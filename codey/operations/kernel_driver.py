@@ -19,12 +19,15 @@ from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact, write_provider_artifact
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 from codey.providers.response_record import json_value
-from codey.runtime.core.operation_payload import RuntimeExecutionCounters
+from codey.runtime.core.operation_payload import (
+    LEAF_CONTROL_READY,
+    LEAF_TOOL_DELIVERY_PENDING,
+    RuntimeExecutionCounters,
+)
 from codey.runtime.core.operation_reducer import (
     ACTION_COMMIT_GENERATION_BOUNDARY,
     ACTION_SUBMIT_PROVIDER_REQUEST,
 )
-from codey.runtime.core.operation_state import LEAF_CONTROL_READY, LEAF_TOOL_DELIVERY_PENDING
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
@@ -323,7 +326,7 @@ def _execute_kernel_action(context: KernelContext, view: Any, action: Any) -> Ke
     if action.kind == rules.ACTION_BEGIN_CLOSING:
         context.close(state, KernelResult(False, "stopped", state.logical_turn, "stopped"))
     elif action.kind == rules.ACTION_RESUME_QUESTION:
-        from codey.runtime.core.operation_state import LEAF_REPAIR_RUNNING, LEAF_WRITER_RUNNING
+        from codey.runtime.core.operation_payload import LEAF_REPAIR_RUNNING, LEAF_WRITER_RUNNING
         context.advance(state, LEAF_REPAIR_RUNNING if state.driver == "repair" else LEAF_WRITER_RUNNING)
     elif action.kind == rules.ACTION_RETURN_WAITING:
         return KernelResult(False, "shell command requires approval", state.logical_turn, "approval")

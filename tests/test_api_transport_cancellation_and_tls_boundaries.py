@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from codey.providers import api_transport
+from codey.providers import api_generation, api_transport
 
 
 def test_cancelled_before_connect_is_classified_not_sent() -> None:
@@ -25,7 +25,7 @@ def test_cancelled_before_connect_is_classified_not_sent() -> None:
     thread.start()
     try:
         with pytest.raises(api_transport.GenerationNotSentError):
-            api_transport.generate(
+            api_generation.generate(
                 f"http://127.0.0.1:{server.server_port}/v1",
                 {}, {}, timeout=1,
                 observe=lambda **_: None,

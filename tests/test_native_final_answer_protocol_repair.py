@@ -1,4 +1,5 @@
 """Malformed native answer objects are repaired, never reinterpreted as success."""
+
 import copy
 import json
 
@@ -6,7 +7,7 @@ import pytest
 
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers import api_transport
+from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from tests.support.kernel_runtime import KernelRunRequest, KernelTransportDeps, run_task_kernel
 
@@ -41,7 +42,7 @@ def test_native_answer_object_must_be_resent_through_declared_done(monkeypatch, 
         return {"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": calls},
                              "finish_reason": "tool_calls"}]}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *a, **kw: True)
     provider = ApiProvider("http://localhost:9/v1", "fixture")
     session = TaskSession(policy=TaskPolicy(frozenset({"control"}), required_checks=("output_json",)), max_turns=3)

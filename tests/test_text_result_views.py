@@ -7,6 +7,7 @@ import pytest
 from codey.operations.kernel_prompt import _format_results
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from codey.providers import api_context
 from codey.providers.api_provider import ApiProvider
 from codey.providers.context_ledger import digest
 from codey.providers.text_result_views import (
@@ -85,14 +86,14 @@ def test_provider_compacts_only_old_marked_output_and_preserves_events_without_m
     provider.set_result_refs(("receipt-1", "latest-receipt"))
     payloads = []
     try:
-        with patch("codey.providers.api_transport.generate", side_effect=AssertionError("no summary needed")):
+        with patch("codey.providers.api_generation.generate", side_effect=AssertionError("no summary needed")):
             provider.maintain_context()
             provider.wait_for_maintenance(3)
         assert "Stored body omitted" in provider._messages[0]["content"]
         assert provider._messages[2] == latest
         assert provider.context_ledger.events() == original
         assert "Original goal remains" in provider._messages[0]["content"]
-        with patch("codey.providers.api_transport.generate", side_effect=lambda _url, payload, *_args, **_kwargs:
+        with patch("codey.providers.api_generation.generate", side_effect=lambda _url, payload, *_args, **_kwargs:
                    (payloads.append(payload) or {"choices": [{"message": {"content": "ok"}}]})):
             provider.send("continue", tool_call_json=True)
         assert all(TEXT_RESULTS_KEY not in row for row in payloads[0]["messages"])
@@ -120,9 +121,9 @@ def test_soft_admission_reduces_backed_history_without_background_commit_or_summ
     provider.request_counter = lambda payload, **kwargs: RequestContextCount(len(str(payload)) // 4, "tokenizer")
     payloads = []
     try:
-        with patch.object(provider, "_schedule_maintenance"), patch.object(
-                provider, "_commit_context", side_effect=AssertionError("no background commit")), patch(
-                "codey.providers.api_transport.generate", side_effect=lambda _url, payload, *_args, **_kwargs:
+        with patch.object(api_context, 'schedule_maintenance'), patch.object(
+                api_context, 'commit_context', side_effect=AssertionError("no background commit")), patch(
+                "codey.providers.api_generation.generate", side_effect=lambda _url, payload, *_args, **_kwargs:
                 (payloads.append(payload) or {"choices": [{"message": {"content": "ok"}}]})):
             provider.send("Recheck the current source", tool_call_json=text_format == "json_schema")
         assert len(payloads) == 1

@@ -113,7 +113,6 @@ def test_all_provider_workflows_attach_the_shared_boundary() -> None:
     for relative in (
         "codey/operations/project_adapter.py",
         "codey/operations/research_iteration.py",
-        "codey/operations/evidence_followup.py",
     ):
         tree = ast.parse((ROOT / relative).read_text(encoding="utf-8"))
         sink_calls = [

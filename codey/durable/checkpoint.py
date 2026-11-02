@@ -18,7 +18,7 @@ from codey.durable.reducer import with_effect_intents, with_effect_settlement
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
-    from codey.runtime.core.operation_state import RuntimeOperationState
+    from codey.runtime.core.operation_payload import RuntimeOperationState
     from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection
     from codey.runtime.log.entries import RuntimeLogEntry
 
@@ -31,7 +31,7 @@ def _entry(session_id: str, row: dict[str, Any]) -> RuntimeLogEntry:
 
 
 def operation_from_checkpoint(task: TaskCheckpoint, session_id: str) -> RuntimeOperationState | None:
-    from codey.runtime.core.operation_state import RuntimeOperationState, RuntimeOperationTransitionError
+    from codey.runtime.core.operation_payload import RuntimeOperationState, RuntimeOperationTransitionError
 
     if task.conversation_id != session_id:
         raise RuntimeOperationTransitionError("checkpoint conversation boundary mismatch")
@@ -91,13 +91,8 @@ def _delivery_rows(snapshot: dict[str, Any]) -> list[dict[str, object]]:
 
 def checkpoint_entries(task: TaskCheckpoint, effects: tuple[EffectRecord, ...], *,
                        session_id: str) -> tuple[RuntimeLogEntry, ...]:
-    from codey.runtime.core.operation_state import (
-        LEAF_TERMINAL,
-        RuntimeOperationTransitionError,
-        operation_started_entry,
-        operation_state_entry,
-        outcome_for_terminal,
-    )
+    from codey.runtime.core.operation_payload import LEAF_TERMINAL, RuntimeOperationTransitionError
+    from codey.runtime.core.operation_state import operation_started_entry, operation_state_entry, outcome_for_terminal
     from codey.runtime.effects.effect_records import (
         RuntimeEffectIntent,
         RuntimeEffectSettlement,
@@ -142,9 +137,8 @@ def delivery_snapshot(batch: DeliveryBatchProjection) -> dict[str, object]:
     }
 
 
-
 def _apply_boundary_transition(mutation: DurableMutation, state: RuntimeOperationState) -> DurableMutation:
-    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+    from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 
     if mutation.task is None:
         raise RuntimeOperationTransitionError("boundary lost its task")
@@ -154,7 +148,7 @@ def _apply_boundary_transition(mutation: DurableMutation, state: RuntimeOperatio
 
 
 def _effect_changes(projections: Any, effects: tuple[EffectRecord, ...]) -> tuple[list[EffectRecord], list[EffectRecord]]:
-    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+    from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 
     known = {effect.effect_id: effect for effect in effects}
     intents: list[EffectRecord] = []
@@ -192,7 +186,7 @@ def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
                       generation_boundary: str | None = None,
                       boundary_result: list[object] | None = None,
                       boundary_transition: Callable[..., RuntimeOperationState] | None = None) -> None:
-    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+    from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
     from codey.runtime.log.session_projection import reduce_session
     from codey.runtime.log.session_view import load_session_view
 

@@ -1,4 +1,5 @@
 """Allow and deny resume Chat in its original task and authorization."""
+
 import copy
 import json
 import threading
@@ -12,6 +13,7 @@ from codey.app.api import shell_approval_response
 from codey.app.context import AppContext
 from codey.app.task_services import build_task_deps
 from codey.operations.task_entry import run_task_submission
+from codey.providers import api_generation
 from codey.storage.local_store import session_key
 from codey.task.model import TaskSubmission
 from tests.support.workspace_conversation import TextConversation, short_test_state_home
@@ -57,7 +59,6 @@ def test_shell_decision_resumes_chat_without_project_workflow(tmp_path, monkeypa
 @pytest.mark.parametrize("approved", [False, True])
 def test_native_approval_resume_keeps_original_task_and_tool_history(tmp_path, monkeypatch, approved):
     from codey.app import shell_service
-    from codey.providers import api_transport
     from codey.providers.api_provider import ApiProvider
 
     payloads = []
@@ -73,7 +74,7 @@ def test_native_approval_resume_keeps_original_task_and_tool_history(tmp_path, m
             "function": {"name": name, "arguments": json.dumps(args)},
         }]}, "finish_reason": "tool_calls"}]}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     execute = Mock(return_value={"ok": True, "status": "exit", "output": "approval-marker", "exit_code": 0})
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
     provider = ApiProvider("http://scripted.test/v1", "scripted-fixture", native_tools=True, stream=False)

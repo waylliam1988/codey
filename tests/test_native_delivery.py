@@ -734,7 +734,7 @@ def test_builder_supersede_requires_not_sent_proof(tmp_path: Path) -> None:
     import pytest
     pytest.skip("legacy multi-batch builder fixture predates durable generation boundaries")
 
-    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+    from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
     from codey.runtime.effects.effect_records import (
         SENT_STATE_MAYBE_SENT,
         SENT_STATE_NOT_SENT,

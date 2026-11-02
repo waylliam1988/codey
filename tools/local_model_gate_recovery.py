@@ -24,7 +24,6 @@ from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_run import TaskRunDeps
-from codey.providers.api_chat import encode_tools
 from codey.providers.api_provider import ApiProvider
 from codey.runtime.core.cancellation import start_process, wait_process
 from codey.task.model import TaskSubmission
@@ -54,11 +53,10 @@ class _ScriptedLocalProvider(ApiProvider):
         self.directory, self.stage = directory, stage
         self.responses = 0
 
-    def _generate(self, messages, tools=None, *, timeout=None, checkpoints=None):
+    def _generate_attempt(self, payload, deadline, connection_id, sink, budget):
         self.responses += 1
-        _append(self.directory / "scripted-requests.jsonl", {"messages": messages, "tools": encode_tools(tools)})
-        if tools == []:
-            return {"choices": [{"message": {"role": "assistant", "content": "OK"}, "finish_reason": "stop"}]}
+        tools = payload.get("tools")
+        _append(self.directory / "scripted-requests.jsonl", payload)
         if self.stage == "prepare":
             name, args = "edit", {"path": "checkpoint.py", "content": CONTENT}
         elif self.responses == 1:

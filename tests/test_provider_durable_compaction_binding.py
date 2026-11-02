@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from codey.durable import CommitConflict, DurableSession, MemoryDurableStore
+from codey.providers import api_context
 from codey.providers.api_provider import ApiProvider
 from codey.providers.context_checkpoint import ContextRange
 from codey.providers.context_ledger import digest
@@ -29,11 +30,11 @@ def _provider_with_source():
 def test_compaction_commit_writes_the_canonical_range_edit_before_view_commit():
     durable, provider, first, second = _provider_with_source()
     try:
-        snapshot = provider._context_snapshot()
+        snapshot = api_context.context_snapshot(provider)
         items = list(provider._messages)
         selected = ContextRange(0, 2, digest(items))
         checkpoint = {"kind": "work_state", "text": "retained early fact and decision"}
-        assert provider._commit_context(selected, [{"role": "assistant", "content": "retained early fact and decision"}],
+        assert api_context.commit_context(provider, selected, [{"role": "assistant", "content": "retained early fact and decision"}],
                                         checkpoint, snapshot, None, 10.0)
         assert durable.context_snapshot("chat", token_budget=100).messages == (
             {"role": "assistant", "content": "retained early fact and decision"},)
@@ -47,13 +48,13 @@ def test_compaction_commit_writes_the_canonical_range_edit_before_view_commit():
 def test_compaction_source_change_refuses_the_durable_edit_and_keeps_provider_view():
     durable, provider, first, _second = _provider_with_source()
     try:
-        snapshot = provider._context_snapshot()
+        snapshot = api_context.context_snapshot(provider)
         items = list(provider._messages)
         selected = ContextRange(0, 2, digest(items))
         durable.append_message("chat", "user_message", {"text": "concurrent tail"})
         checkpoint = {"kind": "work_state", "text": "stale summary"}
         try:
-            provider._commit_context(selected, [{"role": "assistant", "content": "stale summary"}],
+            api_context.commit_context(provider, selected, [{"role": "assistant", "content": "stale summary"}],
                                      checkpoint, snapshot, None, 10.0)
         except CommitConflict:
             pass

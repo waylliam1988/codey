@@ -20,6 +20,7 @@ from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.local_response_codec import normalize_local_reply
 from codey.runtime.core.cancellation import start_process, wait_process
@@ -176,12 +177,11 @@ def record_api_generations(path: Path):
     import threading
     from unittest.mock import patch
 
-    from codey.providers import api_transport
 
     if _RECORDING_PATH.get() == path.resolve():
         yield
         return
-    original = api_transport.generate
+    original = api_generation.generate
     lock = threading.Lock()
     counter = 0
 
@@ -230,7 +230,7 @@ def record_api_generations(path: Path):
 
     token = _RECORDING_PATH.set(path.resolve())
     try:
-        with patch.object(api_transport, "generate", generate), patch.object(ApiProvider, "acknowledge_tool_results", acknowledge):
+        with patch.object(api_generation, "generate", generate), patch.object(ApiProvider, "acknowledge_tool_results", acknowledge):
             yield
     finally:
         _RECORDING_PATH.reset(token)

@@ -1,8 +1,10 @@
 """Live gates must admit real API connections, not pretend Zen is Local/web."""
+
 from dataclasses import asdict
 
 import pytest
 
+from codey.providers import api_generation
 from codey.runtime.core.api_selection import ApiRunSelection
 from tools import local_model_gate_attempts as attempts
 from tools import local_model_release_gate as release
@@ -120,16 +122,15 @@ def test_gate_secondary_model_scope_excludes_personal_local_or_web_targets():
 def test_api_gate_observer_counts_real_http_attempt_without_saving_headers(monkeypatch, tmp_path):
     import json
 
-    from codey.providers import api_transport
 
     def generate(url, payload, headers, **kwargs):
         kwargs["observe"](attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0)
         return {"status": "completed", "output": []}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     path = tmp_path / "provider.jsonl"
     with attempts.record_api_generations(path):
-        api_transport.generate("http://fixture/responses", {"model": "fixture"}, {"Authorization": "secret-fixture"})
+        api_generation.generate("http://fixture/responses", {"model": "fixture"}, {"Authorization": "secret-fixture"})
     records = [json.loads(line) for line in path.read_text(encoding="utf8").splitlines()]
     assert sum(row["type"] == "wire_attempt" and row["phase"] == "request" for row in records) == 1
     assert "secret-fixture" not in path.read_text(encoding="utf8")

@@ -10,7 +10,7 @@ import pytest
 
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers import api_transport
+from codey.providers import api_context, api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolCall, ProviderToolDefinition, ProviderToolResult
 from codey.providers.error_classification import RequestPrepError
@@ -67,7 +67,7 @@ def test_gate_rechecks_native_result_after_revocation(monkeypatch: pytest.Monkey
         if len(gate_payloads) == 2:
             raise ValueError("revoked after first native turn")
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider.bind_attempt_gate(gate)
     try:
         assert provider.send_turn("read", [READ]).tool_calls == (call,)
@@ -97,7 +97,7 @@ def test_native_error_receipt_uses_the_same_gate(monkeypatch: pytest.MonkeyPatch
         if gate_calls == 2:
             raise ValueError("receipt revoked")
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider.bind_attempt_gate(gate)
     try:
         first = provider.send_turn("read", [READ])
@@ -119,7 +119,7 @@ def test_resumed_durable_context_is_admitted_at_the_next_send(monkeypatch: pytes
         payloads.append(copy.deepcopy(payload))
         return _reply(provider.api_protocol)
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider.bind_context("resume-session")
     provider.load_durable_context(
         [{"role": "user", "content": "durable fact"}, {"role": "assistant", "content": "old answer"}],
@@ -142,9 +142,9 @@ def test_compaction_auxiliary_inherits_attempt_gate(monkeypatch: pytest.MonkeyPa
     def generate(_endpoint: str, _payload: dict[str, object], *_args: object, **_kwargs: Any) -> dict[str, object]:
         return _reply("openai-completions")
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider.bind_attempt_gate(lambda client, payload: calls.append((client.purpose, copy.deepcopy(payload))))
-    auxiliary = provider.fork_auxiliary()
+    auxiliary = api_context.fork_auxiliary(provider)
     try:
         assert auxiliary.send("bounded work-state summary") == "ok"
         assert len(calls) == 1
@@ -160,7 +160,7 @@ def test_terminal_receipt_does_not_claim_a_physical_attempt(monkeypatch: pytest.
     def generate(*_args: object, **_kwargs: Any) -> dict[str, object]:
         return _reply("openai-completions", call=ProviderToolCall("call-3", "read", {}))
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider.bind_attempt_gate(lambda _client, _payload: calls.append(True))
     try:
         provider.send_turn("read", [READ])
@@ -201,7 +201,7 @@ def test_kernel_native_followup_uses_the_same_gate(monkeypatch: pytest.MonkeyPat
     def read_file(call: ToolCall) -> ToolResult:
         return ToolResult(ok=True, call=call, model_text="saved note")
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     session = TaskSession(
         policy=TaskPolicy(grants=frozenset({"project.read", "control"})),
         task_kind="project",

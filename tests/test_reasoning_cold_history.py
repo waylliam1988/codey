@@ -1,4 +1,5 @@
 """Thinking must survive a cold reload independently of tool result text."""
+
 import io
 import json
 
@@ -6,7 +7,7 @@ import pytest
 
 from codey.app.context import AppContext
 from codey.durable.provider_response import tool_call_message
-from codey.providers import api_chat, api_transport
+from codey.providers import api_chat, api_stream
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.providers.response_record import encode_reply
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
@@ -60,7 +61,7 @@ def test_native_tool_context_projection_preserves_reasoning(tmp_path):
 def test_stream_reasoning_has_the_same_alias_and_type_rules_as_nonstream(field, value):
     events = [{"choices": [{"delta": {field: value, "content": "Answer"}, "finish_reason": "stop"}]}]
     raw = b"".join(b"data: " + json.dumps(event).encode() + b"\n\n" for event in events) + b"data: [DONE]\n\n"
-    body = api_transport.read_sse(io.BytesIO(raw), deadline=float("inf"), cancelled=lambda: False)
+    body = api_stream.read_sse(io.BytesIO(raw), deadline=float("inf"), cancelled=lambda: False)
     turn, _ = api_chat.decode_exchange(body, text_only=False, text_decoder=None)
     assert turn.text == "Answer"
     assert turn.reasoning == (value if isinstance(value, str) else "")

@@ -16,8 +16,11 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.runtime.core.operation_payload import RuntimeExecutionCounters
-from codey.runtime.core.operation_state import RuntimeOperationState, RuntimeOperationTransitionError
+from codey.runtime.core.operation_payload import (
+    RuntimeExecutionCounters,
+    RuntimeOperationState,
+    RuntimeOperationTransitionError,
+)
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import RuntimeEffectError, RuntimeEffectIntent
 from codey.runtime.write.mutation_line import RuntimeMutationLine

@@ -718,7 +718,7 @@ class ExecutionDelegate:
     @staticmethod
     def _staged_note_receipt(tools: Any, created: list[str], proposals: list[object], canonical: dict[str, object]) -> None:
         from codey.providers.response_record import json_value
-        from codey.research.tools import StagedKnowledgeStore
+        from codey.research.staging import StagedKnowledgeStore
 
         if isinstance(getattr(tools, "store", None), StagedKnowledgeStore):
             proposals.extend(json_value(tools.store._staged_notes[identity]) for identity in created)

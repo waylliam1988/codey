@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,

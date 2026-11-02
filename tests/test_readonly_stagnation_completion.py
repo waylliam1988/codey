@@ -17,7 +17,7 @@ def test_readonly_completion_from_repair_settled_preserves_phase_and_budget(
     from codey.completion.verification_policy import VerificationCandidate
     from codey.durable import DurableSession, MemoryDurableStore
     from codey.operations import project_candidate_validation as validation
-    from codey.runtime.core.operation_state import LEAF_REPAIR_SETTLED
+    from codey.runtime.core.operation_payload import LEAF_REPAIR_SETTLED
     from codey.runtime.core.run_result import RunResult
     from codey.runtime.observe.execution_evidence import CheckEvidence
     from codey.runtime.write.mutation_line import RuntimeMutationLine

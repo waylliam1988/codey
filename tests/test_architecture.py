@@ -2281,136 +2281,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn("class RecoveryFailed(", source)
 
     def test_long_files_do_not_grow(self) -> None:
-        # 1000-line guardrail (warning-grade): the files above the line are
-        # known cohesive stores/flows. They must shrink over time; this test
-        # fails only when a NEW file crosses the line or a tracked file
-        # grows, so refactors stay honest without a hard fail on legacy.
-        over_limit: dict[str, int] = {}
-        for path in sorted((ROOT / "codey").rglob("*.py")):
-            size = sum(1 for _ in path.open(encoding="utf-8"))
-            if size > 1000:
-                over_limit[path.relative_to(ROOT / "codey").as_posix()] = size
-        baseline = {
-            # Durable task/effect/submission records share their schema owner.
-            "durable/model.py",
-            # Conversation context now owns the display transcript and
-            # execution-output stores; keep their lifecycle in one boundary.
-            "app/context.py",
-            "ghost/continuity.py",
-            # GhostInbox remains the single durable owner for candidate state,
-            # learning settings, and the four independent control gates.
-            "ghost/inbox.py",
-            "providers/controls.py",
-            # Transport lifecycle and pooled HTTP plumbing are one cohesive
-            # boundary; the stop-race fix crossed the 1000-line warning by one.
-            "providers/api_transport.py",
-            # Existing committed owners at b7992d19; exact ceilings below
-            # prevent further growth. Their size remains structural debt.
-            "providers/api_provider.py",
-            "research/tools.py",
-            # PLR split 2026-09-26: extracted per-branch helpers stay in-module
-            # for cohesion (single caller, domain-specific); file crossed 1000.
-            "providers/worker.py",
-            "research/browser_search.py",
-            "research/evidence_ledger.py",
-            # Round5 fail-closed: _safe_nonnegative/_safe_positive_page stay
-            # in-module for cohesion (projection-local bool/overflow guard).
-            "research/object_model.py",
-            "research/source_connectors.py",
-            "runs/trace.py",
-            "runtime/core/operation_state.py",
-            # PLR split 2026-09-26: batch intent/orphan/link helpers stay in-module.
-            "runtime/effects/tool_result_delivery.py",
-            # DurableSession is the single mutation-line facade for
-            # conversation, task, approval, and effect commits.  Keeping
-            # these entry points together makes the owner visible; extracting
-            # them into generic repositories would increase call-chain size.
-            "durable/session.py",
-            # Task loop owns the complete admission/turn/finalization flow.
-            "toolchain/runtime.py",
-            "workspace/changes.py",
+        from tests.support.architecture_limits import size_limit_violations
+
+        sizes = {
+            path.relative_to(ROOT / "codey").as_posix(): len(path.read_text(encoding="utf-8").splitlines())
+            for path in (ROOT / "codey").rglob("*.py")
         }
-        self.assertEqual(set(over_limit) - baseline, set())
-        # Reverse direction: a baseline entry that shrank back under the
-        # line must leave the baseline, or regrowth up to the old ceiling
-        # would never alarm.
-        self.assertEqual(baseline - set(over_limit), set())
-        ceiling = {
-            # Session-scoped run lanes and per-run cancellation/output
-            # lifecycle add a small amount of cohesive context state.
-            # DurableSession, scheduler and durable projection wiring now
-            # live at the application boundary; this is the single assembly
-            # point and stays below the next structural split threshold.
-            # Independent Ghost maintenance control adds a small gate at the
-            # app-owned sleep scheduler boundary.
-            "app/context.py": 1188,
-            "ghost/affinity.py": 2750,
-            "ghost/continuity.py": 1350,
-            "ghost/hebbian.py": 1300,
-            "ghost/inbox.py": 1200,
-            # PLR split 2026-09-26: 2780 lines after per-action split.
-            "ghost/work_queue.py": 2840,
-            "providers/controls.py": 1400,
-            # Freeze the already-committed b7992d19 sizes, without headroom.
-            "providers/api_provider.py": 1147,
-            "research/tools.py": 1027,
-            "providers/api_transport.py": 1053,
-            # PLR split 2026-09-26: 1009 lines after _wait_for_response split.
-            "providers/worker.py": 1060,
-            "research/browser_search.py": 1233,
-            # Round5 fail-closed: 1013 lines after safe-int helpers.
-            "research/object_model.py": 1070,
-            # PLR split 2026-09-26: 1558 lines after payload-check split.
-            "research/evidence_ledger.py": 1620,
-            # Boundary hardening: named done-review result + multiline build
-            # (advisor_count preserved), loop.py -25 lines in the same round.
-            # PLR split 2026-09-26: 1510 lines after run() preamble/loop split.
-            "research/source_connectors.py": 1420,
-            "runs/trace.py": 2450,
-            # PLR split 2026-09-26: 1188 lines after from_payload field split.
-            # Durable checkpoint projection keeps the explicit adapter in this
-            # module while the mutation owner remains in codey.durable.
-            "runtime/core/operation_state.py": 1473,
-            # PLR split 2026-09-26: 1046 lines after batch-helper split.
-            # Abandoned terminal 2026-09-27: 1194 lines (abandoned receipt +
-            # terminal exclusivity, no new file; ceiling raised, not split).
-            # Durable-backed delivery reconstruction and bounded projection
-            # validation add a small amount of owned code here.
-            "runtime/effects/tool_result_delivery.py": 1270,
-            # Cancellation barrier, ownership joins, workflow reconciliation,
-            # and durable recovery settlement are kept beside the session
-            # mutation owner.  This is the one explicit durable mutation
-            # facade; splitting it into repositories would duplicate the
-            # transaction boundary and make ownership less visible.
-            # Session failure latch, internal/external commit observers, and
-            # close listeners are part of the same mutation-line contract.
-            # Boundary transactions, InboxDoc reconstruction, scheduler
-            # reconciliation and context/fork reads remain one explicit
-            # DurableSession owner; keep a measured ceiling until a semantic
-            # split can move a whole owner without adding repositories.
-            "durable/session.py": 2196,
-            # Headless shell denial now shares the durable cancellation
-            # barrier with the live kernel; keep the cohesive loop just above
-            # the previous warning ceiling until a whole semantic owner can
-            # move without duplicating its boundary.
-            # Kernel transport carries the explicit Ghost admit_hints gate.
-            # Current cohesive task admission/finalization owner is 1231 lines.
-            # Operation schema owns the durable task and reference validation.
-            "durable/model.py": 1013,
-            # LF/CRLF line-boundary note (was a one-line overclaim).
-            # PLR split 2026-09-26: 1381 lines after search_files scan split.
-            "toolchain/runtime.py": 1440,
-            # Read-only require_baseline + stat-size capacity guard.
-            # PLR split 2026-09-26: 1214 lines after git-command split.
-            # Review NUL status/numstat + C-quote decode 2026-10-04: 1346 lines.
-            "workspace/changes.py": 1420,
-        }
-        grown = {
-            name: size
-            for name, size in over_limit.items()
-            if size > ceiling.get(name, 1000)
-        }
-        self.assertEqual(grown, {})
+        limits = json.loads((ROOT / "tests" / "architecture-size-limits.json").read_text(encoding="utf-8"))
+        self.assertEqual(size_limit_violations(sizes, limits), [])
 
 
 if __name__ == "__main__":

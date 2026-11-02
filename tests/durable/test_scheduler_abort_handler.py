@@ -8,6 +8,7 @@ import pytest
 
 from codey.durable import DurableSession, MemoryDurableStore, TaskStatus
 from codey.durable.scheduler import AbortInvocation, DurableTaskScheduler
+from codey.providers import api_generation
 
 
 def test_abort_runs_independent_handler_after_durable_mark_and_signal() -> None:
@@ -131,7 +132,7 @@ def test_abort_event_reaches_provider_transport_and_invalidates_reply() -> None:
         except BaseException as exc:
             errors.append(exc)
 
-    with patch.object(api_transport, "generate", generate):
+    with patch.object(api_generation, "generate", generate):
         worker = threading.Thread(target=run)
         worker.start()
         assert opened.wait(2)
@@ -151,7 +152,6 @@ def _wait_until(predicate, timeout: float = 2.0) -> bool:
             return True
         time.sleep(0.01)
     return predicate()
-
 
 
 def test_abort_cleans_shell_and_approval_resources_without_optional_provider_hook(tmp_path, monkeypatch) -> None:

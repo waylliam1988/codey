@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from codey.runtime.core.operation_payload import RuntimeExecutionCounters
-from codey.runtime.core.operation_state import (
+from codey.runtime.core.operation_payload import (
     LEAF_ACCEPTED,
     LEAF_CLOSING,
     LEAF_COMPLETION_PENDING,
@@ -30,10 +29,11 @@ from codey.runtime.core.operation_state import (
     LEAF_WRITER_RUNNING,
     LEAF_WRITER_SETTLED,
     LEAVES,
+    RuntimeExecutionCounters,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
-    operation_state_entry,
 )
+from codey.runtime.core.operation_state import operation_state_entry
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
@@ -244,7 +244,6 @@ def _response_ready_action(view: SessionView) -> RuntimeAction:
         return RuntimeAction(ACTION_FAIL_INVARIANT, leaf=state.leaf, reason="missing_provider_response_fact")
     return RuntimeAction(ACTION_INTERPRET_PROVIDER_RESPONSE, leaf=state.leaf,
                          effect_id=providers[0].intent.effect_id, response_ref=state.response_ref, driver=state.driver)
-
 
 
 def _execution_position_action(view: SessionView, inputs: RuntimeDecisionInputs) -> RuntimeAction | None:

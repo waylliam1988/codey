@@ -1,4 +1,5 @@
 """Temporary Zen declarations satisfy transport without changing task authority."""
+
 import json
 from unittest.mock import Mock
 
@@ -6,7 +7,7 @@ import pytest
 
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers import api_transport
+from codey.providers import api_generation, api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition
 from codey.providers.zen.connection import ZenProvider
@@ -45,7 +46,7 @@ def provider_with_responses(monkeypatch, replies, protocol="openai-responses"):
             return {"choices": [{"message": message, "finish_reason": "tool_calls" if message["tool_calls"] else "stop"}]}
         return body
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     runtime = ApiProvider("http://fixture.test/v1", "fixture", api_protocol=protocol, tool_choice="auto")
     return ZenProvider(runtime), requests
 
@@ -111,7 +112,7 @@ def test_plain_tool_refusal_is_bounded_and_does_not_fabricate_text_success(monke
 
 def test_alias_collision_is_rejected_before_any_generation(monkeypatch):
     generate = Mock()
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ZenProvider(ApiProvider("http://fixture.test/v1", "fixture"))
     tools = [ProviderToolDefinition(name, "description", {}) for name in ("read_file", "read")]
     with pytest.raises(ValueError, match="collision"):

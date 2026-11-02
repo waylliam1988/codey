@@ -381,7 +381,7 @@ def main():
         shutil.copytree((args.after_root or root) / 'codey', after / 'codey',
                         ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
         if args.maintenance_ratio is not None:
-            policy = after / 'codey/providers/api_provider.py'
+            policy = after / 'codey/providers/api_context.py'
             text, changed = re.subn(r'(?<=pressure >= self.context_budget.input_limit \* )0\.80',
                                    f'{args.maintenance_ratio:.2f}', policy.read_text(encoding='utf-8'), count=1)
             if changed != 1:

@@ -19,7 +19,7 @@ def test_new_model_does_not_import_old_provider_protocol_history(tmp_path):
     assert switched._messages == []
     assert switched.export_work_state() == ""
     assert "encrypted_content" not in switched.export_work_state()
-    with patch("codey.providers.api_transport.generate", return_value={"status": "completed", "output": []}):
+    with patch("codey.providers.api_generation.generate", return_value={"status": "completed", "output": []}):
         switched.send("continue")
 
 

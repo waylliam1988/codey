@@ -9,7 +9,7 @@ from codey.providers.api_provider import ApiProvider
 def test_provider_context_is_bound_to_the_durable_runtime_window():
     provider = ApiProvider("http://localhost:9/v1", "fixture")
     provider.bind_context("chat-a")
-    with patch("codey.providers.api_transport.generate", return_value={"choices": [{"message": {"content": "answer"}}]}):
+    with patch("codey.providers.api_generation.generate", return_value={"choices": [{"message": {"content": "answer"}}]}):
         provider.send("remember this exact original")
     assert provider.context_ledger.events()[0]["content"] == "remember this exact original"
     other = ApiProvider("http://localhost:9/v1", "fixture")
@@ -33,7 +33,7 @@ def test_session_and_protocol_ledger_factories_share_identity(tmp_path):
 def test_new_chat_starts_an_empty_provider_window():
     provider = ApiProvider("http://localhost:9/v1", "fixture")
     provider.bind_context("chat-a")
-    with patch("codey.providers.api_transport.generate", return_value={"choices": [{"message": {"content": "answer"}}]}):
+    with patch("codey.providers.api_generation.generate", return_value={"choices": [{"message": {"content": "answer"}}]}):
         provider.send("original")
     provider.new_chat()
     assert provider.context_ledger.events()
@@ -43,7 +43,7 @@ def test_new_chat_starts_an_empty_provider_window():
 def test_failed_generation_does_not_archive_unconfirmed_user_input():
     provider = ApiProvider("http://localhost:9/v1", "fixture")
     provider.bind_context("chat-a")
-    with patch("codey.providers.api_transport.generate", side_effect=RuntimeError("offline")), pytest.raises(RuntimeError):
+    with patch("codey.providers.api_generation.generate", side_effect=RuntimeError("offline")), pytest.raises(RuntimeError):
         provider.send("not accepted")
     assert provider.context_ledger.events() == []
 
@@ -74,7 +74,7 @@ def test_corrupted_archive_fails_closed(tmp_path):
 def test_close_does_not_create_an_independent_recovery_archive(tmp_path):
     provider = ApiProvider("http://localhost:9/v1", "fixture")
     provider.bind_context("a")
-    with patch("codey.providers.api_transport.generate", return_value={"choices": [{"message": {"content": "answer"}}]}):
+    with patch("codey.providers.api_generation.generate", return_value={"choices": [{"message": {"content": "answer"}}]}):
         provider.send("original")
     expected = list(provider._messages)
     provider.close()
@@ -92,7 +92,7 @@ def test_malformed_native_reply_preserves_valid_input_durably_without_archiving_
     provider._messages = original
     malformed = {"choices": [{"message": {"tool_calls": [
         {"id": "bad", "function": {"name": "run", "arguments": "{"}}]}}]}
-    with patch("codey.providers.api_transport.generate", return_value=malformed):
+    with patch("codey.providers.api_generation.generate", return_value=malformed):
         provider.send_turn("continue")
     expected = [*original, {"role": "user", "content": "continue"}]
     assert provider._messages == expected
@@ -114,7 +114,7 @@ def test_emergency_multi_segment_compaction_commits_all_lineage_with_the_answer(
         provider.context_ledger.commit(history, checkpoint={"kind":"work_state", "item_digest":digest(item), "source":[]})
     provider._messages = history
     provider.summarize_context = lambda source, _: "Goal: keep API"
-    with patch("codey.providers.api_transport.generate", return_value={"choices": [{"message": {"content": "ok"}}]}):
+    with patch("codey.providers.api_generation.generate", return_value={"choices": [{"message": {"content": "ok"}}]}):
         provider.send("continue")
     assert len(provider.context_ledger.checkpoint_digests()) == 4
     assert "alpha" in str(provider.context_ledger.original_source(provider._messages))

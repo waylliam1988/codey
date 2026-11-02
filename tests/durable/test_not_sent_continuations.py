@@ -16,8 +16,7 @@ from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolResult
 from codey.providers.error_classification import RequestPrepError
 from codey.runtime.core.models import ToolResult
-from codey.runtime.core.operation_payload import RuntimeExecutionCounters
-from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationTransitionError
 from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
 from codey.runtime.effects.effect_records import RuntimeEffectError
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore

@@ -29,7 +29,7 @@ def test_local_policy_override_controls_rejected_generation(monkeypatch) -> None
     policy = _Policy()
     provider = ApiProvider("http://fixture/v1", "m", request_policy=policy)
     monkeypatch.setattr(
-        "codey.providers.api_transport.generate",
+        "codey.providers.api_generation.generate",
         lambda *args, **kwargs: (_ for _ in ()).throw(GenerationRejectedError(503, "busy")),
     )
     with pytest.raises(GenerationRejectedError):
@@ -46,7 +46,7 @@ def test_plain_503_is_not_automatically_retried(monkeypatch) -> None:  # type: i
         calls += 1
         raise GenerationRejectedError(503, "busy")
 
-    monkeypatch.setattr("codey.providers.api_transport.generate", reject)
+    monkeypatch.setattr("codey.providers.api_generation.generate", reject)
     with pytest.raises(GenerationRejectedError):
         provider.send("hello")
     assert calls == 1
@@ -69,7 +69,7 @@ def test_policy_can_retry_a_pre_submission_tls_eof_once(monkeypatch) -> None:  #
             raise GenerationNotSentError("pre-submission TLS EOF")
         return {"choices": [{"message": {"content": "ready"}, "finish_reason": "stop"}]}
 
-    monkeypatch.setattr("codey.providers.api_transport.generate", generate)
+    monkeypatch.setattr("codey.providers.api_generation.generate", generate)
     assert provider.send("hello") == "ready"
     assert calls == 2
 

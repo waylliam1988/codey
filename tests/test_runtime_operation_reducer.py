@@ -3,16 +3,7 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from codey.runtime.core.operation_reducer import (
-    ACTION_CONTINUE,
-    ACTION_FAIL_INVARIANT,
-    ACTION_REPLAY_SAFE_TOOL_BATCH,
-    ACTION_SETTLE_PROVIDER_UNKNOWN,
-    ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
-    ACTION_TERMINAL,
-    next_runtime_action,
-)
-from codey.runtime.core.operation_state import (
+from codey.runtime.core.operation_payload import (
     DRIVER_WRITER,
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
@@ -27,9 +18,17 @@ from codey.runtime.core.operation_state import (
     LEAF_WRITER_SETTLED,
     LEAVES,
     RuntimeOperationState,
-    lane_for_run,
-    operation_id_for_run,
 )
+from codey.runtime.core.operation_reducer import (
+    ACTION_CONTINUE,
+    ACTION_FAIL_INVARIANT,
+    ACTION_REPLAY_SAFE_TOOL_BATCH,
+    ACTION_SETTLE_PROVIDER_UNKNOWN,
+    ACTION_SYNTHESIZE_INTERRUPTED_EFFECTS,
+    ACTION_TERMINAL,
+    next_runtime_action,
+)
+from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,

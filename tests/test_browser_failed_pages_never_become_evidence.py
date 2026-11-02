@@ -8,7 +8,7 @@ from unittest import mock
 
 import pytest
 
-from codey.research import browser_search
+from codey.research import browser_search, extract, source_download
 from codey.research.ledger import ResearchLedger
 from codey.research.source_gateway import ResearchSourceGateway
 
@@ -32,7 +32,7 @@ def test_failed_acquisition_is_error_and_never_records_evidence(monkeypatch, tra
     response.status = 200
     response.headers = {"content-type": "text/html"}
     response.geturl = lambda: URL
-    monkeypatch.setattr(browser_search, "_open_url_no_redirect", lambda *args, **kwargs: response)
+    monkeypatch.setattr(source_download, "_open_url_no_redirect", lambda *args, **kwargs: response)
     monkeypatch.setattr(browser_search, "check_fetch_url", lambda *args, **kwargs: "")
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: "")
     provider = browser_search.BrowserSearchProvider()
@@ -42,7 +42,7 @@ def test_failed_acquisition_is_error_and_never_records_evidence(monkeypatch, tra
         provider._fetch_page = page
         monkeypatch.setattr(provider, "_ensure_fetch_page_on_browser_thread", lambda _: page)
         monkeypatch.setattr(browser_search, "_fetch_page_content_after_settle", lambda _: (html, browser_search.extract_text(html)))
-    fetch = (browser_search._download_text_fallback if transport == "http"
+    fetch = (source_download._download_text_fallback if transport == "http"
              else provider._fetch_on_browser_thread)
     ledger = ResearchLedger()
     gateway = ResearchSourceGateway(SimpleNamespace(fetch=fetch), ledger)
@@ -74,14 +74,14 @@ def test_http_error_body_cannot_become_a_citable_source(monkeypatch, transport, 
     response.status = status
     response.headers = {"content-type": "text/html"}
     response.geturl = lambda: URL
-    monkeypatch.setattr(browser_search, "_open_url_no_redirect", lambda *a, **k: response)
+    monkeypatch.setattr(source_download, "_open_url_no_redirect", lambda *a, **k: response)
     monkeypatch.setattr(browser_search, "check_fetch_url", lambda *a, **k: "")
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *a, **k: "")
     provider = browser_search.BrowserSearchProvider()
     page = mock.Mock(url=URL)
     page.goto.return_value = SimpleNamespace(status=status, headers=response.headers)
     monkeypatch.setattr(provider, "_ensure_fetch_page_on_browser_thread", lambda _: page)
-    fetch = browser_search._download_text_fallback if transport == "http" else provider._fetch_on_browser_thread
+    fetch = source_download._download_text_fallback if transport == "http" else provider._fetch_on_browser_thread
     ledger = ResearchLedger()
     result = ResearchSourceGateway(SimpleNamespace(fetch=fetch), ledger).open(URL)
     assert result.status == "error"
@@ -114,4 +114,4 @@ def test_persistently_empty_application_main_cannot_become_navigation_evidence(m
     monkeypatch.setattr(browser_search, "_FETCH_SETTLE_TIMEOUT_SECONDS", 0)
     _, text = browser_search._fetch_page_content_after_settle(page)
     assert text == ""
-    assert not browser_search._usable_fetch_page_text(text)
+    assert not extract._usable_fetch_page_text(text)

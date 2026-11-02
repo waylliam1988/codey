@@ -7,6 +7,7 @@ import sys
 
 import pytest
 
+from codey.providers import api_generation
 from codey.research.local_scope import ResearchScope, current_scope, effective_answers, registered_plan
 from codey.research.passages import passage_ref
 from tests.test_research_deterministic_completion import _run
@@ -119,7 +120,6 @@ def local_setup(tmp_path):
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("native", [False, True])
 def test_report_length_reopens_only_original_selection_and_accepts_replacement(tmp_path, monkeypatch, native):
-    from codey.providers import api_transport
     from codey.providers.api_provider import ApiProvider
 
     providers = []
@@ -160,7 +160,7 @@ def test_report_length_reopens_only_original_selection_and_accepts_replacement(t
                 if native else {"content": raw})
             return {"choices": [{"message": message, "finish_reason": "stop"}]}
 
-        monkeypatch.setattr(api_transport, "generate", generate)
+        monkeypatch.setattr(api_generation, "generate", generate)
         actual = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False)
         providers.append(actual)
         return actual
@@ -373,7 +373,6 @@ def test_reread_old_finding_displaces_recent_candidate_and_survives_request_rest
         assert len(tools.ledger.references) == 6
     finally:
         store.close()
-
 
 
 def test_scope_v1_roundtrip_keeps_original_fields_and_v2_validates_repair_issue():

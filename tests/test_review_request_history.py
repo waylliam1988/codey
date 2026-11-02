@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from codey.providers import api_transport
+from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolResult
 from codey.providers.token_accounting import RequestContextCount
@@ -23,7 +23,7 @@ def test_required_native_choice_is_request_scoped_and_does_not_mutate_provider(m
                 if protocol == "openai-completions" else {"output": [{"type": "message", "role": "assistant",
                     "content": [{"type": "output_text", "text": "ok"}]}], "status": "completed"})
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", native_tools=True, api_protocol=protocol,
                            stream=False, request_counter=lambda *a, **kw: RequestContextCount(100, "tokenizer"))
     tools = [ProviderToolDefinition("submit", "Submit an answer", {"type": "object", "properties": {}})]
@@ -55,7 +55,7 @@ def test_bounded_payload_preserves_protocol_pairs_counts_actual_view_and_keeps_h
         return {"output": [{"type": "message", "role": "assistant",
                             "content": [{"type": "output_text", "text": "recorded"}]}], "status": "completed"}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     history = []
     for n in range(8):
         history.extend([{"role": "user", "content": f"ARCHIVED_SCOPE_{n}" + "x" * 2000},
@@ -108,8 +108,6 @@ def test_invalid_bounded_history_is_rejected_before_any_send(groups):
         provider.close()
 
 
-
-
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 def test_output_limit_is_counted_sent_and_never_raises_or_mutates_provider_budget(monkeypatch, protocol):
     sent, counted = [], []
@@ -125,7 +123,7 @@ def test_output_limit_is_counted_sent_and_never_raises_or_mutates_provider_budge
         return {"output": [{"type": "message", "role": "assistant",
                             "content": [{"type": "output_text", "text": "ok"}]}], "status": "completed"}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", api_protocol=protocol,
                            request_counter=count, output_tokens=4096, stream=False)
     try:
@@ -153,7 +151,7 @@ def test_truncated_json_is_not_executed_or_resent(monkeypatch):
         sent.append(payload)
         return {"choices": [{"message": {"content": '{"tool":"done","args":{'}, "finish_reason": "length"}]}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", stream=False)
     try:
         with pytest.raises(OutputLengthError):

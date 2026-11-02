@@ -94,7 +94,7 @@ def run_full_prose_repair(root, *, boundary="", resume=False, repeat=False):
             {"id": f"call-{turn}", "type": "function", "function": {"name": name,
                 "arguments": json.dumps(args, ensure_ascii=False)}}]}, "finish_reason": "tool_calls"}]}
 
-    with patch("codey.providers.api_transport.generate", generate):
+    with patch("codey.providers.api_generation.generate", generate):
         return _run(root, native=True, resume=resume, boundary=boundary,
             boundary_turn=3 if boundary == "provider_request_ready" else 2,
             compact_planning=True, required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,

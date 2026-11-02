@@ -21,7 +21,7 @@ def test_nested_recorder_counts_one_logical_send_and_three_physical_attempts(mon
         def observe_failure(self, *_args):
             return RetryDirective(True)
 
-    monkeypatch.setattr("codey.providers.api_transport.generate", transport)
+    monkeypatch.setattr("codey.providers.api_generation.generate", transport)
     path = tmp_path / "provider.jsonl"
     provider = ApiProvider("http://fixture/v1", "fixture", request_policy=Policy())
     with record_api_generations(path), record_api_generations(path):

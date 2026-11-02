@@ -37,9 +37,7 @@ from codey.operations.task_state import stop_flag_for
 from codey.providers.diagnostics import ProviderActionError
 from codey.reviews.coordinator import change_state
 from codey.runtime.core import cancellation
-from codey.runtime.core.operation_state import (
-    LEAF_COMPLETION_PROOF_RECORDED,
-)
+from codey.runtime.core.operation_payload import LEAF_COMPLETION_PROOF_RECORDED
 from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent
 

@@ -15,6 +15,8 @@ from unittest.mock import patch
 
 from experiment_paths import DATA_ROOT, REPO
 
+from codey.providers import api_context
+
 sys.path.insert(0, str(REPO))
 
 from codey.agents.request import AgentRequest  # noqa: E402
@@ -216,7 +218,7 @@ def probe(directory, project, *, protocol, placement, case, durable_effects=Fals
         # Producer-owned declarations for this experiment, not inferred from
         # missing text at admission. An undeclared provider is an error.
         declarations = {provider: (sources, "direct")}
-        fork = ApiProvider.fork_auxiliary
+        fork = api_context.fork_auxiliary
 
         def declared_fork(client):
             auxiliary = fork(client)
@@ -297,7 +299,7 @@ def probe(directory, project, *, protocol, placement, case, durable_effects=Fals
                     method, replacement = ("_admit_request", prepared) if placement == "preparation" else ("_generate_attempt", attempted)
                     stack.enter_context(patch.object(ApiProvider, method, replacement))
                     if placement == DECLARED_PLACEMENT:
-                        stack.enter_context(patch.object(ApiProvider, "fork_auxiliary", declared_fork))
+                        stack.enter_context(patch.object(api_context, 'fork_auxiliary', declared_fork))
                 current_request = replace(request, ghost_directive="") if case == "history_only_compaction" else request
                 result = run_test_kernel(
                     TaskSession(policy=TaskPolicy(frozenset({"control"})), max_turns=1, coding_context_enabled=False),

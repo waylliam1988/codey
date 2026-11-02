@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from codey.providers import api_transport
+from codey.providers import api_generation, api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.error_classification import RequestPrepError
 from codey.providers.token_accounting import RequestContextCount
@@ -24,7 +24,7 @@ def test_attempt_gate_rejects_before_any_transport(monkeypatch):
         sent.append(True)
         raise AssertionError("transport must not run after gate rejection")
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     def reject(_client, _payload):
         raise ValueError("revoked Ghost")
 
@@ -50,7 +50,7 @@ def test_attempt_gate_rechecks_each_retry(monkeypatch):
             raise error
         return {"choices": [{"finish_reason": "stop", "message": {"content": "ok"}}]}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider.bind_attempt_gate(gate)
     assert provider.send("hello") == "ok"
     assert len(calls) == 2

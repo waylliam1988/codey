@@ -28,7 +28,7 @@ from codey.providers.catalog import PROVIDER_LABELS
 from codey.providers.diagnostics import ProviderActionError
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.ledger_projection import event_with_projected_receipt
-from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.observe.terminalizer import (
     operation_outcome_from_task_done_event,

@@ -8,7 +8,7 @@ from tests.manual import context_compaction_benchmark_ab as benchmark
 
 
 def test_semantic_ratio_calibration_does_not_change_receipt_batching_or_the_checkout(tmp_path, monkeypatch):
-    original = (Path(__file__).parents[1] / 'codey/providers/api_provider.py').read_text(encoding='utf-8')
+    original = (Path(__file__).parents[1] / 'codey/providers/api_context.py').read_text(encoding='utf-8')
     frozen = []
 
     def run(command, **kwargs):
@@ -19,7 +19,7 @@ def test_semantic_ratio_calibration_does_not_change_receipt_batching_or_the_chec
         else:
             config = json.loads(Path(command[-1]).read_text(encoding='utf-8'))
             if config['arm'] == 'after':
-                frozen.append((Path(config['root']) / 'codey/providers/api_provider.py').read_text(encoding='utf-8'))
+                frozen.append((Path(config['root']) / 'codey/providers/api_context.py').read_text(encoding='utf-8'))
             Path(config['output']).write_text(json.dumps({'case': config['case'], 'seed': config['seed'],
                 'arm': config['arm'], 'success': True, 'total_tokens': 1}), encoding='utf-8')
         return SimpleNamespace(returncode=0)
@@ -31,4 +31,4 @@ def test_semantic_ratio_calibration_does_not_change_receipt_batching_or_the_chec
     assert benchmark.main() == 0
     assert 'pressure >= self.context_budget.input_limit * 0.90' in frozen[0]
     assert 'pressure >= self.context_budget.input_limit * 0.60' in frozen[0]
-    assert (Path(__file__).parents[1] / 'codey/providers/api_provider.py').read_text(encoding='utf-8') == original
+    assert (Path(__file__).parents[1] / 'codey/providers/api_context.py').read_text(encoding='utf-8') == original

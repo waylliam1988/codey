@@ -5,13 +5,13 @@ import time
 
 import pytest
 
+from codey.providers.api_generation import generate
 from codey.providers.api_provider import ApiProvider
 from codey.providers.api_transport import (
     AttemptControl,
     GenerationNotSentError,
     GenerationRejectedError,
     GenerationUnknownError,
-    generate,
 )
 from codey.providers.zen import node_http
 from tests.test_api_transport_real_stream_and_pool_lifecycle import service

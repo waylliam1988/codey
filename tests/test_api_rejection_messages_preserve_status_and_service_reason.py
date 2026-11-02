@@ -7,7 +7,8 @@ from urllib.error import HTTPError
 
 import pytest
 
-from codey.providers.api_transport import GenerationRejectedError, generate
+from codey.providers.api_generation import generate
+from codey.providers.api_transport import GenerationRejectedError
 
 
 def test_free_tier_rejection_preserves_status_type_and_service_reason():

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.automation import browser
+from codey.research import source_download
 
 
 class BrowserProviderWrapperTests(unittest.TestCase):
@@ -142,9 +143,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         self.assertEqual(browser.PROVIDER_URL_CONTAINS["glm"], "chatglm.cn")
 
     def test_research_pdf_request_user_agent_does_not_name_product(self) -> None:
-        from codey.research import browser_search
 
-        request = browser_search._pdf_request("https://example.com/paper.pdf")
+        request = source_download._pdf_request("https://example.com/paper.pdf")
 
         user_agent = request.headers["User-agent"]
         self.assertEqual(user_agent, "Research PDF Reader")

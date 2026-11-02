@@ -13,7 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from codey.runtime.core.operation_state import (
+from codey.runtime.core.operation_payload import (
     DRIVER_REPAIR,
     DRIVER_WRITER,
     LEAF_PROVIDER_EFFECT_PENDING,
@@ -25,9 +25,8 @@ from codey.runtime.core.operation_state import (
     LEAF_TOOL_EFFECT_PENDING,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
-    operation_is_open,
-    operation_state_from_entries,
 )
+from codey.runtime.core.operation_state import operation_is_open, operation_state_from_entries
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,

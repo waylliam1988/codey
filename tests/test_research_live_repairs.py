@@ -8,7 +8,7 @@ import pytest
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.model import KnowledgeObject
 from codey.knowledge.store import KnowledgeStore
-from codey.research import browser_search
+from codey.research import browser_search, extract, source_download
 from codey.research.ledger import ResearchLedger
 from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.tools import ResearchTools
@@ -43,8 +43,8 @@ def test_chinese_challenge_is_not_acquired_as_citable_evidence():
         "正在验证您的浏览器，请稍候。校验通过后将自动跳转到请求的页面。</body></html>"
     ).encode()
     ledger = ResearchLedger()
-    gateway = ResearchSourceGateway(SimpleNamespace(fetch=browser_search._download_text_fallback), ledger)
-    with mock.patch.object(browser_search, "_open_url_no_redirect", return_value=response):
+    gateway = ResearchSourceGateway(SimpleNamespace(fetch=source_download._download_text_fallback), ledger)
+    with mock.patch.object(source_download, "_open_url_no_redirect", return_value=response):
         result = gateway.open(URL)
     assert result.status == "error" and "page_unavailable" in result.detail
     assert not ledger.opened_sources and not ledger.final_url_set()
@@ -52,7 +52,7 @@ def test_chinese_challenge_is_not_acquired_as_citable_evidence():
 
 def test_long_article_about_browser_verification_is_still_usable():
     text = "研究浏览器人机验证的可用性与误判。" + "实验方法、对照和观测结果。" * 180
-    assert browser_search._usable_fetch_page_text(text)
+    assert extract._usable_fetch_page_text(text)
 
 
 def test_missing_sources_feedback_repairs_omission_without_reopening_or_relabelling(tmp_path):

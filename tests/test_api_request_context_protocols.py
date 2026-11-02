@@ -7,7 +7,7 @@ import pytest
 from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.providers import api_transport
+from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.research.tools import ResearchTools
 from tests.support.kernel_runtime import run_task_kernel
@@ -34,7 +34,7 @@ def test_latest_research_context_is_ephemeral_in_real_kernel_requests(monkeypatc
                     "content": [{"type": "output_text", "text": content}]}])
         return {"output": output, "status": "completed"}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", native_tools=native, api_protocol=protocol,
                            thinking_enabled=False, text_tool_format="plain", stream=False)
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read"})), task_kind="evidence_followup",

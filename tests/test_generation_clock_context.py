@@ -1,4 +1,5 @@
 """Actual generation envelopes carry one clock observation, history stays exact."""
+
 import copy
 import json
 from datetime import datetime, timedelta, timezone
@@ -6,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.providers import api_transport, request_context
+from codey.providers import api_context, api_generation, request_context
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 from codey.providers.token_accounting import RequestContextCount
@@ -52,7 +53,7 @@ def test_initial_and_tool_continuation_count_and_send_same_clock_without_rewriti
             "name": "read_file", "arguments": '{"path":"a.py"}'}] if len(sent) == 1 else [
             {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "ok"}]}])}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://localhost:9/v1", "fixture", api_protocol=protocol, request_counter=count)
     tools = [ProviderToolDefinition("read_file", "read", {})]
     prompt = "Historical input: yesterday was 2024-05-22. Return fixed JSON."
@@ -73,11 +74,11 @@ def test_initial_and_tool_continuation_count_and_send_same_clock_without_rewriti
 def test_other_generation_entries_have_clock_context(monkeypatch, purpose):
     payloads = []
     monkeypatch.setattr(request_context, "clock_context", lambda: "<request_context>aux</request_context>")
-    monkeypatch.setattr(api_transport, "generate", lambda url, payload, *args, **kw:
+    monkeypatch.setattr(api_generation, "generate", lambda url, payload, *args, **kw:
         (payloads.append(copy.deepcopy(payload)) or {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}))
     provider = ApiProvider("http://localhost:9/v1", "fixture", purpose=purpose)
     if purpose == "compaction":
-        provider = provider.fork_auxiliary()
+        provider = api_context.fork_auxiliary(provider)
     assert provider.send("Retain the historical date 2024-05-22.") == "ok"
     messages = payloads[0]["messages"]
     assert messages[-1] == {"role": "user", "content": "<request_context>aux</request_context>"}

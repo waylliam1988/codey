@@ -339,7 +339,7 @@ def refresh_checkpoint_view(ctx: ProjectRun) -> Any:
 
 def commit_runtime_operation(ctx: ProjectRun, step: str, commit: Callable[[Any, str, str], object | None]) -> None:
     """Shared runtime commit (single owner; phases must not duplicate)."""
-    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+    from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
     from codey.runtime.log.entries import RuntimeLogError
 
     operation = ctx.work.operation

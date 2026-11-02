@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from codey.providers import api_generation
 from tests.manual.research_evidence_local import INPUTS, PASSAGES, fixture_windows
 
 
@@ -52,7 +53,6 @@ def test_candidate_refresh_probe_rereads_the_oldest_of_six_scripted_candidates()
     assert calls[-1].args["id"] == "f1"
 
 
-
 def test_factorial_matrix_holds_completion_sampling_and_candidate_order_constant():
     from tests.manual.research_local_matrix import matrix
 
@@ -79,7 +79,6 @@ def test_narrow_relations_keep_original_question_evidence_and_complete_or_list()
     for case in {row["case"] for row in runs}:
         assert len(RELATION_TARGETS[case]) == 2 and case in QUESTIONS and case in INPUTS["given"]
     assert "readonly_conditions" not in RELATION_TARGETS
-
 
 
 def test_wire_statistics_use_admitted_payload_and_report_missing_usage(tmp_path):
@@ -155,7 +154,7 @@ def test_invalid_fixed_clock_fails_instead_of_falling_back_to_host_time(tmp_path
 def test_fixed_clock_is_identical_in_counted_and_admitted_initial_and_continuation_requests(tmp_path, monkeypatch, protocol):
     import copy
 
-    from codey.providers import api_transport, request_context
+    from codey.providers import request_context
     from codey.providers.api_provider import ApiProvider
     from codey.providers.base import ProviderToolDefinition, ProviderToolResult
     from codey.providers.token_accounting import RequestContextCount
@@ -179,7 +178,7 @@ def test_fixed_clock_is_identical_in_counted_and_admitted_initial_and_continuati
         return {"status": "completed", "output": ([{"type": "function_call", "call_id": "c1", "name": "read_file", "arguments": '{"path":"a.py"}'}]
             if len(sent) == 1 else [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "ok"}]}])}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://localhost:9/v1", "fixture", api_protocol=protocol, request_counter=count)
     try:
         tools = [ProviderToolDefinition("read_file", "read", {})]

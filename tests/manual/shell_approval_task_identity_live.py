@@ -16,7 +16,7 @@ from codey.app import api
 from codey.app.context import AppContext
 from codey.app.task_services import build_task_deps
 from codey.operations.task_entry import run_task_submission
-from codey.providers import api_transport
+from codey.providers import api_generation
 from codey.providers.local_connection import capture_selection, config_for_selection, open_selection
 from codey.task.model import StartTask, TaskSubmission
 
@@ -36,7 +36,7 @@ def probe(directory: Path, *, cold: bool) -> dict[str, object]:
     task = (f"Local approval diagnostic. Use shell to execute exactly `{command}` once, wait for approval, "
             "then report the observed marker using done. Do not execute the command again. "
             "No other commands, file changes, or network access are needed.")
-    original_generate = api_transport.generate
+    original_generate = api_generation.generate
 
     def generate(url, payload, *args, **kwargs):
         payloads.append(copy.deepcopy(payload))
@@ -60,7 +60,7 @@ def probe(directory: Path, *, cold: bool) -> dict[str, object]:
     request = TaskSubmission.from_input(session_id="approval-live", project=None, max_turns=4, provider_id="local",
         input=StartTask(task), intent="chat", model_selection=selection.to_payload())
     try:
-        with patch.object(api_transport, "generate", generate), patch("codey.app.task_submit.submit_browser_task", enqueue):
+        with patch.object(api_generation, "generate", generate), patch("codey.app.task_submit.submit_browser_task", enqueue):
             run_task_submission(build_task_deps(state), request)
             pending = state.pending_shell_approvals()
             assert len(pending) == 1, [event for event in events if event.get("type") == "task_done"]

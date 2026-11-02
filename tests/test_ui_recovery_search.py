@@ -229,6 +229,7 @@ def test_busy_rejection_opens_actual_running_chat_and_preserves_draft(page):
     page.route("**/api/run", lambda route: route.fulfill(status=409, json={"error": "busy"}))
     page.route("**/api/state", lambda route: route.fulfill(json={
         "busy": True, "run_id": "run-b", "session_id": "b", "run_status": "running",
+        "task_states": [{"run_id": "run-b", "session_id": "b", "task_revision": 1, "task_status": "running"}],
     }))
     page.locator("#task").fill("original task")
     page.locator("#send").click()

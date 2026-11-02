@@ -12,7 +12,7 @@ def test_streamed_native_text_reaches_display_before_generation_finishes(monkeyp
         on_event({"choices": [{"index": 0, "delta": {"tool_calls": [{"function": {"arguments": "SECRET TOOL JSON"}}]}}]})
         return {"choices": [{"message": {"content": "第一段。\n\n第二段。"}, "finish_reason": "stop"}]}
 
-    monkeypatch.setattr("codey.providers.api_transport.generate", generate)
+    monkeypatch.setattr("codey.providers.api_generation.generate", generate)
     assert provider.send_turn("hello").text == "第一段。\n\n第二段。"
     assert seen[-1]["state"] == "complete"
     assert seen[-1]["text"] == "第一段。\n\n第二段。"
@@ -34,7 +34,7 @@ def test_failed_stream_keeps_partial_text_and_text_protocols_are_not_exposed(mon
         on_event({"type": "response.output_text.delta", "delta": "partial"})
         raise GenerationUnknownError("disconnected")
 
-    monkeypatch.setattr("codey.providers.api_transport.generate", generate)
+    monkeypatch.setattr("codey.providers.api_generation.generate", generate)
     with pytest.raises(GenerationUnknownError):
         provider.send_turn("hello")
     assert seen[-1]["state"] == "interrupted"

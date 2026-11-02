@@ -3,12 +3,12 @@ from __future__ import annotations
 import unittest
 
 from codey.durable import DurableSession, MemoryDurableStore
+from codey.runtime.core.operation_payload import DRIVER_WRITER
 from codey.runtime.core.operation_reducer import (
     ACTION_CONTINUE,
     ACTION_REPLAY_SAFE_TOOL_BATCH,
     ACTION_SETTLE_PROVIDER_UNKNOWN,
 )
-from codey.runtime.core.operation_state import DRIVER_WRITER
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,

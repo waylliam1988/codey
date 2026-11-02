@@ -5,13 +5,13 @@ import unittest
 from pathlib import Path
 
 from codey.durable import DurableSession, SQLiteDurableStore
-from codey.runtime.core.operation_state import (
+from codey.runtime.core.operation_payload import (
     DRIVER_WRITER,
     LEAF_PROVIDER_EFFECT_PENDING,
     LEAF_TOOL_DELIVERY_PENDING,
     LEAF_WRITER_RUNNING,
-    RuntimeOperationStore,
 )
+from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,

@@ -18,13 +18,13 @@ from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
+from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.operation_reducer import (
     ACTION_COMMIT_GENERATION_BOUNDARY,
     ACTION_INTERPRET_PROVIDER_RESPONSE,
     ACTION_SETTLE_PROVIDER_UNKNOWN,
     ACTION_SUBMIT_PROVIDER_REQUEST,
 )
-from codey.runtime.core.operation_state import RuntimeOperationTransitionError
 from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
 from codey.runtime.effects.effect_records import RuntimeEffectError, RuntimeEffectIntent
 from codey.runtime.write.drive import peek_next_action

@@ -20,11 +20,8 @@ from codey.runs.receipt import (
 from codey.runs.text_clip import clip_text as _clip
 from codey.runs.trace_schema import MAX_TRACE_BYTES, SCHEMA_VERSION, TRACE_KIND
 from codey.runtime.core import cancellation
-from codey.runtime.core.operation_state import (
-    LEAF_TERMINAL,
-    RuntimeOperationState,
-    operation_progress_text,
-)
+from codey.runtime.core.operation_payload import LEAF_TERMINAL, RuntimeOperationState
+from codey.runtime.core.operation_state import operation_progress_text
 from codey.storage.local_store import StoreCorruption, backup_corrupt_file, read_json_strict
 from codey.utils.refs import coerce_int
 

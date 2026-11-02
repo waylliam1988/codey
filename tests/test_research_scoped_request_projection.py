@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from codey.providers import api_transport
+from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.token_accounting import RequestContextCount
 from tests.test_research_local_scope import run_local
@@ -27,7 +27,7 @@ def test_whole_task_survives_actual_provider_history_trimming_and_repair(tmp_pat
                 "name": row["tool"], "arguments": json.dumps(row["args"])}}]} if native else {"content": raw})
             return {"choices": [{"message": message, "finish_reason": "stop"}]}
 
-        monkeypatch.setattr(api_transport, "generate", generate)
+        monkeypatch.setattr(api_generation, "generate", generate)
         provider = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False,
                                request_counter=lambda *a, **kw: RequestContextCount(100, "tokenizer"))
         providers.append(provider)
@@ -71,7 +71,7 @@ def test_local_work_is_frozen_in_actual_bounded_payload_and_protocol_pairs_survi
             counted.append(copy.deepcopy(payload))
             return RequestContextCount(100, "tokenizer")
 
-        monkeypatch.setattr(api_transport, "generate", generate)
+        monkeypatch.setattr(api_generation, "generate", generate)
         provider = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False, request_counter=count)
         providers.append(provider)
         return provider
@@ -111,7 +111,7 @@ def test_old_work_does_not_grow_sent_input_while_or_tail_and_anchor_remain(monke
                 if protocol == "openai-completions" else {"output": [{"type": "message", "role": "assistant",
                     "content": [{"type": "output_text", "text": "ok"}]}], "status": "completed"})
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", api_protocol=protocol, stream=False,
                            request_counter=lambda *args, **kwargs: RequestContextCount(100, "tokenizer"))
     history = []

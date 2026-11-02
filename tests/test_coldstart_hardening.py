@@ -35,10 +35,8 @@ from codey.providers.worker import (
     _PendingRequest,
     _WorkerSession,
 )
-from codey.runtime.core.operation_state import (
-    RuntimeOperationStore,
-    RuntimeOperationTransitionError,
-)
+from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
+from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.runtime.write.task_runtime import TaskRuntime, _turn_budget
 from codey.task.model import TaskSubmission

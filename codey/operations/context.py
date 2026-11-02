@@ -13,7 +13,7 @@ from codey.operations.conversation_window import WindowAction
 from codey.providers.diagnostics import ProviderFailure
 from codey.runs.ledger import RunLedgerWriter
 from codey.runs.work_checkpoint import WorkCheckpoint, WorkCheckpointStore
-from codey.runtime.core.operation_state import RuntimeOperationState
+from codey.runtime.core.operation_payload import RuntimeOperationState
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.task.model import TaskSubmission

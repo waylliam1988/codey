@@ -18,6 +18,7 @@ from codey.operations.provider_receipts import restore_snapshot, snapshot_descri
 from codey.operations.task_execution import ExecutionDelegate
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
+from codey.providers import api_generation
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.local_scope import ResearchScope, current_scope, question_details, submission
 from codey.research.passages import passage_ref
@@ -285,7 +286,6 @@ def test_inline_real_process_restart_never_duplicates_claim_selection_or_publica
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("native", [False, True])
 def test_actual_inline_requests_share_frozen_schema_and_hide_the_old_save_action(tmp_path, monkeypatch, native):
-    from codey.providers import api_transport
     from codey.providers.api_provider import ApiProvider
 
     sent, providers = [], []
@@ -299,7 +299,7 @@ def test_actual_inline_requests_share_frozen_schema_and_hide_the_old_save_action
                 "name": call["tool"], "arguments": json.dumps(call["args"])}}]} if native else {"content": raw})
             return {"choices": [{"message": message, "finish_reason": "stop"}]}
 
-        monkeypatch.setattr(api_transport, "generate", generate)
+        monkeypatch.setattr(api_generation, "generate", generate)
         provider = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False,
                                thinking_enabled=False, text_tool_format="plain" if native else "json_schema")
         providers.append(provider)

@@ -1,11 +1,12 @@
 """Both API protocols obey the same atomic exchange and cancellation rules."""
+
 import copy
 import json
 import threading
 
 import pytest
 
-from codey.providers import api_transport
+from codey.providers import api_generation, api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolCall, ProviderToolDefinition, ProviderToolResult
 from codey.providers.error_classification import OutputLengthError
@@ -40,7 +41,7 @@ def provider(request):
 @pytest.mark.parametrize("entry", ["send", "send_turn", "send_tool_results"])
 def test_failed_exchange_keeps_committed_history_and_does_not_replay(provider, monkeypatch, entry):
     call = ProviderToolCall(" exact id ", "read_file", {"path": "a.txt"}) if entry == "send_tool_results" else None
-    monkeypatch.setattr(api_transport, "generate", lambda *a, **k: reply_body(provider.api_protocol, call=call))
+    monkeypatch.setattr(api_generation, "generate", lambda *a, **k: reply_body(provider.api_protocol, call=call))
     provider.send_turn("first", [READ])
     before = copy.deepcopy(provider._messages)
     calls = []
@@ -49,7 +50,7 @@ def test_failed_exchange_keeps_committed_history_and_does_not_replay(provider, m
         calls.append(args)
         raise api_transport.GenerationUnknownError("response lost")
 
-    monkeypatch.setattr(api_transport, "generate", fail)
+    monkeypatch.setattr(api_generation, "generate", fail)
     with pytest.raises(api_transport.GenerationUnknownError):
         if entry == "send_tool_results":
             provider.send_tool_results([ProviderToolResult(call.id, "contents")], [READ])
@@ -62,7 +63,7 @@ def test_failed_exchange_keeps_committed_history_and_does_not_replay(provider, m
 
 
 def test_plain_truncation_retains_input_without_committing_partial_answer(provider, monkeypatch):
-    monkeypatch.setattr(api_transport, "generate", lambda *a, **k: reply_body(provider.api_protocol, limited=True))
+    monkeypatch.setattr(api_generation, "generate", lambda *a, **k: reply_body(provider.api_protocol, limited=True))
     with pytest.raises(OutputLengthError):
         provider.send("do not accept a partial answer")
     assert provider._messages == [{"role": "user", "content": "do not accept a partial answer"}]
@@ -71,7 +72,7 @@ def test_plain_truncation_retains_input_without_committing_partial_answer(provid
 def test_native_exchange_updates_reasoning_for_the_latest_reply(provider, monkeypatch):
     replies = iter([reply_body(provider.api_protocol, reasoning="old reasoning"),
                     reply_body(provider.api_protocol, reasoning="new reasoning")])
-    monkeypatch.setattr(api_transport, "generate", lambda *a, **k: next(replies))
+    monkeypatch.setattr(api_generation, "generate", lambda *a, **k: next(replies))
     provider.send("first")
     turn = provider.send_turn("second", [READ])
     assert turn.reasoning == "new reasoning"
@@ -80,7 +81,7 @@ def test_native_exchange_updates_reasoning_for_the_latest_reply(provider, monkey
 
 def test_unrequested_native_calls_are_not_silently_accepted_as_plain_text(provider, monkeypatch):
     call = ProviderToolCall(" exact id ", "read_file", {"path": "a.txt"})
-    monkeypatch.setattr(api_transport, "generate", lambda *a, **k: reply_body(provider.api_protocol, call=call))
+    monkeypatch.setattr(api_generation, "generate", lambda *a, **k: reply_body(provider.api_protocol, call=call))
     with pytest.raises(RuntimeError, match="text-only"):
         provider.send("answer with text")
     assert provider._messages == [{"role": "user", "content": "answer with text"}]
@@ -95,7 +96,7 @@ def test_native_call_and_result_are_committed_once_with_exact_identity(provider,
         sent.append(copy.deepcopy(payload))
         return next(replies)
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     assert provider.send_turn("read", [READ]).tool_calls == (call,)
     assert provider.send_tool_results([ProviderToolResult(call.id, "contents")], [READ]).text == "answer"
     history = sent[1].get("messages", sent[1].get("input"))
@@ -120,7 +121,7 @@ def test_cancelled_inflight_exchange_cannot_commit_and_other_send_is_rejected(pr
         except Exception as exc:
             failures.append(exc)
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     thread = threading.Thread(target=send)
     thread.start()
     try:
@@ -140,7 +141,7 @@ def test_shared_runtime_budget_does_not_query_local_capabilities(monkeypatch):
     monkeypatch.setattr("codey.providers.capabilities.capability_for", lambda _: pytest.fail("Local budget leaked"))
     provider = ApiProvider("http://fixture.invalid/v1", "fixture", context_window_tokens=4096,
                            context_reserve_tokens=1024, context_keep_recent_tokens=2048)
-    monkeypatch.setattr(api_transport, "generate", lambda *a, **k: reply_body(provider.api_protocol))
+    monkeypatch.setattr(api_generation, "generate", lambda *a, **k: reply_body(provider.api_protocol))
     assert provider.send("hello") == "answer"
 
 
@@ -149,7 +150,7 @@ def test_malformed_empty_chat_tool_calls_cannot_be_committed_as_plain_text(monke
     provider = ApiProvider("http://fixture.invalid/v1", "fixture")
     body = reply_body(provider.api_protocol)
     body["choices"][0]["message"]["tool_calls"] = malformed_calls
-    monkeypatch.setattr(api_transport, "generate", lambda *a, **k: body)
+    monkeypatch.setattr(api_generation, "generate", lambda *a, **k: body)
     with pytest.raises(RuntimeError, match="malformed tool_calls"):
         provider.send("text only")
     assert provider._messages == [{"role": "user", "content": "text only"}]

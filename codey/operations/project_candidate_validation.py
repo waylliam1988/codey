@@ -14,7 +14,7 @@ from codey.operations.project_completion_context import ProjectRun, commit_runti
 from codey.operations.project_writer_phase import _run_one_writer_attempt
 from codey.operations.task_state import stop_flag_for
 from codey.reviews.coordinator import change_state
-from codey.runtime.core.operation_state import LEAF_REPAIR_SETTLED
+from codey.runtime.core.operation_payload import LEAF_REPAIR_SETTLED
 
 VALIDATE_TASK = 'Validate the stopped candidate using the original authorized check; do not edit files.'
 READONLY_COMPLETION_TASK = (

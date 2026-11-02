@@ -22,7 +22,7 @@ def test_checkpoint_keeps_recent_complete_exchanges_without_mutating_history():
                            context_window_tokens=1500, context_reserve_tokens=300, context_keep_recent_tokens=900)
     provider._messages = history
     provider.summarize_context = lambda *_: "Goal: preserve original work"
-    with patch("codey.providers.api_transport.generate", return_value={"status": "completed", "output": []}):
+    with patch("codey.providers.api_generation.generate", return_value={"status": "completed", "output": []}):
         provider.send_tool_results([ProviderToolResult("new", "current result")], [])
     compacted = provider._messages
     assert compacted[1:] == old[1:] + recent + [result]

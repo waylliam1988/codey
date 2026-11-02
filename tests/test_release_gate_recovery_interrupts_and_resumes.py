@@ -50,11 +50,13 @@ def test_recovery_gate_restarts_and_finishes_without_repeating_edit(tmp_path, pr
         assert result["delivery_mode"] == "same_window_text_resume"
         requests = [json.loads(line) for line in (tmp_path / "scripted-requests.jsonl").read_text(encoding="utf-8").splitlines()]
         for request in requests[1:]:
-            prompt = next(message["content"] for message in reversed(request["messages"])
-                          if message["role"] == "user" and not message["content"].startswith("<request_context>"))
-            assert "Tool contract (use exactly these shapes):" in prompt
-            assert 'run(args: { "command": string;' in prompt
+            system = "\n".join(message["content"] for message in request["messages"] if message["role"] == "system")
+            assert system.count("Tool contract (use exactly these shapes):") == 1
+            assert 'run(args: { "command": string;' in system
+            prompt = "\n".join(str(message.get("content", "")) for message in request["messages"])
             assert prompt.count("For actions, reply with exactly one bare JSON tool call") == 1
+            assert all("Tool contract (use exactly these shapes):" not in message.get("content", "")
+                       for message in request["messages"] if message["role"] != "system")
 
 
 def test_recovery_is_reported_as_restart_safety_not_storage_control_plane():

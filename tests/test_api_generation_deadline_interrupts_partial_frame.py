@@ -7,7 +7,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import pytest
 
 from codey.providers import api_transport
-from codey.providers.api_transport import GenerationUnknownError, generate
+from codey.providers.api_generation import generate
+from codey.providers.api_transport import GenerationUnknownError
 
 
 @pytest.mark.parametrize("content_type", ["application/json", "text/event-stream"])

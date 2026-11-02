@@ -15,19 +15,13 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from codey.durable.model import ArtifactRecord
 
-from codey.runtime.core.operation_payload import RuntimeExecutionCounters
-from codey.runtime.core.operation_reducer import prepare_operation_settlement, record_progress_observation
-from codey.runtime.core.operation_state import (
+from codey.runtime.core.operation_payload import (
     LEAF_TERMINAL,
+    RuntimeExecutionCounters,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
-    new_operation_state,
-    operation_is_open,
-    operation_state_entry,
-    operation_state_from_entries,
-    outcome_for_terminal,
-    start_entries,
 )
+from codey.runtime.core.operation_reducer import prepare_operation_settlement, record_progress_observation
 from codey.runtime.core.operation_state import (
     mark_candidate_validation_running as state_mark_candidate_validation_running,
 )
@@ -57,6 +51,14 @@ from codey.runtime.core.operation_state import (
 )
 from codey.runtime.core.operation_state import (
     mark_writer_settled as state_mark_writer_settled,
+)
+from codey.runtime.core.operation_state import (
+    new_operation_state,
+    operation_is_open,
+    operation_state_entry,
+    operation_state_from_entries,
+    outcome_for_terminal,
+    start_entries,
 )
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import (
@@ -601,12 +603,8 @@ class RuntimeMutationLine:
         settlement: RuntimeEffectSettlement | None, boundary: str,
     ) -> tuple[object, ...]:
         """Commit the last generation, final input placement and kernel verdict."""
-        from codey.runtime.core.operation_state import (
-            LEAF_KERNEL_SETTLED,
-            LEAF_REPAIR_RUNNING,
-            LEAF_WRITER_RUNNING,
-            advance_execution,
-        )
+        from codey.runtime.core.operation_payload import LEAF_KERNEL_SETTLED, LEAF_REPAIR_RUNNING, LEAF_WRITER_RUNNING
+        from codey.runtime.core.operation_state import advance_execution
 
         def mutation(projection: Any, entries: Any) -> Any:
             view = load_session_view(entries, session_id=session_id, run_id=run_id)

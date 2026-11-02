@@ -3,9 +3,12 @@
 Only ordinary messages are supported. Network calls are captured as request plans
 and executed by the common loopback transport; Pi session I/O is not loaded.
 """
+
 import json
 import subprocess
 from pathlib import Path
+
+from codey.providers import api_context
 
 NODE_REPLAY = r"""
 import fs from 'node:fs';
@@ -81,7 +84,7 @@ def attach_reference_policy(provider, root):
     original_send = provider.send
     previous_summary, checkpoint_text = None, ""
     provider._compaction.compact = lambda *args, **kwargs: None
-    provider._schedule_maintenance = lambda: None
+    provider._compaction.schedule = lambda *args, **kwargs: None
 
     def send(text, timeout=None):
         nonlocal previous_summary, checkpoint_text
@@ -89,7 +92,7 @@ def attach_reference_policy(provider, root):
         deadline = time.monotonic() + (timeout or provider.timeout)
         prepared = provider._codec.prepare(provider._messages, [{"role": "user", "content": text}],
                                            system=provider.system_prompt, tools=None)
-        measured = provider._count_context(prepared, None, deadline)
+        measured = api_context.count_context(provider, prepared, None, deadline)
         if measured.value is not None and measured.value > provider.context_budget.input_limit:
             history = [item for item in provider._messages if not checkpoint_text or item.get("content") != checkpoint_text]
             selected = select_pi(root, history, provider.context_budget.keep_recent_tokens,
@@ -99,7 +102,7 @@ def attach_reference_policy(provider, root):
                 raise ContextOverflowError("Pi reference has no closed source range that reduces this request")
             summary, checkpoint_text = selected["summary"], selected["checkpoint"]
             for index, plan in enumerate(selected["plans"]):
-                auxiliary = provider.fork_auxiliary()
+                auxiliary = api_context.fork_auxiliary(provider)
                 auxiliary.system_prompt = plan["systemPrompt"]
                 reserve = auxiliary.context_budget.output_tokens + auxiliary.context_budget.safety_tokens
                 auxiliary._context_budget = replace(auxiliary.context_budget, output_tokens=plan["maxTokens"],

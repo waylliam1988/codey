@@ -15,8 +15,8 @@ from codey.operations.provider_receipts import RESPONSE_KIND, read_provider_arti
 from codey.operations.task_effects import KernelEffectSink
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.providers.response_record import decode_reply, encode_reply
+from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.operation_reducer import ACTION_INTERPRET_PROVIDER_RESPONSE, ACTION_SETTLE_PROVIDER_UNKNOWN
-from codey.runtime.core.operation_state import RuntimeOperationTransitionError
 from codey.runtime.write.drive import peek_next_action
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore

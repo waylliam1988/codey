@@ -101,3 +101,57 @@ def extract_title(html: str) -> str:
     with contextlib.suppress(Exception):
         parser.feed(html or "")
     return _SPACES_RE.sub(" ", parser.title).strip()
+
+
+_MAX_PAGE_CHARS = 200_000
+
+_FETCH_PAGE_ERROR_MARKERS = (
+    "access denied",
+    "are you a robot",
+    "captcha",
+    "checking your browser",
+    "cookies must be enabled",
+    "enable javascript",
+    "enable cookies",
+    "not automatically redirected",
+    "temporarily unavailable",
+    "unusual traffic",
+    "verify you are human",
+    "just a moment",
+    "页面安全校验中",
+    "正在验证您的浏览器",
+    "人机验证",
+    "请完成安全验证",
+)
+
+_FETCH_CHALLENGE_TEXT_MAX_CHARS = 1500
+
+_FETCH_BOILERPLATE_LINES = frozenset({
+    "hhs vulnerability disclosure", "skip to main content", "skip to content",
+    "privacy policy", "accessibility", "terms of use", "contact us",
+})
+
+def _usable_fetch_page_text(text: str) -> bool:
+    normalized = _clean_space(text).casefold()
+    if not normalized:
+        return False
+    if _looks_like_short_fetch_challenge(normalized):
+        return False
+    if all(_clean_space(line).casefold() in _FETCH_BOILERPLATE_LINES
+           for line in text.splitlines() if line.strip()):
+        return False
+    return len(normalized) >= 24
+
+def _fetch_page_failure_kind(text: str) -> str:
+    normalized = _clean_space(text).casefold()
+    if _looks_like_short_fetch_challenge(normalized):
+        return "page_unavailable"
+    return "page_blank"
+
+def _looks_like_short_fetch_challenge(normalized_text: str) -> bool:
+    if len(normalized_text) > _FETCH_CHALLENGE_TEXT_MAX_CHARS:
+        return False
+    return any(marker in normalized_text for marker in _FETCH_PAGE_ERROR_MARKERS)
+
+def _clean_space(text: str) -> str:
+    return " ".join((text or "").split())

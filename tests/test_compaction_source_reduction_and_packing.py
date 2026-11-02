@@ -1,7 +1,9 @@
 """Summary requests preserve distinct facts while avoiding redundant source work."""
+
 import time
 from unittest.mock import patch
 
+from codey.providers import api_context
 from codey.providers.api_provider import ApiProvider
 from codey.providers.token_accounting import RequestContextCount
 
@@ -13,8 +15,8 @@ def test_repeated_source_lines_are_counted_once_without_losing_boundary_facts():
     def generate(url, payload, *args, **kwargs):
         sent.append(str(payload))
         return {"choices": [{"message": {"content": "Goal: preserve no-db. Exit code: 1, exec-17"}}]}
-    with patch("codey.providers.api_transport.generate", side_effect=generate):
-        provider._summarize_context(source, time.monotonic() + 10)
+    with patch("codey.providers.api_generation.generate", side_effect=generate):
+        api_context.summarize_context(provider, source, time.monotonic() + 10)
     assert len(sent) == 1
     assert len(sent[0]) < 2000
     assert "650" in sent[0] and "no-db" in sent[0] and "exec-17" in sent[0]
@@ -29,6 +31,6 @@ def test_chunk_admission_uses_actual_counter_instead_of_a_character_ratio():
     def generate(url, payload, *args, **kwargs):
         sent.append(payload)
         return {"choices": [{"message": {"content": "Goal: preserve facts"}}]}
-    with patch("codey.providers.api_transport.generate", side_effect=generate):
-        provider._summarize_context([{"role": "assistant", "content": "abcdefghijklmnop " * 1200}], time.monotonic() + 10)
+    with patch("codey.providers.api_generation.generate", side_effect=generate):
+        api_context.summarize_context(provider, [{"role": "assistant", "content": "abcdefghijklmnop " * 1200}], time.monotonic() + 10)
     assert len(sent) == 1

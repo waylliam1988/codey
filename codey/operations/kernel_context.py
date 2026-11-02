@@ -30,7 +30,7 @@ from codey.operations.task_guidance import task_result_context, task_working_con
 from codey.operations.task_session import TaskSession
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolResult, TurnFinish, tools_from_specs
-from codey.runtime.core import operation_state as positions
+from codey.runtime.core import operation_payload
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
 from codey.runtime.log.session_view import driver_for_state, load_session_view, not_sent_continuation_effect
@@ -102,7 +102,7 @@ class KernelContext:
         question = task.state.get("question", {})
         decision = self.decision(state) if state.work_ref else None
         approval = None
-        if state.leaf == positions.LEAF_TOOL_EFFECT_PENDING:
+        if state.leaf == operation_payload.LEAF_TOOL_EFFECT_PENDING:
             for identity in task.state.get("approvals", {}):
                 record = self.durable.approval(identity)
                 command = read_approval_command(self.sink.managed_outputs, record)
@@ -311,7 +311,7 @@ class KernelContext:
         from codey.operations.kernel_driver import prepare_provider_request
 
         scoped_contract = self.request_scoped_context
-        if not self.native and not scoped_contract and state.leaf not in {positions.LEAF_WRITER_RUNNING, positions.LEAF_REPAIR_RUNNING}:
+        if not self.native and not scoped_contract and state.leaf not in {operation_payload.LEAF_WRITER_RUNNING, operation_payload.LEAF_REPAIR_RUNNING}:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
         self.snapshots[turn] = snapshot
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window,
@@ -322,7 +322,7 @@ class KernelContext:
         self.sink._request_context["work_ref"] = state.work_ref
         self.sink._request_context["source_response_ref"] = (
             self.response_reference(state) if state.response_ref or state.work_ref
-            or state.leaf == positions.LEAF_TOOL_DELIVERY_PENDING else "")
+            or state.leaf == operation_payload.LEAF_TOOL_DELIVERY_PENDING else "")
         tools = tools_from_specs(snapshot.model_specs)
         if self.native and messages:
             method = "acknowledge_tool_results" if acknowledge else "send_tool_results"
@@ -405,7 +405,7 @@ class KernelContext:
         if original.get("close_reply"):
             if original.get("work_ref") != state.work_ref:
                 raise RecoveryFailed("protocol close response lost its original outcome")
-            self.advance(state, positions.LEAF_CLOSING)
+            self.advance(state, operation_payload.LEAF_CLOSING)
             return
         if turn > self.session.max_turns:
             self.close(state, KernelResult(False, self.session.last_done_text or "max turns reached",
@@ -438,7 +438,7 @@ class KernelContext:
                         if previous_ref and state.counters.invalid_turns else None)
             repeated = previous is not None and previous.get("purpose") == "retry" and previous.get("prompt") == prompt
             if repeated or threshold is not None and invalid >= max(1, threshold):
-                self.advance(state, positions.LEAF_CLOSING, counters=replace(state.counters, invalid_turns=invalid),
+                self.advance(state, operation_payload.LEAF_CLOSING, counters=replace(state.counters, invalid_turns=invalid),
                     data=ClosingDecision(purpose="closing", result=KernelResult(False,
                         f"stopped after {invalid} invalid tool requests"
                         + (" (repeated response without new diagnostic information)" if repeated else "")
@@ -452,11 +452,11 @@ class KernelContext:
             question = question_args(dict(plan.control_args))
             identity = f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id
             question_id = "question_" + hashlib.sha256(f"{identity}:{turn}".encode()).hexdigest()[:24]
-            self.advance(state, positions.LEAF_CONTROL_READY, data=QuestionDecision(
+            self.advance(state, operation_payload.LEAF_CONTROL_READY, data=QuestionDecision(
                 purpose="question", question=question, question_id=question_id,
                 result=KernelResult(False, question["question"], turn, "question").to_payload()))
             return
-        self.advance(state, positions.LEAF_COMPLETION_PENDING if kind == "done" else positions.LEAF_PLAN_READY,
+        self.advance(state, operation_payload.LEAF_COMPLETION_PENDING if kind == "done" else operation_payload.LEAF_PLAN_READY,
                      counters=replace(state.counters, invalid_turns=0))
 
     def retry(self, state: Any, prompt: str, *, error: str = "", counters: RuntimeExecutionCounters | None = None) -> None:
@@ -464,7 +464,7 @@ class KernelContext:
         scope = self.response(state).snapshot.research_scope
         if scope is not None and scope.replaces:
             decision["research_repair"] = scope.to_payload()
-        self.advance(state, positions.LEAF_CONTROL_READY, data=decision, counters=counters or state.counters)
+        self.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision, counters=counters or state.counters)
 
     def plan(self, state: Any) -> Any:
         received = self.response(state)
@@ -480,7 +480,7 @@ class KernelContext:
         calls, turn = list(plan.calls), received.logical_turn
         if not received.snapshot.implementation_compatible:
             raise RecoveryFailed("captured tool implementation is unavailable or incompatible")
-        if state.leaf == positions.LEAF_PLAN_READY:
+        if state.leaf == operation_payload.LEAF_PLAN_READY:
             approval = wiring._approval_stop(calls, project_path=self.execution.project_path,
                 on_shell_request=self.observation.on_shell_request, turn=turn,
                 run_id=f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id,
@@ -538,7 +538,7 @@ class KernelContext:
         if (not self.cancelled() and len(results) == 1 and results[0].ok
                 and results[0].call.name == "submit_research_answer"
                 and (submitted_answer(self.session) is not None if whole_research(self.session) else current_scope(self.session) is None)):
-            self.advance(state, positions.LEAF_COMPLETION_PENDING)
+            self.advance(state, operation_payload.LEAF_COMPLETION_PENDING)
             return
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
         if self.cancelled() or progress.stopped or turn >= self.session.max_turns:
@@ -597,5 +597,5 @@ class KernelContext:
         self.observation.on_boundary(GenerationBoundaryRequest(action.reason))
 
     def close(self, state: Any, result: KernelResult, *, counters: RuntimeExecutionCounters | None = None) -> None:
-        self.advance(state, positions.LEAF_CLOSING, data=ClosingDecision(purpose="closing", result=result.to_payload()),
+        self.advance(state, operation_payload.LEAF_CLOSING, data=ClosingDecision(purpose="closing", result=result.to_payload()),
                      counters=counters)

@@ -51,10 +51,12 @@ def test_responses_result_is_sent_in_original_window(monkeypatch, tmp_path) -> N
             "type": "message", "status": "completed", "content": [{"type": "output_text", "text": "done"}],
         }]}
 
-    monkeypatch.setattr("codey.providers.api_transport.generate", fake_generate)
+    monkeypatch.setattr("codey.providers.api_generation.generate", fake_generate)
     turn = provider.send_tool_results_bound(
         [ProviderToolResult("call-shell-1", "exit 0")], window,
     )
     assert turn.text == "done"
-    assert seen[0]["input"][-1]["call_id"] == "call-shell-1"
+    results = [item for item in seen[0]["input"] if item.get("type") == "function_call_output"]
+    assert results == [{"type": "function_call_output", "call_id": "call-shell-1", "output": "exit 0"}]
+    assert provider.window_ref == window
 

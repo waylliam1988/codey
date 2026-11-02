@@ -252,7 +252,7 @@ def test_verification_requirement_parser_failure_cannot_grant_verification(monke
 def test_persisted_authorization_snapshot_cannot_be_replaced(tmp_path, change):
     from dataclasses import replace
 
-    from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+    from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 
     project, state, logdir = _dirs(tmp_path)
     log, mutations, *_ = _open_runtime(logdir, state, "s", "r", project)

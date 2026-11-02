@@ -5,7 +5,8 @@ import time
 
 import pytest
 
-from codey.providers.api_transport import GenerationUnknownError, read_sse
+from codey.providers.api_stream import read_sse
+from codey.providers.api_transport import GenerationUnknownError
 
 
 def stream_calls(deltas):

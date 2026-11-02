@@ -3,9 +3,12 @@
 Transport and workload are shared deliberately. This compares compaction policy,
 not OpenCode's complete runtime, plugins, prompts, permissions or process manager.
 """
+
 import json
 import subprocess
 from pathlib import Path
+
+from codey.providers import api_context
 
 NODE_REPLAY = r"""
 import fs from 'node:fs';
@@ -43,7 +46,7 @@ def attach_reference_policy(provider, root):
     original_send = provider.send
     previous_summary, previous_recent, checkpoint_text = None, "", ""
     provider._compaction.compact = lambda *args, **kwargs: None
-    provider._schedule_maintenance = lambda: None
+    provider._compaction.schedule = lambda *args, **kwargs: None
 
     def send(text, timeout=None):
         nonlocal previous_summary, previous_recent, checkpoint_text
@@ -51,7 +54,7 @@ def attach_reference_policy(provider, root):
         deadline = time.monotonic() + (timeout or provider.timeout)
         pending = [{"role": "user", "content": text}]
         prepared = provider._codec.prepare(provider._messages, pending, system=provider.system_prompt, tools=None)
-        measured = provider._count_context(prepared, None, deadline)
+        measured = api_context.count_context(provider, prepared, None, deadline)
         if measured.value is not None and measured.value > provider.context_budget.input_limit:
             entries = []
             index = 0
@@ -81,7 +84,7 @@ def attach_reference_policy(provider, root):
                                        previous_summary, previous_recent)
             if selected["estimated_prompt_tokens"] > provider.context_budget.input_limit:
                 raise ContextOverflowError("OpenCode reference summary prompt exceeds its model input budget")
-            auxiliary = provider.fork_auxiliary()
+            auxiliary = api_context.fork_auxiliary(provider)
             try:
                 summary = auxiliary.send(selected["prompt"], timeout=max(0.001, deadline - time.monotonic()))
             finally:

@@ -1,7 +1,7 @@
 """Cold-start v1 locks (red-first).
 
 Desired contracts after the cleanup:
-- Runtime operation state, local config, and Ghost control surface are schema v1.
+- Runtime operation state has one current schema; local config and Ghost use v1.
 - Local config read requires type(schema_version) is int and == 1.
 - Provider profiles require exact v1 (file schema + each profile).
 - Shell approval event fields require the current complete record and verify
@@ -17,7 +17,7 @@ from unittest import mock
 
 
 def _op_state(leaf="accepted"):
-    from codey.runtime.core.operation_state import RuntimeOperationState
+    from codey.runtime.core.operation_payload import RuntimeOperationState
 
     return RuntimeOperationState(
         session_id="s1",
@@ -36,16 +36,16 @@ def _op_state(leaf="accepted"):
 
 
 def test_operation_schema_has_one_current_execution_format() -> None:
-    from codey.runtime.core import operation_state as mod
+    from codey.runtime.core import operation_payload as mod
 
-    assert mod.SCHEMA_VERSION == 5
+    assert mod.SCHEMA_VERSION == 6
     assert mod.KIND == "runtime_operation_state"
     payload = _op_state().to_payload()
     assert payload["schema_version"] == mod.SCHEMA_VERSION
 
 
 def test_operation_rejects_bool_schema_version() -> None:
-    from codey.runtime.core.operation_state import RuntimeOperationState
+    from codey.runtime.core.operation_payload import RuntimeOperationState
 
     payload = _op_state().to_payload()
     bool_payload = dict(payload)
@@ -58,11 +58,11 @@ def test_operation_rejects_bool_schema_version() -> None:
 
 
 def test_operation_rejects_v2_payload_after_coldstart() -> None:
-    from codey.runtime.core.operation_state import RuntimeOperationState
+    from codey.runtime.core.operation_payload import RuntimeOperationState
 
     payload = _op_state().to_payload()
     # Decoding accepts the current format; checkpoint migration is explicit.
-    for bad_version in (2, 999, "1"):
+    for bad_version in (1, 2, 3, 4, 5, 999, "6"):
         bad_payload = dict(payload)
         bad_payload["schema_version"] = bad_version
         assert RuntimeOperationState.from_payload(bad_payload) is None

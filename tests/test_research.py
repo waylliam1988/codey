@@ -16,7 +16,7 @@ from codey.automation import browser_worker
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.policies.network import check_fetch_url
-from codey.research import browser_search
+from codey.research import browser_search, extract, source_download
 from codey.research.browser_search import RESEARCH_CDP_PORT, RESEARCH_PROFILE, BrowserSearchProvider
 from codey.research.done_finalizer import finalize_done_answer
 from codey.research.ledger import EvidenceItem, ResearchLedger
@@ -2737,7 +2737,6 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertNotIn("Codey", provider.sent[1])
 
 
-
     def test_research_iteration_repair_for_disallowed_write_does_not_teach_write_shape(self) -> None:
         provider = FakeProvider(
             json.dumps(
@@ -3003,8 +3002,6 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(note.project, "E:/project")
 
 
-
-
     def test_web_style_provider_send_stays_on_runner_thread(self) -> None:
         class ThreadRecordingProvider(FakeProvider):
             def __init__(self) -> None:
@@ -3044,7 +3041,6 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("Conversation context from this chat", provider.sent[0])
         self.assertIn("Compare SQLite", provider.sent[0])
-
 
 
     def test_done_finalizer_compiles_source_ids_and_numbering(self) -> None:
@@ -3920,7 +3916,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
             mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
             mock.patch(
-                "codey.research.browser_search._download_text_fallback",
+                "codey.research.source_download._download_text_fallback",
                 return_value={"status": "error", "detail": ("ERROR: HTTP fallback had no usable visible content: page_blank").removeprefix("ERROR:").strip(),
                     "url": page.url,
                     "title": "",
@@ -3988,7 +3984,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
             mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
             mock.patch("codey.research.browser_search.cancellation.wait"),
-            mock.patch("codey.research.browser_search._download_text_fallback") as http_fallback,
+            mock.patch("codey.research.source_download._download_text_fallback") as http_fallback,
         ):
             result = provider._fetch_on_browser_thread(page.url)
 
@@ -4025,10 +4021,10 @@ class ResearchBoundaryTests(unittest.TestCase):
                 )
 
         with (
-            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
-            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=ChallengeResponse()),
+            mock.patch("codey.research.source_download.check_fetch_url", return_value=None),
+            mock.patch("codey.research.source_download._open_url_no_redirect", return_value=ChallengeResponse()),
         ):
-            result = browser_search._download_text_fallback(
+            result = source_download._download_text_fallback(
                 "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
             )
 
@@ -4044,7 +4040,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             + "It also mentions captcha handling as part of the study context."
         )
 
-        self.assertTrue(browser_search._usable_fetch_page_text(text))
+        self.assertTrue(extract._usable_fetch_page_text(text))
 
     def test_http_text_fallback_truncates_extracted_text_to_fetch_limit(self) -> None:
         class Headers(dict):
@@ -4072,11 +4068,11 @@ class ResearchBoundaryTests(unittest.TestCase):
                 )
 
         with (
-            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
-            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=LongTextResponse()),
-            mock.patch("codey.research.browser_search._MAX_PAGE_CHARS", 64),
+            mock.patch("codey.research.source_download.check_fetch_url", return_value=None),
+            mock.patch("codey.research.source_download._open_url_no_redirect", return_value=LongTextResponse()),
+            mock.patch("codey.research.source_download._MAX_PAGE_CHARS", 64),
         ):
-            result = browser_search._download_text_fallback("https://example.com/long")
+            result = source_download._download_text_fallback("https://example.com/long")
 
         self.assertEqual(len(result["text"]), 64)
         self.assertTrue(result["text"].startswith("Readable research article text."))
@@ -4110,8 +4106,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
 
         with (
-            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
-            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=response),
+            mock.patch("codey.research.source_download.check_fetch_url", return_value=None),
+            mock.patch("codey.research.source_download._open_url_no_redirect", return_value=response),
         ):
             result = provider.fetch("https://example.com/report.pdf")
 
@@ -4148,9 +4144,9 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = BrowserSearchProvider()
 
         with (
-            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
-            mock.patch("codey.research.browser_search.PDF_MAX_BYTES", 1024),
-            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=response),
+            mock.patch("codey.research.source_download.check_fetch_url", return_value=None),
+            mock.patch("codey.research.source_download.PDF_MAX_BYTES", 1024),
+            mock.patch("codey.research.source_download._open_url_no_redirect", return_value=response),
         ):
             result = provider.fetch("https://example.com/report.pdf")
 
@@ -4193,8 +4189,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             return None
 
         with (
-            mock.patch("codey.research.browser_search.check_fetch_url", side_effect=policy),
-            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=response) as opened,
+            mock.patch("codey.research.source_download.check_fetch_url", side_effect=policy),
+            mock.patch("codey.research.source_download._open_url_no_redirect", return_value=response) as opened,
         ):
             result = provider.fetch("https://example.com/report.pdf")
 
@@ -4231,7 +4227,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             return None
 
         try:
-            with mock.patch("codey.research.browser_search.check_fetch_url", side_effect=policy):
+            with mock.patch("codey.research.source_download.check_fetch_url", side_effect=policy):
                 result = BrowserSearchProvider().fetch(url)
         finally:
             httpd.shutdown()
@@ -4263,7 +4259,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         with (
             mock.patch("codey.research.browser_search._search_browser_call", return_value=sentinel),
-            mock.patch("codey.research.browser_search._download_pdf_streaming", return_value=streamed) as download,
+            mock.patch("codey.research.source_download._download_pdf_streaming", return_value=streamed) as download,
         ):
             result = provider.fetch("https://example.com/report")
 
@@ -4297,8 +4293,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         response = StreamingResponse()
 
         with (
-            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
-            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=response),
+            mock.patch("codey.research.source_download.check_fetch_url", return_value=None),
+            mock.patch("codey.research.source_download._open_url_no_redirect", return_value=response),
             mock.patch(
                 "codey.research.browser_search.cancellation.check",
                 side_effect=[None, None, None, cancellation.TaskCancelled("stop")],
@@ -4386,9 +4382,6 @@ class ProtocolTelemetryTests(unittest.TestCase):
     def test_research_json_codec_has_stable_name(self) -> None:
         self.assertEqual(JsonToolCodec.name, "research_json")
         self.assertEqual(JsonToolCodec().name, "research_json")
-
-
-
 
 
 class NetworkPolicyTests(unittest.TestCase):

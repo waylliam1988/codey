@@ -11,8 +11,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.operation_state import (
-    RuntimeOperationTransitionError,
     mark_tool_delivery_pending,
     mark_tool_effect_pending,
     mark_tool_effect_settled,

@@ -4,7 +4,7 @@ import unittest
 
 from codey.durable import DurableSession, MemoryDurableStore
 from codey.durable.checkpoint import checkpoint_entries
-from codey.runtime.core.operation_state import (
+from codey.runtime.core.operation_payload import (
     DRIVER_REPAIR,
     DRIVER_WRITER,
     KIND,
@@ -30,6 +30,8 @@ from codey.runtime.core.operation_state import (
     SCHEMA_VERSION,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
+)
+from codey.runtime.core.operation_state import (
     advance_execution,
     completion_proof_satisfied,
     mark_completion_blocked,

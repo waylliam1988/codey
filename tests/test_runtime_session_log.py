@@ -5,12 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from codey.runtime.core.operation_payload import LEAF_WRITER_RUNNING
 from codey.runtime.core.operation_reducer import ACTION_CONTINUE
-from codey.runtime.core.operation_state import (
-    LEAF_WRITER_RUNNING,
-    RuntimeOperationStore,
-    mark_terminal,
-)
+from codey.runtime.core.operation_state import RuntimeOperationStore, mark_terminal
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     RuntimeEffectIntent,

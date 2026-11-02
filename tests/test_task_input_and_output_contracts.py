@@ -10,6 +10,7 @@ from codey.operations.completion_gate import evaluate
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import declaration
 from codey.policies.task_policy import TaskPolicy, build_task_policy
+from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from tests.support.kernel_runtime import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps, run_task_kernel
@@ -49,7 +50,6 @@ def test_prepared_requests_keep_history_prefix_and_count_exact_sent_payload(monk
 
 
 def test_native_read_batch_uses_original_kernel_and_receipts_in_one_generation(tmp_path, monkeypatch):
-    from codey.providers import api_transport
 
     monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *a, **kw: True)
     (tmp_path / "a.txt").write_bytes(b"FIRST\n")
@@ -73,7 +73,7 @@ def test_native_read_batch_uses_original_kernel_and_receipts_in_one_generation(t
         return {"choices": [{"message": {"role": "assistant", "content": "", "tool_calls": calls},
                              "finish_reason": "tool_calls"}]}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read"})), project=str(tmp_path), max_turns=3)
     result = run_task_kernel(session, request=KernelRunRequest(
         transport=KernelTransportDeps(provider=ApiProvider("http://localhost:9/v1", "fixture"),

@@ -235,7 +235,7 @@ def test_staged_knowledge_store_read_through() -> None:
         root = Path(td)
         parent_store = KnowledgeStore(root / "knowledge")
         from codey.knowledge.note import KnowledgeNote
-        from codey.research.tools import StagedKnowledgeStore
+        from codey.research.staging import StagedKnowledgeStore
 
         # 1. Note in parent
         parent_note = KnowledgeNote(
@@ -372,7 +372,7 @@ def test_staged_knowledge_store_rollback_on_partial_failure() -> None:
         target_store = KnowledgeStore(root / "knowledge")
         changes = KnowledgeChanges(root=target_store.root)
         from codey.knowledge.note import KnowledgeNote
-        from codey.research.tools import StagedKnowledgeStore
+        from codey.research.staging import StagedKnowledgeStore
 
         # Pre-populate an existing note in hypotheses folder
         existing_note = KnowledgeNote(id="existing-note", title="Original Title", body="Original Body", type="hypothesis")
@@ -439,7 +439,7 @@ def test_staged_knowledge_store_link_validation() -> None:
         root = Path(td)
         store = KnowledgeStore(root / "knowledge")
         from codey.knowledge.note import KnowledgeNote
-        from codey.research.tools import StagedKnowledgeStore
+        from codey.research.staging import StagedKnowledgeStore
 
         staged_store = StagedKnowledgeStore(store)
         staged_store.write_note(KnowledgeNote(id="existing-note", title="T", body="B", type="fact"))
@@ -469,7 +469,7 @@ def test_staged_knowledge_store_rollback_restores_links_after_link_failure() -> 
         store = KnowledgeStore(root / "knowledge")
         changes = KnowledgeChanges(root=store.root)
         from codey.knowledge.note import KnowledgeNote
-        from codey.research.tools import StagedKnowledgeStore
+        from codey.research.staging import StagedKnowledgeStore
 
         source = KnowledgeNote(id="source-note", title="Source Title", body="Source body.", type="fact")
         old_target = KnowledgeNote(id="old-target", title="Old Target", body="Old body.", type="fact")

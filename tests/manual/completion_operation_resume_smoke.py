@@ -30,13 +30,8 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.runs.details import load_run_details
-from codey.runtime.core.operation_state import (
-    LEAF_TERMINAL,
-    LEAF_WRITER_RUNNING,
-    RuntimeOperationStore,
-    lane_for_run,
-    operation_id_for_run,
-)
+from codey.runtime.core.operation_payload import LEAF_TERMINAL, LEAF_WRITER_RUNNING
+from codey.runtime.core.operation_state import RuntimeOperationStore, lane_for_run, operation_id_for_run
 from codey.runtime.log.session_log import RuntimeSessionLog
 from codey.runtime.log.session_projection import reduce_session
 

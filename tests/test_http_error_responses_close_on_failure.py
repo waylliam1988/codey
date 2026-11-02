@@ -8,7 +8,7 @@ import urllib.error
 import pytest
 
 from codey.providers import local_discovery
-from codey.research import browser_search, connector_search
+from codey.research import browser_search, connector_search, source_download
 
 
 @pytest.mark.parametrize("status", [401, 403, 500])
@@ -33,9 +33,9 @@ def test_http_failure_closes_owned_body_and_preserves_verdict(monkeypatch, opera
         with pytest.raises(ValueError, match="connector request failed"):
             connector_search._read_url_text(url, timeout=1)
     else:
-        monkeypatch.setattr(browser_search, "_open_url_no_redirect", fail)
-        result = (browser_search._download_text_fallback(url) if operation == "html"
-                  else browser_search._download_pdf_streaming(url))
+        monkeypatch.setattr(source_download, "_open_url_no_redirect", fail)
+        result = (source_download._download_text_fallback(url) if operation == "html"
+                  else source_download._download_pdf_streaming(url))
         assert result["status"] == ("error" if operation == "html" else "skipped")
         assert f"HTTP {status}" in result["detail"]
     # Keep the exception alive: garbage collection cannot manufacture cleanup.

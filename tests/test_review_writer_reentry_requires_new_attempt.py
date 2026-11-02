@@ -3,13 +3,12 @@ from dataclasses import replace
 
 import pytest
 
-from codey.runtime.core.operation_state import (
+from codey.runtime.core.operation_payload import (
     LEAF_WRITER_SETTLED,
     RuntimeOperationState,
     RuntimeOperationTransitionError,
-    mark_provider_effect_pending,
-    mark_writer_running,
 )
+from codey.runtime.core.operation_state import mark_provider_effect_pending, mark_writer_running
 
 
 def settled():

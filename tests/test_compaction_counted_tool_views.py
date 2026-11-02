@@ -1,9 +1,11 @@
 """Counted lossless and receipt-backed views protect source data and cache continuity."""
+
 import json
 from unittest.mock import patch
 
 import pytest
 
+from codey.providers import api_context
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import render_result_metadata as _render_result_metadata
 from codey.providers.token_accounting import RequestContextCount
@@ -57,7 +59,7 @@ def test_old_body_is_losslessly_encoded_without_receipts_or_auxiliary_generation
     original = history(protocol)
     provider._messages = original
     provider.context_ledger.commit(original, events=original)
-    with patch("codey.providers.api_transport.generate", side_effect=AssertionError("no model needed")):
+    with patch("codey.providers.api_generation.generate", side_effect=AssertionError("no model needed")):
         provider.maintain_context()
         provider.wait_for_maintenance(3)
     key = "output" if protocol == "openai-responses" else "content"
@@ -92,7 +94,7 @@ def test_cheap_lossless_maintenance_does_not_wait_for_the_semantic_pressure_thre
     original = history()
     provider._messages = original
     provider.context_ledger.commit(original, events=original)
-    with patch("codey.providers.api_transport.generate", return_value={"choices": [{"message": {"content": "Next inspect."}}]}) as generated:
+    with patch("codey.providers.api_generation.generate", return_value={"choices": [{"message": {"content": "Next inspect."}}]}) as generated:
         provider.send("Continue the investigation")
         provider.wait_for_maintenance(3)
     assert generated.call_count == 1
@@ -121,7 +123,7 @@ def test_trusted_receipt_can_be_cheaper_than_a_lossless_view_under_the_actual_co
     provider.set_result_refs(('observation-old',))
     provider.request_counter = lambda payload, **kwargs: RequestContextCount(
         len(str(payload)) // 4 + (20000 if 'text_encoding' in str(payload) else 0), 'tokenizer')
-    with patch('codey.providers.api_transport.generate', side_effect=AssertionError('receipt needs no semantic call')):
+    with patch('codey.providers.api_generation.generate', side_effect=AssertionError('receipt needs no semantic call')):
         provider.maintain_context()
         provider.wait_for_maintenance(3)
     assert 'Stored body omitted' in provider._messages[2]['content']
@@ -157,13 +159,13 @@ def test_receipt_views_batch_below_pressure_to_avoid_rewriting_the_cached_prefix
     provider._messages = original
     provider.set_result_refs(('observation-old', 'observation-latest'))
     provider.last_context_count = RequestContextCount(3000, 'tokenizer')
-    with patch('codey.providers.api_transport.generate', side_effect=AssertionError('no semantic generation')):
-        provider._schedule_maintenance()
+    with patch('codey.providers.api_generation.generate', side_effect=AssertionError('no semantic generation')):
+        api_context.schedule_maintenance(provider)
         provider.wait_for_maintenance(3)
         assert provider._messages == original
         assert not provider._compaction.diagnostics
         provider.last_context_count = RequestContextCount(4500, 'tokenizer')
-        provider._schedule_maintenance()
+        api_context.schedule_maintenance(provider)
         provider.wait_for_maintenance(3)
         assert provider._messages == original
         assert not provider._compaction.diagnostics
@@ -171,7 +173,7 @@ def test_receipt_views_batch_below_pressure_to_avoid_rewriting_the_cached_prefix
                   {'role': 'tool', 'tool_call_id': 'second', 'content': original[2]['content'].replace('observation-old', 'observation-second')}]
         provider._messages = original[:3] + second + original[3:]
         provider.set_result_refs(('observation-old', 'observation-second', 'observation-latest'))
-        provider._schedule_maintenance()
+        api_context.schedule_maintenance(provider)
         provider.wait_for_maintenance(3)
     assert 'Stored body omitted' in provider._messages[2]['content']
     assert provider._messages[6] == original[4]

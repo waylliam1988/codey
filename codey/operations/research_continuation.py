@@ -34,7 +34,7 @@ def restore_note_proposals(tools: Any, canonical: Mapping[str, object]) -> None:
     commit applies proposals after candidate selection.
     """
     from codey.knowledge.note import KnowledgeNote
-    from codey.research.tools import StagedKnowledgeStore
+    from codey.research.staging import StagedKnowledgeStore
 
     links = canonical.get("knowledge_links_created", 0)
     if type(links) is not int or links < 0:

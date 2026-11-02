@@ -71,7 +71,7 @@ def test_body_reader_scans_long_sse_line_incrementally():
 
 
 def test_sse_terminal_event_returns_before_http_body_eof():
-    from codey.providers.api_transport import read_sse
+    from codey.providers.api_stream import read_sse
 
     class Source:
         def __init__(self):

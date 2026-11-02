@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 from codey.durable import DurableSession, MemoryDurableStore
-from codey.runtime.core.operation_state import LEAF_WRITER_SETTLED, RuntimeOperationTransitionError
+from codey.runtime.core.operation_payload import LEAF_WRITER_SETTLED, RuntimeOperationTransitionError
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_TOOL_CALL,
     SETTLEMENT_STATUS_OK,

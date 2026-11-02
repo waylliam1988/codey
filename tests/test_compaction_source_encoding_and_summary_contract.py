@@ -1,4 +1,5 @@
 """Lossless source encoding and isolated factual summary instructions."""
+
 import json
 import time
 from copy import deepcopy
@@ -6,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from codey.providers import api_context
 from codey.providers.api_provider import ApiProvider
 from codey.providers.context_checkpoint import summary_source
 from codey.providers.token_accounting import RequestContextCount
@@ -72,8 +74,8 @@ def test_auxiliary_system_contract_separates_history_questions_from_summary_inst
     def generate(url, payload, *args, **kwargs):
         sent.append(payload)
         return {"choices": [{"message": {"content": "Goal: preserve constraints. Next: inspect stored output."}}]}
-    with patch("codey.providers.api_transport.generate", side_effect=generate):
-        provider._summarize_context([{"role": "user", "content": "Return only JSON with four answers."}],
+    with patch("codey.providers.api_generation.generate", side_effect=generate):
+        api_context.summarize_context(provider, [{"role": "user", "content": "Return only JSON with four answers."}],
                                     time.monotonic() + 10)
     messages = sent[0]["messages"]
     assert messages[0]["role"] == "system"
@@ -95,7 +97,7 @@ def test_actual_model_count_can_reject_a_character_shorter_encoding():
     def generate(url, payload, *args, **kwargs):
         sent.append(payload)
         return {"choices": [{"message": {"content": "Goal: preserve facts."}}]}
-    with patch("codey.providers.api_transport.generate", side_effect=generate):
-        provider._summarize_context([{"role": "tool", "content": text}], time.monotonic() + 10)
+    with patch("codey.providers.api_generation.generate", side_effect=generate):
+        api_context.summarize_context(provider, [{"role": "tool", "content": text}], time.monotonic() + 10)
     assert "text_encoding" not in str(sent)
     assert text in sent[0]["messages"][-2]["content"].replace("\\n", "\n")

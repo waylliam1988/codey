@@ -16,6 +16,8 @@ from unittest.mock import patch
 
 from experiment_paths import DATA_ROOT, REPO
 
+from codey.providers import api_context
+
 sys.path.insert(0, str(REPO))
 
 from codey.app.context import AppContext  # noqa: E402
@@ -254,7 +256,7 @@ def probe(directory: Path, *, protocol: str, lifetime: str, revoke: bool, handof
                 messages = [thaw_json(message) for message in source.messages]
                 if contains(messages) or WORK_FACT not in encode(messages):
                     raise RuntimeError("canonical summary source is contaminated or missing the fact")
-                summary = provider._summarize_context(provider._codec.encode_context(messages), time.monotonic() + 5)
+                summary = api_context.summarize_context(provider, provider._codec.encode_context(messages), time.monotonic() + 5)
                 edits = [{"target": source_entries[0].entry_id, "action": "replace",
                           "messages": [{"role": "assistant", "content": summary}]}]
                 edits += [{"target": entry.entry_id, "action": "omit"} for entry in source_entries[1:]]

@@ -6,7 +6,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
-from codey.providers import api_transport, local_config, local_connection, local_selection
+from codey.providers import api_context, api_generation, local_config, local_connection, local_selection
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
 from codey.providers.text_tool_schema import text_tool_schema
@@ -50,10 +50,10 @@ def test_ordinary_and_auxiliary_requests_are_not_forced_into_tool_envelopes(monk
         text = '{"tool":"done","args":{"summary":"two"}}' if "response_format" in payload else "ordinary prose"
         return {"choices": [{"message": {"content": text}, "finish_reason": "stop"}]}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", native_tools=False, thinking_enabled=False,
                            text_tool_format="json_schema")
-    auxiliary = provider.fork_auxiliary()
+    auxiliary = api_context.fork_auxiliary(provider)
     try:
         assert provider.send("hello") == "ordinary prose"
         assert '"done"' in provider.send("task", tool_call_json=True)
@@ -74,7 +74,7 @@ def test_headless_task_admits_constrained_request_through_shared_kernel(tmp_path
         payloads.append(payload)
         return {"choices": [{"message": {"content": '{"tool":"done","args":{"summary":"2"}}'}, "finish_reason": "stop"}]}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", native_tools=False, thinking_enabled=False,
                            text_tool_format="json_schema")
     result = run_headless(HeadlessRequest(project=None, task="What is 1+1?", intent="hybrid", provider_id="qwen",
@@ -129,6 +129,8 @@ def test_multiple_strict_research_tools_require_done_coverage_state():
 
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True),
                           task_kind="research")
+    # Explicit legacy report contract, after questions have been registered.
+    session.research_questions = ("What does the source establish?",)
     schema = text_tool_schema(tools_from_specs(build_turn_snapshot(session, native=False).model_specs))
     validator = Draft202012Validator(schema)
     coverage = {"question_ref": "q1", "state": "not_investigated",
@@ -147,6 +149,7 @@ def test_strict_report_task_refs_bind_the_original_task_in_both_contracts():
 
     session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
                           task_text="Explain writers. Identify version gaps.")
+    session.research_questions = ("Writer limits and version gaps?",)
     snapshot = build_turn_snapshot(session)
     validator = Draft202012Validator(text_tool_schema(tools_from_specs(snapshot.model_specs)))
     row = {"question_ref": "q1", "state": "not_investigated",
@@ -227,6 +230,7 @@ def test_format_only_task_has_valid_empty_task_refs_schema():
 
     session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
                           task_text="请用中文回答。")
+    session.research_questions = ("Research context?",)
     schema = text_tool_schema(tools_from_specs(build_turn_snapshot(session).model_specs))
     Draft202012Validator.check_schema(schema)
     assert Draft202012Validator(schema).is_valid({"tool": "done", "args": {"report_sections": {"coverage": [{
@@ -241,7 +245,7 @@ def test_explicit_schema_reaches_payload_but_does_not_leak_to_next_send(monkeypa
         payloads.append(payload)
         return {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", native_tools=False, thinking_enabled=False,
                            text_tool_format="json_schema")
     try:
@@ -265,7 +269,7 @@ def test_request_scoped_contract_is_counted_but_never_enters_history_or_auxiliar
         payloads.append(payload)
         return {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", native_tools=False, thinking_enabled=False,
                            text_tool_format=text_format, system_prompt="BASE SYSTEM")
     counter = provider.request_counter
@@ -275,7 +279,7 @@ def test_request_scoped_contract_is_counted_but_never_enters_history_or_auxiliar
         return counter(payload, **kwargs)
 
     provider.request_counter = count
-    auxiliary = provider.fork_auxiliary()
+    auxiliary = api_context.fork_auxiliary(provider)
     try:
         provider.send("first result", tool_call_json=text_format == "json_schema", tool_call_contract="FROZEN FIRST CONTRACT",
                       tool_call_observations="RECEIPT SNAPSHOT ONE")

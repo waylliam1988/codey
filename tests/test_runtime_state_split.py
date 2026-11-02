@@ -1,7 +1,7 @@
 """Parity tests: lock behavior of the four refactored runtime functions.
 
 Pure-extraction guard for:
-- RuntimeOperationState.from_payload (operation_state.py)
+- RuntimeOperationState.from_payload (operation_payload.py)
 - batches_from_entries (tool_result_delivery.py)
 - _compact_entries (compaction.py)
 - validate_prompt_surface_payload (prompt_surface.py)
@@ -15,12 +15,8 @@ from __future__ import annotations
 
 import unittest
 
-from codey.runtime.core.operation_state import (
-    RuntimeOperationState,
-    lane_for_run,
-    new_operation_state,
-    operation_id_for_run,
-)
+from codey.runtime.core.operation_payload import RuntimeOperationState
+from codey.runtime.core.operation_state import lane_for_run, new_operation_state, operation_id_for_run
 from codey.runtime.effects.tool_result_delivery import (
     DeliveryBatchIntent,
     DeliveryBatchItem,

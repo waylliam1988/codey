@@ -12,7 +12,7 @@ from codey.operations.context import RunWork
 from codey.operations.project_completion_context import MAX_COMPLETION_REPAIR_ROUNDS
 from codey.operations.task_state import TaskState
 from codey.runs.ledger import LedgerWriteFailed
-from codey.runtime.core.operation_state import RuntimeOperationTransitionError
+from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.runtime.observe.terminalizer import terminal_turns

@@ -12,6 +12,7 @@ from codey.operations.provider_receipts import restore_snapshot, snapshot_descri
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.policies.task_policy import TaskPolicy
+from codey.providers import api_generation
 from codey.research.methods import research_method_guidance
 from codey.runtime.core.models import ToolCall, ToolPlan
 from tests.test_research_findings import URL, execute
@@ -59,7 +60,6 @@ def test_local_preparation_and_restored_repairs_follow_only_frozen_completion(tm
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("native", [False, True])
 def test_actual_local_payloads_do_not_reintroduce_global_save_instructions(tmp_path, monkeypatch, native):
-    from codey.providers import api_transport
     from codey.providers.api_provider import ApiProvider
 
     sent = []
@@ -74,7 +74,7 @@ def test_actual_local_payloads_do_not_reintroduce_global_save_instructions(tmp_p
                 {"content": json.dumps(call)})
             return {"choices": [{"message": message, "finish_reason": "stop"}]}
 
-        monkeypatch.setattr(api_transport, "generate", generate)
+        monkeypatch.setattr(api_generation, "generate", generate)
         actual = ApiProvider("http://fixture/v1", "fixture", native_tools=native, stream=False)
         providers.append(actual)
         return actual

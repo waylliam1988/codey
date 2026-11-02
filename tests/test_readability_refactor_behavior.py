@@ -7,13 +7,13 @@ import pytest
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.runs.receipt import build_task_receipt, task_receipt_from_payload
+from codey.runtime.core.operation_payload import DRIVER_WRITER, LEAF_TOOL_DELIVERY_PENDING
 from codey.runtime.core.operation_reducer import (
     ACTION_CONTINUE,
     ACTION_OBSERVE_BATCH_PROGRESS,
     ACTION_REPLAY_SAFE_TOOL_BATCH,
     next_runtime_action,
 )
-from codey.runtime.core.operation_state import DRIVER_WRITER, LEAF_TOOL_DELIVERY_PENDING
 from codey.runtime.effects.replay_policy import ReplayClass
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchItem
 from tests.support.kernel_protocol_test_helpers import normalize_turn

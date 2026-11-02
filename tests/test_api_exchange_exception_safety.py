@@ -19,7 +19,7 @@ class _ExplodingPending(_ExplodingSettle):
 def test_settle_failure_still_releases_send_lock(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     provider = ApiProvider("http://fixture/v1", "m", request_policy=_ExplodingSettle())
     monkeypatch.setattr(
-        "codey.providers.api_transport.generate",
+        "codey.providers.api_generation.generate",
         lambda *args, **kwargs: {"choices": [{"message": {"content": "ready"}, "finish_reason": "stop"}]},
     )
     with pytest.raises(RuntimeError, match="settle failed"):
@@ -31,7 +31,7 @@ def test_settle_failure_still_releases_send_lock(monkeypatch) -> None:  # type: 
 def test_pending_close_failure_still_releases_send_lock(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     provider = ApiProvider("http://fixture/v1", "m", request_policy=_ExplodingPending())
     monkeypatch.setattr(
-        "codey.providers.api_transport.generate",
+        "codey.providers.api_generation.generate",
         lambda *args, **kwargs: {"choices": [{"message": {"content": "ready"}, "finish_reason": "stop"}]},
     )
     with pytest.raises(RuntimeError):

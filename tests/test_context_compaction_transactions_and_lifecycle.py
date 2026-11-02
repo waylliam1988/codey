@@ -1,9 +1,11 @@
 """Foreground transactions, background races and auxiliary lifecycle stay isolated."""
+
 import threading
 from unittest.mock import patch
 
 import pytest
 
+from codey.providers import api_context
 from codey.providers.api_provider import ApiProvider
 from codey.providers.token_accounting import RequestContextCount
 
@@ -31,7 +33,7 @@ def test_background_summary_preserves_appended_tail_without_waiting():
     provider.summarize_context = summary
     provider.maintain_context()
     assert started.wait(2)
-    with patch("codey.providers.api_transport.generate", return_value=reply()):
+    with patch("codey.providers.api_generation.generate", return_value=reply()):
         provider.send("new correction")
     finish.set()
     provider.wait_for_maintenance(3)
@@ -67,7 +69,7 @@ def test_emergency_summary_failure_preserves_original_and_never_sends_main_reque
     original = long_history()
     provider._messages = original
     provider.summarize_context = lambda *_: (_ for _ in ()).throw(RuntimeError("summary failed"))
-    with patch("codey.providers.api_transport.generate", side_effect=AssertionError("must not generate")), pytest.raises(RuntimeError, match="summary failed"):
+    with patch("codey.providers.api_generation.generate", side_effect=AssertionError("must not generate")), pytest.raises(RuntimeError, match="summary failed"):
         provider.send("continue")
     assert provider._messages == original
 
@@ -87,7 +89,7 @@ def test_summary_usage_is_separate_and_final_candidate_is_recounted():
     def generate(url, payload, *args, **kwargs):
         return reply("Goal: Keep API; Next: verify" if "Source:" in str(payload) else "done")
 
-    with patch("codey.providers.api_transport.generate", side_effect=generate):
+    with patch("codey.providers.api_generation.generate", side_effect=generate):
         provider.send("continue")
     assert len(records) >= 2
     assert all(record.purpose == "compaction" for record in records[:-1])
@@ -105,7 +107,7 @@ def test_background_output_reduction_commits_without_a_model_request():
         {"role": "tool", "tool_call_id": "latest", "content": "latest observation"},
         {"role": "assistant", "content": "recent"}, {"role": "user", "content": "continue"}]
     provider.set_result_refs(("exec-17",))
-    with patch("codey.providers.api_transport.generate", side_effect=AssertionError("no semantic request needed")):
+    with patch("codey.providers.api_generation.generate", side_effect=AssertionError("no semantic request needed")):
         provider.maintain_context()
         provider.wait_for_maintenance(3)
     assert len(provider._messages[2]["content"]) < 2000
@@ -182,9 +184,9 @@ def test_background_can_commit_older_work_while_the_latest_tool_is_unanswered():
 
 def test_auxiliary_created_before_close_cannot_start_a_late_request():
     provider = ApiProvider("http://localhost:9/v1", "fixture", context_keep_recent_tokens=1000)
-    auxiliary = provider.fork_auxiliary()
+    auxiliary = api_context.fork_auxiliary(provider)
     provider.close()
-    with patch("codey.providers.api_transport.generate", return_value=reply()) as generated, pytest.raises(RuntimeError, match="cancelled"):
+    with patch("codey.providers.api_generation.generate", return_value=reply()) as generated, pytest.raises(RuntimeError, match="cancelled"):
         auxiliary.send("late source")
     generated.assert_not_called()
 
@@ -220,7 +222,7 @@ def test_checkpoint_only_pressure_merges_a_bounded_pair_from_original_sources():
     provider.summarize_context = lambda source, _: (seen.append(source) or "Goal: Keep API. New info.")
     from codey.providers.token_accounting import ContextBudget
     provider._context_budget = ContextBudget(300, 50, 0, 100)
-    with patch("codey.providers.api_transport.generate", return_value=reply()):
+    with patch("codey.providers.api_generation.generate", return_value=reply()):
         provider.send("continue")
     assert len(seen) == 3
     assert "step 0:" in str(seen[-1]) and "new info" in str(seen[-1])
@@ -232,7 +234,7 @@ def test_a_large_accepted_answer_schedules_maintenance_before_the_next_request(m
                            context_reserve_tokens=1024, context_keep_recent_tokens=1000)
     scheduled = []
     monkeypatch.setattr(provider, "maintain_context", lambda: scheduled.append(True))
-    with patch("codey.providers.api_transport.generate", return_value=reply("large observation " * 1500)):
+    with patch("codey.providers.api_generation.generate", return_value=reply("large observation " * 1500)):
         provider.send("short question")
     assert scheduled == [True]
 
@@ -243,11 +245,11 @@ def test_maintenance_waits_for_eighty_percent_instead_of_summarizing_normal_grow
     scheduled = []
     monkeypatch.setattr(provider, "maintain_context", lambda: scheduled.append(True))
     provider.request_counter = lambda *args, **kwargs: RequestContextCount(2000, "tokenizer")
-    with patch("codey.providers.api_transport.generate", return_value=reply()):
+    with patch("codey.providers.api_generation.generate", return_value=reply()):
         provider.send("continue normal work")
     assert scheduled == []
     provider.request_counter = lambda *args, **kwargs: RequestContextCount(2600, "tokenizer")
-    with patch("codey.providers.api_transport.generate", return_value=reply()):
+    with patch("codey.providers.api_generation.generate", return_value=reply()):
         provider.send("continue near budget")
     assert scheduled == [True]
 
@@ -258,7 +260,7 @@ def test_recent_history_target_cannot_override_a_smaller_independent_input_limit
                            input_limit_tokens=2048)
     provider._messages = long_history()
     provider.summarize_context = lambda *_: "Goal: Keep API. Latest constraint: keep files local."
-    with patch("codey.providers.api_transport.generate", return_value=reply()):
+    with patch("codey.providers.api_generation.generate", return_value=reply()):
         assert provider.send("continue") == "ok"
     assert provider.last_context_count.value <= 2048
     assert any("Current project state:" in str(item) for item in provider._messages)
@@ -270,6 +272,6 @@ def test_background_thread_start_failure_does_not_invalidate_an_accepted_answer(
     provider._messages = [{"role":"assistant", "content":"old " * 1600}]
     provider.request_counter = lambda *args, **kwargs: RequestContextCount(2000, "tokenizer")
     monkeypatch.setattr(provider, "maintain_context", lambda: (_ for _ in ()).throw(RuntimeError("cannot start thread")))
-    with patch("codey.providers.api_transport.generate", return_value=reply("accepted")):
+    with patch("codey.providers.api_generation.generate", return_value=reply("accepted")):
         assert provider.send("continue") == "accepted"
     assert provider.context_ledger.events()[-1]["content"] == "accepted"

@@ -1,4 +1,5 @@
 """Streams require terminal framing; cancelled generations never return calls."""
+
 import io
 import json
 import threading
@@ -7,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-from codey.providers import api_transport
+from codey.providers import api_generation, api_stream, api_transport
 from codey.providers.api_provider import ApiProvider
 from codey.runtime.core import cancellation
 
@@ -16,7 +17,7 @@ def test_chat_finish_reason_without_done_frame_is_unknown():
     event = {"choices": [{"delta": {"content": "unfinished"}, "finish_reason": "stop"}]}
     raw = ("data: " + json.dumps(event) + "\n\n").encode()
     with pytest.raises(api_transport.GenerationUnknownError):
-        api_transport.read_sse(io.BytesIO(raw), deadline=float("inf"), cancelled=lambda: False)
+        api_stream.read_sse(io.BytesIO(raw), deadline=float("inf"), cancelled=lambda: False)
 
 
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
@@ -29,7 +30,7 @@ def test_cancelled_generation_does_not_return_executable_calls(protocol):
             return {"status": "completed", "output": [{"type": "function_call", "call_id": "old", "name": "done", "arguments": "{}"}]}
         return {"choices": [{"finish_reason": "tool_calls", "message": {"tool_calls": [{"id": "old", "function": {"name": "done", "arguments": "{}"}}]}}]}
 
-    with patch.object(api_transport, "generate", late_reply), pytest.raises(api_transport.GenerationUnknownError):
+    with patch.object(api_generation, "generate", late_reply), pytest.raises(api_transport.GenerationUnknownError):
         provider.send_turn("fixture")
     assert provider._messages == []
 
@@ -43,7 +44,7 @@ def test_connection_refusal_is_known_not_sent_without_replay(monkeypatch):
 
     monkeypatch.setattr(api_transport, "open_request", refused)
     with pytest.raises(RuntimeError) as error:
-        api_transport.generate("http://fixture.test/v1", {}, {}, timeout=1, observe=lambda **k: None)
+        api_generation.generate("http://fixture.test/v1", {}, {}, timeout=1, observe=lambda **k: None)
     assert getattr(error.value, "provider_failure_kind", "") == "not_submitted"
     assert len(calls) == 1
 
@@ -70,7 +71,7 @@ def test_abandon_closes_the_open_transport_and_discards_reply(monkeypatch, proto
         provider.abandon_inflight()
         return {"choices": [{"finish_reason": "stop", "message": {"content": "late"}}], "status": "completed", "output": []}
 
-    monkeypatch.setattr(api_transport, "generate", send)
+    monkeypatch.setattr(api_generation, "generate", send)
     with pytest.raises(api_transport.GenerationUnknownError):
         provider.send_turn("fixture")
     assert closed == [True]

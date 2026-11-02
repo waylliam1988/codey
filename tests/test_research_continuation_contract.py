@@ -13,7 +13,8 @@ from codey.operations.research_continuation import ResearchContinuation, Researc
 from codey.providers.response_record import json_value
 from codey.research.pipeline import ResearchContinuationError
 from codey.research.tools import ResearchTools
-from codey.runtime.core.operation_state import RuntimeOperationState, new_operation_state
+from codey.runtime.core.operation_payload import RuntimeOperationState
+from codey.runtime.core.operation_state import new_operation_state
 
 
 def test_restored_note_commit_is_idempotent_and_conflict_preserves_vault(tmp_path, monkeypatch):

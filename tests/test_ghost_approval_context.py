@@ -13,7 +13,7 @@ from codey.app.context import AppContext
 from codey.app.task_services import build_task_deps
 from codey.operations.kernel_actions import _payload_strings
 from codey.operations.task_entry import run_task_submission
-from codey.providers import api_transport
+from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolCall
 from codey.task.model import ResolveShellApproval, StartTask, TaskSubmission
@@ -37,7 +37,7 @@ def test_approval_resume_binds_original_context(tmp_path, monkeypatch, protocol,
         payloads.append(copy.deepcopy(payload))
         return next(replies)
 
-    monkeypatch.setattr(api_transport, "generate", generate)
+    monkeypatch.setattr(api_generation, "generate", generate)
     if control == "expired":
         from codey.workspace.context_admission import sources_from_values
 

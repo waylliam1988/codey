@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.runtime.core.operation_state import (
+from codey.runtime.core.operation_payload import (
     LEAF_ACCEPTED,
     LEAF_COMPLETION_PROOF_RECORDED,
     LEAF_PROVIDER_EFFECT_PENDING,
@@ -16,11 +16,9 @@ from codey.runtime.core.operation_state import (
     LEAF_TOOL_EFFECT_PENDING,
     LEAF_WRITER_RUNNING,
     LEAF_WRITER_SETTLED,
-    RuntimeOperationStore,
     RuntimeOperationTransitionError,
-    new_operation_state,
-    operation_started_entry,
 )
+from codey.runtime.core.operation_state import RuntimeOperationStore, new_operation_state, operation_started_entry
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     EFFECT_CATEGORY_TOOL_CALL,

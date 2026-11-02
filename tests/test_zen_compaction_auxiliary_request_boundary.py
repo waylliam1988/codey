@@ -1,7 +1,9 @@
 """Zen owns auxiliary declarations and closure; core sees only ordinary usage/state."""
+
 import time
 from unittest.mock import patch
 
+from codey.providers import api_context
 from codey.providers.api_provider import ApiProvider
 from codey.providers.zen.connection import ZenProvider
 
@@ -20,8 +22,8 @@ def test_zen_auxiliary_summary_uses_partner_envelope_and_closes_calls_without_ex
                 "name": payload["tools"][0]["function"]["name"], "arguments": "{}"}}]}}]}
         return {"choices": [{"message": {"content": "Goal: preserve API. Next: read exec-17."}}]}
 
-    with patch("codey.providers.api_transport.generate", side_effect=generate):
-        text = runtime._summarize_context([{"role": "user", "content": "Keep API"}], time.monotonic() + 5)
+    with patch("codey.providers.api_generation.generate", side_effect=generate):
+        text = api_context.summarize_context(runtime, [{"role": "user", "content": "Keep API"}], time.monotonic() + 5)
     assert "exec-17" in text
     assert "Not executed" in str(seen[1])
     assert len(usage) == 2 and all(row.purpose == "compaction" for row in usage)
@@ -44,8 +46,8 @@ def test_zen_summary_packing_counts_its_actual_prefix_and_required_declarations(
         sent.append(payload)
         return {'choices':[{'message':{'content':'Goal: preserve API.'}}]}
 
-    with patch('codey.providers.api_transport.generate', side_effect=generate):
-        text = runtime._summarize_context([{'role':'user','content':'distinct work ' * 140}], time.monotonic() + 5)
+    with patch('codey.providers.api_generation.generate', side_effect=generate):
+        text = api_context.summarize_context(runtime, [{'role':'user','content':'distinct work ' * 140}], time.monotonic() + 5)
     assert 'preserve API' in text
     assert len(sent) >= 2
     assert all(payload.get('tools') for payload in counted)

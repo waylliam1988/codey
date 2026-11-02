@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from codey.providers import api_transport
+from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
 
@@ -17,7 +17,7 @@ def test_incomplete_output_item_is_rejected_while_valid_input_is_retained(monkey
         item.update(call_id="write1", name="edit", arguments='{"path":"a.py","content":"changed"}')
     else:
         item.update(role="assistant", content=[{"type": "output_text", "text": "complete"}])
-    monkeypatch.setattr(api_transport, "generate", lambda *a, **kw: {"status": "completed", "output": [item]})
+    monkeypatch.setattr(api_generation, "generate", lambda *a, **kw: {"status": "completed", "output": [item]})
     with pytest.raises(RuntimeError, match="output item.*not complete"):
         provider.send_turn("Edit a.py", [ProviderToolDefinition("edit", "edit", {})])
     assert provider._messages == [{"role": "user", "content": "Edit a.py"}]

@@ -100,7 +100,7 @@ def test_bound_tool_delivery_rejects_wrong_window_before_transport(tmp_path, mon
     current = provider.window_ref
     assert current is not None
     wrong = ProtocolWindowRef.new("session-1", current.binding)
-    monkeypatch.setattr("codey.providers.api_transport.generate", lambda *a, **k: (_ for _ in ()).throw(AssertionError("HTTP")))
+    monkeypatch.setattr("codey.providers.api_generation.generate", lambda *a, **k: (_ for _ in ()).throw(AssertionError("HTTP")))
     with pytest.raises(ValueError, match="window reference"):
         provider.send_tool_results_bound([ProviderToolResult("call-1", "ok")], wrong)
 

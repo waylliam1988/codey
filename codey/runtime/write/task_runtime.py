@@ -7,11 +7,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from codey.runtime.core.operation import OperationContext, OperationIntent
-from codey.runtime.core.operation_state import (
-    LEAF_TERMINAL,
-    lane_for_run,
-    operation_id_for_run,
-)
+from codey.runtime.core.operation_payload import LEAF_TERMINAL
+from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.core.ports import TaskExecutor, TaskPreparer, TaskStartFailureHandler
 from codey.runtime.write.mutation_line import RuntimeMutationLine

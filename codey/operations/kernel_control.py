@@ -13,9 +13,12 @@ from codey.operations.kernel_contracts import (
     result_from_payload,
 )
 from codey.providers.base import AssistantTurn, ProviderToolResult
-from codey.runtime.core import operation_state as positions
-from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationTransitionError
-from codey.runtime.core.operation_state import RuntimeOperationState
+from codey.runtime.core import operation_payload
+from codey.runtime.core.operation_payload import (
+    RuntimeExecutionCounters,
+    RuntimeOperationState,
+    RuntimeOperationTransitionError,
+)
 
 if TYPE_CHECKING:
     from codey.operations.kernel_context import KernelContext
@@ -110,7 +113,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     if complete:
         result = KernelResult(True, final_text, context.session.turn, "done", proof=proof,
                               research_report=compiled.to_payload() if compiled else None)
-        context.advance(state, positions.LEAF_CONTROL_READY, data=DoneDecision(
+        context.advance(state, operation_payload.LEAF_CONTROL_READY, data=DoneDecision(
             purpose="done", result=result.to_payload(), workspace_revision=context.session.workspace_revision,
             workspace_fingerprint=context.session.workspace_fingerprint))
     else:
@@ -140,7 +143,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
             error_source=error_source, error_type=error_type)
         if repair is not None:
             decision["research_repair"] = repair.to_payload()
-        context.advance(state, positions.LEAF_CONTROL_READY, data=decision,
+        context.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision,
             counters=counters)
 
 
@@ -164,7 +167,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             and any(call.name == "submit_research_answer" for call in context.plan(state).calls)):
         # Closure delivers the original submission receipt. There is no
         # synthetic model done call and no substituted tool-success message.
-        context.advance(state, positions.LEAF_CLOSING)
+        context.advance(state, operation_payload.LEAF_CLOSING)
         return
     if decision["purpose"] == "retry":
         # A cold restart may enter directly at control_ready. Rebuild the
@@ -241,7 +244,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             if (current.revision != decision["workspace_revision"]
                     or current.fingerprint != decision["workspace_fingerprint"]):
                 context.session.set_workspace_state(current.revision, current.fingerprint)
-                context.advance(state, positions.LEAF_COMPLETION_PENDING)
+                context.advance(state, operation_payload.LEAF_COMPLETION_PENDING)
                 return
         text = "OK: done accepted: " + decision["result"]["summary"][:500]
     else:
@@ -250,7 +253,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         context.freeze(state, received.snapshot, turn=received.logical_turn,
             messages=[ProviderToolResult(identity, text) for identity in ids], acknowledge=True)
     else:
-        context.advance(state, positions.LEAF_CLOSING)
+        context.advance(state, operation_payload.LEAF_CLOSING)
 
 
 def close_protocol(context: Any, view: Any) -> None:
