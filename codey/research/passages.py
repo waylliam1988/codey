@@ -20,6 +20,8 @@ class ReadPassage:
     pages: tuple[tuple[int, str], ...]
     start: int
     end: int
+    source_version: tuple[str, int] | None = None
+    evidence_version: tuple[str, int] | None = None
 
     @property
     def excerpt(self) -> str:
@@ -31,11 +33,17 @@ class ReadPassage:
                      if start <= self.start < self.end <= end), None)
 
     def descriptor(self) -> dict[str, Any]:
-        return {"ref": self.ref, "start": self.start, "end": self.end}
+        return {"ref": self.ref, "start": self.start, "end": self.end,
+                **({"source_version": list(self.source_version)} if self.source_version else {}),
+                **({"evidence_version": list(self.evidence_version)} if self.evidence_version else {})}
 
 
-def passage_ref(url: str, text_hash: str, start: int, end: int) -> str:
-    digest = hashlib.sha256(f"{url}\n{text_hash}\n{start}:{end}".encode()).hexdigest()
+def passage_ref(url: str, text_hash: str, start: int, end: int, *,
+                source_version: Any = None, evidence_version: Any = None) -> str:
+    from codey.knowledge.model import canonical_json
+
+    pin = "\n" + canonical_json([source_version, evidence_version]) if source_version else ""
+    digest = hashlib.sha256(f"{url}\n{text_hash}\n{start}:{end}{pin}".encode()).hexdigest()
     return "p" + digest[:12]
 
 
@@ -158,15 +166,29 @@ def restore_passages(ledger: ResearchLedger, observation: object, descriptors: o
         raise ValueError("invalid read passage descriptors")
     pending = {}
     for row in descriptors:
-        if not isinstance(row, dict) or set(row) != {"ref", "start", "end"}:
+        if (not isinstance(row, dict) or not {"ref", "start", "end"} <= set(row)
+                or set(row) - {"ref", "start", "end", "source_version", "evidence_version"}):
             raise ValueError("invalid read passage descriptor")
         start, end = row["start"], row["end"]
         if type(start) is not int or type(end) is not int or not 0 <= start < end <= len(text):
             raise ValueError("invalid read passage range")
-        ref = passage_ref(source.final_url, source.text_hash, start, end)
+        versions: dict[str, tuple[str, int]] = {}
+        for key in ("source_version", "evidence_version"):
+            if key not in row:
+                continue
+            from codey.knowledge.model import KnowledgeReference
+
+            pin = row[key]
+            if not isinstance(pin, (list, tuple)) or len(pin) != 2:
+                raise ValueError("invalid stored material version")
+            KnowledgeReference(pin[0], pin[1], "uses")
+            versions[key] = (pin[0], pin[1])
+        if "evidence_version" in versions and "source_version" not in versions:
+            raise ValueError("stored evidence requires a pinned source")
+        ref = passage_ref(source.final_url, source.text_hash, start, end, **versions)
         if row["ref"] != ref or not text[start:end].strip():
             raise ValueError("read passage identity differs from source version")
-        value = ReadPassage(ref, source, text, tuple(sorted(pages.items())), start, end)
+        value = ReadPassage(ref, source, text, tuple(sorted(pages.items())), start, end, **versions)
         previous = ledger.read_passages.get(ref)
         # Reacquisition time may differ, while the referenced bytes stay identical.
         if previous is not None and (previous.source.final_url, previous.source.text_hash,

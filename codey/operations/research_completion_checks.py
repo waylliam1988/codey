@@ -15,13 +15,13 @@ from codey.completion.contract import (
     CompletionCheck,
     completion_check,
 )
-from codey.research.finding_report import FindingReport, compile_finding_report
+from codey.research.finding_report import ResearchReport, compile_finding_report
 
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
 
 
-def prepare_research_completion(session: TaskSession, text: str, context: Any) -> tuple[str, FindingReport | None]:
+def prepare_research_completion(session: TaskSession, text: str, context: Any) -> tuple[str, ResearchReport | None]:
     """Derive this gate call's report without replacing the original proposal."""
     if session.task_kind == "research_review":
         from codey.research.semantic_review import submitted_review
@@ -42,10 +42,10 @@ def prepare_research_completion(session: TaskSession, text: str, context: Any) -
     if whole_research(session):
         from codey.research.answer_report import compile_answer_report
 
-        report = compile_answer_report(session, ledger, store,
+        answer = compile_answer_report(session, ledger, store,
             project=str(_context_get(context, "knowledge_project") or ""),
             session_id=str(_context_get(context, "knowledge_session_id") or ""))
-        return report.text, report
+        return answer.text, answer
     try:
         from codey.research.local_scope import assembled_report, registered_plan, unresolved_targets
 
@@ -120,7 +120,7 @@ def investigation_attempt_checks(session: Any) -> list[CompletionCheck]:
                             "" if attempted else "research_investigation_not_attempted")]
 
 
-def citation_requirement_checks(session: Any, text: str, context: Any, *, report: FindingReport | None = None) -> list[CompletionCheck]:
+def citation_requirement_checks(session: Any, text: str, context: Any, *, report: ResearchReport | None = None) -> list[CompletionCheck]:
     policy = getattr(session, "policy", None)
     required = "research_citations" in getattr(policy, "required_checks", ())
     strict = bool(getattr(policy, "strict_research", False))
@@ -156,7 +156,7 @@ def _missing_ledger_rows() -> list[CompletionCheck]:
 
 
 def strict_research_checks(session: Any, done_text: str, context: Any = None, *,
-                           report: FindingReport | None = None) -> list[CompletionCheck]:
+                           report: ResearchReport | None = None) -> list[CompletionCheck]:
     """严格 Research 专属：证据归档、报告与研究质量（普通任务不调用）。
 
     Strict Research always requires a valid evidence ledger. A missing
@@ -186,7 +186,7 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
     return ""
 
 
-def _ledger_checks(session: Any, done_text: str, compiled: FindingReport | None) -> list[CompletionCheck]:
+def _ledger_checks(session: Any, done_text: str, compiled: ResearchReport | None) -> list[CompletionCheck]:
     from codey.research.answer_report import DELIVERY_CHECKS, AnswerReport
 
     if isinstance(compiled, AnswerReport):

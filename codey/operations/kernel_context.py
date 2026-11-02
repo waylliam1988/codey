@@ -435,12 +435,18 @@ class KernelContext:
         if plan.protocol_error:
             invalid = state.counters.invalid_turns + 1
             threshold = self.transport.stagnant_turns
-            if threshold is not None and invalid >= max(1, threshold):
+            prompt = kernel_prompt._repair_prompt(plan, snapshot=snapshot, native=self.native, reply=reply)
+            previous_ref = original.get("work_ref")
+            previous = (self.decision(replace(state, work_ref=previous_ref))
+                        if previous_ref and state.counters.invalid_turns else None)
+            repeated = previous is not None and previous.get("purpose") == "retry" and previous.get("prompt") == prompt
+            if repeated or threshold is not None and invalid >= max(1, threshold):
                 self.advance(state, positions.LEAF_CLOSING, counters=replace(state.counters, invalid_turns=invalid),
                     data=ClosingDecision(purpose="closing", result=KernelResult(False,
-                        f"stopped after {invalid} invalid tool requests: {plan.protocol_error}", turn, "protocol").to_payload()))
+                        f"stopped after {invalid} invalid tool requests"
+                        + (" (repeated response without new diagnostic information)" if repeated else "")
+                        + f": {plan.protocol_error}", turn, "protocol").to_payload()))
                 return
-            prompt = kernel_prompt._repair_prompt(plan, snapshot=snapshot, native=self.native)
             self.retry(state, prompt, error=plan.protocol_error, counters=replace(state.counters, invalid_turns=invalid))
             return
         kind = getattr(plan.control, "kind", "")
@@ -558,9 +564,14 @@ class KernelContext:
         original_scope = self.response(state).snapshot.research_scope
         snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native,
             research_repair=original_scope if original_scope is not None and original_scope.replaces else None)
+        from codey.runtime.core.models import ToolResult
+
+        def result_context(result: ToolResult) -> str:
+            return task_result_context(self.session, result, snapshot.research_scope)
+
         advance = wiring._advance_after_results(self.native, results, self.session, None,
             completion_context=self.completion_context, boundary_prompt=self.boundary_text(), text_result_spans=spans,
-            result_context=lambda result: task_result_context(self.session, result, snapshot.research_scope))
+            result_context=result_context)
         if isinstance(advance, KernelResult):
             self.close(state, advance)
             return

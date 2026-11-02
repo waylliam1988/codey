@@ -61,7 +61,7 @@ def compact_plan_spec(spec: Any, task: str) -> Any:
                             "contract_version": {"type": "integer", "enum": [4],
                                                  "description": "Fixed by the application; may be omitted."}})
     defaults = task_layout(task)["task_questions"]
-    example_args = {} if all(1 <= len(row["text"].strip()) <= 800 for row in defaults) else {
+    example_args: dict[str, Any] = {} if all(1 <= len(row["text"].strip()) <= 800 for row in defaults) else {
         "questions": [{"text": "The complete requested relationship and its evidence boundary", "task_refs": ["t1"]}]}
     return replace(spec, parameters=tuple(schema["properties"].items()), required=(),
         json_examples=(json.dumps({"tool": "research_plan", "args": example_args}, separators=(",", ":")),),
@@ -76,14 +76,16 @@ def compact_plan_spec(spec: Any, task: str) -> Any:
 def is_compact_plan_spec(spec: Any) -> bool:
     if spec is None:
         return False
-    return dict(spec.parameters).get("questions", {}).get("items", {}).get("type") == "object"
+    kind = dict(spec.parameters).get("questions", {}).get("items", {}).get("type")
+    return isinstance(kind, str) and kind == "object"
 
 
 def frozen_plan_version(spec: Any) -> int:
     version = dict(spec.parameters).get("contract_version", {}).get("enum", [2])
-    if tuple(version) not in ((2,), (3,), (4,)):
+    if tuple(version) not in ((2,), (3,), (4,)) or type(version[0]) is not int:
         raise ValueError("invalid frozen plan entry version")
-    return version[0]
+    result: int = version[0]
+    return result
 
 
 def _accounting_ranges(layout: dict[str, Any], task: str, refs: list[str]) -> list[dict[str, int]]:

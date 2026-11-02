@@ -45,7 +45,7 @@ def tool_repair_text(error: str, spec: ToolSpec) -> str:
     """A self-contained repair for one captured tool, never its entire catalog."""
     from codey.toolchain.tool_spec import _schema_for_spec, thaw_schema_value
 
-    schema = json.dumps(thaw_schema_value(_schema_for_spec(spec)), ensure_ascii=False, separators=(",", ":"))
+    schema = json.dumps(thaw_schema_value(_schema_for_spec(spec)), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return (f"{error}\nCurrent {spec.name} contract:\n{spec.description}\n"
             f"Arguments (JSON Schema; only declared fields): {schema}")
 

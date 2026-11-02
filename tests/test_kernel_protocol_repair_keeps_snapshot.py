@@ -63,7 +63,8 @@ def test_native_repair_requests_native_calls_instead_of_json(monkeypatch):
         ),
     )
     assert len(prompts) == 2
-    assert result.stop_reason == "max_turns"
+    assert result.stop_reason == "protocol"
+    assert "without new diagnostic information" in result.summary
 
 
 def test_repair_uses_supplied_contract_without_consulting_live_registry(monkeypatch):

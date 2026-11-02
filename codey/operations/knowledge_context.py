@@ -31,7 +31,8 @@ def knowledge_background(tools: Any, session: Any, question: str) -> str:
     scope_guidance = (f"Personal knowledge owner for this isolated knowledge space: {tools.store.owner_id}. "
         "Use scope=personal with that scope_id for authorized user facts and their private inferences; "
         "scope=session is limited to the current conversation. Retain observation time and user_statement origin. "
-        "Public research uses global or the current project scope.\n")
+        "Durable research defaults to personal scope without a project, or project scope with one. "
+        "Global is explicitly public; temporary content uses session scope.\n")
     if getattr(policy, "strict_research", False):
-        return render_recall(hits, max_chars=4000, include_answer_refs=False, compact=True)
+        return scope_guidance + render_recall(hits, max_chars=4000, include_answer_refs=False, compact=True)
     return scope_guidance + render_recall(hits, max_chars=6000)

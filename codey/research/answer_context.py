@@ -35,11 +35,31 @@ def answer_context(session: Any, ledger: Any, scope: AnswerScope) -> str:
     if not scope.aliases:
         lines.append("No original evidence is currently displayed. Read a source before making supported claims.")
     projection = read_evidence_projection(session, ledger, passage_refs=scope.passage_refs)
-    receipts = [{"result_ref": identity, "tool": result.call.name, "ok": result.ok}
-                for identity, result in session._memory_results.items()
-                if result.canonical.get("read_passages")]
+    receipts = []
+    omitted = []
+    labels: dict[str, str] = {}
+    for identity, result in session._memory_results.items():
+        if not result.ok or not result.canonical.get("read_passages"):
+            continue
+        rows = result.canonical["read_passages"]
+        receipts.append({"result_ref": identity, "tool": result.call.name,
+                         "passage_refs": [row["ref"] for row in rows]})
+        for row in rows:
+            ref = row["ref"]
+            if ref in labels:
+                continue
+            labels[ref] = f"e{len(labels) + 1}"
+            if ref in scope.passage_refs:
+                continue
+            passage = ledger.read_passages[ref]
+            omitted.append({"label": labels[ref], "passage_ref": ref, "display_omitted": True,
+                "url": passage.source.final_url, "source_hash": passage.source.text_hash,
+                "start": passage.start, "end": passage.end,
+                **({"knowledge_source": list(passage.source_version)} if passage.source_version else {}),
+                "recover": {"tool": "read_tool_result", "args": {"result_ref": identity}}})
     latest = list(session._memory_results.values())[-1:]
-    lines.append(canonical_json({"source_locators": projection["locators"][-12:], "read_receipts": receipts[-8:],
+    lines.append(canonical_json({"source_locators": projection["locators"], "read_receipts": receipts,
+        "omitted_windows": omitted,
         "investigation_attempts": investigation_history(session),
         "latest_error": [result.model_text[:1600] for result in latest if not result.ok]}))
     lines.append("Use [eN] citations exactly as displayed. Reuse these passages for any part of the complete task. "
@@ -48,5 +68,9 @@ def answer_context(session: Any, ledger: Any, scope: AnswerScope) -> str:
                  "Section labels are navigation, not evidence, and the bounded outline may omit middle sections. "
                  "To read a named section, call open_url with its displayed offset or source_search for its title. "
                  "Calling open_url without offset reads the beginning again.")
+    lines.append("omitted_windows is a recovery index, not permission to cite hidden text. "
+                 "Recover its original receipt to restore its stable eN. For knowledge_source locators, "
+                 "read knowledge_read(id, revision, offset) instead of fetching a newer live URL. "
+                 "next_offset is the first unread position, not the furthest observed end.")
     lines.extend(["Complete user task (verbatim):\n" + session.task_text, ANSWER_GUIDANCE])
     return "\n\n".join(lines)

@@ -154,5 +154,9 @@ def published_answer_version(history: Any, synthesis_id: str) -> tuple[str, int]
             continue
         answers = [row["value"]["id"] for row in envelope["command"]["mutations"] if row["value"]["kind"] == "answer"]
         if len(answers) == 1:
-            return answers[0], receipt.canonical["versions"][answers[0]]
+            versions = receipt.canonical.get("versions")
+            revision = versions.get(answers[0]) if isinstance(versions, dict) else None
+            if type(revision) is not int or revision < 1:
+                raise ResearchContinuationError("publication has no valid settled answer revision")
+            return answers[0], revision
     raise ResearchContinuationError("publication has no settled exact answer version")

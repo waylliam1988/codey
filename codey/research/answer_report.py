@@ -74,17 +74,19 @@ class AnswerReport:
                 raise ValueError("report citation points to another passage")
         if raw["text"] != render_answer(raw["markdown"], raw["source_versions"], raw["evidence_bindings"]):
             raise ValueError("report rendering differs from the frozen answer")
-        scalar = {"text", "markdown", "state", "task_digest", "proposal_digest"}
-        return cls(**{key: raw[key] if key in scalar else tuple(raw[key]) for key in fields})
+        return cls(raw["text"], raw["markdown"], raw["state"], raw["task_digest"], raw["proposal_digest"],
+                   tuple(raw["citation_bindings"]), tuple(raw["source_versions"]), tuple(raw["evidence_bindings"]),
+                   tuple(raw["knowledge_refs"]), tuple(raw["knowledge_mutations"]), tuple(raw["attempt_refs"]),
+                   tuple(raw["selection_receipts"]), tuple(raw["questions"]))
 
 
 def render_answer(markdown: str, sources: Any, evidence: Any) -> str:
     if not evidence:
         return markdown
-    by_id = {row["id"]: row for row in sources}
+    by_id = {(row["id"], row["revision"]): row for row in sources}
     rows = []
     for item in evidence:
-        source = by_id[item["source_id"]]
+        source = by_id[item["source_id"], item["source_revision"]]
         title = source["title"].replace("\n", " ").replace("[", "").replace("]", "")
         rows.append(f"[{item['label']}] {title} — {source['url']} "
                     f"(source {source['content_hash']}, {item['start']}:{item['end']})")

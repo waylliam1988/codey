@@ -10,11 +10,14 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codey.knowledge.model import canonical_json
 from codey.research.issues import ResearchIssuePayload
 from codey.research.task_requirements import coverage_requirements, task_requirements
+
+if TYPE_CHECKING:
+    from codey.research.answer_contract import AnswerScope
 
 
 def digest(value: Any) -> str:
@@ -179,7 +182,7 @@ class ResearchScope:
         return payload
 
     @classmethod
-    def from_payload(cls, raw: Any) -> ResearchScope:
+    def from_payload(cls, raw: Any) -> ResearchScope | AnswerScope:
         from codey.research.answer_contract import ANSWER_SCOPE_VERSION, AnswerScope
 
         if isinstance(raw, dict) and raw.get("schema_version") == ANSWER_SCOPE_VERSION:
@@ -228,7 +231,14 @@ class ResearchScope:
             submission_mode=raw.get("submission_mode", "select"))
 
 
-def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None = None) -> ResearchScope | None:
+def _local_repair_scope(raw: Any) -> ResearchScope:
+    restored = ResearchScope.from_payload(raw) if isinstance(raw, dict) else raw
+    if not isinstance(restored, ResearchScope):
+        raise ValueError("local research repair requires a local scope")
+    return restored
+
+
+def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None = None) -> ResearchScope | AnswerScope | None:
     from codey.research.answer_contract import answer_scope, whole_research
 
     if whole_research(session):
@@ -241,7 +251,7 @@ def current_scope(session: Any, *, repair: dict[str, Any] | ResearchScope | None
     replaces = ""
     repair_issue_json = ""
     if repair is not None:
-        restored = ResearchScope.from_payload(repair) if isinstance(repair, dict) else repair
+        restored = _local_repair_scope(repair)
         old = answers.get(restored.unit_ref)
         if restored.plan_digest != digest(plan) or old is None:
             raise ValueError("repair scope has no original selection")
@@ -406,7 +416,7 @@ def submission(session: Any, ledger: Any, scope: ResearchScope | None, args: dic
     if scope is None:
         raise ValueError("submit_research_answer requires an original frozen research scope")
     actual = current_scope(session, repair=scope if scope.replaces else None)
-    if actual is None or (actual.plan_digest, actual.unit_ref, actual.replaces) != (scope.plan_digest, scope.unit_ref, scope.replaces):
+    if not isinstance(actual, ResearchScope) or (actual.plan_digest, actual.unit_ref, actual.replaces) != (scope.plan_digest, scope.unit_ref, scope.replaces):
         raise ValueError("local submission scope is stale")
     validate_scope_call(scope, "submit_research_answer", args)
     inline = submission_finding(scope, args)
@@ -540,4 +550,5 @@ def repair_scope(session: Any, ledger: Any, store: Any, issue: ResearchIssuePayl
     basis = answers[unit["unit_ref"]]["submission_id"]
     seed = ResearchScope(2, digest(plan), unit["question_ref"], unit["unit_ref"], unit["question"], unit["target"],
                          tuple(unit["task_refs"]), (), (), basis, canonical_json(issue) if issue else "")
-    return current_scope(session, repair=seed)
+    restored = current_scope(session, repair=seed)
+    return _local_repair_scope(restored) if restored is not None else None

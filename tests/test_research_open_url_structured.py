@@ -124,8 +124,8 @@ def test_research_tool_output_is_window_plus_receipt_only() -> None:
 
 @pytest.mark.usefixtures("public_source_dns")
 def test_search_read_keeps_leading_condition_and_resumes_before_clipped_tail():
-    from codey.research.passages import restore_passages
     from codey.research.ledger import ResearchLedger
+    from codey.research.passages import restore_passages
     from codey.research.source_search import search_text
 
     prefix = "Background material. " * 60 + "\n\n"

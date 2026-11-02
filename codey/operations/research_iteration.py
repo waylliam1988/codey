@@ -74,7 +74,7 @@ def _persist_synthesis(tools: Any, task: str, summary: str, *, session_id: str,
             raise ValueError("whole answers require their original frozen publication effect")
         note_id = _stable_synthesis_id(run_id if projection == "initial" else run_id + ":" + projection)
         return publisher(publication_command(accepted_report, task=task, run_id=run_id, projection=projection,
-            note_id=note_id, session_id=session_id, project=project))
+            note_id=note_id, session_id=session_id, project=project, store=tools.store))
     import hashlib
 
     from codey.knowledge.archive import stable_identity

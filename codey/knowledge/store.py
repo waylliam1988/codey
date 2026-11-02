@@ -91,9 +91,8 @@ class KnowledgeStore:
                 changes.capture_content(rel, previous[0].to_markdown() if previous else None)
                 if previous and previous[1] != rel:
                     changes.capture_content(previous[1], previous[0].to_markdown())
-            self.documents.write(note, rel)
+            revision = self.documents.write(note, rel)
             if projection_refs:
-                revision = self.documents.get(note.id)[2]
                 self.index._read_conn().executemany("INSERT OR IGNORE INTO note_knowledge_refs VALUES(?,?,?,?)",
                     [(note.id, revision, row["target"], row["revision"]) for row in projection_refs])
             self._index_body_links(note)

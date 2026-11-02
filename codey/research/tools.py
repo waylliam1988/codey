@@ -233,7 +233,8 @@ class ResearchTools:
             lines.append(f"[{row['type']}] {row['title']} (id={row['id']}, {status}; legacy document, verify evidence)\n   {snippet}".rstrip())
         return ResearchToolOutput("\n".join(lines), ok=True)
 
-    def knowledge_read(self, note_id: str, *, revision: int | None = None, question_ref: str = "") -> ResearchToolOutput:
+    def knowledge_read(self, note_id: str, *, revision: int | None = None, question_ref: str = "",
+                       offset: int = 0, limit: int = 6000) -> ResearchToolOutput:
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         binding = self.ledger.references.get(note_id)
@@ -245,6 +246,13 @@ class ResearchTools:
         if version is not None:
             if not KnowledgeAccess(self.project, self.session_id, self.store.owner_id).allows(version):
                 return ResearchToolOutput("ERROR: knowledge scope mismatch", ok=False)
+            if version.value.kind in {"source", "evidence"}:
+                from codey.research.knowledge_materials import read_material
+
+                try:
+                    return read_material(self, version, offset=offset, limit=limit)
+                except (ValueError, TypeError, KeyError) as exc:
+                    return ResearchToolOutput(f"ERROR: {exc}", ok=False)
             payload = version.to_dict()
             payload["content_complete"] = len(version.value.content) <= 12000
             payload["content"] = version.value.content[:12000]
@@ -377,6 +385,7 @@ class ResearchTools:
                       schema_version: int = 1) -> ResearchToolOutput:
         from codey.research.questions import question_plan
 
+        observation: dict[str, Any]
         try:
             if schema_version in {2, 3, 4}:
                 from codey.research.plan_contract import compact_plan
@@ -392,7 +401,7 @@ class ResearchTools:
                     "next": "Read the original sources for the current question, then explicitly submit its supported answer or gap."}),
                     read_observation=observation, ok=True)
             planned = question_plan(questions, self.ledger.questions)
-            observation: dict[str, Any] = {"questions": list(planned)}
+            observation = {"questions": list(planned)}
             if question_details is not None:
                 from codey.research.local_scope import question_details as validate_details
 

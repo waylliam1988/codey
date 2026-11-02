@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from codey.knowledge.model import KnowledgeReference, canonical_json
+from codey.research.answer_report import AnswerReport
 from codey.research.evidence_view import ResolvedReference, resolve_selected_references
 from codey.research.issues import ResearchIssue
 from codey.research.ledger import ResearchLedger
@@ -54,8 +55,8 @@ class FindingReport:
         return {**payload, "compilation_digest": _digest(payload)}
 
     @classmethod
-    def from_payload(cls, raw: Any) -> FindingReport:
-        from codey.research.answer_report import REPORT_SCHEMA, AnswerReport
+    def from_payload(cls, raw: Any) -> FindingReport | AnswerReport:
+        from codey.research.answer_report import REPORT_SCHEMA
 
         if isinstance(raw, dict) and raw.get("schema") == REPORT_SCHEMA:
             return AnswerReport.from_payload(raw)
@@ -75,6 +76,9 @@ class FindingReport:
             tuple(body["coverage"]), body["reference_metadata"], tuple(body["source_versions"]),
             tuple(body["paragraph_bindings"]), body["proposal_digest"], tuple(body["questions"]), tuple(body["evidence_bindings"]),
             tuple(body["open_questions"]), tuple(body.get("selection_receipts", ())))
+
+
+ResearchReport = FindingReport | AnswerReport
 
 
 def validate_report_bindings(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...]) -> None:

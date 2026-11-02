@@ -11,6 +11,27 @@ from codey.research.answer_contract import digest
 from codey.research.passages import passage_ref
 
 
+def archive_scope(store: Any, *, project: str, session_id: str,
+                  versions: Any = ()) -> tuple[str, str]:
+    """Inherit restricted material; otherwise retain research for its owner.
+
+    A session is provenance, not the default owner of durable research. Explicit
+    session-scoped material stays private; global material stays globally readable.
+    """
+    from codey.knowledge.recall import KnowledgeAccess
+
+    restricted = set()
+    for version in versions:
+        if version is None or not KnowledgeAccess(project, session_id, store.owner_id).allows(version):
+            raise ValueError("selected stored material is missing or inaccessible")
+        if version.value.scope != "global":
+            restricted.add((version.value.scope, version.value.scope_id))
+    if len(restricted) > 1:
+        raise ValueError("selected material combines incompatible restricted scopes")
+    return next(iter(restricted)) if restricted else (
+        ("project", project) if project else ("personal", store.owner_id))
+
+
 def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, project: str,
                      session_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     """No writes. Every object is selected by an explicit inline citation.
@@ -18,9 +39,13 @@ def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, pro
     Use each immutable ReadPassage, never the ledger's latest view of its URL.
     Whole answers use evidence directly; no model claims are manufactured here.
     """
-    scope, owner = ("project", project) if project else ("session", session_id) if session_id else ("global", "")
+    selected = {row["label"]: row["passage_ref"] for row in submission["citations"]}
+    versions = [store.repository.read(*pin) for ref in selected.values()
+                if (passage := ledger.read_passages.get(ref)) is not None
+                for pin in (passage.source_version, passage.evidence_version) if pin is not None]
+    scope, owner = archive_scope(store, project=project, session_id=session_id, versions=versions)
     mutations: dict[str, KnowledgeMutation] = {}
-    sources: dict[str, dict[str, Any]] = {}
+    sources: dict[tuple[str, int], dict[str, Any]] = {}
     bindings = []
 
     def pinned(value: KnowledgeObject) -> KnowledgeReference:
@@ -35,10 +60,10 @@ def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, pro
         mutations[value.id] = KnowledgeMutation(value)
         return KnowledgeReference(value.id, 1, "uses")
 
-    selected = {row["label"]: row["passage_ref"] for row in submission["citations"]}
     for label, ref in selected.items():
         passage = ledger.read_passages.get(ref)
-        if passage is None or ref != passage_ref(passage.source.final_url, passage.source.text_hash, passage.start, passage.end):
+        if passage is None or ref != passage_ref(passage.source.final_url, passage.source.text_hash, passage.start, passage.end,
+                source_version=passage.source_version, evidence_version=passage.evidence_version):
             raise ValueError("selected evidence lost its original read passage")
         source = passage.source
         source_id = stable_identity("source", scope, owner, source.final_url, source.text_hash)
@@ -46,19 +71,37 @@ def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, pro
             status="active", scope=scope, scope_id=owner,
             provenance={"url": source.final_url, "content_hash": source.text_hash, "retrieved_at": source.retrieved_at,
                         "quality": source.quality.to_dict(), "independence": "unknown",
-                        "content_kind": source.content_kind, "truncated": source.truncated})
-        source_ref = pinned(value)
+                        "content_kind": source.content_kind, "truncated": source.truncated,
+                        "pages": [{"number": number, "text": text} for number, text in passage.pages]})
+        if passage.source_version:
+            stored = store.repository.read(*passage.source_version)
+            if (stored is None or stored.value.kind != "source" or stored.value.content != passage.source_text
+                    or stored.value.provenance.get("url") != source.final_url):
+                raise ValueError("read source differs from its pinned knowledge version")
+            source_id = stored.value.id
+            source_ref = KnowledgeReference(source_id, stored.revision, "uses")
+        else:
+            source_ref = pinned(value)
         old = store.repository.read(source_id, source_ref.revision)
-        sources[source_id] = {"id": source_id, "revision": source_ref.revision, "url": source.final_url,
+        sources[source_id, source_ref.revision] = {"id": source_id, "revision": source_ref.revision, "url": source.final_url,
             "title": source.title, "content_hash": source.text_hash,
-            "retrieved_at": old.value.provenance["retrieved_at"] if old else source.retrieved_at,
+            "retrieved_at": old.value.provenance.get("retrieved_at", source.retrieved_at) if old else source.retrieved_at,
             "quality": source.quality.to_dict()}
         locator = "passage:" + ref
         evidence_id = stable_identity("evidence", source_id, passage.excerpt, str(passage.page), locator)
         evidence = KnowledgeObject(evidence_id, "evidence", passage.excerpt, "observed_result", title=source.title,
             status="active", scope=scope, scope_id=owner,
-            references=(replace(source_ref, relation="from_source"),), provenance={"page": passage.page, "locator": locator})
-        evidence_ref = pinned(evidence)
+            references=(replace(source_ref, relation="from_source"),),
+            provenance={"page": passage.page, "locator": locator, "start": passage.start, "end": passage.end})
+        if passage.evidence_version:
+            stored = store.repository.read(*passage.evidence_version)
+            if (stored is None or stored.value.kind != "evidence" or stored.value.content != passage.excerpt
+                    or replace(source_ref, relation="from_source") not in stored.value.references):
+                raise ValueError("read evidence differs from its pinned knowledge version")
+            evidence_id = stored.value.id
+            evidence_ref = KnowledgeReference(evidence_id, stored.revision, "uses")
+        else:
+            evidence_ref = pinned(evidence)
         bindings.append({"label": label, "passage_ref": ref, "evidence_id": evidence_id,
             "evidence_revision": evidence_ref.revision, "source_id": source_id, "source_revision": source_ref.revision,
             "excerpt": passage.excerpt, "excerpt_digest": digest(passage.excerpt), "page": passage.page,
@@ -70,7 +113,7 @@ def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, pro
 
 
 def publication_command(report: Any, *, task: str, run_id: str, projection: str,
-                        note_id: str, session_id: str, project: str) -> dict[str, Any]:
+                        note_id: str, session_id: str, project: str, store: Any) -> dict[str, Any]:
     """The original publication command owns all writes, including its one answer."""
     from dataclasses import asdict
 
@@ -81,7 +124,12 @@ def publication_command(report: Any, *, task: str, run_id: str, projection: str,
     report = AnswerReport.from_payload(report.to_payload())
     if report.task_digest != digest(task):
         raise ValueError("publication task differs from the submitted answer")
-    scope, owner = ("project", project) if project else ("session", session_id) if session_id else ("global", "")
+    pending = {row["value"]["id"]: KnowledgeObject.from_dict(row["value"]) for row in report.knowledge_mutations}
+    from codey.knowledge.model import KnowledgeVersion
+
+    versions = [KnowledgeVersion(pending[row["id"]], row["revision"], "", "") if row["id"] in pending else
+                store.repository.read(row["id"], row["revision"]) for row in report.knowledge_refs]
+    scope, owner = archive_scope(store, project=project, session_id=session_id, versions=versions)
     references = tuple(KnowledgeReference(row["id"], row["revision"], "uses") for row in report.knowledge_refs)
     note = KnowledgeNote.create(type="synthesis", title=synthesis_title(task), body=report.text,
         tags=["research", *([f"session:{session_id}"] if session_id else [])],

@@ -383,6 +383,9 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
     session.research_questions = ()
     tools.ledger.questions = ()
     session.max_turns = 7
+    # This scenario exercises the frozen v1 finding/report contract. New
+    # entries use compact registration, which requires a different script.
+    monkeypatch.setattr("codey.research.plan_contract.compact_plan_spec", lambda spec, task: spec)
     monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *a, **k: native)
 
     class Provider:

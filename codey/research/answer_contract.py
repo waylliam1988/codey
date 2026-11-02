@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 from typing import Any
 
 from codey.knowledge.model import canonical_json
@@ -21,6 +21,7 @@ READ_BUDGET = 18000
 MAX_ANSWER_CHARACTERS = 64000
 ANSWER_STATES = ("answered", "partial", "unresolved")
 ANSWER_TOOLS = ("web_search", "open_url", "open_result", "reopen_source", "open_hit", "source_search",
+                "knowledge_search", "knowledge_read", "knowledge_commit",
                 "read_tool_result", "submit_research_answer", "ask_user")
 
 ANSWER_GUIDANCE = (
@@ -41,6 +42,9 @@ ANSWER_GUIDANCE = (
     "Your next response must invoke a tool: acquire evidence if useful and permitted, otherwise call "
     "submit_research_answer with markdown containing the complete answer and state=answered/partial/unresolved. "
     "Put the answer directly in the tool arguments; the application publishes that exact submission."
+    " Historical search hits are leads: knowledge_read pins source/evidence versions into the same eN channel. "
+    "Optional knowledge_commit can explicitly accumulate or revise candidate claims, conditions and inferences "
+    "with exact evidence references; it is never required for answer delivery and cannot publish an answer."
 )
 
 
@@ -74,7 +78,8 @@ class AnswerScope:
         return "document"
 
     def to_payload(self) -> dict[str, Any]:
-        return json.loads(canonical_json(asdict(self)))
+        return {"task_digest": self.task_digest, "aliases": [list(row) for row in self.aliases],
+                "attempt_refs": list(self.attempt_refs), "schema_version": self.schema_version}
 
     @classmethod
     def from_payload(cls, raw: Any) -> AnswerScope:
@@ -136,7 +141,7 @@ def citation_occurrences(markdown: str) -> list[dict[str, Any]]:
     masked = re.sub(r"(?ms)^([ \t]*)(`{3,}|~{3,})[^\n]*\n.*?^\1\2[^\n]*(?:\n|$)",
                     lambda match: " " * len(match[0]), markdown)
     masked = re.sub(r"(`+)([^`\n]*?)\1", lambda match: " " * len(match[0]), masked)
-    rows = []
+    rows: list[dict[str, Any]] = []
     for match in re.finditer(r"(?<!\\)\[(e[0-9][^\]\n]*)\](?!\()", masked):
         labels = re.split(r"\s*[,，]\s*", match[1])
         if any(re.fullmatch(r"e[1-9][0-9]*", label) is None for label in labels):
@@ -196,6 +201,15 @@ def answer_spec(spec: Any, scope: AnswerScope) -> Any:
             example.get("args", {}).pop("question_ref", None)
             examples.append(canonical_json(example))
         description = spec.description.split(" Select question_ref=")[0]
+        if spec.name == "knowledge_commit":
+            from codey.toolchain.tool_spec import thaw_schema_value
+
+            parameters = thaw_schema_value(parameters)
+            parameters["changes"]["items"]["properties"]["value"]["properties"]["kind"]["enum"] = [
+                "claim", "inference", "question", "entity", "observation"]
+            description += (" For this whole research task, only explicitly authored claims, inferences, questions, "
+                            "entities and observations are allowed. Source/evidence/answer publication belongs to "
+                            "the original answer transaction. Optional accumulation never certifies interpretation.")
         return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()),
             required=tuple(k for k in spec.required if k != "question_ref"), json_examples=tuple(examples), description=description))
     parameters = {"markdown": {"type": "string", "minLength": 12, "maxLength": MAX_ANSWER_CHARACTERS},

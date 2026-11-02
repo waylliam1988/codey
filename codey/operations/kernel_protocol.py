@@ -22,6 +22,7 @@ MAX_NATIVE_CALLS_PER_TURN = 8
 
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
+    from codey.research.answer_contract import AnswerScope
     from codey.research.local_scope import ResearchScope
 
 
@@ -47,7 +48,7 @@ class TurnSnapshot:
     custom_executors: tuple[tuple[str, Any], ...] = ()
     implementation_compatible: bool = True
     nested_tool_names: tuple[str, ...] = ()
-    research_scope: ResearchScope | None = None
+    research_scope: ResearchScope | AnswerScope | None = None
 
     @property
     def inventory_names(self) -> tuple[str, ...]:
@@ -220,7 +221,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: 
     allowed = controller_allowed_for_session(session)
     if not whole and session.policy.strict_research and session.task_kind == "research" and not session.research_questions:
         allowed = tuple(name for name in (allowed or ()) if name != "done")
-    from codey.research.local_scope import current_scope, registered_plan
+    from codey.research.local_scope import ResearchScope, current_scope, registered_plan
 
     scope = current_scope(session, repair=research_repair) if session.policy.strict_research and session.task_kind == "research" else None
     if not whole and registered_plan(session) is not None and session.policy.strict_research and session.task_kind == "research":
@@ -231,7 +232,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False, research_repair: 
             domain_tools.discard("save_finding")
         if scope is not None and scope.submission_mode == "inline":
             domain_tools.discard("save_finding")
-        if scope is not None and not scope.finding_refs:
+        if isinstance(scope, ResearchScope) and not scope.finding_refs:
             domain_tools.discard("save_inference")
         allowed = tuple(name for name in (allowed or ()) if name in domain_tools)
     from codey.toolchain.tool_spec import visible_tool_names_for_snapshot

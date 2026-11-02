@@ -3,7 +3,7 @@
 from typing import Any
 
 from codey.completion.contract import CompletionProof, build_completion_contract, project_completion_proof
-from codey.research.finding_report import FindingReport
+from codey.research.finding_report import FindingReport, ResearchReport
 from codey.research.identity import project_ref, sanitize_research_url_ref
 from codey.research.object_model import (
     EvidenceLocator,
@@ -17,7 +17,7 @@ from codey.research.object_model import (
 from codey.utils.refs import digest_json, digest_text, stable_ref
 
 
-def published_completion(proof: CompletionProof, compiled: FindingReport, *,
+def published_completion(proof: CompletionProof, compiled: ResearchReport, *,
                          synthesis_id: str, result_ref: str, answer_version: tuple[str, int] | None = None) -> CompletionProof:
     """Bind deterministic writer checks to its settled publication, never a model verdict."""
     from codey.completion.contract import CHECK_PASS, CompletionCheck
@@ -84,7 +84,7 @@ def validate_accepted_projection(result: Any, *, run_id: str, session_id: str, p
         raise ValueError("research history differs from its original compilation")
 
 
-def project_accepted_report(compiled: FindingReport, *, question: str, run_id: str, session_id: str,
+def project_accepted_report(compiled: ResearchReport, *, question: str, run_id: str, session_id: str,
                             project: str, synthesis_id: str) -> ResearchRecord:
     from codey.research.answer_report import AnswerReport
 

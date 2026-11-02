@@ -31,6 +31,27 @@ class ResearchContextView:
             "read_evidence": self.read_evidence, "evidence_index": self.evidence_index, "locators": self.locators})
 
 
+def read_intervals(length: int, ranges: Any) -> dict[str, Any]:
+    """Navigation derived only from actual receipts, including holes between reads."""
+    merged: list[list[int]] = []
+    for start, end in sorted(ranges):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    unread = []
+    cursor = 0
+    for start, end in merged:
+        if cursor < start:
+            unread.append([cursor, start])
+        cursor = max(cursor, end)
+    if cursor < length:
+        unread.append([cursor, length])
+    return {"read_intervals": merged, "unread_intervals": unread,
+            "first_unread_interval": unread[0] if unread else None,
+            "next_offset": unread[0][0] if unread else length}
+
+
 def read_evidence_projection(session: Any, ledger: Any, *, question_ref: str = "",
                              passage_refs: tuple[str, ...] | None = None) -> dict[str, Any]:
     """Reconstruct before-save evidence from receipt projections, without I/O.
@@ -71,15 +92,23 @@ def read_evidence_projection(session: Any, ledger: Any, *, question_ref: str = "
         locators.append({"result_id": identity, "url": url, "kind": "search_lead_not_evidence"})
     for identity, target in getattr(session, "hit_targets", {}).items():
         locators.append({"hit_id": identity, **target, "kind": "locator_not_evidence"})
+    source_views: dict[tuple[str, str], tuple[dict[str, Any], Any, str]] = {}
     for identity, url in getattr(session, "source_ids", {}).items():
         source = ledger.source_record_for_url(url)
         if source is None:
             continue
         text = ledger.source_text_for_url(url)
-        ends = [p.end for p in ledger.read_passages.values()
+        source_views[(source.final_url, source.text_hash)] = ({"source_id": identity}, source, text)
+    # Historical reads and prior versions remain navigable after a URL changes.
+    for passage in ledger.read_passages.values():
+        source_views.setdefault((passage.source.final_url, passage.source.text_hash), (
+            {"knowledge_source": list(passage.source_version)} if passage.source_version else {},
+            passage.source, passage.source_text))
+    for navigation, source, text in source_views.values():
+        ranges = [(p.start, p.end) for p in ledger.read_passages.values()
                 if (p.source.final_url, p.source.text_hash) == (source.final_url, source.text_hash)]
-        locators.append({"source_id": identity, "url": url, "source_hash": source.text_hash,
-            "available_length": len(text), "next_offset": max(ends, default=0),
+        locators.append({**navigation, "url": source.final_url, "source_hash": source.text_hash,
+            "available_length": len(text), **read_intervals(len(text), ranges),
             "sections": section_locators(text, content_kind=source.content_kind),
             "kind": "locator_not_evidence"})
     return {"packets": packets, "locators": locators}

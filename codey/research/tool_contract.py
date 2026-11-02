@@ -142,10 +142,13 @@ TOOL_CONTRACTS = {
         input_schema=object_schema({
             'id': {'type': 'string'},
             'revision': {'type': 'integer'},
+            'offset': {'type': 'integer', 'minimum': 0},
+            'limit': {'type': 'integer', 'minimum': 500, 'maximum': 12000},
         }, 'id'),
         example='{"tool":"knowledge_read","args":{"id":"<note id>"}}',
         description=("read a structured object and its pinned revision, conditions, provenance and references; "
-                     "also accepts legacy note ids. " + knowledge_read_id_guidance()),
+                     "also accepts legacy note ids. Source reads accept offset/limit for bounded pinned windows; "
+                     "source and evidence reads yield original passages for citations. " + knowledge_read_id_guidance()),
         parallel_safe=False,
     ),
     "knowledge_write": ToolContract(

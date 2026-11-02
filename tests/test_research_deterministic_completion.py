@@ -19,7 +19,7 @@ UNSUPPORTED_GAP_ANSWER = "We measured WAL on this machine: it is always 10x fast
 def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task=TASK,
          provider_factory=None, planner_enabled=False, required_checks=(), omit_requirement=False,
          unsupported_claim=False, bad_reference=False, gap_answer=None, gap_investigation=False, boundary_turn=None,
-         source_text=None, compact_planning=False):
+         source_text=None, compact_planning=False, session_id="s", run_id="r", knowledge_root=None):
     import hashlib
     import os
     from unittest.mock import patch
@@ -38,19 +38,19 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
     durable = DurableSession(SQLiteDurableStore(root / "state.sqlite"))
     if resume:
         durable.recover_scheduler_state()
-        if durable.task("r").status == "pending":
-            durable.claim_task("r")
+        if durable.task(run_id).status == "pending":
+            durable.claim_task(run_id)
     else:
-        durable.admit_input(conversation_id="s", request_id="input", task_id="r", text=task, provider_snapshot={})
-        durable.claim_task("r")
-        durable.start_task("r", state=dict(durable.task("r").state))
+        durable.admit_input(conversation_id=session_id, request_id="input", task_id=run_id, text=task, provider_snapshot={})
+        durable.claim_task(run_id)
+        durable.start_task(run_id, state=dict(durable.task(run_id).state))
     line = RuntimeMutationLine(durable=durable)
     if not resume:
-        line.accept_operation(session_id="s", run_id="r", provider_id="local", turn_budget=budget,
+        line.accept_operation(session_id=session_id, run_id=run_id, provider_id="local", turn_budget=budget,
                               max_repair_rounds=0, task_kind="research")
 
     def state():
-        return operation_from_checkpoint(durable.task("r"), "s")
+        return operation_from_checkpoint(durable.task(run_id), session_id)
 
     def log(**row):
         with (root / "calls.jsonl").open("a", encoding="utf-8") as stream:
@@ -86,7 +86,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
                 f"call-{state().writer_attempt}-{state().logical_turn}", row["tool"], row["args"]),))
 
         def send_tool_results(self, results, tools):
-            return self.send_turn("\n".join(row.user_content or row.content for row in results), tools)
+            return self.send_turn("\n".join(part for row in results for part in (row.content, row.user_content) if part), tools)
 
         def acknowledge_tool_results(self, results, tools, timeout=None):
             from codey.providers.base import AssistantTurn
@@ -125,7 +125,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
                 name, args = "done", {"report_sections": {"coverage": coverage}}
             return json.dumps({"tool": name, "args": args})
 
-    store = KnowledgeStore(root / "knowledge")
+    store = KnowledgeStore(knowledge_root or root / "knowledge")
     original_publish = store.publish_note
 
     def publish(note, *args, **kwargs):
@@ -140,7 +140,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
     if boundary:
         def committed(*_):
             position = state()
-            publications = [effect for effect in durable.effects("r")
+            publications = [effect for effect in durable.effects(run_id)
                             if effect.intent.get("tool_name") == "_publish_research_answer"]
             if publications and ((boundary == "publication_admitted" and publications[-1].settlement is None)
                                  or (boundary == "publication_receipt" and publications[-1].settlement is not None)):
@@ -154,8 +154,8 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
         search_factory=Search, run_research_advisors=None, ghost_continuity=lambda **_: None,
         managed_outputs=ManagedOutputStore(root), runtime_mutations=line)
     frame = SimpleNamespace(provider=provider_factory(Provider()) if provider_factory else Provider(),
-        provider_id="local", project_text="", trace=None, run_id="r", research_handoff="", entry_policy=policy,
-        request=SimpleNamespace(task=task, session_id="s", requested_capabilities=()))
+        provider_id="local", project_text="", trace=None, run_id=run_id, research_handoff="", entry_policy=policy,
+        request=SimpleNamespace(task=task, session_id=session_id, requested_capabilities=()))
     try:
         # This fixture archives the version-1 plan/report contract. New-plan
         # scenarios opt in below; legacy crash/replay tests keep their inputs.
@@ -163,7 +163,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
                   if not compact_planning else nullcontext())
         with legacy, patch("codey.operations.research_flow.ResearchPipelineConfig", return_value=ResearchPipelineConfig(enabled=planner_enabled)):
             result = run_research_pipeline(deps, frame, SimpleNamespace(on_event=lambda _: None), max_turns=budget,
-                build_context=lambda *a, **kw: ResearchContext(question=task, session_id="s", run_id="r", max_turns=budget))
+                build_context=lambda *a, **kw: ResearchContext(question=task, session_id=session_id, run_id=run_id, max_turns=budget))
         return result.final_result
     finally:
         store.close()

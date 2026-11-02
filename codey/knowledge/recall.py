@@ -153,7 +153,9 @@ def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_an
         lines.append("When using saved versions, include knowledge_refs:[{id:...,revision:...}] in done "
                      "to preserve the exact premises.")
     if compact:
-        lines.append("This summary is a locator. Read a matching object with knowledge_read to obtain its pinned fN before adoption.")
+        lines.append("This summary is a locator. Use knowledge_read with the exact id and revision. "
+                     "Source/evidence reads enter the original passage citation channel; claims yield pinned fN. "
+                     "An old claim or answer never substitutes for reading its original evidence.")
     for hit in hits:
         version, value = hit.version, hit.version.value
         # Clip only at presentation, leaving full content and provenance in SQLite.

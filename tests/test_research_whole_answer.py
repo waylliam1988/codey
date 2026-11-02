@@ -38,7 +38,7 @@ def test_cross_source_submission_prepares_one_atomic_archive_without_claims(tmp_
         assert AnswerReport.from_payload(report.to_payload()) == report
         mutations = [KnowledgeMutation(KnowledgeObject.from_dict(row["value"]), row["expected_revision"])
                      for row in report.knowledge_mutations]
-        answer = KnowledgeObject("answer-test", "answer", report.text, "model_inference", scope="session", scope_id="first",
+        answer = KnowledgeObject("answer-test", "answer", report.text, "model_inference", scope="personal", scope_id=store.owner_id,
             references=tuple(KnowledgeReference(row["id"], row["revision"], "uses") for row in report.knowledge_refs))
         mutations.append(KnowledgeMutation(answer))
         first = store.commit_knowledge("publication-test", mutations)

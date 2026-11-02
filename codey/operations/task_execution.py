@@ -476,7 +476,7 @@ class ExecutionDelegate:
 
     def _research_call_denial(self, call: ToolCall) -> tuple[ToolResult, bool, int | None] | None:
         from codey.operations.kernel_result import policy_denial_result
-        from codey.research.local_scope import current_scope, validate_scope_call
+        from codey.research.local_scope import ResearchScope, current_scope, validate_scope_call
         from codey.research.questions import QUESTION_BOUND_TOOLS, question_ref, requires_question_ref
 
         try:
@@ -489,7 +489,7 @@ class ExecutionDelegate:
                         raise ValueError("research scope belongs to another task")
                 else:
                     actual = current_scope(self.session, repair=scope if scope.replaces else None)
-                    if actual is None or (actual.plan_digest, actual.unit_ref, actual.replaces) != (scope.plan_digest, scope.unit_ref, scope.replaces):
+                    if not isinstance(actual, ResearchScope) or (actual.plan_digest, actual.unit_ref, actual.replaces) != (scope.plan_digest, scope.unit_ref, scope.replaces):
                         raise ValueError("research scope is stale")
                     validate_scope_call(scope, call.name, call.args)
             if call.name in QUESTION_BOUND_TOOLS:
@@ -572,8 +572,7 @@ class ExecutionDelegate:
             if name == "knowledge_read":
                 return self._read_research_knowledge(call, tools)
             if name == "knowledge_commit":
-                outcome = tools.knowledge_commit(args)
-                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
+                return self._commit_research_knowledge(call, tools)
             if name in {"knowledge_write", "save_finding", "save_inference"}:
                 return self._execute_research_write(call, tools)
             if name == "knowledge_link":
@@ -586,12 +585,25 @@ class ExecutionDelegate:
             return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
         return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
 
+    def _commit_research_knowledge(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
+        from codey.research.answer_contract import AnswerScope
+
+        if isinstance(self._research_scope, AnswerScope) and any(
+            row.get("value", {}).get("kind") not in {"claim", "inference", "question", "entity", "observation"}
+            for row in call.args.get("changes", [])
+        ):
+            raise ValueError("whole research knowledge_commit only accumulates explicit claims, inferences, "
+                             "questions, entities or observations; answer publication owns source/evidence/answer")
+        outcome = tools.knowledge_commit(call.args)
+        return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
+
     def _read_research_knowledge(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
         from codey.research.questions import question_ref
 
         args = call.args
         identity = str(args.get("id") or "")
-        outcome = tools.knowledge_read(identity, revision=args.get("revision"), question_ref=question_ref(args, tools.ledger))
+        outcome = tools.knowledge_read(identity, revision=args.get("revision"), question_ref=question_ref(args, tools.ledger),
+                                       offset=args.get("offset", 0), limit=args.get("limit", 6000))
         text = outcome.model_text
         if not outcome.ok and self._research_scope is not None:
             if identity in tools.ledger.read_passages:
@@ -602,7 +614,10 @@ class ExecutionDelegate:
                 text = ("ERROR: this id is an opened-source locator, not a stored knowledge object. "
                         "Recover its original read with read_tool_result using read_receipt_index, or use an advertised "
                         "source-reading action for more text. knowledge_read needs an exact stored id or saved/read fN.")
-        canonical = {"research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
+        canonical: dict[str, Any] = {
+            "research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
+        if outcome.ok and outcome.read_passages:
+            canonical.update(research_observation=outcome.read_observation, read_passages=list(outcome.read_passages))
         return ToolResult(ok=outcome.ok, call=call, model_text=text, canonical=canonical), outcome.ok, None
 
     def _record_research_plan(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:

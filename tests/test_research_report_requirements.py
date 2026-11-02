@@ -6,8 +6,8 @@ import pytest
 
 from codey.research.finding_report import FindingReport, compile_finding_report
 from codey.research.task_requirements import (
-    coverage_requirements,
     conclusion_characters,
+    coverage_requirements,
     report_requirements,
     task_requirements,
     validate_report_requirements,
@@ -17,8 +17,8 @@ from tests.test_research_findings import URL, answer_args, execute, setup
 
 
 def test_counting_and_length_repair_share_one_contract():
-    from codey.research.issues import ResearchIssue
     from codey.operations.kernel_prompt import _completion_followup
+    from codey.research.issues import ResearchIssue
 
     assert conclusion_characters(" 中 文 [f12]\n [2] \t") == 2
     with pytest.raises(ResearchIssue) as error:
@@ -36,8 +36,8 @@ def test_counting_and_length_repair_share_one_contract():
 @pytest.mark.usefixtures("public_source_dns")
 def test_saved_count_matches_final_compilation_and_gate_keeps_structured_issue(tmp_path):
     from codey.operations.completion_gate import evaluate
-    from tests.test_research_gate_preparation import strict_session
     from tests.test_research_findings import selection_args
+    from tests.test_research_gate_preparation import strict_session
 
     store, tools, session, delegate = setup(tmp_path)
     try:

@@ -36,7 +36,7 @@ from codey.operations.research_completion_checks import (
     strict_research_checks,
 )
 from codey.policies.requirement import RequirementEvaluation
-from codey.research.finding_report import FindingReport
+from codey.research.finding_report import ResearchReport
 from codey.research.issues import ResearchIssuePayload
 from codey.utils.refs import stable_ref
 
@@ -93,7 +93,7 @@ def _session_profile(session: Any) -> str:
     return str(getattr(session, "task_kind", "") or "").strip().lower() or "project"
 
 
-def _proof_evidence_refs(session: Any, context: Any, report: FindingReport | None = None) -> tuple[str, ...]:
+def _proof_evidence_refs(session: Any, context: Any, report: ResearchReport | None = None) -> tuple[str, ...]:
     """最终收据绑定的实际任务引用：run 身份 + 结果收据引用（refs only）。
 
     edit 引用携带工作区 revision，verification 引用携带 workspace 身份，
@@ -172,7 +172,7 @@ class GateVerdict:
     final_text: str = ""
     error_source: str = ""
     error_type: str = ""
-    research_report: FindingReport | None = None
+    research_report: ResearchReport | None = None
     research_issue: ResearchIssuePayload | None = None
 
 
