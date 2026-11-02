@@ -4,6 +4,8 @@
 
 **实施状态更新：A 已提交为 `13a756ea`。B 组合投影与后续最小导航实验均未证明整体收益，完整留档后退出活动代码；当前生产源码回到 A。C/D 暂缓，下文 B/C/D 保留为待验证设计，不能按原四批顺序自动继续。** 见 [实际实施与回测记录](research-four-batch-implementation-20261102.zh-CN.md) 和 [逐例实验数据](reports/research-navigation-experiment-20261102.json)。
 
+**后续局部实施：在 A 上仅修改 `_repair_prompt()`，完整保留缺提交动作时的原正文。** 23 项定向、98 项扩大相关测试通过；12B 八例均正式交付，三例实际修复完整带回原稿。用户确认保留；这不代表 B 或整批 C 已验收，D 继续暂缓。见 [完整正文修复实测](research-prose-repair-experiment-20261102.zh-CN.md)。上段“生产源码回到 A”描述的是此次局部实施之前的状态。
+
 源码采样记录见 [函数与指纹清单](reports/research-function-plan-baseline-20261102.json)，相应只读副本在 `.e2e-artifacts/research-function-plan-20261102/source/`。本轮仅新增设计文档、采样脚本及记录，不修改生产源码，不运行模型或改变服务状态。上一份分析中的“77 项通过”来自用户提供的另一轮审计，本轮没有重跑，不能作为本方案已通过的测试数。
 
 ## 1. 最终决策：改边界，不重写运行时

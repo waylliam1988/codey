@@ -1,0 +1,708 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-02",
+  "status": "Retain narrow repair change; no general content superiority claim",
+  "base_commit": "f16addb12e7cdb0559b56476a881433fd68c2268",
+  "identity": {
+    "runtime_id": "ea83bc1d3cc7a9095cbdfd8f48ddb55022bd65f200fb855f7ec31eb110443936",
+    "harness_digest": "c6439dd9f45456292be0c6d72f047d3b583a109910dff3dd817991b59d6a87a6",
+    "commit": "f16addb12e7cdb0559b56476a881433fd68c2268",
+    "materials": {
+      "fixtures.json": "12c36dc056d8c6044488a24b3375e05b4fdfcd2e1e9e258a9a7454f6fb418b96",
+      "wal-material.json": "6ac89c45e856905947012e8d13a47b5ed1c388562c9af76e5778599c88b05826",
+      "asyncio-material.json": "6ab5978186d03cb019c97edc79a7d76a1d4289798cb74742ee2f243b317f9e8d",
+      "material-channel.json": "45fba2765dd41b05803d08119c7f59e5cad808e216edaef007c5f18dafd9bc85"
+    }
+  },
+  "control_identities": {
+    "batch-a": {
+      "runtime_id": "dd0596557c361f6d907e4ad1de1b1ca338fec296f3363072205304231c47327b",
+      "harness_digest": "c6439dd9f45456292be0c6d72f047d3b583a109910dff3dd817991b59d6a87a6",
+      "commit": "751c6f461b889cad07cc6ebada99df7d80b3fa93",
+      "materials": {
+        "fixtures.json": "12c36dc056d8c6044488a24b3375e05b4fdfcd2e1e9e258a9a7454f6fb418b96",
+        "wal-material.json": "6ac89c45e856905947012e8d13a47b5ed1c388562c9af76e5778599c88b05826",
+        "asyncio-material.json": "6ab5978186d03cb019c97edc79a7d76a1d4289798cb74742ee2f243b317f9e8d",
+        "material-channel.json": "45fba2765dd41b05803d08119c7f59e5cad808e216edaef007c5f18dafd9bc85"
+      }
+    },
+    "a-control-seed75": {
+      "runtime_id": "099be567374ab17f70886479a2b3968f586b6c733bd7720486587da95ad43bea",
+      "harness_digest": "c6439dd9f45456292be0c6d72f047d3b583a109910dff3dd817991b59d6a87a6",
+      "commit": "13a756ea0b0ab16ab21a07277b861b39781a82ee",
+      "materials": {
+        "fixtures.json": "12c36dc056d8c6044488a24b3375e05b4fdfcd2e1e9e258a9a7454f6fb418b96",
+        "wal-material.json": "6ac89c45e856905947012e8d13a47b5ed1c388562c9af76e5778599c88b05826",
+        "asyncio-material.json": "6ab5978186d03cb019c97edc79a7d76a1d4289798cb74742ee2f243b317f9e8d",
+        "material-channel.json": "45fba2765dd41b05803d08119c7f59e5cad808e216edaef007c5f18dafd9bc85"
+      }
+    }
+  },
+  "production_scope": "Only kernel_prompt._repair_prompt: full normalized native whole-answer completed prose derived from original reply; real submit still required. No runtime, transitions, gates, publication, budgets or navigation changes.",
+  "summary": {
+    "cases": 8,
+    "deliveries": 8,
+    "requests": 22,
+    "control_deliveries": 8,
+    "control_requests": 21,
+    "repair_cases": 3,
+    "complete_draft_roundtrips": 3,
+    "byte_identical_submissions": 1,
+    "no_repair_cases": 5,
+    "proxy_failures_retained": 3
+  },
+  "tests": {
+    "targeted": {
+      "passed": 23,
+      "seconds": 18.09,
+      "command": "python -m pytest -q tests/test_research_full_prose_repair.py tests/test_research_repair_and_navigation.py tests/test_kernel_protocol_repair_keeps_snapshot.py"
+    },
+    "expanded": {
+      "passed": 98,
+      "seconds": 60.66,
+      "command": "python -m pytest -q tests/test_research_whole_kernel.py tests/test_research_whole_answer.py tests/test_research_long_term_loop.py tests/test_native_final_answer_protocol_repair.py tests/test_kernel_json_syntax_repair.py tests/durable/test_prepared_provider_request.py tests/test_kernel_receipt_integrity.py tests/test_research_convergence_compatibility.py"
+    },
+    "ruff": "passed",
+    "diff_check": "passed; CRLF normalization warning only",
+    "full_pytest": false,
+    "fixture_corrections": [
+      "Use AnswerReport.markdown rather than nonexistent submission field",
+      "Bind fixture ApiProvider context to session s for cold recovery"
+    ],
+    "production_guards_weakened_for_tests": false
+  },
+  "limitations": [
+    "Small repeatedly used development fixtures; native call ids/sampling can vary despite seed.",
+    "Five direct-submit cases do not exercise the new branch; do not attribute their content to the repair change.",
+    "Full failed prose preservation does not certify content or guarantee unchanged final submission.",
+    "Three connection-aborted proxy events retained; all 22 admitted generations have responses and all eight runs publish.",
+    "Cross-source 24h TTL historical rubric was not directly requested; no posthoc exemption."
+  ],
+  "artifacts": {
+    "experiment-plan.json": {
+      "path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\experiment-plan.json",
+      "sha256": "3efaa38ae7bb44b259a625d5dfd501a233224d01e7bdd42cf1cb994913f0dd12"
+    },
+    "experiment-source.json": {
+      "path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\experiment-source.json",
+      "sha256": "8fcd134c204b239077b10081f8f9b66906499d24ff0e8581a53ca9e7e0089279"
+    },
+    "matrix.json": {
+      "path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\matrix.json",
+      "sha256": "a8b601666f4981acf419bf6775ac126de8fa2ce8416e9eb4cbdcb5fdafa6fa1e"
+    },
+    "source-manifest.json": {
+      "path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\source-manifest.json",
+      "sha256": "c2bd9faa67992e3374b5e1af3d25d96315e87368da5638d3b3e3b5959b709b8f"
+    },
+    "tracked.patch": {
+      "path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\tracked.patch",
+      "sha256": "4cf900b49bba3413310e1bf1e8f445ddbae24963ab8158fcf311c501f23ba838"
+    }
+  },
+  "records": [
+    {
+      "batch": "prose-repair-only",
+      "case": "asyncio_synthesis",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 2,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "response_turns": [
+        {
+          "index": 1,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst"
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "text": "",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "args": {
+                "markdown": "### asyncio.gather 研究报告\n\n基于 Python 3.12.7 官方材料，对 `asyncio.gather` 的研究结果如下：\n\n**1. 默认 `return_exceptions=False` 时，一个子任务抛异常的影响**\n*   **异常传播**：第一个抛出的异常会立即传播到等待 `gather()` 的任务中 [e1]。\n*   **其余任务状态**：其他处于 `aws` 序列中的 awaitable **不会被自动取消**，它们会继续运行 [e1]。\n\n**2. `return_exceptions=True` 的改变与结果排列**\n*   **改变内容**：当设置为 `True` 时，异常被视为成功的结果，并被聚合到结果列表中 [e1]。\n*   **排列顺序**：结果列表中的值顺序与 `aws` 中 awaitable 的**输入顺序**一致，而不是完成顺序 [e1]。\n\n**3. 取消 `gather` 本身与取消其中一个 Task/Future 的区别**\n*   **取消 `gather` 本身**：如果 `gather()` 被取消，所有尚未完成的提交 awaitable 都会被**取消** [e1]。\n*   **取消其中一个 Task/Future**：如果 `aws` 序列中的某个 Task 或 Future 被取消，它被视为抛出了 `CancelledError`。在这种情况下，**`gather()` 调用本身不会被取消** [e1]。\n*   **目的**：这种区分是为了防止取消其中一个提交的 Task/Future 导致其他 Task/Future 也被连带取消 [e1]。\n*   **边界条件**：\n    *   如果 `return_exceptions` 为 `False`，在 `gather` 传播异常后（即标记为 done 后），再调用 `gather.cancel()` 不会取消其余任务 [e1]。\n    *   如果 `gather` 本身被取消，无论 `return_exceptions` 是什么值，取消都会传播 [e1]。\n\n**4. 捕获异常后调用 `gather.cancel()` 是否必然取消其余任务？**\n*   **结论**：**不一定**。\n*   **原因**：如果 `return_exceptions` 为 `False`，`gather` 在传播异常后就已经被标记为 done（完成）了。此时调用 `gather.cancel()` 不会取消其余任务 [e1]。\n\n**5. `TaskGroup` 与 `gather` 在子任务异常取消上的区别及速度证明**\n*   **取消保证区别**：如果一个任务（或由任务调度的子任务）抛出异常，`TaskGroup` 会取消剩余的已调度任务，而 `gather` 则不会 [e1]。\n*   **速度证明**：材料中**没有**足够证据证明 `TaskGroup` 总是比 `gather` 更快。材料仅强调了 `TaskGroup` 在处理嵌套子任务时提供了更强的安全保证 [e1]。\n\n**状态**：answered",
+                "state": "answered"
+              }
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\runs\\asyncio_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "627be3679b257e0351833b1a3f69af1a9730e2bc41a9aec3fc1368512a976220",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\wire\\asyncio_synthesis-74-codey.jsonl",
+      "wire_sha256": "684ae565090c6e0e1eaee733d74a042b6cf292dcba7cd8241f07a28103025888",
+      "source_identity_sha256": "8fcd134c204b239077b10081f8f9b66906499d24ff0e8581a53ca9e7e0089279",
+      "proxy_failures": [],
+      "repairs": [],
+      "review": {
+        "issues": [],
+        "strict_content_pass": true,
+        "note": "No repair branch triggered; content result is not attributable to this change."
+      }
+    },
+    {
+      "batch": "prose-repair-only",
+      "case": "asyncio_synthesis",
+      "seed": 75,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 2,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "response_turns": [
+        {
+          "index": 1,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/asyncio-task.rst"
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "text": "",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "args": {
+                "markdown": "### 关于 `asyncio.gather` 的研究报告\n\n基于 Python 3.12.7 官方材料，对 `asyncio.gather` 的研究结果如下：\n\n#### 1. 默认 `return_exceptions=False` 时，子任务抛异常的影响\n*   **异常传播**：当 `return_exceptions` 为 `False`（默认值）时，第一个抛出的异常会立即传播给等待 `gather()` 的任务 [e1]。\n*   **其余任务状态**：其他处于 `aws` 序列中的 awaitable **不会被自动取消**，它们会继续运行 [e1]。\n\n#### 2. `return_exceptions=True` 的改变与结果排列\n*   **改变内容**：当 `return_exceptions` 为 `True` 时，异常被视为成功结果处理，并被聚合到结果列表中 [e1]。\n*   **排列顺序**：结果列表中的值顺序与 `aws` 中 awaitable 的**输入顺序**相对应，而不是完成顺序 [e1]。\n\n#### 3. 取消 `gather` 本身与取消其中一个 Task/Future 的区别\n*   **取消 `gather` 本身**：如果 `gather()` 被取消，所有尚未完成的提交 awaitable 都会被**取消** [e1]。\n*   **取消其中一个 Task/Future**：如果 `aws` 序列中的某个 Task 或 Future 被取消，它被视为抛出了 `CancelledError`。在这种情况下，**`gather()` 调用本身不会被取消** [e1]。\n*   **边界情况**：\n    *   **保留未完成任务**：当 `gather` 传播异常后（`return_exceptions=False`），如果此时 `gather` 已被标记为完成（done），那么调用 `gather.cancel()` 不会取消任何其他 awaitable [e1]。\n    *   **CancelledError**：取消单个 Task/Future 不会导致 `gather` 整体取消，目的是防止一个任务的取消导致其他任务被意外取消 [e1]。\n    *   **return_exceptions 的影响**：无论 `return_exceptions` 是什么值，如果 `gather` 本身被取消，取消都会传播 [e1]。\n\n#### 4. 捕获异常后调用 `gather.cancel()` 是否必然取消其余任务？\n*   **结论**：**不一定**。\n*   **原因**：如果 `gather` 在传播异常后已经被标记为“完成”（done），那么此时调用 `gather.cancel()` 就不会取消其余任务 [e1]。\n\n#### 5. `TaskGroup` 与 `gather` 在子任务异常处理上的区别\n*   **取消保证**：如果一个任务（或由任务调度的子任务）抛出异常，`TaskGroup` 会取消剩余的已调度任务，而 `gather` 则不会 [e1]。\n*   **是否证明 `TaskGroup` 总是更快？**：材料中**没有明确证明** `TaskGroup` 总是更快。材料仅指出 `TaskGroup` 在处理嵌套子任务时提供了“更强的安全保证”（stronger safety guarantees）[e1]。\n\n**状态**：answered\n",
+                "state": "answered"
+              }
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\runs\\asyncio_synthesis-75-codey\\research-report.txt",
+      "report_sha256": "a6726c7de29fbfec2d683515f869fce2e024392a9f952789c3d4ed1c8e589048",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\wire\\asyncio_synthesis-75-codey.jsonl",
+      "wire_sha256": "d9c84d4e1961c88fa6615c1c8e30a66dbca8c9421783f850b4d647bb5ec414b1",
+      "source_identity_sha256": "8fcd134c204b239077b10081f8f9b66906499d24ff0e8581a53ca9e7e0089279",
+      "proxy_failures": [],
+      "repairs": [],
+      "review": {
+        "issues": [],
+        "strict_content_pass": true,
+        "note": "No repair branch triggered; content result is not attributable to this change."
+      }
+    },
+    {
+      "batch": "prose-repair-only",
+      "case": "cross-source-export",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/harbor-api"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/birch-deployment"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "response_turns": [
+        {
+          "index": 1,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "url": "https://example.org/frozen-research/harbor-api"
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "url": "https://example.org/frozen-research/birch-deployment"
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "text": "",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "args": {
+                "markdown": "### Birch 部署中的 Harbor v2 导出分析\n\n根据提供的材料，针对您的问题回答如下：\n\n**1. 谁可以在 Birch 发起 Harbor v2 导出？需要满足哪些条件？**\n在 Birch 部署中，发起 Harbor v2 导出需要满足以下条件：\n*   **身份要求**：必须拥有**已认证的会话**（authenticated session）[e1]。\n*   **角色要求**：必须同时满足以下两个角色之一（**替代条件**）：\n    *   **审计员角色**（auditor role）[e1]；\n    *   **项目所有者角色**（project-owner role）[e1]。\n*   **权限范围限制**：在 Birch 中，项目所有者的权限仅适用于该特定项目，而非所有项目 [e2]。\n*   **时间窗口限制**：在 Birch 的**维护窗口**期间，即使是已认证的审计员或所有者，也会被拒绝新的导出请求 [e2]。\n\n**2. 202 回执能否证明可以使用导出结果？使用前还要检查什么？**\n*   **结论**：202 回执**不能**证明可以使用导出结果 [e1]。\n*   **原因**：202 回执仅意味着请求已被排队（queued），并不代表导出已完成 [e1]。\n*   **使用前检查条件**：在结果可以使用前，必须同时满足以下两个条件：\n    1.  状态为“就绪”（status is ready）[e1]。\n    2.  下载的校验和（checksum）已通过验证 [e1]。\n\n**3. Ticket 到期后能否断定导出失败？**\n*   **结论**：**不能**仅凭 Ticket 到期就断定导出失败 [e1]。\n*   **原因**：规范并未定义 Ticket 到期意味着底层导出的成功还是失败 [e1]。此外，在 Birch 中，移除到期的 Ticket 仅是元数据清理，Ticket 记录本身无法建立导出是否完成的结论 [e2]。\n\n**状态**：answered",
+                "state": "answered"
+              }
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\runs\\cross-source-export-74-codey\\research-report.txt",
+      "report_sha256": "dc4740ad8427a56a31e42b58f6ecb15b6c35242fa1ca4f2bd8502053c27488e7",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\wire\\cross-source-export-74-codey.jsonl",
+      "wire_sha256": "3b14ab77e4128db57fb29167291a79962f0630300257c00739b2b43b93813eb8",
+      "source_identity_sha256": "8fcd134c204b239077b10081f8f9b66906499d24ff0e8581a53ca9e7e0089279",
+      "proxy_failures": [],
+      "repairs": [],
+      "review": {
+        "issues": [
+          "historical_rubric_24h_TTL_omitted"
+        ],
+        "strict_content_pass": false,
+        "note": "Authentication AND role OR, project restriction, maintenance denial, ready AND checksum, expiry-not-failure present. TTL was not directly asked; unchanged historical rubric retained."
+      }
+    },
+    {
+      "batch": "prose-repair-only",
+      "case": "long-recovery-manual",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "offset": 18416,
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "response_turns": [
+        {
+          "index": 1,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "url": "https://example.org/frozen-research/meridiem-manual"
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "offset": 18416,
+                "url": "https://example.org/frozen-research/meridiem-manual"
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "text": "",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "args": {
+                "markdown": "根据 Meridiem 第4版手册，相关条件的回答如下：\n\n1. **恢复请求的准入条件**：\n   恢复请求仅在“已认证的运算符（authenticated operator）”且“任务已暂停（paused job）”的情况下才被准入 [e2]。\n\n2. **恢复完成条件**：\n   在第4版中，只有当远程任务报告为“已恢复（RESTORED）”且运算符验证了“恢复产物的校验和（checksum of the restored artifact）”时，恢复才算完成 [e16]。\n\n3. **202 能否证明完成？**：\n   不能。HTTP 202 表示“已入队（queued）”，而非“已完成（completed）” [e2]。\n\n4. **回执过期时间与旧版适用性**：\n   第4版的回执在“七天后过期（expire after seven days）” [e16]。旧版的“24小时寿命（edition-3 lifetime of 24 hours）”已被第4版的七天规则取代 [e16]。\n\n5. **过期是否证明恢复失败，是否会删除恢复产物？**：\n   - **是否证明失败**：过期并不确定恢复是成功还是失败 [e16]。\n   - **是否删除产物**：过期仅移除回执，并不会删除恢复出的产物（recovered artifact） [e16]。",
+                "state": "answered"
+              }
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\runs\\long-recovery-manual-74-codey\\research-report.txt",
+      "report_sha256": "cc5efe03f69374f8fdd806dd65fdb5f4fe94307a976358e1b5cf05f2f3a62aac",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\wire\\long-recovery-manual-74-codey.jsonl",
+      "wire_sha256": "f97821378945c678ffaa100084963410ce6ada4ebf367cecaa958177f3a79923",
+      "source_identity_sha256": "8fcd134c204b239077b10081f8f9b66906499d24ff0e8581a53ca9e7e0089279",
+      "proxy_failures": [],
+      "repairs": [],
+      "review": {
+        "issues": [],
+        "strict_content_pass": true,
+        "note": "No repair branch triggered; content result is not attributable to this change."
+      }
+    },
+    {
+      "batch": "prose-repair-only",
+      "case": "long-recovery-manual",
+      "seed": 75,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        },
+        {
+          "name": "open_url",
+          "args": {
+            "offset": 18416,
+            "url": "https://example.org/frozen-research/meridiem-manual"
+          }
+        }
+      ],
+      "plain_prose_turns": [],
+      "response_turns": [
+        {
+          "index": 1,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "url": "https://example.org/frozen-research/meridiem-manual"
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "offset": 18416,
+                "url": "https://example.org/frozen-research/meridiem-manual"
+              }
+            }
+          ]
+        },
+        {
+          "index": 3,
+          "text": "",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "args": {
+                "markdown": "根据 Meridiem 第4版手册，相关条件的回答如下：\n\n1. **恢复请求的准入条件**：恢复请求仅在**已认证的操作员**（authenticated operator）且**任务已暂停**（paused job）的情况下才被准入 [e2]。\n2. **恢复完成条件**：恢复仅在**远程任务报告为 RESTORED** 且**操作员验证了恢复产物的校验和**（verifies the checksum of the restored artifact）时才算完成 [e16]。\n3. **202 能否证明完成**：**不能**。HTTP 202 表示已入队（queued），而非完成 [e2]。\n4. **回执过期时间及旧版适用性**：在第4版中，回执在**7天后过期** [e16]。旧版的24小时寿命已被替换，因此**不再适用** [e2, e16]。\n5. **过期对恢复状态及产物的影响**：\n   - **能否证明恢复失败**：**不能**。过期仅移除回执，并不确定恢复是成功还是失败 [e16]。\n   - **是否会删除恢复产物**：**不会**删除恢复产物 [e16]。\n\n状态：answered",
+                "state": "answered"
+              }
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\runs\\long-recovery-manual-75-codey\\research-report.txt",
+      "report_sha256": "7885e21ae827cba9a61a716e9622b95339468ea9e2a6a0b9e6fc32e625b5c688",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\wire\\long-recovery-manual-75-codey.jsonl",
+      "wire_sha256": "8b9131176e16167997ef145869f29988d6d4aa3c6892c05f30c50f346c358632",
+      "source_identity_sha256": "8fcd134c204b239077b10081f8f9b66906499d24ff0e8581a53ca9e7e0089279",
+      "proxy_failures": [],
+      "repairs": [],
+      "review": {
+        "issues": [],
+        "strict_content_pass": true,
+        "note": "No repair branch triggered; content result is not attributable to this change."
+      }
+    },
+    {
+      "batch": "prose-repair-only",
+      "case": "rlock-direct",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/threading.rst"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "response_turns": [
+        {
+          "index": 1,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "url": "https://raw.githubusercontent.com/python/cpython/v3.12.7/Doc/library/threading.rst"
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "text": "当 `Condition.wait()` 使用多次重入的 `RLock` 时，其处理机制如下：\n\n1.  **释放锁的机制**：它并不直接使用 `RLock` 的 `release` 方法来释放锁，因为如果锁是递归多次获取的，直接调用 `release` 可能并不会完全解锁。相反，它使用 `RLock` 类的一个**内部接口**，该接口能够真正地将锁完全解锁（即使它之前被递归获取了多次）[e1]。\n2.  **重新获得锁并恢复层级**：在等待结束重新获得锁时，它使用另一个**内部接口**来恢复递归层级（recursion level）[e1]。",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "text": "",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "args": {
+                "markdown": "当 `Condition.wait()` 使用多次重入的 `RLock` 时，其处理机制如下：\n\n1.  **释放锁的机制**：它并不直接使用 `RLock` 的 `release` 方法来释放锁，因为如果锁是递归多次获取的，直接调用 `release` 可能并不会完全解锁。相反，它使用 `RLock` 类的一个**内部接口**，该接口能够真正地将锁完全解锁（即使它之前被递归获取了多次）[e1]。\n2.  **重新获得锁并恢复层级**：在等待结束重新获得锁时，它使用另一个**内部接口**来恢复递归层级（recursion level）[e1]。",
+                "state": "answered"
+              }
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\runs\\rlock-direct-74-codey\\research-report.txt",
+      "report_sha256": "83948b490f57d934b8bd749a7e53a75a33ee53a6ee03b12c5ba472dc086222ed",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\wire\\rlock-direct-74-codey.jsonl",
+      "wire_sha256": "f8395b03708e06a6faa8aeacd3eaf2e003e634476d8d9e72420ce788ff499fcd",
+      "source_identity_sha256": "8fcd134c204b239077b10081f8f9b66906499d24ff0e8581a53ca9e7e0089279",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "repairs": [
+        {
+          "response_index": 2,
+          "draft_characters": 275,
+          "full_draft_in_admitted_payload": true,
+          "draft_response_sha256": "bf070e311d77d4e3d1d2826deb790f153e82846fd7a937848d621ba513816da6",
+          "final_equals_draft": true,
+          "draft_to_submission_diff": []
+        }
+      ],
+      "review": {
+        "issues": [],
+        "strict_content_pass": true,
+        "note": "Internal release and recursion restoration preserved byte-for-byte through repair."
+      }
+    },
+    {
+      "batch": "prose-repair-only",
+      "case": "wal_synthesis",
+      "seed": 74,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://www.sqlite.org/wal.html"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "response_turns": [
+        {
+          "index": 1,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "url": "https://www.sqlite.org/wal.html"
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "text": "基于提供的 SQLite 官方材料，对 WAL（Write-Ahead Logging）的研究如下：\n\n### 1. WAL 的读写并发和单写者限制是否矛盾？分别解释机制。\n**不矛盾。** 这种“并行”与“限制”是针对不同维度的描述：\n*   **读写并发机制：** 由于写入操作只是简单地将新内容追加到 WAL 文件的末尾，且写入操作不会干扰读取操作，因此**读者不会阻塞写入者，写入者也不会阻塞读者** [e1]。这使得读取和写入可以同时进行。\n*   **单写者限制：** 尽管读写可以并行，但由于**只有一个 WAL 文件**，因此在任何给定时刻**只能有一个写入者** [e1]。\n\n### 2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。\n*   **WAL 引入版本：** 从 SQLite 版本 3.7.0 (2010-07-21) 开始提供 [e1]。\n*   **只读打开支持版本：** 从 SQLite 版本 3.22.0 (2018-01-22) 开始，Relaxed 限制，允许在只读媒体上读取 WAL 模式数据库 [e2]。\n*   **完整替代条件：** 材料中并未明确给出 WAL 完全替代回滚日志（Rollback Journal）的“完整条件”，仅提到 WAL 在大多数场景下显著更快，且提供更多并发性 [e1]。\n*   **保留或的关系：** 材料中没有明确说明 WAL 是否完全取代了回滚日志，仅将其作为一种可选的“选项”（option） [e1]。\n\n### 3. checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？\n*   **何时停止：** 当 checkpoint 达到 WAL 文件中**超过任何当前读者末端标记（end mark）的页面**时，它必须停止 [e1]。\n*   **为什么：** 因为如果不停止，checkpoint 可能会覆盖掉读者正在使用的数据库文件中的部分内容 [e1]。\n*   **进度保存在哪里：** 进度保存在 **wal-index** 中 [e1]。\n*   **以后如何继续：** checkpoint 会记住它停下的位置，并在下一次调用时从该位置继续将内容从 WAL 转移到数据库文件中 [e1]。\n\n### 4. writer 回绕复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。\n*   **writer 回绕复用 WAL 的条件：** 必须同时满足以下三个条件：\n    1.  整个 WAL 已被转移到数据库中并同步（synced）；\n    2.  没有任何读者正在使用 WAL；\n    3.  （隐含条件：发生写入操作时触发检查）[e1]。\n*   **是否为 checkpoint 转移数据的必要条件：** \n    *   **不是。** \n    *   **区分：** **Checkpoint** 是一个主动或周期性的过程，负责将 WAL 内容转移到数据库文件中（只要不被读者阻塞即可）；而 **writer 回绕** 是一个“检查并重置”的动作，它发生在写入发生时，只有当 checkpoint 已经完成了“全部转移”且“无读者占用”时，writer 才会把 WAL 回绕到开头以防止文件无限增长 [e1]。\n\n### 5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？说明证据边界。\n*   **能否证明更快：** 材料**不能**严格证明“本机”WAL 比回滚日志更快。它仅给出了一个**定性描述**：“WAL is significantly faster in most scenarios” [e1]。\n*   **是否从未做过本机测量：** 材料**没有证明**官方从未做过本机测量。材料只提供了结论（WAL 更快），并没有提供具体的测量数据、实验环境或具体的“秒/毫秒”数值。\n*   **证据边界：** 提供的材料属于**功能性描述和定性结论**，而非**定量实验数据**。它告诉用户 WAL 在大多数情况下更快，但没有提供支撑这一结论的具体实验证据（如具体的测试用例或耗时对比）。\n\n**状态：answered**",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "text": "",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "args": {
+                "markdown": "### 1. WAL 的读写并发和单写者限制是否矛盾？分别解释机制。\n**不矛盾。** 这种“并行”与“限制”是针对不同维度的描述：\n*   **读写并发机制：** 由于写入操作只是简单地将新内容追加到 WAL 文件的末尾，且写入操作不会干扰读取操作，因此**读者不会阻塞写入者，写入者也不会阻塞读者** [e1]。这使得读取和写入可以同时进行。\n*   **单写者限制：** 尽管读写可以并行，但由于**只有一个 WAL 文件**，因此在任何给定时刻**只能有一个写入者** [e1]。\n\n### 2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。\n*   **WAL 引入版本：** 从 SQLite 版本 3.7.0 (2010-07-21) 开始提供 [e1]。\n*   **只读打开支持版本：** 从 SQLite 版本 3.22.0 (2018-01-22) 开始，放宽了限制，允许在只读媒体上读取 WAL 模式数据库 [e2]。\n*   **完整替代条件：** 材料中并未明确给出 WAL 完全替代回滚日志（Rollback Journal）的“完整条件”，仅提到 WAL 在大多数场景下显著更快，且提供更多并发性 [e1]。\n*   **保留或的关系：** 材料中没有明确说明 WAL 是否完全取代了回滚日志，仅将其作为一种可选的“选项”（option） [e1]。\n\n### 3. checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？\n*   **何时停止：** 当 checkpoint 达到 WAL 文件中**超过任何当前读者末端标记（end mark）的页面**时，它必须停止 [e1]。\n*   **为什么：** 因为如果不停止，checkpoint 可能会覆盖掉读者正在使用的数据库文件中的部分内容 [e1]。\n*   **进度保存在哪里：** 进度保存在 **wal-index** 中 [e1]。\n*   **以后如何继续：** checkpoint 会记住它停下的位置，并在下一次调用时从该位置继续将内容从 WAL 转移到数据库文件中 [e1]。\n\n### 4. writer 回绕复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。\n*   **writer 回绕复用 WAL 的条件：** 必须同时满足以下三个条件：\n    1.  整个 WAL 已被转移到数据库中并同步（synced）；\n    2.  没有任何读者正在使用 WAL；\n    3.  （隐含条件：发生写入操作时触发检查）[e1]。\n*   **是否为 checkpoint 转移数据的必要条件：** \n    *   **不是。** \n    *   **区分：** **Checkpoint** 是一个主动或周期性的过程，负责将 WAL 内容转移到数据库文件中（只要不被读者阻塞即可）；而 **writer 回绕** 是一个“检查并重置”的动作，它发生在写入发生时，只有当 checkpoint 已经完成了“全部转移”且“无读者占用”时，writer 才会把 WAL 回绕到开头以防止文件无限增长 [e1]。\n\n### 5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？说明证据边界。\n*   **能否证明更快：** 材料**不能**严格证明“本机”WAL 比回滚日志更快。它仅给出了一个**定性描述**：“WAL is significantly faster in most scenarios” [e1]。\n*   **是否从未做过本机测量：** 材料**没有证明**官方从未做过本机测量。材料只提供了结论（WAL 更快），并没有提供具体的测量数据、实验环境或具体的“秒/毫秒”数值。\n*   **证据边界：** 提供的材料属于**功能性描述和定性结论**，而非**定量实验数据**。它告诉用户 WAL 在大多数情况下更快，但没有提供支撑这一结论的具体实验证据（如具体的测试用例或耗时对比）。\n\n**状态：answered**",
+                "state": "answered"
+              }
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\runs\\wal_synthesis-74-codey\\research-report.txt",
+      "report_sha256": "8c1f4d20b398714ff6a7529f8e06b1b295ecdbb31a0c20f218ec6946e83c3cee",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\wire\\wal_synthesis-74-codey.jsonl",
+      "wire_sha256": "482d4156d54efed2d581a15c025e3002d562a4c4b5e71b5145bfd5d6446460b7",
+      "source_identity_sha256": "8fcd134c204b239077b10081f8f9b66906499d24ff0e8581a53ca9e7e0089279",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "repairs": [
+        {
+          "response_index": 2,
+          "draft_characters": 1801,
+          "full_draft_in_admitted_payload": true,
+          "draft_response_sha256": "a30d02d8c551f95a49ffe789e8a4dcb8769d9c143b5f15e906ca3ab4a142bb11",
+          "final_equals_draft": false,
+          "draft_to_submission_diff": [
+            "--- first-prose",
+            "+++ real-submission",
+            "@@ -1,5 +1,3 @@",
+            "-基于提供的 SQLite 官方材料，对 WAL（Write-Ahead Logging）的研究如下：",
+            "-",
+            " ### 1. WAL 的读写并发和单写者限制是否矛盾？分别解释机制。",
+            " **不矛盾。** 这种“并行”与“限制”是针对不同维度的描述：",
+            " *   **读写并发机制：** 由于写入操作只是简单地将新内容追加到 WAL 文件的末尾，且写入操作不会干扰读取操作，因此**读者不会阻塞写入者，写入者也不会阻塞读者** [e1]。这使得读取和写入可以同时进行。",
+            "@@ -7,7 +5,7 @@",
+            " ",
+            " ### 2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。",
+            " *   **WAL 引入版本：** 从 SQLite 版本 3.7.0 (2010-07-21) 开始提供 [e1]。",
+            "-*   **只读打开支持版本：** 从 SQLite 版本 3.22.0 (2018-01-22) 开始，Relaxed 限制，允许在只读媒体上读取 WAL 模式数据库 [e2]。",
+            "+*   **只读打开支持版本：** 从 SQLite 版本 3.22.0 (2018-01-22) 开始，放宽了限制，允许在只读媒体上读取 WAL 模式数据库 [e2]。",
+            " *   **完整替代条件：** 材料中并未明确给出 WAL 完全替代回滚日志（Rollback Journal）的“完整条件”，仅提到 WAL 在大多数场景下显著更快，且提供更多并发性 [e1]。",
+            " *   **保留或的关系：** 材料中没有明确说明 WAL 是否完全取代了回滚日志，仅将其作为一种可选的“选项”（option） [e1]。",
+            " "
+          ]
+        }
+      ],
+      "review": {
+        "issues": [
+          "readonly_OR_question_misinterpreted_in_first_prose_and_submission"
+        ],
+        "strict_content_pass": false,
+        "note": "74 retains explicit cannot-prove-local-speed boundary; 75 already gets this wrong before repair. Both keep initial readonly error. Neither is a whole-answer content pass."
+      }
+    },
+    {
+      "batch": "prose-repair-only",
+      "case": "wal_synthesis",
+      "seed": 75,
+      "delivery": true,
+      "process_exit_code": 0,
+      "requests": 3,
+      "reads": [
+        {
+          "name": "open_url",
+          "args": {
+            "url": "https://www.sqlite.org/wal.html"
+          }
+        }
+      ],
+      "plain_prose_turns": [
+        2
+      ],
+      "response_turns": [
+        {
+          "index": 1,
+          "text": "",
+          "calls": [
+            {
+              "name": "open_url",
+              "args": {
+                "url": "https://www.sqlite.org/wal.html"
+              }
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "text": "基于提供的 SQLite 官方材料，研究结果如下：\n\n### 1. WAL 的读写并发和单写者限制是否矛盾？分别解释机制。\n**不矛盾。** 它们描述的是不同维度的并发能力：\n*   **读写并发机制：** 由于写入操作仅是将新内容追加到 WAL 文件的末尾，且写入操作不会干扰读者的动作，因此**读者不会阻塞写入者，写入者也不会阻塞读者** [e1]。这意味着读取和写入可以同时进行。\n*   **单写者限制机制：** 虽然读写可以并发，但由于**只有一个 WAL 文件**，因此在任何给定时刻**只能有一个写入者** [e1]。\n\n### 2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。\n*   **WAL 引入版本：** SQLite 版本 3.7.0 (2010-07-21) [e1]。\n*   **只读打开支持版本：** SQLite 版本 3.22.0 (2018-01-22) [e2]。\n*   **完整替代条件：** 材料中并未明确说明 WAL 是否完全“替代”了回滚日志，而是将其作为一种可选的“选项” [e1]。材料提到默认方法是回滚日志，而 WAL 是从 3.7.0 开始可用的新选项。\n*   **保留或的关系：** 材料并未明确说明 WAL 是否保留了回滚日志的某些功能，仅指出 WAL 在大多数场景下显著更快，并提供了更多的并发性 [e1]。\n\n### 3. checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？\n*   **何时停止：** 当 checkpoint 达到 WAL 文件中**超过任何当前读者末端标记（end mark）的页面**时，它必须停止 [e1]。\n*   **为什么：** 因为否则 checkpoint 可能会覆盖读者正在使用的数据库文件中的一部分 [e1]。\n*   **进度保存在哪里：** 进度保存在 **wal-index** 中 [e1]。\n*   **以后如何继续：** checkpoint 记录了它停下的位置，并在**下一次调用时**从该位置继续将内容从 WAL 转移到数据库中 [e1]。\n\n### 4. writer 回绕复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。\n*   **writer 回绕复用 WAL 的条件：** 必须同时满足以下三个条件：\n    1.  整个 WAL 已被转移到数据库中并同步（synced）；\n    2.  没有读者正在使用 WAL；\n    3.  写入操作发生时，writer 检查到 checkpoint 已完成上述进度 [e1]。\n*   **是否为 checkpoint 转移数据的必要条件：** **不是。**\n    *   **区分：** checkpoint 的动作是**将内容从 WAL 转移到数据库**（它可以在读者并行时受阻，但只要读者结束就能继续）；而 writer 的回绕动作是**在满足特定条件（全转移且无读者）时，将 WAL 重新回到开头**以防止文件无限增长 [e1]。\n\n### 5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？说明证据边界。\n*   **关于“更快”的证明：** 材料**可以证明** WAL 在大多数场景下显著更快 [e1]。\n*   **关于“从未做过本机测量”的证明：** 材料**无法证明**官方页面从未做过本机测量。\n*   **证据边界：** 材料给出了定性的结论（“significantly faster”），但并没有提供具体的**量化数据**（如具体的秒数、毫秒数或在特定工作负载下的对比数值）。因此，它证明了“快”这一事实，但并未提供证明“快到什么程度”或“在何种具体测量环境下快”的细节。",
+          "calls": []
+        },
+        {
+          "index": 3,
+          "text": "",
+          "calls": [
+            {
+              "name": "submit_research_answer",
+              "args": {
+                "markdown": "### 1. WAL 的读写并发和单写者限制是否矛盾？分别解释机制。\n**不矛盾。** 它们描述的是不同维度的并发能力：\n*   **读写并发机制：** 由于写入操作仅是将新内容追加到 WAL 文件的末尾，且写入操作不会干扰读者的动作，因此**读者不会阻塞写入者，写入者也不会阻塞读者** [e1]。这意味着读取和写入可以同时进行。\n*   **单写者限制机制：** 虽然读写可以并发，但由于**只有一个 WAL 文件**，因此在任何给定时刻**只能有一个写入者** [e1]。\n\n### 2. WAL 引入版本、只读打开支持版本及完整替代条件是什么？保留或的关系。\n*   **WAL 引入版本：** SQLite 版本 3.7.0 (2010-07-21) [e1]。\n*   **只读打开支持版本：** SQLite 版本 3.22.0 (2018-01-22) [e2]。\n*   **完整替代条件：** 材料中并未明确说明 WAL 是否完全“替代”了回滚日志，而是将其作为一种可选的“选项” [e1]。材料提到默认方法是回滚日志，而 WAL 是从 3.7.0 开始可用的新选项。\n*   **保留或的关系：** 材料并未明确说明 WAL 是否保留了回滚日志的某些功能，仅指出 WAL 在大多数场景下显著更快，并提供了更多的并发性 [e1]。\n\n### 3. checkpoint 与读者并行时何时停止、为什么、进度保存在哪里、以后如何继续？\n*   **何时停止：** 当 checkpoint 达到 WAL 文件中**超过任何当前读者末端标记（end mark）的页面**时，它必须停止 [e1]。\n*   **为什么：** 因为否则 checkpoint 可能会覆盖读者正在使用的数据库文件中的一部分 [e1]。\n*   **进度保存在哪里：** 进度保存在 **wal-index** 中 [e1]。\n*   **以后如何继续：** checkpoint 记录了它停下的位置，并在**下一次调用时**从该位置继续将内容从 WAL 转移到数据库中 [e1]。\n\n### 4. writer 回绕复用 WAL 的条件是什么？这些条件是否也是 checkpoint 转移数据的必要条件？区分两个动作。\n*   **writer 回绕复用 WAL 的条件：** 必须同时满足以下三个条件：\n    1.  整个 WAL 已被转移到数据库中并同步（synced）；\n    2.  没有读者正在使用 WAL；\n    3.  写入操作发生时，writer 检查到 checkpoint 已完成上述进度 [e1]。\n*   **是否为 checkpoint 转移数据的必要条件：** **不是。**\n    *   **区分：** checkpoint 的动作是**将内容从 WAL 转移到数据库**（它可以在读者并行时受阻，但只要读者结束就能继续）；而 writer 的回绕动作是**在满足特定条件（全转移且无读者）时，将 WAL 重新回到开头**以防止文件无限增长 [e1]。\n\n### 5. 这些材料能否证明本机 WAL 比回滚日志更快，或证明整份官方页面从未做过本机测量？说明证据边界。\n*   **关于“更快”的证明：** 材料**可以证明** WAL 在大多数场景下显著更快 [e1]。\n*   **关于“从未做过本机测量”的证明：** 材料**无法证明**官方页面从未做过本机测量。\n*   **证据边界：** 材料给出了定性的结论（“significantly faster”），但并没有提供具体的**量化数据**（如具体的秒数、毫秒数或在特定工作负载下的对比数值）。因此，它证明了“快”这一事实，但并未提供证明“快到什么程度”或“在何种具体测量环境下快”的细节。",
+                "state": "answered"
+              }
+            }
+          ]
+        }
+      ],
+      "report_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\runs\\wal_synthesis-75-codey\\research-report.txt",
+      "report_sha256": "21c8bf78ea84973d091a0c9e4610a6065f69aaf5d1143cd464ca0485cc81cf0b",
+      "wire_path": "D:\\codey\\.e2e-artifacts\\research-convergence-20261102\\prose-repair-only\\wire\\wal_synthesis-75-codey.jsonl",
+      "wire_sha256": "5652681eafe24ecac5ea0ef5d046ed52d4604ddb583b69ce9c98e29d8ed84160",
+      "source_identity_sha256": "8fcd134c204b239077b10081f8f9b66906499d24ff0e8581a53ca9e7e0089279",
+      "proxy_failures": [
+        {
+          "event": "proxy_failure",
+          "error": "ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None)"
+        }
+      ],
+      "repairs": [
+        {
+          "response_index": 2,
+          "draft_characters": 1619,
+          "full_draft_in_admitted_payload": true,
+          "draft_response_sha256": "c34decc538aac9e1a889d2b02d2ac57bf1cb346fc4c8bf45433b61f1957a5dd4",
+          "final_equals_draft": false,
+          "draft_to_submission_diff": [
+            "--- first-prose",
+            "+++ real-submission",
+            "@@ -1,5 +1,3 @@",
+            "-基于提供的 SQLite 官方材料，研究结果如下：",
+            "-",
+            " ### 1. WAL 的读写并发和单写者限制是否矛盾？分别解释机制。",
+            " **不矛盾。** 它们描述的是不同维度的并发能力：",
+            " *   **读写并发机制：** 由于写入操作仅是将新内容追加到 WAL 文件的末尾，且写入操作不会干扰读者的动作，因此**读者不会阻塞写入者，写入者也不会阻塞读者** [e1]。这意味着读取和写入可以同时进行。"
+          ]
+        }
+      ],
+      "review": {
+        "issues": [
+          "readonly_OR_question_misinterpreted_in_first_prose_and_submission",
+          "local_performance_question_not_answered_correctly_in_first_prose_or_submission"
+        ],
+        "strict_content_pass": false,
+        "note": "74 retains explicit cannot-prove-local-speed boundary; 75 already gets this wrong before repair. Both keep initial readonly error. Neither is a whole-answer content pass."
+      }
+    }
+  ]
+}
