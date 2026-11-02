@@ -55,7 +55,6 @@ def test_opt_in_task_kind_reaches_shared_kernel(project: str | None, expected: s
     assert single.call_args.kwargs["task_kind"] == "hybrid"
 
 
-
 @pytest.mark.parametrize("kind", ["hybrid"])
 def test_default_kinds_all_use_shared_kernel(kind: str) -> None:
     """Default hybrid uses one session; no opt-in needed.
@@ -1162,45 +1161,6 @@ def test_default_research_iteration_records_effects_in_same_runtime(tmp_path) ->
     assert not iteration.result.notes_created
     store.close()
     durable.close()
-
-
-def test_research_evidence_followup_uses_shared_kernel_with_fresh_url_guard(tmp_path) -> None:
-    from codey.knowledge.changes import KnowledgeChanges
-    from codey.knowledge.store import KnowledgeStore
-    from codey.research.plan_executor import PlanExecutionResult
-    from codey.research.tools import ResearchTools
-    from tests.support.kernel_runtime import run_evidence_followup
-
-    url = "https://example.com/fresh"
-    store = KnowledgeStore(tmp_path / "knowledge")
-    tools = ResearchTools(search=None, store=store, changes=KnowledgeChanges(root=store.root))
-    tools.sources_read.add(url)
-    tools.ledger.record_open(url, url, "Fresh source", "Freshly retrieved material supports the claim.")
-    replies = iter([
-        '{"tool":"knowledge_write","args":{"type":"fact","title":"x","body":"x",'
-        '"sources":["https://example.com/other"],"evidence":[{"source_url":"https://example.com/other",'
-        '"excerpt":"x","claim":"x","stance":"supports"}]}}',
-        '{"tool":"knowledge_write","args":{"type":"fact","title":"x","body":"x",'
-        '"sources":["https://example.com/fresh"],"evidence":[{"source_url":"https://example.com/fresh",'
-        '"excerpt":"Freshly retrieved material supports the claim.","claim":"x","stance":"supports"}]}}',
-    ])
-
-    class Provider:
-        def send(self, _prompt, timeout=None):
-            return next(replies)
-
-    result = run_evidence_followup(
-        provider=Provider(), tools=tools,
-        plan=SimpleNamespace(plan_ref="p1"),
-        material=PlanExecutionResult(fresh_source_urls=(url,), previews=("Freshly retrieved material supports the claim.",)),
-        question="x", run_id="r", session_id="s", round_index=1,
-        parent_policy=_cutover_parent_policy(),
-    )
-    assert result.has_new_evidence
-    assert len(tools.ledger.evidence_items) == 1
-    assert tools.ledger.evidence_items[0].source_url == url
-    assert len(tools.created_ids) == 1
-    store.close()
 
 
 def test_unified_edit_keeps_existing_file_guard_and_read_before_edit(tmp_path) -> None:

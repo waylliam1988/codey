@@ -89,12 +89,6 @@ class _FakeProvider:
         return "{}"
 
 
-
-
-
-
-
-
 def _stub_result() -> ResearchRunResult:
     return ResearchRunResult(
         question="question",
@@ -236,7 +230,7 @@ def test_pipeline_skips_trace_row_when_nothing_admitted() -> None:
         policy=_continuity_allow_policy(),
     ).run()
 
-    assert output.planner_stop_reason == "proof_review_missing"
+    assert output.planner_stop_reason == "external_followup_retired"
     assert trace.topic_payloads == []
 
 

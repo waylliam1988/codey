@@ -20,7 +20,6 @@ from codey.research.evidence_ledger import EvidenceLedgerWriteResult
 from codey.research.pipeline import (
     ResearchIterationRun,
     ResearchPipeline,
-    ResearchPipelineConfig,
     ResearchPipelineResult,
 )
 from codey.research.proof_quality import proof_review_trace_payload
@@ -273,7 +272,6 @@ def build_research_context(
         permission_profile="research",
         max_turns=max_turns,
         chat_handoff=frame.research_handoff,
-        should_stop=stop_flag_for(deps.state, frame.run_id).is_set,
         trace=RunTraceResearchSink(frame.trace),
         topic_continuity_context=continuity_text,
         topic_continuity_payload=continuity_payload,
@@ -301,8 +299,6 @@ def run_research_pipeline(
         max_turns: int,
         chat_handoff: str,
         search: object,
-        tools: Any = None,
-        iteration_context: str = "",
         topic_continuity_context: str = "",
         topic_continuity_payload: Any = None,
     ) -> Any:
@@ -324,39 +320,11 @@ def run_research_pipeline(
             chat_handoff=chat_handoff,
             trace_recorder=frame.trace,
             search=search,
-            tools=tools,
-            iteration_context=iteration_context,
             topic_continuity_context=topic_continuity_context,
             topic_continuity_payload=topic_continuity_payload,
             requested_capabilities=request.requested_capabilities,
             task_policy=getattr(frame, "entry_policy", None),
             publish_synthesis=True,
-        )
-
-    investigation_index = 0
-
-    from codey.operations.research_continuation import ResearchContinuation, ResearchInvocation
-
-    continuation = ResearchContinuation(deps.runtime_mutations, deps.managed_outputs,
-                                        session_id=request.session_id, run_id=frame.run_id)
-
-    def investigate(plan: Any, tools: Any, initial_summary: str) -> Any:
-        from codey.operations.research_investigation import investigate_plan
-
-        nonlocal investigation_index
-        investigation_index += 1
-        return investigate_plan(
-            history=continuation,
-            provider=frame.provider,
-            tools=tools,
-            plan=plan,
-            question=request.task,
-            initial_summary=initial_summary,
-            should_stop=stop_flag_for(deps.state, frame.run_id).is_set,
-            provider_id=frame.provider_id,
-            round_index=investigation_index,
-            on_event=hooks.on_event,
-            parent_policy=getattr(frame, "entry_policy", None),
         )
 
     recorder = getattr(deps.state, "record_research_changes", None)
@@ -366,25 +334,6 @@ def run_research_pipeline(
     )
     ledger_sink = record_ledger_write or record_evidence_ledger_write
 
-    def synthesize_result(result: Any, tools: Any) -> Any:
-        from codey.operations.research_iteration import run_research_iteration
-        from codey.operations.research_synthesis import synthesis_context
-
-        def synthesize(invocation: ResearchInvocation, feedback: str = "") -> Any:
-            return run_research_iteration(
-                deps, provider=frame.provider, session_id=request.session_id, project=frame.project_text,
-                task=request.task, max_turns=max_turns, on_event=hooks.on_event,
-                stop_flag=stop_flag_for(deps.state, frame.run_id), provider_id=frame.provider_id,
-                run_id=frame.run_id, chat_handoff="", trace_recorder=frame.trace, search=tools.search,
-                tools=tools, iteration_context=synthesis_context(tools) + ("\n" + feedback if feedback else ""),
-                task_policy=frame.entry_policy, invocation=invocation, publish_synthesis=True,
-            ).result
-
-        final = synthesize(ResearchInvocation.synthesis(investigation_index)) if investigation_index else result
-        # The result/proof belong to the new parent invocation. Even when it
-        # exhausts its budget, never return the older draft as successful.
-        return final
-
     pipeline = ResearchPipeline(
         context=context_builder(
             frame,
@@ -393,10 +342,7 @@ def run_research_pipeline(
         ),
         run_iteration=iteration,
         search_factory=deps.search_factory,
-        investigate=investigate,
-        synthesize_result=synthesize_result,
         evidence_ledgers=deps.evidence_ledgers,
-        config=ResearchPipelineConfig(),
         ledger_event_sink=lambda result: ledger_sink(hooks, result),
         research_changes_sink=changes_sink,
         policy=getattr(frame, "entry_policy", None),

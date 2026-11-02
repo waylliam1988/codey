@@ -1,0 +1,566 @@
+{
+  "baseline": "b7992d19",
+  "scope": "Retire unreachable outer research investigation and generation branch; preserve live writer, audit, knowledge and publication paths.",
+  "production_diff": {
+    "files": [
+      {
+        "path": "codey/operations/evidence_followup.py",
+        "added": 0,
+        "deleted": 199
+      },
+      {
+        "path": "codey/operations/research_continuation.py",
+        "added": 5,
+        "deleted": 130
+      },
+      {
+        "path": "codey/operations/research_flow.py",
+        "added": 0,
+        "deleted": 54
+      },
+      {
+        "path": "codey/operations/research_investigation.py",
+        "added": 0,
+        "deleted": 127
+      },
+      {
+        "path": "codey/operations/research_synthesis.py",
+        "added": 0,
+        "deleted": 9
+      },
+      {
+        "path": "codey/research/context.py",
+        "added": 1,
+        "deleted": 14
+      },
+      {
+        "path": "codey/research/evidence_rules.py",
+        "added": 0,
+        "deleted": 280
+      },
+      {
+        "path": "codey/research/followup_selection.py",
+        "added": 0,
+        "deleted": 197
+      },
+      {
+        "path": "codey/research/pipeline.py",
+        "added": 23,
+        "deleted": 338
+      },
+      {
+        "path": "codey/research/plan_executor.py",
+        "added": 0,
+        "deleted": 330
+      },
+      {
+        "path": "codey/research/query_planner.py",
+        "added": 2,
+        "deleted": 2
+      },
+      {
+        "path": "codey/research/record_merge.py",
+        "added": 0,
+        "deleted": 567
+      }
+    ],
+    "added": 31,
+    "deleted": 2247,
+    "net_removed": 2216
+  },
+  "frozen_model_interfaces": {
+    "interface_count": 20,
+    "byte_identical": true,
+    "baseline_sha256": "83f6512624312cdd07287d0711858ef6872b684094773612ffae648fd9c0a58a",
+    "current_sha256": "83f6512624312cdd07287d0711858ef6872b684094773612ffae648fd9c0a58a"
+  },
+  "final_tests": {
+    "passed": 1106,
+    "subtests_passed": 512,
+    "shards": [
+      {
+        "shard": 1,
+        "passed": 490,
+        "subtests_passed": 28,
+        "summary": "490 passed, 28 subtests passed in 277.36s (0:04:37)"
+      },
+      {
+        "shard": 2,
+        "passed": 616,
+        "subtests_passed": 484,
+        "summary": "616 passed, 484 subtests passed in 273.93s (0:04:33)"
+      }
+    ],
+    "selection": [
+      "tests/test_research.py",
+      "tests/test_research_protocol_contract.py",
+      "tests/test_research_native_codec.py",
+      "tests/test_research_controller.py",
+      "tests/test_tool_contract_drift.py",
+      "tests/test_tool_example_single_source.py",
+      "tests/test_persistent_research_lifecycle.py",
+      "tests/test_research_question_ownership.py",
+      "tests/test_research_reference_coverage.py",
+      "tests/test_run_trace.py",
+      "tests/test_headless_desktop_entry_authorization_parity.py",
+      "tests/test_shared_task_service_consumers.py",
+      "tests/test_task_entry_cutover.py",
+      "tests/test_task_guidance_reaches_production_entries.py",
+      "tests/test_research_flow_topic_continuity.py",
+      "tests/test_research_deterministic_completion.py",
+      "tests/test_clip_tail_budget.py",
+      "tests/test_server_lazy_state.py",
+      "tests/test_coldstart_export_cleanup.py",
+      "tests/test_work_checkpoint_flow.py",
+      "tests/durable/test_research_continuation_restart.py",
+      "tests/test_server.py::SessionThreadingTests::test_run_task_with_research_intent_uses_research_runner",
+      "tests/test_server.py::SessionThreadingTests::test_followup_research_intent_includes_previous_research_context",
+      "tests/test_research_assessment_retirement.py",
+      "tests/test_research_whole_answer.py",
+      "tests/test_research_whole_kernel.py",
+      "tests/test_research_full_prose_repair.py",
+      "tests/test_research_convergence_compatibility.py",
+      "tests/test_research_long_term_loop.py",
+      "tests/test_research_historical_claim_read.py",
+      "tests/test_research_findings.py",
+      "tests/test_research_local_scope.py",
+      "tests/test_research_inline_submission.py",
+      "tests/test_research_local_contract_guidance.py",
+      "tests/test_research_reduction_local.py",
+      "tests/test_research_knowledge_acceptance.py",
+      "tests/test_kernel_receipt_integrity.py",
+      "tests/test_research_read_projection.py",
+      "tests/test_research_observation_contract.py",
+      "tests/test_recovery_restores_research_ledger.py",
+      "tests/test_knowledge_repository.py",
+      "tests/test_knowledge_version_graph.py",
+      "tests/test_long_term_knowledge.py",
+      "tests/test_research_first_pass_knowledge.py",
+      "tests/test_safe_tool_replay.py",
+      "tests/test_tool_replay_policy.py",
+      "tests/test_effect_intent_persists_safe_replay_args.py",
+      "tests/test_research_pipeline.py",
+      "tests/test_research_continuation_contract.py",
+      "tests/test_research_runtime_observations.py",
+      "tests/test_research_evidence_split.py",
+      "tests/test_research_iteration_topic_continuity.py",
+      "tests/test_research_system_action_policy_closure.py",
+      "tests/test_research_system_actions_require_task_policy.py",
+      "tests/test_fail_closed_boundary_sweep.py",
+      "tests/test_manual_ab_cli_lifecycle.py",
+      "tests/test_architecture.py",
+      "tests/test_architecture_no_legacy_loops.py",
+      "tests/test_query_planner.py",
+      "tests/durable/test_not_sent_continuations.py",
+      "tests/test_research_experiment_gate.py",
+      "tests/test_research_followup_quality.py",
+      "tests/test_manual_ab_harness_common.py",
+      "tests/test_ab_observation_journal.py",
+      "tests/test_research_claim_support_projection.py"
+    ],
+    "source_changed_during_run": false,
+    "full_repository_pytest": false
+  },
+  "typechecks": [
+    {
+      "checker": "mypy",
+      "target": "3.11",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "output": "Success: no issues found in 575 source files\n"
+    },
+    {
+      "checker": "mypy",
+      "target": "3.12",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.12"
+      ],
+      "output": "Success: no issues found in 575 source files\n"
+    },
+    {
+      "checker": "mypy",
+      "target": "3.13",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.13"
+      ],
+      "output": "Success: no issues found in 575 source files\n"
+    },
+    {
+      "checker": "pyrefly",
+      "target": "3.11",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "output": " INFO 0 errors (35 suppressed, 79 warnings not shown)\n"
+    },
+    {
+      "checker": "pyrefly",
+      "target": "3.12",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.12"
+      ],
+      "output": " INFO 0 errors (35 suppressed, 79 warnings not shown)\n"
+    },
+    {
+      "checker": "pyrefly",
+      "target": "3.13",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.13"
+      ],
+      "output": " INFO 0 errors (35 suppressed, 79 warnings not shown)\n"
+    },
+    {
+      "checker": "ty",
+      "target": "3.11",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "output": "All checks passed!\n"
+    },
+    {
+      "checker": "ty",
+      "target": "3.12",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.12"
+      ],
+      "output": "All checks passed!\n"
+    },
+    {
+      "checker": "ty",
+      "target": "3.13",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.13"
+      ],
+      "output": "All checks passed!\n"
+    }
+  ],
+  "remaining_imports": {
+    "deleted_modules": [
+      "codey.operations.evidence_followup",
+      "codey.operations.research_investigation",
+      "codey.operations.research_synthesis",
+      "codey.research.evidence_rules",
+      "codey.research.followup_selection",
+      "codey.research.plan_executor",
+      "codey.research.record_merge",
+      "tests.manual.bounded_research_planner_ab",
+      "tests.manual.research_followup_quality_ab",
+      "tests.manual.research_forced_followup_gap_ab",
+      "tests.test_bounded_research_planner_ab",
+      "tests.test_evidence_followup_split",
+      "tests.test_research_context_budget_invalid_value_uses_default",
+      "tests.test_research_evidence_followup",
+      "tests.test_research_parent_synthesis",
+      "tests.test_research_plan_executor",
+      "tests.test_research_record_merge",
+      "tests.test_research_run_split"
+    ],
+    "remaining_imports": []
+  },
+  "removed_or_replaced_tests": {
+    "baseline": "b7992d19",
+    "removed_or_replaced_function_count": 86,
+    "files": [
+      {
+        "path": "tests/durable/test_research_continuation_restart.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_durable_cancellation_during_followup_never_returns_previous_draft_as_done",
+          "test_failed_followup_retains_original_attempt_and_provider_diagnostic",
+          "test_lost_continuation_commit_acknowledgement_never_reacquires_material",
+          "test_research_continuation_admission_is_idempotent",
+          "test_research_restart_preserves_material_invocations_and_note_ids"
+        ],
+        "added_functions": [
+          "test_durable_cancellation_during_submission_never_returns_done",
+          "test_failed_submission_retains_original_turn_and_provider_diagnostic",
+          "test_research_restart_preserves_original_reads_and_single_publication"
+        ]
+      },
+      {
+        "path": "tests/test_architecture.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_report_sections_is_a_stdlib_leaf"
+        ],
+        "added_functions": [
+          "test_report_sections_and_coverage_stay_below_domain_layers"
+        ]
+      },
+      {
+        "path": "tests/test_architecture_no_legacy_loops.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_old_evidence_followup_has_no_production_importers"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_bounded_research_planner_ab.py",
+        "deleted_file": true,
+        "removed_or_replaced_functions": [
+          "test_run_case_accepts_pipeline_topic_continuity_kwargs"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_evidence_followup_split.py",
+        "deleted_file": true,
+        "removed_or_replaced_functions": [
+          "test_evidence_excerpt_required_and_quote_alias",
+          "test_evidence_item_shape",
+          "test_evidence_must_be_nonempty_list",
+          "test_evidence_source_checks",
+          "test_evidence_source_must_be_in_sources",
+          "test_extra_keys_rejected",
+          "test_forbidden_tool_blocked",
+          "test_missing_and_bad_type_rejected",
+          "test_source_internal_id_and_whitelist",
+          "test_sources_must_be_nonempty_list",
+          "test_success_delegates_verbatim",
+          "test_tool_name_case_insensitive",
+          "test_type_case_insensitive"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_fail_closed_boundary_sweep.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_followup_bounded_score_huge",
+          "test_tool_contract_coerce_float_huge"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_context_budget_invalid_value_uses_default.py",
+        "deleted_file": true,
+        "removed_or_replaced_functions": [
+          "test_malformed_budget_uses_default",
+          "test_valid_small_budget_is_still_bounded"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_continuation_contract.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_corrupt_observation_does_not_publish_partial_ledger",
+          "test_invalid_material_is_rejected",
+          "test_valid_material_rebuilds_original_source"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_evidence_followup.py",
+        "deleted_file": true,
+        "removed_or_replaced_functions": [
+          "test_evidence_followup_controller_restricts_tools_and_urls",
+          "test_evidence_followup_prompt_tolerates_malformed_context_limit",
+          "test_run_evidence_followup_classifies_done_without_evidence_as_noop",
+          "test_run_evidence_followup_classifies_no_relevant_done_as_noop",
+          "test_run_evidence_followup_extracts_evidence_with_provider",
+          "test_run_evidence_followup_rejects_forbidden_tool_calls",
+          "test_run_evidence_followup_rejects_missing_args_field",
+          "test_run_evidence_followup_rejects_missing_tool_field",
+          "test_run_evidence_followup_rejects_multiple_tool_calls",
+          "test_run_evidence_followup_repairs_invalid_knowledge_write_schema_once",
+          "test_run_evidence_followup_reports_invalid_knowledge_write_args_after_failed_repair"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_evidence_split.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_inject_split_preserves_sections",
+          "test_render_search_coverage_none_queries_graceful"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_experiment_gate.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_connector_backed_followup_harness_self_test"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_followup_quality.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_followup_quality_ab_transcript_mode_defaults_to_archive"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_parent_synthesis.py",
+        "deleted_file": true,
+        "removed_or_replaced_functions": [
+          "test_parent_reconsiders_gaps_even_when_investigation_saved_no_new_evidence",
+          "test_parent_synthesis_cancellation_never_returns_successful_old_draft",
+          "test_synthesis_handoff_is_bounded_and_keeps_source_identity_and_stance"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_pipeline.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_followup_selection_treats_answered_coverage_gap_as_actionable",
+          "test_pipeline_keeps_initial_result_when_followup_iteration_raises",
+          "test_pipeline_prefers_better_followup_but_rejects_unsupported_regression",
+          "test_pipeline_reports_missing_proof_review_without_followup",
+          "test_pipeline_retains_best_when_staging_commit_fails",
+          "test_pipeline_selection_accepts_minimal_evidence_candidate_after_protocol_not_answered",
+          "test_pipeline_selection_proof_complete_dominates_partial_status",
+          "test_pipeline_selection_question_alignment_outranks_coverage",
+          "test_pipeline_selection_rejects_unsupported_claim_regression",
+          "test_pipeline_skips_followup_when_proof_is_ok_and_appends_ledger_once",
+          "test_pipeline_staging_commits_accepted_followup_side_effects",
+          "test_pipeline_staging_isolates_rejected_followup_side_effects",
+          "test_pipeline_tracks_attempted_metrics_when_candidate_rejected",
+          "test_research_candidate_score_missing_evidence_negated_in_sort_key",
+          "test_research_candidate_score_rejects_nonfinite_coverage"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_plan_executor.py",
+        "deleted_file": true,
+        "removed_or_replaced_functions": [
+          "test_plan_executor_bounds_malformed_plan_limits",
+          "test_plan_executor_bounds_queries_sources_and_url_guard",
+          "test_plan_executor_deduplicates_redirected_fresh_sources",
+          "test_plan_executor_does_not_count_redirect_to_root_landing_page_as_fresh_material",
+          "test_plan_executor_skips_baseline_urls_and_reports_no_new_material",
+          "test_plan_executor_skips_root_landing_pages_before_opening",
+          "test_plan_executor_stops_before_search_when_total_source_budget_is_full"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_record_merge.py",
+        "deleted_file": true,
+        "removed_or_replaced_functions": [
+          "test_merge_evidence_patch_appends_new_evidence_and_reindexes_citations",
+          "test_merge_evidence_patch_builds_minimal_candidate_from_protocol_result_with_ledger_evidence",
+          "test_merge_evidence_patch_does_not_fabricate_counterclaim_or_conclusion",
+          "test_merge_evidence_patch_handles_unparseable_or_protocol_initial_summary",
+          "test_merge_evidence_patch_preserves_markdown_link_source_citations",
+          "test_merge_evidence_patch_preserves_same_excerpt_from_different_sources",
+          "test_merge_evidence_patch_prunes_unsupported_raw_claims",
+          "test_merge_evidence_patch_rebuilds_when_pruning_leaves_no_supported_body_lines"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_run_split.py",
+        "deleted_file": true,
+        "removed_or_replaced_functions": [
+          "test_pipeline_drive_followup_missing_tools",
+          "test_plan_executor_limits_and_finalize"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_runtime_observations.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_parent_synthesis_projects_saved_ledger_once"
+        ],
+        "added_functions": [
+          "test_working_view_projects_saved_ledger_once"
+        ]
+      },
+      {
+        "path": "tests/test_research_system_action_policy_closure.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_pipeline_propagates_parent_policy_type_error_without_retry",
+          "test_plan_executor_policy_is_required_and_none_is_denied",
+          "test_subset_followup_policy_honors_parent_explicit_denials",
+          "test_subset_followup_policy_without_parent_write_grants_nothing"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_research_system_actions_require_task_policy.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_control_only_plan_executor_must_not_call_search_adapter",
+          "test_evidence_followup_policy_is_subset_of_parent"
+        ],
+        "added_functions": []
+      },
+      {
+        "path": "tests/test_task_entry_cutover.py",
+        "deleted_file": false,
+        "removed_or_replaced_functions": [
+          "test_research_evidence_followup_uses_shared_kernel_with_fresh_url_guard"
+        ],
+        "added_functions": []
+      }
+    ]
+  },
+  "baseline_reproduced_failures": 7,
+  "architecture_size_debt_ceilings_at_baseline": {
+    "providers/api_provider.py": 1147,
+    "providers/api_transport.py": 1053,
+    "research/browser_search.py": 1233,
+    "research/tools.py": 1027,
+    "runtime/core/operation_state.py": 1473
+  },
+  "model_inference_invoked": false,
+  "raw_artifacts": ".e2e-artifacts/research-outer-followup-cleanup-20261102"
+}

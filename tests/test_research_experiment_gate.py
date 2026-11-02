@@ -4,15 +4,10 @@ import json
 from pathlib import Path
 
 from tests.manual import research_experiment_gate as gate
-from tests.manual import research_followup_quality_ab as followup_ab
 
 
 def test_research_experiment_gate_self_test() -> None:
     gate._self_test()
-
-
-def test_connector_backed_followup_harness_self_test() -> None:
-    followup_ab._self_test()
 
 
 def test_research_experiment_gate_scores_bounded_files_without_raw_bodies(tmp_path: Path) -> None:

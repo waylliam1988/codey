@@ -78,9 +78,6 @@ class OverflowSweepTests(unittest.TestCase):
         from codey.research.source_search import bounded_limit
         self.assertEqual(bounded_limit(float("inf")), 6)
 
-    def test_tool_contract_coerce_float_huge(self):
-        from codey.research.tool_contract import _coerce_float
-        self.assertIsNone(_coerce_float(10 ** 400))
 
     def test_tools_as_int_float_huge(self):
         from codey.research.tools import _as_float, _as_int
@@ -91,9 +88,6 @@ class OverflowSweepTests(unittest.TestCase):
         from codey.research.query_planner import _unit_float
         self.assertEqual(_unit_float(10 ** 400), 0.0)
 
-    def test_followup_bounded_score_huge(self):
-        from codey.research.followup_selection import bounded_score
-        self.assertEqual(bounded_score(10 ** 400), 0.0)
 
     def test_source_document_compact_pages_inf(self):
         from codey.research.source_document import compact_pages
@@ -168,23 +162,18 @@ class BoolUnicodeFiniteTests(unittest.TestCase):
     def test_ascii_digit_gate(self):
         from codey.research.proof_quality import _positive_ints as pi
         from codey.research.source_document import compact_pages as cp
-        from codey.research.tool_contract import _coerce_int as tc
         from codey.research.tools import _as_int as rt
         from codey.runs.ledger_projection import _int as lp
         from codey.runs.receipt import _nonnegative_int as rc
         self.assertEqual(lp("١٢٣"), 0)
         self.assertEqual(rc("١٢٣"), 0)
-        self.assertIsNone(tc("١٢٣"))
         self.assertEqual(rt("١٢٣", 0), 0)
         self.assertEqual(cp(["١٢٣"]), "")
         self.assertEqual(pi(["١٢٣"]), ())
 
     def test_coerce_float_finite(self):
         from codey.knowledge.note import _as_float as kn
-        from codey.research.tool_contract import _coerce_float as tc
         from codey.research.tools import _as_float as rt
-        self.assertIsNone(tc(float("inf")))
-        self.assertIsNone(tc("nan"))
         self.assertIsNone(rt(float("inf")))
         self.assertIsNone(kn("inf"))
 

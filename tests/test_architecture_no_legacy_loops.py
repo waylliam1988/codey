@@ -1,9 +1,8 @@
 """Legacy loops must be gone: files deleted, no importers in prod or tests.
 
 Locks:
-- ``codey.research.evidence_followup.run_evidence_followup`` (direct
-  provider.send loop) has no production importers; production uses
-  ``codey.operations.evidence_followup``.
+- Both the former direct-send follow-up loop and the unreachable outer
+  investigation branch are retired, with no production or test importers.
 - Legacy ``agents.prompt_context/result_delivery/tool_turn`` and
   ``protocols.native_openai`` are deleted: files must not exist and neither
   production nor tests may import them. ``agents.tool_execution`` +
@@ -35,32 +34,6 @@ def _imports_of(path: Path) -> set[str]:
 
 
 class NoLegacyLoopsTests(unittest.TestCase):
-    def test_old_evidence_followup_has_no_production_importers(self) -> None:
-        offenders = []
-        for path in CODEY.rglob("*.py"):
-            rel = path.relative_to(ROOT).as_posix()
-            if rel.startswith("tests/") or "/tests/" in rel:
-                continue
-            if rel == "codey/research/evidence_followup.py":
-                continue
-            if rel == "codey/operations/evidence_followup.py":
-                continue
-            imports = _imports_of(path)
-            if "codey.research.evidence_followup" in imports:
-                # Importing rules/controller/prompts is fine; importing the old
-                # direct-send loop is not.
-                text = path.read_text(encoding="utf-8", errors="ignore")
-                if (
-                    "run_evidence_followup" in text
-                    and "operations.evidence_followup" not in text
-                    and rel not in {"codey/research/pipeline.py"}
-                ):
-                    offenders.append(rel)
-        # pipeline.py may import result types; ensure it does not import the loop.
-        pipe = (ROOT / "codey/research/pipeline.py").read_text(encoding="utf-8")
-        self.assertNotIn("run_evidence_followup", pipe)
-        self.assertEqual(offenders, [], f"production importers of old loop: {offenders}")
-
     def test_legacy_modules_deleted(self) -> None:
         for rel in (
             "codey/agents/prompt_context.py",
@@ -68,6 +41,13 @@ class NoLegacyLoopsTests(unittest.TestCase):
             "codey/agents/tool_turn.py",
             "codey/protocols/native_openai.py",
             "codey/research/evidence_followup.py",
+            "codey/operations/evidence_followup.py",
+            "codey/operations/research_investigation.py",
+            "codey/operations/research_synthesis.py",
+            "codey/research/evidence_rules.py",
+            "codey/research/plan_executor.py",
+            "codey/research/record_merge.py",
+            "codey/research/followup_selection.py",
             "tests/test_native_openai_codec.py",
         ):
             self.assertFalse((ROOT / rel).exists(), f"legacy file must be deleted: {rel}")
@@ -79,6 +59,14 @@ class NoLegacyLoopsTests(unittest.TestCase):
             "codey.agents.tool_turn",
             "codey.protocols.native_openai",
             "codey.toolchain.registry",
+            "codey.research.evidence_followup",
+            "codey.operations.evidence_followup",
+            "codey.operations.research_investigation",
+            "codey.operations.research_synthesis",
+            "codey.research.evidence_rules",
+            "codey.research.plan_executor",
+            "codey.research.record_merge",
+            "codey.research.followup_selection",
         }
         offenders: list[str] = []
         # The independent parity subprocess imports the immutable old checkout,

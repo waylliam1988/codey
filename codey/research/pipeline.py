@@ -1,4 +1,4 @@
-"""Research lifecycle pipeline for bounded planner execution."""
+"""Run one research writer and project its settled audit and knowledge changes."""
 
 from __future__ import annotations
 
@@ -7,21 +7,16 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-import codey.research.followup_selection as followup_selection
 from codey.research.brief_projection import project_research_brief
-from codey.research.context import ResearchContext, ResearchPipelineConfig
+from codey.research.context import ResearchContext
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
-from codey.research.evidence_rules import EvidenceFollowupResult
 from codey.research.evidence_runtime import snapshot_from_research_record
-from codey.research.plan_executor import PlanExecutionResult, PlanExecutor
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
 from codey.research.query_planner import ResearchPlan, build_research_plan
-from codey.research.record_merge import merge_evidence_patch
 from codey.research.review_finding import findings_from_proof_review, planner_gaps_from_findings
 from codey.research.run_result import ResearchRunResult
 from codey.research.source_trust import project_source_set
 from codey.research.tools import ResearchTools
-from codey.runtime.core import cancellation
 
 
 class ResearchContinuationError(RuntimeError):
@@ -42,27 +37,9 @@ class ResearchIterationRunner(Protocol):
         max_turns: int,
         chat_handoff: str,
         search: object,
-        tools: ResearchTools | None = None,
-        iteration_context: str = "",
         topic_continuity_context: str = "",
         topic_continuity_payload: Mapping[str, object] | None = None,
     ) -> ResearchIterationRun:
-        ...
-
-
-class EvidenceFollowupRunner(Protocol):
-    def __call__(
-        self,
-        *,
-        tools: ResearchTools,
-        plan: ResearchPlan,
-        material: PlanExecutionResult,
-        question: str,
-        parent_policy: object,
-        initial_summary: str = "",
-        max_context_chars: int = 8000,
-        should_stop: Callable[[], bool] | None = None,
-    ) -> EvidenceFollowupResult:
         ...
 
 
@@ -93,63 +70,30 @@ class ResearchPipelineResult:
         }
 
 
-@dataclass
-class _FollowupOutcome:
-    best: ResearchRunResult
-    best_review: ResearchProofReview | None
-    best_tools: ResearchTools | None
-    plan: ResearchPlan
-    followup_rounds: int
-    total_fresh_sources: int
-    total_new_evidence: int
-    total_attempted_fresh_sources: int
-    total_attempted_new_evidence: int
-    total_merged_evidence: int
-    planner_stop_reason: str
-
-
 class ResearchPipeline:
-
     def __init__(
         self,
         *,
         context: ResearchContext,
         run_iteration: ResearchIterationRunner,
         search_factory: Callable[[], object],
-        evidence_followup_runner: EvidenceFollowupRunner | None = None,
         evidence_ledgers: EvidenceLedgerStore | None = None,
-        config: ResearchPipelineConfig | None = None,
         ledger_event_sink: Callable[[EvidenceLedgerWriteResult], None] | None = None,
         research_changes_sink: Callable[..., None] | None = None,
-        execute_plan: Callable[[PlanExecutor, ResearchPlan, ResearchTools], PlanExecutionResult] | None = None,
-        investigate: Callable[[ResearchPlan, ResearchTools, str], tuple[PlanExecutionResult, EvidenceFollowupResult]] | None = None,
-        synthesize_result: Callable[[ResearchRunResult, ResearchTools], ResearchRunResult] | None = None,
-        project_result: Callable[[ResearchRunResult, ResearchTools], ResearchRunResult] | None = None,
         policy: object,
     ) -> None:
         self.context = context
         self.run_iteration = run_iteration
         self.search_factory = search_factory
-        self.evidence_followup_runner = evidence_followup_runner
         self.evidence_ledgers = evidence_ledgers
-        self.config = config or ResearchPipelineConfig()
         self.ledger_event_sink = ledger_event_sink
         self.research_changes_sink = research_changes_sink
-        self.execute_plan = execute_plan
-        self.investigate = investigate
-        self.synthesize_result = synthesize_result
-        self.project_result = project_result
-        # 原任务授权：补研究与合成均不得超越此边界
         self.policy = policy
 
     def run(self) -> ResearchPipelineResult:
         search = self.search_factory()
         try:
-            # Topic continuity travels to the initial iteration as bounded
-            # text plus its digest-only payload; the runner projects the
-            # audit row at the provider-send boundary, so an admitted row is
-            # always bound to outbound provider-send attempt bytes.
-            initial_run = self.run_iteration(
+            run = self.run_iteration(
                 task=self.context.question,
                 max_turns=self.context.max_turns,
                 chat_handoff=self.context.chat_handoff,
@@ -157,285 +101,39 @@ class ResearchPipeline:
                 topic_continuity_context=self.context.topic_continuity_context,
                 topic_continuity_payload=self.context.topic_continuity_payload,
             )
-            initial = initial_run.result
-            best = initial
-            best_tools = initial_run.tools
-            best_review = self._review(best, require_ledger_record=False)
-            plan = self._plan(best_review)
-            self.context.trace.record_plan(plan)
-            followup_rounds = 0
-            total_fresh_sources = 0
-            total_new_evidence = 0
-            total_attempted_fresh_sources = 0
-            total_attempted_new_evidence = 0
-            total_merged_evidence = len(getattr(best.research_record, "evidence", ())) if getattr(best, "research_record", None) else 0
-            planner_stop_reason = self._followup_block_reason(initial, best_review, plan) or "planned"
-            if planner_stop_reason == "planned":
-                outcome = self._drive_followup(
-                    plan=plan,
-                    best=best,
-                    best_review=best_review,
-                    best_tools=best_tools,
-                    followup_rounds=followup_rounds,
-                    total_fresh_sources=total_fresh_sources,
-                    total_new_evidence=total_new_evidence,
-                    total_attempted_fresh_sources=total_attempted_fresh_sources,
-                    total_attempted_new_evidence=total_attempted_new_evidence,
-                    total_merged_evidence=total_merged_evidence,
-                    planner_stop_reason=planner_stop_reason,
-                )
-                best = outcome.best
-                best_review = outcome.best_review
-                best_tools = outcome.best_tools
-                plan = outcome.plan
-                followup_rounds = outcome.followup_rounds
-                total_fresh_sources = outcome.total_fresh_sources
-                total_new_evidence = outcome.total_new_evidence
-                total_attempted_fresh_sources = outcome.total_attempted_fresh_sources
-                total_attempted_new_evidence = outcome.total_attempted_new_evidence
-                total_merged_evidence = outcome.total_merged_evidence
-                planner_stop_reason = outcome.planner_stop_reason
-
-            return self._finalize_pipeline_result(
-                best,
-                best_tools,
-                planner_stop_reason=planner_stop_reason,
-                followup_rounds=followup_rounds,
-                total_fresh_sources=total_fresh_sources,
-                total_new_evidence=total_new_evidence,
-                total_merged_evidence=total_merged_evidence,
-                total_attempted_fresh_sources=total_attempted_fresh_sources,
-                total_attempted_new_evidence=total_attempted_new_evidence,
-            )
-
+            review = self._review(run.result, require_ledger_record=False)
+            self.context.trace.record_plan(self._plan(review))
+            return self._finalize_pipeline_result(run.result, run.tools)
         finally:
             close = getattr(search, "close", None)
             if callable(close):
                 with contextlib.suppress(Exception):
                     close()
 
-    def _execute_plan(self, executor: PlanExecutor, plan: ResearchPlan, staged_tools: ResearchTools) -> PlanExecutionResult:
-        # 无策略重试已删除：回调先产生效果再抛 TypeError 时，向上传播，
-        # 绝不去掉父策略再调一次（否则同一效果执行两次）。
-        if self.execute_plan is not None:
-            return self.execute_plan(executor, plan, staged_tools)
-        return executor.execute(plan, staged_tools, policy=self.policy)
-
-    def _run_followup(self, staged_tools: ResearchTools, plan: ResearchPlan,
-                      material: PlanExecutionResult, best: ResearchRunResult) -> EvidenceFollowupResult:
-        assert self.evidence_followup_runner is not None
-        return self.evidence_followup_runner(
-            tools=staged_tools, plan=plan, material=material,
-            question=self.context.question, initial_summary=best.summary,
-            max_context_chars=self.config.max_followup_context_chars,
-            should_stop=self.context.should_stop, parent_policy=self.policy,
-        )
-
-    def _investigate(self, executor: PlanExecutor, plan: ResearchPlan, tools: ResearchTools,
-                     summary: str) -> tuple[PlanExecutionResult, EvidenceFollowupResult | None]:
-        if self.investigate is not None:
-            return self.investigate(plan, tools, summary)
-        return self._execute_plan(executor, plan, tools), None
-
-    def _drive_followup(
-        self,
-        *,
-        plan: ResearchPlan,
-        best: ResearchRunResult,
-        best_review: ResearchProofReview | None,
-        best_tools: ResearchTools | None,
-        followup_rounds: int,
-        total_fresh_sources: int,
-        total_new_evidence: int,
-        total_attempted_fresh_sources: int,
-        total_attempted_new_evidence: int,
-        total_merged_evidence: int,
-        planner_stop_reason: str,
-    ) -> _FollowupOutcome:
-        def _outcome(reason: str) -> _FollowupOutcome:
-            return _FollowupOutcome(
-                best=best,
-                best_review=best_review,
-                best_tools=best_tools,
-                plan=plan,
-                followup_rounds=followup_rounds,
-                total_fresh_sources=total_fresh_sources,
-                total_new_evidence=total_new_evidence,
-                total_attempted_fresh_sources=total_attempted_fresh_sources,
-                total_attempted_new_evidence=total_attempted_new_evidence,
-                total_merged_evidence=total_merged_evidence,
-                planner_stop_reason=reason,
-            )
-
-        if best_tools is None:
-            return _outcome("missing_iteration_tools")
-        if self.evidence_followup_runner is None and self.investigate is None:
-            return _outcome("missing_evidence_followup_runner")
-        current_tools = best_tools
-        max_rounds = self._max_rounds()
-        for round_index in range(1, max_rounds + 1):
-            if self.context.should_stop():
-                planner_stop_reason = "stopped"
-                break
-            staged_tools = current_tools.create_staged()
-
-            executor = PlanExecutor(
-                config=self.config,
-                should_stop=self.context.should_stop,
-            )
-            try:
-                material, integrated_result = self._investigate(executor, plan, staged_tools, best.summary)
-            except ResearchContinuationError:
-                raise
-            except cancellation.TaskCancelled:
-                raise
-            except Exception:
-                planner_stop_reason = "followup_execution_error"
-                break
-            planner_stop_reason = material.stop_reason
-            attempted_sources = len(material.fresh_source_urls) if material.fresh_source_urls else max(0, (material.fresh_source_count or 0))
-            total_attempted_fresh_sources += attempted_sources
-            if not material.has_new_material and not (integrated_result and integrated_result.has_new_evidence):
-                break
-            try:
-                followup_result = integrated_result or self._run_followup(staged_tools, plan, material, best)
-            except ResearchContinuationError:
-                raise
-            except cancellation.TaskCancelled:
-                raise
-            except Exception:
-                planner_stop_reason = "followup_iteration_error"
-                break
-            attempted_ev = max(0, (followup_result.new_evidence_count or 0))
-            total_attempted_new_evidence += attempted_ev
-            if not followup_result.has_new_evidence:
-                planner_stop_reason = followup_result.stop_reason or "no_evidence_extracted"
-                break
-            candidate = merge_evidence_patch(
-                initial=best,
-                tools=staged_tools,
-                material=material,
-            )
-            candidate_review = self._review(candidate, require_ledger_record=False)
-            # With a gated parent synthesis, retain validated acquired evidence
-            # even if the ungated patch ranks below the old draft. The patch is
-            # input to that synthesis, never its completion proof.
-            if self.synthesize_result is not None or followup_selection.selects_candidate(candidate, candidate_review, best, best_review):
-                try:
-                    best_tools.commit_staged(staged_tools)
-                except cancellation.TaskCancelled:
-                    raise
-                except Exception:
-                    planner_stop_reason = "followup_commit_error"
-                    break
-                best = candidate
-                best_review = candidate_review
-                current_tools = best_tools
-                followup_rounds = round_index
-                total_fresh_sources += attempted_sources
-                total_new_evidence += attempted_ev
-                total_merged_evidence = len(getattr(best.research_record, "evidence", ())) if getattr(best, "research_record", None) else 0
-                planner_stop_reason = "evidence_merged"
-            else:
-                planner_stop_reason = "candidate_not_selected"
-                break
-            plan = self._plan(best_review)
-            self.context.trace.record_plan(plan)
-            block_reason = self._followup_block_reason(best, best_review, plan)
-            if block_reason:
-                planner_stop_reason = block_reason
-                break
-        else:
-            if (
-                followup_rounds >= max_rounds
-                and self._followup_block_reason(best, best_review, plan) == ""
-            ):
-                planner_stop_reason = "max_followup_rounds"
-        return _FollowupOutcome(
-            best=best,
-            best_review=best_review,
-            best_tools=best_tools,
-            plan=plan,
-            followup_rounds=followup_rounds,
-            total_fresh_sources=total_fresh_sources,
-            total_new_evidence=total_new_evidence,
-            total_attempted_fresh_sources=total_attempted_fresh_sources,
-            total_attempted_new_evidence=total_attempted_new_evidence,
-            total_merged_evidence=total_merged_evidence,
-            planner_stop_reason=planner_stop_reason,
-        )
-
     def _finalize_pipeline_result(
-        self,
-        best: ResearchRunResult,
-        best_tools: ResearchTools | None,
-        *,
-        planner_stop_reason: str,
-        followup_rounds: int,
-        total_fresh_sources: int,
-        total_new_evidence: int,
-        total_merged_evidence: int,
-        total_attempted_fresh_sources: int,
-        total_attempted_new_evidence: int,
+        self, result: ResearchRunResult, tools: ResearchTools | None,
     ) -> ResearchPipelineResult:
-        if best_tools is not None and self.synthesize_result is not None:
-            best = self.synthesize_result(best, best_tools)
-        if followup_rounds and best_tools is not None and self.project_result is not None:
-            best = self.project_result(best, best_tools)
-        ledger_result = self._append_final_record(best)
+        ledger_result = self._append_final_record(result)
         self.context.trace.record_evidence_ledger_write(ledger_result)
         if self.ledger_event_sink is not None and ledger_result is not None:
             self.ledger_event_sink(ledger_result)
-        self.context.trace.record_result(best)
-        final_review = self._review(best, require_ledger_record=self.evidence_ledgers is not None and best.accepted_report is None)
-        self.context.trace.record_proof_review(final_review)
-        self._record_final_findings(best, final_review)
-        self.context.trace.record_plan(self._plan(final_review))
-        self._record_research_changes(best_tools)
+        self.context.trace.record_result(result)
+        review = self._review(result, require_ledger_record=self.evidence_ledgers is not None and result.accepted_report is None)
+        self.context.trace.record_proof_review(review)
+        self._record_final_findings(result, review)
+        self.context.trace.record_plan(self._plan(review))
+        self._record_research_changes(tools)
+        # Preserve the UI/trace payload shape. Acquisition belongs to the writer;
+        # these historical outer-followup counters are zero for new research.
         output = ResearchPipelineResult(
-            final_result=best,
-            followup_applied=followup_rounds > 0,
-            followup_rounds=followup_rounds,
-            stop_reason=best.stop_reason,
-            planner_stop_reason=planner_stop_reason,
-            fresh_source_count=total_fresh_sources,
-            new_evidence_count=total_new_evidence,
-            final_evidence_count=total_merged_evidence,
-            attempted_fresh_source_count=total_attempted_fresh_sources,
-            attempted_new_evidence_count=total_attempted_new_evidence,
+            final_result=result,
+            stop_reason=result.stop_reason,
+            planner_stop_reason=("strict_writer_owns_followup" if getattr(self.policy, "strict_research", False)
+                                 else "external_followup_retired"),
+            final_evidence_count=len(getattr(result.research_record, "evidence", ())) if result.research_record else 0,
         )
-
         self.context.trace.record_pipeline_result(output)
         return output
-
-    def _followup_block_reason(
-        self,
-        result: ResearchRunResult,
-        review: ResearchProofReview | None,
-        plan: ResearchPlan,
-    ) -> str:
-        if getattr(self.policy, "strict_research", False):
-            # The shared writer handles explicit gaps and deterministic repair.
-            # The legacy source-count planner must not run a second followup.
-            return "strict_writer_owns_followup"
-        if result.stop_reason in {"max_turns", "protocol"} and not result.queries and not result.opened_sources:
-            return "initial_no_research_progress"
-        if not self.config.enabled:
-            return "disabled"
-        if self._max_rounds() <= 0:
-            return "max_followup_rounds"
-        if review is None:
-            return "proof_review_missing"
-        if not followup_selection.has_actionable_gap(review):
-            return followup_selection.pipeline_stop_reason(plan, review)
-        if not plan.query_candidates:
-            return followup_selection.pipeline_stop_reason(plan, review)
-        if not followup_selection.is_followup_eligible_stop(result.stop_reason):
-            reason = (result.stop_reason or "unknown").strip() or "unknown"
-            return "initial_stop_reason_" + _reason_code(reason)
-        if self.context.should_stop():
-            return "stopped"
-        return ""
 
     def _review(
         self,
@@ -465,8 +163,8 @@ class ResearchPipeline:
         return build_research_plan(
             review,
             question=self.context.effective_proof_question or self.context.question,
-            max_queries=self.config.max_queries_per_round,
-            max_sources=self.config.max_total_sources,
+            max_queries=3,
+            max_sources=6,
         )
 
     def _record_final_findings(
@@ -554,23 +252,10 @@ class ResearchPipeline:
             self.context.run_id, tools.changes, self.context.session_id
         )
 
-    def _max_rounds(self) -> int:
-        try:
-            return max(0, min(3, (self.config.max_followup_rounds or 0)))
-        except (TypeError, ValueError):
-            return 0
-
-def _reason_code(value: object) -> str:
-    text = str(value or "").strip()
-    rendered = "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
-    return rendered[:80] or "unknown"
-
 
 __all__ = [
-    "EvidenceFollowupRunner",
     "ResearchIterationRun",
     "ResearchIterationRunner",
     "ResearchPipeline",
     "ResearchPipelineResult",
-    "ResearchPipelineConfig",
 ]

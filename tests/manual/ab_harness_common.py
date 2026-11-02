@@ -1296,41 +1296,6 @@ def fixture_material_phase(search: object) -> Iterator[None]:
         search.material_phase = previous
 
 
-@contextmanager
-def fixture_network_policy_bypass(
-    allowed_prefixes: Sequence[str] = ("https://source-a.test/", "https://source-b.test/"),
-) -> Iterator[None]:
-    """Allow *.test fixture hosts through the network policy, scoped."""
-
-    from codey.policies import network as network_module
-    from codey.research import plan_executor as research_plan_executor_module
-    from codey.research import tools as research_tools_module
-
-    original = (
-        network_module.check_fetch_url,
-        research_tools_module.check_fetch_url,
-        research_plan_executor_module.check_fetch_url,
-    )
-
-    def _allow_fixture_urls(url: str, *, resolve: bool = True, use_cache: bool = False) -> str | None:
-        text = str(url or "").strip().lower()
-        if text.startswith(tuple(allowed_prefixes)):
-            return None
-        return original[0](url, resolve=resolve, use_cache=use_cache)
-
-    network_module.check_fetch_url = _allow_fixture_urls
-    research_tools_module.check_fetch_url = _allow_fixture_urls
-    research_plan_executor_module.check_fetch_url = _allow_fixture_urls
-    try:
-        yield
-    finally:
-        (
-            network_module.check_fetch_url,
-            research_tools_module.check_fetch_url,
-            research_plan_executor_module.check_fetch_url,
-        ) = original
-
-
 def _clip(value: object, limit: int) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if limit <= 3:
@@ -1370,7 +1335,6 @@ __all__ = [
     "classify_provider_failure",
     "expected_matrix_keys",
     "fixture_material_phase",
-    "fixture_network_policy_bypass",
     "git_state",
     "interleaved_arm_schedule",
     "journal_directory_for_output",

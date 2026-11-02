@@ -17,7 +17,7 @@ UNSUPPORTED_GAP_ANSWER = "We measured WAL on this machine: it is always 10x fast
 
 
 def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task=TASK,
-         provider_factory=None, planner_enabled=False, required_checks=(), omit_requirement=False,
+         provider_factory=None, required_checks=(), omit_requirement=False,
          unsupported_claim=False, bad_reference=False, gap_answer=None, gap_investigation=False, boundary_turn=None,
          source_text=None, compact_planning=False, session_id="s", run_id="r", knowledge_root=None):
     import hashlib
@@ -29,7 +29,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
     from codey.knowledge.store import KnowledgeStore
     from codey.operations.research_flow import ResearchFlowDeps, run_research_pipeline
     from codey.policies.task_policy import TaskPolicy
-    from codey.research.context import ResearchContext, ResearchPipelineConfig
+    from codey.research.context import ResearchContext
     from codey.research.passages import passage_ref
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
@@ -161,7 +161,7 @@ def _run(root: Path, *, boundary="", resume=False, budget=10, native=False, task
         # scenarios opt in below; legacy crash/replay tests keep their inputs.
         legacy = (patch("codey.research.plan_contract.compact_plan_spec", side_effect=lambda spec, task: spec)
                   if not compact_planning else nullcontext())
-        with legacy, patch("codey.operations.research_flow.ResearchPipelineConfig", return_value=ResearchPipelineConfig(enabled=planner_enabled)):
+        with legacy:
             result = run_research_pipeline(deps, frame, SimpleNamespace(on_event=lambda _: None), max_turns=budget,
                 build_context=lambda *a, **kw: ResearchContext(question=task, session_id=session_id, run_id=run_id, max_turns=budget))
         return result.final_result
@@ -176,13 +176,13 @@ def test_writer_publishes_once_without_model_review_and_replays_without_new_call
     from codey.knowledge.store import KnowledgeStore
     from codey.research.report_projection import validate_accepted_projection
 
-    result = _run(tmp_path, native=native, planner_enabled=True)
+    result = _run(tmp_path, native=native)
     assert result.stop_reason == "done" and result.semantic_review is None
     assert result.turns == 5 and result.completion_proof.satisfied
     assert not any("assessed" in row.check_id for row in result.completion_proof.checks)
     validate_accepted_projection(result, run_id="r", session_id="s", project="")
     before = (tmp_path / "calls.jsonl").read_bytes()
-    assert _run(tmp_path, native=native, planner_enabled=True, resume=True) == result
+    assert _run(tmp_path, native=native, resume=True) == result
     assert (tmp_path / "calls.jsonl").read_bytes() == before
     store = KnowledgeStore(tmp_path / "knowledge")
     try:

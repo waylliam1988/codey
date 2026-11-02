@@ -55,25 +55,23 @@ def test_ordinary_context_and_evidence_only_contract():
     assert set(dict(done.parameters)) == {"summary"}
 
 
-def test_parent_synthesis_projects_saved_ledger_once():
-    from codey.operations.research_synthesis import synthesis_context
+def test_working_view_projects_saved_ledger_once():
     from codey.research.ledger import EvidenceItem, ResearchLedger
-    from codey.research.tools import ResearchTools
 
     ledger = ResearchLedger()
     ledger.questions = ("What was observed?",)
     ledger.references["f1"] = ResearchReference("object", 1, "claim", "current_run", "original-note")
     ledger.evidence_items.append(EvidenceItem("Earlier scoped finding", "https://example.org/",
         "Observed result", note_id="original-note"))
-    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research")
+    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
+                          task_text="What was observed?")
+    session.research_questions = ledger.questions
     text = task_working_context(session, ledger)
     view = state(session, ledger)
     assert view["saved_evidence_count"] == 1 and view["references"][0]["ref"] == "f1"
     assert view["references"][0]["interpretation_review"] == "unreviewed"
     assert view["recent_results"] == [] and "original-note" not in text
-    handoff = synthesis_context(ResearchTools(None, None, None, ledger=ledger))
-    assert "Earlier scoped finding" not in handoff and "What was observed?" not in handoff
-    assert (text + handoff).count("Earlier scoped finding") == 1
+    assert text.count("Earlier scoped finding") == 1
 
 
 def test_unknown_property_repair_allows_correcting_keys_without_rewriting_source_values():
@@ -89,8 +87,6 @@ def test_unknown_property_repair_allows_correcting_keys_without_rewriting_source
             assert "Remove the rejected property key at the reported location" in prompt
             assert "Preserve valid source excerpts" in prompt
             assert "the rejected key must change" in prompt
-
-
 
 
 def test_valid_full_length_questions_cannot_exceed_serialization_budget():

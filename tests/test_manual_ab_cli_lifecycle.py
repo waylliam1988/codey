@@ -10,7 +10,6 @@ import pytest
 @pytest.mark.parametrize(
     ("module_name", "experiment_id"),
     (
-        ("tests.manual.bounded_research_planner_ab", "bounded_research_planner_ab"),
         ("tests.manual.source_connector_ab", "source_connector_ab"),
         ("tests.manual.research_source_rendering_ab", "research_source_rendering_ab"),
     ),

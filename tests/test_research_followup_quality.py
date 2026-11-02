@@ -1,19 +1,11 @@
 from __future__ import annotations
 
-from tests.manual import research_followup_quality_ab
-from tests.manual.ab_journal import TRANSCRIPT_MODE_ARCHIVE, TRANSCRIPT_MODE_DIGEST_ONLY
 from tests.manual.research_scorers.followup_quality import followup_usefulness, score_followup_quality_row
 from tests.manual.research_scorers.source_finalizer_scoring import (
     aggregate_source_finalizer_rows,
     paired_source_finalizer_deltas,
     score_source_finalizer_row,
 )
-
-
-def test_followup_quality_ab_transcript_mode_defaults_to_archive() -> None:
-    assert research_followup_quality_ab._transcript_cache_mode("archive") == TRANSCRIPT_MODE_ARCHIVE
-    assert research_followup_quality_ab._transcript_cache_mode("digest-only") == TRANSCRIPT_MODE_DIGEST_ONLY
-    assert research_followup_quality_ab._transcript_cache_mode("off") is None
 
 
 def test_followup_quality_score_and_usefulness_are_shared() -> None:

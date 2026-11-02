@@ -2,8 +2,8 @@
 
 Planner v1 consumes proof-review gaps plus connector metadata and returns a
 bounded plan. The planner itself does not execute searches, fetch sources, or
-patch prompts; ResearchPipeline may use its bounded output as follow-up behavior
-input.
+patch prompts. ResearchPipeline records its bounded output for audit only;
+source acquisition belongs to the research writer.
 """
 
 from __future__ import annotations

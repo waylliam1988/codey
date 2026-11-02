@@ -146,3 +146,8 @@ Mypy 的 `no-any-return` 来自生产回执边界：动态 store 返回值没有
 | 生产源码固定验证 | 扩大回归结束时，四个修改文件的 SHA256 均与开始时一致 |
 
 最终完整结果见 `final.log`、`final.xml`、`final-summary.json` 和三份 `*-frozen.log`；最终定向结果见 `targeted-final.log/xml`。本轮验证合同接线、版本固定、发布和恢复，不证明模型已能稳定理解历史主张或研究内容正确率提升。
+
+
+## 外层补查接线后续清理
+
+详见 [Research 外层补查支线清理](research-outer-followup-cleanup-20261102.zh-CN.md)。该轮以 `b7992d19` 为基线，退役不可达的调查、抽取、候选合并和额外合成支线，保留真实整篇研究、知识积累、审计与发布恢复；最终固定版本检查及原有失败归因单独记录。

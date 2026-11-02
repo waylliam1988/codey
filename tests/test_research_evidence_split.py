@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
-from codey.research import record_merge as rm
 from codey.research.evidence_ledger import EvidenceLedgerStore, _canonical_ledger_payload
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
@@ -96,41 +94,6 @@ def test_canonical_split_preserves_valid_ledger() -> None:
         assert _canonical_ledger_payload(dict(snapshot.payload)) is True
 
 
-def test_inject_split_preserves_sections() -> None:
-    ledger = _ledger_with_one_source()
-    url = "https://example.com/plr-b4"
-    sections = {
-        "conclusion": "",
-        "evidence": "",
-        "counter": "",
-        "source_quality": "",
-        "coverage": "",
-        "sources": "",
-    }
-    prepared = ledger.prepare_evidence_items(
-        [{
-            "claim": "PLR B4 claim.",
-            "source_url": url,
-            "excerpt": "PLR B4 verified fact text.",
-            "stance": "supports",
-        }],
-        fallback_sources=[url],
-        fallback_claim="PLR B4 claim.",
-        fallback_body="PLR B4 verified fact text.",
-        note_type="fact",
-    )
-    assert not prepared.error
-    ledger.add_evidence_items(list(prepared.items), note_id="note-plr-b4")
-    updated = rm._inject_new_evidence_into_sections(
-        sections,
-        list(ledger.evidence_items),
-        ledger,
-        rebuild=True,
-    )
-    assert url in updated["sources"]
-    assert updated["evidence"].strip() != ""
-
-
 def test_review_split_preserves_verdict_shape() -> None:
     verdict = _review_relations(
         claims={},
@@ -176,20 +139,6 @@ def test_knowledge_write_split_preserves_save() -> None:
             assert out.startswith("saved fact note id=")
         finally:
             store.index.close()
-
-
-def test_render_search_coverage_none_queries_graceful() -> None:
-    ledger = MagicMock()
-    ledger.coverage_payload.return_value = {
-        "queries": None,
-        "opened_count": 0,
-        "skipped_results": None,
-    }
-    ledger.final_url_set.return_value = set()
-    ledger.evidence_items = []
-    text = rm._render_search_coverage(ledger, set())
-    assert "已打开来源: 0" in text
-    assert "证据条目: 0" in text
 
 
 def test_overclaim_accepts_set_like_frozenset() -> None:

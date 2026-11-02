@@ -1,7 +1,6 @@
 """Corrupt continuation data must stop before publishing recovered facts."""
 from __future__ import annotations
 
-import copy
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -12,69 +11,9 @@ from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.research_continuation import ResearchContinuation, ResearchInvocation, restore_note_proposals
 from codey.providers.response_record import json_value
-from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import ledger_observation
 from codey.research.pipeline import ResearchContinuationError
-from codey.research.plan_executor import PlanExecutionResult
-from codey.research.query_planner import QueryCandidate, ResearchPlan
 from codey.research.tools import ResearchTools
 from codey.runtime.core.operation_state import RuntimeOperationState, new_operation_state
-
-
-def _material():
-    ledger = ResearchLedger()
-    ledger.record_search("durable recovery", [{"title": "Original", "url": "https://example.com/source"}])
-    ledger.record_open("https://example.com/source", "https://example.com/source", "Original", "original source text")
-    material = PlanExecutionResult(queries_executed=("durable recovery",),
-        opened_sources=(ledger.opened_sources[0].to_dict(),), previews=("original source text",),
-        fresh_source_urls=("https://example.com/source",), fresh_source_count=1, stop_reason="max_sources")
-    observations = [ledger_observation(ledger, "web_search"),
-                    ledger_observation(ledger, "open_url", url="https://example.com/source")]
-    plan = ResearchPlan("research_plan:0123456789abcdef",
-                        query_candidates=(QueryCandidate("research_query:0123456789abcdef", "durable recovery"),))
-    return material, observations, plan
-
-
-@pytest.mark.parametrize("field,value", [
-    ("fresh_source_count", True), ("fresh_source_count", 0), ("skipped_count", -1),
-    ("stop_reason", []), ("stop_reason", "invented"), ("queries_executed", [False]),
-    ("previews", [None]), ("errors", [{}]), ("opened_sources", ["not a source"]),
-    ("fresh_source_urls", ["https://example.com/source", "https://example.com/source"]),
-])
-def test_invalid_material_is_rejected(field, value):
-    payload = json_value(_material()[0])
-    payload[field] = value
-    with pytest.raises(ResearchContinuationError):
-        ResearchContinuation.decode_material(payload)
-
-
-@pytest.mark.parametrize("corruption", ["body", "query", "source", "shape", "missing"])
-def test_corrupt_observation_does_not_publish_partial_ledger(corruption):
-    material, observations, plan = _material()
-    observations = copy.deepcopy(observations)
-    if corruption == "body":
-        observations[1]["text"] = "changed source text"
-    elif corruption == "query":
-        observations[0]["search"]["query"] = "another query"
-    elif corruption == "source":
-        material = replace(material, opened_sources=({**material.opened_sources[0], "title": "Different"},))
-    elif corruption == "shape":
-        observations[1] = {"evidence": []}
-    else:
-        observations.pop()
-    tools = SimpleNamespace(ledger=ResearchLedger())
-    with pytest.raises(ResearchContinuationError):
-        ResearchContinuation.restore_material(tools, plan, material, observations)
-    assert tools.ledger.searches == []
-    assert tools.ledger.opened_sources == []
-
-
-def test_valid_material_rebuilds_original_source():
-    material, observations, plan = _material()
-    tools = SimpleNamespace(ledger=ResearchLedger())
-    ResearchContinuation.restore_material(tools, plan, material, observations)
-    assert tools.ledger.source_text_for_url(material.fresh_source_urls[0]) == "original source text"
-    assert tools.ledger.opened_sources[0].to_dict() == material.opened_sources[0]
 
 
 def test_restored_note_commit_is_idempotent_and_conflict_preserves_vault(tmp_path, monkeypatch):

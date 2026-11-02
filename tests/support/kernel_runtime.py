@@ -202,46 +202,6 @@ def run_research_iteration(deps, **kwargs):
             durable.close()
 
 
-def run_evidence_followup(**kwargs):
-    """An evidence-only fixture starts after a committed parent invocation."""
-    from types import SimpleNamespace
-
-    from codey.durable import DurableSession, MemoryDurableStore
-    from codey.operations.evidence_followup import run_evidence_followup as run
-    from codey.operations.generation_boundary import durable_generation_boundary_callback
-    from codey.operations.task_effects import KernelEffectSink
-    from codey.operations.task_session import TaskSession
-    from codey.policies.task_policy import TaskPolicy
-    from codey.runtime.write.mutation_line import RuntimeMutationLine
-    from codey.storage.managed_outputs import ManagedOutputStore
-
-    with tempfile.TemporaryDirectory() as temporary:
-        durable = DurableSession(MemoryDurableStore())
-        session_id, run_id, provider_id = kwargs.get("session_id") or "s", kwargs.get("run_id") or "r", kwargs.get("provider_id") or "local"
-        mutations = RuntimeMutationLine(durable=durable)
-        outputs = kwargs.get("managed_outputs") or ManagedOutputStore(Path(temporary))
-        durable.admit_input(conversation_id=session_id, request_id=run_id, task_id=run_id,
-                            text=kwargs["question"], provider_snapshot={})
-        durable.claim_task(run_id)
-        durable.start_task(run_id, state=dict(durable.task(run_id).state))
-        mutations.accept_operation(session_id=session_id, run_id=run_id, provider_id=provider_id,
-                                   turn_budget=8, max_repair_rounds=0, task_kind="research")
-        mutations.mark_writer_running(session_id, run_id, provider_id=provider_id)
-        sink = KernelEffectSink(mutations, session_id=session_id, run_id=run_id, provider_id=provider_id,
-                                durable=durable, managed_outputs=outputs)
-        try:
-            from codey.operations.kernel_driver import drive_kernel
-
-            drive_kernel(TaskSession(TaskPolicy(frozenset({"control"})), task_kind="chat"), request=KernelRunRequest(
-                transport=KernelTransportDeps(provider=SimpleNamespace(send=lambda *_: '{"tool":"done","args":{"summary":"parent finished"}}'), run_id=run_id, provider_id=provider_id),
-                observation=KernelObservationDeps(intent_sink=sink, on_boundary=durable_generation_boundary_callback(
-                    durable=durable, session_id=session_id, task_id=run_id, sink=sink))))
-            return run(**{**kwargs, "session_id":session_id, "run_id":run_id, "provider_id":provider_id,
-                "runtime_mutations":mutations, "durable":durable, "managed_outputs":outputs})
-        finally:
-            durable.close()
-
-
 def run_project_audit_advisor(*args, **kwargs):
     """Explicit store resources for isolated read-only advisor tests."""
     from codey.durable import DurableSession, MemoryDurableStore

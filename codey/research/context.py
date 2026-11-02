@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -171,17 +171,6 @@ class RunTraceResearchSink:
 
 
 @dataclass(frozen=True)
-class ResearchPipelineConfig:
-    enabled: bool = True
-    max_followup_rounds: int = 1
-    max_queries_per_round: int = 3
-    max_sources_per_query: int = 2
-    max_total_sources: int = 6
-    max_source_preview_chars: int = 2400
-    max_followup_context_chars: int = 8000
-
-
-@dataclass(frozen=True)
 class ResearchContext:
     question: str
     session_id: str
@@ -194,7 +183,6 @@ class ResearchContext:
     chat_handoff: str = ""
     topic_continuity_context: str = ""
     topic_continuity_payload: Mapping[str, object] | None = None
-    should_stop: Callable[[], bool] = lambda: False
     trace: ResearchTraceSink = field(default_factory=NullResearchTraceSink)
 
     @property
@@ -208,7 +196,6 @@ class ResearchContext:
 __all__ = [
     "NullResearchTraceSink",
     "ResearchContext",
-    "ResearchPipelineConfig",
     "ResearchTraceSink",
     "RunTraceResearchSink",
 ]
