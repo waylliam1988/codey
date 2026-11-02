@@ -26,12 +26,22 @@ class KernelResult:
     def to_payload(self) -> dict[str, Any]:
         from codey.providers.response_record import json_value
 
-        return cast(dict[str, Any], json_value(self))
+        return {"schema_version": 2, **cast(dict[str, Any], json_value(self))}
 
 def result_from_payload(payload: Any) -> KernelResult:
     from codey.completion.contract import _proof_from_payload
 
-    if (not isinstance(payload, dict) or set(payload) != {"completed", "summary", "turns", "stop_reason", "proof", "delivery", "research_report"}
+    legacy = {"completed", "summary", "turns", "stop_reason", "proof", "delivery"}
+    current = legacy | {"research_report"}
+    if not isinstance(payload, dict):
+        raise ValueError("invalid persisted kernel result")
+    if set(payload) == legacy:
+        payload = {**payload, "research_report": None}
+    elif set(payload) == current | {"schema_version"}:
+        if type(payload["schema_version"]) is not int or payload["schema_version"] != 2:
+            raise ValueError("unknown persisted kernel result version")
+        payload = {key: value for key, value in payload.items() if key != "schema_version"}
+    if (set(payload) != current
             or type(payload["completed"]) is not bool or not isinstance(payload["summary"], str)
             or type(payload["turns"]) is not int or payload["turns"] < 0
             or not isinstance(payload["stop_reason"], str)

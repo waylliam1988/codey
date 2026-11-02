@@ -131,12 +131,12 @@ class KnowledgeRecall:
         rows = conn.execute(
             "SELECT r.id,r.revision,r.relation FROM knowledge_refs r JOIN knowledge_heads h "
             "ON r.id=h.id AND r.revision=h.revision JOIN knowledge_versions v ON v.id=r.id AND v.revision=r.revision "
-            f"WHERE r.target=? AND {scope} AND v.status NOT IN ('withdrawn','superseded') " + excluded +
+            f"WHERE r.target=? AND r.target_revision=? AND {scope} AND v.status NOT IN ('withdrawn','superseded') " + excluded +
             "ORDER BY CASE r.relation WHEN 'refuted_by' THEN 0 WHEN 'limited_by' THEN 1 ELSE 2 END LIMIT ?",
-            (version.value.id, *args, limit),
+            (version.value.id, version.revision, *args, limit),
         ).fetchall()
         outgoing = [(r.target, r.revision, r.relation) for r in version.value.references if r.target not in exclude_ids]
-        return (outgoing + [(str(r[0]), int(r[1]), str(r[2])) for r in rows])[:limit]
+        return list(dict.fromkeys(outgoing + [(str(r[0]), int(r[1]), str(r[2])) for r in rows]))[:limit]
 
 
 def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_answer_refs: bool = True,
