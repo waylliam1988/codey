@@ -20,10 +20,14 @@ from tests.test_research_whole_kernel import run_whole
 @pytest.mark.parametrize("native", [False, True])
 def test_accepted_publication_reuses_audit_and_keeps_diagnostics(tmp_path, whole, native):
     trace = _TraceRecorder()
+    ledger = EvidenceLedgerStore(tmp_path / "ledger")
+    events = []
     original_init = pipeline.ResearchPipeline.__init__
 
     def init(self, **kwargs):
         kwargs["context"] = replace(kwargs["context"], trace=trace)
+        kwargs["evidence_ledgers"] = ledger
+        kwargs["ledger_event_sink"] = events.append
         original_init(self, **kwargs)
 
     with (
@@ -45,7 +49,13 @@ def test_accepted_publication_reuses_audit_and_keeps_diagnostics(tmp_path, whole
     assert len(plans) == 2 and plans[0] is plans[1]
     assert plans[1] == pipeline.build_research_plan(*plan.call_args.args, **plan.call_args.kwargs)
     writes = [args[0] for name, args, _ in trace.calls if name == "record_evidence_ledger_write"]
-    assert writes == [None]  # This kernel fixture has no optional evidence ledger.
+    assert writes == events and len(writes) == 1
+    assert writes[0].ok and not writes[0].skipped, writes[0].reason_code
+    saved = ledger.load(session_id="s", project="")
+    assert saved.available
+    if whole:
+        assert not saved.payload["claims"]  # Body citations never manufacture verified claims.
+        assert {row["stance"] for row in saved.payload["evidence"].values()} == {"cited_unreviewed"}
     names = [name for name, _, _ in trace.calls]
     assert "record_research_source_trust" in names
     assert "record_research_brief_projection" in names

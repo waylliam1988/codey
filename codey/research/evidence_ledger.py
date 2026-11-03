@@ -1121,7 +1121,8 @@ def _evidence_schema_ok(evidence: Mapping[str, object]) -> bool:
         and _identifier_schema_ok(evidence.get("source_id"), 80, allow_empty=False)
         and _digest_schema_ok(evidence.get("excerpt_digest"))
         and _bounded_text_schema_ok(evidence.get("bounded_excerpt"), 360, allow_empty=False)
-        and evidence.get("stance") in {"supports", "contradicts", "context", "unknown"}
+        # Whole answers preserve cited material without asserting claim support.
+        and evidence.get("stance") in {"supports", "contradicts", "context", "unknown", "cited_unreviewed"}
         and _identifier_schema_ok(evidence.get("note_id"), 120)
         and _digest_schema_ok(evidence.get("claim_text_digest"))
     )
