@@ -99,9 +99,9 @@ def test_failed_investigation_can_publish_gap_without_fabricated_source(tmp_path
 
 
 def test_work_view_retains_bounded_failed_and_repeated_investigation_receipts(tmp_path):
-    from codey.research.answer_context import investigation_history
+    from codey.research.answer_context import answer_context, investigation_history
 
-    store, _, session, _ = setup(tmp_path)
+    store, tools, session, _ = setup(tmp_path)
     try:
         for index in range(12):
             session._memory_results[f"search-{index}"] = ToolResult(
@@ -111,7 +111,9 @@ def test_work_view_retains_bounded_failed_and_repeated_investigation_receipts(tm
         history = investigation_history(session)
         assert len(history) == 8 and history[0]["result_ref"] == "search-5"
         assert history[-2]["identical_observations"] == 12
-        assert history[-1]["ok"] is False and history[-1]["error"] == "Read timed out"
+        assert history[-1]["ok"] is False and history[-1]["result_ref"] == "failed-read"
+        assert "error" not in history[-1]
+        assert '"latest_error":["Read timed out"]' in answer_context(session, tools.ledger, answer_scope(session))
         # This observation cannot create evidence or claim that the topic is absent.
         scope = answer_scope(session)
         assert not scope.aliases and len(scope.attempt_refs) == 13

@@ -44,11 +44,12 @@ def prior_knowledge(session: Any, *, budget: int = 6000) -> list[dict[str, Any]]
 
 
 def investigation_history(session: Any) -> list[dict[str, Any]]:
-    """Avoid duplicate read rows after a settled search supplied no new leads."""
+    """Reuse displayed reads and latest_error without losing settled receipts."""
     counts: dict[str, int] = {}
     rows = []
     receipt_reads = set()
     latest = list(session._memory_results.values())[-1:]
+    latest_ref = next(reversed(session._memory_results), "")
     compact = bool(latest and latest[0].call.name == "knowledge_search"
                    and latest[0].canonical.get("knowledge_search_empty") is True)
     for identity, result in session._memory_results.items():
@@ -66,7 +67,7 @@ def investigation_history(session: Any) -> list[dict[str, Any]]:
             receipt_reads.add(identity)
         rows.append({"result_ref": identity, "tool": result.call.name, "args": result.call.args,
                      "ok": result.ok, "identical_observations": counts[key],
-                     **({"error": result.model_text[:500]} if not result.ok else {})})
+                     **({"error": result.model_text[:500]} if not result.ok and identity != latest_ref else {})})
     # Visible windows retain their text; omitted_windows retains each hidden
     # window's exact recovery receipt and passage identity.
     return [row for row in rows[-8:] if not compact or row["result_ref"] not in receipt_reads]

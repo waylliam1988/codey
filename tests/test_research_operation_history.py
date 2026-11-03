@@ -60,7 +60,10 @@ def test_installed_projection_matches_the_isolated_candidate(tail):
         "search": result("knowledge_search", passages=False)})
     if tail is not None:
         session._memory_results["tail"] = tail
-    assert investigation_history(session) == original_history(session)
+    expected = original_history(session)
+    if tail is not None and not tail.ok:
+        assert expected[-1].pop("error") == tail.model_text
+    assert investigation_history(session) == expected
     empty = result("knowledge_search", passages=False, args={"query": "missing"})
     empty = ToolResult(empty.call, empty.model_text, ok=True, canonical={"knowledge_search_empty": True})
     session._memory_results["empty"] = empty
@@ -105,7 +108,11 @@ def test_actual_work_view_changes_only_duplicate_reads_and_restores_them_on_fail
             f"receipt-{i}" for i in range(14)}
         assert session._memory_results == memory
         session._memory_results["failure"] = result(ok=False, passages=False, text="Bad exact-id revision=7")
-        assert view("original_control") == view("production")
+        before_blocks, before = view("original_control")
+        after_blocks, after = view("production")
+        assert before_blocks == after_blocks
+        assert before["investigation_attempts"][-1].pop("error") == "Bad exact-id revision=7"
+        assert before == after and after["latest_error"] == ["Bad exact-id revision=7"]
         session._memory_results["later-success"] = result(passages=False, args={"id": "correct-id", "revision": 7})
         assert view("original_control") == view("production")
         session._memory_results["later-empty"] = searched

@@ -68,11 +68,17 @@ def task_guidance_for_policy(policy: TaskPolicy) -> str:
 
 
 def task_result_context(session: Any, result: Any, research_scope: Any) -> str:
-    """Compact only successful reads fully present in the frozen work view."""
+    """Reuse complete reads and errors already present in the frozen work view."""
     from codey.operations.kernel_prompt import _result_context
     from codey.providers.base import render_result_metadata
     from codey.research.answer_contract import AnswerScope
 
+    if (isinstance(research_scope, AnswerScope) and not result.ok and len(result.model_text) <= 1600
+            and next(reversed(session._memory_results.values()), None) is result):
+        identity = next((key for key, value in session._memory_results.items() if value is result), "")
+        if identity:
+            return ("Tool failed. The complete error appears in latest_error in the current evidence view.\n"
+                    + render_result_metadata(identity, tool=result.call.name, ok=False))
     rows = result.canonical.get("read_passages", [])
     if isinstance(research_scope, AnswerScope) and result.ok and rows:
         labels = {ref: label for label, ref in research_scope.aliases}
