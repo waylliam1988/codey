@@ -313,6 +313,7 @@ def research_loop(case, legacy):
                 else:
                     from codey.durable import DurableSession, MemoryDurableStore
                     from codey.operations.research_iteration import run_research_iteration
+                    from codey.policies.task_policy import STRICT_RESEARCH_REQUIRED_CHECKS, TaskPolicy
                     from codey.runtime.write.mutation_line import RuntimeMutationLine
                     from codey.storage.managed_outputs import ManagedOutputStore
                     durable = DurableSession(MemoryDurableStore())
@@ -329,14 +330,26 @@ def research_loop(case, legacy):
                         runtime_mutations=mutations, managed_outputs=ManagedOutputStore(Path(td))), provider=provider,
                         session_id="s", project="", task="How is helium obtained?", max_turns=case.get("max_turns", 6),
                         on_event=lambda _e: None, stop_flag=flag, provider_id="local", run_id=run_id, chat_handoff="",
-                        trace_recorder=None, search=Search())
+                        trace_recorder=None, search=Search(),
+                        # Frozen pre-plan scripts exercise the historical finding
+                        # contract, not the newer whole-answer entry default.
+                        task_policy=None if case.get("contract") == "whole-answer" else TaskPolicy(
+                            grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write", "knowledge.link"}),
+                            strict_research=True, required_checks=STRICT_RESEARCH_REQUIRED_CHECKS,
+                            source="parity/finding-contract"))
                     result = iteration.result
                     tools = iteration.tools
                     durable.close()
             # Exclude generated ids and timestamps, retain note contents and
             # source/evidence facts. A note disappearing is never normalized away.
             notes = [store.read_note(key) for key in tools.created_ids]
-            return {"operations": operations, "stop_reason": result.stop_reason,
+            modern = {}
+            if not legacy and case.get("contract") == "whole-answer":
+                from dataclasses import asdict
+
+                modern = {"accepted_evidence": [asdict(item) for item in result.research_record.evidence],
+                          "citation_map": result.citation_map}
+            return {**modern, "operations": operations, "stop_reason": result.stop_reason,
                     "source_urls": sorted(tools.sources_read), "evidence_count": len(tools.ledger.evidence_items),
                     "notes": [{
                         "type": note.type, "title": note.title, "body": note.body,

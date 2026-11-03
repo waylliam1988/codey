@@ -262,6 +262,9 @@ def _all_specs() -> dict[str, ToolSpec]:
         specs[name] = spec
     if "done" not in specs:
         specs["done"] = _coding_specs().get("done", ToolSpec(name="done", grant="control"))
+    from codey.research.revision_tools import PREPARE, preparation_spec
+
+    specs[PREPARE] = preparation_spec()
     return specs
 
 

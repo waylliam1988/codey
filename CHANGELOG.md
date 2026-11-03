@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+- Defer the full stored-knowledge revision schema in whole-answer Research until
+  a settled, non-writing preparation request. Restore the original tool context
+  after a failed knowledge read, and preserve frozen permissions, exact versions,
+  original publication and safe process recovery. Local model follow-ups show
+  lower lookup input cost; they do not establish improved interpretation or edits.
+- Repair stale Research and provider test fixtures instead of excluding their
+  failures: pin historical parity contracts, update the current positive replay
+  and removed-module inventory, record real PDF tool events and accepted evidence,
+  clean temporary tool registrations, and verify current Zen request forwarding.
+
 - Repair offline Research regressions against the current planning, question
   binding, exact-passage saving and answers-only completion contract. Read the
   shared input schema in the parity probe, retain its immutable legacy baseline,

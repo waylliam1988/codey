@@ -485,6 +485,7 @@ class ProbeResearchIteration(ResearchIteration):
         self.trace = trace
         self.sent_messages: list[str] = []
         self.received_replies: list[str] = []
+        self.events: list[object] = []
         self.tools = ProbeResearchTools(
             search=search,
             store=store,
@@ -610,7 +611,7 @@ class ProbeResearchIteration(ResearchIteration):
             project="",
             task=str(question or ""),
             max_turns=self.max_turns,
-            on_event=lambda event: None,
+            on_event=self.events.append,
             stop_flag=None,
             provider_id=self.provider_id or "local",
             run_id=self.run_id,
@@ -1184,7 +1185,7 @@ def run_case(
                 "evidence_items": result.evidence_items,
                 "quality_warnings": result.quality_warnings,
                 "summary_preview": _clip(result.summary, MAX_REPLY_CHARS),
-                "tool_calls": _tool_calls(events),
+                "tool_calls": _tool_calls(runner.events),
             }
             row["id_rewrite_count"] = len(row["id_rewrites"])
             row["used_result_id"] = any(item.get("kind") == "result_id" for item in row["id_rewrites"])
@@ -1224,6 +1225,10 @@ def _score(
         str(item.get("excerpt") or "")
         for item in result.evidence_items
     ).lower()
+    # Whole-answer citations use settled read receipts rather than save_finding.
+    record = getattr(result, "research_record", None)
+    if record is not None:
+        evidence_text += "\n" + "\n".join(item.bounded_excerpt for item in record.evidence).lower()
     opened_urls = set(result.source_urls)
     used_source_search = any(call["name"] == "source_search" for call in tool_calls)
     primary_applicable = bool(case.expected_primary_urls)
@@ -1661,11 +1666,11 @@ def _done_attempt_count(replies: list[str]) -> int:
         objects = _extract_json_objects(reply or "")
         done_objects = [
             obj for obj in objects
-            if str(obj.get("tool") or "").strip().lower() == "done"
+            if str(obj.get("tool") or "").strip().lower() in {"done", "submit_research_answer"}
         ]
         if done_objects:
             count += len(done_objects)
-        elif re.search(r'"tool"\s*:\s*"done"', reply or "", flags=re.I):
+        elif re.search(r'"tool"\s*:\s*"(?:done|submit_research_answer)"', reply or "", flags=re.I):
             count += 1
     return count
 
@@ -1879,14 +1884,48 @@ class ScriptedProvider:
     def send(self, text: str, timeout=None) -> str:
         self.sent.append(text)
         if not self.replies:
-            return json.dumps({"tool": "done", "args": {"summary": "done"}})
+            raise RuntimeError("deep research provider script exhausted")
         return self.replies.pop(0)
 
     def close(self) -> None:
         pass
 
 
+def pdf_recall_provider() -> ScriptedProvider:
+    """Explicit current-contract script: find page 9, read it, cite its receipt."""
+    calls = [
+        ("web_search", {"query": "omega method validation"}),
+        ("open_url", {"url": PDF_METHOD_URL}),
+        ("source_search", {"url": PDF_METHOD_URL, "query": "stratified bootstrap"}),
+        ("open_url", {"url": PDF_METHOD_URL, "pages": "9"}),
+        # Pages 1-5 bind e1-e5; the actual page-9 read binds e6.
+        ("submit_research_answer", {"state": "answered", "markdown":
+            "The Omega paper uses stratified bootstrap validation with 5,000 resamples "
+            "(PDF page 9) [e6]."}),
+    ]
+    return ScriptedProvider(*(json.dumps({"tool": name, "args": args}) for name, args in calls))
+
+
 def self_test() -> int:
+    import socket
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from codey.policies import network
+
+    def resolve(host, port, **_kwargs):
+        # Fixture fetches stay local; keep the production public-address guard.
+        assert host == "example.edu", f"Unscripted DNS host: {host}"
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", port))]
+
+    with (
+        patch.object(network, "socket", SimpleNamespace(getaddrinfo=resolve, IPPROTO_TCP=socket.IPPROTO_TCP)),
+        patch.object(network, "DEFAULT_NETWORK_POLICY", network.NetworkPolicy()),
+    ):
+        return _self_test_fixtures()
+
+
+def _self_test_fixtures() -> int:
     case = next(item for item in CASES if item.name == "pdf-target-page")
     baseline_codec = ProbeJsonToolCodec("baseline")
     source_codec = ProbeJsonToolCodec("source_search")
@@ -1911,7 +1950,7 @@ def self_test() -> int:
     )
     thin_codec.configure_thin_gate(thin_state)
     opened_by_result_id = thin_codec.parse('{"tool":"open_url","args":{"result_id":"r1"}}')
-    assert opened_by_result_id.calls[0].args["url"] == OFFICIAL_LONG_URL
+    assert opened_by_result_id.protocol_error_kind == "invalid_args" and not opened_by_result_id.calls
     source_search_by_source_id = thin_codec.parse(
         '{"tool":"source_search","args":{"source_id":"s1","query":"72-hour"}}'
     )
@@ -1940,44 +1979,7 @@ def self_test() -> int:
         assert "[page 9]" in page.model_text
         store.close()
 
-    report = (
-        "## Conclusion\n"
-        "- The Omega method uses stratified bootstrap validation [1 p.9].\n\n"
-        "## Key evidence\n"
-        "- [1 p.9] The method uses stratified bootstrap validation.\n\n"
-        "## Counter-evidence\n"
-        "- No strong counter-evidence was found; this fixture only checks source_search.\n\n"
-        "## Source quality\n"
-        "- [1] primary paper source.\n\n"
-        "## Search coverage\n"
-        "- query: omega method validation\n\n"
-        "## Sources\n"
-        f"[1] Omega method paper - {PDF_METHOD_URL}"
-    )
-    provider = ScriptedProvider(
-        json.dumps({"tool": "open_url", "args": {"url": PDF_METHOD_URL}}),
-        json.dumps({
-            "tool": "source_search",
-            "args": {"url": PDF_METHOD_URL, "query": "stratified bootstrap"},
-        }),
-        json.dumps({"tool": "open_url", "args": {"url": PDF_METHOD_URL, "pages": "9"}}),
-        json.dumps({
-            "tool": "knowledge_write",
-            "args": {
-                "type": "fact",
-                "title": "Omega validation method",
-                "body": "The method uses stratified bootstrap validation.",
-                "sources": [PDF_METHOD_URL],
-                "evidence": [{
-                    "claim": "Omega method uses stratified bootstrap validation.",
-                    "source_url": PDF_METHOD_URL,
-                    "excerpt": "stratified bootstrap validation with 5,000 resamples",
-                    "page": 9,
-                }],
-            },
-        }),
-        json.dumps({"tool": "done", "args": {"summary": report}}),
-    )
+    provider = pdf_recall_provider()
     row = run_case(provider, "scripted", case, "source_search", max_turns=8, timeout=30.0)
     assert row["final_done"]
     assert row["used_source_search"]

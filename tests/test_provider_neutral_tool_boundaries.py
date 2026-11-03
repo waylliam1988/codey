@@ -3,12 +3,13 @@ from dataclasses import fields
 from types import SimpleNamespace
 
 from codey.operations import kernel_protocol, kernel_transport
+from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import base
 
 
 def test_turn_snapshot_has_no_chat_completions_tool_wrapper():
-    session = SimpleNamespace(policy=TaskPolicy(grants=frozenset({"control"})), controller_denied=())
+    session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"})))
     snapshot = kernel_protocol.build_turn_snapshot(session, native=True)
     assert snapshot.frozen_specs
     assert "native_tools" not in {f.name for f in fields(snapshot)}

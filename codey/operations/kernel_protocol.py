@@ -77,10 +77,10 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
         raise ValueError("same-model research assessment execution has been retired")
     policy = getattr(session, "policy", None)
     try:
-        denied = {"submit_research_review"} | {str(n or "").strip().lower() for n in (getattr(session, "controller_denied", ()) or ())
+        denied = {"submit_research_review", "prepare_knowledge_revision"} | {str(n or "").strip().lower() for n in (getattr(session, "controller_denied", ()) or ())
                   if str(n or "").strip()}
     except Exception:
-        denied = {"submit_research_review"}
+        denied = {"submit_research_review", "prepare_knowledge_revision"}
     if not bool(getattr(policy, "strict_research", False)):
         denied.add("submit_research_answer")
         base: tuple[str, ...] | None = None
@@ -88,9 +88,12 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
         from codey.research.answer_contract import ANSWER_TOOLS, whole_research
 
         if whole_research(session):
-            return tuple(name for name in ANSWER_TOOLS if name not in denied and (
+            from codey.research.revision_tools import revision_tool_names
+
+            names = tuple(name for name in ANSWER_TOOLS if name not in denied and (
                 name not in {"open_result", "reopen_source", "open_hit"} or getattr(session,
                 {"open_result": "search_results", "reopen_source": "source_ids", "open_hit": "hit_targets"}[name], None)))
+            return revision_tool_names(session, names)
         # Research exposes one simple acquisition write, keeping complex
         # knowledge revision tools available to ordinary/hybrid tasks.
         denied.update({"knowledge_write", "knowledge_commit", "knowledge_link"})

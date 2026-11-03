@@ -30,14 +30,12 @@ def helium_case() -> dict:
     """A modern positive case, separate from the immutable legacy scripts."""
     import json
 
-    url = "https://example.com/helium"
     text = "Helium is separated from natural gas streams."
     calls = [
-        ("research_plan", {"questions": ["How is helium obtained?"]}),
-        ("web_search", {"query": "helium production", "question_ref": "q1"}),
-        ("open_result", {"result_id": "r1", "question_ref": "q1"}),
-        ("save_finding", finding_args(url, text)),
-        ("done", selection_args()),
+        ("web_search", {"query": "helium production"}),
+        ("open_result", {"result_id": "r1"}),
+        ("submit_research_answer", {"state": "answered", "markdown": text + " [e1]."}),
     ]
     return {"id": "research/current-evidence-synthesis", "boundary": "research_loop",
-            "max_turns": 5, "replies": [json.dumps({"tool": name, "args": args}) for name, args in calls]}
+            "contract": "whole-answer", "max_turns": 3,
+            "replies": [json.dumps({"tool": name, "args": args}) for name, args in calls]}

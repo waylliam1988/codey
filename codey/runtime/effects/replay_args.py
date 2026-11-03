@@ -126,6 +126,12 @@ def _validate_research_answer(args: Mapping[str, object]) -> dict[str, object]:
     return dict(args)
 
 
+def _validate_revision_preparation(args: Mapping[str, object]) -> dict[str, object]:
+    if args:
+        raise ValueError("revision preparation takes no arguments")
+    return {}
+
+
 def validate_replay_args_shape(
     tool_name: str,
     args: object,
@@ -136,7 +142,8 @@ def validate_replay_args_shape(
         raise ValueError(f"tool is not replayable: {canonical_name}")
     if not isinstance(args, Mapping):
         raise ValueError("replay args must be a mapping")
-    validator = {"knowledge_commit": _validate_knowledge_commit, "submit_research_answer": _validate_research_answer}.get(canonical_name)
+    validator = {"knowledge_commit": _validate_knowledge_commit, "submit_research_answer": _validate_research_answer,
+                 "prepare_knowledge_revision": _validate_revision_preparation}.get(canonical_name)
     if validator is not None:
         return validator(args)
     if canonical_name == "submit_research_review":

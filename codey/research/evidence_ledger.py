@@ -45,8 +45,7 @@ EVIDENCE_LEDGER_KIND = "research_evidence_ledger"
 def _safe_count(value: object) -> int:
     if isinstance(value, bool):
         return 0
-    count: int = nonnegative_int(value)
-    return count
+    return nonnegative_int(value)
 MAX_EVIDENCE_LEDGER_BYTES = 1024 * 1024
 MAX_LEDGER_RECORDS = 100
 MAX_LEDGER_SOURCES = 300

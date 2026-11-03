@@ -103,11 +103,13 @@
     },
     "codey/research/evidence_followup.py": {
       "current_owners": [
-        "codey/operations/evidence_followup.py"
+        "codey/operations/research_flow.py",
+        "codey/research/pipeline.py"
       ],
       "tests": [
-        "tests/test_research_evidence_followup.py"
-      ]
+        "tests/test_research_pipeline.py"
+      ],
+      "disposition": "Outer follow-up executor and its dedicated tests retired; single-writer flow and audit projection remain. See docs/research-outer-followup-cleanup-20261102.zh-CN.md."
     },
     "codey/toolchain/registry.py": {
       "current_owners": [
@@ -227,6 +229,63 @@
         "tests/durable/test_session.py",
         "tests/durable/test_workflow_timeline.py"
       ]
+    },
+    "codey/research/advisors.py": {
+      "current_owners": [
+        "codey/operations/research_flow.py"
+      ],
+      "tests": [
+        "tests/test_kernel_legacy_parity.py",
+        "tests/test_research_pipeline.py"
+      ],
+      "disposition": "Retired unreachable outer follow-up/advisor branch; current single-writer production and audit owners listed"
+    },
+    "codey/research/plan_executor.py": {
+      "current_owners": [
+        "codey/research/pipeline.py"
+      ],
+      "tests": [
+        "tests/test_research_pipeline.py"
+      ],
+      "disposition": "Retired unreachable outer follow-up/advisor branch; current single-writer production and audit owners listed"
+    },
+    "codey/research/record_merge.py": {
+      "current_owners": [
+        "codey/research/report_projection.py"
+      ],
+      "tests": [
+        "tests/test_research_pipeline.py"
+      ],
+      "disposition": "Retired unreachable outer follow-up/advisor branch; current single-writer production and audit owners listed"
+    },
+    "codey/research/followup_selection.py": {
+      "current_owners": [
+        "codey/research/pipeline.py"
+      ],
+      "tests": [
+        "tests/test_research_pipeline.py"
+      ],
+      "disposition": "Retired unreachable outer follow-up/advisor branch; current single-writer production and audit owners listed"
+    },
+    "codey/research/protocol_diagnostics.py": {
+      "current_owners": [
+        "tests/support/research_protocol_diagnostics.py"
+      ],
+      "tests": [
+        "tests/test_kernel_legacy_parity.py"
+      ],
+      "disposition": "Legacy implementation retained offline only"
+    },
+    "codey/research/done_finalizer.py": {
+      "current_owners": [
+        "tests/support/research_done_finalizer.py",
+        "codey/research/answer_report.py",
+        "codey/research/finding_report.py"
+      ],
+      "tests": [
+        "tests/test_kernel_legacy_parity.py"
+      ],
+      "disposition": "Legacy implementation retained offline only"
     }
   },
   "entry_chains": {

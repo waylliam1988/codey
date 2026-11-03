@@ -72,5 +72,7 @@ def answer_context(session: Any, ledger: Any, scope: AnswerScope) -> str:
                  "Recover its original receipt to restore its stable eN. For knowledge_source locators, "
                  "read knowledge_read(id, revision, offset) instead of fetching a newer live URL. "
                  "next_offset is the first unread position, not the furthest observed end.")
-    lines.extend(["Complete user task (verbatim):\n" + session.task_text, ANSWER_GUIDANCE])
+    from codey.research.revision_tools import revision_guidance
+
+    lines.extend(["Complete user task (verbatim):\n" + session.task_text, revision_guidance(session, ANSWER_GUIDANCE)])
     return "\n\n".join(lines)

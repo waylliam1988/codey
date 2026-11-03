@@ -217,7 +217,11 @@ def worker(root, directory, base_url, case_id, seed, arm):
             stream.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
 
     def stage(directory, *args, **kwargs):
-        shutil.copytree(root / ("warm-knowledge" if case.get("warm") else "empty-knowledge"), directory / "knowledge")
+        seed = case.get("knowledge_seed", "warm-knowledge" if case.get("warm") else "empty-knowledge")
+        seed_path = (root / seed).resolve()
+        if root.resolve() not in seed_path.parents:
+            raise ValueError("Knowledge seed must stay inside the experiment")
+        shutil.copytree(seed_path, directory / "knowledge")
         return original_stage(directory, *args, **kwargs)
 
     def current_answer(observed, versions, summary, store):

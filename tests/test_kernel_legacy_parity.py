@@ -144,7 +144,14 @@ def test_research_parity_observes_all_stable_note_metadata():
     case = helium_case()
     observation = kernel_parity_probe.research_loop(case, legacy=False)
     assert observation["stop_reason"] == "done", observation
-    assert observation["evidence_count"] == 1
+    # Whole-answer citations come from settled read receipts, not save_finding.
+    evidence, = observation["accepted_evidence"]
+    assert evidence["bounded_excerpt"] == "Helium is separated from natural gas streams."
+    assert evidence["locator"]["char_start"] == 0
+    assert evidence["locator"]["char_end"] == 45
+    source, = observation["citation_map"]
+    assert source["url"] == "https://example.com/helium"
+    assert source["revision"] == 1
     assert any(note["type"] == "synthesis" for note in observation["notes"])
     note = observation["notes"][0]
     assert set(note) == {

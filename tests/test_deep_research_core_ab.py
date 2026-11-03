@@ -315,24 +315,7 @@ def test_thin_gate_separates_opened_sources_from_citable_sources() -> None:
 
 def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:
     case = next(item for item in ab.CASES if item.name == "pdf-target-page")
-    # New single entry requires Chinese report sections (结论/来源) via the
-    # completion gate; behavior (source_search recall, target page 9) preserved.
-    from tests.support.research_script import finding_args, selection_args
-
-    page_text = case.documents[0].source_document(pages="9").text
-    provider = ab.ScriptedProvider(
-        json.dumps({"tool": "research_plan", "args": {"questions": ["What validation method is used?"]}}),
-            json.dumps({"tool": "web_search", "args": {"query": "omega method validation", "question_ref": "q1"}}),
-        json.dumps({"tool": "open_url", "args": {"question_ref": "q1", "url": ab.PDF_METHOD_URL}}),
-        json.dumps({
-            "tool": "source_search",
-            "args": {"question_ref": "q1", "url": ab.PDF_METHOD_URL, "query": "stratified bootstrap"},
-        }),
-        json.dumps({"tool": "open_url", "args": {"question_ref": "q1", "url": ab.PDF_METHOD_URL, "pages": "9"}}),
-        json.dumps({"tool": "save_finding", "args": finding_args(ab.PDF_METHOD_URL, page_text, start=len("[page 9]\n"),
-            claim="Omega method uses stratified bootstrap validation.")}),
-        json.dumps({"tool": "done", "args": selection_args()}),
-    )
+    provider = ab.pdf_recall_provider()
 
     row = ab.run_case(
         provider,
@@ -343,7 +326,15 @@ def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:
         timeout=30.0,
     )
 
-    assert row["final_done"], json.dumps(row, ensure_ascii=True)
+    for check in ("final_done", "opened_primary_source", "used_source_search",
+                  "opened_target_page_or_offset", "target_fact_reported", "saved_exact_evidence_snippet"):
+        assert row[check], json.dumps(row, ensure_ascii=True)
+    assert row["send_count"] == row["reply_count"] == 5
+    assert row["done_attempts"] == 1
+    assert [call["name"] for call in row["tool_calls"]] == [
+        "web_search", "open_url", "source_search", "open_url", "submit_research_answer"]
+    assert "[e6]" in row["summary_preview"]
+
 
 
 def test_deep_research_ab_summary_reports_deltas() -> None:

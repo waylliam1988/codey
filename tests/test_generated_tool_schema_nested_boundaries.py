@@ -37,4 +37,22 @@ def test_nested_schema_accepts_generated_values_and_rejects_single_corruptions(s
 
 
 def test_unsupported_constraint_is_rejected_at_registration():
-    assert tool_spec.register_custom_tool("unsupported_pattern", grant="control", parameters=(("x", {"type": "string", "pattern": "x"}),), required=("x",)) is False
+    name = "unsupported_format"
+    try:
+        assert tool_spec.register_custom_tool(name, grant="control", parameters=(
+            ("x", {"type": "string", "format": "email"}),), required=("x",)) is False
+        assert tool_spec.spec_for_tool(name) is None
+    finally:
+        tool_spec.unregister_custom_tool(name)
+
+
+def test_supported_pattern_is_enforced_and_temporary_tool_is_removed():
+    name = "supported_pattern"
+    try:
+        assert tool_spec.register_custom_tool(name, grant="control", parameters=(
+            ("x", {"type": "string", "pattern": "^x+$"}),), required=("x",))
+        assert tool_spec.validate_args_against_spec(name, {"x": "xx"}) == ""
+        assert tool_spec.validate_args_against_spec(name, {"x": "xy"})
+    finally:
+        tool_spec.unregister_custom_tool(name)
+    assert tool_spec.spec_for_tool(name) is None
