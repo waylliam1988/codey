@@ -31,8 +31,7 @@ class ToolReplayPolicyTests(unittest.TestCase):
 
     def test_replayable_safe_tools_narrow_whitelist(self) -> None:
         self.assertEqual(REPLAYABLE_SAFE_TOOL_NAMES, frozenset({"read", "ls", "search", "references", "codemode",
-                                                              "knowledge_commit", "submit_research_review", "submit_research_answer",
-                                                              "prepare_knowledge_revision"}))
+                                                              "knowledge_commit", "submit_research_review", "submit_research_answer"}))
         for tool in ("read", "ls", "search", "references"):
             self.assertTrue(is_replayable_safe_tool(tool))
         # Context/research names are not coding runtime tools.

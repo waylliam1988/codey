@@ -19,7 +19,7 @@ SAFE_RUNTIME_TOOL_NAMES = READ_ONLY_RUNTIME_TOOL_NAMES
 # The retired review name classifies archived intents only. This whitelist
 # never grants current execution; admission still needs a live frozen tool.
 IDEMPOTENT_RUNTIME_TOOL_NAMES = frozenset({
-    "knowledge_commit", "submit_research_review", "submit_research_answer", "prepare_knowledge_revision",
+    "knowledge_commit", "submit_research_review", "submit_research_answer",
 })
 UNSAFE_RUNTIME_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES - SAFE_RUNTIME_TOOL_NAMES
 # CodeMode is a resumable container. Its recovery still re-enters the kernel;
@@ -74,8 +74,7 @@ def tool_replay_policy(
             reason="read_only_tool",
         )
     if canonical_name in IDEMPOTENT_RUNTIME_TOOL_NAMES:
-        reason = "idempotent_tool_preparation" if canonical_name == "prepare_knowledge_revision" else "idempotent_knowledge_transaction"
-        return ReplayDecision(replay_class=ReplayClass.SAFE, reason=reason)
+        return ReplayDecision(replay_class=ReplayClass.SAFE, reason="idempotent_knowledge_transaction")
     if canonical_name in UNSAFE_RUNTIME_TOOL_NAMES:
         return ReplayDecision(
             replay_class=ReplayClass.UNSAFE,

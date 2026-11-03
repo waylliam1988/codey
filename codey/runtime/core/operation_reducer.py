@@ -379,10 +379,9 @@ def _tool_pending_action(
         )
     # Research acquisition is not generally replayable: a fresh fetch can
     # change the evidence basis. Frozen local selections and review commits
-    # use only original inputs and idempotent local transactions. Revision
-    # preparation is also safe: it only reveals a tool and writes no knowledge.
+    # use only original inputs and idempotent local transactions.
     research_commit = (state.task_kind == "research" and all(
-        projection.intent.tool_name in {"submit_research_review", "submit_research_answer", "prepare_knowledge_revision"}
+        projection.intent.tool_name in {"submit_research_review", "submit_research_answer"}
         for projection in live_pending))
     if state.task_kind not in {"project", "hybrid"} and not research_commit:
         return RuntimeAction(

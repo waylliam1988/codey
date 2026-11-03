@@ -55,18 +55,16 @@ def run_longitudinal(root, *, phase, native=False, boundary="", resume=False):
             elif turn == 2:
                 assert evidence.value.id in prompt
                 name, args = "knowledge_read", {"id": evidence.value.id, "revision": evidence.revision}
-            elif turn == 3:
-                name, args = "prepare_knowledge_revision", {}
-            elif turn in (4, 5):
+            elif turn in (3, 4):
                 assert "[e1]" in prompt
-                claim = K("writer-mechanism", "claim", "Writes serialize." if turn == 4 else
+                claim = K("writer-mechanism", "claim", "Writes serialize." if turn == 3 else
                           "One writer per database; concurrency alone does not measure throughput.",
                           "model_extraction", title="Serialized write mechanism", scope="personal", scope_id=owner,
                           aliases=("serialization",),
                           conditions={"database": {"state": "reported", "value": "same database"}},
                           references=(R(evidence.value.id, evidence.revision, "supported_by"),))
-                changes = [{"value": claim.to_dict(), "expected_revision": turn - 4}]
-                if turn == 4:
+                changes = [{"value": claim.to_dict(), "expected_revision": turn - 3}]
+                if turn == 3:
                     inference = K("shared-mechanism", "inference", "A shared write lock can constrain concurrency.",
                                   "model_inference", scope="personal", scope_id=owner,
                                   references=(R(claim.id, 1, "depends_on"),))
@@ -101,7 +99,7 @@ def test_research_close_rephrase_recall_read_revise_publish_and_recover(tmp_path
     assert interrupted.returncode == 74, interrupted.stderr.decode(errors="replace")
     result = run_longitudinal(tmp_path, phase="reuse", native=native, resume=True)
     assert result.stop_reason == "done", result.summary
-    assert result.turns == 6
+    assert result.turns == 5
     calls = tmp_path / "reuse" / "script.jsonl"
     before = calls.read_bytes()
     assert run_longitudinal(tmp_path, phase="reuse", native=native, resume=True) == result

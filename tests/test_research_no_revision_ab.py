@@ -10,7 +10,7 @@ from codey.research.answer_contract import answer_scope
 from codey.research.ledger import ResearchLedger
 from codey.runtime.core.models import ToolCall, ToolResult
 from tests.manual.research_no_revision_ab import READ_ONLY_GUIDANCE, RETIRED, treatment
-from tests.support.legacy_research_revision_tools import PREPARE_GUIDANCE, REVISION_GUIDANCE
+from tests.support.legacy_research_revision_tools import REVISION_GUIDANCE
 from tests.test_research_lazy_revision_ab import session
 
 
@@ -29,12 +29,10 @@ def test_candidate_removes_revision_before_and_after_read_failure_only(native, f
         after = build_turn_snapshot(s, native=native)
         observed = answer_context(s, ledger, scope)
     assert not RETIRED.intersection(after.tool_names)
-    assert set(before.tool_names) - set(after.tool_names) == {
-        "knowledge_commit" if failed_read else "prepare_knowledge_revision"}
+    assert set(before.tool_names) - set(after.tool_names) == {"knowledge_commit"}
     assert {spec.name: spec for spec in after.model_specs} == {
         spec.name: spec for spec in before.model_specs if spec.name not in RETIRED}
-    assert observed.replace(READ_ONLY_GUIDANCE, "") == text.replace(
-        REVISION_GUIDANCE if failed_read else PREPARE_GUIDANCE, "")
+    assert observed.replace(READ_ONLY_GUIDANCE, "") == text.replace(REVISION_GUIDANCE, "")
     assert s._memory_results == memory
     assert build_turn_snapshot(s, native=native) == before
 

@@ -501,16 +501,6 @@ class ExecutionDelegate:
     def _execute_research(self, call: ToolCall, *, turn: int = 0,
                           tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
         name = (call.name or "").strip().lower()
-        if name == "prepare_knowledge_revision":
-            from codey.research.revision_tools import preparation_result
-
-            result = preparation_result(self.session, self._research_scope, call)
-            return result, result.ok, None
-        return self._execute_research_action(call, turn=turn, tool_index=tool_index)
-
-    def _execute_research_action(self, call: ToolCall, *, turn: int = 0,
-                                 tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
-        name = (call.name or "").strip().lower()
         tools = self._observation_tools(source_read=name in {"open_url", "open_result", "reopen_source", "open_hit"})
         args = dict(call.args or {})
         try:
