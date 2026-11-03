@@ -155,3 +155,11 @@ Mypy 的 `no-any-return` 来自生产回执边界：动态 store 返回值没有
 ## 超长文件职责拆分后续
 
 详见 [Research 相关职责拆分与行数门禁收紧](research-responsibility-refactor-20261102.zh-CN.md)。本轮处理此前仅登记尺寸的五个超长文件，统一门禁记录，保留原运行时与写入责任；行为对比、扩大回归、类型检查和剩余结构债务单独记录。
+
+## 2026-11-03 全流程审查后的清理已实施
+
+[全流程与分支删减审查](research-complete-branch-review-20261103.zh-CN.md)原列出的四处清理已由 `d42ba1d5` 完成：旧 `done_finalizer`、brief 的离线 impact/handoff、source profile 聚合迁出生产；accepted report 的重复审计及查询计划改为复用。离线实现仍供测试/回放使用，现用报告编译器、引用与版本检查、诊断输出及其他分支的重新校验保留。
+
+验证中另发现整篇答案的 `cited_unreviewed` 状态被 evidence ledger 拒绝，已由 `fedc334b` 修复；未将未经语义审查的引用转换为 `supports`。扩大回归首次为 1,879 passed、5 failed，另 485 个 subtest 通过；5 项恢复失败受到运行中源码变更干扰，冻结后相关 32 项全部通过。ledger 补充回归 140 项通过，与扩大回归有重叠。Ruff、Mypy/Pyrefly/ty 的 3.11/3.12/3.13 目标检查及 wheel 检查通过；完整结果和限制见新报告第 8.4 节。
+
+这批没有重跑模型实验，不并入本文原 A/B 的样本或收益。现阶段已确认可清理的生产位置与重复计算已处理；历史展示、修订、长文续读和恢复等剩余项目仍按新报告的证据边界推进，不作“全部无用内容已经穷尽”的声明。

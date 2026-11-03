@@ -1,0 +1,2534 @@
+{
+  "schema_version": 1,
+  "production_commit": "7060f345",
+  "production_modified": false,
+  "promoted_arms": [],
+  "test_type": "Exploratory ablation, original production headless runtime, fixed official excerpts, real Gemma4 12B inference",
+  "source_identity": {
+    "runtime_id": "3f3aa399ba6e5b2a9c247bae0c8eac2de9b488b2de0f274bcbee2412305fa70b",
+    "harness_digest": "62975e902257c8d6f422842132f9ccfdcae7cc39325de03b4bfacae7b9a38bcd",
+    "commit": "7060f345867a69e8f17886ab60263602c64fe72a",
+    "materials": {
+      "fixtures.json": "d1c8294f08567cb548028c76800cf72ab04ad17fd7b713e622be0aeb914d94df",
+      "material-channel.json": "cef5f7caa82a9f9b9f6cdb2bc26cdd669085b15fc58fa2351e366e41fc95e2d5",
+      "limits.json": "a340b19d1372229a269de57724eb58e83f09b4d737d024f77c79fce7a342d38f"
+    }
+  },
+  "specification_sha256": {
+    "preregistration.json": "9ab8f7b8f25ce6b49f4acdfdcaa822e3b25df869b34c9510a1ca44235dfa0339",
+    "backend-model.json": "620ae89caa264870dddb3b53aedb9f64e9604d2d84c6224998a722b6b52c37fc"
+  },
+  "summary": {
+    "baseline": {
+      "runs": 10,
+      "delivery": 9,
+      "answer_semantics_pass": 6,
+      "answer_assessable": 9,
+      "no_final_answer": 1,
+      "formal_citation_binding_pass": 9,
+      "calls": 22,
+      "input_tokens": 91640,
+      "output_tokens": 3763,
+      "tool_errors": 2,
+      "elapsed_seconds": 220.35,
+      "cold_calls": 16,
+      "cold_input_tokens": 67276,
+      "warm_delivery": 1,
+      "warm_pinned_reuse": 1,
+      "warm_calls": 6,
+      "warm_input_tokens": 24364,
+      "knowledge_structure_pass": 2,
+      "knowledge_semantics_pass": 0,
+      "knowledge_runs": 2,
+      "input_delta_percent": 0.0,
+      "cold_input_delta_percent": 0.0
+    },
+    "dedup_rules": {
+      "runs": 10,
+      "delivery": 9,
+      "answer_semantics_pass": 6,
+      "answer_assessable": 9,
+      "no_final_answer": 1,
+      "formal_citation_binding_pass": 9,
+      "calls": 24,
+      "input_tokens": 95662,
+      "output_tokens": 3841,
+      "tool_errors": 3,
+      "elapsed_seconds": 224.17,
+      "cold_calls": 16,
+      "cold_input_tokens": 63902,
+      "warm_delivery": 1,
+      "warm_pinned_reuse": 1,
+      "warm_calls": 8,
+      "warm_input_tokens": 31760,
+      "knowledge_structure_pass": 2,
+      "knowledge_semantics_pass": 0,
+      "knowledge_runs": 2,
+      "input_delta_percent": 4.39,
+      "cold_input_delta_percent": -5.02
+    },
+    "hide_revision": {
+      "runs": 10,
+      "delivery": 8,
+      "answer_semantics_pass": 6,
+      "answer_assessable": 8,
+      "no_final_answer": 2,
+      "formal_citation_binding_pass": 8,
+      "calls": 28,
+      "input_tokens": 93915,
+      "output_tokens": 3787,
+      "tool_errors": 6,
+      "elapsed_seconds": 238.44,
+      "cold_calls": 16,
+      "cold_input_tokens": 54666,
+      "warm_delivery": 0,
+      "warm_pinned_reuse": 0,
+      "warm_calls": 12,
+      "warm_input_tokens": 39249,
+      "knowledge_structure_pass": 2,
+      "knowledge_semantics_pass": 0,
+      "knowledge_runs": 2,
+      "input_delta_percent": 2.48,
+      "cold_input_delta_percent": -18.74
+    },
+    "no_auto_recall": {
+      "runs": 10,
+      "delivery": 8,
+      "answer_semantics_pass": 4,
+      "answer_assessable": 8,
+      "no_final_answer": 2,
+      "formal_citation_binding_pass": 8,
+      "calls": 26,
+      "input_tokens": 106601,
+      "output_tokens": 3710,
+      "tool_errors": 5,
+      "elapsed_seconds": 234.61,
+      "cold_calls": 16,
+      "cold_input_tokens": 66377,
+      "warm_delivery": 0,
+      "warm_pinned_reuse": 0,
+      "warm_calls": 10,
+      "warm_input_tokens": 40224,
+      "knowledge_structure_pass": 2,
+      "knowledge_semantics_pass": 0,
+      "knowledge_runs": 2,
+      "input_delta_percent": 16.33,
+      "cold_input_delta_percent": -1.34
+    }
+  },
+  "backend_faults": 0,
+  "source_verification": "passed before each inference and after final inference",
+  "grading": "Independent code-agent review against preregistered requirements; tested Gemma model did not grade itself. Formal binding is separate from sentence support and knowledge semantics.",
+  "limitations": [
+    "Two seeds on five tasks; no statistical noninferiority claim.",
+    "Frozen single-source excerpts; no autonomous search ranking, long omitted windows, or competing multi-source versions. WAL checkpoint/rewind not covered.",
+    "Warm data are explicit legal-ID fixtures, not knowledge accumulated by the tested model. IDs contain multiple hyphens; do not estimate production failure frequency from this fixture.",
+    "Independent fresh stores use production-random owner IDs and live retrieved timestamps; no byte-identical-request causal claim for semantic score differences. Task/material/sampling/budgets and code ablation were frozen.",
+    "No stored-knowledge edit task: no claim that knowledge_commit is globally unnecessary.",
+    "Failed delivery has no assessable final report, not proof all facts were wrong."
+  ],
+  "decision": {
+    "dedup_rules": "Not approved for production removal: cold input -5.02%, overall retries erase savings; paired content omissions persist.",
+    "hide_revision": "Not approved for production removal: cold input savings, but warm delivery regresses and total input/calls increase. Do not remove stored-knowledge editing implementation.",
+    "no_auto_recall": "Retain automatic recall: disabling it does not improve the measured outcomes; explicit lookup still fails and total cost grows.",
+    "retained": "Original task; actual evidence read/windows; whole answer; knowledge_updates; exact IDs/versions/scope/citation checks; atomic publication; cancellation/recovery; retry stopping.",
+    "next_review_focus": "Historical target selection/copying and preservation of semantic conditions. Do not silently equate hyphen and underscore identities or remove exact-version checks."
+  },
+  "rows": [
+    {
+      "case": "asyncio-boundaries",
+      "seed": 74,
+      "arm": "baseline",
+      "calls": 2,
+      "input_tokens": 9256,
+      "output_tokens": 704,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\asyncio-boundaries-74-baseline\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "TaskGroup ordinary task exceptions versus gather: introduced false return_exceptions=True exception"
+        ],
+        "review_note": "The report says gather does not cancel others unless return_exceptions=True; True does not establish such cancellation.",
+        "report_sha256": "f0145d034f91deb8ea94cafabf57ece4e54d5496a1db9e10d857496be971800a"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "asyncio-boundaries",
+      "seed": 74,
+      "arm": "dedup_rules",
+      "calls": 2,
+      "input_tokens": 8832,
+      "output_tokens": 672,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\asyncio-boundaries-74-dedup_rules\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "Single Task/Future cancellation does not cancel other children"
+        ],
+        "review_note": "Preserves CancelledError and uncancelled gather but omits the requested other-children boundary.",
+        "report_sha256": "65e1970fec5a2dfe89174f2061387074cce319f264f49cbd3ebf2d0229117d6e"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "asyncio-boundaries",
+      "seed": 74,
+      "arm": "hide_revision",
+      "calls": 2,
+      "input_tokens": 7681,
+      "output_tokens": 760,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": false,
+      "report_file": "runs\\asyncio-boundaries-74-hide_revision\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "All twelve frozen asyncio requirements preserved, including other-child noncancellation and return_exceptions-independent parent cancellation.",
+        "report_sha256": "82338c091641c74782861618c28cb1b568154873bec5d1ccd32cefc7c39590fb"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "asyncio-boundaries",
+      "seed": 74,
+      "arm": "no_auto_recall",
+      "calls": 2,
+      "input_tokens": 9139,
+      "output_tokens": 670,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\asyncio-boundaries-74-no_auto_recall\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "Single Task/Future cancellation does not cancel other children"
+        ],
+        "review_note": "Preserves CancelledError and uncancelled gather but omits the requested other-children boundary.",
+        "report_sha256": "5c5fe4c28b73ba5512179ba19363ac5f13045231796bdb0db52268b34bf9ce23"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "asyncio-boundaries",
+      "seed": 75,
+      "arm": "baseline",
+      "calls": 2,
+      "input_tokens": 9249,
+      "output_tokens": 746,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\asyncio-boundaries-75-baseline\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "Single Task/Future cancellation does not cancel other children"
+        ],
+        "review_note": "Explicit CancelledError and uncancelled gather retained; other-child noncancellation omitted.",
+        "report_sha256": "ec91f08f9ccf296d987f65a8a472b1472815797e4c2bf4c51d6ea4e601f476c2"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "asyncio-boundaries",
+      "seed": 75,
+      "arm": "dedup_rules",
+      "calls": 2,
+      "input_tokens": 8839,
+      "output_tokens": 675,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\asyncio-boundaries-75-dedup_rules\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "Single Task/Future cancellation does not cancel other children"
+        ],
+        "review_note": "Explicit CancelledError and uncancelled gather retained; other-child noncancellation omitted.",
+        "report_sha256": "505b2e0f847cd821b9ba156ccf6831eb4b73cffb71c6714fb418abd26796ace5"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "asyncio-boundaries",
+      "seed": 75,
+      "arm": "hide_revision",
+      "calls": 2,
+      "input_tokens": 7679,
+      "output_tokens": 677,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": false,
+      "report_file": "runs\\asyncio-boundaries-75-hide_revision\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "Single Task/Future cancellation does not cancel other children"
+        ],
+        "review_note": "Explicit CancelledError and uncancelled gather retained; other-child noncancellation omitted.",
+        "report_sha256": "fc6072dcd9fc374d87205ff72a56da8991629018b6f0c622aa88f0a5b51aa5d2"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "asyncio-boundaries",
+      "seed": 75,
+      "arm": "no_auto_recall",
+      "calls": 2,
+      "input_tokens": 9139,
+      "output_tokens": 709,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\asyncio-boundaries-75-no_auto_recall\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "TaskGroup ordinary task exceptions versus gather: introduced false return_exceptions=True exception"
+        ],
+        "review_note": "Other-child boundary restored, but the false unless return_exceptions=True exception appears in TaskGroup comparison.",
+        "report_sha256": "d1e5e4399e9ce2eef9a035c5efe565d950b719779d882fbb5f5386fedda328f0"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "queue-gap",
+      "seed": 74,
+      "arm": "baseline",
+      "calls": 2,
+      "input_tokens": 8180,
+      "output_tokens": 392,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\queue-gap-74-baseline\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Increment/decrement/zero mechanism and both performance evidence limits preserved.",
+        "report_sha256": "74262c29686fe71e87454d8eaa716b6f4870e74d6604affbe3cc421351c27143"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "queue-gap",
+      "seed": 74,
+      "arm": "dedup_rules",
+      "calls": 2,
+      "input_tokens": 7761,
+      "output_tokens": 365,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\queue-gap-74-dedup_rules\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "put increments unfinished task count"
+        ],
+        "review_note": "Both evidence limits and task_done/zero preserved; initialization/increment mechanism omitted.",
+        "report_sha256": "a1cda2fd08bfa14bf147d4cef67120cfab68ec9d8e40a8302de863af138c737a"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "queue-gap",
+      "seed": 74,
+      "arm": "hide_revision",
+      "calls": 2,
+      "input_tokens": 6611,
+      "output_tokens": 376,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": false,
+      "report_file": "runs\\queue-gap-74-hide_revision\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "put increments unfinished task count"
+        ],
+        "review_note": "Both evidence limits and task_done/zero preserved; initialization/increment mechanism omitted.",
+        "report_sha256": "e82047a77ef6d4c0363a4e5c68f6f8e3f408faa0b69842c5e82daadf75df45ba"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "queue-gap",
+      "seed": 74,
+      "arm": "no_auto_recall",
+      "calls": 2,
+      "input_tokens": 8073,
+      "output_tokens": 423,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\queue-gap-74-no_auto_recall\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "put increments unfinished task count"
+        ],
+        "review_note": "Both evidence limits and task_done/zero preserved; initialization/increment mechanism omitted.",
+        "report_sha256": "4d5ea1d1fbff6d0e9021bc2fc2c84cf4d75d7ffa0fc0d4d609efafac070507f0"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "queue-gap",
+      "seed": 75,
+      "arm": "baseline",
+      "calls": 2,
+      "input_tokens": 8191,
+      "output_tokens": 391,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\queue-gap-75-baseline\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "put increments unfinished task count"
+        ],
+        "review_note": "Both performance evidence limits preserved. put/increment mechanism omitted.",
+        "report_sha256": "a01e5222143524f096239155df1d681ca6b09cd4d33fb946beda9070e9eb4646"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "queue-gap",
+      "seed": 75,
+      "arm": "dedup_rules",
+      "calls": 2,
+      "input_tokens": 7765,
+      "output_tokens": 422,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\queue-gap-75-dedup_rules\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Complete unfinished task count mechanism and both evidence limits preserved.",
+        "report_sha256": "63cf31e008cc4d7328a800c696e39c71f95113350d273864f5e3abfeac1f808a"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "queue-gap",
+      "seed": 75,
+      "arm": "hide_revision",
+      "calls": 2,
+      "input_tokens": 6613,
+      "output_tokens": 424,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": false,
+      "report_file": "runs\\queue-gap-75-hide_revision\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Both performance evidence limits preserved. Complete increment/decrement/zero mechanism.",
+        "report_sha256": "12ecadd4f07ae3c02845a0cad3bf565484a00f082b763630f4adf90d16733b46"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "queue-gap",
+      "seed": 75,
+      "arm": "no_auto_recall",
+      "calls": 2,
+      "input_tokens": 8076,
+      "output_tokens": 405,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\queue-gap-75-no_auto_recall\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": false,
+        "failed_requirements": [
+          "put increments unfinished task count"
+        ],
+        "review_note": "Both performance evidence limits preserved. put/increment mechanism omitted.",
+        "report_sha256": "73d3572fbb790c187ca6073772210afd5824cb7f01d477fbfbc73b67ceb998e8"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-accumulate",
+      "seed": 74,
+      "arm": "baseline",
+      "calls": 2,
+      "input_tokens": 8190,
+      "output_tokens": 442,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-accumulate-74-baseline\\research-report.txt",
+      "candidates": [
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "SQLite 从版本 3.22.0 开始支持在只读媒体或缺乏写权限的情况下读取 WAL 模式数据库，前提是满足特定条件（如 -shm 和 -wal 文件已存在且可读，或目录有写权限，或使用 immutable 参数）。",
+          "id": "claim-a3ebcbe552dbcfb9b3ef605024ef16c30030073ac9d1d6cd83ddab0bb417354e",
+          "kind": "claim",
+          "origin": "model_extraction",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "cb0738e985a75928d4864bf15205873f635e57ae444ce894d2c5e8fbc8d58f23"
+          },
+          "references": [
+            {
+              "relation": "supported_by",
+              "revision": 1,
+              "target": "evidence-181f51ebeeee41df2faa5693c0d9cf0e415be3bd43b0fc4a52b8a77856c9f09a"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-53f3905114ae4c43b42bf952f7164fa1",
+          "status": "candidate",
+          "title": "SQLite 只读 WAL 数据库支持版本与条件"
+        },
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "如果一个 WAL 模式数据库在只读媒体上可以被读取，那么在将其烧录到只读媒体之前，将其转换为 PRAGMA journal_mode=DELETE 是一个良好的实践。",
+          "id": "inference-b4584e736d69b3208ad92f1f19a402479aced2956c8d16b6f15b4c91d6d0fee8",
+          "kind": "inference",
+          "origin": "model_inference",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k2",
+            "submission_digest": "cb0738e985a75928d4864bf15205873f635e57ae444ce894d2c5e8fbc8d58f23"
+          },
+          "references": [
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "claim-a3ebcbe552dbcfb9b3ef605024ef16c30030073ac9d1d6cd83ddab0bb417354e"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-53f3905114ae4c43b42bf952f7164fa1",
+          "status": "candidate",
+          "title": "烧录只读媒体前的最佳实践推论"
+        }
+      ],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Published answer retains all readonly/version/OR conditions. Knowledge semantics graded separately.",
+        "knowledge_structure": true,
+        "knowledge_semantics": false,
+        "knowledge_review_note": "The stored inference is a source-stated condition or recommendation reclassified as inference; candidate save does not validate deduction. The DELETE recommendation is not established by the cited readonly-support claim alone; the inference omits a direct reference to the original recommendation.",
+        "structured_conditions_present": false,
+        "report_sha256": "21fc560c2f79f80b6e2db50c1a9caf3e6976a008c6c4614ae8a5252736d340b6"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-accumulate",
+      "seed": 74,
+      "arm": "dedup_rules",
+      "calls": 2,
+      "input_tokens": 7775,
+      "output_tokens": 465,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-accumulate-74-dedup_rules\\research-report.txt",
+      "candidates": [
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "SQLite 从版本 3.22.0 开始支持在只读媒体或缺乏写权限的情况下读取 WAL 模式数据库，前提是满足特定条件（如 -shm 和 -wal 文件已存在、目录有写权限或使用 immutable 参数）。",
+          "id": "claim-80e441d1b71a30c271fbd7ca068017ad5360e3f5e5a965664ca591051388d274",
+          "kind": "claim",
+          "origin": "model_extraction",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "72de02a706bcc5c210242d3e59a0e21d2c86efd0b7e78d4777314ea500f8063d"
+          },
+          "references": [
+            {
+              "relation": "supported_by",
+              "revision": 1,
+              "target": "evidence-9476367c79be5f22fe55b04b60a31bce0b0301674cb4b82ae7219ea36ce5f1f7"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-62f5968f0f96403b8b74dd535d337b49",
+          "status": "candidate",
+          "title": "SQLite 只读 WAL 数据库支持版本及条件"
+        },
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "如果一个 WAL 模式数据库在只读媒体上可以被读取，那么在将其烧录到只读媒体之前，将其转换为 PRAGMA journal_mode=DELETE 模式是一个良好的实践。",
+          "id": "inference-3f951975fa86ac4bc541674ab41d26862ffd44e9904d5f4154d2bd3cbbc9bf7d",
+          "kind": "inference",
+          "origin": "model_inference",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k2",
+            "submission_digest": "72de02a706bcc5c210242d3e59a0e21d2c86efd0b7e78d4777314ea500f8063d"
+          },
+          "references": [
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "claim-80e441d1b71a30c271fbd7ca068017ad5360e3f5e5a965664ca591051388d274"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-62f5968f0f96403b8b74dd535d337b49",
+          "status": "candidate",
+          "title": "烧录只读媒体前的最佳实践推论"
+        }
+      ],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Published answer retains all readonly/version/OR conditions. Knowledge semantics graded separately.",
+        "knowledge_structure": true,
+        "knowledge_semantics": false,
+        "knowledge_review_note": "The stored inference is a source-stated condition or recommendation reclassified as inference; candidate save does not validate deduction. The claim also drops readability of preexisting shm/wal sidecars. The DELETE recommendation is not established by the cited readonly-support claim alone; the inference omits a direct reference to the original recommendation.",
+        "structured_conditions_present": false,
+        "report_sha256": "6da66298982d5c23b137220a01ba31812fc93aa7d3b1b2e0d05230f5bb40392a"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-accumulate",
+      "seed": 74,
+      "arm": "hide_revision",
+      "calls": 2,
+      "input_tokens": 6608,
+      "output_tokens": 485,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": false,
+      "report_file": "runs\\wal-accumulate-74-hide_revision\\research-report.txt",
+      "candidates": [
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "SQLite 从 3.22.0 版本开始支持在只读媒体或缺乏写权限的情况下读取 WAL 模式的数据库，前提是满足以下任一条件：-shm 和 -wal 文件已存在且可读；或者数据库所在目录有写权限以创建这些文件；或者在打开数据库连接时使用了 immutable 查询参数。",
+          "id": "claim-5dfa2898805d3da14839abff9f91e1b757cd2d888d88e4bdcef99e010d4edc8b",
+          "kind": "claim",
+          "origin": "model_extraction",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "69fa48d3d136a9122cc5823ed685fcc7661befda90a47fd16b1ae538591bc451"
+          },
+          "references": [
+            {
+              "relation": "supported_by",
+              "revision": 1,
+              "target": "evidence-4ac3fce3ba3c71dfbf6b34dee4fd134f4f81141851a11b89d8368f00182667e3"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-2eb0d08c60034370b2d43eb55db9fcfd",
+          "status": "candidate",
+          "title": "SQLite 只读 WAL 数据库的支持条件"
+        },
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "由于 SQLite 3.22.0 之后支持在满足特定条件（如文件已存在或目录可写）时读取只读 WAL 数据库，因此在将数据库镜像烧录到只读媒体前，将其转换为 PRAGMA journal_mode=DELETE 模式是一种良好的实践。",
+          "id": "inference-5ba87271181046b27a467ef4131ff7b9803707c98311acccbcaaa3d18f0fa920",
+          "kind": "inference",
+          "origin": "model_inference",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k2",
+            "submission_digest": "69fa48d3d136a9122cc5823ed685fcc7661befda90a47fd16b1ae538591bc451"
+          },
+          "references": [
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "evidence-4ac3fce3ba3c71dfbf6b34dee4fd134f4f81141851a11b89d8368f00182667e3"
+            },
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "claim-5dfa2898805d3da14839abff9f91e1b757cd2d888d88e4bdcef99e010d4edc8b"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-2eb0d08c60034370b2d43eb55db9fcfd",
+          "status": "candidate",
+          "title": "将数据库转换为 DELETE 模式的实践意义"
+        }
+      ],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Published answer retains all readonly/version/OR conditions. Knowledge semantics graded separately.",
+        "knowledge_structure": true,
+        "knowledge_semantics": false,
+        "knowledge_review_note": "The stored inference is a source-stated condition or recommendation reclassified as inference; candidate save does not validate deduction.",
+        "structured_conditions_present": false,
+        "report_sha256": "ab86a7aa19954033e8ef996b154673cf96b62da0766838656573a380837cff86"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-accumulate",
+      "seed": 74,
+      "arm": "no_auto_recall",
+      "calls": 2,
+      "input_tokens": 8082,
+      "output_tokens": 458,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-accumulate-74-no_auto_recall\\research-report.txt",
+      "candidates": [
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "SQLite 从版本 3.22.0 开始支持在只读媒体或缺乏写权限的情况下读取 WAL 模式数据库，前提是满足特定条件（如 -shm 和 -wal 文件已存在、目录有写权限或使用 immutable 参数）。",
+          "id": "claim-7f9fa1b68388ce6628b6c65c391e5f4cdc38540892f794f4711454078aa2ec69",
+          "kind": "claim",
+          "origin": "model_extraction",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "65363bbe2f99590497a371c210e36642bd1ad5c6831a17647711241f97a9f952"
+          },
+          "references": [
+            {
+              "relation": "supported_by",
+              "revision": 1,
+              "target": "evidence-80a0030f34463d9f8ec0da6cb38f624d4c7120a85dd6d1ab52b9873d2d7462a5"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-5c9aec722aaf4513a93557c15c0794f5",
+          "status": "candidate",
+          "title": "SQLite 只读 WAL 数据库支持版本及条件"
+        },
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "由于 SQLite 3.22.0 之后支持在只读媒体上读取 WAL 数据库，因此在将数据库镜像烧录到只读媒体前，将其转换为 PRAGMA journal_mode=DELETE 是一个良好的实践。",
+          "id": "inference-dd7c56473d1da4fc622c9338b18f2b5b93ec42e211ba3d3028fde9b08eaee2ab",
+          "kind": "inference",
+          "origin": "model_inference",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k2",
+            "submission_digest": "65363bbe2f99590497a371c210e36642bd1ad5c6831a17647711241f97a9f952"
+          },
+          "references": [
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "claim-7f9fa1b68388ce6628b6c65c391e5f4cdc38540892f794f4711454078aa2ec69"
+            },
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "evidence-80a0030f34463d9f8ec0da6cb38f624d4c7120a85dd6d1ab52b9873d2d7462a5"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-5c9aec722aaf4513a93557c15c0794f5",
+          "status": "candidate",
+          "title": "只读媒体烧录前的最佳实践推论"
+        }
+      ],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Published answer retains all readonly/version/OR conditions. Knowledge semantics graded separately.",
+        "knowledge_structure": true,
+        "knowledge_semantics": false,
+        "knowledge_review_note": "The stored inference is a source-stated condition or recommendation reclassified as inference; candidate save does not validate deduction. The claim also drops readability of preexisting shm/wal sidecars.",
+        "structured_conditions_present": false,
+        "report_sha256": "99c93911d29ea2ba1b40c5d8ba9b47d5c9acc41eb259a88ecca0013b09995318"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-accumulate",
+      "seed": 75,
+      "arm": "baseline",
+      "calls": 2,
+      "input_tokens": 8196,
+      "output_tokens": 429,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-accumulate-75-baseline\\research-report.txt",
+      "candidates": [
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "SQLite 从 3.22.0 版本开始支持在只读媒体或缺乏写权限的情况下读取 WAL 模式的数据库。",
+          "id": "claim-23747af3fbb721ccbeb957249f3ff1cb6c73e99ea9c26cc8e97ccafa783d2b72",
+          "kind": "claim",
+          "origin": "model_extraction",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "00078b112920cc455a5d3e8a63383fe179b15c39fccae2c14db981de1fc20574"
+          },
+          "references": [
+            {
+              "relation": "supported_by",
+              "revision": 1,
+              "target": "evidence-842b28b261ef39837615a2bbab23d48300088363355b1e470b6662b068b98888"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-e536a7ee2d4e4b58be31a4a38b4fc7b7",
+          "status": "candidate",
+          "title": "SQLite 支持只读 WAL 数据库的版本"
+        },
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "如果数据库所在的目录具有写权限，即使数据库本身是只读的，也可以读取 WAL 模式数据库，因为系统可以创建所需的 -shm 和 -wal 文件。",
+          "id": "inference-cbed51ee036305ad1b5a9a7a0c53a2ac9a240c2f7ea0603ac49d4528271630ed",
+          "kind": "inference",
+          "origin": "model_inference",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k2",
+            "submission_digest": "00078b112920cc455a5d3e8a63383fe179b15c39fccae2c14db981de1fc20574"
+          },
+          "references": [
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "claim-23747af3fbb721ccbeb957249f3ff1cb6c73e99ea9c26cc8e97ccafa783d2b72"
+            },
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "evidence-842b28b261ef39837615a2bbab23d48300088363355b1e470b6662b068b98888"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-e536a7ee2d4e4b58be31a4a38b4fc7b7",
+          "status": "candidate",
+          "title": "目录写权限对只读 WAL 数据库的影响"
+        }
+      ],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Published answer retains all readonly/version/OR conditions. Knowledge semantics graded separately.",
+        "knowledge_structure": true,
+        "knowledge_semantics": false,
+        "knowledge_review_note": "The stored inference is a source-stated condition or recommendation reclassified as inference; candidate save does not validate deduction.",
+        "structured_conditions_present": false,
+        "report_sha256": "b22d66cdca2816988be0aa8b48023021681fc529722a5ea84e7958eca06c2d79"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-accumulate",
+      "seed": 75,
+      "arm": "dedup_rules",
+      "calls": 2,
+      "input_tokens": 7768,
+      "output_tokens": 420,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-accumulate-75-dedup_rules\\research-report.txt",
+      "candidates": [
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "SQLite 从 3.22.0 版本开始支持在只读媒体或缺乏写权限的情况下读取 WAL 模式的数据库。",
+          "id": "claim-da48744bedd7193a12c45cccbf96b75bfc8e589ab3b4f1e7933cc4ce89d957d6",
+          "kind": "claim",
+          "origin": "model_extraction",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "fae7d3733166ac2860aad4382ae6a1a1264ae7dfb6803c89a0df28b7d478023a"
+          },
+          "references": [
+            {
+              "relation": "supported_by",
+              "revision": 1,
+              "target": "evidence-faaf5d9e820ca8c74b4c7c4229ef70e90e44b00d1afa5d3df145e4848f857037"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-a660d7c0f41141b4a3f6ec7ea4843296",
+          "status": "candidate",
+          "title": "SQLite 只读 WAL 支持版本"
+        },
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "如果一个 WAL 模式数据库在只读媒体上或缺乏写权限时仍可被读取，是因为满足了特定的条件（如 -shm/-wal 文件已存在、目录有写权限或使用了 immutable 参数）。",
+          "id": "inference-c659f40fd5d745d188d7e5e7382c04b713ae9e246ba45df1d78e4e000b1cc469",
+          "kind": "inference",
+          "origin": "model_inference",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k2",
+            "submission_digest": "fae7d3733166ac2860aad4382ae6a1a1264ae7dfb6803c89a0df28b7d478023a"
+          },
+          "references": [
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "claim-da48744bedd7193a12c45cccbf96b75bfc8e589ab3b4f1e7933cc4ce89d957d6"
+            },
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "evidence-faaf5d9e820ca8c74b4c7c4229ef70e90e44b00d1afa5d3df145e4848f857037"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-a660d7c0f41141b4a3f6ec7ea4843296",
+          "status": "candidate",
+          "title": "只读 WAL 数据库的读取条件推论"
+        }
+      ],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Published answer retains all readonly/version/OR conditions. Knowledge semantics graded separately.",
+        "knowledge_structure": true,
+        "knowledge_semantics": false,
+        "knowledge_review_note": "The stored inference is a source-stated condition or recommendation reclassified as inference; candidate save does not validate deduction.",
+        "structured_conditions_present": false,
+        "report_sha256": "63ad810f12178b9f044bc49d5415ed008492313484076fa312cc42f5f88f0148"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-accumulate",
+      "seed": 75,
+      "arm": "hide_revision",
+      "calls": 2,
+      "input_tokens": 6618,
+      "output_tokens": 467,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": false,
+      "report_file": "runs\\wal-accumulate-75-hide_revision\\research-report.txt",
+      "candidates": [
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "SQLite 从版本 3.22.0 开始支持在只读媒体或缺乏写权限的情况下读取 WAL 模式数据库，前提是满足特定条件（如 -shm 和 -wal 文件已存在且可读，或目录有写权限，或使用了 immutable 参数）。",
+          "id": "claim-0a4d218e2696f84b68e7b2be20ca11f38ea0168c5de6606c3e49227b001ef4d0",
+          "kind": "claim",
+          "origin": "model_extraction",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "465e33486fc50b6dc12405a794ac8eb7e0859e776421171076fbeb7c6aa46591"
+          },
+          "references": [
+            {
+              "relation": "supported_by",
+              "revision": 1,
+              "target": "evidence-171f99b10d27236be7903e9f1589ef542045aa10b34c47dc5993f04d0082a980"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-9182877bd95f4543a2448dea066783f7",
+          "status": "candidate",
+          "title": "SQLite 只读 WAL 数据库支持版本及条件"
+        },
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "由于 WAL 模式数据库在只读媒体上可以被读取（满足特定条件），因此在将 SQLite 数据库镜像烧录到只读媒体之前，将其转换为 PRAGMA journal_mode=DELETE 是一种良好的实践。",
+          "id": "inference-f9a02e6b5f42878a85f4820dd3eccab591f2b70e013ca5e37e9aa3555c0a5623",
+          "kind": "inference",
+          "origin": "model_inference",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k2",
+            "submission_digest": "465e33486fc50b6dc12405a794ac8eb7e0859e776421171076fbeb7c6aa46591"
+          },
+          "references": [
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "claim-0a4d218e2696f84b68e7b2be20ca11f38ea0168c5de6606c3e49227b001ef4d0"
+            },
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "evidence-171f99b10d27236be7903e9f1589ef542045aa10b34c47dc5993f04d0082a980"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-9182877bd95f4543a2448dea066783f7",
+          "status": "candidate",
+          "title": "将数据库转换为 DELETE 模式的实践意义"
+        }
+      ],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Published answer retains all readonly/version/OR conditions. Knowledge semantics graded separately.",
+        "knowledge_structure": true,
+        "knowledge_semantics": false,
+        "knowledge_review_note": "The stored inference is a source-stated condition or recommendation reclassified as inference; candidate save does not validate deduction.",
+        "structured_conditions_present": false,
+        "report_sha256": "142d19fad769840362d33a9d6ce3676e099056870c7d4283769219c8404f5b6b"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-accumulate",
+      "seed": 75,
+      "arm": "no_auto_recall",
+      "calls": 2,
+      "input_tokens": 8082,
+      "output_tokens": 451,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1,
+        "inference": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-accumulate-75-no_auto_recall\\research-report.txt",
+      "candidates": [
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "SQLite 从 3.22.0 版本开始支持在只读媒体或缺乏写权限的情况下读取 WAL 模式的数据库。",
+          "id": "claim-2f7fce83a2b10940e6b28ea86c8c2c7e29d06f02fe6c5015a5de11546d0a38b6",
+          "kind": "claim",
+          "origin": "model_extraction",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "115975bdd95e10dfd1c1162f806fd9ff1008e9662c7c382fbc0c35208688bdd6"
+          },
+          "references": [
+            {
+              "relation": "supported_by",
+              "revision": 1,
+              "target": "evidence-4943367d34574840748fba554127f5e99e4abb6efdb6ec848a09f88687b4c983"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-129d3c03874b434bb0c376049b619c97",
+          "status": "candidate",
+          "title": "SQLite WAL 只读支持版本"
+        },
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "如果一个 WAL 模式数据库在只读媒体上或缺乏写权限时仍可被读取，是因为满足了特定的条件（如 -shm/-wal 文件已存在、目录有写权限或使用了 immutable 参数）。",
+          "id": "inference-386618b4ac95e9c0175a7a3fa4925523a476ceaad50dffacbb23b535832a6706",
+          "kind": "inference",
+          "origin": "model_inference",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k2",
+            "submission_digest": "115975bdd95e10dfd1c1162f806fd9ff1008e9662c7c382fbc0c35208688bdd6"
+          },
+          "references": [
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "claim-2f7fce83a2b10940e6b28ea86c8c2c7e29d06f02fe6c5015a5de11546d0a38b6"
+            },
+            {
+              "relation": "depends_on",
+              "revision": 1,
+              "target": "evidence-4943367d34574840748fba554127f5e99e4abb6efdb6ec848a09f88687b4c983"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-129d3c03874b434bb0c376049b619c97",
+          "status": "candidate",
+          "title": "WAL 只读数据库的成立条件推论"
+        }
+      ],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "Published answer retains all readonly/version/OR conditions. Knowledge semantics graded separately.",
+        "knowledge_structure": true,
+        "knowledge_semantics": false,
+        "knowledge_review_note": "The stored inference is a source-stated condition or recommendation reclassified as inference; candidate save does not validate deduction.",
+        "structured_conditions_present": false,
+        "report_sha256": "4ceff4584b6daa963b4289b17dff2a4f88a9191f3c057ea26a277a14410fd0c4"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-conditions",
+      "seed": 74,
+      "arm": "baseline",
+      "calls": 2,
+      "input_tokens": 8009,
+      "output_tokens": 204,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-conditions-74-baseline\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "3.22.0, read-only/no DB write permission, both sidecars existing and readable, writable directory to create both, immutable, and OR all preserved.",
+        "report_sha256": "9f012697f337c2b2808bd9ffd635b12f8665c616360fe659bac6ac5715d12dcd"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-conditions",
+      "seed": 74,
+      "arm": "dedup_rules",
+      "calls": 2,
+      "input_tokens": 7583,
+      "output_tokens": 165,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-conditions-74-dedup_rules\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "3.22.0, read-only/no DB write permission, both sidecars existing and readable, writable directory to create both, immutable, and OR all preserved.",
+        "report_sha256": "edd106e47c5fef57f93453d49d996f8fb0a54e5a1f70d9607161b568b197b02a"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-conditions",
+      "seed": 74,
+      "arm": "hide_revision",
+      "calls": 2,
+      "input_tokens": 6428,
+      "output_tokens": 165,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": false,
+      "report_file": "runs\\wal-conditions-74-hide_revision\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "3.22.0, read-only/no DB write permission, both sidecars existing and readable, writable directory to create both, immutable, and OR all preserved.",
+        "report_sha256": "637d83420d97087a42187e718eea8c3ce2af9c60180fec3230a7b2541d918927"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-conditions",
+      "seed": 74,
+      "arm": "no_auto_recall",
+      "calls": 2,
+      "input_tokens": 7899,
+      "output_tokens": 205,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-conditions-74-no_auto_recall\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "3.22.0, read-only/no DB write permission, both sidecars existing and readable, writable directory to create both, immutable, and OR all preserved.",
+        "report_sha256": "241a39142af4d33eae8dce2303f761000031014733dfa9aa2390cb5718024f9f"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-conditions",
+      "seed": 75,
+      "arm": "baseline",
+      "calls": 2,
+      "input_tokens": 8005,
+      "output_tokens": 167,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-conditions-75-baseline\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "3.22.0, read-only/no DB write permission, both sidecars existing and readable, writable directory to create both, immutable, and OR all preserved.",
+        "report_sha256": "8c00770e2c04e52ed4ab69c8342c40b272ca2d80aa1f1b49bdde6b46fdf6abce"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-conditions",
+      "seed": 75,
+      "arm": "dedup_rules",
+      "calls": 2,
+      "input_tokens": 7579,
+      "output_tokens": 172,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-conditions-75-dedup_rules\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "3.22.0, read-only/no DB write permission, both sidecars existing and readable, writable directory to create both, immutable, and OR all preserved.",
+        "report_sha256": "329e2209df88dac51ac5f5bcfd4e2b52b6b21d6d207ce6da8a23ab93c5d12a4d"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-conditions",
+      "seed": 75,
+      "arm": "hide_revision",
+      "calls": 2,
+      "input_tokens": 6428,
+      "output_tokens": 169,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": false,
+      "report_file": "runs\\wal-conditions-75-hide_revision\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "3.22.0, read-only/no DB write permission, both sidecars existing and readable, writable directory to create both, immutable, and OR all preserved.",
+        "report_sha256": "24f417329a9397419dcfd52e93ad928bda4358df68f0614ff68d7823071440e6"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "wal-conditions",
+      "seed": 75,
+      "arm": "no_auto_recall",
+      "calls": 2,
+      "input_tokens": 7887,
+      "output_tokens": 166,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "open_url",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": null,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\wal-conditions-75-no_auto_recall\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "failed_requirements": [],
+        "review_note": "3.22.0, read-only/no DB write permission, both sidecars existing and readable, writable directory to create both, immutable, and OR all preserved.",
+        "report_sha256": "681f964fcb676d1f77439037bd57372db69d787f4856e0b2e50012d329652090"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "warm-wal",
+      "seed": 74,
+      "arm": "baseline",
+      "calls": 2,
+      "input_tokens": 8329,
+      "output_tokens": 200,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "knowledge_read",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 2,
+        "claim": 1,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": true,
+      "rules_per_request": [
+        2,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\warm-wal-74-baseline\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": true,
+        "assessable": true,
+        "failed_requirements": [],
+        "review_note": "All readonly/version/OR conditions preserved; exact historical source revision 1 read with no live fetch.",
+        "historical_material_reuse": true,
+        "report_sha256": "d4f80582e1e4549a271c674e0b7a4fbced384d3dc0460c455b037c417180c364"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "warm-wal",
+      "seed": 74,
+      "arm": "dedup_rules",
+      "calls": 2,
+      "input_tokens": 7912,
+      "output_tokens": 353,
+      "delivery": true,
+      "citation_binding_ok": true,
+      "answer_state": "answered",
+      "tool_errors": 0,
+      "tools": [
+        {
+          "name": "knowledge_read",
+          "ok": true
+        },
+        {
+          "name": "submit_research_answer",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 2,
+        "claim": 2,
+        "answer": 1
+      },
+      "one_publication_commit": true,
+      "warm_pinned_reuse": true,
+      "rules_per_request": [
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\warm-wal-74-dedup_rules\\research-report.txt",
+      "candidates": [
+        {
+          "aliases": [],
+          "conditions": {},
+          "content": "SQLite 从 3.22.0 版本开始支持在只读媒体或没有写权限的情况下打开 WAL 模式数据库，前提是满足以下任一条件：-shm 和 -wal 文件已存在且可读；或者目录具有写权限以创建这些文件；或者使用 immutable 查询参数打开连接。",
+          "id": "claim-247ffc558cfa6ff9f2101fe36ccdfd10546eece93705ab7399692c1a0707109b",
+          "kind": "claim",
+          "origin": "model_extraction",
+          "provenance": {
+            "basis": "explicit_research_update",
+            "key": "k1",
+            "submission_digest": "d3eb8e06db27fe238ded7f49051b23eb17c6ad2ad06ed485d2938e3c5a9b387d"
+          },
+          "references": [
+            {
+              "relation": "supported_by",
+              "revision": 1,
+              "target": "evidence-36b66d654e27600e9fd331832a03ddd8eb941dcabd9897a48e403090a712e50e"
+            }
+          ],
+          "scope": "personal",
+          "scope_id": "owner-6ce96204c7044e82884dc501000ff9ed",
+          "status": "candidate",
+          "title": ""
+        }
+      ],
+      "grade": {
+        "answer_semantics": true,
+        "assessable": true,
+        "failed_requirements": [],
+        "review_note": "All readonly/version/OR conditions preserved; exact historical source revision 1 read with no live fetch.",
+        "historical_material_reuse": true,
+        "report_sha256": "b5ddfeb8b325d19d33be8900d0086fffe397b6f15d1fb22ec0b493b02dd29109"
+      },
+      "stop_reason": "done"
+    },
+    {
+      "case": "warm-wal",
+      "seed": 74,
+      "arm": "hide_revision",
+      "calls": 6,
+      "input_tokens": 19634,
+      "output_tokens": 132,
+      "delivery": false,
+      "citation_binding_ok": false,
+      "answer_state": null,
+      "tool_errors": 3,
+      "tools": [
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1
+      },
+      "one_publication_commit": false,
+      "warm_pinned_reuse": false,
+      "rules_per_request": [
+        2,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "revision_tool_visible": false,
+      "report_file": "runs\\warm-wal-74-hide_revision\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": null,
+        "assessable": false,
+        "failed_requirements": [
+          "No published final answer; content not assessable"
+        ],
+        "review_note": "Model changed legal hyphenated IDs into underscore IDs; exact identity lookup correctly rejected them. Retry/stop result is not proof that every factual belief was wrong.",
+        "historical_material_reuse": false,
+        "report_sha256": "b9d354e4b0f0ab875b151ec40f2025c679e8e4f72ecc3eb2c19fe09d90fa3eb5"
+      },
+      "stop_reason": "max_turns"
+    },
+    {
+      "case": "warm-wal",
+      "seed": 74,
+      "arm": "no_auto_recall",
+      "calls": 4,
+      "input_tokens": 16023,
+      "output_tokens": 88,
+      "delivery": false,
+      "citation_binding_ok": false,
+      "answer_state": null,
+      "tool_errors": 2,
+      "tools": [
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1
+      },
+      "one_publication_commit": false,
+      "warm_pinned_reuse": false,
+      "rules_per_request": [
+        2,
+        1,
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\warm-wal-74-no_auto_recall\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": null,
+        "assessable": false,
+        "failed_requirements": [
+          "No published final answer; content not assessable"
+        ],
+        "review_note": "Model changed legal hyphenated IDs into underscore IDs; exact identity lookup correctly rejected them. Retry/stop result is not proof that every factual belief was wrong.",
+        "historical_material_reuse": false,
+        "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c"
+      },
+      "stop_reason": "no_progress"
+    },
+    {
+      "case": "warm-wal",
+      "seed": 75,
+      "arm": "baseline",
+      "calls": 4,
+      "input_tokens": 16035,
+      "output_tokens": 88,
+      "delivery": false,
+      "citation_binding_ok": false,
+      "answer_state": null,
+      "tool_errors": 2,
+      "tools": [
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1
+      },
+      "one_publication_commit": false,
+      "warm_pinned_reuse": false,
+      "rules_per_request": [
+        2,
+        1,
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\warm-wal-75-baseline\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": null,
+        "assessable": false,
+        "failed_requirements": [
+          "No published final answer; content not assessable"
+        ],
+        "review_note": "Model changed legal hyphenated IDs into underscore IDs; exact identity lookup correctly rejected them. Retry/stop result is not proof that every factual belief was wrong.",
+        "historical_material_reuse": false,
+        "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c"
+      },
+      "stop_reason": "no_progress"
+    },
+    {
+      "case": "warm-wal",
+      "seed": 75,
+      "arm": "dedup_rules",
+      "calls": 6,
+      "input_tokens": 23848,
+      "output_tokens": 132,
+      "delivery": false,
+      "citation_binding_ok": false,
+      "answer_state": null,
+      "tool_errors": 3,
+      "tools": [
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1
+      },
+      "one_publication_commit": false,
+      "warm_pinned_reuse": false,
+      "rules_per_request": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\warm-wal-75-dedup_rules\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": null,
+        "assessable": false,
+        "failed_requirements": [
+          "No published final answer; content not assessable"
+        ],
+        "review_note": "Model changed legal hyphenated IDs into underscore IDs; exact identity lookup correctly rejected them. Retry/stop result is not proof that every factual belief was wrong.",
+        "historical_material_reuse": false,
+        "report_sha256": "b9d354e4b0f0ab875b151ec40f2025c679e8e4f72ecc3eb2c19fe09d90fa3eb5"
+      },
+      "stop_reason": "max_turns"
+    },
+    {
+      "case": "warm-wal",
+      "seed": 75,
+      "arm": "hide_revision",
+      "calls": 6,
+      "input_tokens": 19615,
+      "output_tokens": 132,
+      "delivery": false,
+      "citation_binding_ok": false,
+      "answer_state": null,
+      "tool_errors": 3,
+      "tools": [
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1
+      },
+      "one_publication_commit": false,
+      "warm_pinned_reuse": false,
+      "rules_per_request": [
+        2,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "revision_tool_visible": false,
+      "report_file": "runs\\warm-wal-75-hide_revision\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": null,
+        "assessable": false,
+        "failed_requirements": [
+          "No published final answer; content not assessable"
+        ],
+        "review_note": "Model changed legal hyphenated IDs into underscore IDs; exact identity lookup correctly rejected them. Retry/stop result is not proof that every factual belief was wrong.",
+        "historical_material_reuse": false,
+        "report_sha256": "b9d354e4b0f0ab875b151ec40f2025c679e8e4f72ecc3eb2c19fe09d90fa3eb5"
+      },
+      "stop_reason": "max_turns"
+    },
+    {
+      "case": "warm-wal",
+      "seed": 75,
+      "arm": "no_auto_recall",
+      "calls": 6,
+      "input_tokens": 24201,
+      "output_tokens": 135,
+      "delivery": false,
+      "citation_binding_ok": false,
+      "answer_state": null,
+      "tool_errors": 3,
+      "tools": [
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        },
+        {
+          "name": "knowledge_search",
+          "ok": true
+        },
+        {
+          "name": "knowledge_read",
+          "ok": false
+        }
+      ],
+      "kinds": {
+        "source": 1,
+        "evidence": 1,
+        "claim": 1
+      },
+      "one_publication_commit": false,
+      "warm_pinned_reuse": false,
+      "rules_per_request": [
+        2,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "revision_tool_visible": true,
+      "report_file": "runs\\warm-wal-75-no_auto_recall\\research-report.txt",
+      "candidates": [],
+      "grade": {
+        "answer_semantics": null,
+        "assessable": false,
+        "failed_requirements": [
+          "No published final answer; content not assessable"
+        ],
+        "review_note": "Model changed legal hyphenated IDs into underscore IDs; exact identity lookup correctly rejected them. Retry/stop result is not proof that every factual belief was wrong.",
+        "historical_material_reuse": false,
+        "report_sha256": "06fe9deab5ba612943d2597efe62f72eacdc70ebcb102c1800d0a965b48f343c"
+      },
+      "stop_reason": "no_progress"
+    }
+  ],
+  "validation": {
+    "pytest_passed": 98,
+    "pytest_failed": 0,
+    "pytest_seconds": 60.6,
+    "pytest_selection": [
+      "tests/test_research_workflow_ablation.py",
+      "tests/test_research_framework_comparison.py",
+      "tests/test_research_experiment_identity.py",
+      "tests/test_research_scoped_request_projection.py",
+      "tests/test_research_whole_answer.py",
+      "tests/test_research_first_pass_knowledge.py",
+      "tests/test_research_historical_claim_read.py"
+    ],
+    "ruff_files": [
+      "tests/manual/research_workflow_ablation.py",
+      "tests/test_research_workflow_ablation.py"
+    ],
+    "ruff": "passed",
+    "git_diff_check": "passed",
+    "production_diff": "empty",
+    "production_commit": "7060f345",
+    "final_frozen_identity": "passed",
+    "full_repository_pytest": false,
+    "production_type_check_rerun": false,
+    "reason": "Only manual experiment harness, isolated harness tests and audit reports added; production source unchanged."
+  }
+}
