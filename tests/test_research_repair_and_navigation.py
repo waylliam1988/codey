@@ -12,7 +12,6 @@ from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.answer_context import answer_context
 from codey.research.answer_contract import answer_scope
 from codey.research.context_view import read_evidence_projection, read_intervals
-from codey.runtime.core.models import ToolCall, ToolResult
 from tests.test_research_deterministic_completion import _run
 from tests.test_research_findings import URL, execute, setup
 from tests.test_research_long_term_loop import strict_session
@@ -114,34 +113,30 @@ def test_source_locator_exposes_middle_gap_from_real_read_receipts(tmp_path):
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_every_omitted_window_has_exact_recovery_beyond_old_receipt_and_locator_caps(tmp_path):
+def test_all_earlier_read_snapshots_keep_exact_identity_beyond_old_locator_caps(tmp_path):
+    from codey.research.answer_context import _render_context
+    from codey.research.answer_contract import submit_answer
+
     store, tools, session, delegate = setup(tmp_path)
     tools.search.text = "Complete original material. " * 25
     try:
         for index in range(16):
             read = execute(delegate, tools, session, "open_url", {"url": URL + f"/{index}"})
             session._memory_results[f"receipt-{index}"] = read
-        scope = answer_scope(session, budget=1400)
+        scope = answer_scope(session)
         before = dict(tools.ledger.read_passages)
-        text = answer_context(session, tools.ledger, scope)
+        cap = len(_render_context(session, tools.ledger, scope, scope.aliases[-2:]))
+        text = answer_context(session, tools.ledger, scope, count_tokens=len, token_budget=cap)
         data = next(json.loads(block) for block in text.split("\n\n") if block.startswith('{"investigation_attempts"'))
-        assert "read_receipts" not in data
+        assert "read_receipts" not in data and "omitted_windows" not in data
         assert len(data["source_locators"]) == 16
-        assert len(data["omitted_windows"]) == 14
-        assert {row["recover"]["args"]["result_ref"] for row in data["omitted_windows"]} == {
-            f"receipt-{i}" for i in range(14)}
-        hidden = data["omitted_windows"][0]
-        assert hidden["label"] == "e1" and hidden["display_omitted"]
-        assert hidden["source_hash"] and (hidden["start"], hidden["end"]) == (0, len(tools.search.text))
-        assert hidden["recover"] == {"tool": "read_tool_result", "args": {"result_ref": "receipt-0"}}
-        assert "text" not in hidden and "excerpt" not in hidden
-        # Same receipt recovery semantics used by the real kernel: re-display
-        # the original window last, making it eligible with its original label.
-        session._memory_results["recovered"] = ToolResult(
-            ToolCall("read_tool_result", {"result_ref": "receipt-0"}), "Recovered original receipt", ok=True)
-        restored = answer_scope(session, budget=1400)
-        assert ("e1", hidden["passage_ref"]) in restored.aliases
-        assert tools.ledger.read_passages == before
-        assert not store.search("material")
+        assert len(data["previously_read_snapshots"]) == 14
+        for label, hidden in zip(scope.aliases, data["previously_read_snapshots"], strict=False):
+            passage = tools.ledger.read_passages[label[1]]
+            assert hidden["label"] == label[0] and hidden["source_hash"] == passage.source.text_hash
+            assert (hidden["start"], hidden["end"]) == (passage.start, passage.end)
+            assert "recover" not in hidden and "text" not in hidden and "excerpt" not in hidden
+        submit_answer(scope, {"state": "answered", "markdown": "The earlier original material [e1]."})
+        assert tools.ledger.read_passages == before and not store.search("material")
     finally:
         store.close()

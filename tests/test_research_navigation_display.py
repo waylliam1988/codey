@@ -5,7 +5,7 @@ from copy import deepcopy
 
 import pytest
 
-from codey.research.answer_context import answer_context
+from codey.research.answer_context import _render_context, answer_context
 from codey.research.answer_contract import answer_scope, submit_answer
 from codey.runtime.core.models import ToolCall, ToolResult
 from tests.manual.research_navigation_ab import compact_view
@@ -31,7 +31,15 @@ def test_candidate_changes_only_duplicate_fields_and_keeps_actual_first_gap(tmp_
         passages = deepcopy(tools.ledger.read_passages)
         before = baseline_context(session, tools.ledger, answer_scope(session))
         candidate = compact_view(before)
-        assert answer_context(session, tools.ledger, answer_scope(session)) == candidate
+        installed = answer_context(session, tools.ledger, answer_scope(session))
+        assert all(passage.excerpt in installed for passage in passages.values())
+        if not offsets:
+            assert "No original excerpt has been read for this task yet" in installed
+            assert "Read a provided web URL with open_url" in installed
+            assert "Previously read snapshots are indexed below" not in installed
+        installed_packet = packet(installed)
+        assert installed_packet["source_locators"] == packet(candidate)["source_locators"]
+        assert installed_packet["previously_read_snapshots"] == []
         old, new = packet(before), packet(candidate)
         old.pop("read_receipts")
         for row in old["source_locators"]:
@@ -51,32 +59,27 @@ def test_candidate_changes_only_duplicate_fields_and_keeps_actual_first_gap(tmp_
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_all_hidden_original_labels_and_recovery_calls_survive_without_full_receipt_list(tmp_path):
+def test_over_budget_originals_keep_stable_citations_without_receipt_recovery(tmp_path):
     store, tools, session, delegate = setup(tmp_path)
     tools.search.text = "Complete original material. " * 25 + "\n"
     try:
         for index in range(16):
             result = execute(delegate, tools, session, "open_url", {"url": URL + f"/{index}"})
-            assert result.ok
             session._memory_results[f"receipt-{index}"] = result
-        scope = answer_scope(session, budget=1500)
-        before = baseline_context(session, tools.ledger, scope)
-        assert answer_context(session, tools.ledger, scope) == compact_view(before)
-        old, new = packet(before), packet(compact_view(before))
-        assert len(new["omitted_windows"]) == 14
-        assert new["omitted_windows"] == old["omitted_windows"]
-        for hidden in new["omitted_windows"]:
-            identity = hidden["recover"]["args"]["result_ref"]
-            assert hidden["passage_ref"] in {r["ref"] for r in session._memory_results[identity].canonical["read_passages"]}
-        first = new["omitted_windows"][0]
-        assert first["label"] == "e1" and "text" not in first
-        with pytest.raises(ValueError, match="Unknown or unshown"):
-            submit_answer(scope, {"state": "answered", "markdown": "The hidden original material [e1]."})
-        session._memory_results["recovered"] = ToolResult(ToolCall("read_tool_result", first["recover"]["args"]),
-                                                         "Recovered original output", ok=True)
-        restored = answer_scope(session, budget=1500)
-        assert ("e1", first["passage_ref"]) in restored.aliases
-        submit_answer(restored, {"state": "answered", "markdown": "The original material [e1]."})
-        assert len(compact_view(before)) < len(before)
+        scope = answer_scope(session)
+        cap = len(_render_context(session, tools.ledger, scope, scope.aliases[-2:]))
+        text = answer_context(session, tools.ledger, scope, count_tokens=len, token_budget=cap)
+        data = packet(text)
+        assert len(text) <= cap and len(data["previously_read_snapshots"]) == 14
+        assert "read_tool_result" not in text and "omitted_windows" not in data
+        first = data["previously_read_snapshots"][0]
+        assert first["label"] == "e1" and first["source_hash"]
+        assert (first["start"], first["end"]) == (0, len(tools.search.text))
+        assert "recover" not in first and "passage_ref" not in first
+        assert len(scope.aliases) == 16
+        submit_answer(scope, {"state": "answered", "markdown": "The earlier original material [e1]."})
+        session._memory_results["recovered"] = ToolResult(ToolCall("read_tool_result", {"result_ref": "receipt-0"}),
+                                                         "Legacy recovered original output", ok=True)
+        assert answer_scope(session).aliases == scope.aliases
     finally:
         store.close()

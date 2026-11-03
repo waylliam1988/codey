@@ -161,7 +161,7 @@ def local_research_context(session: Any, ledger: Any, store: Any, scope: Any, *,
         "report_constraints": report_requirements(session.task_text),
         "selection_budget": selection_budget(session, ledger, store),
         "read_evidence": evidence["packets"], "candidate_findings": candidates, "other_target_progress": progress,
-        "locators_not_evidence": evidence["locators"][-12:], "read_receipt_index": receipts[-8:],
+        "locators_not_evidence": evidence["locators"][-12:], "read_receipts": receipts[-8:],
         "replacing_selection": scope.replaces,
         **({"repeated_action": repeated} if repeated is not None else {}),
         **({"repair_issue": json.loads(scope.repair_issue_json)} if scope.repair_issue_json else {}),
@@ -174,7 +174,7 @@ def local_research_context(session: Any, ledger: Any, store: Any, scope: Any, *,
                   if scope.submission_mode == "inline" else
                   "Otherwise save the supported local answer once, then submit with answered/partial and its fN. ")
     reuse = ("Shown original passages can be reused for this question without another search or fetch. "
-             "Other observed windows remain recoverable through read_receipt_index/read_tool_result; "
+             "Other observed windows remain recoverable through read_receipts/read_tool_result; "
              "not every previously observed window necessarily fits this request. "
              if plan.get("schema_version") in (2, 3) else
              "Recover a prior read via read_tool_result to reuse its pinned passages without fetching the page again. ")

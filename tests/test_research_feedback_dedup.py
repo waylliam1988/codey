@@ -84,7 +84,7 @@ def test_actual_request_contains_one_complete_error_and_real_repair_still_publis
         result = run_whole(tmp_path, native=native, scenario="repair", provider_wrap=wrap)
         assert result.stop_reason == "done" and result.synthesis_id and len(sent) == 3
         last = "\n".join(str(row.get("content", "")) for row in sent[-1]["messages"])
-        assert last.count("Unknown or unshown evidence: e99.") == 1
+        assert last.count("Unknown or unread evidence: e99.") == 1
         assert ERROR_RECEIPT.strip() in last
         assert "[e1]" in last and "e99" not in result.accepted_report.markdown
     finally:

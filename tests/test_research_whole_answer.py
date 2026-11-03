@@ -69,17 +69,19 @@ def test_same_url_changes_never_rebind_aliases_or_selected_original_text(tmp_pat
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_omitted_window_is_not_citable_and_recovery_keeps_original_alias(tmp_path):
+def test_display_omission_does_not_revoke_original_task_read_citation(tmp_path):
+    from codey.research.answer_context import _render_context, answer_context
+
     store, tools, session, delegate = setup(tmp_path)
     try:
+        tools.search.text = "Complete original concurrency statement. " * 30
         session._memory_results["read1"] = execute(delegate, tools, session, "open_url", {"url": URL})
-        original = answer_scope(session)
-        omitted = answer_scope(session, budget=1)
-        assert not omitted.aliases
-        with pytest.raises(ValueError, match="unshown"):
-            submit_answer(omitted, {"state": "answered", "markdown": "Concurrency is supported [e1]."})
-        assert answer_scope(session).aliases == original.aliases
-        frozen = AnswerScope.from_payload(json.loads(json.dumps(original.to_payload())))
+        scope = answer_scope(session)
+        cap = len(_render_context(session, tools.ledger, scope, ())) + 10
+        text = answer_context(session, tools.ledger, scope, count_tokens=len, token_budget=cap)
+        assert "[e1] Original study" not in text
+        assert '"label":"e1"' in text
+        frozen = AnswerScope.from_payload(json.loads(json.dumps(scope.to_payload())))
         assert submit_answer(frozen, {"state": "answered", "markdown": "Concurrency is supported [e1]."})["citations"]
     finally:
         store.close()
@@ -135,7 +137,7 @@ def test_grouped_citations_preserve_explicit_selection_and_original_offsets():
     selected = submit_answer(scope, {"state": "answered", "markdown": markdown})
     assert [row["label"] for row in selected["citations"]] == ["e1", "e2"]
     assert all(markdown[row["start"]:row["end"]] == "[e1, e2]" for row in selected["citations"])
-    with pytest.raises(ValueError, match="unshown"):
+    with pytest.raises(ValueError, match="unread"):
         submit_answer(scope, {"state": "answered", "markdown": "Unsupported selection [e1, e99]."})
     with pytest.raises(ValueError, match="no ranges"):
         submit_answer(scope, {"state": "answered", "markdown": "Ambiguous selection [e1-e2]."})
@@ -153,17 +155,18 @@ def test_section_read_keeps_conditions_together_without_extending_original_windo
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_read_delivery_is_not_compacted_when_any_original_passage_is_omitted(tmp_path):
+def test_read_delivery_reuses_pinned_task_read_evidence_without_claiming_current_visibility(tmp_path):
     from codey.operations.task_guidance import task_result_context
 
     store, tools, session, delegate = setup(tmp_path)
     try:
         result = execute(delegate, tools, session, "open_url", {"url": URL})
         session._memory_results["read"] = result
-        omitted = answer_scope(session, budget=1)
+        omitted = replace(answer_scope(session), aliases=())
         assert result.model_text in task_result_context(session, result, omitted)
         compact = task_result_context(session, result, answer_scope(session))
         assert "[e1]" in compact and "Read succeeded" in compact and "read" in compact
+        assert "appears in the current evidence view" not in compact
         assert result.model_text not in compact
     finally:
         store.close()

@@ -2960,7 +2960,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             self.assertNotIn("[e999]", result.summary)
             store.close()
 
-        self.assertIn("Unknown or unshown evidence: e999", provider.sent[3])
+        self.assertIn("Unknown or unread evidence: e999", provider.sent[3])
         self.assertIn("Helium is separated from natural gas streams.", provider.sent[3])
         self.assertNotIn("[no tool output]", provider.sent[3])
         self.assertNotIn("Codey", provider.sent[3])

@@ -612,12 +612,19 @@ class ExecutionDelegate:
         text = outcome.model_text
         if not outcome.ok and self._research_scope is not None:
             if identity in tools.ledger.read_passages:
-                text = ("ERROR: this id names a read passage, not a stored knowledge object. "
+                text = ("ERROR: this id names a task-read passage, not stored knowledge. "
+                        "Cite its existing [eN] label directly. knowledge_read needs an exact stored id and revision."
+                        if isinstance(self._research_scope, AnswerScope) else
+                        "ERROR: this id names a read passage, not a stored knowledge object. "
                         "Use its complete text if present in read_evidence; otherwise recover its original read with "
-                        "read_tool_result using read_receipt_index. Choose an answer or a gap from the actual evidence.")
+                        "read_tool_result using read_receipts. Choose an answer or a gap from the actual evidence.")
             elif identity in getattr(self.session, "source_ids", {}):
-                text = ("ERROR: this id is an opened-source locator, not a stored knowledge object. "
-                        "Recover its original read with read_tool_result using read_receipt_index, or use an advertised "
+                text = ("ERROR: this id is a source locator, not stored knowledge. "
+                        "Use the existing [eN] evidence, or the displayed source-reading action for unread text. "
+                        "knowledge_read needs an exact stored id and revision."
+                        if isinstance(self._research_scope, AnswerScope) else
+                        "ERROR: this id is an opened-source locator, not a stored knowledge object. "
+                        "Recover its original read with read_tool_result using read_receipts, or use an advertised "
                         "source-reading action for more text. knowledge_read needs an exact stored id and revision.")
         canonical: dict[str, Any] = {
             "research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}

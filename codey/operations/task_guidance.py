@@ -1,5 +1,6 @@
 """Select domain guidance at task composition, before entering the common loop."""
 
+import time
 from typing import TYPE_CHECKING, Any
 
 from codey.policies.output_requirement import guidance
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 
 def task_working_context(session: "TaskSession", research_ledger: "ResearchLedger | None" = None,
                          knowledge_store: Any = None, knowledge_session_id: str = "", *, research_scope: Any = None,
-                         tool_names: tuple[str, ...] | None = None) -> str:
+                         tool_names: tuple[str, ...] | None = None, provider: Any = None) -> str:
     from codey.operations.kernel_prompt import working_context
     from codey.research.completion_guidance import render_research_observations
 
@@ -29,8 +30,22 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
     from codey.research.answer_contract import AnswerScope
 
     if isinstance(scope, AnswerScope):
+        from codey.providers.token_accounting import ContextBudget
         from codey.research.answer_context import answer_context
 
+        budget = getattr(provider, "context_budget", None)
+        counter = getattr(provider, "count_text", None)
+        if isinstance(budget, ContextBudget) and callable(counter):
+            deadline = time.monotonic() + min(30.0, getattr(provider, "timeout", 30.0))
+
+            def count(text: str) -> int:
+                value = counter(text, deadline=deadline).value
+                if type(value) is not int or value < 0:
+                    raise ValueError("provider research token count is unavailable")
+                return value
+
+            return answer_context(session, research_ledger, scope, count_tokens=count,
+                                  token_budget=min(budget.window_tokens // 2, budget.input_limit))
         return answer_context(session, research_ledger, scope)
     if scope is not None:
         from codey.research.context_view import local_research_context
@@ -85,7 +100,7 @@ def task_result_context(session: Any, result: Any, research_scope: Any) -> str:
         if all(row["ref"] in labels for row in rows):
             identity = next((key for key, value in session._memory_results.items() if value is result), "")
             if identity:
-                return ("Read succeeded. The complete original window appears in the current evidence view as "
+                return ("Read succeeded. The original window is pinned for citation as "
                         + ", ".join(f"[{labels[row['ref']]}]" for row in rows) + ".\n"
                         + render_result_metadata(identity, tool=result.call.name, ok=True))
-    return _result_context(result, session)
+    return _result_context(result, session, receipt_recovery=not isinstance(research_scope, AnswerScope))

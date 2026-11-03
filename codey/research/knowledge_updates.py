@@ -102,7 +102,7 @@ def normalize_updates(raw: Any, labels: set[str]) -> list[dict[str, Any]]:
             target = ref["ref"]
             if _EVIDENCE_LABEL.fullmatch(target):
                 if target not in labels:
-                    raise ValueError(f"knowledge_updates references unknown or unshown evidence [{target}]")
+                    raise ValueError(f"knowledge_updates references unknown or unread evidence [{target}]")
             elif target not in by_key:
                 raise ValueError(f"knowledge_updates references unknown batch key [{target}]")
             elif row["kind"] == "inference" and by_key[target]["kind"] not in {"claim", "inference"}:

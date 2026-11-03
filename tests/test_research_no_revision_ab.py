@@ -48,7 +48,7 @@ def test_removal_preserves_original_task_and_optional_new_knowledge_channel():
     assert "Complete user task (verbatim):\n" + s.task_text in text
     assert "creating a new object does not update the old one" in text
     packet = next(block for block in text.split("\n\n") if block.startswith('{"investigation_attempts":'))
-    assert json.loads(packet) == {"investigation_attempts": [], "latest_error": [], "omitted_windows": [],
+    assert json.loads(packet) == {"investigation_attempts": [], "latest_error": [], "previously_read_snapshots": [],
                                  "source_locators": []}
 
 

@@ -63,7 +63,7 @@ def test_whole_prior_interpretation_requires_a_separate_pinned_material_read(tmp
         assert not answer_scope(session).aliases
         with pytest.raises(ValueError, match="explicit.*eN"):
             submit_answer(answer_scope(session), {"state": "answered", "markdown": "Historical answer [f1]."})
-        with pytest.raises(ValueError, match="Unknown or unshown"):
+        with pytest.raises(ValueError, match="Unknown or unread"):
             submit_answer(answer_scope(session), {"state": "answered", "markdown": "Historical answer [e1]."})
         if kind == "observation":
             assert payload["references"] == []

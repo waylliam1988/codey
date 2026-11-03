@@ -52,7 +52,7 @@ def record(name, original, disabled, *, boundary, limitation=""):
 def test_citation_parser_fault(monkeypatch):
     scope = AnswerScope("a" * 64, (), ("attempt",))
     args = {"state": "unresolved", "markdown": "The claimed source does not exist [e99]."}
-    with pytest.raises(ValueError, match="unshown"):
+    with pytest.raises(ValueError, match="unread"):
         submit_answer(scope, args)
     monkeypatch.setattr(answer_contract, "citation_occurrences", lambda text: [])
     result = submit_answer(scope, args)

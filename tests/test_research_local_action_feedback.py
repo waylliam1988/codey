@@ -51,7 +51,7 @@ def test_namespace_mistake_recovers_original_read_without_inventing_a_knowledge_
         identity = scope.passage_refs[0] if kind == "passage" else next(iter(session.source_ids))
         result, ok, _ = ExecutionDelegate(session=session, research_tools=tools, research_scope=scope)._execute_research(
             ToolCall("knowledge_read", {"id": identity, "question_ref": scope.question_ref}))
-        assert not ok and "read_receipt_index" in result.model_text and "read_tool_result" in result.model_text
+        assert not ok and "read_receipts" in result.model_text and "read_receipt_index" not in result.model_text and "read_tool_result" in result.model_text
         assert "knowledge_search" not in result.model_text  # It may be outside this request's exposed tool set.
         assert not result.canonical and not tools.created_ids
         assert len(tools.ledger.read_passages) == len(scope.passage_refs)

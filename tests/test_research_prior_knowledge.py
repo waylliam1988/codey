@@ -75,7 +75,7 @@ def test_long_statements_have_exact_recovery_not_silently_cut_conditions():
                                        "short": read("claim-short", complete=False)})
     rows = prior_knowledge(s, budget=1000)
     assert rows[0] == {"id": "claim-long", "revision": 1, "result_ref": "long", "display_omitted": True,
-                       "recover": {"tool": "read_tool_result", "args": {"result_ref": "long"}}}
+                       "recover": {"tool": "knowledge_read", "args": {"id": "claim-long", "revision": 1}}}
     assert rows[1]["content_complete"] is False
     assert len(json.dumps(rows, separators=(",", ":"))) < 1000
 

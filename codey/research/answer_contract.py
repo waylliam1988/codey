@@ -18,12 +18,11 @@ from codey.research.questions import INVESTIGATION_TOOLS
 
 ANSWER_SCOPE_VERSION = 4
 ANSWER_CONTRACT_VERSION = 1
-READ_BUDGET = 18000
 MAX_ANSWER_CHARACTERS = 64000
 ANSWER_STATES = ("answered", "partial", "unresolved")
 ANSWER_TOOLS = ("web_search", "open_url", "open_result", "reopen_source", "open_hit", "source_search",
                 "knowledge_search", "knowledge_read", "knowledge_commit",
-                "read_tool_result", "submit_research_answer", "ask_user")
+                "submit_research_answer", "ask_user")
 
 ANSWER_GUIDANCE = (
     "Research the user's actual questions, not just their general topic. "
@@ -117,11 +116,9 @@ class AnswerScope:
         return cls(raw["task_digest"], tuple(tuple(row) for row in raw["aliases"]), tuple(raw["attempt_refs"]))
 
 
-def answer_scope(session: Any, *, budget: int = READ_BUDGET) -> AnswerScope:
-    """Append-only labels from receipt order; only complete visible windows fit."""
+def answer_scope(session: Any) -> AnswerScope:
+    """Stable citation labels for actual successful reads, independent of display."""
     labels: dict[str, str] = {}
-    lengths: dict[str, int] = {}
-    windows = []
     attempts = []
     results = getattr(session, "_memory_results", {})
     for identity, result in results.items():
@@ -131,23 +128,10 @@ def answer_scope(session: Any, *, budget: int = READ_BUDGET) -> AnswerScope:
             continue
         original = results.get(result.call.args.get("result_ref")) if result.call.name == "read_tool_result" else result
         rows = original.canonical.get("read_passages", []) if original is not None and original.ok else []
-        window = []
         for row in rows:
             ref = row["ref"]
             labels.setdefault(ref, f"e{len(labels) + 1}")
-            lengths[ref] = row["end"] - row["start"]
-            window.append(ref)
-        if window:
-            windows.append(window)
-    selected: set[str] = set()
-    size = 0
-    for window in reversed(windows):
-        extra = set(window) - selected
-        cost = sum(lengths[ref] for ref in extra)
-        if size + cost <= budget:
-            selected.update(extra)
-            size += cost
-    return AnswerScope(digest(session.task_text), tuple((label, ref) for ref, label in labels.items() if ref in selected),
+    return AnswerScope(digest(session.task_text), tuple((label, ref) for ref, label in labels.items()),
                        tuple(attempts))
 
 
@@ -177,8 +161,8 @@ def submit_answer(scope: AnswerScope, args: dict[str, Any]) -> dict[str, Any]:
     updates = normalize_updates(args.get("knowledge_updates", []), set(aliases))
     unknown = {row["label"] for row in citations} - aliases.keys()
     if unknown:
-        raise ValueError("Unknown or unshown evidence: " + ", ".join(sorted(unknown))
-                         + ". Use only the displayed [eN] labels, or read the original material first.")
+        raise ValueError("Unknown or unread evidence: " + ", ".join(sorted(unknown))
+                         + ". Use the task-read [eN] labels, or read the original material first.")
     if not scope.attempt_refs:
         raise ValueError("Investigate the task before submitting; failed acquisition attempts may support a gap report.")
     if not citations and args["state"] != "unresolved":

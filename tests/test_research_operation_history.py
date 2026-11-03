@@ -79,7 +79,7 @@ def test_actual_work_view_changes_only_duplicate_reads_and_restores_them_on_fail
 
     def view(arm):
         with treatment(arm):
-            text = answer_context(session, tools.ledger, answer_scope(session, budget=1400))
+            text = answer_context(session, tools.ledger, answer_scope(session))
         blocks = text.split("\n\n")
         index = next(i for i, block in enumerate(blocks) if block.startswith('{"investigation_attempts":'))
         data = json.loads(blocks[index])
@@ -103,9 +103,7 @@ def test_actual_work_view_changes_only_duplicate_reads_and_restores_them_on_fail
         assert len(before.pop("investigation_attempts")) == 8
         assert [row["result_ref"] for row in after.pop("investigation_attempts")] == ["empty-search"]
         assert before == after
-        assert "read_receipts" not in after and len(after["omitted_windows"]) == 14
-        assert {row["recover"]["args"]["result_ref"] for row in after["omitted_windows"]} == {
-            f"receipt-{i}" for i in range(14)}
+        assert "read_receipts" not in after and after["previously_read_snapshots"] == []
         assert session._memory_results == memory
         session._memory_results["failure"] = result(ok=False, passages=False, text="Bad exact-id revision=7")
         before_blocks, before = view("original_control")

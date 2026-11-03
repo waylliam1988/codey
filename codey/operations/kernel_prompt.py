@@ -272,7 +272,7 @@ def _completion_followup(feedback: str, *, native: bool, structured_report: bool
     return feedback + "\n\n" + rule
 
 
-def _result_context(result: ToolResult, session: TaskSession) -> str:
+def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
     text = (result.model_text or "")
     if result.call.name == "codemode" and result.ok:
         text = f"Result data (JSON):\n{text}"
@@ -284,11 +284,11 @@ def _result_context(result: ToolResult, session: TaskSession) -> str:
             if result.truncated else "If more detail is needed, use read_tool_result."
         )
         text += f"\n\n{render_result_metadata(result_ref, tool=result.call.name, ok=result.ok)}\n"
-        if source_result:
+        if source_result and receipt_recovery:
             text += ("result_ref identifies this tool receipt only; it is not a source URL, source offset or hit id. "
                      "Use the source URLs/locators below for further page reading. "
                      "Use read_tool_result only to recover an omitted receipt, copying the complete result_ref.")
-        else:
+        elif receipt_recovery:
             text += ("For read_tool_result only, copy the complete result_ref including its prefix. "
                      f'Read omitted detail with read_tool_result({{"result_ref":"{result_ref}","query":"literal keyword"}}). '
                      f"{instruction} do not repeat execution to recover output.")
@@ -317,8 +317,8 @@ def _result_context(result: ToolResult, session: TaskSession) -> str:
         example = next(iter(targets))
         return (f"{text}\n\nSource locator references:\n{refs}\n"
                 f'Open the passage with open_hit({{"hit_id":"{example}"}}), or open_url with the source URL and its offset. '
-                "These offsets refer to source text, not tool receipts; do not pass them to read_tool_result. "
-                "Use read_tool_result only to inspect omitted locator-list output.")
+                + ("These offsets refer to source text, not tool receipts; do not pass them to read_tool_result. "
+                   "Use read_tool_result only to inspect omitted locator-list output." if receipt_recovery else ""))
     if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"} and session.source_ids:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.source_ids.items())[-12:])
         return (f"{text}\n\nOpened source references for citations:\n{refs}\n"

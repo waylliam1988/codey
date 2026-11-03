@@ -78,7 +78,7 @@ def test_removing_post_publication_review_loses_diagnostics_while_delivery_survi
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_web_receipt_requires_output_view_and_restores_the_original_alias(tmp_path, monkeypatch):
+def test_receipt_output_search_preserves_task_read_authority_and_original_alias(tmp_path, monkeypatch):
     from codey.operations.tool_result_reader import read_tool_result
     from codey.research.answer_contract import answer_scope
     from codey.runtime.core.models import ToolCall
@@ -93,20 +93,19 @@ def test_web_receipt_requires_output_view_and_restores_the_original_alias(tmp_pa
         first_alias = answer_scope(session).aliases[0]
         noise = execute(delegate, tools, session, "open_url", {"url": URL + "/noise"})
         session._memory_results["noise"] = noise
-        budget = len(tools.search.text)
-        assert first_alias not in answer_scope(session, budget=budget).aliases
+        assert first_alias in answer_scope(session).aliases
         monkeypatch.setattr(tools.search, "fetch", lambda *a: pytest.fail("receipt restore refetched source"))
 
         wrong = read_tool_result(delegate, ToolCall("read_tool_result", {
             "result_ref": "original", "view": "value", "query": "Secret"}))
         assert not wrong.ok and "canonical value unavailable" in wrong.model_text
-        assert first_alias not in answer_scope(session, budget=budget).aliases
+        assert first_alias in answer_scope(session).aliases
 
         restored = read_tool_result(delegate, ToolCall("read_tool_result", {
             "result_ref": "original", "view": "output", "query": "Secret"}))
         assert restored.ok and "ZEPHYR-6842-Q" in restored.model_text
         session._memory_results["restored"] = restored
-        assert first_alias in answer_scope(session, budget=budget).aliases
+        assert first_alias in answer_scope(session).aliases
         assert not store.search("Secret")
     finally:
         store.close()
