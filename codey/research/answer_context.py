@@ -9,18 +9,32 @@ from codey.research.questions import INVESTIGATION_TOOLS
 
 
 def investigation_history(session: Any) -> list[dict[str, Any]]:
-    """Bounded observation of actual attempts, including unsuccessful searches."""
+    """Avoid duplicate read rows after a settled search supplied no new leads."""
     counts: dict[str, int] = {}
     rows = []
+    receipt_reads = set()
+    latest = list(session._memory_results.values())[-1:]
+    compact = bool(latest and latest[0].call.name == "knowledge_search"
+                   and latest[0].canonical.get("knowledge_search_empty") is True)
     for identity, result in session._memory_results.items():
+        # Errors, repeats, editing and receipt recovery retain the original view
+        # for the remaining settled task history, including after a later success.
+        if not result.ok or result.call.name not in INVESTIGATION_TOOLS:
+            compact = False
         if result.call.name not in INVESTIGATION_TOOLS:
             continue
         key = canonical_json([result.call.name, result.call.args, result.ok, result.model_text])
         counts[key] = counts.get(key, 0) + 1
+        if counts[key] > 1:
+            compact = False
+        if result.ok and result.canonical.get("read_passages"):
+            receipt_reads.add(identity)
         rows.append({"result_ref": identity, "tool": result.call.name, "args": result.call.args,
                      "ok": result.ok, "identical_observations": counts[key],
                      **({"error": result.model_text[:500]} if not result.ok else {})})
-    return rows[-8:]
+    # answer_context keeps every such read in read_receipts, with its exact
+    # recovery identity and passage refs. Evidence and navigation are unchanged.
+    return [row for row in rows[-8:] if not compact or row["result_ref"] not in receipt_reads]
 
 
 def answer_context(session: Any, ledger: Any, scope: AnswerScope) -> str:

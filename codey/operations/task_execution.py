@@ -578,7 +578,10 @@ class ExecutionDelegate:
                 from codey.research.text_args import first_text_arg
 
                 outcome = tools.knowledge_search(first_text_arg(args, "query"), depth=args.get("depth", 1))
-                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
+                search_canonical = ({"knowledge_search_empty": True}
+                    if outcome.ok and getattr(outcome, "knowledge_search_empty", False) is True else {})
+                return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text,
+                                  canonical=search_canonical), outcome.ok, None
             if name == "knowledge_read":
                 return self._read_research_knowledge(call, tools)
             if name == "knowledge_commit":

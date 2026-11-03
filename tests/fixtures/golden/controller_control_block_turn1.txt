@@ -9,8 +9,8 @@ Research controller current allowed actions:
 - In done.summary, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.
 
 Allowed JSON shapes for this turn (choose exactly one):
-- {"tool":"knowledge_search","args":{"query":"..."}}
-- {"tool":"knowledge_read","args":{"id":"<note id>"}}
-- {"tool":"web_search","args":{"query":"..."}}
+- {"tool":"knowledge_search","args":{"query":"...","question_ref":"q1"}}
+- {"tool":"knowledge_read","args":{"id":"<note id>","question_ref":"q1"}}
+- {"tool":"web_search","args":{"query":"...","question_ref":"q1"}}
 
 Do not call tools outside the allowed list. Do not output multiple JSON objects.

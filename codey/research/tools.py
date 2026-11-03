@@ -41,6 +41,7 @@ class ResearchToolOutput:
     read_passages: tuple[dict[str, Any], ...] = ()
     read_observation: dict[str, Any] = field(default_factory=dict)
     ok: bool = field(kw_only=True)
+    knowledge_search_empty: bool = field(default=False, kw_only=True)
 
     def __post_init__(self) -> None:
         if type(self.ok) is not bool:
@@ -224,7 +225,8 @@ class ResearchTools:
         recalled = render_recall(hits, include_answer_refs=not (self.evidence_only or self.local_submission))
         rows = self.store.search_notes(query, project=self.project, session_id=self.session_id)
         if not rows:
-            return ResearchToolOutput(recalled or "no local notes yet on this topic", ok=True)
+            return ResearchToolOutput(recalled or "no local notes yet on this topic", ok=True,
+                                      knowledge_search_empty=not hits)
         lines = [recalled] if recalled else []
         for row in rows:
             status = row.get("status") or "active"

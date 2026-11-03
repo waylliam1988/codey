@@ -115,11 +115,18 @@ def test_receipt_override_skips_head_tail_clip() -> None:
     assert outcome.model_text == "WINDOW"
 
 
-def test_research_tool_output_is_window_plus_receipt_only() -> None:
+def test_research_tool_output_contains_only_receipts_and_observed_search_status() -> None:
     import dataclasses
 
     names = {field.name for field in dataclasses.fields(ResearchToolOutput)}
-    assert names == {"model_text", "receipt_text", "read_passages", "read_observation", "ok"}
+    assert names == {"model_text", "receipt_text", "read_passages", "read_observation", "ok",
+                     "knowledge_search_empty"}
+    # This is the program's observed zero-hit status, not a semantic judgment
+    # about an answer. Ordinary source reads keep the conservative default.
+    search_status = next(field for field in dataclasses.fields(ResearchToolOutput)
+                         if field.name == "knowledge_search_empty")
+    assert search_status.kw_only and search_status.default is False
+    assert ResearchToolOutput("Original window", ok=True).knowledge_search_empty is False
 
 
 @pytest.mark.usefixtures("public_source_dns")
