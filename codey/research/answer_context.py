@@ -67,8 +67,8 @@ def investigation_history(session: Any) -> list[dict[str, Any]]:
         rows.append({"result_ref": identity, "tool": result.call.name, "args": result.call.args,
                      "ok": result.ok, "identical_observations": counts[key],
                      **({"error": result.model_text[:500]} if not result.ok else {})})
-    # answer_context keeps every such read in read_receipts, with its exact
-    # recovery identity and passage refs. Evidence and navigation are unchanged.
+    # Visible windows retain their text; omitted_windows retains each hidden
+    # window's exact recovery receipt and passage identity.
     return [row for row in rows[-8:] if not compact or row["result_ref"] not in receipt_reads]
 
 
@@ -88,15 +88,12 @@ def answer_context(session: Any, ledger: Any, scope: AnswerScope) -> str:
                      + canonical_json(prior) + "\nCompare these statements against original evidence; reading them "
                      "does not verify them. display_omitted means recover the original receipt with read_tool_result.")
     projection = read_evidence_projection(session, ledger, passage_refs=scope.passage_refs)
-    receipts = []
     omitted = []
     labels: dict[str, str] = {}
     for identity, result in session._memory_results.items():
         if not result.ok or not result.canonical.get("read_passages"):
             continue
         rows = result.canonical["read_passages"]
-        receipts.append({"result_ref": identity, "tool": result.call.name,
-                         "passage_refs": [row["ref"] for row in rows]})
         for row in rows:
             ref = row["ref"]
             if ref in labels:
@@ -111,7 +108,9 @@ def answer_context(session: Any, ledger: Any, scope: AnswerScope) -> str:
                 **({"knowledge_source": list(passage.source_version)} if passage.source_version else {}),
                 "recover": {"tool": "read_tool_result", "args": {"result_ref": identity}}})
     latest = list(session._memory_results.values())[-1:]
-    lines.append(canonical_json({"source_locators": projection["locators"], "read_receipts": receipts,
+    lines.append(canonical_json({"source_locators": [
+        {key: value for key, value in row.items() if key not in {"unread_intervals", "first_unread_interval"}}
+        for row in projection["locators"]],
         "omitted_windows": omitted,
         "investigation_attempts": investigation_history(session),
         "latest_error": [result.model_text[:1600] for result in latest if not result.ok]}))

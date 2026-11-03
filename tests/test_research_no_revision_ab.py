@@ -49,7 +49,7 @@ def test_removal_preserves_original_task_and_optional_new_knowledge_channel():
     assert "creating a new object does not update the old one" in text
     packet = next(block for block in text.split("\n\n") if block.startswith('{"investigation_attempts":'))
     assert json.loads(packet) == {"investigation_attempts": [], "latest_error": [], "omitted_windows": [],
-                                 "read_receipts": [], "source_locators": []}
+                                 "source_locators": []}
 
 
 def test_invalid_experimental_arm_is_not_silently_treated_as_control():

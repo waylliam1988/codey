@@ -125,9 +125,11 @@ def test_every_omitted_window_has_exact_recovery_beyond_old_receipt_and_locator_
         before = dict(tools.ledger.read_passages)
         text = answer_context(session, tools.ledger, scope)
         data = next(json.loads(block) for block in text.split("\n\n") if block.startswith('{"investigation_attempts"'))
-        assert len(data["read_receipts"]) == 16
+        assert "read_receipts" not in data
         assert len(data["source_locators"]) == 16
         assert len(data["omitted_windows"]) == 14
+        assert {row["recover"]["args"]["result_ref"] for row in data["omitted_windows"]} == {
+            f"receipt-{i}" for i in range(14)}
         hidden = data["omitted_windows"][0]
         assert hidden["label"] == "e1" and hidden["display_omitted"]
         assert hidden["source_hash"] and (hidden["start"], hidden["end"]) == (0, len(tools.search.text))

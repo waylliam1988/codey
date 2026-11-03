@@ -100,7 +100,9 @@ def test_actual_work_view_changes_only_duplicate_reads_and_restores_them_on_fail
         assert len(before.pop("investigation_attempts")) == 8
         assert [row["result_ref"] for row in after.pop("investigation_attempts")] == ["empty-search"]
         assert before == after
-        assert len(after["read_receipts"]) == 16 and len(after["omitted_windows"]) == 14
+        assert "read_receipts" not in after and len(after["omitted_windows"]) == 14
+        assert {row["recover"]["args"]["result_ref"] for row in after["omitted_windows"]} == {
+            f"receipt-{i}" for i in range(14)}
         assert session._memory_results == memory
         session._memory_results["failure"] = result(ok=False, passages=False, text="Bad exact-id revision=7")
         assert view("original_control") == view("production")
