@@ -85,7 +85,9 @@ def test_research_iteration_supplies_guidance_through_actual_shared_kernel():
     assert len(provider.sent) == 1
     from codey.research.answer_contract import ANSWER_GUIDANCE
 
-    assert ANSWER_GUIDANCE in provider.sent[0]
+    assert provider.sent[0].count(ANSWER_GUIDANCE) == 1
+    assert "Register 1..8 questions with research_plan" not in provider.sent[0]
+    assert "Submit only report_sections.coverage" not in provider.sent[0]
     visible = provider.sent[0].split("Visible tools: ", 1)[1].splitlines()[0]
     assert "submit_research_answer" in visible
     assert "research_plan" not in visible

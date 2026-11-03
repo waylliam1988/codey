@@ -151,8 +151,15 @@ def test_kernel_prompt_has_no_domain_branch_or_completion_dependencies():
     tree = ast.parse(source)
     forbidden = ("codey.research", "codey.operations.project_completion_checks",
                  "codey.operations.project_verification")
-    imports = [node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
-    assert not any(name.startswith(forbidden) for name in imports)
+    domain_imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+                      and (node.module or "").startswith(forbidden)]
+    # Protocol repair recognizes the frozen whole-answer scope to preserve an
+    # unsubmitted draft. Task guidance still belongs outside the prompt renderer.
+    repair = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "_repair_prompt")
+    for node in domain_imports:
+        assert node in list(ast.walk(repair))
+        assert node.module == "codey.research.answer_contract"
+        assert [(name.name, name.asname) for name in node.names] == [("AnswerScope", None)]
 
 
 @pytest.mark.parametrize("native", [False, True])

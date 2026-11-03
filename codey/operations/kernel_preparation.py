@@ -19,7 +19,7 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
                         task_guidance: str, native: bool, completion_context: Any = None,
                         request_scoped_contract: bool = False) -> PreparedKernelTurn:
     snapshot = kernel_protocol.build_turn_snapshot(session, native=native)
-    from codey.research.answer_contract import ANSWER_GUIDANCE, AnswerScope
+    from codey.research.answer_contract import AnswerScope
 
     whole = isinstance(snapshot.research_scope, AnswerScope)
     from codey.research.plan_contract import is_compact_plan_spec
@@ -33,9 +33,10 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     if whole:
         from codey.research.completion_guidance import render_completion_guidance
 
-        task_guidance = task_guidance.replace(render_completion_guidance(snapshot.policy), ANSWER_GUIDANCE)
-        if ANSWER_GUIDANCE not in task_guidance:
-            task_guidance = ANSWER_GUIDANCE + "\n" + task_guidance
+        # The current task/evidence view supplies whole-answer rules on each
+        # research request. Remove the legacy completion block without copying
+        # those rules into the base prompt as well.
+        task_guidance = task_guidance.replace(render_completion_guidance(snapshot.policy), "")
     elif snapshot.research_scope is not None:
         from codey.research.completion_guidance import render_completion_guidance
 

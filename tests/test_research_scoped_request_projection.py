@@ -8,6 +8,7 @@ import pytest
 from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.token_accounting import RequestContextCount
+from codey.research.answer_contract import ANSWER_GUIDANCE
 from tests.test_research_local_scope import run_local
 from tests.test_research_whole_kernel import TASK, run_whole
 
@@ -38,7 +39,9 @@ def test_whole_task_survives_actual_provider_history_trimming_and_repair(tmp_pat
         assert result.stop_reason == "done" and len(sent) == 3
         for payload in sent:
             actual = "\n".join(str(row.get("content", "")) for row in payload["messages"])
-            assert TASK in actual and "Preserve every requested distinction" in actual
+            assert TASK in actual and actual.count(ANSWER_GUIDANCE) == 1
+            assert "Register 1..8 questions with research_plan" not in actual
+            assert "Submit only report_sections.coverage" not in actual
             assert "submit_research_answer" in actual
             if native:
                 assert payload["tool_choice"] == "required"
