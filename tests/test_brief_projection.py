@@ -3,14 +3,16 @@ from __future__ import annotations
 import unittest
 
 from codey.research.brief_projection import (
-    MAX_HANDOFF_CHARS,
     ClaimSummary,
-    build_impact_contract,
-    constraints_from_claims,
     project_research_brief,
-    render_handoff,
 )
 from codey.research.evidence_runtime import snapshot_from_research_record
+from tools.research_benchmark.brief_impact import (
+    MAX_HANDOFF_CHARS,
+    build_impact_contract,
+    constraints_from_claims,
+    render_handoff,
+)
 
 
 def _record_payload() -> dict[str, object]:

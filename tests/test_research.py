@@ -18,7 +18,6 @@ from codey.knowledge.store import KnowledgeStore
 from codey.policies.network import check_fetch_url
 from codey.research import browser_search, extract, source_download
 from codey.research.browser_search import RESEARCH_CDP_PORT, RESEARCH_PROFILE, BrowserSearchProvider
-from codey.research.done_finalizer import finalize_done_answer
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
@@ -38,6 +37,7 @@ from tests.support.research_controller import (
     format_controller_results,
     render_control_block,
 )
+from tests.support.research_done_finalizer import finalize_done_answer
 from tests.support.research_iteration_adapter import ResearchIteration
 from tests.support.research_protocol import JsonToolCodec
 

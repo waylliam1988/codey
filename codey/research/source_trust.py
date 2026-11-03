@@ -211,45 +211,6 @@ def source_trust_warnings(sources: Mapping[str, Mapping[str, object]]) -> tuple[
     return tuple(dict.fromkeys(warnings))
 
 
-def evaluate_against_profile(
-    projections: Iterable[SourceTrustProjection],
-    *,
-    floor_tier: int = TIER_WEAK,
-) -> dict[str, object]:
-    """Combine projections with an optional strictness floor.
-
-    Pure aggregation: counts, per-source below-floor warnings, and bounded
-    preference hints. Never removes sources; rows below the floor stay in the
-    set with a warning attached to the evaluation, not deleted.
-    """
-
-    rows = [item for item in projections or () if isinstance(item, SourceTrustProjection)]
-    counts: dict[str, int] = {}
-    for cls in SOURCE_CLASSES:
-        matched = sum(1 for item in rows if item.source_class == cls)
-        if matched:
-            counts[cls] = matched
-    warnings: list[str] = []
-    if len(rows) < 2:
-        warnings.append("single_source")
-    if rows and all(item.freshness in {"", "undated", "stale"} for item in rows):
-        warnings.append("sources_stale_or_undated")
-    if rows and not any(item.tier >= TIER_STRONG for item in rows):
-        warnings.append("no_strong_source")
-    below_floor = sum(1 for item in rows if item.tier < max(TIER_WEAK, floor_tier))
-    if below_floor:
-        warnings.append("sources_below_quality_threshold")
-    weak = sum(1 for item in rows if item.tier == TIER_WEAK)
-    if weak:
-        warnings.append("weak_source_class_present")
-    return {
-        "count": len(rows),
-        "class_counts": counts,
-        "below_floor_count": below_floor,
-        "warnings": warnings[:8],
-    }
-
-
 def _classify(*, host: str, kind: str, level: str) -> tuple[str, ...]:
     classes: list[str] = []
 
@@ -336,7 +297,6 @@ __all__ = [
     "TIER_WEAK",
     "WEAK_SOURCE_CLASSES",
     "SourceTrustProjection",
-    "evaluate_against_profile",
     "project_source_set",
     "project_source_trust",
     "source_trust_warnings",

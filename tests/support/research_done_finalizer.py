@@ -1,4 +1,7 @@
-"""Deterministic compiler for Research final report citations."""
+"""Legacy text finalizer retained for offline replay and regression fixtures.
+
+Production compiles AnswerReport and FindingReport without this finalizer.
+"""
 
 from __future__ import annotations
 

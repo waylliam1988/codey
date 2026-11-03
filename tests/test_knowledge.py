@@ -287,7 +287,8 @@ class KnowledgeStoreTests(unittest.TestCase):
                     "- PDF page citation remains supported [1 p.4]\n"
                     "- array[0] per cited source [1]\n"
                     "- array[0] only is not evidence\n"
-                    "- Comma citation stays fail-closed [1, 2]\n\n"
+                    "- Comma citation with known sources [1, 2]\n"
+                    "- Mixed comma citation stays fail-closed [1, 99]\n\n"
                     "## 来源\n"
                     "[1] Primary docs - https://example.com/one\n"
                     "[2] Secondary docs - https://example.com/two\n"
@@ -306,9 +307,10 @@ class KnowledgeStoreTests(unittest.TestCase):
         self.assertIn("PDF page citation remains supported [1 p.4]", key_block)
         self.assertIn("array[0] per cited source [1]", key_block)
         self.assertNotIn("array[0] only is not evidence", key_block)
-        self.assertNotIn("Comma citation stays fail-closed", key_block)
+        self.assertIn("Comma citation with known sources [1, 2]", key_block)
+        self.assertNotIn("Mixed comma citation stays fail-closed", key_block)
         self.assertIn("array[0] only is not evidence [uncited]", limitations_block)
-        self.assertIn("Comma citation stays fail-closed [1, 2] [uncited]", limitations_block)
+        self.assertIn("Mixed comma citation stays fail-closed [1, 99] [uncited]", limitations_block)
 
     def test_brief_builder_scans_past_uncited_conclusions_and_preserves_real_limitations(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -1,8 +1,8 @@
-"""Replay archived Research final answers through the current done finalizer.
+"""Replay archived Research final answers through the legacy text finalizer.
 
 This is a manual-only, no-network projection. It reads existing manual result
 rows plus archived prompt/reply transcript files, reconstructs a minimal ledger
-from the bounded ResearchRecord payload, and runs the current
+from the bounded ResearchRecord payload, and runs the archived
 ``finalize_done_answer(..., enforce_claim_support=True)`` over the archived
 final ``done.summary``.
 
@@ -26,7 +26,6 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.research.done_finalizer import finalize_done_answer
 from codey.research.identity import sanitize_research_url_ref
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import build_research_record
@@ -35,6 +34,7 @@ from codey.research.report_quality import parse_citation_rows, review_report_qua
 from codey.research.source_document import SourceDocument
 from codey.reviews.report_sections import parse_sections
 from tests.manual import source_connector_ab as connector
+from tests.support.research_done_finalizer import finalize_done_answer
 
 PROBE = "research_finalizer_replay_projection"
 TARGET_GAPS = (

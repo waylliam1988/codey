@@ -34,9 +34,7 @@ if __package__ in (None, ""):
 
 from codey.research.analysis_run import analysis_run_record
 from codey.research.brief_projection import (
-    build_impact_contract,
     project_research_brief,
-    render_handoff,
 )
 from codey.research.evidence_runtime import (
     normalize_runtime_ref,
@@ -49,6 +47,10 @@ from codey.research.review_finding import (
     planner_gaps_from_findings,
 )
 from tests.manual.research_benchmark_suite import load_suite
+from tools.research_benchmark.brief_impact import (
+    build_impact_contract,
+    render_handoff,
+)
 from tools.research_benchmark.scorer import build_regression_report
 
 PROBE = "longitudinal_research_harness_ab"

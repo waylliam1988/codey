@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from codey.research.brief_projection import (
     ANSWER_STATUSES,
     CLAIM_STATUSES,
-    CONSTRAINT_SUPPORTS,
 )
 from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.research.review_finding import (
@@ -40,6 +39,9 @@ from codey.research.review_finding import (
 )
 from codey.research.source_trust import project_source_set
 from codey.utils.refs import digest_json, identifier, nonnegative_int, stable_ref
+from tools.research_benchmark.brief_impact import (
+    CONSTRAINT_SUPPORTS,
+)
 
 MAX_FINDINGS_SCANNED = 64
 MAX_RELATIONS_SCANNED = 64

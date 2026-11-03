@@ -63,7 +63,9 @@ def test_structured_report_preserves_arguments_and_passes_existing_gate_only_wit
         state.last_done_args = plan.control_args
         assert not completion_gate.evaluate(state, plan.control.body, context={"research_ledger": ResearchLedger()}).complete
         compiled = compile_finding_report(args, tools.ledger, store, task=state.task_text)
-        verdict = completion_gate.evaluate(state, compiled.text, context={"research_ledger": tools.ledger, "research_report": compiled})
+        verdict = completion_gate.evaluate(state, compiled.text, context={
+            "research_ledger": tools.ledger, "knowledge_store": store,
+        })
         assert verdict.complete, verdict.followup
         assert set(parse_sections(compiled.text)) == set(REQUIRED_SECTIONS)
     finally:
@@ -159,8 +161,8 @@ def test_literal_escape_sequences_in_selected_report_content_are_preserved(tmp_p
 
 
 def test_grouped_citations_are_compiled_but_unobserved_numbers_still_fail():
-    from codey.research.done_finalizer import finalize_done_answer
     from codey.utils.citation_scanner import citation_refs
+    from tests.support.research_done_finalizer import finalize_done_answer
 
     args = arguments()
     second = "https://example.com/replication"

@@ -102,8 +102,12 @@ class ResearchPipeline:
                 topic_continuity_payload=self.context.topic_continuity_payload,
             )
             review = self._review(run.result, require_ledger_record=False)
-            self.context.trace.record_plan(self._plan(review))
-            return self._finalize_pipeline_result(run.result, run.tools)
+            plan = self._plan(review)
+            self.context.trace.record_plan(plan)
+            return self._finalize_pipeline_result(
+                run.result, run.tools,
+                accepted_audit=(review, plan) if run.result.accepted_report is not None else None,
+            )
         finally:
             close = getattr(search, "close", None)
             if callable(close):
@@ -112,16 +116,25 @@ class ResearchPipeline:
 
     def _finalize_pipeline_result(
         self, result: ResearchRunResult, tools: ResearchTools | None,
+        *,
+        accepted_audit: tuple[ResearchProofReview | None, ResearchPlan] | None = None,
     ) -> ResearchPipelineResult:
         ledger_result = self._append_final_record(result)
         self.context.trace.record_evidence_ledger_write(ledger_result)
         if self.ledger_event_sink is not None and ledger_result is not None:
             self.ledger_event_sink(ledger_result)
         self.context.trace.record_result(result)
-        review = self._review(result, require_ledger_record=self.evidence_ledgers is not None and result.accepted_report is None)
+        if accepted_audit is not None and result.accepted_report is not None:
+            # Accepted-report auditing does not read the ledger. Reuse even a
+            # failed (None) review, while retaining every diagnostic trace event.
+            review, plan = accepted_audit
+        else:
+            # Legacy records can acquire ledger evidence during finalization.
+            review = self._review(result, require_ledger_record=self.evidence_ledgers is not None and result.accepted_report is None)
+            plan = self._plan(review)
         self.context.trace.record_proof_review(review)
         self._record_final_findings(result, review)
-        self.context.trace.record_plan(self._plan(review))
+        self.context.trace.record_plan(plan)
         self._record_research_changes(tools)
         # Preserve the UI/trace payload shape. Acquisition belongs to the writer;
         # these historical outer-followup counters are zero for new research.

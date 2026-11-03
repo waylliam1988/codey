@@ -9,11 +9,11 @@ from codey.research.source_trust import (
     TIER_STRONG,
     TIER_WEAK,
     SourceTrustProjection,
-    evaluate_against_profile,
     project_source_set,
     project_source_trust,
     source_trust_warnings,
 )
+from tests.support.research_source_profile import evaluate_against_profile
 
 
 def _source(host: str, *, level: str = "secondary", kind: str = "web", freshness: str = "undated", suffix: str = "0123456789abcdef") -> dict[str, object]:

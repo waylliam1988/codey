@@ -9,9 +9,7 @@ from codey.completion.contract import (
 )
 from codey.research.brief_projection import (
     ClaimSummary,
-    ImplementationConstraint,
     ResearchBriefProjection,
-    ResearchImpactContract,
 )
 from codey.research.evidence_runtime import EvidenceRuntimeSnapshot
 from codey.research.proof_quality import ResearchProofReview
@@ -21,6 +19,10 @@ from codey.research.review_finding import (
     GAP_FOLLOWUP_SEARCH,
     PlannerGap,
     ReviewFindingRecord,
+)
+from tools.research_benchmark.brief_impact import (
+    ImplementationConstraint,
+    ResearchImpactContract,
 )
 from tools.research_benchmark.scorer import (
     OBSERVABLE_NAMES,
