@@ -199,21 +199,31 @@ class ColdstartReviewBatchTests(unittest.TestCase):
                     ))
                 with (
                     mock.patch.object(
-                        store.index, "notes_by_ids", wraps=store.index.notes_by_ids
+                        store.documents, "get_many", wraps=store.documents.get_many
                     ) as spy,
                     mock.patch.object(
                         store.index, "get",
                         side_effect=AssertionError("notes batch must not index.get per note"),
                     ),
+                    mock.patch.object(store.documents, "get", side_effect=AssertionError("no per-note document query")),
                 ):
-                    notes = store.read_notes_with_rows(["alpha", "beta"])
+                    queries = []
+                    store.index._read_conn().set_trace_callback(queries.append)
+                    try:
+                        notes = store.read_notes_with_rows(["beta", "missing", "alpha", "beta"])
+                    finally:
+                        store.index._read_conn().set_trace_callback(None)
                     self.assertEqual(spy.call_count, 1)
+                    self.assertEqual(list(notes), ["beta", "alpha"])
+                    self.assertEqual(sum("FROM note_documents" in query for query in queries), 1)
+                    self.assertEqual(notes["alpha"][0].body, "body alpha")
+                    self.assertEqual(store.read_notes_with_rows([]), {})
                 missing = store.read_notes_with_rows(["alpha", "beta", "missing"])
             finally:
                 store.close()
             self.assertIn("alpha", notes)
             self.assertIn("beta", notes)
-            self.assertEqual(spy.call_count, 1)
+            self.assertEqual(spy.call_count, 2)
             for _note_id, (note, row) in notes.items():
                 self.assertTrue(note.id)
                 self.assertIn("path", row)

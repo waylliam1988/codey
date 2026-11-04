@@ -18,6 +18,10 @@ def test_migration_restart_export_and_rebuild_have_one_authority(tmp_path):
         store.write_note(replace(note, body="Revised"))
         path.write_text(note.to_markdown(), encoding="utf-8")
         store.index.clear()
+        batch = store.read_notes_with_rows([note.id, "missing", note.id])
+        assert list(batch) == [note.id]
+        assert batch[note.id][0].body == "Revised"
+        assert batch[note.id][1]["revision"] == 2
         assert store.rebuild() == 1
         assert store.read_note(note.id).body == "Revised"
         assert store.read_note(note.id, revision=1).body == "Original"

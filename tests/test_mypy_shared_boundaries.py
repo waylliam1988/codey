@@ -12,6 +12,8 @@ def _mypy(
     follow_imports: str | None = None,
     platform: str | None = None,
 ) -> str:
+    # Keep dependency signatures: skip turns typed helpers into Any and produces
+    # artificial no-any-return errors in these boundary modules.
     flags = [] if follow_imports is None else ["--follow-imports", follow_imports]
     if platform is not None:
         flags.extend(["--platform", platform])
@@ -46,7 +48,7 @@ def test_task_submission_protocol_is_clean_at_application_boundary() -> None:
         "codey/app/server.py",
         "codey/app/headless_runner.py",
         "codey/operations/task_state.py",
-        follow_imports="skip",
+        follow_imports="silent",
     )
     assert "codey\\app\\task_submit.py" not in output
     assert "codey\\app\\server.py" not in output
@@ -58,7 +60,7 @@ def test_dynamic_payload_boundaries_are_clean() -> None:
         "codey/workspace/changes.py",
         "codey/completion/contract.py",
         "codey/runtime/log/entries.py",
-        follow_imports="skip",
+        follow_imports="silent",
     )
     assert "codey\\workspace\\changes.py" not in output
     assert "codey\\completion\\contract.py" not in output
@@ -66,14 +68,14 @@ def test_dynamic_payload_boundaries_are_clean() -> None:
 
 
 def test_process_tree_adapter_is_clean() -> None:
-    output = _mypy("codey/runtime/core/cancellation.py", follow_imports="skip")
+    output = _mypy("codey/runtime/core/cancellation.py", follow_imports="silent")
     assert "codey\\runtime\\core\\cancellation.py" not in output
 
 
 def test_process_tree_adapter_is_clean_on_linux_stubs() -> None:
     output = _mypy(
         "codey/runtime/core/cancellation.py",
-        follow_imports="skip",
+        follow_imports="silent",
         platform="linux",
     )
     assert "Module has no attribute \"WinDLL\"" not in output
@@ -85,7 +87,7 @@ def test_process_tree_adapter_is_clean_on_linux_stubs() -> None:
 def test_worker_process_group_adapter_is_clean_on_linux_stubs() -> None:
     output = _mypy(
         "codey/providers/worker.py",
-        follow_imports="skip",
+        follow_imports="silent",
         platform="linux",
     )
     assert "Module has no attribute \"CREATE_NEW_PROCESS_GROUP\"" not in output
@@ -97,7 +99,7 @@ def test_control_and_release_windows_adapters_are_clean_on_linux_stubs() -> None
         "codey/launcher/runner.py",
         "codey/launcher/releases.py",
         "codey/control/client.py",
-        follow_imports="skip",
+        follow_imports="silent",
         platform="linux",
     )
     assert "Module has no attribute \"WinDLL\"" not in output
@@ -114,7 +116,7 @@ def test_kernel_and_evidence_boundaries_are_clean() -> None:
         "codey/operations/project_completion_enforcement.py",
         "codey/research/evidence_ledger.py",
         "codey/runs/trace.py",
-        follow_imports="skip",
+        follow_imports="silent",
     )
     for module in (
         "codey\\operations\\task_loop.py",
@@ -124,3 +126,4 @@ def test_kernel_and_evidence_boundaries_are_clean() -> None:
         "codey\\runs\\trace.py",
     ):
         assert module not in output
+    assert "Success: no issues found" in output

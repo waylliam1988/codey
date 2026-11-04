@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from typing import Any
 
@@ -52,6 +53,16 @@ class KnowledgeDocuments:
     def by_path(self, path: str) -> tuple[KnowledgeNote, str, int] | None:
         row = self.index._read_conn().execute("SELECT id FROM note_documents WHERE path=?", (path,)).fetchone()
         return self.get(str(row[0])) if row else None
+
+    def get_many(self, note_ids: list[str]) -> dict[str, tuple[KnowledgeNote, str, int]]:
+        if not note_ids:
+            return {}
+        rows = self.index._read_conn().execute(
+            "SELECT * FROM note_documents WHERE id IN (SELECT value FROM json_each(?))",
+            (json.dumps(note_ids),)).fetchall()
+        found = {str(row["id"]): (KnowledgeNote.from_markdown(row["markdown"]), str(row["path"]), int(row["revision"]))
+                 for row in rows}
+        return {identity: found[identity] for identity in dict.fromkeys(note_ids) if identity in found}
 
     def all(self) -> list[tuple[KnowledgeNote, str, int]]:
         rows = self.index._read_conn().execute("SELECT * FROM note_documents ORDER BY id").fetchall()

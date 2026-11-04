@@ -5125,27 +5125,20 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "http://localhost:1234"
             from codey.providers.token_accounting import ContextBudget
             provider.context_budget = ContextBudget(32768, 8192, 0, 12000)
+            provider.timeout = 30.0
+            from codey.utils.text_budget import estimate_tokens
+
+            provider.count_text = lambda text, **_: SimpleNamespace(value=estimate_tokens(text))
             provider.export_work_state.return_value = ""
             provider.send.side_effect = [
-                json.dumps({'tool': 'research_plan', 'args': {'questions': ['What does the source establish?']}}),
-                json.dumps({'tool': 'web_search', 'args': {'query': '2026 US Iran war predictions', 'question_ref': 'q1'}}),
-                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1', 'question_ref': 'q1'}}),
-                json.dumps({'tool': 'save_finding',
-                            'args': {'question_ref': 'q1',
-                                     'claim': 'This sentence is not present in the opened page.',
-                                     'passage_ref': 'p219815a22026'}}),
-                json.dumps({'tool': 'save_finding',
-                            'args': {'question_ref': 'q1',
-                                     'claim': 'The PDF report describes four possible paths after talks stumble. It frames '
-                                              'military escalation, diplomatic reset, proxy conflict, and a managed stalemate as '
-                                              'possible scenarios.',
-                                     'passage_ref': 'pe1c4137fe37d'}}),
-                json.dumps({'tool': 'done',
-                            'args': {'report_sections': {'coverage': [{'question_ref': 'q1',
-                                                                       'state': 'partial',
-                                                                       'findings': ['f1'],
-                                                                       'investigations': [],
-                                                                       'task_refs': ['r1']}]}}}),
+                json.dumps({'tool': 'web_search', 'args': {'query': '2026 US Iran war predictions'}}),
+                json.dumps({'tool': 'open_result', 'args': {'result_id': 'r1'}}),
+                json.dumps({'tool': 'submit_research_answer',
+                            'args': {'markdown': 'This sentence cites unread evidence. [e99]', 'state': 'answered'}}),
+                json.dumps({'tool': 'submit_research_answer',
+                            'args': {'markdown': 'The PDF report describes four possible paths after talks stumble. '
+                                     'It frames military escalation, diplomatic reset, proxy conflict, and a managed '
+                                     'stalemate as possible scenarios. [e1]', 'state': 'answered'}}),
             ]
 
             with (
@@ -5180,30 +5173,33 @@ class SessionThreadingTests(unittest.TestCase):
             emitted = []
             while not events.empty():
                 emitted.append(events.get_nowait())
-        done = next(event for event in emitted if event["type"] == "task_done")
-        self.assertEqual(done["stop_reason"], "done", done)
+            done = next(event for event in emitted if event["type"] == "task_done")
+            self.assertEqual(done["stop_reason"], "done", done)
+            published = state.knowledge_store.read_note(done["research"]["synthesis_id"])
+            answer = next(version.value for reference in state.knowledge_store.note_references(published.id)
+                          if (version := state.knowledge_store.repository.read(
+                              reference["target"], reference["revision"])) is not None and version.value.kind == "answer")
         tool_events = [event for event in emitted if event["type"] == "tool"]
         pdf_event = next(event for event in tool_events if event["path"] == pdf_url)
-        note_events = [event for event in tool_events if event["kind"] == "note"]
-        rejected = next(event for event in note_events if event["status"] != "ok")
-        self.assertIn("passage_ref", rejected["result"])
-        note_event = next(event for event in note_events if event["status"] == "ok")
+        rejected = next(event for event in tool_events if event["status"] != "ok")
+        self.assertIn("e99", rejected["result"])
 
         self.assertEqual(done["mode"], "research")
         self.assertEqual(done["stop_reason"], "done")
         self.assertEqual(pdf_event["status"], "ok")
         self.assertFalse(pdf_event["error"])
         self.assertIn("PDF report", pdf_event["result"])
-        self.assertEqual(note_event["status"], "ok")
-        self.assertFalse(note_event["error"])
-        self.assertNotIn("This sentence is not present", note_event["result"])
+        self.assertIsNotNone(published)
+        self.assertIn("The PDF report describes four possible paths", published.body)
+        self.assertNotIn("unread evidence", published.body)
+        self.assertNotIn("e99", published.body)
         self.assertEqual(done["research"]["citation_map"][0]["url"], pdf_url)
         self.assertTrue(done["research"]["citation_map"][0]["revision"])
         self.assertEqual(done["research"]["opened_sources"][0]["content_kind"], "pdf")
         self.assertEqual(done["research"]["opened_sources"][0]["pages_read"], [1])
-        self.assertEqual(done["research"]["evidence_items"][0]["source_url"], pdf_url)
-        self.assertEqual(done["research"]["evidence_items"][0]["page"], 1)
-        self.assertIn("The PDF report describes four possible paths", done["research"]["evidence_items"][0]["excerpt"])
+        binding = answer.provenance["evidence_bindings"][0]
+        self.assertEqual(binding["page"], 1)
+        self.assertIn("The PDF report describes four possible paths", binding["excerpt"])
         agent_run.assert_not_called()
 
     def test_followup_research_intent_includes_previous_research_context(self) -> None:

@@ -214,12 +214,9 @@ class KnowledgeStore:
         self, note_ids: list[str]
     ) -> dict[str, tuple[KnowledgeNote, dict[str, Any]]]:
         out: dict[str, tuple[KnowledgeNote, dict[str, Any]]] = {}
-        for note_id in dict.fromkeys(note_ids):
-            found = self.documents.get(note_id)
-            if found:
-                note, path, revision = found
-                out[note_id] = (note, {"id": note_id, "path": path, "revision": revision,
-                                       "content_hash": _content_hash(note.to_markdown())})
+        for note_id, (note, path, revision) in self.documents.get_many(note_ids).items():
+            out[note_id] = (note, {"id": note_id, "path": path, "revision": revision,
+                                   "content_hash": _content_hash(note.to_markdown())})
         return out
 
     def iter_note_paths(self) -> Iterator[Path]:

@@ -105,8 +105,9 @@ def _real_research_gate():
             session.last_done_args = args
             compiled = compile_finding_report(args, tools.ledger, store, task=session.task_text)
             verdict = evaluate(session, compiled.text, context={
-                "research_ledger": tools.ledger, "research_report": compiled, "run_id": "research-run"})
+                "research_ledger": tools.ledger, "knowledge_store": store, "run_id": "research-run"})
             assert verdict.complete, verdict.followup
+            assert verdict.research_report == compiled
             return session, ExecutionEvidence(), verdict, tools.ledger, compiled.text
         finally:
             store.close()

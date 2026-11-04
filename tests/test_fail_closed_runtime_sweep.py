@@ -378,12 +378,23 @@ class GhostKnowledgeSweepTests(unittest.TestCase):
         from codey.knowledge.research_interest import _unit_float
         self.assertEqual(_unit_float(True), 0.0)
 
-    def test_store_rows_skip_bad(self):
-        import inspect
+    def test_store_skips_malformed_legacy_notes(self):
+        from pathlib import Path
 
-        from codey.knowledge import store as store_mod
-        src = inspect.getsource(store_mod)
-        self.assertIn("isinstance(row", src, "store still dereferences row.get without guard")
+        from codey.knowledge.note import KnowledgeNote
+        from codey.knowledge.store import KnowledgeStore
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "bad.md").write_text("---\n- invalid frontmatter\n---\nBad note.", encoding="utf-8")
+            note = KnowledgeNote(id="valid", title="Valid", body="A valid legacy note.", type="fact")
+            (root / "valid.md").write_text(note.to_markdown(), encoding="utf-8")
+            store = KnowledgeStore(root)
+            try:
+                self.assertEqual(set(store.read_notes(["valid", "bad"])), {"valid"})
+                self.assertEqual(store.read_note("valid").body, note.body)
+            finally:
+                store.close()
 
     def test_facts_list_payload_no_crash(self):
         from codey.workspace.facts import ProjectFactsStore
