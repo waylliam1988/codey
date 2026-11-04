@@ -1,0 +1,22 @@
+{
+  "experiment": "research-recall-rows-ab-20261104",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "runs": 16,
+  "seeds": [81, 82],
+  "cases": ["history", "history_error", "inference", "conflict"],
+  "baseline": {
+    "runs": 8,
+    "done": 8,
+    "no_progress": 0,
+    "requests": 56,
+    "input_characters": 656613
+  },
+  "full_rows": {
+    "runs": 8,
+    "done": 7,
+    "no_progress": 1,
+    "requests": 64,
+    "input_characters": 755703
+  },
+  "decision": "keep_compact_recall"
+}

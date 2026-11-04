@@ -32,9 +32,10 @@ def test_twenty_findings_keep_latest_text_evidence_and_full_index_without_mutati
     original = deepcopy(ledger.references)
     view = build_research_context_view(session, ledger, budget=budget)
     assert view.references[0]["ref"] == "f20"
-    assert view.references[0]["text"].startswith("Local claim 20.")
-    assert view.references[0]["excerpt"].startswith("Original evidence 20.")
-    assert view.references[0]["display_truncated"] and view.references[0]["detail_available"]
+    assert view.references[0]["display_omitted"] and view.references[0]["detail_available"]
+    assert "text" not in view.references[0] and "excerpt" not in view.references[0]
+    assert view.references[0]["recover"] == {"tool": "knowledge_read",
+                                              "args": {"id": "claim-20", "revision": 1}}
     assert view.questions[0]["finding_refs"] == list(original)
     assert view.omitted_references == 20 - len(view.references) > 0
     assert ledger.references == original and len(view.render()) <= budget

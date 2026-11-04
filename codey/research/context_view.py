@@ -189,28 +189,21 @@ def local_research_context(session: Any, ledger: Any, store: Any, scope: Any, *,
 
 
 def _bounded(row: dict[str, Any], budget: int) -> dict[str, Any]:
-    # A truncated condition is never silently presented as complete.
+    # Keep semantic units whole. A prefix of a condition or evidence excerpt
+    # is more misleading than an indexed row that can be read exactly later.
     if len(canonical_json(row)) <= budget:
-        return row
+        return {key: value for key, value in row.items() if key not in {"object_id", "revision"}}
     preview = {key: value for key, value in row.items()
-               if key in {"ref", "question_ref", "kind", "status", "interpretation_review", "dependencies_changed",
-                          "evidence_basis", "passage_refs"}}
-    preview.update(display_truncated=True, detail_available=True)
-    # Give original evidence room before filling the remainder with model text.
-    for key in ("excerpt", "text", "conditions", "limitations"):
-        if key not in row:
-            continue
-        value = row[key] if isinstance(row[key], str) else canonical_json(row[key])
-        lower, upper = 0, min(len(value), 500 if key in {"excerpt", "text"} else len(value))
-        while lower < upper:
-            middle = (lower + upper + 1) // 2
-            candidate = {**preview, key: value[:middle]}
-            if len(canonical_json(candidate)) <= budget:
-                lower = middle
-            else:
-                upper = middle - 1
-        if lower:
-            preview[key] = value[:lower]
+               if key in {"ref", "question_ref", "kind", "status", "interpretation_review",
+                          "dependencies_changed", "evidence_basis", "passage_refs",
+                          "object_id", "revision"}}
+    preview.update(display_omitted=True, detail_available=True)
+    identity = row.get("object_id") or row.get("ref")
+    if identity:
+        args: dict[str, Any] = {"id": identity}
+        if type(row.get("revision")) is int:
+            args["revision"] = row["revision"]
+        preview["recover"] = {"tool": "knowledge_read", "args": args}
     return preview
 
 
@@ -295,7 +288,8 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
                 from codey.research.references import resolve_version
 
                 version = resolve_version(ledger, store, label)
-                rows.append({"ref": label, "kind": version.value.kind, "text": version.value.content,
+                rows.append({"ref": label, "object_id": version.value.id, "revision": version.revision,
+                    "kind": version.value.kind, "text": version.value.content,
                     "status": version.value.status, "interpretation_review": version.interpretation_review,
                     "dependencies_changed": version.dependencies_changed, "conditions": version.value.conditions,
                     "limitations": version.value.provenance.get("limitations", ""), "detail_available": True})
@@ -313,7 +307,9 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
                     rows[-1]["version_anchors"] = anchors
             else:
                 items = [item for item in ledger.evidence_items if item.note_id == ledger.references[label].note_id]
-                rows.append({"ref": label, "text": items[0].claim if items else "Read details before adopting.",
+                binding = ledger.references[label]
+                rows.append({"ref": label, "object_id": binding.object_id, "revision": binding.revision,
+                    "text": items[0].claim if items else "Read details before adopting.",
                     "kind": ledger.references[label].kind, "interpretation_review": "unreviewed",
                     "excerpt": items[0].excerpt if items else "", "detail_available": True})
     # Questions keep their full conditions. Drop optional receipts first; if
@@ -346,16 +342,24 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
     # Optional whole packets use only remaining room. Never clip an OR list or
     # silently call a preview complete. Detailed local scopes allocate first.
     for packet in projection["packets"]:
-        candidate = replace(view, read_evidence=(*view.read_evidence, packet))
-        if len(candidate.render()) <= budget:
+        candidates = (view,
+            replace(view, recent_results=()),
+            replace(view, investigations=()),
+            replace(view, recent_results=(), investigations=()))
+        candidate = next((replace(item, read_evidence=(*item.read_evidence, packet))
+                          for item in candidates
+                          if len(replace(item, read_evidence=(*item.read_evidence, packet)).render()) <= budget), None)
+        if candidate is not None:
             view = candidate
         else:
             index = {"investigation_ref": packet["investigation_ref"], "display_omitted": True,
                 "passages": [{key: value for key, value in row.items() if key != "text"}
                              for row in packet["passages"]],
                 "next": "Recover the original read receipt with read_tool_result, or explicitly open the source range."}
-            candidate = replace(view, evidence_index=(*view.evidence_index, index))
-            if len(candidate.render()) <= budget:
+            candidate = next((replace(item, evidence_index=(*item.evidence_index, index))
+                              for item in candidates
+                              if len(replace(item, evidence_index=(*item.evidence_index, index)).render()) <= budget), None)
+            if candidate is not None:
                 view = candidate
     for locator in projection["locators"]:
         candidate = replace(view, locators=(*view.locators, locator))
