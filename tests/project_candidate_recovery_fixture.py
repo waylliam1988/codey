@@ -85,11 +85,15 @@ def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
 
     def writer(request):
         calls.append(request)
-        if request.task == VALIDATE_TASK and (fault == 'runtime_validation' or repair_stagnates or denied_probe):
+        if (request.task == VALIDATE_TASK and fault != 'missing_verification'
+                and (fault in {'runtime_validation', 'missing_tests'} or repair_stagnates or denied_probe)):
             return project_adapter.run(replace(request,
                 on_event=lambda ev: observe(ev, request.on_event, request.stop_flag)))
         if request.task == VALIDATE_TASK:
-            steps = [action('run', command=COMMAND, path='.'), action('done', summary='Validation finished')]
+            # A missing-verification fault must withhold the check from both
+            # the model repair and the runtime's bounded validation attempt.
+            steps = [] if fault == 'missing_verification' else [action('run', command=COMMAND, path='.')]
+            steps.append(action('done', summary='Validation finished'))
         elif len(calls) == 1:
             steps = [action('run', command=COMMAND, path='.'), action('read_file', path='names.py'),
                      action('read_file', path='test_names.py'),
@@ -102,7 +106,7 @@ def scenario(tmp_path, *, kind='stagnant', source=GOOD, fault='', max_turns=20,
                 steps += [action('run', command=COMMAND, path='.'), action('done', summary='Tests passed')]
         else:
             steps = [action('read_file', path='names.py'), edit(BAD, source)]
-            if fault != 'missing_tests':
+            if fault not in {'missing_tests', 'missing_verification'}:
                 steps.append(action('run', command=COMMAND, path='.'))
             if repair_stagnates:
                 if denied_probe:

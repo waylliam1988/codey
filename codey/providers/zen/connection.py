@@ -195,33 +195,35 @@ class ZenProvider:
 
     def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
                   timeout: float | None = None, *, tool_call_observations: str = "",
-                  tool_call_history_groups: int = 0, output_token_limit: int = 0) -> Any:
+                  tool_call_history_groups: int = 0, output_token_limit: int = 0,
+                  require_tool_call: bool = False) -> Any:
         return self._exchange("send_turn", prompt, tools, timeout,
                               tool_call_observations=tool_call_observations,
                               tool_call_history_groups=tool_call_history_groups,
-                              output_token_limit=output_token_limit)
+                              output_token_limit=output_token_limit, require_tool_call=require_tool_call)
 
     def send_tool_results(self, results: Any, tools: list[ProviderToolDefinition] | None = None,
                   timeout: float | None = None, *, tool_call_observations: str = "",
-                  tool_call_history_groups: int = 0, output_token_limit: int = 0) -> Any:
+                  tool_call_history_groups: int = 0, output_token_limit: int = 0,
+                  require_tool_call: bool = False) -> Any:
         return self._exchange("send_tool_results", results, tools, timeout,
                               tool_call_observations=tool_call_observations,
                               tool_call_history_groups=tool_call_history_groups,
-                              output_token_limit=output_token_limit)
+                              output_token_limit=output_token_limit, require_tool_call=require_tool_call)
 
     def send_tool_results_bound(self, results: Any, window_ref: Any,
                                 tools: list[ProviderToolDefinition] | None = None,
                                 timeout: float | None = None,
                                 delivery_commit: dict[str, Any] | None = None,
                                 tool_call_observations: str = "", tool_call_history_groups: int = 0,
-                                output_token_limit: int = 0) -> Any:
+                                output_token_limit: int = 0, require_tool_call: bool = False) -> Any:
         declared, inverse = prepare_declarations(tools)
         with self._sending() as generation:
             self._check_generation(generation)
             turn: Any = self.runtime.send_tool_results_bound(
                 results, window_ref, declared, timeout=timeout, delivery_commit=delivery_commit,
                 tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
-                output_token_limit=output_token_limit,
+                output_token_limit=output_token_limit, require_tool_call=require_tool_call,
             )
             self._check_generation(generation)
         if isinstance(turn, AssistantTurn):

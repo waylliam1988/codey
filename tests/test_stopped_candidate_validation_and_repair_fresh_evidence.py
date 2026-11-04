@@ -3,6 +3,7 @@ import pytest
 
 from tests.project_candidate_recovery_fixture import (
     INITIAL,
+    VALIDATE_TASK,
     assert_complete,
     scenario,
 )
@@ -49,7 +50,23 @@ def test_failed_registered_check_is_repaired_with_new_validation_and_current_rev
     assert 'python -m unittest' in result['calls'][1].completion_repair_context
 
 
-@pytest.mark.parametrize('fault', ['missing_tests', 'missing_review', 'stale_review', 'rejected_review'])
+@pytest.mark.parametrize('fault', ['missing_verification', 'missing_review', 'stale_review', 'rejected_review'])
 def test_repair_requires_current_tests_and_approved_current_review(tmp_path, fault):
     result = scenario(tmp_path, kind='repair', fault=fault)
     assert result['terminal']['stop_reason'] not in {'done', 'error', 'provider_failure'}
+    if fault == 'missing_verification':
+        assert len(result['calls']) == 3 and result['calls'][-1].task == VALIDATE_TASK
+        assert not any(event['tool'] == 'run' and event['exit_code'] == 0 for event in result['events'])
+
+
+def test_model_omitting_tests_completes_only_after_real_runtime_validation_and_review(tmp_path):
+    result = scenario(tmp_path, kind='repair', fault='missing_tests')
+    assert_complete(result)
+    assert len(result['calls']) == 3 and result['calls'][-1].task == VALIDATE_TASK
+    assert result['calls'][-1].provider.name == 'runtime candidate validation'
+    assert len(result['reviews']) == 2
+    assert result['reviews'][0]['source'] != result['reviews'][-1]['source']
+    passed = [event for event in result['events'] if event['tool'] == 'run' and event['exit_code'] == 0]
+    admitted = [row for row in result['ledger'] if row['type'] == 'candidate_validation_admitted']
+    assert len(admitted) == 1 and admitted[0]['driver'] == 'runtime'
+    assert len(passed) == 1 and passed[0]['command'] == admitted[0]['command']

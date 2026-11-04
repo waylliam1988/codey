@@ -26,7 +26,9 @@ class ScriptedLocal(ApiProvider):
         self.timeline.append((self.label, "new_chat"))
         return super().reset_window(expected_ref=expected_ref)
 
-    def send(self, text, timeout=None):
+    def send(self, text, timeout=None, **request_options):
+        # ApiProvider receives request-scoped tool/context arguments. This
+        # fixture scripts decisions; transport serialization is tested elsewhere.
         self.prompts.append(text)
         self.timeline.append((self.label, "send"))
         reply = next(self.replies)

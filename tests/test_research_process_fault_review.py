@@ -38,7 +38,7 @@ from tests.test_research_whole_kernel import run_whole
 
 
 def record(name, original, disabled, *, boundary, limitation=""):
-    target = os.environ.get("CODEY_RESEARCH_FAULT_ARTIFACT_DIR")
+    target = os.environ.get("RESEARCH_FAULT_ARTIFACT_DIR")
     if target:
         directory = Path(target)
         directory.mkdir(parents=True, exist_ok=True)

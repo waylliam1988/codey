@@ -32,7 +32,8 @@ def probe(directory: Path, *, cold: bool) -> dict[str, object]:
     payloads, events, workers = [], [], []
     queued = threading.Event()
     terminal = threading.Event()
-    command = "echo CODEY_APPROVAL_MARKER_739142"
+    marker = "APPROVAL_MARKER_739142"
+    command = f"echo {marker}"
     task = (f"Local approval diagnostic. Use shell to execute exactly `{command}` once, wait for approval, "
             "then report the observed marker using done. Do not execute the command again. "
             "No other commands, file changes, or network access are needed.")
@@ -80,12 +81,12 @@ def probe(directory: Path, *, cold: bool) -> dict[str, object]:
             assert terminal.wait(5)
         final = [event for event in events if event.get("type") == "task_done"][-1]
         assert final["stop_reason"] == "done", final
-        assert "CODEY_APPROVAL_MARKER_739142" in final.get("summary", ""), final
+        assert marker in final.get("summary", ""), final
         assert len(payloads) == 2, len(payloads)
         resumed = payloads[1]["messages"]
         results = [message for message in resumed if message.get("role") == "tool"]
         assert len(results) == 1 and results[0]["tool_call_id"] == record["call_id"]
-        assert "CODEY_APPROVAL_MARKER_739142" in results[0]["content"]
+        assert marker in results[0]["content"]
         observations = [str(message.get("content", "")) for message in resumed
                         if "Current work observations (runtime records):" in str(message.get("content", ""))]
         assert len(observations) == 1 and json.dumps(task) in observations[0]

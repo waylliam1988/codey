@@ -23,7 +23,7 @@ def response(text="", *, calls=()):
     ]}
 
 
-def provider_with_responses(monkeypatch, replies, protocol="openai-responses"):
+def provider_with_responses(monkeypatch, replies, protocol="openai-responses", *, expected_tool_choice="auto"):
     requests = []
     replies = iter(replies)
 
@@ -33,7 +33,7 @@ def provider_with_responses(monkeypatch, replies, protocol="openai-responses"):
         names = {tool.get("name", tool.get("function", {}).get("name")) for tool in payload.get("tools", [])}
         if not {"read", "shell"} <= names:
             raise api_transport.GenerationRejectedError(403, '{"error":{"type":"FreeTierError"}}')
-        assert payload["tool_choice"] == "auto"
+        assert payload["tool_choice"] == expected_tool_choice
         body = next(replies)
         if protocol == "openai-completions":
             message = {"content": "", "tool_calls": []}
