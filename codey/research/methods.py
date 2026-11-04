@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codey.knowledge.model import canonical_json
-from codey.research.task_requirements import task_requirement_context
-
 
 @dataclass(frozen=True)
 class ResearchMethod:
@@ -50,15 +47,11 @@ METHODS = (
 )
 
 
-def research_method_guidance(question: str, *, evidence_only: bool = False, finding_report: bool = False) -> str:
+def research_method_guidance(question: str, *, evidence_only: bool = False) -> str:
     text = question.casefold()
     selected = [method for method in METHODS if any(term in text for term in method.terms)]
     lines = ["Relevant domain checks:"]
-    if finding_report:
-        lines.append("Frozen original task requirements (not semantic decomposition): " + canonical_json(task_requirement_context(question)))
-        lines.append("Plan and answer every obligation in these units, including version comparisons and workload "
-                     "unknowns. Register a question and explicit coverage gap for any research obligation you cannot answer.")
-    if not evidence_only and not finding_report:
+    if not evidence_only:
         lines.append("When adopting saved knowledge, include its exact id and revision in done.knowledge_refs.")
     for method in selected[:4]:
         lines.append(f"{method.name}: sources: {method.sources}. Extract when available: "

@@ -54,11 +54,11 @@ def test_unread_action_uses_exact_stored_version_and_never_points_to_eof():
 
 
 def test_methods_short_preserves_domain_sources_conditions_and_clinical_boundary():
-    before = methods.research_method_guidance("sqlite cancer clinical treatment", finding_report=True)
+    before = methods.research_method_guidance("sqlite cancer clinical treatment", evidence_only=True)
     with experiment.treatment("methods_short"):
-        after = methods.research_method_guidance("sqlite cancer clinical treatment", finding_report=True)
+        after = methods.research_method_guidance("sqlite cancer clinical treatment", evidence_only=True)
         assert len(after) < len(before)
         assert "version, environment, workload, reproduction" in after
         assert "in vitro/animal/human distinctions" in after
         assert "never infer individual treatment" in after
-    assert methods.research_method_guidance("sqlite cancer clinical treatment", finding_report=True) == before
+    assert methods.research_method_guidance("sqlite cancer clinical treatment", evidence_only=True) == before

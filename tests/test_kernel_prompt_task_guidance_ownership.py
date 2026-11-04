@@ -19,16 +19,32 @@ from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
 def _guidance(policy):
     from codey.operations.task_guidance import task_guidance_for_policy
 
-    return task_guidance_for_policy(policy)
+    return task_guidance_for_policy(policy, task_kind="project")
 
 
-def test_full_research_guidance_reviewed_prompt_digest():
+def test_shared_strict_guidance_reviewed_prompt_digest():
     policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
                         strict_research=True)
     assert hashlib.sha256(_guidance(policy).encode()).hexdigest() == (
         # Reviewed: adopt exact saved findings without final rewriting; attempts come from receipts.
         "861f1d5c44a5bbcdcda2a11105fb775422155acaecee3d2a12023f1ecd185034"
     )
+
+
+@pytest.mark.parametrize("kind", ["research", "project", "chat", "evidence_followup"])
+def test_task_guidance_selects_completion_rules_without_losing_output_requirements(kind):
+    from codey.operations.task_guidance import task_guidance_for_policy
+    from codey.policies.output_requirement import JSON_ANSWER_GUIDANCE
+
+    policy = TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
+                        strict_research=True, required_checks=("output_json",))
+    text = task_guidance_for_policy(policy, task_kind=kind)
+    assert JSON_ANSWER_GUIDANCE in text
+    for legacy in ("Register 1..8 questions with research_plan", "Submit only report_sections.coverage"):
+        assert (legacy in text) is (kind != "research")
+    if kind == "research":
+        assert "save_finding" not in text
+        assert "knowledge_commit" not in text
 
 
 @pytest.mark.parametrize("native", [False, True])

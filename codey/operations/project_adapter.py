@@ -243,7 +243,7 @@ def run(request: AgentRequest) -> RunResult:
     outcome = run_task_kernel(
         session,
         request=KernelRunRequest(
-            task_guidance=task_guidance_for_policy(session.policy),
+            task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
             transport=KernelTransportDeps(
                 provider=provider,
                 run_id=request.run_id,

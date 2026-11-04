@@ -324,7 +324,7 @@ def run_research_iteration(
         session,
         invocation=invocation,
         request=KernelRunRequest(
-            task_guidance=task_guidance_for_policy(session.policy),
+            task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
             transport=KernelTransportDeps(
                 provider=active_provider,
                 run_id=run_id,

@@ -439,7 +439,7 @@ def _run_entry_kernel(  # noqa: PLR0915
         result = run_task_kernel(
             session,
             request=KernelRunRequest(
-                task_guidance=task_guidance_for_policy(session.policy),
+                task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
                 transport=KernelTransportDeps(
                     provider=active_provider,
                     run_id=frame.run_id,

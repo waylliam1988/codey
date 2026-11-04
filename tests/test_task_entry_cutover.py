@@ -231,7 +231,8 @@ def _prepared_research_prompt(*, native=False):
         task_kind="research", task_text="Explain writers and version conditions in Chinese.",
     )
     prepared = prepare_kernel_turn(session, user_task=session.task_text, context_text="",
-                                   task_guidance=task_guidance_for_policy(session.policy), native=native)
+                                   task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
+                                   native=native)
     # The kernel appends the current task/evidence view after base preparation.
     return prepared.prompt + "\n\n" + answer_context(session, ResearchLedger(), answer_scope(session))
 

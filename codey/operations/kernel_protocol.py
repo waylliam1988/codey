@@ -213,8 +213,7 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     from codey.toolchain.tool_spec import visible_tool_names_for_snapshot
 
     authorized = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
-    if (scope is not None
-            or session.policy.strict_research and session.task_kind == "research" and not session.research_questions):
+    if scope is not None:
         authorized = tuple(name for name in authorized if name in (allowed or ()))
     exposure = getattr(session, "model_tool_names", None)
     if exposure is not None and (len(set(exposure)) != len(exposure) or not set(exposure) <= set(authorized)):

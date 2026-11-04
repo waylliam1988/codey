@@ -267,7 +267,7 @@ def build_research_context_view(session: Any, ledger: Any = None, store: Any = N
                                   attempts, recent, saved, len(rows) - count, issue)
     projection = read_evidence_projection(session, ledger)
     # Optional whole packets use only remaining room. Never clip an OR list or
-    # silently call a preview complete. Detailed local scopes allocate first.
+    # silently call a preview complete. Question and finding details allocate first.
     for packet in projection["packets"]:
         candidates = (view,
             replace(view, recent_results=()),

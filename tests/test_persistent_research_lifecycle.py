@@ -271,7 +271,7 @@ def test_reference_check_is_mechanical_and_does_not_prove_interpretation(tmp_pat
         assert all(name + ": sources" in guidance for name in ("software", "clinical", "business"))
         assert "Old answers" not in guidance  # Stable rules are supplied once by task guidance.
         assert "in vitro/animal/human distinctions" in guidance
-        assert "done.knowledge_refs" not in research_method_guidance("sqlite", finding_report=True)
+        assert "done.knowledge_refs" not in research_method_guidance("sqlite", evidence_only=True)
     finally:
         store.close()
 

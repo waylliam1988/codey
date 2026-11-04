@@ -22,19 +22,11 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     from codey.research.answer_contract import AnswerScope
 
     whole = isinstance(snapshot.research_scope, AnswerScope)
-    if whole:
-        from codey.research.completion_guidance import render_completion_guidance
-
-        # The current task/evidence view supplies whole-answer rules on each
-        # research request. Remove the legacy completion block without copying
-        # those rules into the base prompt as well.
-        task_guidance = task_guidance.replace(render_completion_guidance(snapshot.policy), "")
     guidance = [task_guidance] if task_guidance else []
     if snapshot.policy.strict_research and snapshot.research_scope is None:
         from codey.research.methods import research_method_guidance
 
-        guidance.append(research_method_guidance(user_task, evidence_only=session.task_kind == "evidence_followup",
-                                                   finding_report=session.task_kind == "research"))
+        guidance.append(research_method_guidance(user_task, evidence_only=session.task_kind == "evidence_followup"))
     for check_id in snapshot.policy.required_checks:
         requirement = parse_tool_success_check(check_id)
         if requirement is not None:
