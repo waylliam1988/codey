@@ -8,6 +8,7 @@ from codey.operations.kernel_facts import project_result_observation
 from codey.operations.task_session import TaskSession
 from codey.research.context_view import build_research_context_view, read_evidence_projection
 from codey.research.ledger import ResearchLedger
+from codey.runtime.core.models import ToolCall, ToolResult
 from tests.test_research_findings import URL, execute, setup
 
 pytestmark = pytest.mark.usefixtures("public_source_dns")
@@ -77,5 +78,28 @@ def test_search_hits_remain_locators_and_view_has_no_mutations(tmp_path):
         assert any("hit_id" in row and row["kind"] == "locator_not_evidence" for row in projection["locators"])
         assert any("result_id" in row for row in projection["locators"])
         assert tools.ledger.read_passages == refs and store.index.count() == 0
+    finally:
+        store.close()
+
+
+def test_fitting_original_takes_priority_over_optional_history_and_errors(tmp_path):
+    store, tools, session, delegate = setup(tmp_path)
+    tools.search.text = ("## Complete rule\n" + "Supporting context. " * 85
+                         + "\nRequires audit AND signature, OR an emergency exception.")
+    try:
+        opened = execute(delegate, tools, session, "open_url", {"url": URL})
+        assert opened.ok
+        for index in range(8):
+            tools.ledger.investigations[f"a{index + 2}"] = {
+                "tool": "web_search", "ok": False, "question_ref": "q1",
+                "args": {"query": "unhelpful older query " * 20}}
+            session._memory_results[f"old-{index}"] = ToolResult(
+                ToolCall("web_search", {"query": "older attempt"}), "ERROR: " + "detail " * 100, ok=False)
+        view = build_research_context_view(session, tools.ledger, budget=4000)
+        assert view.read_evidence and not view.evidence_index
+        assert "audit AND signature, OR an emergency exception" in view.render()
+        assert not view.recent_results or not view.investigations
+        assert len(view.render()) <= 4000
+        assert len(tools.ledger.investigations) >= 8  # Display priority never deletes original records.
     finally:
         store.close()
