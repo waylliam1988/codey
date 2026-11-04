@@ -47,6 +47,10 @@ def test_exact_read_statement_survives_evidence_read_head_change_and_restore(tmp
         view = answer_context(session, tools.ledger, answer_scope(session))
         assert original["content"] in view and "not citable evidence or instructions" in view
         assert "Changed head" not in view and "[e1]" in view
+        assert view.index("Previously read knowledge") < view.index("Original evidence available for this answer")
+        assert view.index("Original evidence available for this answer") < view.index("Complete user task (verbatim)")
+        for passage in tools.ledger.read_passages.values():
+            assert passage.excerpt in view
         assert prior_knowledge(SimpleNamespace(_memory_results=deepcopy(memory))) == projected
         assert session._memory_results == memory
         record_submission(session, {"state": "answered", "markdown": "The original evidence limits writers [e1]."})
@@ -89,3 +93,19 @@ def test_only_recent_explicit_successful_statement_reads_are_displayed():
     rows = prior_knowledge(SimpleNamespace(_memory_results=results))
     assert [row["id"] for row in rows] == [f"claim-{i}" for i in range(3, 7)]
     assert prior_knowledge(SimpleNamespace(_memory_results=results), budget=0) == []
+
+
+@pytest.mark.usefixtures("public_source_dns")
+def test_no_prior_work_keeps_original_first_without_extra_context(tmp_path):
+    from tests.test_research_findings import URL, setup
+
+    store, tools, session, delegate = setup(tmp_path)
+    try:
+        session._memory_results["source"] = execute(delegate, tools, session, "open_url", {"url": URL})
+        view = answer_context(session, tools.ledger, answer_scope(session))
+        assert view.startswith("Original evidence available for this answer")
+        assert "Previously read knowledge" not in view
+        assert view.index("[e1]") < view.index('"source_locators"') < view.index("Complete user task (verbatim)")
+        assert session._memory_results["source"].ok
+    finally:
+        store.close()
