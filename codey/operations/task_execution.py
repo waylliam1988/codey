@@ -401,6 +401,14 @@ class ExecutionDelegate:
             return ToolResult(ok=False, call=call, model_text=model_text), False, None
         if not isinstance(ledger, ResearchLedger):
             raise ValueError("successful source read requires a research ledger observation")
+        from codey.research.answer_contract import AnswerScope
+
+        if isinstance(self._research_scope, AnswerScope):
+            from codey.research.answer_context import fitting_full_read
+
+            opened = fitting_full_read(self.session, self.research_tools.ledger,
+                                       call, opened, provider=getattr(self.research_tools, "context_provider", None))
+            model_text = opened.model_text
         observation = opened.read_observation or ledger_observation(ledger, "open", url=url)
         from codey.research.output_receipts import maybe_externalize_output
 

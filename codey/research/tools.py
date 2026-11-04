@@ -68,6 +68,7 @@ class ResearchTools:
     finding_report: bool = False
     local_submission: bool = False
     coherent_passages: bool = False
+    context_provider: Any = field(default=None, repr=False, compare=False)
 
     def create_staged(self) -> ResearchTools:
         staged_store = StagedKnowledgeStore(self.store) if self.store is not None else None
@@ -91,6 +92,7 @@ class ResearchTools:
             finding_report=self.finding_report,
             local_submission=self.local_submission,
             coherent_passages=self.coherent_passages,
+            context_provider=self.context_provider,
         )
 
     def commit_staged(self, staged: ResearchTools) -> None:

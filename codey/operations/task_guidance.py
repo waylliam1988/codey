@@ -1,6 +1,5 @@
 """Select domain guidance at task composition, before entering the common loop."""
 
-import time
 from typing import TYPE_CHECKING, Any
 
 from codey.policies.output_requirement import guidance
@@ -30,23 +29,10 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
     from codey.research.answer_contract import AnswerScope
 
     if isinstance(scope, AnswerScope):
-        from codey.providers.token_accounting import ContextBudget
-        from codey.research.answer_context import answer_context
+        from codey.research.answer_context import answer_context, work_view_limits
 
-        budget = getattr(provider, "context_budget", None)
-        counter = getattr(provider, "count_text", None)
-        if isinstance(budget, ContextBudget) and callable(counter):
-            deadline = time.monotonic() + min(30.0, getattr(provider, "timeout", 30.0))
-
-            def count(text: str) -> int:
-                value = counter(text, deadline=deadline).value
-                if type(value) is not int or value < 0:
-                    raise ValueError("provider research token count is unavailable")
-                return value
-
-            return answer_context(session, research_ledger, scope, count_tokens=count,
-                                  token_budget=min(budget.window_tokens // 2, budget.input_limit))
-        return answer_context(session, research_ledger, scope)
+        count, cap = work_view_limits(provider)
+        return answer_context(session, research_ledger, scope, count_tokens=count, token_budget=cap)
     if scope is not None:
         from codey.research.context_view import local_research_context
 

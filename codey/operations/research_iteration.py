@@ -253,6 +253,7 @@ def run_research_iteration(
         )
 
     provider = ObservedProvider(provider, observe_send)
+    tools.context_provider = provider
     policy = task_policy or build_task_policy(
         SimpleNamespace(
             project=project,

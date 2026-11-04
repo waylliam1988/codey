@@ -1,14 +1,80 @@
 """The task's actual read windows, without parallel plans or candidate answers."""
 
+from __future__ import annotations
+
 import json
+import time
 from collections.abc import Callable
-from typing import Any
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any
 
 from codey.knowledge.model import canonical_json
 from codey.research.answer_contract import ANSWER_GUIDANCE, AnswerScope
 from codey.research.context_view import read_evidence_projection
 from codey.research.questions import INVESTIGATION_TOOLS
 from codey.utils.text_budget import estimate_tokens
+
+if TYPE_CHECKING:
+    from codey.research.ledger import ResearchLedger
+    from codey.research.tools import ResearchToolOutput
+    from codey.runtime.core.models import ToolCall
+
+
+def work_view_limits(provider: Any) -> tuple[Callable[[str], int], int]:
+    """Use the same tokenizer and half-window limit for acquisition and display."""
+    from codey.providers.token_accounting import ContextBudget
+
+    budget = getattr(provider, "context_budget", None)
+    counter = getattr(provider, "count_text", None)
+    if not isinstance(budget, ContextBudget) or not callable(counter):
+        return estimate_tokens, 16384
+    deadline = time.monotonic() + min(30.0, getattr(provider, "timeout", 30.0))
+
+    def count(text: str) -> int:
+        value = counter(text, deadline=deadline).value
+        if type(value) is not int or value < 0:
+            raise ValueError("provider research token count is unavailable")
+        return value
+
+    return count, min(budget.window_tokens // 2, budget.input_limit)
+
+
+def fitting_full_read(session: Any, ledger: ResearchLedger, call: ToolCall,
+                      opened: ResearchToolOutput, *, provider: Any = None) -> ResearchToolOutput:
+    """Preview the actual work view; extend a default HTML read only if all fits."""
+    from codey.research.answer_contract import answer_scope
+    from codey.research.ledger_receipts import source_observation
+    from codey.research.passages import describe_document_window, render_passage_window, restore_passages
+    from codey.research.source_document import SourceDocument
+    from codey.research.source_rendering import render_opened_source
+    from codey.runtime.core.models import ToolResult
+
+    if not opened.ok or "limit" in call.args or call.args.get("pages") or not opened.read_passages:
+        return opened
+    source, text, _pages = source_observation(opened.read_observation)
+    if source.content_kind != "html" or opened.read_passages[-1]["end"] >= len(text):
+        return opened
+    document = SourceDocument.html(requested_url=source.requested_url, final_url=source.final_url,
+                                   title=source.title, text=text, mime_type=source.mime_type, truncated=source.truncated)
+    rows = describe_document_window(document, source.text_hash, opened.read_passages[0]["start"], len(text), coherent=True)
+    with session.projection_lock:
+        preview = session.clone_projection()
+        evidence = ledger.clone()
+    restore_passages(evidence, opened.read_observation, rows)
+    # Pure preview of this already admitted read, never an additional action or
+    # settled fact. The real immutable receipt still owns all actual settlement.
+    preview._memory_results["proposed_full_read"] = ToolResult(
+        call=call, model_text="", ok=True, canonical={"read_passages": rows})
+    proposed = answer_scope(preview)
+    count, cap = work_view_limits(provider)
+    try:
+        if count(_render_context(preview, evidence, proposed, proposed.aliases)) > cap:
+            return opened
+    except (ValueError, TimeoutError, OSError):
+        return opened
+    body = render_opened_source(document, render_passage_window(document, rows),
+                                read_window=(rows[0]["start"], rows[-1]["end"]))
+    return replace(opened, model_text=body, read_passages=tuple(rows))
 
 
 def prior_knowledge(session: Any, *, budget: int = 6000) -> list[dict[str, Any]]:
