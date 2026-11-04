@@ -34,10 +34,8 @@ def test_counting_and_length_repair_share_one_contract():
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_saved_count_matches_final_compilation_and_gate_keeps_structured_issue(tmp_path):
-    from codey.operations.completion_gate import evaluate
+def test_archived_finding_count_matches_shared_compiler_structured_issue(tmp_path):
     from tests.test_research_findings import selection_args
-    from tests.test_research_gate_preparation import strict_session
 
     store, tools, session, delegate = setup(tmp_path)
     try:
@@ -49,14 +47,14 @@ def test_saved_count_matches_final_compilation_and_gate_keeps_structured_issue(t
 
         saved = json.loads(result.model_text)
         assert saved["conclusion_characters"] == conclusion_characters(claim)
-        session = strict_session(session)
         session.task_text += " 给出约100字的中文研究结论。"
         session.last_done_args = selection_args(saved["finding_ref"])
-        verdict = evaluate(session, "", context={"research_ledger": tools.ledger, "knowledge_store": store,
-                                               "knowledge_session_id": tools.session_id})
-        assert not verdict.complete
-        assert verdict.research_issue["code"] == "report_length"
-        assert f"q1/f1={saved['conclusion_characters']}" in verdict.followup
+        from codey.research.issues import ResearchIssue
+
+        with pytest.raises(ResearchIssue) as failure:
+            compile_finding_report(session.last_done_args, tools.ledger, store, task=session.task_text)
+        assert failure.value.code == "report_length"
+        assert f"q1/f1={saved['conclusion_characters']}" in str(failure.value)
     finally:
         store.close()
 

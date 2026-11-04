@@ -24,11 +24,12 @@ def arguments():
 
 
 def session():
+    # Shared historical report codec; current Research uses complete answers.
     return TaskSession(TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"}),
                                   strict_research=True,
                                   required_checks=("research_sources_opened", "research_evidence_saved",
                                                    "research_report_sections")),
-                       task_kind="research", task_text="Explain writer concurrency.",
+                       task_kind="chat", task_text="Explain writer concurrency.",
                        research_questions=("What limits writer concurrency?",))
 
 
@@ -114,6 +115,11 @@ def test_native_completion_guidance_matches_frozen_phase_schema(kind):
     state.task_kind = kind
     prepared = prepare_kernel_turn(state, user_task="Investigate the evidence", context_text="",
                                    task_guidance="", native=True)
+    if kind == "research":
+        assert "done" not in prepared.snapshot.tool_names
+        assert "submit_research_answer" in prepared.snapshot.tool_names
+        assert "Submit the whole answer" in prepared.prompt
+        return
     done = next(spec for spec in prepared.snapshot.model_specs if spec.name == "done")
     structured = "report_sections" in done.required
     invalid = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("bad", "done", {}),)),

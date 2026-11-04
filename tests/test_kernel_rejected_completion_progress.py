@@ -158,38 +158,39 @@ def test_repair_progress_codec_rejects_invalid_observations(changes):
 
 
 def run_domain_repair_probe(root, *, native=False, boundary="", resume=False):
-    """Production kernel repeatedly repairs the same real length constraint."""
-    import hashlib
+    """Exercise durable domain budgets after the actual complete-answer gate."""
+    from dataclasses import replace
+    from unittest.mock import patch
 
-    from codey.research.passages import passage_ref
+    from codey.operations import completion_gate
+    from codey.research.issues import ResearchIssue
     from tests.test_research_deterministic_completion import _run
-    from tests.test_research_findings import URL
 
-    text = "Readers and a writer may run concurrently. Only one writer at a time."
-    passage = passage_ref(URL, hashlib.sha256(text.encode()).hexdigest()[:16], 0, len(text))
+    original_gate = completion_gate.evaluate
+
+    def rejected(*args, **kwargs):
+        verdict = original_gate(*args, **kwargs)
+        assert verdict.complete, verdict.followup
+        issue = ResearchIssue("controlled_domain_issue", "markdown", "Controlled delivery constraint remains unmet")
+        return replace(verdict, complete=False, proof=None, followup=str(issue), research_issue=issue.to_payload())
 
     def factory(provider):
-        send = provider.send
+        original = provider.send
 
         def reply(prompt):
-            row = json.loads(send(prompt))
-            calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
-            turn = next(event["turn"] for event in reversed(calls) if "turn" in event)
-            if turn == 1:
-                row["args"] = {"questions": ["What limits writer concurrency?"], "question_details": [{"task_refs": ["r1"]}]}
-            elif turn == 5 or turn >= 6 and (turn - 6) % 7 == 6:
-                number = 1 if turn == 5 else 1 + 6 * ((turn - 6) // 7 + 1)
-                row = {"tool": "submit_research_answer", "args": {"state": "answered", "findings": [f"f{number}"]}}
-            elif turn == 4 or turn >= 6:
-                row = {"tool": "save_finding", "args": {"question_ref": "q1", "passage_ref": passage,
-                    "claim": "同一时刻只有一个写者。" * 6 + str(turn)}}
+            row = json.loads(original(prompt))
+            if row["tool"] == "submit_research_answer":
+                calls = [json.loads(line) for line in (root / "calls.jsonl").read_text().splitlines()]
+                turn = next(event["turn"] for event in reversed(calls) if "turn" in event)
+                row["args"]["markdown"] += f" Revision {turn}."
             return json.dumps(row)
 
         provider.send = reply
         return provider
 
-    return _run(root, native=native, boundary=boundary, boundary_turn=12 if boundary == "control_ready" else 13,
-                resume=resume, budget=40, task="Explain writer limit. 给出约20字的中文研究结论。", provider_factory=factory)
+    with patch.object(completion_gate, "evaluate", rejected):
+        return _run(root, native=native, boundary=boundary, boundary_turn=4 if boundary == "control_ready" else 5,
+                    resume=resume, budget=15, provider_factory=factory)
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -212,11 +213,11 @@ def test_domain_budget_survives_process_exit_on_rejection_and_request_admission(
     try:
         saved = operation_from_checkpoint(durable.task("r"), "s").counters.progress
         assert saved.schema_version == 2 and saved.repair_rejections == 2
-        assert saved.repair_failure_key.startswith("report_length:")
+        assert saved.repair_failure_key.startswith("controlled_domain_issue:")
     finally:
         durable.close()
     result = run_domain_repair_probe(tmp_path, native=native, resume=True)
-    expected_turns = 5 + 7 * (saved.limit - 1)
+    expected_turns = 2 + saved.limit
     assert result.stop_reason == "no_progress" and result.turns == expected_turns, result.summary
     calls = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
     assert sum("attempt" in row for row in calls) == expected_turns

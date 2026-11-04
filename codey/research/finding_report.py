@@ -17,7 +17,6 @@ from codey.research.report_proposal import (
     ResearchReportProposal,
     bind_gap_investigations,
     bind_selected_answers,
-    bind_unresolved_targets,
     parse_report_proposal,
     report_character_budget,
 )
@@ -186,9 +185,7 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
 
 
 def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: Any, *,
-                           project: str = "", session_id: str = "", task: str = "",
-                           selection_receipts: tuple[str, ...] = (),
-                           unresolved_targets: dict[str, tuple[str, ...]] | None = None) -> FindingReport:
+                           project: str = "", session_id: str = "", task: str = "") -> FindingReport:
     proposal = parse_report_proposal(args, investigations=ledger.investigations)
     validate_question_coverage(list(proposal.coverage), ledger)
     proposal = bind_gap_investigations(proposal, ledger.investigations)
@@ -212,7 +209,6 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
             if item.version.value.kind == "claim":
                 validate_version_literals(item.version.value.content, [row.evidence.value.content for row in item.evidence])
     proposal = bind_selected_answers(proposal, resolved)
-    proposal = bind_unresolved_targets(proposal, unresolved_targets or {})
     if task and proposal.answers_only:
         from codey.research.task_requirements import validate_report_requirements
 
@@ -223,7 +219,7 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
     if proposal.answers_only:
         from codey.research.answer_focus import validate_answer_focus
 
-        validate_answer_focus(proposal, resolved, ledger.questions, local_submissions=bool(selection_receipts))
+        validate_answer_focus(proposal, resolved, ledger.questions)
     text, sources = render_report(proposal, resolved, ledger.questions, tuple(row.query for row in ledger.searches))
     from codey.research.source_literals import version_mentions
 
@@ -257,4 +253,4 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
     return FindingReport(text, tuple({"id": item.version.value.id, "revision": item.version.revision} for item in resolved),
         tuple(dict.fromkeys(item.binding.note_id for item in resolved if item.binding.note_id)),
         proposal.coverage, metadata, sources, tuple(paragraphs), _digest(args), ledger.questions, evidence_bindings,
-        tuple(args.get("open_questions", ())), selection_receipts)
+        tuple(args.get("open_questions", ())))

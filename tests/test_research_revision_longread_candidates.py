@@ -42,6 +42,7 @@ def test_revision_derives_read_version_and_preserves_unmentioned_fields(tmp_path
 @pytest.mark.usefixtures("public_source_dns")
 def test_full_read_fits_all_originals_and_preserves_explicit_limit_and_budget(tmp_path):
     store, tools, session, delegate = setup(tmp_path)
+    session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         delegate._research_scope = answer_scope(session)
         tools.coherent_passages = True
@@ -94,6 +95,7 @@ def test_full_read_budget_includes_existing_material_and_uses_provider_count(tmp
     from tests.test_research_findings import execute
 
     store, tools, session, delegate = setup(tmp_path)
+    session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         delegate._research_scope = answer_scope(session)
         session._memory_results["old"] = execute(delegate, tools, session, "open_url", {"url": URL})
@@ -120,6 +122,7 @@ def test_full_read_budget_includes_existing_material_and_uses_provider_count(tmp
 ])
 def test_revision_retains_kind_access_and_exact_field_guards(tmp_path, patch_value):
     store, tools, session, delegate = setup(tmp_path)
+    session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         value = KnowledgeObject("claim", "claim", "Original", "model_extraction", scope="personal", scope_id=store.owner_id)
         store.repository.commit("seed", [KnowledgeMutation(value)])
@@ -138,6 +141,7 @@ def test_revision_retains_kind_access_and_exact_field_guards(tmp_path, patch_val
 
 def test_revision_identical_retry_and_invalid_second_change_are_atomic(tmp_path):
     store, tools, session, delegate = setup(tmp_path)
+    session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         value = KnowledgeObject("claim", "claim", "Original", "model_extraction")
         store.repository.commit("seed", [KnowledgeMutation(value)])
@@ -162,6 +166,7 @@ def test_flat_revision_format_and_success_receipt_are_directly_usable(tmp_path):
     from codey.research.answer_context import _render_context
 
     store, tools, session, delegate = setup(tmp_path)
+    session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         value = KnowledgeObject("claim", "claim", "Original", "model_extraction")
         store.repository.commit("seed", [KnowledgeMutation(value)])
@@ -186,6 +191,7 @@ def test_flat_revision_format_and_success_receipt_are_directly_usable(tmp_path):
 
 def test_unchanged_edits_cannot_create_another_version_after_reread(tmp_path):
     store, tools, session, delegate = setup(tmp_path)
+    session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         store.repository.commit("seed", [KnowledgeMutation(KnowledgeObject("claim", "claim", "Original", "model_extraction"))])
         delegate._research_scope = answer_scope(session)
@@ -213,6 +219,7 @@ def test_unchanged_edits_cannot_create_another_version_after_reread(tmp_path):
 
 def test_explicit_creation_candidate_never_infers_creation_from_unknown_edit_id(tmp_path):
     store, tools, session, delegate = setup(tmp_path)
+    session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         delegate._research_scope = answer_scope(session)
         value = KnowledgeObject("new-entity", "entity", "Explicitly requested entity", "user_statement",
@@ -244,6 +251,7 @@ def test_production_full_read_keeps_old_originals_and_restores_real_receipts(tmp
     from tests.test_research_findings import execute
 
     store, tools, session, delegate = setup(tmp_path)
+    session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         delegate._research_scope = answer_scope(session)
         session._memory_results["old"] = execute(delegate, tools, session, "open_url", {"url": URL})

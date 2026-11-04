@@ -383,9 +383,6 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
     session.research_questions = ()
     tools.ledger.questions = ()
     session.max_turns = 7
-    # This scenario exercises the frozen v1 finding/report contract. New
-    # entries use compact registration, which requires a different script.
-    monkeypatch.setattr("codey.research.plan_contract.compact_plan_spec", lambda spec, task: spec)
     monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda *a, **k: native)
 
     class Provider:
@@ -394,20 +391,11 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
         def reply(self):
             self.turns += 1
             if self.turns == 1:
-                name, args = "research_plan", {"questions": ["What limits writer concurrency?"]}
-            elif self.turns == 2:
                 name, args = "web_search", {"query": "writer concurrency official documentation"}
-            elif self.turns == 3:
+            elif self.turns == 2:
                 name, args = "open_result", {"result_id": "r1"}
-            elif self.turns == 4:
-                name, args = "save_finding", {"claim": "Only one writer can write at a time.",
-                    "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))}
             else:
-                name, args = "done", selection_args(next(iter(tools.ledger.references)))
-            from codey.research.questions import QUESTION_BOUND_TOOLS
-
-            if name in QUESTION_BOUND_TOOLS:
-                args["question_ref"] = "q1"
+                name, args = "submit_research_answer", {"state": "answered", "markdown": "Only one writer can write at a time [e1]."}
             return (AssistantTurn(tool_calls=(ProviderToolCall(f"call-{self.turns}", name, args),)) if native else
                     json.dumps({"tool": name, "args": args}))
 
@@ -429,8 +417,8 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
             execution=KernelExecutionDeps(research_tools=tools, permission_profile="research"),
             observation=KernelObservationDeps(completion_context={"research_ledger": tools.ledger})))
         assert result.completed, result.summary
-        assert "## 来源" in result.summary and "[1] Original study" in result.summary
-        assert "实际检索词" in result.summary
-        assert session.notes_saved == 1 and len(tools.ledger.evidence_items) == 1
+        assert "## 引用来源" in result.summary and "[e1] Original study" in result.summary
+        assert session.notes_saved == 0 and not tools.ledger.evidence_items
+        assert result.research_report["schema"] == "research_answer_v1"
     finally:
         store.close()

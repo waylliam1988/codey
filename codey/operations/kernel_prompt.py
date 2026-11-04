@@ -85,8 +85,6 @@ def kernel_prompt_for_session(
     coding_context: CodingContext | None = None,
     request_scoped_contract: bool = False,
     done_spec: ToolSpec | None = None,
-    local_submission: bool = False,
-    research_planning: bool = False,
     whole_submission: bool = False,
 ) -> str:
     task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
@@ -113,16 +111,6 @@ def kernel_prompt_for_session(
         parts.append(("Use native tool calls. " + _NATIVE_ARGUMENTS_RULE) if native else _TEXT_ACTION_RULE)
         parts.append("Submit the whole answer with submit_research_answer. After its receipt, the application checks "
                      "and publishes the same answer; no further model rewrite is needed.")
-        return "\n\n".join(parts)
-    if research_planning:
-        parts.append(("Use native tool calls. " + _NATIVE_ARGUMENTS_RULE) if native else _TEXT_ACTION_RULE)
-        parts.append("Register the complete questions with research_plan; {} accepts the original task questions.")
-        return "\n\n".join(parts)
-    if local_submission:
-        parts.append(("Use native tool calls. " + _NATIVE_ARGUMENTS_RULE) if native else _TEXT_ACTION_RULE)
-        parts.append("End only the current target with submit_research_answer. "
-                     "Use only authorized tools and report specific observed failures. "
-                     "The kernel advances the original plan from the settled selection receipt.")
         return "\n\n".join(parts)
     if native:
         parts.append(
@@ -198,9 +186,6 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
             )
         if snapshot.research_scope is not None:
             instruction += " Submit the answer with submit_research_answer using the frozen contract."
-        elif "research_plan" in snapshot.tool_names and "done" not in snapshot.tool_names:
-            entry = next(item for item in snapshot.model_specs if item.name == "research_plan")
-            instruction += " " + entry.description
         elif spec is None or spec.name == "done":
             done = next((item for item in snapshot.model_specs if item.name == "done"), None)
             instruction += " " + _native_done_guidance(done)
@@ -258,9 +243,9 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
 
 
 def _completion_followup(feedback: str, *, native: bool, structured_report: bool = False,
-                         local_submission: bool = False) -> str:
+                         whole_submission: bool = False) -> str:
     """Render completion feedback for its transport without changing the verdict."""
-    final_rule = ("Repair this target with submit_research_answer under its frozen contract." if local_submission else
+    final_rule = ("Repair the complete answer with submit_research_answer under its frozen contract." if whole_submission else
                   _native_final_rule(structured_report=structured_report))
     rule = (_NATIVE_ARGUMENTS_RULE + " " + final_rule if native else
             r'Preserve the requested answer format. Encode any needed line breaks once as \n inside JSON strings. '

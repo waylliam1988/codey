@@ -66,7 +66,7 @@ class ResearchTools:
     ledger: ResearchLedger = field(default_factory=ResearchLedger)
     evidence_only: bool = False
     finding_report: bool = False
-    local_submission: bool = False
+    answer_submission: bool = False
     coherent_passages: bool = False
     context_provider: Any = field(default=None, repr=False, compare=False)
 
@@ -90,7 +90,7 @@ class ResearchTools:
             ledger=self.ledger.clone(),
             evidence_only=self.evidence_only,
             finding_report=self.finding_report,
-            local_submission=self.local_submission,
+            answer_submission=self.answer_submission,
             coherent_passages=self.coherent_passages,
             context_provider=self.context_provider,
         )
@@ -224,7 +224,7 @@ class ResearchTools:
         if not query:
             return ResearchToolOutput("ERROR: knowledge_search needs a query", ok=False)
         hits = self.store.search(query, project=self.project, session_id=self.session_id, depth=depth)
-        recalled = render_recall(hits, include_answer_refs=not (self.evidence_only or self.local_submission))
+        recalled = render_recall(hits, include_answer_refs=not (self.evidence_only or self.answer_submission))
         rows = self.store.search_notes(query, project=self.project, session_id=self.session_id)
         if not rows:
             return ResearchToolOutput(recalled or "no local notes yet on this topic", ok=True,
@@ -299,18 +299,15 @@ class ResearchTools:
         preface = ("Document note; its note_id is not a done.knowledge_refs object id.\n"
                    "Answer reference candidates (use only versions actually adopted):\n"
                    + canonical_json({"knowledge_refs": answer_refs[:6]}) + "\n\n"
-                   ) if answer_refs and not self.evidence_only and not automatic_refs and not self.local_submission else ""
+                   ) if answer_refs and not self.evidence_only and not automatic_refs and not self.answer_submission else ""
         if whole_answer:
             preface = KNOWLEDGE_READ_GUIDANCE + "\n\n"
-        elif self.local_submission and answer_refs:
-            preface = ("Document note; read a linked knowledge object by its exact id and revision to obtain an fN "
-                       "before explicitly selecting it with submit_research_answer.\n\n")
         if automatic_refs and not self.evidence_only and not whole_answer:
             preface = "Cite this saved finding by [finding_ref] only if adopted; the application resolves its exact versions.\n\n"
         preface += ("Document status describes the saved note, not semantic approval of its summary. "
                     "Inspect the linked claim and its exact evidence before adopting the wording.\n"
                     "Claim interpretation state:\n" + canonical_json(claim_states[:12]) + "\n\n")
-        version_label = ("Structured knowledge versions:" if self.evidence_only or automatic_refs or self.local_submission else
+        version_label = ("Structured knowledge versions:" if self.evidence_only or automatic_refs or self.answer_submission else
                          "Structured knowledge versions (use these for knowledge_refs):")
         return ResearchToolOutput(preface + note.to_markdown() + "\n\n" + version_label + "\n"
                                   + canonical_json(references), ok=True)
@@ -390,37 +387,15 @@ class ResearchTools:
 
         return save_inference(self, args)
 
-    def research_plan(self, questions: object, *, question_details: object = None, task: str = "",
-                      schema_version: int = 1) -> ResearchToolOutput:
+    def research_plan(self, questions: object) -> ResearchToolOutput:
+        """Register questions for scoped source acquisition outside Research."""
         from codey.research.questions import question_plan
 
-        observation: dict[str, Any]
         try:
-            if schema_version in {2, 3, 4}:
-                from codey.research.plan_contract import compact_plan
-
-                if question_details is not None or self.ledger.questions:
-                    raise ValueError("compact plans register once and do not accept question_details")
-                observation = compact_plan(questions, task, submission_mode="inline" if schema_version >= 3 else "select",
-                                           schema_version=3 if schema_version == 4 else 2)
-                planned = question_plan([row["text"] for row in observation["questions"]])
-                self.ledger.questions = planned
-                return ResearchToolOutput(canonical_json({"questions": [
-                    {"question_ref": f"q{index}", "question": text} for index, text in enumerate(planned, 1)],
-                    "next": "Read the original sources for the current question, then explicitly submit its supported answer or gap."}),
-                    read_observation=observation, ok=True)
             planned = question_plan(questions, self.ledger.questions)
-            observation = {"questions": list(planned)}
-            if question_details is not None:
-                from codey.research.local_scope import question_details as validate_details
-
-                observation["question_details"] = validate_details(question_details, planned, task)
             self.ledger.questions = planned
-            return ResearchToolOutput(canonical_json({"questions": [
-                {"question_ref": f"q{index}", "question": text} for index, text in enumerate(planned, 1)],
-                **({"question_details": observation["question_details"]} if question_details is not None else {}),
-                "next": "Investigate these questions; final coverage must answer or explain the gap for every question. "
-                        "A recorded plan is not completed research."}), read_observation=observation, ok=True)
+            observation = {"questions": list(planned)}
+            return ResearchToolOutput(canonical_json(observation), read_observation=observation, ok=True)
         except ValueError as exc:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 

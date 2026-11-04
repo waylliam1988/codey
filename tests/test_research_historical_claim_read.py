@@ -94,7 +94,7 @@ def test_document_note_read_uses_its_admitted_submission_contract(tmp_path, whol
     store = KnowledgeStore(tmp_path)
     note = KnowledgeNote.create(type="fact", title="Writer history", body="Prior writer interpretation.")
     store.publish_note(note, "seed", seed_history())
-    tools = ResearchTools(None, store, None, session_id="later", local_submission=True, finding_report=True,
+    tools = ResearchTools(None, store, None, session_id="later", answer_submission=True, finding_report=True,
                           created_ids=[note.id] if current_note else [])
     session = strict_session()
     delegate = ExecutionDelegate(session=session, research_tools=tools)
@@ -109,7 +109,9 @@ def test_document_note_read_uses_its_admitted_submission_contract(tmp_path, whol
         else:
             # The local finding-selection protocol still supports fN adoption.
             result = tools.knowledge_read(note.id)
-            assert ("[finding_ref]" if current_note else "obtain an fN") in result.model_text
+            if current_note:
+                assert "[finding_ref]" in result.model_text
+            assert "obtain an fN" not in result.model_text
         assert not tools.ledger.read_passages
     finally:
         store.close()
@@ -166,7 +168,7 @@ def test_cold_history_claim_to_material_to_whole_publication(tmp_path, native):
         return provider
 
     def run(resume=False):
-        return _run(tmp_path / "reuse", native=native, provider_factory=factory, compact_planning=True,
+        return _run(tmp_path / "reuse", native=native, provider_factory=factory,
                     required_checks=strict_session().policy.required_checks, knowledge_root=tmp_path / "knowledge",
                     session_id="later", run_id="later", resume=resume)
 

@@ -9,14 +9,14 @@ from tests.test_research_findings import report_args
 
 def test_manual_knowledge_refs_are_rejected_by_the_frozen_report_contract():
     session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research")
-    # The legacy report can be submitted only after its original registration.
+    # An old question registration cannot restore the retired done/report route.
     session.research_questions = ("What limits writer concurrency?",)
     args = {"report_sections": {"coverage": report_args("f1")["report_sections"]["coverage"]},
             "knowledge_refs": [{"id": "note-id", "revision": 99}]}
     snapshot = build_turn_snapshot(session, native=True)
-    assert "done" in snapshot.tool_names
+    assert "done" not in snapshot.tool_names
     plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("done", "done", args),)), snapshot=snapshot)
-    assert plan.control is None and "knowledge_refs" in plan.protocol_error
+    assert plan.control is None and "done" in plan.protocol_error
     assert args["knowledge_refs"][0]["id"] == "note-id"
 
 

@@ -29,7 +29,7 @@ _GAP = re.compile(r"尚未|未知|未明确|未证实|仍需|无法确定|未能
 
 
 def validate_answer_focus(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...],
-                          questions: tuple[str, ...], *, local_submissions: bool = False) -> None:
+                          questions: tuple[str, ...]) -> None:
     by_label = {item.label: item for item in resolved}
     for index, row in enumerate(proposal.coverage):
         if row["state"] not in {"evidence_found", "partial"}:
@@ -55,11 +55,6 @@ def validate_answer_focus(proposal: ResearchReportProposal, resolved: tuple[Reso
             gap_repair = ("use partial; the application appends an unresolved-question notice. "
                           if proposal.findings_only else
                           "use partial and explicitly state that the requested limit remains unresolved. ")
-            if local_submissions:
-                repair = "Select a supported replacement only if direct evidence is available. "
-                gap_repair = ("submit_research_answer with state=unresolved and findings=[] for this target. "
-                              "This needs no new finding. Changing an unsupported selection to partial does not "
-                              "supply the missing direct evidence. ")
             raise ResearchIssue("count_limit_not_addressed", f"report_sections.coverage[{index}].{field}",
                 f"{row['question_ref']} asks: {question}\n"
                 "Coexistence or nonblocking operations do not establish an exclusive count limit. "
@@ -71,4 +66,4 @@ def validate_answer_focus(proposal: ResearchReportProposal, resolved: tuple[Reso
                 "This check detects a missing cue; it does not certify a supported interpretation.",
                 allowed_refs=tuple(row["findings"]), requires_acquisition=coexistence_only,
                 allowed_actions=("read direct limiting evidence", "save supported replacement",
-                                 "submit unresolved with findings=[]" if local_submissions else "select partial or unresolved"))
+                                 "select partial or unresolved"))

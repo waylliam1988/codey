@@ -25,7 +25,7 @@ from tests.manual.research_experiment_identity import freeze_experiment, verify_
 from tests.manual.research_workflow_ablation import ablation as previous_ablation
 
 ARMS = (
-    "baseline", "dedup_rules", "hide_revision", "no_auto_recall", "no_task_anchor",
+    "baseline", "dedup_rules", "no_auto_recall", "no_task_anchor",
     "no_semantic_guidance", "no_history_hints", "no_knowledge_search", "no_web_search",
     "no_original_read", "no_source_search", "no_navigation", "no_receipt_index",
     "no_attempt_history", "no_omitted_index", "no_knowledge_updates", "no_state_field",
@@ -87,7 +87,7 @@ def ablation(arm):
     from codey.research import answer_context, answer_contract
 
     with ExitStack() as stack:
-        if arm in {"baseline", "dedup_rules", "hide_revision", "no_auto_recall"}:
+        if arm in {"baseline", "dedup_rules", "no_auto_recall"}:
             stack.enter_context(previous_ablation(arm))
         guidance = answer_contract.ANSWER_GUIDANCE
         if arm == "no_semantic_guidance":

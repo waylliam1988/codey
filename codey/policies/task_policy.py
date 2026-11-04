@@ -29,8 +29,8 @@ STRICT_RESEARCH_REQUIRED_CHECKS = (
     "research_citations",
 )
 
-# Frozen entry requirements distinguish new whole-answer tasks from historical
-# finding reports. Old policies retain their original checks on replay.
+# Frozen requirements remain readable in historical projections. Live Research
+# uses one whole-answer contract independently of the stored check identifiers.
 RESEARCH_ANSWER_REQUIRED_CHECKS = (
     "research_submission", "research_investigation_attempted", "research_citations",
     "research_source_bindings", "research_report_sections",

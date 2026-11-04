@@ -34,7 +34,7 @@ def validate_decision(payload: Any, *, schema_version: int = 2) -> KernelDecisio
     purpose = payload.get("purpose")
     if purpose == "retry":
         required = {"purpose", "prompt", "error"} | ({"counters"} if schema_version == 1 else set())
-        if (set(payload) - {"research_repair"} not in (required, required | {"error_source", "error_type"})
+        if (set(payload) not in (required, required | {"error_source", "error_type"})
                 or not all(isinstance(payload[key], str) for key in ("prompt", "error"))):
             raise ValueError("invalid retry decision")
         if schema_version == 1:
@@ -45,10 +45,6 @@ def validate_decision(payload: Any, *, schema_version: int = 2) -> KernelDecisio
         if "error_source" in payload and (not isinstance(payload["error_source"], str)
                 or not isinstance(payload["error_type"], str)):
             raise ValueError("invalid completion diagnostic")
-        if "research_repair" in payload:
-            from codey.research.local_scope import ResearchScope
-
-            ResearchScope.from_payload(payload["research_repair"])
     elif purpose == "done":
         if (set(payload) != {"purpose", "result", "workspace_revision", "workspace_fingerprint"}
                 or type(payload["workspace_revision"]) is not int or payload["workspace_revision"] < 0
@@ -83,10 +79,6 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
 
     context.restore_facts()
     plan = context.plan(state)
-    from codey.research.local_scope import assembled_report, plan_units, registered_plan, repair_scope
-
-    local_plan = registered_plan(context.session) if context.session.policy.strict_research else None
-    local = local_plan is not None
     if plan.control is not None and plan.control.kind == "done":
         context.session.last_done_text = plan.control.body or ""
         context.session.last_done_args = dict(plan.control_args)
@@ -119,30 +111,20 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     else:
         from codey.operations.kernel_progress import KernelProgress
 
-        ledger = getattr(context.execution.research_tools, "ledger", None)
-        if local_plan is not None and domain_issue is not None and domain_issue["code"] == "missing_evidence":
-            context.close(state, KernelResult(False, "Research investigation ended without supported findings.\n"
-                + "\n".join(f"{row['question_ref']}: {row['question']}" for row in
-                    plan_units(local_plan)),
-                context.session.turn, "research_unresolved"))
-            return
-        repair = repair_scope(context.session, ledger, getattr(context.execution.research_tools, "store", None), domain_issue) if local else None
         progress = KernelProgress(context.transport.stagnant_turns, snapshot=state.counters.progress)
-        proposal = assembled_report(context.session, ledger)[0] if local else context.session.last_done_args
+        proposal = context.session.last_done_args
         from codey.research.answer_contract import submitted_answer, whole_research
 
         if whole_research(context.session):
             proposal = submitted_answer(context.session) or {}
         progress.reject_completion(proposal, followup, context.session,
-            failure_key=(domain_issue["code"] + ":" + domain_issue["path"]) if local and domain_issue else "")
+            failure_key=(domain_issue["code"] + ":" + domain_issue["path"]) if domain_issue else "")
         counters = replace(state.counters, progress=progress.snapshot())
         decision = RetryDecision(
             purpose="retry", prompt=kernel_prompt._completion_followup(followup, native=context.native,
-                structured_report=local or "report_sections" in context.session.last_done_args,
-                local_submission=local), error="",
+                structured_report="report_sections" in context.session.last_done_args,
+                whole_submission=whole_research(context.session)), error="",
             error_source=error_source, error_type=error_type)
-        if repair is not None:
-            decision["research_repair"] = repair.to_payload()
         context.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision,
             counters=counters)
 
@@ -171,7 +153,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         return
     if decision["purpose"] == "retry":
         # A cold restart may enter directly at control_ready. Rebuild the
-        # original plan/selections/read receipts before freezing a repair;
+        # original submission and read receipts before freezing a repair;
         # process-local caches cannot decide its available tools or evidence.
         context.restore_facts()
         turn = received.logical_turn
@@ -204,9 +186,9 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         snapshot = received.snapshot
         # Native rejection replies use the exact declarations that answered
         # the original calls. A text retry starts the next ordinary turn.
-        if messages is None or "research_repair" in decision:
+        if messages is None:
             from codey.operations.kernel_protocol import build_turn_snapshot
-            snapshot = build_turn_snapshot(context.session, native=context.native, research_repair=decision.get("research_repair"))
+            snapshot = build_turn_snapshot(context.session, native=context.native)
         # Both request-scoped providers and text-only providers render the
         # same frozen repair basis, including after a successful local write.
         observations = "" if context.request_scoped_observations else task_working_context(

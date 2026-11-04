@@ -420,7 +420,7 @@ class KernelContext:
                 self.close(state, KernelResult(False, "local provider emitted finish_reason=length twice", turn, "provider_failure"))
                 return None
             if not reply.tool_calls:
-                completion = ("submit_research_answer for this target" if snapshot.research_scope is not None else
+                completion = ("submit_research_answer for the complete task" if snapshot.research_scope is not None else
                               "done(summary) if the verified task is complete")
                 self.retry(state, "Your previous response was truncated before a tool call. Continue with the next "
                            "required tool call, or call " + completion + ". Do not output ordinary explanation.",
@@ -462,9 +462,6 @@ class KernelContext:
 
     def retry(self, state: Any, prompt: str, *, error: str = "", counters: RuntimeExecutionCounters | None = None) -> None:
         decision = RetryDecision(purpose="retry", prompt=prompt, error=error)
-        scope = self.response(state).snapshot.research_scope
-        if scope is not None and scope.replaces:
-            decision["research_repair"] = scope.to_payload()
         self.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision, counters=counters or state.counters)
 
     def plan(self, state: Any) -> Any:
@@ -533,12 +530,11 @@ class KernelContext:
         kernel_events._emit_tool_results(self.observation.on_event, self.session, results,
             run_id=f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id,
             turn=turn)
-        from codey.research.answer_contract import submitted_answer, whole_research
-        from codey.research.local_scope import current_scope
+        from codey.research.answer_contract import submitted_answer
 
         if (not self.cancelled() and len(results) == 1 and results[0].ok
                 and results[0].call.name == "submit_research_answer"
-                and (submitted_answer(self.session) is not None if whole_research(self.session) else current_scope(self.session) is None)):
+                and submitted_answer(self.session) is not None):
             self.advance(state, operation_payload.LEAF_COMPLETION_PENDING)
             return
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
@@ -551,9 +547,7 @@ class KernelContext:
                        else KernelResult(False, summary, turn, reason))
             return
         spans: list[dict[str, Any]] = []
-        original_scope = self.response(state).snapshot.research_scope
-        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native,
-            research_repair=original_scope if original_scope is not None and original_scope.replaces else None)
+        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
         from codey.runtime.core.models import ToolResult
 
         def result_context(result: ToolResult) -> str:

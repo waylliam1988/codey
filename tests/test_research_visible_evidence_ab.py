@@ -13,7 +13,6 @@ from codey.research import answer_context, answer_contract
 from codey.research.answer_report import AnswerReport, compile_answer_report
 from codey.runtime.core.models import ToolCall, ToolResult
 from tests.test_research_findings import URL, execute, setup
-from tests.test_research_inline_submission import inline_setup
 from tests.test_research_whole_kernel import run_whole
 
 
@@ -77,15 +76,6 @@ def test_all_fitting_originals_are_kept_verbatim_and_invented_reads_rejected(tmp
         store.close()
 
 
-@pytest.mark.usefixtures("public_source_dns")
-def test_experiment_preserves_legacy_inline_recovery(tmp_path):
-    store, tools, session, scope = inline_setup(tmp_path)
-    try:
-        result, ok, _ = ExecutionDelegate(session=session, research_tools=tools, research_scope=scope)._execute_research(
-            ToolCall("knowledge_read", {"id": scope.passage_refs[0], "question_ref": scope.question_ref}))
-        assert not ok and "read_receipts" in result.model_text and "read_receipt_index" not in result.model_text
-    finally:
-        store.close()
 
 
 @pytest.mark.usefixtures("public_source_dns")

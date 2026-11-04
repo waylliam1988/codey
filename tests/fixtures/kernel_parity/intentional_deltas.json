@@ -4287,15 +4287,6 @@
     }
   },
   "research/source-hit": {
-    "status": "INTENTIONAL_DENY",
-    "category": "research-contract",
-    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
-    "tests": [
-      "tests/test_kernel_legacy_parity.py",
-      "tests/test_research_findings.py",
-      "tests/test_research_question_ownership.py"
-    ],
-    "changelog": "CHANGELOG.md",
     "before": {
       "evidence_count": 1,
       "notes": [
@@ -4354,11 +4345,55 @@
     },
     "after": {
       "evidence_count": 0,
-      "notes": [],
-      "operations": [],
-      "source_urls": [],
-      "stop_reason": "protocol"
-    }
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams [e1].\n\n## 引用来源\n[e1] Helium article — https://example.com/helium (source 592ef0d675c80123, 0:45)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json.",
+    "tests": [
+      "tests/test_research_convergence.py",
+      "tests/test_research_whole_kernel.py",
+      "tests/test_research_long_term_loop.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md"
   },
   "loop/fresh-failure": {
     "status": "INTENTIONAL_CHANGE",
@@ -7414,15 +7449,6 @@
     }
   },
   "research/evidence-synthesis": {
-    "status": "INTENTIONAL_DENY",
-    "category": "research-contract",
-    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
-    "tests": [
-      "tests/test_kernel_legacy_parity.py",
-      "tests/test_research_findings.py",
-      "tests/test_research_question_ownership.py"
-    ],
-    "changelog": "CHANGELOG.md",
     "before": {
       "evidence_count": 1,
       "notes": [
@@ -7481,22 +7507,53 @@
     },
     "after": {
       "evidence_count": 0,
-      "notes": [],
-      "operations": [],
-      "source_urls": [],
-      "stop_reason": "protocol"
-    }
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams [e1].\n\n## 引用来源\n[e1] Helium article — https://example.com/helium (source 592ef0d675c80123, 0:45)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json.",
+    "tests": [
+      "tests/test_research_convergence.py",
+      "tests/test_research_whole_kernel.py",
+      "tests/test_research_long_term_loop.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md"
   },
   "research/synthesis-questions": {
-    "status": "INTENTIONAL_DENY",
-    "category": "research-contract",
-    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
-    "tests": [
-      "tests/test_kernel_legacy_parity.py",
-      "tests/test_research_findings.py",
-      "tests/test_research_question_ownership.py"
-    ],
-    "changelog": "CHANGELOG.md",
     "before": {
       "evidence_count": 1,
       "notes": [
@@ -7557,22 +7614,53 @@
     },
     "after": {
       "evidence_count": 0,
-      "notes": [],
-      "operations": [],
-      "source_urls": [],
-      "stop_reason": "protocol"
-    }
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams [e1].\n\n## 引用来源\n[e1] Helium article — https://example.com/helium (source 592ef0d675c80123, 0:45)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json.",
+    "tests": [
+      "tests/test_research_convergence.py",
+      "tests/test_research_whole_kernel.py",
+      "tests/test_research_long_term_loop.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md"
   },
   "research/controller-open-result": {
-    "status": "INTENTIONAL_DENY",
-    "category": "research-contract",
-    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
-    "tests": [
-      "tests/test_kernel_legacy_parity.py",
-      "tests/test_research_findings.py",
-      "tests/test_research_question_ownership.py"
-    ],
-    "changelog": "CHANGELOG.md",
     "before": {
       "evidence_count": 1,
       "notes": [
@@ -7631,22 +7719,53 @@
     },
     "after": {
       "evidence_count": 0,
-      "notes": [],
-      "operations": [],
-      "source_urls": [],
-      "stop_reason": "protocol"
-    }
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams [e1].\n\n## 引用来源\n[e1] Helium article — https://example.com/helium (source 592ef0d675c80123, 0:45)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json.",
+    "tests": [
+      "tests/test_research_convergence.py",
+      "tests/test_research_whole_kernel.py",
+      "tests/test_research_long_term_loop.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md"
   },
   "research/source-search": {
-    "status": "INTENTIONAL_DENY",
-    "category": "research-contract",
-    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
-    "tests": [
-      "tests/test_kernel_legacy_parity.py",
-      "tests/test_research_findings.py",
-      "tests/test_research_question_ownership.py"
-    ],
-    "changelog": "CHANGELOG.md",
     "before": {
       "evidence_count": 1,
       "notes": [
@@ -7705,52 +7824,53 @@
     },
     "after": {
       "evidence_count": 0,
-      "notes": [],
-      "operations": [],
-      "source_urls": [],
-      "stop_reason": "protocol"
-    }
-  },
-  "research/search-only-budget": {
-    "status": "INTENTIONAL_DENY",
-    "category": "research-contract",
-    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
-    "tests": [
-      "tests/test_kernel_legacy_parity.py",
-      "tests/test_research_findings.py",
-      "tests/test_research_question_ownership.py"
-    ],
-    "changelog": "CHANGELOG.md",
-    "before": {
-      "evidence_count": 0,
-      "notes": [],
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams [e1].\n\n## 引用来源\n[e1] Helium article — https://example.com/helium (source 592ef0d675c80123, 0:45)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
       "operations": [
         [
           "search",
           "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
         ]
       ],
-      "source_urls": [],
-      "stop_reason": "max_turns"
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
     },
-    "after": {
-      "evidence_count": 0,
-      "notes": [],
-      "operations": [],
-      "source_urls": [],
-      "stop_reason": "max_turns"
-    }
+    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json.",
+    "tests": [
+      "tests/test_research_convergence.py",
+      "tests/test_research_whole_kernel.py",
+      "tests/test_research_long_term_loop.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md"
   },
   "research/native-evidence-synthesis": {
-    "status": "INTENTIONAL_DENY",
-    "category": "research-contract",
-    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
-    "tests": [
-      "tests/test_kernel_legacy_parity.py",
-      "tests/test_research_findings.py",
-      "tests/test_research_question_ownership.py"
-    ],
-    "changelog": "CHANGELOG.md",
     "before": {
       "evidence_count": 1,
       "notes": [
@@ -7809,22 +7929,53 @@
     },
     "after": {
       "evidence_count": 0,
-      "notes": [],
-      "operations": [],
-      "source_urls": [],
-      "stop_reason": "protocol"
-    }
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams [e1].\n\n## 引用来源\n[e1] Helium article — https://example.com/helium (source 592ef0d675c80123, 0:45)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json.",
+    "tests": [
+      "tests/test_research_convergence.py",
+      "tests/test_research_whole_kernel.py",
+      "tests/test_research_long_term_loop.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md"
   },
   "research/controller-source-references": {
-    "status": "INTENTIONAL_DENY",
-    "category": "research-contract",
-    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
-    "tests": [
-      "tests/test_kernel_legacy_parity.py",
-      "tests/test_research_findings.py",
-      "tests/test_research_question_ownership.py"
-    ],
-    "changelog": "CHANGELOG.md",
     "before": {
       "evidence_count": 1,
       "notes": [
@@ -7883,22 +8034,53 @@
     },
     "after": {
       "evidence_count": 0,
-      "notes": [],
-      "operations": [],
-      "source_urls": [],
-      "stop_reason": "protocol"
-    }
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams [e1].\n\n## 引用来源\n[e1] Helium article — https://example.com/helium (source 592ef0d675c80123, 0:45)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json.",
+    "tests": [
+      "tests/test_research_convergence.py",
+      "tests/test_research_whole_kernel.py",
+      "tests/test_research_long_term_loop.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md"
   },
   "research/controller-reopen-source": {
-    "status": "INTENTIONAL_DENY",
-    "category": "research-contract",
-    "reason": "Strict Research requires research_plan before investigation, question_ref bindings, save_finding exact passage adoption and answers-only done.coverage. This immutable pre-plan script is deliberately rejected rather than auto-completed or silently rewritten. The separate modern helium_case verifies successful collection, evidence and synthesis metadata through the same production kernel.",
-    "tests": [
-      "tests/test_kernel_legacy_parity.py",
-      "tests/test_research_findings.py",
-      "tests/test_research_question_ownership.py"
-    ],
-    "changelog": "CHANGELOG.md",
     "before": {
       "evidence_count": 1,
       "notes": [
@@ -7961,10 +8143,54 @@
     },
     "after": {
       "evidence_count": 0,
-      "notes": [],
-      "operations": [],
-      "source_urls": [],
-      "stop_reason": "protocol"
-    }
+      "notes": [
+        {
+          "aliases": [],
+          "body": "Helium is separated from natural gas streams [e1].\n\n## 引用来源\n[e1] Helium article — https://example.com/helium (source 592ef0d675c80123, 0:45)",
+          "confidence": null,
+          "open_questions": [],
+          "project": "",
+          "relations": [],
+          "session_id": "s",
+          "sources": [
+            "https://example.com/helium"
+          ],
+          "status": "active",
+          "tags": [
+            "research",
+            "session:s"
+          ],
+          "title": "How is helium obtained?",
+          "type": "synthesis",
+          "valid_until": null
+        }
+      ],
+      "operations": [
+        [
+          "search",
+          "helium production"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ],
+        [
+          "fetch",
+          "https://example.com/helium"
+        ]
+      ],
+      "source_urls": [
+        "https://example.com/helium"
+      ],
+      "stop_reason": "done"
+    },
+    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json.",
+    "tests": [
+      "tests/test_research_convergence.py",
+      "tests/test_research_whole_kernel.py",
+      "tests/test_research_long_term_loop.py",
+      "tests/test_kernel_legacy_parity.py"
+    ],
+    "changelog": "CHANGELOG.md"
   }
 }

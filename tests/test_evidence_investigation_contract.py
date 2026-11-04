@@ -25,13 +25,15 @@ def test_investigation_done_accepts_only_acquisition_receipt(native, strict):
         assert bool(plan.protocol_error) is not accepted
 
 
-def test_parent_research_retains_its_full_report_contract():
-    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research")
-    assert "done" not in build_turn_snapshot(session).inventory_names
-    session.research_questions = ("What does the source establish?",)
-    spec = next(item for item in build_turn_snapshot(session).frozen_specs if item.name == "done")
-    assert "report_sections" in dict(spec.parameters)
-    assert set(spec.required) == {"report_sections"}
+def test_parent_research_uses_complete_answer_contract_before_and_after_question_reads():
+    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.write"}), strict_research=True), task_kind="research")
+    for questions in ((), ("What does the source establish?",)):
+        session.research_questions = questions
+        snapshot = build_turn_snapshot(session)
+        assert "done" not in snapshot.inventory_names
+        spec = next(item for item in snapshot.frozen_specs if item.name == "submit_research_answer")
+        assert set(dict(spec.parameters)) == {"markdown", "state", "knowledge_updates"}
+        assert set(spec.required) == {"markdown", "state"}
 
 
 def test_investigation_cannot_end_by_repeating_parent_without_attempting_acquisition():

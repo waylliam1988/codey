@@ -1,4 +1,4 @@
-"""Research exposes the original revision tool directly, with existing guards."""
+"""Research never exposes revisions, including after a failed historical read."""
 
 import json
 from copy import deepcopy
@@ -26,14 +26,14 @@ def session():
 
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("failed_read", [False, True])
-def test_revision_available_directly_before_and_after_read_errors(native, failed_read):
+def test_revision_absent_before_and_after_read_errors(native, failed_read):
     s = session()
     first = build_turn_snapshot(s, native=native)
     if failed_read:
         s._memory_results["bad-read"] = ToolResult(ToolCall("knowledge_read", {"id": "bad-id"}),
                                                   "ERROR: not found", ok=False)
     observed = build_turn_snapshot(s, native=native)
-    assert "knowledge_commit" in first.tool_names and "knowledge_commit" in observed.tool_names
+    assert "knowledge_commit" not in first.tool_names and "knowledge_commit" not in observed.tool_names
     assert "prepare_knowledge_revision" not in first.tool_names
     assert first.model_specs == observed.model_specs
     assert spec_for_tool("prepare_knowledge_revision") is None
@@ -44,7 +44,8 @@ def test_revision_available_directly_before_and_after_read_errors(native, failed
     restored._memory_results = deepcopy(s._memory_results)
     assert build_turn_snapshot(restored, native=native).model_specs == observed.model_specs
     view = answer_context(s, ResearchLedger(), answer_scope(s))
-    assert "Use knowledge_commit to edit existing stored objects" in view
+    assert "Use knowledge_commit to edit existing stored objects" not in view
+    assert "Research does not edit existing stored objects" in view
     assert "first call prepare_knowledge_revision" not in view
 
 

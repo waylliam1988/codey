@@ -311,7 +311,7 @@ def run_first_pass(root, *, native=False, boundary="", resume=False):
 
     return _run(root, native=native, boundary=boundary, resume=resume, boundary_turn=2,
                 task="Explain writer concurrency and retain a candidate claim and inference for reuse.",
-                compact_planning=True, required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS, provider_factory=factory)
+                required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS, provider_factory=factory)
 
 
 @pytest.mark.parametrize("native", [False, True])

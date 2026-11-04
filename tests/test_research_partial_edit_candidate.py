@@ -86,6 +86,7 @@ def test_real_dispatch_keeps_frozen_call_and_original_creation_protocol(tmp_path
     from tests.test_research_findings import setup
 
     store, tools, session, delegate = setup(tmp_path)
+    session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         value = KnowledgeObject("old-object", "claim", "Original", "model_extraction",
                                 scope="personal", scope_id=store.owner_id, aliases=("kept",))
@@ -137,6 +138,7 @@ def test_partial_edits_retain_original_kind_access_and_field_guards(tmp_path, fi
     from tests.test_research_findings import setup
 
     store, _, session, delegate = setup(tmp_path)
+    session.task_kind = "coding"  # Isolated maintenance experiment, outside Research.
     try:
         value = KnowledgeObject("old-object", "claim", "Original", "model_extraction",
                                 scope="personal", scope_id=store.owner_id)

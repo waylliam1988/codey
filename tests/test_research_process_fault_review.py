@@ -224,7 +224,7 @@ def test_kernel_work_bound_fault(tmp_path, monkeypatch, repeated):
 
                 patcher.setattr(KernelProgress, "stopped", property(lambda self: False))
             result = _run(tmp_path / str(disabled), budget=8 if repeated else (6 if disabled else 3),
-                          compact_planning=True, required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,
+                          required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,
                           provider_factory=factory)
         counts.append(len(calls))
         reasons.append(result.stop_reason)
@@ -378,7 +378,7 @@ def test_state_field_removal_changes_open_question_completion(tmp_path):
             return provider
 
         with ablation(arm):
-            result = _run(tmp_path / arm, native=True, task=task, compact_planning=True,
+            result = _run(tmp_path / arm, native=True, task=task,
                           required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS, provider_factory=factory)
         assert result.stop_reason == "done" and result.turns == 2
         decision = ResearchCompletionGate().evaluate(

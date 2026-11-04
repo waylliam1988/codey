@@ -22,14 +22,6 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     from codey.research.answer_contract import AnswerScope
 
     whole = isinstance(snapshot.research_scope, AnswerScope)
-    from codey.research.plan_contract import is_compact_plan_spec
-
-    compact_planning = any(spec.name == "research_plan" and is_compact_plan_spec(spec) for spec in snapshot.model_specs)
-    if compact_planning:
-        from codey.research.completion_guidance import render_completion_guidance
-
-        task_guidance = task_guidance.replace(render_completion_guidance(snapshot.policy),
-                                             render_completion_guidance(snapshot.policy, planning=True))
     if whole:
         from codey.research.completion_guidance import render_completion_guidance
 
@@ -37,18 +29,12 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
         # research request. Remove the legacy completion block without copying
         # those rules into the base prompt as well.
         task_guidance = task_guidance.replace(render_completion_guidance(snapshot.policy), "")
-    elif snapshot.research_scope is not None:
-        from codey.research.completion_guidance import render_completion_guidance
-
-        task_guidance = task_guidance.replace(render_completion_guidance(snapshot.policy),
-                                             render_completion_guidance(snapshot.policy, local=True,
-                                                 submission_mode=snapshot.research_scope.submission_mode))
     guidance = [task_guidance] if task_guidance else []
     if snapshot.policy.strict_research and snapshot.research_scope is None:
         from codey.research.methods import research_method_guidance
 
         guidance.append(research_method_guidance(user_task, evidence_only=session.task_kind == "evidence_followup",
-                                                   finding_report=session.task_kind == "research", compact_planning=compact_planning))
+                                                   finding_report=session.task_kind == "research"))
     for check_id in snapshot.policy.required_checks:
         requirement = parse_tool_success_check(check_id)
         if requirement is not None:
@@ -60,8 +46,6 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
         coding_context=prepare_coding_context(session, completion_context=completion_context),
         request_scoped_contract=request_scoped_contract,
         done_spec=next((spec for spec in snapshot.model_specs if spec.name == "done"), None),
-        local_submission=snapshot.research_scope is not None and not whole,
         whole_submission=whole,
-        research_planning=compact_planning,
     )
     return PreparedKernelTurn(snapshot, prompt)

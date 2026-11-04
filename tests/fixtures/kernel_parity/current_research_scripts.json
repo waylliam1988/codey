@@ -1,0 +1,61 @@
+{
+  "research/evidence-synthesis": [
+    "{\"tool\": \"knowledge_search\", \"args\": {\"query\": \"helium\"}}",
+    "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}",
+    "{\"tool\": \"open_url\", \"args\": {\"url\": \"https://example.com/helium\"}}",
+    "{\"tool\": \"submit_research_answer\", \"args\": {\"state\": \"answered\", \"markdown\": \"Helium is separated from natural gas streams [e1].\", \"knowledge_updates\": [{\"key\": \"helium-production\", \"kind\": \"claim\", \"content\": \"Helium is separated from natural gas streams.\", \"references\": [\"e1\"]}]}}"
+  ],
+  "research/synthesis-questions": [
+    "{\"tool\": \"knowledge_search\", \"args\": {\"query\": \"helium\"}}",
+    "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}",
+    "{\"tool\": \"open_url\", \"args\": {\"url\": \"https://example.com/helium\"}}",
+    "{\"tool\": \"submit_research_answer\", \"args\": {\"state\": \"answered\", \"markdown\": \"Helium is separated from natural gas streams [e1].\", \"knowledge_updates\": [{\"key\": \"helium-production\", \"kind\": \"claim\", \"content\": \"Helium is separated from natural gas streams.\", \"references\": [\"e1\"]}]}}"
+  ],
+  "research/controller-open-result": [
+    "{\"tool\": \"knowledge_search\", \"args\": {\"query\": \"helium\"}}",
+    "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}",
+    "{\"tool\": \"open_result\", \"args\": {\"result_id\": \"r1\"}}",
+    "{\"tool\": \"submit_research_answer\", \"args\": {\"state\": \"answered\", \"markdown\": \"Helium is separated from natural gas streams [e1].\", \"knowledge_updates\": [{\"key\": \"helium-production\", \"kind\": \"claim\", \"content\": \"Helium is separated from natural gas streams.\", \"references\": [\"e1\"]}]}}"
+  ],
+  "research/source-search": [
+    "{\"tool\": \"knowledge_search\", \"args\": {\"query\": \"helium\"}}",
+    "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}",
+    "{\"tool\": \"open_url\", \"args\": {\"url\": \"https://example.com/helium\"}}",
+    "{\"tool\": \"source_search\", \"args\": {\"url\": \"https://example.com/helium\", \"query\": \"natural gas\"}}",
+    "{\"tool\": \"submit_research_answer\", \"args\": {\"state\": \"answered\", \"markdown\": \"Helium is separated from natural gas streams [e1].\", \"knowledge_updates\": [{\"key\": \"helium-production\", \"kind\": \"claim\", \"content\": \"Helium is separated from natural gas streams.\", \"references\": [\"e1\"]}]}}"
+  ],
+  "research/search-only-budget": [
+    "{\"tool\": \"knowledge_search\", \"args\": {\"query\": \"helium\"}}",
+    "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}"
+  ],
+  "research/knowledge-read-budget": [
+    "{\"tool\": \"knowledge_read\", \"args\": {\"id\": \"missing\"}}"
+  ],
+  "research/native-evidence-synthesis": [
+    "{\"tool\": \"knowledge_search\", \"args\": {\"query\": \"helium\"}}",
+    "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}",
+    "{\"tool\": \"open_url\", \"args\": {\"url\": \"https://example.com/helium\"}}",
+    "{\"tool\": \"submit_research_answer\", \"args\": {\"state\": \"answered\", \"markdown\": \"Helium is separated from natural gas streams [e1].\", \"knowledge_updates\": [{\"key\": \"helium-production\", \"kind\": \"claim\", \"content\": \"Helium is separated from natural gas streams.\", \"references\": [\"e1\"]}]}}"
+  ],
+  "research/controller-source-references": [
+    "{\"tool\": \"knowledge_search\", \"args\": {\"query\": \"helium\"}}",
+    "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}",
+    "{\"tool\": \"open_result\", \"args\": {\"result_id\": \"r1\"}}",
+    "{\"tool\": \"submit_research_answer\", \"args\": {\"state\": \"answered\", \"markdown\": \"Helium is separated from natural gas streams [e1].\", \"knowledge_updates\": [{\"key\": \"helium-production\", \"kind\": \"claim\", \"content\": \"Helium is separated from natural gas streams.\", \"references\": [\"e1\"]}]}}"
+  ],
+  "research/controller-reopen-source": [
+    "{\"tool\": \"knowledge_search\", \"args\": {\"query\": \"helium\"}}",
+    "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}",
+    "{\"tool\": \"open_result\", \"args\": {\"result_id\": \"r1\"}}",
+    "{\"tool\": \"reopen_source\", \"args\": {\"source_id\": \"s1\"}}",
+    "{\"tool\": \"submit_research_answer\", \"args\": {\"state\": \"answered\", \"markdown\": \"Helium is separated from natural gas streams [e1].\", \"knowledge_updates\": [{\"key\": \"helium-production\", \"kind\": \"claim\", \"content\": \"Helium is separated from natural gas streams.\", \"references\": [\"e1\"]}]}}"
+  ],
+  "research/source-hit": [
+    "{\"tool\": \"knowledge_search\", \"args\": {\"query\": \"helium\"}}",
+    "{\"tool\": \"web_search\", \"args\": {\"query\": \"helium production\"}}",
+    "{\"tool\": \"open_url\", \"args\": {\"url\": \"https://example.com/helium\"}}",
+    "{\"tool\": \"source_search\", \"args\": {\"source_id\": \"s1\", \"query\": \"natural gas\"}}",
+    "{\"tool\": \"open_hit\", \"args\": {\"hit_id\": \"h1\"}}",
+    "{\"tool\": \"submit_research_answer\", \"args\": {\"state\": \"answered\", \"markdown\": \"Helium is separated from natural gas streams [e1].\", \"knowledge_updates\": [{\"key\": \"helium-production\", \"kind\": \"claim\", \"content\": \"Helium is separated from natural gas streams.\", \"references\": [\"e1\"]}]}}"
+  ]
+}

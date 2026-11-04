@@ -59,14 +59,15 @@ def test_current_native_and_text_contracts_remove_answer_and_optional_attempt_bo
         snapshot = build_turn_snapshot(session, native=native)
         schema = text_tool_schema(tools_from_specs(snapshot.model_specs))
         validator = Draft202012Validator(schema)
-        args = selection()
-        raw = {"tool": "done", "args": args}
+        args = {"markdown": "Only one writer may write at a time [e1].", "state": "answered"}
+        raw = {"tool": "submit_research_answer", "args": args}
         assert validator.is_valid(raw)
-        assert normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("done", "done", args),)), snapshot=snapshot).control
-        for text in ("显著提高了并发性能。", "prior to 3.7.0; also fixes the WAL-reset bug."):
-            args["report_sections"]["coverage"][0]["answer"] = text
-            assert not validator.is_valid(raw)
-            rejected = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("done", "done", args),)), snapshot=snapshot)
+        assert normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("submit", "submit_research_answer", args),)),
+                              snapshot=snapshot).calls
+        for field in ("findings", "finding", "report_sections", "investigations", "question_ref"):
+            invalid = {**args, field: []}
+            assert not validator.is_valid({"tool": "submit_research_answer", "args": invalid})
+            rejected = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("submit", "submit_research_answer", invalid),)), snapshot=snapshot)
             assert rejected.protocol_error and rejected.control is None
     finally:
         store.close()

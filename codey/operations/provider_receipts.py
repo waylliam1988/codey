@@ -175,9 +175,12 @@ def restore_snapshot(payload: object) -> Any:
         bindings.append((name, current))
     if [name for name, _ in bindings] != inventory:
         raise ValueError("captured executor descriptors do not match tool names")
-    from codey.research.local_scope import ResearchScope
+    from codey.research.answer_contract import AnswerScope
 
-    scope = ResearchScope.from_payload(payload["research_scope"]) if payload.get("research_scope") is not None else None
+    raw_scope = payload.get("research_scope")
+    if isinstance(raw_scope, dict) and "plan_digest" in raw_scope:
+        raise ValueError("legacy local Research request is no longer supported; start a new Research task")
+    scope = AnswerScope.from_payload(raw_scope) if raw_scope is not None else None
     return TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=payload["contract_text"],
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested), research_scope=scope)

@@ -30,13 +30,11 @@ from tests.test_research_whole_answer import record_submission
 def run_longitudinal(root, *, phase, native=False, boundary="", resume=False):
     knowledge = root / "knowledge"
     evidence = None
-    owner = ""
     if phase == "reuse":
         store = KnowledgeStore(knowledge)
         try:
             evidence = next(hit.version for hit in store.search("writer", session_id="second")
                             if hit.version.value.kind == "evidence")
-            owner = store.owner_id
         finally:
             store.close()
 
@@ -55,37 +53,32 @@ def run_longitudinal(root, *, phase, native=False, boundary="", resume=False):
             elif turn == 2:
                 assert evidence.value.id in prompt
                 name, args = "knowledge_read", {"id": evidence.value.id, "revision": evidence.revision}
-            elif turn in (3, 4):
-                assert "[e1]" in prompt
-                claim = K("writer-mechanism", "claim", "Writes serialize." if turn == 3 else
-                          "One writer per database; concurrency alone does not measure throughput.",
-                          "model_extraction", title="Serialized write mechanism", scope="personal", scope_id=owner,
-                          aliases=("serialization",),
-                          conditions={"database": {"state": "reported", "value": "same database"}},
-                          references=(R(evidence.value.id, evidence.revision, "supported_by"),))
-                changes = [{"value": claim.to_dict(), "expected_revision": turn - 3}]
-                if turn == 3:
-                    inference = K("shared-mechanism", "inference", "A shared write lock can constrain concurrency.",
-                                  "model_inference", scope="personal", scope_id=owner,
-                                  references=(R(claim.id, 1, "depends_on"),))
-                    changes.append({"value": inference.to_dict(), "expected_revision": 0})
-                name, args = "knowledge_commit", {"commit_id": f"accumulate-{turn}", "changes": changes}
             else:
+                assert turn == 3 and "[e1]" in prompt
                 name, args = "submit_research_answer", {"state": "answered",
-                    "markdown": "Readers may overlap a writer; writes remain serialized [e1]."}
+                    "markdown": "Readers may overlap a writer; writes remain serialized [e1].",
+                    "knowledge_updates": [
+                        {"key": "writer_mechanism", "kind": "claim",
+                         "content": "One writer per database; concurrency alone does not measure throughput.",
+                         "conditions": {"database": {"state": "reported", "value": "same database"}},
+                         "references": ["e1"]},
+                        {"key": "shared_mechanism", "kind": "inference",
+                         "content": "A shared write lock can constrain concurrency.",
+                         "references": ["writer_mechanism"]},
+                    ]}
             return json.dumps({"tool": name, "args": args})
         provider.send = send
         return provider
 
     return _run(root / phase, task="Explain writer concurrency." if phase == "first" else
                 "Can simultaneous readers remove the single writer limit?",
-                native=native, compact_planning=True, required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,
+                native=native, required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,
                 provider_factory=factory, source_text=TEXT, knowledge_root=knowledge,
                 session_id=phase, run_id=phase, boundary=boundary, boundary_turn=3, resume=resume)
 
 
 @pytest.mark.parametrize("native", [False, True])
-def test_research_close_rephrase_recall_read_revise_publish_and_recover(tmp_path, native):
+def test_research_close_recall_read_accumulate_publish_and_recover(tmp_path, native):
     source = ("from pathlib import Path; from tests.test_research_long_term_loop import run_longitudinal; "
               "import sys; run_longitudinal(Path(sys.argv[1]), phase=sys.argv[2], native=sys.argv[3]=='True', "
               "boundary=sys.argv[4])")
@@ -99,7 +92,7 @@ def test_research_close_rephrase_recall_read_revise_publish_and_recover(tmp_path
     assert interrupted.returncode == 74, interrupted.stderr.decode(errors="replace")
     result = run_longitudinal(tmp_path, phase="reuse", native=native, resume=True)
     assert result.stop_reason == "done", result.summary
-    assert result.turns == 5
+    assert result.turns == 3
     calls = tmp_path / "reuse" / "script.jsonl"
     before = calls.read_bytes()
     assert run_longitudinal(tmp_path, phase="reuse", native=native, resume=True) == result
@@ -108,18 +101,18 @@ def test_research_close_rephrase_recall_read_revise_publish_and_recover(tmp_path
     store = KnowledgeStore(tmp_path / "knowledge")
     try:
         versions = store.index._read_conn().execute("SELECT kind,COUNT(*) FROM knowledge_versions GROUP BY kind").fetchall()
-        assert dict(versions) == {"answer": 2, "source": 1, "evidence": 1, "claim": 2, "inference": 1}
-        old = store.repository.read("writer-mechanism", 1)
-        latest = store.repository.read("writer-mechanism")
-        assert old.value.content == "Writes serialize." and latest.revision == 2
+        assert dict(versions) == {"answer": 2, "source": 1, "evidence": 1, "claim": 1, "inference": 1}
+        hits = store.search("writer", session_id="third", depth=2)
+        latest = next(hit.version for hit in hits if hit.version.value.kind == "claim")
+        inference = next(hit.version for hit in hits if hit.version.value.kind == "inference")
+        assert latest.revision == 1 and latest.value.status == "candidate"
         assert latest.interpretation_review == "unreviewed"
         assert latest.value.conditions["database"]["value"] == "same database"
-        assert store.repository.read("shared-mechanism").dependencies_changed
-        hits = store.search("serialization", session_id="third", depth=2)
-        assert any(hit.version.value.id == latest.value.id and hit.version.revision == 2 for hit in hits)
+        assert not inference.dependencies_changed
+        assert inference.value.references[0].target == latest.value.id
         assert all(hit.version.value.scope == "personal" and hit.version.value.scope_id == store.owner_id for hit in hits)
         assert not KnowledgeRecall(store.repository).search("writer", access=KnowledgeAccess(owner_id="another-owner"))
-        assert not result.accepted_report.knowledge_mutations
+        assert len(result.accepted_report.knowledge_mutations) == 2
         binding = result.accepted_report.evidence_bindings[0]
         assert binding["evidence_id"] == latest.value.references[0].target
         assert binding["evidence_revision"] == 1
@@ -214,7 +207,7 @@ def test_strict_optional_accumulation_cannot_create_a_second_answer(tmp_path):
         assert plan.protocol_error
         delegate._research_scope = snapshot.research_scope
         result, ok, _ = delegate._execute_research(ToolCall("knowledge_commit", args))
-        assert not ok and "publication" in result.model_text
+        assert not ok and "knowledge_updates" in result.model_text
         assert store.repository.read("second-answer") is None
     finally:
         store.close()

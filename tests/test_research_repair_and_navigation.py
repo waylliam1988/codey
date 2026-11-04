@@ -35,7 +35,7 @@ def run_repeated_protocol(root, *, native=False, boundary="", resume=False):
 
     session = strict_session()
     return _run(root, native=native, resume=resume, boundary=boundary, boundary_turn=2,
-                compact_planning=True, required_checks=session.policy.required_checks, provider_factory=factory)
+                required_checks=session.policy.required_checks, provider_factory=factory)
 
 
 @pytest.mark.parametrize("native", [False, True])

@@ -11,7 +11,6 @@ from codey.policies.permissions import (
     profile_for_name,
     profile_for_task_kind,
 )
-from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_TOOL_CONTRACTS
 from codey.toolchain.definition import TOOL_DEFINITIONS
 
 
@@ -75,9 +74,13 @@ class PermissionProfileTests(unittest.TestCase):
         self.assertFalse(allows_context_source(reviewer, "research_topic_continuity"))
         self.assertFalse(research.project_write)
         self.assertEqual(allowed_coding_tool_names(research), ())
-        # Whole-answer submission is exposed by its frozen research scope,
-        # rather than the static profile used by ordinary/legacy tasks.
-        self.assertEqual(set(research.research_tools), set(RESEARCH_TOOL_CONTRACTS) - {"submit_research_answer"})
+        # The static Research profile contains acquisition and read tools only.
+        # Whole-answer submission is exposed by its frozen answer scope; legacy
+        # split-plan tools are kept out of the product profile.
+        self.assertEqual(
+            set(research.research_tools),
+            {"knowledge_search", "knowledge_read", "web_search", "open_url", "source_search", "done"},
+        )
         self.assertFalse(allows_context_source(research, "ghost_directive"))
         self.assertFalse(allows_context_source(research, "ghost_continuity"))
         # Research admits only its own bounded topic-continuity source.
@@ -89,7 +92,7 @@ class PermissionProfileTests(unittest.TestCase):
         from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS, TaskPolicy
 
         grants = frozenset({"control", "web.read", "knowledge.read", "knowledge.write"})
-        for strict, checks, expected in ((False, (), False), (True, (), False),
+        for strict, checks, expected in ((False, (), False), (True, (), True),
                                          (True, RESEARCH_ANSWER_REQUIRED_CHECKS, True)):
             session = TaskSession(TaskPolicy(grants, strict_research=strict, required_checks=checks),
                                   task_kind="research", task_text="Explain the source condition.")

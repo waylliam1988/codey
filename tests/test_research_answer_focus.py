@@ -110,7 +110,7 @@ def test_actual_focused_run_single_actor_wording_still_needs_direct_limit_eviden
 
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("state", ["evidence_found", "partial"])
-def test_local_feedback_explains_empty_gap_exit_without_relaxing_the_check(tmp_path, state):
+def test_archived_report_feedback_keeps_shared_count_check(tmp_path, state):
     store, tools, session, delegate = setup(tmp_path)
     tools.ledger.questions = session.research_questions = (QUESTION,)
     tools.search.text = COEXISTENCE
@@ -121,13 +121,13 @@ def test_local_feedback_explains_empty_gap_exit_without_relaxing_the_check(tmp_p
         args = answer_args("f1")
         args["report_sections"]["coverage"][0].update(answer=ANSWER, state=state)
         with pytest.raises(ResearchIssue) as failure:
-            compile_finding_report(args, tools.ledger, store, selection_receipts=("local-selection",))
+            compile_finding_report(args, tools.ledger, store)
         issue = failure.value
         assert issue.code == "count_limit_not_addressed"
-        assert "state=unresolved and findings=[]" in issue.message
-        assert "Changing an unsupported selection to partial" in issue.message
+        assert "use partial" in issue.message
+        assert "complete answer" not in issue.message
         assert "source_search" not in issue.message and "open_hit" not in issue.message
-        assert "select partial or unresolved" not in issue.allowed_actions
-        assert "submit unresolved with findings=[]" in issue.allowed_actions
+        assert "select partial or unresolved" in issue.allowed_actions
+        assert "submit unresolved with findings=[]" not in issue.allowed_actions
     finally:
         store.close()

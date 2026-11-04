@@ -38,7 +38,8 @@ def test_baseline_arm_hides_source_search_after_open():
 
     snapshot = build_turn_snapshot(_opened_session(denied=("source_search",)), native=True)
     assert "open_url" in snapshot.tool_names
-    assert "save_finding" in snapshot.tool_names
+    assert "submit_research_answer" in snapshot.tool_names
+    assert "save_finding" not in snapshot.tool_names
     assert "knowledge_write" not in snapshot.tool_names
     assert "source_search" not in snapshot.tool_names
     schema_names = {item.name for item in tools_from_specs(snapshot.frozen_specs)}

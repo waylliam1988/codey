@@ -21,7 +21,7 @@ ANSWER_CONTRACT_VERSION = 1
 MAX_ANSWER_CHARACTERS = 64000
 ANSWER_STATES = ("answered", "partial", "unresolved")
 ANSWER_TOOLS = ("web_search", "open_url", "open_result", "reopen_source", "open_hit", "source_search",
-                "knowledge_search", "knowledge_read", "knowledge_commit",
+                "knowledge_search", "knowledge_read",
                 "submit_research_answer", "ask_user")
 
 ANSWER_GUIDANCE = (
@@ -48,8 +48,8 @@ ANSWER_GUIDANCE = (
     "Use local keys such as k1 or writer_limit. An inference must cite all needed premises; "
     "a separate source fact belongs in a claim. "
     "Preserve conditions and uncertainty. The original publication saves these as candidates together with the answer. "
-    "Use knowledge_commit to edit existing stored objects with exact database references; "
-    "current eN labels belong in the submission batch, not knowledge_commit. "
+    "Research does not edit existing stored objects. If prior knowledge conflicts with the original material, "
+    "describe the conflict and preserve the old object; current eN labels belong in the submission batch. "
     "Knowledge accumulation is optional for ordinary answers and cannot certify interpretation."
 )
 
@@ -64,8 +64,7 @@ KNOWLEDGE_READ_GUIDANCE = (
 
 def whole_research(session: Any) -> bool:
     return (getattr(session, "task_kind", "") == "research"
-            and bool(getattr(getattr(session, "policy", None), "strict_research", False))
-            and "research_submission" in getattr(session.policy, "required_checks", ()))
+            and bool(getattr(getattr(session, "policy", None), "strict_research", False)))
 
 
 def digest(value: Any) -> str:
@@ -82,14 +81,6 @@ class AnswerScope:
     @property
     def passage_refs(self) -> tuple[str, ...]:
         return tuple(ref for _, ref in self.aliases)
-
-    @property
-    def replaces(self) -> str:
-        return ""
-
-    @property
-    def submission_mode(self) -> str:
-        return "document"
 
     def to_payload(self) -> dict[str, Any]:
         return {"task_digest": self.task_digest, "aliases": [list(row) for row in self.aliases],
@@ -209,15 +200,6 @@ def answer_spec(spec: Any, scope: AnswerScope) -> Any:
         description = spec.description.split(" Select question_ref=")[0]
         if spec.name == "knowledge_read":
             description += " " + KNOWLEDGE_READ_GUIDANCE
-        if spec.name == "knowledge_commit":
-            from codey.toolchain.tool_spec import thaw_schema_value
-
-            parameters = thaw_schema_value(parameters)
-            parameters["changes"]["items"]["properties"]["value"]["properties"]["kind"]["enum"] = [
-                "claim", "inference", "question", "entity", "observation"]
-            description += (" For this whole research task, only explicitly authored claims, inferences, questions, "
-                            "entities and observations are allowed. Source/evidence/answer publication belongs to "
-                            "the original answer transaction. Optional accumulation never certifies interpretation.")
         return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()),
             required=tuple(k for k in spec.required if k != "question_ref"), json_examples=tuple(examples), description=description))
     parameters = {"markdown": {"type": "string", "minLength": 12, "maxLength": MAX_ANSWER_CHARACTERS},

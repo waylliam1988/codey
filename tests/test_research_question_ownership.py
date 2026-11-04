@@ -127,6 +127,16 @@ def test_strict_snapshot_requires_question_on_all_investigation_and_adoption_too
         session.hit_targets = {"h1": {"url": URL}}
         session.evidence = [(URL, "one writer")]
         snapshot = build_turn_snapshot(session)
+        if not evidence_only:
+            assert "done" not in snapshot.tool_names
+            assert "submit_research_answer" in snapshot.tool_names
+            if name in {"save_finding", "save_inference"}:
+                assert name not in snapshot.tool_names
+            else:
+                spec = next(spec for spec in snapshot.frozen_specs if spec.name == name)
+                assert "question_ref" not in dict(spec.parameters)
+                assert not normalize_turn(decode_text_turn(spec.json_examples[0]), snapshot=snapshot).protocol_error
+            return
         spec = next(spec for spec in snapshot.frozen_specs if spec.name == name)
         assert "question_ref" in spec.required
         done = next(spec for spec in snapshot.frozen_specs if spec.name == "done")

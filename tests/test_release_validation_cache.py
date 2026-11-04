@@ -1,5 +1,7 @@
 import json
+import os
 import sqlite3
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -7,6 +9,7 @@ import pytest
 
 from codey.control.protocol import ControlError
 from codey.launcher import releases, validation_cache
+from codey.storage.atomic_io import filesystem_path
 from codey.storage.local_store import write_json_atomic
 from tools.publish_runtime import publish_runtime
 
@@ -29,7 +32,7 @@ def preparation(tmp_path, monkeypatch):
         calls.append(argv)
         if argv[1] == "-c" and "LocalService" in argv[2]:
             database = kwargs["cwd"]  # The probe must use its isolated copy, never live data.
-            assert str(database).startswith(str(home / "releases"))
+            assert Path(database).is_relative_to(filesystem_path(home / "releases"))
             probe = Path(argv[3]) / "sample.sqlite3"
             if probe.exists():
                 with sqlite3.connect(probe) as db:
@@ -164,3 +167,21 @@ def test_environment_change_during_validation_never_creates_cache_evidence(prepa
     with pytest.raises(ControlError, match="environment changed"):
         prepare("environment-race")
     assert not list((home / "validation-cache").glob("*.json"))
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows import paths must retain the extended filesystem namespace")
+def test_validation_imports_modules_beyond_windows_max_path(tmp_path):
+    directory = tmp_path / "release"
+    directory.mkdir()
+    parent = tmp_path / "checks"
+    source = parent / ("x" * max(1, 245 - len(str(parent)) - 1))
+    extended = filesystem_path(source)
+    extended.mkdir(parents=True)
+    module = "candidate_module_at_the_windows_path_boundary"
+    (extended / (module + ".py")).write_text("VALUE = 42\n", encoding="utf-8")
+    assert len(str(source / (module + ".py"))) > 260
+    manifest = {"validation_source": str(source)}
+    releases._verification(directory, manifest, [
+        [sys.executable, "-c", f"import {module}; assert {module}.VALUE == 42"],
+    ])
+    assert manifest["verification"][0]["exit_code"] == 0

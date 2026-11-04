@@ -119,7 +119,9 @@ def _verification(directory: Path, manifest: dict[str, Any], commands: list[list
             try:
                 started = time.perf_counter()
                 with startup_stage("validation.command"):
-                    done = subprocess.run(argv, cwd=manifest["validation_source"], stdin=subprocess.DEVNULL,
+                    # Python imports must retain the Windows extended namespace too;
+                    # copying long module paths successfully is not sufficient.
+                    done = subprocess.run(argv, cwd=filesystem_path(Path(manifest["validation_source"])), stdin=subprocess.DEVNULL,
                                           stdout=output, stderr=subprocess.STDOUT, timeout=60,
                                           creationflags=_windows_subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
                 result.update(state="settled", exit_code=done.returncode)

@@ -50,7 +50,7 @@ def test_state_omission_still_uses_original_research_publication(tmp_path):
         return provider
 
     with ablation("no_state_field"):
-        result = _run(tmp_path, native=True, provider_factory=factory, compact_planning=True,
+        result = _run(tmp_path, native=True, provider_factory=factory,
                       required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS)
     assert result.stop_reason == "done" and result.accepted_report.state == "partial"
     assert result.summary.startswith("Only one writer")

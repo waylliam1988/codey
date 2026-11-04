@@ -9,7 +9,6 @@ from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.token_accounting import RequestContextCount
 from codey.research.answer_contract import ANSWER_GUIDANCE
-from tests.test_research_local_scope import run_local
 from tests.test_research_whole_kernel import TASK, run_whole
 
 
@@ -57,7 +56,7 @@ def test_whole_task_survives_actual_provider_history_trimming_and_repair(tmp_pat
 
 @pytest.mark.usefixtures("public_source_dns")
 @pytest.mark.parametrize("native", [False, True])
-def test_local_work_is_frozen_in_actual_bounded_payload_and_protocol_pairs_survive(tmp_path, monkeypatch, native):
+def test_complete_answer_is_frozen_in_bounded_payload_and_protocol_pairs_survive(tmp_path, monkeypatch, native):
     sent, counted, providers = [], [], []
 
     def factory(scripted):
@@ -80,15 +79,15 @@ def test_local_work_is_frozen_in_actual_bounded_payload_and_protocol_pairs_survi
         return provider
 
     try:
-        result = run_local(tmp_path, native=native, provider_wrap=factory)
+        result = run_whole(tmp_path, native=native, provider_wrap=factory)
         assert result.stop_reason == "done", result.summary
-        assert counted == sent
-        scopes = [payload for payload in sent if "Frozen local research work" in json.dumps(payload)]
-        assert len(scopes) >= 7
+        assert counted and all(any(payload == measured for measured in counted) for payload in sent)
+        scopes = [payload for payload in sent if "Complete user task (verbatim):" in json.dumps(payload)]
+        assert len(scopes) == 2
         for payload in scopes:
-            assert json.dumps(payload).count("Frozen local research work") == 1
+            assert json.dumps(payload).count("Complete user task (verbatim):") == 1
             assert len(payload["messages"]) <= 7
-            assert "Explain absent measurement" in json.dumps(payload)  # original constraints anchor remains
+            assert TASK in json.dumps(payload)  # original constraints anchor remains
             if native:
                 ids = [item["id"] for message in payload["messages"] for item in message.get("tool_calls", [])]
                 returned = [message["tool_call_id"] for message in payload["messages"] if "tool_call_id" in message]
@@ -96,8 +95,7 @@ def test_local_work_is_frozen_in_actual_bounded_payload_and_protocol_pairs_survi
         frozen = [json.loads(path.read_text(encoding="utf-8")) for path in (tmp_path / "managed_outputs").rglob("*.json")
                   if not path.name.endswith(".meta.json")]
         assert any('"tool_call_history_groups": 1' in json.dumps(row) and '"research_scope"' in json.dumps(row) for row in frozen)
-        history = json.dumps(providers[0]._messages)
-        assert "Only one writer can write at a time" in history
+        assert "Only one writer can write at a time" in result.summary
     finally:
         for provider in providers:
             provider.close()

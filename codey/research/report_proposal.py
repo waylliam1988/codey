@@ -58,15 +58,12 @@ class ResearchReportProposal:
             + [ref for row in self.coverage for ref in row["findings"]]))
 
 
-def _answers_proposal(coverage: tuple[dict[str, Any], ...], *, findings_only: bool = False,
-                      unresolved_targets: dict[str, tuple[str, ...]] | None = None) -> ResearchReportProposal:
+def _answers_proposal(coverage: tuple[dict[str, Any], ...], *, findings_only: bool = False) -> ResearchReportProposal:
     # Gap states authorize no factual answer. Compile their text before any
     # report views or persisted bindings are formed. Original requests remain
     # untouched in their provider/execution receipts.
     coverage = tuple({**row, "answer": f"{row['question_ref']}：{_GAP_ANSWERS[row['state']]}"}
                      if row["state"] in _GAP_ANSWERS else row for row in coverage)
-    coverage = tuple({**row, "answer": row["answer"] + "\n\n尚未完整回答的目标：" + "；".join(unresolved_targets[row["question_ref"]])}
-                     if unresolved_targets and row["question_ref"] in unresolved_targets else row for row in coverage)
     answers = tuple(_paragraph(f"report_sections.coverage[{index}].answer", row["answer"])
                     for index, row in enumerate(coverage))
     conclusion = ReportParagraph("summary", "\n\n".join(
@@ -139,15 +136,6 @@ def bind_gap_investigations(proposal: ResearchReportProposal,
     return _answers_proposal(tuple(coverage), findings_only=proposal.findings_only)
 
 
-def bind_unresolved_targets(proposal: ResearchReportProposal, targets: dict[str, tuple[str, ...]]) -> ResearchReportProposal:
-    """Keep original local obligations visible in the single canonical answer."""
-    if not targets:
-        return proposal
-    bound = _answers_proposal(proposal.coverage, findings_only=proposal.findings_only, unresolved_targets=targets)
-    from codey.reviews.research_coverage import coverage_rows
-
-    coverage_rows(list(bound.coverage))
-    return bound
 
 
 def report_character_budget(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...], task: str) -> dict[str, Any]:

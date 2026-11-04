@@ -97,7 +97,7 @@ def run_full_prose_repair(root, *, boundary="", resume=False, repeat=False):
     with patch("codey.providers.api_generation.generate", generate):
         return _run(root, native=True, resume=resume, boundary=boundary,
             boundary_turn=3 if boundary == "provider_request_ready" else 2,
-            compact_planning=True, required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,
+            required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,
             provider_factory=provider_factory)
 
 

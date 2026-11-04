@@ -14,7 +14,7 @@ from tests.manual import research_branch_review as branch
 from tests.manual import research_framework_comparison as framework
 from tests.manual import research_read_guidance_ab as runner
 from tests.manual.research_experiment_identity import freeze_experiment
-from tests.manual.research_workflow_ablation import REVISION_GUIDANCE
+from tests.support.legacy_research_revision_tools import REVISION_GUIDANCE
 
 PREPARE = "prepare_knowledge_revision"
 PREPARE_GUIDANCE = (

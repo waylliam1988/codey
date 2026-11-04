@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+- Converge Research on one whole-answer workflow. Remove existing-knowledge
+  editing, standalone writes and the local subquestion planning/selection route;
+  save new candidate knowledge with the final answer. Preserve pinned source
+  reading, citations, atomic publication, cancellation, budgets and recovery.
+  Old frozen local requests require a new Research task; historical reports and
+  shared knowledge maintenance APIs remain readable and available to other callers.
+- Retain Windows extended paths as the working directory for release validation,
+  so installed upgrades can import modules beyond MAX_PATH in isolated checks.
+
 - Defer the full stored-knowledge revision schema in whole-answer Research until
   a settled, non-writing preparation request. Restore the original tool context
   after a failed knowledge read, and preserve frozen permissions, exact versions,

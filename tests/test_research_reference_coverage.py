@@ -20,7 +20,7 @@ from codey.research.questions import question_plan, validate_question_coverage
 from codey.research.tool_contract import STRUCTURED_REPORT_EXAMPLE, validate_tool_args
 from codey.reviews.research_coverage import coverage_rows
 from tests.support.research_tool_contract import openai_parameters_schema
-from tests.test_research_findings import URL, execute, report_args, selection_args, setup
+from tests.test_research_findings import URL, execute, report_args, setup
 
 
 def test_actual_report_example_is_accepted_by_schema_parser_and_coverage():
@@ -134,7 +134,7 @@ def test_recalled_claim_pins_old_version_without_new_fetch_or_duplicate_archive(
         check_session.last_done_args = report_args(adopted)
         verdict = evaluate(check_session, "", context={"research_ledger": tools.ledger, "knowledge_store": store,
                                                       "knowledge_session_id": tools.session_id})
-        assert verdict.complete, verdict.followup
+        assert not verdict.complete and "has not been submitted" in verdict.followup
         restored = ResearchLedger()
         project_result_observation(TaskSession(session.policy), read.call, read, ok=True, research_ledger=restored)
         assert restored.references == tools.ledger.references
@@ -186,7 +186,7 @@ def test_inference_pins_premises_keeps_candidate_identity_and_replays(tmp_path):
         check_session.last_done_args = report
         verdict = evaluate(check_session, "", context={"research_ledger": tools.ledger, "knowledge_store": store,
                                                       "knowledge_session_id": tools.session_id})
-        assert verdict.complete, verdict.followup
+        assert not verdict.complete and "has not been submitted" in verdict.followup
         forged = copy.deepcopy(saved_inference)
         forged.canonical["research_reference_bindings"]["f1"] = binding.to_dict()
         with pytest.raises(ValueError, match="conflicting"):
@@ -240,12 +240,9 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
         KernelRunRequest,
         KernelTransportDeps,
     )
-    from codey.policies.task_policy import STRICT_RESEARCH_REQUIRED_CHECKS
+    from codey.policies.task_policy import RESEARCH_ANSWER_REQUIRED_CHECKS
     from tests.support.kernel_runtime import run_task_kernel
 
-    # This test replays the historical finding/report contract, not the new
-    # whole-answer entry. Its string question registration belongs to v1.
-    monkeypatch.setattr("codey.research.plan_contract.compact_plan_spec", lambda spec, task: spec)
     store, tools, session, delegate = setup(tmp_path)
     try:
         execute(delegate, tools, session, "open_url", {"url": URL})
@@ -253,10 +250,11 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
             "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))})
         label = json.loads(result.model_text)["finding_ref"]
         claim_id = stable_identity("claim", tools.ledger.references[label].note_id, "Only one writer can write at a time.")
+        material = store.repository.read(claim_id).value.references[0]
         tools.ledger = ResearchLedger()
         tools.session_id = "later-session"
         session = TaskSession(TaskPolicy(session.policy.grants, strict_research=True,
-            required_checks=STRICT_RESEARCH_REQUIRED_CHECKS), task_kind="research", max_turns=7,
+            required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS), task_kind="research", max_turns=7,
             task_text="Use prior research without fetching webpages again")
         hypothesis = "A single application writer queue may reduce lock contention; workload validation is needed."
 
@@ -266,28 +264,30 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
             def send(self, prompt):
                 self.turn += 1
                 if self.turn == 1:
-                    name, args = "research_plan", {"questions": ["What limits writer concurrency?"]}
-                elif self.turn == 2:
-                    name, args = "knowledge_read", {"id": claim_id, "revision": 1, "question_ref": "q1"}
-                elif inference and self.turn == 3:
-                    name, args = "save_inference", {"statement": hypothesis, "premise_refs": ["f1"], "question_ref": "q1",
-                        "limitations": "No direct workload test; this is only a candidate connection."}
+                    name, args = "knowledge_read", {"id": material.target, "revision": material.revision}
                 else:
-                    name, args = "done", selection_args("f1")
+                    name, args = "submit_research_answer", {"state": "answered",
+                        "markdown": "Only one writer can write at a time [e1]."}
                     if inference:
-                        args["report_sections"]["coverage"][0]["findings"] = ["f1", "f2"]
+                        args["markdown"] += " Candidate deduction: " + hypothesis + " [e1]."
+                        args["knowledge_updates"] = [{"key": "hypothesis", "kind": "inference",
+                            "content": hypothesis, "references": ["e1"]}]
                 return json.dumps({"tool": name, "args": args})
 
+        monkeypatch.setattr(tools.search, "fetch", lambda *_: pytest.fail("prior source was fetched again"))
         result = run_task_kernel(session, request=KernelRunRequest(
             transport=KernelTransportDeps(Provider(), user_task=session.task_text),
             execution=KernelExecutionDeps(research_tools=tools, permission_profile="research"),
             observation=KernelObservationDeps(completion_context={"research_ledger": tools.ledger})))
         assert result.completed, result.summary
-        assert not tools.ledger.opened_sources and not tools.ledger.evidence_items
-        assert "本轮未重新获取" in result.summary
+        assert tools.ledger.opened_sources and not tools.ledger.evidence_items
+        binding, = result.research_report["evidence_bindings"]
+        assert binding["evidence_id"] == material.target
+        assert binding["evidence_revision"] == material.revision
         if inference:
-            assert "候选推论 f2，未审查" in result.summary
+            assert "f2" not in result.summary
+            assert result.research_report["knowledge_batch"]["updates"][0]["kind"] == "inference"
             assert hypothesis in result.summary
-            assert "Only one writer can write at a time." in result.summary
+            assert "Only one writer can write at a time [e1]." in result.summary
     finally:
         store.close()

@@ -2,9 +2,9 @@
 
 from types import SimpleNamespace
 
-from codey.operations import kernel_prompt, kernel_protocol, knowledge_context
-from codey.research import answer_context, answer_contract
-from tests.manual.research_workflow_ablation import REVISION_GUIDANCE, ablation, seed_history
+from codey.operations import kernel_prompt, knowledge_context
+from codey.research import answer_contract
+from tests.manual.research_workflow_ablation import ablation, seed_history
 
 
 def test_rule_deduplication_keeps_current_authoritative_rules_and_task():
@@ -20,18 +20,10 @@ def test_rule_deduplication_keeps_current_authoritative_rules_and_task():
     assert kernel_prompt.kernel_prompt_for_session(session, **kwargs) == baseline
 
 
-def test_revision_ablation_keeps_new_knowledge_and_preserves_other_modes(monkeypatch):
-    monkeypatch.setattr(kernel_protocol, "controller_allowed_for_session",
-                        lambda session: ("knowledge_commit", "knowledge_read", "submit_research_answer"))
-    monkeypatch.setattr(answer_contract, "whole_research", lambda session: session == "whole")
-    original = answer_contract.ANSWER_GUIDANCE
-    with ablation("hide_revision"):
-        assert "knowledge_commit" not in kernel_protocol.controller_allowed_for_session("whole")
-        assert "knowledge_commit" in kernel_protocol.controller_allowed_for_session("ordinary")
-        assert "knowledge_updates" in answer_contract.ANSWER_GUIDANCE
-        assert REVISION_GUIDANCE not in answer_contract.ANSWER_GUIDANCE
-        assert answer_context.ANSWER_GUIDANCE == answer_contract.ANSWER_GUIDANCE
-    assert original == answer_contract.ANSWER_GUIDANCE
+def test_production_answer_surface_keeps_new_knowledge_and_hides_revision():
+    assert "knowledge_commit" not in answer_contract.ANSWER_TOOLS
+    assert "knowledge_updates" in answer_contract.ANSWER_GUIDANCE
+    assert "Research does not edit existing stored objects" in answer_contract.ANSWER_GUIDANCE
 
 
 def test_recall_ablation_keeps_explicit_tools_and_restores_automatic_owner(monkeypatch):

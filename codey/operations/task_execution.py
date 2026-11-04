@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -449,10 +448,10 @@ class ExecutionDelegate:
         if hasattr(tools, "finding_report"):
             tools.finding_report = (self.session is not None and self.session.task_kind == "research"
                                            and self.session.policy.strict_research)
-        if hasattr(tools, "local_submission"):
+        if hasattr(tools, "answer_submission"):
             # Presentation follows the admitted request, including replay. Do
             # not infer a new contract from the mutable current plan here.
-            tools.local_submission = self._research_scope is not None
+            tools.answer_submission = self._research_scope is not None
         ledger = getattr(tools, "ledger", None)
         if isinstance(ledger, ResearchLedger):
             # A read receipt contains this acquisition alone, not stale pages
@@ -484,22 +483,23 @@ class ExecutionDelegate:
 
     def _research_call_denial(self, call: ToolCall) -> tuple[ToolResult, bool, int | None] | None:
         from codey.operations.kernel_result import policy_denial_result
-        from codey.research.local_scope import ResearchScope, current_scope, validate_scope_call
+        from codey.research.answer_contract import AnswerScope, digest, whole_research
         from codey.research.questions import QUESTION_BOUND_TOOLS, question_ref, requires_question_ref
 
         try:
+            if (call.name == "knowledge_commit" and self.session is not None
+                    and self.session.task_kind == "research"):
+                raise ValueError("Research does not modify existing knowledge objects; use knowledge_updates in the complete answer")
+            if whole_research(self.session) and call.name in {
+                "research_plan", "knowledge_write", "knowledge_link", "save_finding", "save_inference",
+            }:
+                raise ValueError("Research uses one complete answer; save new candidates with knowledge_updates in submit_research_answer")
             if self._research_scope is not None:
-                from codey.research.answer_contract import AnswerScope, digest
-
                 scope = self._research_scope
-                if isinstance(scope, AnswerScope):
-                    if scope.task_digest != digest(self.session.task_text):
-                        raise ValueError("research scope belongs to another task")
-                else:
-                    actual = current_scope(self.session, repair=scope if scope.replaces else None)
-                    if not isinstance(actual, ResearchScope) or (actual.plan_digest, actual.unit_ref, actual.replaces) != (scope.plan_digest, scope.unit_ref, scope.replaces):
-                        raise ValueError("research scope is stale")
-                    validate_scope_call(scope, call.name, call.args)
+                if not isinstance(scope, AnswerScope):
+                    raise ValueError("legacy local Research scope is no longer supported; start a new Research task")
+                if scope.task_digest != digest(self.session.task_text):
+                    raise ValueError("research scope belongs to another task")
             if call.name in QUESTION_BOUND_TOOLS:
                 question_ref(call.args, self.research_tools.ledger, required=requires_question_ref(self.session))
         except ValueError as exc:
@@ -597,14 +597,6 @@ class ExecutionDelegate:
         return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
 
     def _commit_research_knowledge(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
-        from codey.research.answer_contract import AnswerScope
-
-        if isinstance(self._research_scope, AnswerScope) and any(
-            row.get("value", {}).get("kind") not in {"claim", "inference", "question", "entity", "observation"}
-            for row in call.args.get("changes", [])
-        ):
-            raise ValueError("whole research knowledge_commit only accumulates explicit claims, inferences, "
-                             "questions, entities or observations; answer publication owns source/evidence/answer")
         outcome = tools.knowledge_commit(call.args)
         return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text), outcome.ok, None
 
@@ -618,22 +610,14 @@ class ExecutionDelegate:
                                        offset=args.get("offset", 0), limit=args.get("limit", 6000),
                                        whole_answer=isinstance(self._research_scope, AnswerScope))
         text = outcome.model_text
-        if not outcome.ok and self._research_scope is not None:
+        if not outcome.ok and isinstance(self._research_scope, AnswerScope):
             if identity in tools.ledger.read_passages:
                 text = ("ERROR: this id names a task-read passage, not stored knowledge. "
-                        "Cite its existing [eN] label directly. knowledge_read needs an exact stored id and revision."
-                        if isinstance(self._research_scope, AnswerScope) else
-                        "ERROR: this id names a read passage, not a stored knowledge object. "
-                        "Use its complete text if present in read_evidence; otherwise recover its original read with "
-                        "read_tool_result using read_receipts. Choose an answer or a gap from the actual evidence.")
+                        "Cite its existing [eN] label directly. knowledge_read needs an exact stored id and revision.")
             elif identity in getattr(self.session, "source_ids", {}):
                 text = ("ERROR: this id is a source locator, not stored knowledge. "
                         "Use the existing [eN] evidence, or the displayed source-reading action for unread text. "
-                        "knowledge_read needs an exact stored id and revision."
-                        if isinstance(self._research_scope, AnswerScope) else
-                        "ERROR: this id is an opened-source locator, not a stored knowledge object. "
-                        "Recover its original read with read_tool_result using read_receipts, or use an advertised "
-                        "source-reading action for more text. knowledge_read needs an exact stored id and revision.")
+                        "knowledge_read needs an exact stored id and revision.")
         canonical: dict[str, Any] = {
             "research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
         if outcome.ok and outcome.read_passages:
@@ -641,59 +625,18 @@ class ExecutionDelegate:
         return ToolResult(ok=outcome.ok, call=call, model_text=text, canonical=canonical), outcome.ok, None
 
     def _record_research_plan(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
-        from codey.research.plan_contract import frozen_plan_version, is_compact_plan_spec
-
-        spec = self._frozen_specs.get(call.name) if self._frozen_specs is not None else None
-        compact = is_compact_plan_spec(spec)
-        version = frozen_plan_version(spec) if compact else 1
-        args = call.args
-        if compact and args.get("contract_version", version) != version:
-            raise ValueError("contract_version must match the frozen entry")
-        outcome = tools.research_plan(args.get("questions"), question_details=args.get("question_details"),
-                                      task=str(getattr(self.session, "task_text", "")), schema_version=version)
+        outcome = tools.research_plan(call.args.get("questions"))
         canonical = {"research_observation": outcome.read_observation} if outcome.ok else {}
         return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
 
     def _submit_research_answer(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
-        from codey.knowledge.model import canonical_json
         from codey.research.answer_contract import AnswerScope, submit_answer
-        from codey.research.local_scope import selection_budget, submission, submission_finding
 
-        if isinstance(self._research_scope, AnswerScope):
-            declared = submit_answer(self._research_scope, call.args)
-            return ToolResult(call, "Whole answer recorded. The application will validate and publish this submission.",
-                              ok=True, canonical={"research_submission": declared}), True, None
-
-        canonical: dict[str, Any] = {}
-        created_finding = None
-        if self._research_scope is None:
-            raise ValueError("submit_research_answer requires an original frozen research scope")
-        finding = submission_finding(self._research_scope, call.args)
-        if finding is not None:
-            saved, ok, code = self._execute_research_write(ToolCall("save_finding", finding), tools)
-            if not ok:
-                if "version literal absent from selected original excerpts:" in saved.model_text:
-                    from codey.research.source_literals import version_anchors
-
-                    available = [(ref, tools.ledger.read_passages[ref].excerpt) for ref in self._research_scope.passage_refs]
-                    saved = replace(saved, model_text=saved.model_text + "\n" + canonical_json({
-                        "available_version_locators": version_anchors(finding["claim"], available),
-                        "next": "Full windows are in read_evidence. Select one primary passage_ref and up to 3 OTHER "
-                                "additional_passage_refs from the same exact source version to support the whole answer. "
-                                "These number matches are locators, not semantic approval or automatic adoption."}))
-                return replace(saved, call=call), False, code
-            saved_ref = json.loads(saved.model_text)["finding_ref"]
-            binding = tools.ledger.references[saved_ref]
-            created_finding = (saved_ref, binding.object_id, binding.revision)
-            canonical.update(saved.canonical)
-        answer = submission(self.session, tools.ledger, self._research_scope, call.args, created_finding=created_finding)
-        canonical["research_answer"] = answer
-        return ToolResult(ok=True, call=call, model_text=canonical_json({
-            "unit_ref": answer["unit_ref"], "state": answer["state"], "selection_recorded": True,
-            **({"finding_ref": created_finding[0], "interpretation_review": "unreviewed"} if created_finding else {}),
-            "report_budget": selection_budget(self.session, tools.ledger, tools.store, pending_answer=answer),
-            "next": "The kernel advances the original plan or checks its parent report. No global done is needed."}),
-            canonical=canonical), True, None
+        if not isinstance(self._research_scope, AnswerScope):
+            raise ValueError("submit_research_answer requires an original frozen whole-answer scope")
+        declared = submit_answer(self._research_scope, call.args)
+        return ToolResult(call, "Whole answer recorded. The application will validate and publish this submission.",
+                          ok=True, canonical={"research_submission": declared}), True, None
 
     def _execute_research_write(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
         name, args = call.name, dict(call.args or {})

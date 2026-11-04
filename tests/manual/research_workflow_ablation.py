@@ -21,19 +21,15 @@ from uuid import uuid4
 from tests.manual import research_framework_comparison as framework
 from tests.manual.research_experiment_identity import freeze_experiment, verify_experiment
 
-ARMS = ("baseline", "dedup_rules", "hide_revision", "no_auto_recall")
-REVISION_GUIDANCE = (
-    "Use knowledge_commit to edit existing stored objects with exact database references; "
-    "current eN labels belong in the submission batch, not knowledge_commit. "
-)
+ARMS = ("baseline", "dedup_rules", "no_auto_recall")
 
 
 @contextmanager
 def ablation(arm):
     if arm not in ARMS:
         raise ValueError(f"unknown ablation: {arm}")
-    from codey.operations import kernel_prompt, kernel_protocol, knowledge_context
-    from codey.research import answer_context, answer_contract
+    from codey.operations import kernel_prompt, knowledge_context
+    from codey.research import answer_contract
 
     with ExitStack() as stack:
         if arm == "dedup_rules":
@@ -48,21 +44,6 @@ def ablation(arm):
                 return original(session, **kwargs)
 
             stack.enter_context(patch.object(kernel_prompt, "kernel_prompt_for_session", deduplicate))
-        elif arm == "hide_revision":
-            original_allowed = kernel_protocol.controller_allowed_for_session
-
-            def without_revision(session):
-                allowed = original_allowed(session)
-                if answer_contract.whole_research(session):
-                    return tuple(name for name in allowed if name != "knowledge_commit")
-                return allowed
-
-            if REVISION_GUIDANCE not in answer_contract.ANSWER_GUIDANCE:
-                raise AssertionError("revision guidance changed; preregister a new experiment")
-            guidance = answer_contract.ANSWER_GUIDANCE.replace(REVISION_GUIDANCE, "")
-            stack.enter_context(patch.object(kernel_protocol, "controller_allowed_for_session", without_revision))
-            stack.enter_context(patch.object(answer_contract, "ANSWER_GUIDANCE", guidance))
-            stack.enter_context(patch.object(answer_context, "ANSWER_GUIDANCE", guidance))
         elif arm == "no_auto_recall":
             original_background = knowledge_context.knowledge_background
 

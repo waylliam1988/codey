@@ -41,7 +41,7 @@ def run_whole(root, *, native=False, resume=False, boundary="", scenario="answer
             return json.dumps({"tool": tool, "args": args})
         provider.send = send
         return provider_wrap(provider) if provider_wrap else provider
-    return _run(root, native=native, resume=resume, boundary=boundary, task=TASK, compact_planning=True,
+    return _run(root, native=native, resume=resume, boundary=boundary, task=TASK,
                 required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS, provider_factory=factory, boundary_turn=2)
 
 

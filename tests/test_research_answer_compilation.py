@@ -26,7 +26,7 @@ def test_one_answer_compiles_and_restores_without_a_second_authored_report(tmp_p
         snapshot = build_turn_snapshot(session)
         for reply in (decode_text_turn(json.dumps({"tool": "done", "args": args})),
                       AssistantTurn(tool_calls=(ProviderToolCall("done", "done", args),))):
-            assert not normalize_turn(reply, snapshot=snapshot).protocol_error
+            assert normalize_turn(reply, snapshot=snapshot).protocol_error
         assert normalize_turn(decode_text_turn(json.dumps({"tool": "done", "args": report_args("f1")})),
                               snapshot=snapshot).protocol_error
         report = compile_finding_report(args, tools.ledger, store)

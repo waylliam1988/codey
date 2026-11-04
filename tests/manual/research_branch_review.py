@@ -23,7 +23,7 @@ from tests.manual import research_framework_comparison as framework
 from tests.manual import research_process_review as previous
 from tests.manual.research_experiment_identity import freeze_experiment, verify_experiment
 
-ARMS = ("baseline", "short_history", "compact_attempts", "hide_revision", "read_requests",
+ARMS = ("baseline", "short_history", "compact_attempts", "read_requests",
         "revision_template", "compact_navigation", "no_navigation", "no_omitted_index",
         "no_receipt_index", "no_draft_copy", "short_errors", "no_error_feedback",
         "no_required_tools", "no_semantic_guidance", "compact_semantic", "no_state_field")

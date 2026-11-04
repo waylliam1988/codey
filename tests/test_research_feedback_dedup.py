@@ -136,7 +136,7 @@ def run_error_restart(root, *, boundary="", resume=False):
             "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}]}, "finish_reason": "tool_calls"}]}
 
     with patch("codey.providers.api_generation.generate", generate):
-        return _run(root, native=True, compact_planning=True, required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,
+        return _run(root, native=True, required_checks=RESEARCH_ANSWER_REQUIRED_CHECKS,
                     provider_factory=factory, resume=resume, boundary=boundary,
                     boundary_turn=2 if boundary == "provider_request_ready" else 1)
 

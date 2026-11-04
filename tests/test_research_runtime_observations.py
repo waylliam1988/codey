@@ -73,7 +73,8 @@ def test_working_view_projects_saved_ledger_once():
     assert view["saved_evidence_count"] == 1 and view["references"][0]["ref"] == "f1"
     assert view["references"][0]["interpretation_review"] == "unreviewed"
     assert view["recent_results"] == [] and "original-note" not in text
-    assert text.count("Earlier scoped finding") == 1
+    assert "Earlier scoped finding" not in text
+    assert "Complete user task (verbatim):\nWhat was observed?" in text
 
 
 def test_unknown_property_repair_allows_correcting_keys_without_rewriting_source_values():

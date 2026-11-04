@@ -69,7 +69,6 @@ class RetryDecision(TypedDict):
     counters: NotRequired[dict[str, object]]
     error_source: NotRequired[str]
     error_type: NotRequired[str]
-    research_repair: NotRequired[dict[str, Any]]
 
 
 class DoneDecision(TypedDict):
