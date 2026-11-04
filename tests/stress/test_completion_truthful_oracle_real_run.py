@@ -82,9 +82,11 @@ def _real_research_gate():
     from pathlib import Path
 
     from codey.operations.completion_gate import evaluate
-    from codey.research.finding_report import compile_finding_report
+    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.research.answer_report import compile_answer_report
+    from codey.runtime.core.models import ToolCall
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
-    from tests.support.research_script import selection_args
     from tests.test_research_findings import execute, setup
 
     with tempfile.TemporaryDirectory() as td:
@@ -96,16 +98,17 @@ def _real_research_gate():
             session.research_questions = tools.ledger.questions
             tools.search.text = "Helium is separated from natural gas streams. 2026 supply note."
             url = "https://example.com/helium"
-            execute(delegate, tools, session, "open_url", {"url": url})
-            saved = execute(delegate, tools, session, "save_finding", {
-                "claim": "Helium supply depends on gas processing.",
-                "passage_ref": next(iter(tools.ledger.read_passages))})
+            session._memory_results["read"] = execute(delegate, tools, session, "open_url", {"url": url})
+            snapshot = build_turn_snapshot(session)
+            args = {"markdown": "Helium supply depends on gas processing [e1].", "state": "answered"}
+            saved = execute_turn(session, [ToolCall("submit_research_answer", args)], research_tools=tools,
+                                 snapshot=snapshot)[0]
             assert saved.ok, saved.model_text
-            args = selection_args()
-            session.last_done_args = args
-            compiled = compile_finding_report(args, tools.ledger, store, task=session.task_text)
+            session._memory_results["submitted"] = saved
+            compiled = compile_answer_report(session, tools.ledger, store, project="", session_id="first")
             verdict = evaluate(session, compiled.text, context={
-                "research_ledger": tools.ledger, "knowledge_store": store, "run_id": "research-run"})
+                "research_ledger": tools.ledger, "knowledge_store": store, "run_id": "research-run",
+                "knowledge_session_id": "first"})
             assert verdict.complete, verdict.followup
             assert verdict.research_report == compiled
             return session, ExecutionEvidence(), verdict, tools.ledger, compiled.text
@@ -113,22 +116,29 @@ def _real_research_gate():
             store.close()
 
 
-def test_strict_research_real_ledger_passes_and_tampered_citation_fails(public_source_dns) -> None:
+@pytest.mark.parametrize("tamper", ["unknown_citation", "body", "source", "read_snapshot"])
+def test_strict_research_real_ledger_passes_and_tampered_citation_fails(public_source_dns, tamper) -> None:
     session, evidence, verdict, ledger, summary = _real_research_gate()
     view = completion_view_from_gate(
         session=session, evidence=evidence, verdict=verdict,
         research_ledger=ledger, done_text=summary,
     )
     InvariantChecker().check_completion_truthful(view)
-    tampered = summary + "\n[2] Unopened - https://unopened.example/b\n"
-    tampered = tampered.replace(
-        "Helium supply depends on gas processing. [1]",
-        "Helium supply depends on gas processing. [1][2]",
-    )
+    tampered = summary
+    if tamper == "unknown_citation":
+        tampered = tampered.replace("[e1].", "[e1][e99].")
+    elif tamper == "body":
+        tampered = tampered.replace("gas processing", "unrelated facts")
+    elif tamper == "source":
+        tampered = tampered.replace("https://example.com/helium", "https://unopened.example/b")
     tampered_view = completion_view_from_gate(
         session=session, evidence=evidence, verdict=verdict,
         research_ledger=ledger, done_text=tampered,
     )
+    if tamper == "read_snapshot":
+        next(iter(tampered_view["read_passages"].values()))["excerpt"] = "Invented, never read text."
+        # The checker must use read facts even if the already-built view claims validity.
+        assert tampered_view["report_valid"] is True
     with pytest.raises(InvariantViolation):
         InvariantChecker().check_completion_truthful(tampered_view)
 

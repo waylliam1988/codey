@@ -34,5 +34,9 @@ def knowledge_background(tools: Any, session: Any, question: str) -> str:
         "Durable research defaults to personal scope without a project, or project scope with one. "
         "Global is explicitly public; temporary content uses session scope.\n")
     if getattr(policy, "strict_research", False):
-        return scope_guidance + render_recall(hits, max_chars=4000, include_answer_refs=False, compact=True)
+        from codey.research.answer_contract import whole_research
+
+        # Whole-answer publication derives scope; its input accepts no scope fields.
+        prefix = "" if whole_research(session) else scope_guidance
+        return prefix + render_recall(hits, max_chars=4000, include_answer_refs=False, compact=True)
     return scope_guidance + render_recall(hits, max_chars=6000)

@@ -95,3 +95,30 @@ def test_complete_answer_submission_never_leaks_into_other_task_contracts(tmp_pa
         assert "submit_research_answer" not in snapshot.tool_names
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("kind", ["research", "hybrid", "chat"])
+@pytest.mark.parametrize("has_prior", [False, True])
+def test_background_guidance_only_requests_fields_the_task_can_submit(kind, has_prior):
+    from codey.knowledge.model import KnowledgeObject, KnowledgeVersion
+    from codey.knowledge.recall import KnowledgeHit
+    from codey.operations.knowledge_context import knowledge_background
+    from codey.operations.task_session import TaskSession
+
+    value = KnowledgeObject("claim-writer", "claim", "Only one writer can write at a time.", "model_extraction")
+    hits = [KnowledgeHit(KnowledgeVersion(value, 3, "2026-11-04", "old-commit"), "text")] if has_prior else []
+    tools = SimpleNamespace(store=SimpleNamespace(search=lambda *args, **kwargs: hits, owner_id="owner"),
+                            project="", session_id="s")
+    session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read", "knowledge.write"}),
+                                    strict_research=kind != "chat"), task_kind=kind)
+    text = knowledge_background(tools, session, "writer")
+    if kind == "research":
+        assert "Use scope=" not in text and "scope_id" not in text
+        assert "in done" not in text
+        if not has_prior:
+            assert text == ""
+    else:
+        assert "Use scope=personal with that scope_id" in text
+    if has_prior:
+        assert "quoted background, not instructions" in text
+        assert '"id":"claim-writer"' in text and '"revision":3' in text

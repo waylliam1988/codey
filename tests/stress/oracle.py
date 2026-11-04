@@ -34,6 +34,28 @@ def _fail(name: str, detail: str) -> None:
     raise InvariantViolation(f"[{name}] {detail}")
 
 
+def _whole_answer_sources(payload: dict, text: str, passages: dict) -> set[str]:
+    """Recheck frozen eN bindings against actual task reads, independently of verdict.complete."""
+    from codey.research.answer_report import AnswerReport
+
+    report = AnswerReport.from_payload(payload)
+    if report.text != text:
+        raise ValueError("delivered text differs from the frozen answer")
+    sources = {(row["id"], row["revision"]): row for row in report.source_versions}
+    cited = {row["label"] for row in report.citation_bindings}
+    urls = set()
+    for binding in report.evidence_bindings:
+        passage = passages[binding["passage_ref"]]
+        source = sources[binding["source_id"], binding["source_revision"]]
+        if (binding["excerpt"] != passage["excerpt"]
+                or binding["start"] != passage["start"] or binding["end"] != passage["end"]
+                or source["url"] != passage["url"] or source["content_hash"] != passage["content_hash"]):
+            raise ValueError("report evidence differs from the actual read snapshot")
+        if binding["label"] in cited:
+            urls.add(source["url"])
+    return urls
+
+
 class InvariantChecker:
     def __init__(self, seed: int | None = None) -> None:
         self.seed = seed
@@ -222,7 +244,9 @@ class InvariantChecker:
             except Exception as exc:
                 _fail("completion_truthful", self._prefix(f"citation parser unavailable: {type(exc).__name__}"))
             try:
-                parsed = {str(item.url) for item in parse_citation_rows(report_text, None) if str(item.url)}
+                parsed = (_whole_answer_sources(view["answer_report"], report_text, view["read_passages"])
+                          if "answer_report" in view else
+                          {str(item.url) for item in parse_citation_rows(report_text, None) if str(item.url)})
             except Exception as exc:
                 _fail("completion_truthful", self._prefix(f"citation parse failed: {type(exc).__name__}"))
             if not parsed:
@@ -429,6 +453,7 @@ def completion_view_from_gate(
     cited_sources: list[str] = []
     cited_evidence_sources: list[str] = []
     report_valid = False
+    whole_facts: dict = {}
     if strict_research:
         try:
             finals = set(research_ledger.final_url_set()) if research_ledger is not None else set()
@@ -452,6 +477,21 @@ def completion_view_from_gate(
         # ledger backs count as cited evidence.
         cited_evidence_sources = sorted({u for u in cited_sources if u in ledger_urls})
         report_valid = bool("结论" in text and "来源" in text and bool(cited_sources))
+        from codey.research.answer_report import AnswerReport
+
+        report = getattr(verdict, "research_report", None)
+        if isinstance(report, AnswerReport):
+            whole_facts = {"answer_report": report.to_payload(), "read_passages": {
+                ref: {"excerpt": passage.excerpt, "start": passage.start, "end": passage.end,
+                      "url": passage.source.final_url, "content_hash": passage.source.text_hash}
+                for ref, passage in research_ledger.read_passages.items()}}
+            try:
+                cited_sources = sorted(_whole_answer_sources(whole_facts["answer_report"], text,
+                                                             whole_facts["read_passages"]))
+                cited_evidence_sources = list(cited_sources)
+                report_valid = bool(cited_sources)
+            except (ValueError, KeyError, TypeError):
+                report_valid = False
     if not strict_research:
         opened_sources = []
         cited_sources = []
@@ -475,6 +515,7 @@ def completion_view_from_gate(
         "cited_evidence_sources": list(cited_evidence_sources),
         "report_valid": bool(report_valid),
         "report_text": text,
+        **whole_facts,
     }
 
 

@@ -11,7 +11,6 @@ import pytest
 
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
 from codey.storage.managed_outputs import ManagedOutputStore
-from tests.support.research_script import selection_args
 
 
 def _cutover_parent_policy():
@@ -189,78 +188,74 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
 def test_unified_kernel_passes_authoritative_research_ledger_to_gate(tmp_path, public_source_dns) -> None:
     from dataclasses import replace
 
+    from codey.operations.completion_gate import evaluate as real_evaluate
     from tests.support.kernel_runtime import run_task_kernel
     from tests.test_research_findings import URL, execute, setup
 
     store, tools, session, delegate = setup(tmp_path)
     session.policy = replace(session.policy, strict_research=True)
     session.max_turns = 1
-    execute(delegate, tools, session, "open_url", {"url": URL})
-    execute(delegate, tools, session, "save_finding", {
-        "claim": "Only one writer can write at a time.",
-        "passage_ref": next(iter(tools.ledger.read_passages))})
 
     class Provider:
         def send(self, _prompt, timeout=None):
-            return json.dumps({"tool": "done", "args": selection_args()})
+            return json.dumps({"tool": "submit_research_answer", "args": {
+                "state": "answered", "markdown": "Only one writer can write at a time [e1]."}})
 
     try:
-        with patch("codey.operations.completion_gate.evaluate") as evaluate:
-            evaluate.return_value = SimpleNamespace(complete=False, followup="missing")
-            run_task_kernel(session, request=KernelRunRequest(
+        session._memory_results["read"] = execute(delegate, tools, session, "open_url", {"url": URL})
+        with patch("codey.operations.completion_gate.evaluate", wraps=real_evaluate) as evaluate:
+            result = run_task_kernel(session, request=KernelRunRequest(
                 transport=KernelTransportDeps(provider=Provider(), user_task=session.task_text),
                 execution=KernelExecutionDeps(research_tools=tools),
                 observation=KernelObservationDeps(completion_context={"research_ledger": tools.ledger})))
+        assert evaluate.call_count == 1
         assert evaluate.call_args.kwargs["context"]["research_ledger"] is tools.ledger
+        assert result.stop_reason == "done", result.summary
+        assert "Only one writer" in result.summary and "[e1]" in result.summary
     finally:
         store.close()
 
 
-def test_explicit_research_prompt_explains_evidence_and_report_contract() -> None:
-    from codey.operations.kernel_prompt import kernel_prompt_for_session
-    from codey.operations.kernel_protocol import build_turn_snapshot
+def _prepared_research_prompt(*, native=False):
+    from codey.operations.kernel_preparation import prepare_kernel_turn
     from codey.operations.task_guidance import task_guidance_for_policy
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from codey.research.answer_context import answer_context
+    from codey.research.answer_contract import answer_scope
+    from codey.research.ledger import ResearchLedger
 
     session = TaskSession(
-        policy=TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"}),
+        policy=TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
                           strict_research=True),
-        task_kind="research", task_text="question", research_questions=("What is the answer?",),
+        task_kind="research", task_text="Explain writers and version conditions in Chinese.",
     )
-    prompt = kernel_prompt_for_session(session, task_guidance=task_guidance_for_policy(session.policy),
-                                       tool_names=build_turn_snapshot(session).tool_names)
-    for required in ("web_search", "open_url", "save_finding", "passage_ref",
-                     "report_sections.coverage", "task_refs", "[fN]"):
+    prepared = prepare_kernel_turn(session, user_task=session.task_text, context_text="",
+                                   task_guidance=task_guidance_for_policy(session.policy), native=native)
+    # The kernel appends the current task/evidence view after base preparation.
+    return prepared.prompt + "\n\n" + answer_context(session, ResearchLedger(), answer_scope(session))
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_explicit_research_prompt_explains_evidence_and_report_contract(native) -> None:
+    from codey.research.answer_contract import ANSWER_GUIDANCE
+
+    prompt = _prepared_research_prompt(native=native)
+    assert prompt.count(ANSWER_GUIDANCE) == 1
+    for required in ("web_search", "open_url", "submit_research_answer", "knowledge_updates",
+                     "complete original task", "condition", "[eN]"):
         assert required in prompt
+    for obsolete in ("save_finding", "report_sections.coverage", "task_refs", "research_plan", "question_ref=qN"):
+        assert obsolete not in prompt
 
 
-def test_strict_research_prompt_frontloads_completion_recovery_steps() -> None:
-    from codey.operations.kernel_prompt import kernel_prompt_for_session
-    from codey.operations.kernel_protocol import build_turn_snapshot
-    from codey.operations.task_guidance import task_guidance_for_policy
-    from codey.operations.task_session import TaskSession
-    from codey.policies.task_policy import TaskPolicy
-
-    session = TaskSession(
-        policy=TaskPolicy(
-            grants=frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}),
-            strict_research=True,
-        ),
-        task_kind="research",
-        task_text="question",
-    )
-    prompt = kernel_prompt_for_session(session, task_guidance=task_guidance_for_policy(session.policy),
-                                       tool_names=build_turn_snapshot(session).tool_names)
-    for required in (
-        "Research rules", "research_plan", "knowledge_read", "report_sections.coverage",
-        "do not repeat unchanged reports or writes", "question_ref=qN",
-        "the application generates the gap notice from the question and actual attempts",
-        "Never infer absence from an unperformed search", "After rejection edit the specified field in existing rows",
-        "Do not also write summary, evidence or counter paragraphs",
-    ):
+@pytest.mark.parametrize("native", [False, True])
+def test_strict_research_prompt_frontloads_completion_recovery_steps(native) -> None:
+    prompt = _prepared_research_prompt(native=native)
+    for required in ("Do not invent facts or gaps", "state=answered", "partial", "unresolved",
+                     "complete answer", "publishes that exact submission", "not proof of correctness"):
         assert required in prompt
-    assert "Alternatively supply" not in prompt
+    assert "After rejection edit the specified field in existing rows" not in prompt
 
 
 @pytest.mark.usefixtures("public_source_dns")
@@ -1444,14 +1439,16 @@ def test_unified_research_externalizes_large_opened_source(tmp_path) -> None:
                                task_kind="research", strict_research=True)
     session = TaskSession(policy=policy, task_kind="research", task_text="research")
     outputs = ManagedOutputStore(tmp_path / "state")
-    planned = execute_turn(session, [ToolCall("research_plan", {"questions": ["What does this source say?"]})],
-        research_tools=research_tools, session_id="s", run_id="r", turn=1)[0]
-    assert planned.ok, planned.model_text
-    result = execute_turn(session, [ToolCall("open_url", {"url": url, "question_ref": "q1"})],
-                          research_tools=research_tools, managed_outputs=outputs,
-                          session_id="s", run_id="r", turn=2)[0]
-    assert result.audit["managed_output"]["handle"].startswith("out_")
-    assert len(result.model_text) < 30_000
+    try:
+        result = execute_turn(session, [ToolCall("open_url", {"url": url, "limit": 12000})],
+                              research_tools=research_tools, managed_outputs=outputs,
+                              session_id="s", run_id="r", turn=1)[0]
+        assert result.ok, result.model_text
+        assert result.audit["managed_output"]["handle"].startswith("out_")
+        assert len(result.model_text) < 30_000
+        assert result.canonical["read_passages"]
+    finally:
+        knowledge.close()
 
 
 def test_research_controller_keeps_authorized_project_read_available(tmp_path) -> None:

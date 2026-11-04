@@ -121,15 +121,47 @@ def test_multiple_tools_bind_their_own_required_arguments_and_bounds():
     assert not validator.is_valid({"tool": "research_plan", "args": {"questions": [str(n) for n in range(9)]}})
 
 
-def test_multiple_strict_research_tools_require_done_coverage_state():
+@pytest.mark.parametrize("native", [False, True])
+def test_research_schema_accepts_whole_answers_and_rejects_old_submission(native):
+    from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
+
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True),
+                          task_kind="research", task_text="Explain writers and version gaps in Chinese.")
+    snapshot = build_turn_snapshot(session, native=native)
+    validator = Draft202012Validator(text_tool_schema(tools_from_specs(snapshot.model_specs)))
+    valid = {"markdown": "The investigation could not establish the requested version conditions.",
+             "state": "unresolved"}
+    assert validator.is_valid({"tool": "submit_research_answer", "args": valid})
+    for invalid in ({"markdown": valid["markdown"]}, {"state": "unresolved"},
+                    {**valid, "state": "complete"}, {**valid, "findings": []}):
+        raw = {"tool": "submit_research_answer", "args": invalid}
+        assert not validator.is_valid(raw)
+        rejected = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("submit", raw["tool"], invalid),)),
+                                  snapshot=snapshot)
+        assert rejected.protocol_error and not rejected.calls and rejected.control is None
+    # The sampler omits string repetition bounds for KoboldCpp grammar size;
+    # the original frozen contract must still reject them in the kernel.
+    for markdown in ("short", "x" * 64001):
+        invalid = {**valid, "markdown": markdown}
+        rejected = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("submit", "submit_research_answer", invalid),)),
+                                  snapshot=snapshot)
+        assert rejected.protocol_error and not rejected.calls and rejected.control is None
+    assert not validator.is_valid({"tool": "done", "args": {"report_sections": {"coverage": []}}})
+    assert "research_plan" not in snapshot.tool_names and "knowledge_commit" not in snapshot.tool_names
+
+
+def test_shared_strict_report_tools_require_done_coverage_state():
     from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import tools_from_specs
 
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "knowledge.write"}), strict_research=True),
-                          task_kind="research")
-    # Explicit legacy report contract, after questions have been registered.
+                          task_kind="hybrid")
+    # Shared report callers retain this contract outside the Research task.
     session.research_questions = ("What does the source establish?",)
     schema = text_tool_schema(tools_from_specs(build_turn_snapshot(session, native=False).model_specs))
     validator = Draft202012Validator(schema)
@@ -147,7 +179,7 @@ def test_strict_report_task_refs_bind_the_original_task_in_both_contracts():
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 
-    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
+    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="hybrid",
                           task_text="Explain writers. Identify version gaps.")
     session.research_questions = ("Writer limits and version gaps?",)
     snapshot = build_turn_snapshot(session)
@@ -173,7 +205,7 @@ def test_report_question_choices_follow_registered_receipts_and_freeze_per_turn(
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 
-    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
+    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="hybrid",
                           task_text="Investigate the substantive questions. Write a short report.")
     session.research_questions = tuple(f"Actual question {n}?" for n in range(1, 6))
     snapshot = build_turn_snapshot(session, native=native)
@@ -204,7 +236,7 @@ def test_format_requirement_needs_no_qn_or_task_ref_and_duplicate_repairs_are_re
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 
-    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
+    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="hybrid",
                           task_text="Explain concurrency. 给出约800字的中文研究结论。")
     session.research_questions = ("What is the limit?", "What is still unknown?")
     snapshot = build_turn_snapshot(session, native=native)
@@ -228,7 +260,7 @@ def test_format_only_task_has_valid_empty_task_refs_schema():
     from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import tools_from_specs
 
-    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="research",
+    session = TaskSession(TaskPolicy(frozenset({"control"}), strict_research=True), task_kind="hybrid",
                           task_text="请用中文回答。")
     session.research_questions = ("Research context?",)
     schema = text_tool_schema(tools_from_specs(build_turn_snapshot(session).model_specs))
