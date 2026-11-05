@@ -12,8 +12,9 @@ import pytest
 from codey.durable import DurableSession, SQLiteDurableStore, SubmissionPlacement
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.errors import CommitConflict
-from codey.operations.kernel_driver import drive_provider_request, load_prepared_request, prepare_provider_request
+from codey.operations.kernel_driver import drive_provider_request, load_prepared_request
 from codey.operations.kernel_errors import RecoveryFailed
+from codey.operations.provider_request import prepare_provider_request
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy

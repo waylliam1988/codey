@@ -207,16 +207,16 @@ def main():
         stack.enter_context(patch("codey.providers.request_context.clock_context", return_value=clock))
         stack.enter_context(patch.object(ResearchContinuation, "kernel", seeded_kernel))
         if args.full_history:
-            from codey.operations import kernel_driver
+            from codey.operations import provider_request
 
-            prepare = kernel_driver.prepare_provider_request
+            prepare = provider_request.prepare_provider_request
 
             def full_history(sink, method, call_args, options, **kwargs):
                 return prepare(sink, method, call_args,
                                {key: value for key, value in options.items() if key != "tool_call_history_groups"},
                                **kwargs)
 
-            stack.enter_context(patch.object(kernel_driver, "prepare_provider_request", full_history))
+            stack.enter_context(patch.object(provider_request, "prepare_provider_request", full_history))
         stage(directory, "research", "http://127.0.0.1:5001", model, live_web=False,
               question=task, max_turns=args.max_turns, seed=args.seed,
               provider_timeout=args.provider_timeout, constrained_text=True)

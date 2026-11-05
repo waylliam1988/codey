@@ -7,8 +7,9 @@ import pytest
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.checkpoint import checkpoint_entries, operation_from_checkpoint
 from codey.operations import completion_gate
-from codey.operations.kernel_driver import load_prepared_request, prepare_provider_request
+from codey.operations.kernel_driver import load_prepared_request
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
+from codey.operations.provider_request import prepare_provider_request
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession

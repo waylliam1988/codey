@@ -13,11 +13,11 @@ from dataclasses import replace
 from typing import Any, cast
 
 from codey.durable.checkpoint import checkpoint_entries
-from codey.operations import provider_request as _provider_request
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelDecision, KernelResult, KernelRunRequest, result_from_payload
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
+from codey.operations.provider_request import _METHODS
 from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 from codey.runtime.core.operation_payload import (
     LEAF_CONTROL_READY,
@@ -43,8 +43,6 @@ from codey.runtime.effects.effect_records import (
 from codey.runtime.log.session_view import load_session_view, not_sent_continuation_effect
 from codey.runtime.write.drive import peek_next_action
 
-_METHODS = _provider_request._METHODS
-prepare_provider_request = _provider_request.prepare_provider_request
 
 def _tools(value: object) -> list[ProviderToolDefinition]:
     from codey.toolchain.tool_spec import _freeze_schema_value
