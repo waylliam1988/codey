@@ -41,12 +41,12 @@
 
 ## 实验隔离与基线
 
-- 原版对照树：`D:\codey`，分支 `master`。
-- 实验树：`D:\codey-coding-audit`。
-- 实验分支：`audit/coding-audit-20261105`。
+- 主树：`D:\codey`，分支 `master`。
+- 本报告早期曾使用临时工作树 `D:\codey-coding-audit` 和分支
+  `audit/coding-audit-20261105` 做隔离实验；改进已逐项合并回主树，临时工作树和分支现已删除。
 - 起始提交：`6ab91052`。
-- 原版当前有一个与本审计无关的未跟踪文档 `docs/cline-integration-implementation-plan.zh-CN.md`；实验树从干净提交创建，未复制该文件。
-- 旧报告记录的 `D:\codey-kernel-audit` 已不存在，本轮新建独立实验树。
+- 主树保留一个与本审计无关的未跟踪文档 `docs/cline-integration-implementation-plan.zh-CN.md`，本审计没有修改它。
+- 旧报告记录的 `D:\codey-kernel-audit` 已不存在。
 - 当前阶段：已完成第一轮候选实机，发现并修复两个确定性边界问题；继续扩大完整编码链路样本。
 
 ## 阶段 0：静态盘点（2026-11-05）
@@ -182,7 +182,7 @@ subprocess.run(["npm", "--version"], shell=False) → FileNotFoundError [WinErro
 - 主树定向回归：162 passed、23 个子断言通过；生产文件 Mypy 通过；Ruff 通过。
 
 原有手工 harness 的独立检查也使用裸 `subprocess.run(["npm", ...])`，因此在第一次
-修复后仍把成功的 Codey 工具回执记成失败。这是测试入口接线问题，已在实验树的
+修复后仍把成功的 Codey 工具回执记成失败。这是测试入口接线问题，已在审计期间的
 `tests/manual/coding_current_context_ab.py` 中改为先用 `shutil.which` 的解析路径启动，
 并通过编码上下文/运行时定向测试。它不改变生产代码。
 
@@ -235,7 +235,7 @@ subprocess.run(["npm", "--version"], shell=False) → FileNotFoundError [WinErro
 ### C-P8 实机结果
 
 原有 harness 排除了 `local` provider，无法直接使用当前 KoboldCpp；这属于审计入口限制，
-已在实验树中允许 `local`，没有改生产 provider。使用六个固定协议失败题、同一 JSON
+已在审计期间允许 `local`，没有改生产 provider。使用六个固定协议失败题、同一 JSON
 codec、同一模型，比较通用 repair prompt（baseline）与 typed repair prompt（typed）：
 
 | 指标 | baseline | typed | 差异 |
@@ -380,6 +380,22 @@ create 在同一模型上通过：3 个文件正确、`unittest` 通过、`stop_
 测试专用任务通过说明“只改测试”的场景在当前合同下可完成，但不能因此放宽
 `edit_integrity` 的测试修改检查；测试改动是否被用户任务授权、是否有生产文件变化，仍由
 完整性和完成证明分开判断。
+
+## 阶段 9：单模型条件下的规划与前置 audit 方法（2026-11-05）
+
+当前只有一个 KoboldCpp 模型时，不能把同一模型的第二次调用称作“独立第二意见”；但仍可
+测量规划或前置 audit 这一步本身是否带来净收益。采用同模型、同材料、同任务的因果 A/B：
+
+- baseline：Writer 直接进入项目上下文；
+- treatment：先用同一模型生成 bounded plan 或 read-only audit，再把结果按生产
+  `ChangeBrief`/audit context 形状交给 Writer；
+- 两组都记录最终文件、独立验证、diff 范围、首个正确编辑、请求数、输入/输出 token、
+  总耗时和无效调用；
+- treatment 的额外调用只回答“这一步是否有用”，不回答“多模型意见是否更可靠”。
+
+因此，单模型可以完成 C-P1/C-P2 的“额外阶段收益”审计；跨模型复核只在以后有第二个
+advisor provider 时追加。若 treatment 只增加 token/轮数而没有提高最终代码质量或减少返工，
+该阶段就没有保留理由。
 
 ## 记录格式
 
