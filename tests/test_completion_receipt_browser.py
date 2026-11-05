@@ -15,7 +15,7 @@ def test_shipped_receipt_renders_proof_basis_without_modifying_fixed_json(page):
       addToSession('a', {type: 'done', text});
       return text;
     }""", answer)
-    assert rendered == "Completed\n依据：source:verified\n限制：limit:observed"
+    assert rendered == "Completed\nEvidence: source:verified\nLimitations: limit:observed"
     assert page.locator(".msg.asst .body").text_content().strip() == answer
     expect(page.locator("#chat-area")).to_contain_text("source:verified")
     expect(page.locator("#chat-area")).to_contain_text("limit:observed")

@@ -99,6 +99,7 @@ def test_control_and_release_windows_adapters_are_clean_on_linux_stubs() -> None
         "codey/launcher/runner.py",
         "codey/launcher/releases.py",
         "codey/control/client.py",
+        "codey/providers/zen/direct.py",
         follow_imports="silent",
         platform="linux",
     )

@@ -22,9 +22,15 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socket import socket as Socket
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from codey.providers.api_transport import GenerationNotSentError
+
+if os.name == "nt" or TYPE_CHECKING:
+    # CREATE_NO_WINDOW is a Windows-only subprocess constant and is absent
+    # from Linux typeshed.
+    _windows_subprocess: Any = subprocess
 
 _INTERFACE_SCRIPT = r"""
 $ErrorActionPreference='Stop'
@@ -66,7 +72,8 @@ def discover_interface(deadline: float, cancelled: Callable[[], bool]) -> Physic
         raise GenerationNotSentError("Zen physical-interface fallback is unavailable on this platform")
     _check(deadline, cancelled)
     proc = subprocess.Popen(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _INTERFACE_SCRIPT],
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            creationflags=_windows_subprocess.CREATE_NO_WINDOW)
     try:
         until = min(deadline, time.monotonic() + 12)
         while True:
