@@ -1,0 +1,132 @@
+{
+  "checked_at_utc": "2026-11-05T14:55:25.286893+00:00",
+  "previous_report_sha256": "56561a80b39bfaa67c49c4a2b357a12b4135de1f6df625caa8284614784c8594",
+  "previous_report_successful_generation_requests": 60,
+  "previous_stream_control_successful_generation_requests": 3,
+  "successful_request_count_scope": "Minimum successes represented by the previous report plus its stream controls; excludes earlier diagnosis, manual use and other users of an exit. Not a quota measurement.",
+  "production_probes": [
+    {
+      "label": "production_sse_default_budget",
+      "attempts": [
+        {
+          "at": "2026-11-05T14:54:12.117330+00:00",
+          "route": "current_network",
+          "body_sha256": "eb54c6df29fe1b92ebc9cc833035346f405035506fafe70e4cfb4bbd7816c685",
+          "stream": true,
+          "max_tokens": 8192,
+          "body_bytes": 2075,
+          "status": 429,
+          "headers": {
+            "cf-ray": "a55cb13f2b7bc69d-LAX",
+            "content-type": "application/json",
+            "date": "Thu, 05 Nov 2026 14:54:12 GMT",
+            "retry-after": "34701",
+            "server": "cloudflare",
+            "x-opencode-log-id": "01a1ac34-0397-77c7-a8f3-7b030499cd6b"
+          },
+          "seconds_to_headers": 0.687,
+          "retry_after_target_utc": "2026-11-06T00:32:33+00:00"
+        },
+        {
+          "at": "2026-11-05T14:54:17.187235+00:00",
+          "route": "physical_interface",
+          "body_sha256": "eb54c6df29fe1b92ebc9cc833035346f405035506fafe70e4cfb4bbd7816c685",
+          "stream": true,
+          "max_tokens": 8192,
+          "body_bytes": 2075,
+          "status": 429,
+          "headers": {
+            "cf-ray": "a55cb165ac0fc4e6-LAX",
+            "content-type": "application/json",
+            "date": "Thu, 05 Nov 2026 14:54:18 GMT",
+            "retry-after": "36239",
+            "server": "cloudflare",
+            "x-opencode-log-id": "01a1ac34-1ba9-7cd3-bd36-2576ed6a9e77"
+          },
+          "seconds_to_headers": 1.828,
+          "retry_after_target_utc": "2026-11-06T00:58:17+00:00"
+        }
+      ],
+      "ok": false,
+      "error_class": "GenerationRejectedError",
+      "status": 429,
+      "error_type": "FreeUsageLimitError",
+      "retry_after": 36239.0,
+      "request_id": "01a1ac34-1ba9-7cd3-bd36-2576ed6a9e77",
+      "message": "Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go"
+    },
+    {
+      "label": "same_body_sse_small_output_budget",
+      "attempts": [
+        {
+          "at": "2026-11-05T14:54:19.070575+00:00",
+          "route": "current_network",
+          "body_sha256": "f5db80f83b07ef61e7848702f7835adeae7a7647678c24b823ed7fc2b6d9bf22",
+          "stream": true,
+          "max_tokens": 32,
+          "body_bytes": 2073,
+          "status": 429,
+          "headers": {
+            "cf-ray": "a55cb16aa944eeaa-SAN",
+            "content-type": "application/json",
+            "date": "Thu, 05 Nov 2026 14:54:19 GMT",
+            "retry-after": "34694",
+            "server": "cloudflare",
+            "x-opencode-log-id": "01a1ac34-1ed7-7aa3-af2c-c9d993534f51"
+          },
+          "seconds_to_headers": 0.703,
+          "retry_after_target_utc": "2026-11-06T00:32:33+00:00"
+        },
+        {
+          "at": "2026-11-05T14:54:19.839897+00:00",
+          "route": "physical_interface",
+          "body_sha256": "f5db80f83b07ef61e7848702f7835adeae7a7647678c24b823ed7fc2b6d9bf22",
+          "stream": true,
+          "max_tokens": 32,
+          "body_bytes": 2073,
+          "status": 429,
+          "headers": {
+            "cf-ray": "a55cb179e889c8da-PDX",
+            "content-type": "application/json",
+            "date": "Thu, 05 Nov 2026 14:54:21 GMT",
+            "retry-after": "36236",
+            "server": "cloudflare",
+            "x-opencode-log-id": "01a1ac34-285b-7a2d-9b4d-6f1253912213"
+          },
+          "seconds_to_headers": 3.328,
+          "retry_after_target_utc": "2026-11-06T00:58:17+00:00"
+        }
+      ],
+      "ok": false,
+      "error_class": "GenerationRejectedError",
+      "status": 429,
+      "error_type": "FreeUsageLimitError",
+      "retry_after": 36236.0,
+      "request_id": "01a1ac34-285b-7a2d-9b4d-6f1253912213",
+      "message": "Free usage limit reached. Free models work in OpenCode (https://opencode.ai); subscribe to OpenCode Go to keep going: https://opencode.ai/go"
+    }
+  ],
+  "official_cli": {
+    "version": "2.2.5",
+    "route": "physical_interface",
+    "status": 429,
+    "error_type": "FreeUsageLimitError",
+    "retry_after_seconds": 36168.0,
+    "retry_after_target_utc": "2026-11-06T00:58:18.144000+00:00",
+    "isolated_state": true,
+    "fixture_only": true
+  },
+  "egress": {
+    "current_network_country": "US",
+    "physical_interface_country": "CN",
+    "distinct_addresses_verified": true,
+    "no_system_network_mutation": true
+  },
+  "findings": [
+    "Previous interleaved same-body SSE/JSON/SSE experiment identifies a stream-shape restriction during an otherwise accessible period.",
+    "Current SSE is rejected by the service on both existing egresses, including a 32-token output limit.",
+    "Official CLI and Codey share the physical-egress Retry-After target to within two seconds, despite different client envelopes and isolated sessions.",
+    "Current failure is a service-side time-bounded free-access refusal, independent of Codey alone; the exact counter and complete eligibility policy are unavailable.",
+    "No assertion that the free limit counts requests rather than tokens, cost, risk score, or a combination. No assertion that waiting guarantees recovery."
+  ]
+}
