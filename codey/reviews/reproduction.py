@@ -37,6 +37,10 @@ First identify a concrete hypothesis about an expression or operation in the cur
 that may violate the task. Choose inputs that distinguish that implementation from the
 required behavior. Test interactions between required behaviors, not only each behavior in
 isolation; happy paths already covered by existing tests are low-value checks.
+For interacting rules, combine them on the SAME input values: separate examples for each
+rule do not test the interaction. When operations compose, consider inputs for which changing
+their order changes the result. State a concrete input and the predicted actual versus required
+result in the brief hypothesis; saying the source already works is not a defect hypothesis.
 Each script imports the real project modules, defines unittest.TestCase test methods, and
 uses assertions whose expected behavior follows the task. It will run in a disposable project
 copy using python -m unittest. Do not change files, dependencies, process state or use network.

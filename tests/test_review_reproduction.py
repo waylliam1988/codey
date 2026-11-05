@@ -90,6 +90,7 @@ def test_native_plan_acknowledged_and_actual_script_in_final_packet(tmp_path):
         def send_turn(self, prompt, tools, timeout, *, require_tool_call):
             assert require_tool_call is True
             assert 'interactions between required behaviors' in prompt
+            assert 'SAME input values' in prompt
             assert tools[0].name == 'submit_review_probes'
             return AssistantTurn(tool_calls=(ProviderToolCall('probe1', 'submit_review_probes', {'probes': [proposal()]}),))
 
