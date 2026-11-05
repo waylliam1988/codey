@@ -90,6 +90,8 @@ class EvidenceProvider(CountingProvider):
             "input_context_tokens": sum(contexts) if contexts and all(isinstance(value, int) for value in contexts) else None,
             "context_count_methods": sorted({row["context"]["method"] for row in records}),
             "coding_context_request_count": sum("Coding current local context:" in json.dumps(row) for row in request_rows),
+            "knowledge_write_guidance_request_count": sum("Personal knowledge owner for this isolated knowledge space:" in json.dumps(row)
+                                                          for row in request_rows),
         }
 
 

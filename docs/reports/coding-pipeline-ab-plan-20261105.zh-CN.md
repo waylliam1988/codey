@@ -100,3 +100,21 @@ self-review，其结果也不等于第二模型独立审查。
 - 当前串行 session 33297：combined 五题；保留生产上下文的 baseline→plan 两题与
   baseline→audit 三题；memory→memory_compact 冷/暖四题；反序四题。生产代码仍固定
   7f05b589；本轮候选精简尚未接入。离线重评 session 32270 可与推理并行，不访问模型。
+- 离线重评已完成，包含生成测试的最终质量：两轮地图/context 共 30 行，各有 1 行生成
+  测试失败；plan 首轮 4 行有 1 行生成测试失败；audit 6 行有 1 行产品行为失败；memory
+  8 行均通过。Review 两轮每轮 12 行最终行为通过 7 行，可见测试却 12/12：再次说明可见
+  测试不能取代独立边界 oracle。原始 JSON 不改，重评单独归档。
+- map+context 联合五题 5/5 done、独立产品行为和最终测试都通过。该角单独显示组合可能
+  比单个投影稳定；不能由“context 单独总成本更高”直接推导默认组合可以删掉 context。
+- 保留 map+context 的规划确认：baseline 两题 2/2；plan 1/2。slug 计划把非 ASCII 示例
+  的结果错误写成 hello-world（合同只替换，不翻译），Writer 将该例照搬为测试，真实测试
+  失败后反复无效编辑。正确产品行为 4/4 不能覆盖错误测试。该错误已出现在 plan 原文，
+  不是 harness 修改验收，也不是生产吞掉命令。与 inventory 多 1 请求、输入 36688→53683
+  且质量相同合看，本地同模型额外规划未见净收益；不为此伪造第二 advisor 身份。
+- 保留生产上下文的 audit 确认：baseline 3/3、18 请求、108757 输入 token；audit 2/3、
+  27 请求、177140 输入 token。tags 审计耗完四轮没有 done/报告，单独记录 stage_usable=false；
+  Writer 本身仍成功。重构只改 totals.py 后反复复用旧 read receipt，调用方和测试仍旧符号，
+  独立 pytest ImportError；不是 pytest 过时，不修改期望去迎合未完成重构。
+- scope 说明精简首轮已确认实际处理生效：memory 请求仍有 owner 写说明，memory_compact
+  请求计数为零；保留 facts、store、检索与独立 suite。目前已完成冷启动两题和续作首题，
+  均通过。等待完整反序结果后再改生产 `knowledge_context.py`，不覆盖原版证据。
