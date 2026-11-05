@@ -1,0 +1,40 @@
+# 独立 Review 与可执行复现 A/B（2026-11-05）
+
+## 目标与准入
+
+用户授权先 A/B，确认后接入生产，再使用原样生产代码实机验证。主树 D:\codey；保留
+未跟踪的 docs/cline-integration-implementation-plan.zh-CN.md。串行使用 KoboldCpp。
+不运行全量 pytest；扩大相关 Review、恢复、权限、provider 合同与执行测试；Ruff 与
+Mypy/Pyrefly/ty 按生产 Python 3.11 检查。分批 commit，逐步记录失败与根因。
+
+现状：生产 Review 已 new_chat，返修以 fresh=False 回到 Writer；Reviewer 只有静态请求，
+没有实际复现工具。它仍收到 Writer summary、recent log 和 ChangeBrief。旧 counterexample
+脚本只支持 app.py/select，不能作为通用生产实现。
+
+## 预登记方法
+
+- baseline：现有生产审查，维持现有影响图与相关上下文。
+- independent：独立审查仅使用原始任务、diff、必要源码/调用方与地图，去掉 Writer 结论。
+- reproduce：在 independent 相同材料上，由模型提出有需求依据的独立测试，程序在临时
+  候选副本执行，将真实命令、退出码和输出送入独立最终审查，再交回 Writer。
+- 每个缺陷都有对应正确控制，不能为了找到问题强制报告 bug；模型测试的预期不是 oracle。
+  测试执行失败必须区分 AssertionError、导入/环境/语法错误。只有确定的需求违背才应返修。
+- 已知题覆盖折扣边界和大小写去重；扩大题包含跨文件调用方与保留 falsy 默认值。
+  预置候选是实验种入，不冒充自然 Writer 产出。独立 oracle 只在 arm 完成后评估。
+- 先跑开发题三 arm，再跑扩大题和反序确认；保留失败，不通过挑 seed 或扩大预算掩盖倒退。
+- 分别记录发现率、正确控制误报、实际复现有效性、Writer 修复后最终质量、正常终态、
+  文件范围、HTTP 请求与实际 tokenizer 输入。缺失 usage 为 null，不当零。
+- 接入生产前需要证明至少修复旧漏检且无新增误报、返修质量不倒退；若不满足，追查 prompt、
+  工具接线、响应协议、执行环境与模型行为。不能因为能写失败测试就自动认定 bug。
+
+## 生产边界候选（尚未接入）
+
+复现只在拥有验证授权的编码任务启用；独立 Review 保持正式工作区不写入。临时副本不是
+操作系统沙箱，沿用既有测试执行授权与命令守卫，不声称防御任意恶意代码。生成测试不得
+扩大父任务权限。缺少依赖或不支持执行时明确标记未验证，不能伪造通过或把错误当 bug。
+对新鲜度、快照、模型身份、证据持久化与 Writer 原会话继续保持原边界。
+
+## 日志
+
+- 2026-11-05：已核对现有生产调用与旧实验边界；开始构造可执行测试与静态上下文独立
+  对照。当前生产代码未修改，原始结果计划保存在 tests/manual/results/review-reproduction-*。
