@@ -383,6 +383,40 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertIn("middle of output omitted", outcome.model_text)
         self.assertIn("omitted content may contain relevant errors", outcome.model_text)
 
+    def test_windows_bare_cmd_shim_is_resolved_before_direct_launch(self) -> None:
+        completed = cancellation.CapturedProcess(
+            [r"C:\Program Files\nodejs\npm.CMD", "test"],
+            0,
+            stdout="ok\n",
+            stderr="",
+            stdout_bytes=3,
+            stderr_bytes=0,
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch("codey.toolchain.runtime.os.name", "nt"),
+            mock.patch("shutil.which", return_value=r"C:\Program Files\nodejs\npm.CMD"),
+            mock.patch(
+                "codey.toolchain.runtime.cancellation.run_process",
+                return_value=completed,
+            ) as run_process,
+        ):
+            raw = run_command_raw(
+                Path(td),
+                ".",
+                "npm test",
+                permission_profile="coding_writer",
+            )
+
+        self.assertIsInstance(raw, tool_runtime.RunCommandRawResult)
+        run_process.assert_called_once()
+        self.assertEqual(
+            run_process.call_args.args[0],
+            [r"C:\Program Files\nodejs\npm.CMD", "test"],
+        )
+
     def test_run_command_prunes_dependency_stack_frames_before_budget_clip(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

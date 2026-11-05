@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from collections.abc import Mapping
@@ -1064,6 +1065,27 @@ def _is_suite_run_command(argv: list[str]) -> bool:
     return is_suite_run_command(argv)
 
 
+def _process_argv(argv: list[str]) -> list[str]:
+    """Resolve a bare Windows executable before direct process launch.
+
+    ``shutil.which`` and the Windows command shell both recognize ``.cmd``
+    shims such as ``npm``, while ``CreateProcess`` used by ``shell=False``
+    does not apply that extension search consistently. Keep the canonical
+    user command unchanged for policy and receipts, but launch the resolved
+    executable when one is available. Paths and explicitly suffixed names are
+    left untouched.
+    """
+    if os.name != "nt" or not argv:
+        return argv
+    executable = str(argv[0] or "")
+    if not executable or "/" in executable or "\\" in executable or Path(executable).suffix:
+        return argv
+    resolved = shutil.which(executable)
+    if not resolved:
+        return argv
+    return [resolved, *argv[1:]]
+
+
 def run_command_raw(
     root: Path,
     rel: str,
@@ -1094,6 +1116,7 @@ def run_command_raw(
         # Fail closed: an untokenizable command never executes.
         return ToolOutcome.error(exc.display, error_code=exc.reason_code)
     argv = list(canonical.argv)
+    process_argv = _process_argv(argv)
     cwd = canonical.cwd
     if not cwd.is_dir():
         return ToolOutcome.error(f"not a directory: {rel}")
@@ -1121,7 +1144,7 @@ def run_command_raw(
                 execution_store.settled(execution_id, code)
     try:
         proc = cancellation.run_process(
-            argv,
+            process_argv,
             cwd=cwd,
             env=env,
             timeout=timeout,
