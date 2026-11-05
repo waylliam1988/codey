@@ -127,11 +127,12 @@ def run_review_attempt(
         reviewer.new_chat()
         observations: tuple[dict[str, object], ...] = ()
         if candidate is not None and parent_policy is not None:
-            from codey.reviews.reproduction import candidate_current, final_review_prompt
+            from codey.reviews.reproduction import candidate_current, final_review_prompt, native_submission_prompt
 
             observations = _review_observations(reviewer, prepared.prompt, task, candidate,
                 parent_policy, replay_probes, trace_recorder)
-            prepared = replace(prepared, prompt=final_review_prompt(prepared.prompt, observations, prepared.scope.provided_files))
+            prepared = replace(prepared, prompt=native_submission_prompt(
+                final_review_prompt(prepared.prompt, observations, prepared.scope.provided_files)))
             reviewer.new_chat()
         review = _request_review_result(reviewer, trace_recorder, prepared, snapshot, structured=candidate is not None)
         review = replace(review, reproduction=observations)

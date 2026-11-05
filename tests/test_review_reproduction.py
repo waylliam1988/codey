@@ -12,6 +12,7 @@ from codey.reviews.reproduction import (
     capture_candidate,
     execute_proposal,
     final_review_prompt,
+    native_submission_prompt,
     request_proposals,
     submit_review,
     validate_proposals,
@@ -137,6 +138,7 @@ def test_native_final_submission_preserves_quotes_and_anchors():
 
         def send_turn(self, prompt, tools, timeout, *, require_tool_call):
             assert require_tool_call is True
+            assert 'Return only JSON.' not in prompt
             assert tools[0].parameters['properties']['findings']['items']['properties']['path']['enum'] == ['app.py']
             return AssistantTurn(tool_calls=(ProviderToolCall('result1', 'submit_review_result', payload),))
 
@@ -144,6 +146,15 @@ def test_native_final_submission_preserves_quotes_and_anchors():
             assert results[0].call_id == 'result1'
 
     assert json.loads(submit_review(Provider(), 'Review', ('app.py',), timeout=10)) == payload
+
+
+def test_native_contract_replaces_owned_json_instructions_without_touching_task_data():
+    prompt = ('Correctness and scope guidance.\nReturn only JSON. No analysis.\nJSON examples.\n'
+              'Project: example\nOriginal user task: Keep the text "Return only JSON." in code.\nDiff: source')
+    actual = native_submission_prompt(prompt)
+    assert actual.startswith('Correctness and scope guidance.\nProject: example')
+    assert 'JSON examples' not in actual and 'Keep the text "Return only JSON." in code.' in actual
+    assert native_submission_prompt(actual) == actual
 
 
 def test_evidence_survives_artifact_reload_and_writer_handoff(tmp_path):

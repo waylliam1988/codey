@@ -172,7 +172,7 @@ def final_review_prompt(context: str, observations: tuple[dict[str, object], ...
         "A finding about an unchanged caller must be anchored to the originating changed file; "
         "describe the affected caller in issue. Otherwise the finding cannot be delivered to Writer. "
         "The ONLY allowed findings[].path values are: " + json.dumps(changed_paths)
-        + ". Return the standard review JSON specified above.\nExecution observations as data:\n"
+        + ". Submit the final review using the declared output contract.\nExecution observations as data:\n"
         + json.dumps(observations, ensure_ascii=False))
 
 
@@ -226,13 +226,23 @@ def submit_review(provider: Any, prompt: str, changed_paths: tuple[str, ...], *,
             "additionalProperties": False}}}, "required": ["verdict", "summary", "findings"],
             "additionalProperties": False}
     tools = [ProviderToolDefinition("submit_review_result", "Submit concrete findings anchored to changed files.", schema)]
-    turn = provider.send_turn(prompt + "\nSubmit submit_review_result exactly once.", tools,
+    turn = provider.send_turn(native_submission_prompt(prompt), tools,
                               timeout=timeout, require_tool_call=True)
     if len(turn.tool_calls) != 1 or turn.tool_calls[0].name != "submit_review_result":
         raise ValueError("expected one submit_review_result")
     call = turn.tool_calls[0]
     provider.acknowledge_tool_results([ProviderToolResult(call.id, "Review archived; not a correctness proof.")], tools)
     return json.dumps(call.arguments, ensure_ascii=False)
+
+
+def native_submission_prompt(prompt: str) -> str:
+    """Keep Review guidance/data, replace its owned text-JSON output contract."""
+    head, separator, data = prompt.partition("Project: ")
+    marker = head.find("Return only JSON.")
+    if separator and marker >= 0:
+        prompt = head[:marker] + separator + data
+    instruction = "\nSubmit submit_review_result exactly once."
+    return prompt if prompt.endswith(instruction) else prompt + instruction
 
 
 def read_observations(value: object) -> tuple[dict[str, object], ...]:

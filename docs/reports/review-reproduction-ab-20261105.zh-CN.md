@@ -87,3 +87,8 @@ Mypy/Pyrefly/ty 按生产 Python 3.11 检查。分批 commit，逐步记录失�
   问题。新增授权/新对话/实际执行/持久化/原样重跑/未改调用方陈旧/未知发送不重试测试，
   修正后 26 passed。此前扩大现有 Review、coordinator、自动流程组 71 passed；
   Mypy 581 文件、Pyrefly（35 suppressed/80 warnings）、ty 无错误。
+- required-native 两行 pilot 仍未提交工具；真实 wire 两次均 tool_choice=required，说明仅
+  设置参数并不能迫使当前 KoboldCpp 返回工具。进一步发现候选把生产静态 Review 的
+  “Return only JSON”与 JSON 示例原封不动送入 native 最终请求，和工具合同冲突。
+  修正为仅替换自有输出指令，保留全部审查指导/项目数据/用户原文；增加幂等与原文保留回归。
+  不修改 Gemma codec，不把普通 prose 捏造成执行记录。继续小 pilot 通过后才扩大。
