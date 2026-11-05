@@ -85,6 +85,6 @@ class ClineRequestPolicy(LocalRequestPolicy):
                 return RetryDirective(False)
             return RetryDirective(budget.used < budget.max_total, when, "rate_limited")
         if failure.status == 401:
-            with self.runtime.auth.lock:
-                self.runtime.auth._state("reauth_required", "reauth_required")
+            self.runtime.auth.reject_credentials(context.deadline, context.cancelled, self.epoch,
+                                                 self.versions.get(context.logical_id, -1))
         return RetryDirective(False)

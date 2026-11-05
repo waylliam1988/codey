@@ -19,12 +19,14 @@ class CredentialRecord:
     expires_at: float
     account_epoch: str
     token_version: int = 0
+    reauth_required: bool = False
 
     def __post_init__(self) -> None:
         if (any(not isinstance(value, str) or not value.strip() or len(value) > 16000
                 for value in (self.access_token, self.refresh_token, self.account_epoch))
                 or type(self.expires_at) not in (int, float) or not math.isfinite(self.expires_at) or self.expires_at <= 0
-                or type(self.token_version) is not int or self.token_version < 0):
+                or type(self.token_version) is not int or self.token_version < 0
+                or type(self.reauth_required) is not bool):
             raise ValueError("invalid credential record")
 
 

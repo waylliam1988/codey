@@ -108,6 +108,7 @@ def test_repeated_401_does_not_loop_or_leak_reflected_credentials(connected, mon
     assert "MARKER" not in str(error.value) and len(sent) == 2
     assert instance.active == 0 and not provider.context_ledger.view
     assert instance.auth.snapshot()["state"] == "reauth_required"
+    assert instance.auth.store.load().reauth_required is True
 
 
 def test_wrapped_upstream_invalid_request_is_not_retried(connected, monkeypatch):

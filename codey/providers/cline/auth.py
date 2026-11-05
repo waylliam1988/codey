@@ -7,6 +7,7 @@ import time
 import urllib.parse
 import webbrowser
 from collections.abc import Callable, Generator
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from time import time_ns
@@ -58,6 +59,7 @@ class Auth:
         self._thread: threading.Thread | None = None
         self._generation = 0
         self._observed_epoch: str | None = None
+        self._rejected_epoch: str | None = None
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -66,13 +68,17 @@ class Auth:
                 epoch = record.account_epoch if record is not None else None
                 previous = self.state
                 if epoch != self._observed_epoch:
-                    previous_epoch = self._observed_epoch
                     self._observed_epoch = epoch
                     self._advance_revision()
-                    if self.state == "reauth_required" and record is not None and previous_epoch is not None:
-                        self.state = "ready"
-                if self.state not in _ACTIVE | {"reauth_required"}:
-                    self.state = "ready" if record is not None else (self.state if self.state != "ready" else "signed_out")
+                    if epoch != self._rejected_epoch:
+                        self._rejected_epoch = None
+                if self.state not in _ACTIVE:
+                    if record is not None and self._record_rejected(record):
+                        if self.state in {"ready", "signed_out", "reauth_required"} or self.error_code == "auth_storage_failed":
+                            self.state = "reauth_required"
+                            self.error_code = "reauth_required"
+                    else:
+                        self.state = "ready" if record is not None else (self.state if self.state != "ready" else "signed_out")
                 if previous != self.state:
                     if self.state in {"ready", "signed_out"}:
                         self.error_code = None
@@ -92,6 +98,8 @@ class Auth:
 
     def _state(self, state: str, error: str | None = None) -> None:
         self.state, self.error_code = state, error
+        if state == "reauth_required":
+            self._rejected_epoch = self._observed_epoch
         self._advance_revision()
         if state not in _ACTIVE:
             self.user_code, self.expires_at, self._url = None, None, ""
@@ -100,7 +108,8 @@ class Auth:
         with self.lock:
             if self.state in _ACTIVE:
                 return self.snapshot()
-            if self.store.load() is not None and self.state != "reauth_required":
+            record = self.store.load()
+            if record is not None and not self._record_rejected(record) and self.state != "reauth_required":
                 return self.snapshot()
             self._generation += 1
             self.attempt = uuid4().hex
@@ -153,6 +162,7 @@ class Auth:
                 if not self._current(generation, cancel):
                     return
                 self.store.save(record)
+                self._rejected_epoch = None
                 self._state("ready")
         except Exception as exc:
             with self.lock:
@@ -265,7 +275,9 @@ class Auth:
                 "refreshToken": record.refresh_token, "grantType": "refresh_token"}, deadline=deadline, cancelled=cancelled)
             if reply.status in {400, 401, 403}:
                 with self.lock:
-                    self._state("reauth_required", "reauth_required")
+                    if cancelled() or time.monotonic() >= deadline or generation != self._generation:
+                        raise TimeoutError("credential refresh cancelled")
+                    self._reject_record(record)
                 raise ConnectionActionError("reauth_required", "Sign in to Cline again.", 401)
             if reply.status != 200:
                 raise RuntimeError("Cline token refresh failed; retry.")
@@ -277,8 +289,27 @@ class Auth:
                 self._state("ready")
             return updated
 
+    def _record_rejected(self, record: CredentialRecord) -> bool:
+        return record.reauth_required or record.account_epoch == self._rejected_epoch
+
+    def _reject_record(self, record: CredentialRecord) -> None:
+        """Called under the credential transaction and instance lock."""
+        if self.store.load() != record:
+            return
+        self._state("reauth_required", "reauth_required")
+        self._rejected_epoch = record.account_epoch
+        self.store.save(replace(record, reauth_required=True))
+
+    def reject_credentials(self, deadline: float, cancelled: Callable[[], bool], epoch: str, version: int) -> None:
+        with self.transaction(deadline, cancelled), self.lock:
+            record = self.store.load()
+            if (not cancelled() and time.monotonic() < deadline and record is not None
+                    and record.account_epoch == epoch and record.token_version == version):
+                self._reject_record(record)
+
     def _check_record(self, record: CredentialRecord | None, epoch: str) -> None:
-        if record is None or record.account_epoch != epoch or self.state in _ACTIVE | {"reauth_required"}:
+        if (record is None or record.account_epoch != epoch or self._record_rejected(record)
+                or self.state in _ACTIVE | {"reauth_required"}):
             raise ConnectionActionError("reauth_required", "Cline account changed or requires sign-in; select the model again.", 401)
 
     def logout(self) -> None:

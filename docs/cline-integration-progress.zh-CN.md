@@ -64,3 +64,24 @@
 - 实机 DeepSeek V4.1 Flash：当前网络完整 429 FreeUsageLimitError → 物理网卡请求级回退 → 正常返回 ZEN_OK（6.359s）；路由状态清空。Beam 相同回退后返回 403 RegionError，属于该模型上游区域拒绝，未继续换出口或伪造成功。
 - 实机前后只读对比：网卡状态、IPv4 路由、DNS 服务端和系统代理快照一致，进程代理环境不变；没有关闭/修改系统 VPN。脱敏证据见 `docs/reports/zen-cancellation-and-routing-20261105.json`。
 - 本次只新增测试与更新说明，没有再次修改生产代码或 prompt；提交与推送回执以本轮最终答复为准。
+
+## 接续：Zen 完整实机验证（2026-11-05）
+
+- 用户要求按 Cline 的实机标准补验 Zen：当前免费目录、JSON/SSE 两轮、真实项目修复、Shell 审批续接和公布的思考设置。
+- [完成] 更新 `tools/zen_free_model_gate.py`：旧脚本只跑 chat/read/审批，并错误地对同时公布 efforts/toggle 的模型发送布尔值。生产以等级轴优先，故修正测试假设；增加按模型/用例选择、两轮、edit、等级矩阵、逐项检查点和终止区域拒绝记录。
+- [完成] 当前目录 10 模型；8 个最初通过 SSE 两轮，2 个明确区域拒绝。DeepSeek/Nemotron Super 真实修复及审批通过；共 66 项结果（34 通过、30 拒绝/失败、2 未执行）。27 项思考请求中 16 项获有效回复，未宣称全绿。
+- [完成] 系统网络、代理环境前后相同，4 个 Up 虚拟网卡保持，未修改 VPN/系统代理/DNS/路由。相关测试及报告已完成；提交和推送回执待收尾。不运行全量 pytest。
+
+### 接续中的新增缺陷核对
+
+- 用户新增两项 P2：重新登录失败后恢复旧失效凭证的 ready 状态；目录移除思考控制后仍发送旧 effort。均已用未改生产代码复现，前者 denied/expired/cancelled 三项失败，后者 Cline/Zen/Local 实际浏览器三项失败。
+- 认证修复：安全凭证记录新增向后兼容的 `reauth_required` 标记，刷新拒绝或重试后 401 后落盘。登录状态与凭证有效性分离；失败/过期/取消后继续阻断准入，允许重试，重启不复活；仅新认证或另一个已成功登录账号记录恢复。迟到拒绝按账号和 token version 匹配。
+- 前端修复：目录核对失效的等级/布尔轴和缓存，清理后持久化 `reasoning_reselect_required`，展示明确提示并阻止发送；用户重新选择模型或有效思考选项才恢复。覆盖非当前聊天和三种 API 来源。
+- 实机：DeepSeek/Nemotron Super 均通过 SSE 两轮、read、edit（原测试通过）及 Shell 同 run 审批；其 4/6 个思考设置获有效回复。Big Pickle/Flint 的 read 同样通过。
+- 429 根因控制：固定同一正文，仅变更 stream/stream_options，SSE 成功而 JSON 返回 FreeUsageLimitError，两者均走当前网络→物理网卡。不能认定真实额度耗尽；生产 Zen 默认 SSE，不为测试静默改变准入设置或追加重试。
+- 后半段 SSE 也开始返回 429，最终 DeepSeek 单次控制同样被拒绝。缺少上游额度/资格事实，保留当前可用性限制，不继续为全绿追加生成。
+- 验证完成：后端/清理/缺包/UI 存储 164 passed（42.05s）；共享 Zen/Local 110 passed（26.23s）；浏览器 62 个独立用例验证，扩大首次 59 成功、3 个过时标题夹具修正后，相关 23 项复跑全过（32.43s）。三个旧夹具给不支持思考的目录设置 low 并要求保留，与新需求冲突，已改为有效默认，失效路径由新三来源用例严格断言。
+- 新测试修正了 `UiState.current()` 快照不能充当可变 session 的假设、原有取消事务 TimeoutError 契约和菜单同名定位；补上新思考选择恢复后的 Composer.updateSend。没有放宽生产能力校验。
+- Ruff 全通过；mypy 597 文件、Pyrefly、ty（Python 3.11）通过；前端 TypeScript/Biome、294 Vitest、构建/发布一致性通过。没有新增类型豁免；没有运行全量 pytest。
+- 报告及脱敏事实见 `docs/reports/zen-live-validation-20261105.{zh-CN.md,json}`；更新模型管理、实现方案、测试索引、TEST_REPORT 和中英文变更记录。
+- 收尾只读确认用户 Cline 仍 ready；60 个随包 JS/MJS 语法检查通过。准备按认证、共享 UI、实机工具/文档分批提交，并推送 origin/master。

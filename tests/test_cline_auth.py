@@ -166,7 +166,8 @@ def test_refresh_rejection_and_network_failure_have_distinct_states(tmp_path, st
     with pytest.raises(RuntimeError) as error:
         auth.credentials(time.monotonic() + 2, lambda: False, "account-A")
     assert "SECRET_MARKER" not in str(error.value)
-    assert auth.state == state and store.load() is original
+    assert auth.state == state
+    assert store.load() == (replace(original, reauth_required=True) if status == 401 else original)
     assert auth.snapshot()["state"] == ("ready" if status == 503 else "reauth_required")
 
 
@@ -252,3 +253,68 @@ def test_new_storage_error_advances_revision_and_recovery_clears_the_error(tmp_p
     recovered = auth.snapshot()
     assert recovered["state"] == "ready" and recovered["error_code"] is None
     assert recovered["revision"] > failed["revision"]
+
+
+@pytest.mark.parametrize("outcome", ["denied", "expired", "cancelled"])
+def test_failed_relogin_cannot_revive_rejected_credentials(tmp_path, monkeypatch, outcome):
+    store, http = MemoryStore(credential(expires=1)), ScriptHTTP()
+    auth = Auth(store, http, tmp_path / "credentials", browser=lambda _: True)
+    assert auth.snapshot()["state"] == "ready"
+    http.hook = lambda url, *_: JsonReply(401, {}) if url.endswith("/refresh") else None
+    with pytest.raises(ConnectionActionError, match="Sign in"):
+        auth.credentials(time.monotonic() + 5, lambda: False, "account-A")
+
+    def poll(*_):
+        if outcome == "cancelled":
+            auth.cancel_login(auth.attempt)
+        if outcome == "expired":
+            raise TimeoutError("expired")
+        raise ValueError("denied")
+
+    monkeypatch.setattr(auth, "_poll", poll)
+    auth.start_login()
+    auth._thread.join(3)
+    assert not auth._thread.is_alive()
+    failed = auth.snapshot()
+    assert failed["state"] == {"denied": "error", "expired": "expired", "cancelled": "cancelled"}[outcome]
+    assert "login" in failed["actions"]
+    with pytest.raises(ConnectionActionError, match="requires sign-in"):
+        auth.credentials(time.monotonic() + 5, lambda: False, "account-A")
+    restarted = Auth(store, http, tmp_path / "credentials")
+    assert restarted.snapshot()["state"] == "reauth_required"
+
+    monkeypatch.setattr(auth, "_poll", lambda *_: {"access_token": "new-access", "refresh_token": "new-refresh"})
+    attempt = auth.attempt
+    auth.start_login()
+    auth._thread.join(3)
+    assert auth.attempt != attempt and auth.snapshot()["state"] == "ready"
+    assert store.load().account_epoch != "account-A"
+    assert auth.credentials(time.monotonic() + 5, lambda: False, store.load().account_epoch) is store.load()
+
+
+def test_late_auth_rejection_does_not_invalidate_a_new_account_or_token(tmp_path):
+    store = MemoryStore(credential(version=2))
+    auth = Auth(store, ScriptHTTP(), tmp_path / "credentials")
+    auth.reject_credentials(time.monotonic() + 3, lambda: False, "account-A", 1)
+    auth.reject_credentials(time.monotonic() + 3, lambda: False, "account-B", 2)
+    with pytest.raises(TimeoutError):
+        auth.reject_credentials(time.monotonic() + 3, lambda: True, "account-A", 2)
+    assert auth.snapshot()["state"] == "ready" and not store.saved
+    auth.reject_credentials(time.monotonic() + 3, lambda: False, "account-A", 2)
+    assert store.load().reauth_required is True
+    assert Auth(store, ScriptHTTP(), tmp_path / "credentials").snapshot()["state"] == "reauth_required"
+
+
+def test_storage_failure_while_marking_reauth_still_blocks_the_old_record(tmp_path, monkeypatch):
+    store = MemoryStore(credential())
+    auth = Auth(store, ScriptHTTP(), tmp_path / "credentials")
+
+    def fail(_):
+        raise ConnectionActionError("auth_storage_failed", "cannot write", 503)
+
+    monkeypatch.setattr(store, "save", fail)
+    with pytest.raises(ConnectionActionError, match="cannot write"):
+        auth.reject_credentials(time.monotonic() + 3, lambda: False, "account-A", 0)
+    assert auth.snapshot()["state"] == "reauth_required"
+    with pytest.raises(ConnectionActionError, match="requires sign-in"):
+        auth.credentials(time.monotonic() + 3, lambda: False, "account-A")
