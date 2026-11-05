@@ -11,7 +11,7 @@
 版本：`0.5.11`
 
 Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、StepFun、Qwen 和
-GLM，也可以连接本地 OpenAI-compatible 模型或支持的 OpenCode Zen 免费模型，
+GLM，也可以连接本地 OpenAI-compatible 模型或支持的 OpenCode Zen、Cline 免费模型，
 然后把它们接到你电脑上的受控工作区。
 
 它的目的有一点“平权”：AI 编程不应该只属于买得起高价 API 或昂贵订阅的人。Codey
@@ -90,6 +90,11 @@ Connection → Advanced → `API protocol` 明确选择 Chat Completions
 免费列表不代表所有任务模式都能访问。已验证 Muse 编码与 Space Bunny 审查，
 具体范围见[测试报告](TEST_REPORT.md)。
 
+Windows 使用 Cline 时，打开 Settings → Cline → Sign in，在系统浏览器完成授权。
+从刷新后的免费目录勾选模型，再 Save changes；登录成功不会自动开启模型。
+凭证保存在 Windows Credential Manager。输入框继续使用模型名称与思考等级两个选择器，
+按已验证能力提供等级或“默认／开／关”。详见[实机验收与限制](docs/reports/cline-integration-validation-20261105.zh-CN.md)。
+
 详见[模型管理与可选连接拆除](docs/model-management.md)。
 
 请求上下文与累计 API 用量分别统计。Run details 标明上次准备的请求，估算带 `~`，
@@ -144,8 +149,8 @@ API 任务可用 `--model`；`--effort` 要求同时指定模型，并符合公�
 桌面、CLI 与 headless 在接纳任务时正式保存模型、协议和生成参数。
 之后修改 Settings 不改变旧任务；原连接不可用时，恢复会明确阻塞。
 
-Chat Completions 和 Responses 共用取消与结果交付规则。Zen 是可移除的连接；
-移除后 Local API 和已保存的聊天、运行历史仍可使用。
+Chat Completions 和 Responses 共用取消与结果交付规则。Zen、Cline 都是可移除的连接；
+Cline 删除包之前需按拆除说明清理系统凭证和连接数据。移除后 Local API 和已保存的聊天、运行历史仍可使用。
 
 CLI、网页事件和 headless JSONL 共用运行身份与工具状态。恢复保留原任务要求；
 已结算结果可继续交付，未结算的危险写操作不会被盲目重试。

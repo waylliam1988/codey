@@ -1,6 +1,9 @@
 # Cline 可移除连接实施方案
 
-状态：设计稿，2026-11-05。本文不表示生产代码已经实现。
+状态：2026-11-05 实施基线，主体已实现并通过相关回归和实机验证。
+本文保留最初的逐字段设计，当前接口以源码与[模型管理说明](model-management.md)为准；
+实际交付、与设计的差异及未验证项见[验收报告](reports/cline-integration-validation-20261105.zh-CN.md)。
+实施与提交进度见[进度记录](cline-integration-progress.zh-CN.md)。
 
 ## 1. 产品约定与已验证边界
 
@@ -19,7 +22,10 @@
 
 实测使用了 Cline CLI 兼容请求头。这不证明省略这些请求头或换成任意客户端标识也能成功。初版封装为单一兼容配置，不自动轮换身份。
 
-尚未实测：SSE、工具调用与结果续聊、所有思考等级、压缩、恢复、退出期间取消、额度耗尽。Beam 续聊曾返回上游 Invalid request；不能据此认定只要保留更多字段就一定修复 Beam。
+初稿时尚未实测的 SSE、工具调用/结果续聊、17 个当前公布的思考选项现已通过实机；
+Solar 和 Nemotron Super 完成真实代码修复，Solar 完成 Shell 审批续接。
+压缩、恢复、取消与清理竞态使用确定性回归；未人为耗尽真实额度或清除生产账号。
+Beam 本轮 JSON/SSE 两轮和工具读取通过，原上游 Invalid request 未复现，不能据此推断其所有任务永久可用。
 
 ## 2. 本次代码审查发现的现有约束
 
@@ -36,7 +42,9 @@
 | `ConnectionStatusCoordinator.observe_catalog()` | 非空模型目录默认视为 ready | OAuth 来源不能仅因公共目录可读就显示已连接 |
 | `provider_ui.selectedEffort()` | toggle 的 null 选择目前折成 off | Cline 若支持服务端默认，必须保留 null/on/off 三态 |
 
-下面的字段、接口名称和阈值为拟新增设计，不能当成现有接口调用。
+下面的字段、接口名称和阈值保留实施前设计语境。已落地的主要差异：完整清理通过
+通用 `clear_data` 操作和停服维护工具执行，不在设置页增加删除按钮；安全存储首版仅 Windows；
+意外用户费用阻断另存 `blocked.json`；真实非流式响应的 success/data 包装由包内 codec/usage 解开。
 
 ## 3. 文件组织与依赖边界
 

@@ -2,6 +2,51 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Cline optional integration (2026-11-05)
+
+Windows validation passed **348 focused pytest tests**, plus **293 frontend tests**
+in 53 Vitest files. No full pytest or full coverage run was performed for this
+delivery. Historical complete-suite counts below do not describe this revision.
+
+| Scope | Result |
+|---|---|
+| Cline auth/catalog/runtime/cleanup/real HTTP/process refresh/removal, generic actions and live-gate tooling | 93 passed, 18.75s |
+| Shared Local/Zen/SSE/budgets/history/compaction/approval/operator routes/review and packaged frontend | 214 passed, 46.47s |
+| Real browser model menu, per-chat thinking, three-state default/on/off/default and new-chat inheritance | 9 passed, 25.59s |
+| Settings model management, independent saves, action layout and an actual wheel build | 32 passed, 73.63s |
+| Enhanced Cline-absent formal review and child CLI/headless probe | 2 passed on final rerun; already included above |
+| Frontend | TypeScript, Biome, 293 Vitest tests, Vite build and published fingerprint check passed |
+| Python | Ruff over codey/tests/tools; mypy 597 production files; Pyrefly and ty, all targeting Python 3.11, passed |
+| Shipped JS/MJS | Syntax checked 54 files; git diff whitespace check passed |
+
+Pyrefly retains the repository's existing 35 suppressed diagnostics and 81
+warnings; this change adds no type-check suppression. Missing/invalid capabilities
+fail admission, and unknown usage remains unknown.
+
+Live production Cline factories passed JSON and SSE two-turn conversations on
+all four current free models. Solar Mini 4 passed chat/read/edit and Shell approval
+continuation; Nemotron Super passed read/edit; Beam and Lightning passed read.
+The two edit cases changed real fixture code and passed its existing tests.
+All 17 currently advertised thinking options were accepted, without claiming
+proof of internal reasoning budgets. Old Beam upstream Invalid request did not
+recur; this is not a guarantee for every task or future upstream availability.
+
+Root causes were classified before changing expectations: success/data decoding
+and cancellation-during-decode were production defects; auth revisions now survive
+runtime replacement and Windows clock tick reuse. The live harness's
+unconditional Zen runtime wrapper was an outdated tool assumption. Existing SSE
+diagnostics were restored after a compatibility regression instead of weakening
+their tests. Isolated cleanup and fresh-process removal tests preserve the live
+account and exercise Local's two protocols, Zen, auxiliary generation, formal
+review, history, approvals and actual child CLI/headless processes.
+
+See the [sanitized report and evidence](docs/reports/cline-integration-validation-20261105.zh-CN.md),
+[progress/commit log](docs/cline-integration-progress.zh-CN.md) and
+[cleanup procedure](docs/model-management.md#cline-cleanup-before-removal).
+Windows Credential Manager is the initial secure storage implementation; no
+plaintext fallback is provided elsewhere. Real quota exhaustion was not induced;
+fault, cancellation, cleanup and compaction cases use deterministic peers.
+
 ## Contract presentation, scoped repair and discovered boundaries (2026-10-25)
 
 Current delivery passed **833 focused tests and 525 subtests** in **135.25s**;

@@ -23,6 +23,24 @@ scheduler consuming it. Frontend source behavior lives beside its TypeScript mod
 
 ## Current verification and coverage
 
+### Optional Cline integration
+
+Focused Cline checks use `test_cline_auth.py`,
+`test_cline_catalog_and_selection.py`, `test_cline_runtime_protocol.py`,
+`test_cline_cleanup.py`, `test_cline_http_and_process_refresh.py` and
+`test_optional_cline_removal_preserves_other_connections.py`. They inject
+isolated credentials, exercise loopback HTTP and two-process token rotation,
+and block Cline imports in fresh parent/child processes. The removal probe also
+runs Local's two protocols, Zen, auxiliary generation and formal code review.
+Windows store deletion uses a unique test target, never the live account.
+
+`test_connection_actions.py` covers shared optional operations. Authentication
+polling/draft protection has frontend Vitest coverage; composer three-state
+thinking and per-chat isolation use the real packaged browser tests in
+`test_dynamic_api_model_menu_and_per_chat_effort.py`. Live tests are explicit
+`python -m tools.cline_live_gate --run-dir <new-directory>` commands, outside
+pytest and CI. See [validation and removal](../docs/reports/cline-integration-validation-20261105.zh-CN.md).
+
 Current complete-suite counts, machine-contract results, coverage measurements,
 and platform limits are maintained in [TEST_REPORT](../TEST_REPORT.md). Older
 counts below describe their historical runs.

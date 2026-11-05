@@ -122,6 +122,9 @@ Chat、编程、Research、规划与获授权的混合任务共用模型工具�
 | `frontend/src/changes_drawer.ts` | 唯一拥有 Changes 项目、显示数据、新鲜度和操作；局部刷新保留阅读现场，旧数据禁止恢复 |
 | `frontend/src/settings.ts` | 独立连接字段 baseline 与保存生命周期；模型偏好修改判断和来源行更新留在 model_settings.js |
 | `codey/providers/zen/` | 动态免费目录、限定合作身份与访问观察；`usage.py` 独占 Zen 两种协议字段映射，`declarations.py` 拥有临时不可用 read/shell 网络声明，`connection.py` 拥有有界文本调用拒绝；不授予任务权限，删除生产包和注册时还需清理专用测试、gate 和文档 |
+| `codey/providers/cline/` | 可移除的设备 OAuth、Windows 凭证、账号/刷新生命周期、免费资格、精确能力映射、reasoning codec/SSE 和请求策略；不注入代理提示词或工具权限 |
+| `codey/app/connection_actions.py`、`frontend/src/connection_auth.ts` | 通用可选登录、状态、退出与清理；页面代次拥有轮询，认证版本不覆盖模型选择草稿 |
+| `tools/cline_live_gate.py`、`cline_clear_data.py` | 显式实机 HTTP/headless/思考验证，以及删除包之前的离线清理；不在启动时自动执行 |
 | `codey/runtime/core/api_selection.py`、`operation_payload.py` | 无秘密的冻结 API 选择，以及严格接纳/交付 payload 校验 |
 | `codey/research/source_gateway.py`、`tools.py` | 显式来源/工具结果；取消及截止异常直接传播，不继续 fallback 获取 |
 | `codey/app/context.py`、`event_bus.py`、`event_payloads.py` | 公共出口补全运行身份和模式、严格状态；总线负责重放，纯投影模块生成有界机器事件与收据 |

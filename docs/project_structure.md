@@ -123,6 +123,9 @@ Using web tools in ordinary coding does not automatically require research notes
 | `frontend/src/changes_drawer.ts` | Sole owner of Changes project, displayed data, freshness and operations; keyed refresh preserves reading context and stale data cannot restore |
 | `frontend/src/settings.ts` | Independent connection-field baseline/save lifecycle; model preference dirty state and source-row reconciliation stay in model_settings.js |
 | `codey/providers/zen/` | Public/free catalog, scoped partner identity and access observations; `declarations.py` owns the temporary unavailable read/shell wire profile, and `connection.py` owns bounded text-call rejection. No task grants; removing production registration/package also requires cleaning its dedicated tests, gates and docs |
+| `codey/providers/cline/` | Removable device OAuth, Windows credentials, refresh/account lifecycle, free eligibility, exact capability mapping, reasoning codec/SSE and request policy; no agent prompt or tool grants |
+| `codey/app/connection_actions.py`, `frontend/src/connection_auth.ts` | Generic optional login/status/logout/cleanup dispatch and mounted-page polling; authentication revisions never replace preference drafts |
+| `tools/cline_live_gate.py`, `cline_clear_data.py` | Explicit live HTTP/headless/thinking checks and offline cleanup before package removal; neither belongs to automatic startup |
 | `codey/runtime/core/api_selection.py`, `operation_payload.py` | Non-secret frozen API selection and strict admission/delivery payload validation |
 | `codey/research/source_gateway.py`, `tools.py` | Explicit acquisition/tool outcomes; cancellation/deadlines propagate without fallback acquisition |
 | `codey/app/context.py`, `event_bus.py`, `event_payloads.py` | Common run identity/mode and strict status publication; replay bus and pure bounded machine-event/receipt projection |

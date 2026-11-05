@@ -12,7 +12,7 @@ Version: `0.5.11`
 
 Codey connects browser AI accounts you already use, such as DeepSeek, MiMo,
 StepFun, Qwen, and GLM, a local OpenAI-compatible model, or supported free
-OpenCode Zen models, to a controlled
+OpenCode Zen or Cline models, to a controlled
 workspace on your own computer.
 
 Its purpose is access equity. AI-assisted programming should not require paid
@@ -113,6 +113,12 @@ checked by the service for each request. A free listing does not guarantee acces
 to every task mode. Muse coding and Space Bunny review were verified; see
 [test results and access limits](TEST_REPORT.md).
 
+To use Cline on Windows, open Settings → Cline → Sign in and authorize in the
+system browser. Choose models from the refreshed free directory and Save changes;
+signing in does not enable models automatically. Credentials use Windows
+Credential Manager. Supported models expose their verified thinking levels or
+Default / On / Off in the existing composer. See [validation and limits](docs/reports/cline-integration-validation-20261105.zh-CN.md).
+
 See [model management and optional connection removal](docs/model-management.md).
 
 Request context and accumulated API usage are separate. Run details labels the
@@ -176,7 +182,9 @@ protocol and generation settings. Later Settings changes do not alter that run;
 an unavailable original connection blocks recovery explicitly.
 
 Chat Completions and Responses share cancellation and result-delivery rules.
-Removing the optional Zen connection preserves Local API support and stored history.
+Zen and Cline are optional connections. Before deleting Cline's package, clear its
+system credentials and local connection data using the documented removal procedure.
+Removing either connection preserves Local API support and stored history.
 
 CLI, browser events and headless JSONL share run identity and tool status.
 Recovery retains the original requirements and can deliver settled results;

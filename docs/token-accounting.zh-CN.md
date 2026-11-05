@@ -103,11 +103,23 @@ RunTrace 保留最多 64 条请求明细、最后一次请求和所有已观察�
 `Last prepared request` 只表示上次准备发送的请求，不冒称下一请求或实时上下文占用。
 不增加常驻统计面板、进度条或供应商品牌样式。
 
-## 移除 Zen 与未来接入
+## Cline 用量
+
+Cline 的 `usage.py` 解开非流式 success/data，并复用 Chat token 归一化。
+累计 SSE 用量保留最新快照，不逐帧相加；cache/reasoning 子项不重复计入总量。
+请求前计数明确 estimated，不将其当作服务端消耗。本次不增加费用 UI；
+服务端用户 `usage.cost` 非零、非有限或无法解析时触发后续请求阻断，不把上游内部成本冒充用户费用。
+阻断在连接缓存中持久化，退出或完整清理后解除。
+确定性测试覆盖正常与不完整用量，实机验收范围见[报告](reports/cline-integration-validation-20261105.zh-CN.md)。
+
+## 移除 Zen、Cline 与未来接入
 
 删除 Zen 注册和 `providers/zen/` 后，核心、Local 及规范化历史仍可运行。
 Zen 的认证身份、目录、访问资格、内部闭合及 usage 字段映射全部随包移除；专用测试、gate 与文档随之清理。
 移除探针使 Zen 不可导入，执行 Local 两种协议及工具往返，并验证规范化 usage。
+
+Cline 的原始用量字段解释也只在其包内；删除包前先清理系统凭证、缓存和来源偏好。
+独立缺包探针还验证 Zen、辅助请求及实际 CLI/headless 子进程。规范化历史不需要导入 Cline。
 
 未来 DeepSeek API 使用独立连接身份（网页 deepseek 保留原义），复用 runtime、codec、记录和显示。
 只补该连接实际需要的认证、目录、计数能力与 usage 解释；没有准确计数能力就明确 estimated，

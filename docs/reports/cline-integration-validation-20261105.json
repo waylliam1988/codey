@@ -1,0 +1,239 @@
+{
+  "date": "2026-11-05",
+  "platform": "Windows",
+  "scope": "Live Cline production factories and headless kernel; not a full release gate",
+  "models": [
+    {
+      "model": "cline-free/solar-mini4",
+      "ok": true,
+      "cases": [
+        {
+          "case": "two_turn_json",
+          "ok": true,
+          "first_nonempty": true,
+          "history_items": 4
+        },
+        {
+          "case": "two_turn_sse",
+          "ok": true,
+          "first_nonempty": true,
+          "history_items": 4
+        },
+        {
+          "case": "chat",
+          "ok": true
+        },
+        {
+          "case": "read",
+          "ok": true,
+          "stop_reason": "done",
+          "work_correct": true,
+          "verification_ok": true
+        },
+        {
+          "case": "edit",
+          "ok": true,
+          "stop_reason": "done",
+          "work_correct": true,
+          "verification_ok": true
+        },
+        {
+          "case": "shell_approve",
+          "ok": true,
+          "stop_reason": "done",
+          "shell_results": 1
+        }
+      ]
+    },
+    {
+      "model": "reflection/beam-free",
+      "ok": true,
+      "cases": [
+        {
+          "case": "two_turn_json",
+          "ok": true,
+          "first_nonempty": true,
+          "history_items": 4
+        },
+        {
+          "case": "two_turn_sse",
+          "ok": true,
+          "first_nonempty": true,
+          "history_items": 4
+        },
+        {
+          "case": "read",
+          "ok": true,
+          "stop_reason": "done",
+          "work_correct": true,
+          "verification_ok": true
+        }
+      ]
+    },
+    {
+      "model": "cline-free/nemotron-3.5-super-vl",
+      "ok": true,
+      "cases": [
+        {
+          "case": "two_turn_json",
+          "ok": true,
+          "first_nonempty": true,
+          "history_items": 4
+        },
+        {
+          "case": "two_turn_sse",
+          "ok": true,
+          "first_nonempty": true,
+          "history_items": 4
+        },
+        {
+          "case": "read",
+          "ok": true,
+          "stop_reason": "done",
+          "work_correct": true,
+          "verification_ok": true
+        },
+        {
+          "case": "edit",
+          "ok": true,
+          "stop_reason": "done",
+          "work_correct": true,
+          "verification_ok": true
+        }
+      ]
+    },
+    {
+      "model": "nvidia/nemotron-3.5-lightning-free",
+      "ok": true,
+      "cases": [
+        {
+          "case": "two_turn_json",
+          "ok": true,
+          "first_nonempty": true,
+          "history_items": 4
+        },
+        {
+          "case": "two_turn_sse",
+          "ok": true,
+          "first_nonempty": true,
+          "history_items": 4
+        },
+        {
+          "case": "read",
+          "ok": true,
+          "stop_reason": "done",
+          "work_correct": true,
+          "verification_ok": true
+        }
+      ]
+    }
+  ],
+  "reasoning": {
+    "ok": true,
+    "accepted_options": 17,
+    "cases": [
+      {
+        "model": "reflection/beam-free",
+        "effort": "max",
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "reflection/beam-free",
+        "effort": "xhigh",
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "reflection/beam-free",
+        "effort": "high",
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "reflection/beam-free",
+        "effort": "medium",
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "reflection/beam-free",
+        "effort": "low",
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "cline-free/nemotron-3.5-super-vl",
+        "thinking": null,
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "cline-free/nemotron-3.5-super-vl",
+        "thinking": true,
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "cline-free/nemotron-3.5-super-vl",
+        "thinking": false,
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "nvidia/nemotron-3.5-lightning-free",
+        "thinking": null,
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "nvidia/nemotron-3.5-lightning-free",
+        "thinking": true,
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "nvidia/nemotron-3.5-lightning-free",
+        "thinking": false,
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "cline-free/solar-mini4",
+        "effort": "max",
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "cline-free/solar-mini4",
+        "effort": "xhigh",
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "cline-free/solar-mini4",
+        "effort": "high",
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "cline-free/solar-mini4",
+        "effort": "medium",
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "cline-free/solar-mini4",
+        "effort": "low",
+        "ok": true,
+        "history_items": 2
+      },
+      {
+        "model": "cline-free/solar-mini4",
+        "effort": "minimal",
+        "ok": true,
+        "history_items": 2
+      }
+    ]
+  }
+}

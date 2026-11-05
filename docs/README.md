@@ -15,6 +15,7 @@
 | [runtime_architecture.zh-CN.md](runtime_architecture.zh-CN.md) | 当前 Runtime 架构 |
 | [api_request_reliability_architecture.zh-CN.md](api_request_reliability_architecture.zh-CN.md) | API 请求、取消、连接与恢复边界 |
 | [model-management.md](model-management.md) | 模型管理与可选连接拆除 |
+| [Cline 实机验收与拆除验证](reports/cline-integration-validation-20261105.zh-CN.md) | 当前集成、根因分类、实机模型范围与凭证清理边界 |
 | [external-control-implementation.zh-CN.md](external-control-implementation.zh-CN.md) | 外部控制 v0.3 实现、使用、模型地址发现与版本切换边界 |
 | [token-accounting.zh-CN.md](token-accounting.zh-CN.md) | 请求预算与 token 用量归属 |
 | [kernel_invariants.zh-CN.md](kernel_invariants.zh-CN.md) | 内核不变量；文内历史验证只对应记录版本 |

@@ -8,6 +8,10 @@ overview, not a release gate.
 - Web providers: DeepSeek, MiMo, StepFun, Qwen, and GLM.
 - Local provider: an OpenAI-compatible endpoint with an optional API key and
   explicit Chat Completions or Responses protocol in Settings → Advanced.
+- Cline: browser device authorization on Windows, secure OS credentials and an
+  explicit free directory with verified model limits and thinking controls.
+  Select models in Settings after sign-in. Coding and tool approval use the
+  shared runtime. [Setup, cleanup and limits](model-management.md#optional-account-sign-in).
 - OpenCode Zen: dynamically discovered supported zero-cost models using the
   agreed public partner connection. The service checks access for every request;
   Zen requires Bun (on PATH or in `~/.bun/bin`). On Windows, each request starts

@@ -7,6 +7,9 @@
 - 网页 provider：DeepSeek、MiMo、StepFun、Qwen、GLM。
 - 本地 provider：OpenAI-compatible endpoint，可选 API key，在 Settings → Advanced
   明确选择 Chat Completions 或 Responses。
+- Cline：Windows 浏览器设备授权、系统安全凭证、明确免费目录与已验证的模型预算/思考选项。
+  登录后在 Settings 明确勾选模型，编码和工具审批复用共同运行链路。
+  [使用、清理与限制](model-management.md#optional-account-sign-in)。
 - OpenCode Zen：合作公共连接动态获取协议受支持的零费用模型；每次请求资格由上游
   检查。Zen 需要 Bun（PATH 或 `~/.bun/bin`）。Windows 每个请求先走现有网络/VPN；
   收到完整免费用量拒绝或确认提交前连接失败后，可通过该请求专属的物理网卡隧道回退一次。

@@ -4,6 +4,15 @@
 
 ## Unreleased
 
+- Add removable Cline integration with browser device authorization, Windows
+  Credential Manager, coordinated refresh, verified free catalog/capabilities,
+  structured reasoning history, streaming tools and per-chat thinking settings.
+  Generic login controls preserve unsaved model choices. Add explicit cleanup and
+  fresh-process absence tests covering Local, Zen, approvals, history and children.
+- Reject history commits when cancellation arrives during response decoding.
+  Validate live Cline JSON/SSE conversations, coding, approval continuation and
+  advertised thinking options; see the [validation report](docs/reports/cline-integration-validation-20261105.zh-CN.md).
+
 - Converge Research on one whole-answer workflow. Remove existing-knowledge
   editing, standalone writes and the local subquestion planning/selection route;
   save new candidate knowledge with the final answer. Preserve pinned source

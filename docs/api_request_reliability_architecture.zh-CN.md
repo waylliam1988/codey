@@ -28,6 +28,20 @@ Gate recorder 区分逻辑发送、物理尝试和重试；同一路径的嵌套
 
 Zen 协调器按连接、身份和协议建立作用域，保留并发、冷却和单次探测规则。策略最多六次物理尝试（包括首次），并受逻辑请求总预算约束。只允许明确短期限流、已证实的提交前网络失败，以及完整 HTTP 429 / server_error / 空 code / 精确消息 `Upstream request failed: Endpoint is unavailable.` 的有界重试。额度、资格、其他未知 429 和发送后未知结果不自动重试；遵守 Retry-After 和有限退避。错误被允许重试不证明模型一定可用。
 
+## Cline 账号与协议扩展
+
+Cline 的凭证、固定地址、客户端兼容头、免费资格和重试分类仅在独立包内。
+设备授权后台执行；重复登录复用 attempt，取消/退出递增代次，迟到交换不能写凭证。
+刷新使用操作系统文件锁协调同一账号的多个进程，锁内重读版本，轮换只写一次完整凭证。
+本版仅支持 Windows Credential Manager，不明文回退。退出/清理与最终任务准入共用
+AppContext 门控，并拒绝活动请求、审批续接或审查仍占用的账号。
+
+共享 ApiProvider 接受连接器注入的 codec、codec revision、动态请求头和 SSE accumulator。
+Cline codec 处理非流式 success/data 包装，保留同一协议窗口的 reasoning_details 和签名，
+语义重放移除不透明字段；辅助压缩保留连接、账号、动态凭证和 codec。取消若在解码期间
+到达，提交门同样拒绝迟到历史。流结果不明不重发；完整 401 最多刷新一次，短 429 有限等待，
+上游 Invalid request 不重试。意外正数用户费用使后续准入阻断，且跨重启保留。
+
 ## 共享 Python 传输与可移除边界
 
 `ApiHttpSession` 仍是共享 Python 传输可显式使用的连接池；当前 Zen Node opener 不通过该池发送。Python 池只有完整消费、可复用 framing 才回池，取消、断流、超时或脏连接销毁；标准库代理发现及 CONNECT 身份隔离仍属于共享层。

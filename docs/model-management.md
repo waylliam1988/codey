@@ -68,6 +68,37 @@ Model names come from connector metadata, user display names or actual IDs.
 Display names never become request IDs. A selected model's display name persists
 with the chat so a removed integration remains readable and unavailable.
 
+## Optional account sign-in
+
+Cline uses the same source editor. On Windows, expand Cline and choose Sign in;
+the system browser handles device authorization. The source shows its state,
+one-time code and expiry while authorization is pending. Repeated clicks reuse
+the current attempt; Cancel invalidates it. Closing Settings stops only UI
+polling; the backend attempt can finish, and reopening restores its status.
+A successful login refreshes the
+directory without changing staged selections; explicitly choose models and Save
+changes. Sign out is refused while a task or approval continuation uses Cline.
+
+Authentication revisions are separate from catalog timestamps and preference
+revisions. Polling cannot overwrite unsaved model choices. Operator-authenticated
+`GET /api/connection_auth?source=cline` reads status;
+`POST /api/connection_action` accepts `source`, `action` and an optional
+`attempt_id`. Login controls are optional connector functions, with no Cline UI
+branch. Tokens, device codes and credential-store paths are never returned.
+
+The initial secure storage implementation requires Windows Credential Manager;
+there is no plaintext fallback on another OS. Free eligibility comes only from
+Cline's `free` array (five-minute cache). Capabilities come from exact IDs or
+reviewed aliases in the public model directory (one-hour cache). Unknown limits
+exclude a model from usable choices. Expired eligibility must refresh before a
+request; retired models and changed capability contracts reject stale selections.
+
+The composer retains `[model] [thinking]`. Connectors may opt into a three-state
+toggle: Default sends no override, On/Off send explicit booleans. Missing opt-in
+preserves existing toggle behavior. Unsupported stored efforts are rejected at
+admission rather than silently becoming Default. Cline sends gateway `reasoning`
+fields and does not add an agent identity/system prompt.
+
 ## Request budgets and usage
 
 Model admission also freezes its context budget and counting method. API static
@@ -107,6 +138,42 @@ test removes an arbitrary optional source, independently of the Zen name.
 The same probe now executes both Local protocols with tool exchanges, usage and
 unbound Chat edits/Shell requests while Zen imports are blocked. Raw Zen usage parsing lives only in its package;
 normalized historical records and Run details do not import Zen.
+
+### Cline cleanup before removal
+
+Deleting Python code does not erase operating-system credentials. Stop the
+desktop/backend first, then run from the checkout with its environment:
+
+```powershell
+python -m tools.cline_clear_data
+```
+
+Success removes the `Codey/Cline/default` Credential Manager record, Cline's
+catalog and safety block cache, selected models and source display cache. It
+retains chat/run history. A failure reports `pending_cleanup` and must be
+resolved before claiming complete removal. Normal Sign out removes credentials
+and the safety block while retaining the public directory and model preferences.
+An unexpected positive user `usage.cost` blocks later requests across restart;
+only explicit sign-out/cleanup resets this safety state.
+
+Then remove the single Cline registration in `codey/providers/catalog.py` and
+`codey/providers/cline/`. Clean dedicated `tests/test_cline_*.py`,
+`tests/test_optional_cline_removal_preserves_other_connections.py`,
+`tests/support/cline.py`, `cline_refresh_probe.py`,
+`optional_cline_removal_probe.py`, `tools/cline_live_gate.py`,
+`tools/cline_clear_data.py` and associated documentation. Generic controls,
+codec/stream hooks and frontend files serve other optional connectors and stay.
+The credential lock sidecar contains no credential or catalog data; remove it
+only after all processes have stopped. Retained history can still contain old
+model identities and protocol reasoning metadata; deleting history is a separate
+user data operation.
+
+Before removal, run `tests/test_cline_cleanup.py` and
+`tests/test_optional_cline_removal_preserves_other_connections.py`. They use
+isolated stores, make Cline unimportable in fresh processes, execute both Local
+protocols, Zen and auxiliary generation, workspace reads/approvals, history,
+CLI startup and an actual headless child. No live account is logged out by tests.
+See [implementation evidence and limitations](reports/cline-integration-validation-20261105.zh-CN.md).
 
 ## Offline inspection
 
