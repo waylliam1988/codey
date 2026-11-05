@@ -23,10 +23,23 @@ from tests.test_chat_workspace_tools_and_answer_completion import NativeConversa
 
 
 @pytest.mark.parametrize("swap_registry_after_send", [False, True])
-def test_workspace_turn_prepares_once_and_executes_original_snapshot(tmp_path, monkeypatch, swap_registry_after_send):
+@pytest.mark.parametrize("scoped", [False, True])
+def test_workspace_turn_prepares_once_and_executes_original_snapshot(tmp_path, monkeypatch, swap_registry_after_send, scoped):
     project = tmp_path / "project"
     project.mkdir()
-    provider = NativeConversation(AssistantTurn(tool_calls=(
+    refreshes, executions, request_refreshes = [], [], []
+
+    class Provider(NativeConversation):
+        request_scoped_tool_context = scoped
+
+        def send_turn(self, prompt, tools, **kwargs):
+            request_refreshes.append(len(refreshes))
+            return super().send_turn(prompt, tools)
+
+        def send_tool_results(self, results, tools, **kwargs):
+            return super().send_tool_results(results, tools)
+
+    provider = Provider(AssistantTurn(tool_calls=(
         ProviderToolCall("edit-1", "edit", {"path": "result.txt", "content": "changed"}),
     )), AssistantTurn(text="finished"))
     bindings = []
@@ -39,8 +52,8 @@ def test_workspace_turn_prepares_once_and_executes_original_snapshot(tmp_path, m
                                AssistantTurn(text="finished")))
         real_send = provider.send_turn
 
-        def send_and_swap(text, tools):
-            turn = real_send(text, tools)
+        def send_and_swap(text, tools, **kwargs):
+            turn = real_send(text, tools, **kwargs)
             assert tool_spec.unregister_custom_tool(name)
             assert tool_spec.register_custom_tool(name, grant="project.verify")
             assert tool_spec.register_custom_executor(name, lambda call: bindings.append("replacement") or ToolResult(call, "new", ok=True))
@@ -56,7 +69,6 @@ def test_workspace_turn_prepares_once_and_executes_original_snapshot(tmp_path, m
     state_home = tmp_path.parent / f"s-{hashlib.sha256(str(tmp_path).encode()).hexdigest()[:10]}"
     state = AppContext(state_home)
     admit_entry_frame(frame, state)
-    refreshes, executions = [], []
     real_refresh = project_prompt_context.refresh_verification_candidates
     real_execute = kernel_actions._call_execute_turn
 
@@ -78,6 +90,7 @@ def test_workspace_turn_prepares_once_and_executes_original_snapshot(tmp_path, m
         assert result.event["stop_reason"] == "done"
         assert result.event["turns"] == 2
         assert executions == [1]
+        assert request_refreshes == [1, 2]
         assert provider.resets == 1
         assert (project / "result.txt").read_text(encoding="utf8") == "changed"
         assert [r.call_id for r in provider.results] == (["edit-1", "probe-1"] if swap_registry_after_send else ["edit-1"])

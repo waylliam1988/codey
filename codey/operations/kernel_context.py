@@ -312,7 +312,8 @@ class KernelContext:
     def freeze(self, state: Any, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None,
-               text_result_spans: list[dict[str, Any]] | None = None) -> None:
+               text_result_spans: list[dict[str, Any]] | None = None,
+               coding_context_prepared: bool = False) -> None:
         from codey.operations.provider_request import prepare_provider_request
 
         scoped_contract = self.request_scoped_context
@@ -339,7 +340,9 @@ class KernelContext:
             method, args = ("send_turn", (prompt, tools)) if self.native else ("send", (prompt,))
         options: dict[str, Any] = {}
         coding = ""
-        if self.native and not acknowledge:
+        # Full-turn prompts already contain their prepared context. Native
+        # continuations still need a fresh projection after tool execution.
+        if self.native and not acknowledge and not coding_context_prepared:
             prepared = prepare_coding_context(self.session, completion_context=self.completion_context)
             coding = render_coding_context(prepared, native=True) if prepared is not None else ""
             if coding and coding not in prompt and not self.request_scoped_observations and messages:
@@ -405,7 +408,8 @@ class KernelContext:
                 research_scope=prepared.snapshot.research_scope, tool_names=prepared.snapshot.tool_names,
                 provider=self.provider)) if part)
         self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
-                    counters=replace(state.counters, progress=progress.snapshot()))
+                    counters=replace(state.counters, progress=progress.snapshot()),
+                    coding_context_prepared=True)
 
     def interpret(self, state: Any) -> None:
         received = self.response(state)

@@ -12,8 +12,9 @@ import pytest
 
 _REPO = Path(__file__).resolve().parents[1]
 _PROBE = r'''
-import json, os, runpy, subprocess, sys
+import json, os, runpy, shutil, subprocess, sys
 from pathlib import Path
+from unittest.mock import patch
 import playwright
 import pytest
 
@@ -34,13 +35,24 @@ def browser_cache():
 
 before = browser_cache()
 native_platform = sys.platform
-sys.platform = platform
-runpy.run_path("tests/conftest.py")
-after = browser_cache()
-# Reinitialization must preserve the original cache, not pin the temporary home.
-runpy.run_path("tests/conftest.py")
-reinitialized = browser_cache()
-sys.platform = native_platform
+native_which = shutil.which
+lookups = []
+
+def host_which(*args, **kwargs):
+    # Only Playwright's cache policy is simulated. Real executable discovery
+    # must use the host platform, including Python 3.12's _winapi handling.
+    with patch.object(sys, "platform", native_platform):
+        lookups.append(sys.platform)
+        return native_which(*args, **kwargs)
+
+with patch.object(sys, "platform", platform), patch.object(shutil, "which", host_which):
+    runpy.run_path("tests/conftest.py")
+    after = browser_cache()
+    # Reinitialization must preserve the original cache, not pin the temporary home.
+    runpy.run_path("tests/conftest.py")
+    reinitialized = browser_cache()
+assert sys.platform == native_platform
+assert len(lookups) == 2 and all(value == native_platform for value in lookups)
 child = subprocess.run([sys.executable, "-c",
     "import json,os; print(json.dumps({k: os.environ.get(k) for k in "
     "('HOME', 'PLAYWRIGHT_BROWSERS_PATH')}))"],
