@@ -155,6 +155,21 @@ def test_native_contract_replaces_owned_json_instructions_without_touching_task_
     assert actual.startswith('Correctness and scope guidance.\nProject: example')
     assert 'JSON examples' not in actual and 'Keep the text "Return only JSON." in code.' in actual
     assert native_submission_prompt(actual) == actual
+    assert 'findings must be []' in actual and 'ALL THREE fields' in actual
+
+
+def test_readonly_native_text_uses_existing_parser_without_fabricating_a_call():
+    from codey.reviews.core import parse_review_response
+
+    class Provider:
+        native_tools = True
+
+        def send_turn(self, *args, **kwargs):
+            return AssistantTurn(text='```json\n{"verdict":"approved","summary":"No bugs.","findings":[]}\n```')
+
+    reply = submit_review(Provider(), 'Review', ('app.py',), timeout=10)
+    assert parse_review_response(reply).approved
+    assert '```json' in reply
 
 
 def test_evidence_survives_artifact_reload_and_writer_handoff(tmp_path):

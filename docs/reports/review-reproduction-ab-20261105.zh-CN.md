@@ -92,3 +92,8 @@ Mypy/Pyrefly/ty 按生产 Python 3.11 检查。分批 commit，逐步记录失�
   “Return only JSON”与 JSON 示例原封不动送入 native 最终请求，和工具合同冲突。
   修正为仅替换自有输出指令，保留全部审查指导/项目数据/用户原文；增加幂等与原文保留回归。
   不修改 Gemma codec，不把普通 prose 捏造成执行记录。继续小 pilot 通过后才扩大。
+- native-contract pilot 已真实找到/修复折扣，并原样重跑失败用例转绿；仍在二审终态失败：
+  模型有时返回无 verdict 的 fenced JSON，或 approved 同时把“修复正确”的赞扬写进 findings，
+  现有 parser 保守转 changes_requested。不能删除这些守卫来让控制通过。补齐 native 合同
+  的三字段要求与“只报告当前未修缺陷，批准时 findings=[]”语义。只读最终回复若为普通
+  文本，交给原 strict parser/一次格式修复，不捏造成工具执行；此兼容与具体模型无关。

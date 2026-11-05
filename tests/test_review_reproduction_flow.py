@@ -62,10 +62,10 @@ def setup(tmp_path):
     return root, tracker
 
 
-def attempt(tmp_path, root, tracker, reviewer, **kwargs):
+def attempt(tmp_path, root, tracker, reviewer, *, task='Return the input.', **kwargs):
     rows = []
     return run_review_attempt(SimpleNamespace(emit=rows.append, state_home=tmp_path / 'state'), session_id='s',
-        project=str(root), task='Return the input.', writer_summary='WRITER_CONCLUSION_TOKEN',
+        project=str(root), task=task, writer_summary='WRITER_CONCLUSION_TOKEN',
         changes=collect_task_changes(root, tracker), recent_log='WRITER_LOG_TOKEN',
         change_brief='WRITER_PLAN_TOKEN', project_map='Relevant modules: app.py, consumer.py',
         verification_map='', review_impact_map='consumer.py imports identity', execution_evidence='',
@@ -124,3 +124,21 @@ def test_unknown_proposal_send_is_not_retried_or_converted_to_approval(tmp_path)
     with pytest.raises(ConnectionError):
         attempt(tmp_path, root, tracker, reviewer, parent_policy=POLICY)
     assert len(reviewer.prompts) == 1 and reviewer.closed == 1
+
+
+def test_explicit_no_tests_intent_does_not_gain_execution_from_review(tmp_path):
+    root, tracker = setup(tmp_path)
+    reviewer = Reviewer()
+    review = attempt(tmp_path, root, tracker, reviewer, parent_policy=POLICY,
+                     task='Return the input. Do not run tests.')
+    assert not review.reproduction
+    assert [name for name, _ in reviewer.prompts] == ['static']
+
+
+def test_non_native_reviewer_retains_existing_static_contract(tmp_path):
+    root, tracker = setup(tmp_path)
+    reviewer = Reviewer()
+    reviewer.native_tools = False
+    review = attempt(tmp_path, root, tracker, reviewer, parent_policy=POLICY)
+    assert review.approved and not review.reproduction
+    assert [name for name, _ in reviewer.prompts] == ['static']

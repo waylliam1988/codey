@@ -228,6 +228,10 @@ def submit_review(provider: Any, prompt: str, changed_paths: tuple[str, ...], *,
     tools = [ProviderToolDefinition("submit_review_result", "Submit concrete findings anchored to changed files.", schema)]
     turn = provider.send_turn(native_submission_prompt(prompt), tools,
                               timeout=timeout, require_tool_call=True)
+    if not turn.tool_calls and turn.text.strip():
+        # A read-only review may arrive as text despite the requested tool.
+        # The existing strict Review parser/one format repair still decides it.
+        return str(turn.text)
     if len(turn.tool_calls) != 1 or turn.tool_calls[0].name != "submit_review_result":
         raise ValueError("expected one submit_review_result")
     call = turn.tool_calls[0]
@@ -241,7 +245,10 @@ def native_submission_prompt(prompt: str) -> str:
     marker = head.find("Return only JSON.")
     if separator and marker >= 0:
         prompt = head[:marker] + separator + data
-    instruction = "\nSubmit submit_review_result exactly once."
+    instruction = ("\nSubmit submit_review_result exactly once with ALL THREE fields: verdict, summary, findings. "
+        "If no concrete defect remains in the CURRENT candidate, verdict must be approved and findings must be []. "
+        "Findings describe only unresolved current bugs: never praise, an old bug already fixed, or an explanation of the diff. "
+        "For a supported current defect use changes_requested and anchor each finding to a declared changed path.")
     return prompt if prompt.endswith(instruction) else prompt + instruction
 
 
