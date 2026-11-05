@@ -798,7 +798,7 @@ K-P1 的实机数据、失败根因和“不合并”结论保留在本报告的
 
 ## 阶段 18：高扇入模块与导入边界审计（2026-11-05）
 
-对当前 718 个 `codey` Python 模块做 AST 导入盘点，最高扇入模块如下：
+本阶段的早期 AST 盘点原记录为 718 个 `codey` Python 模块，本轮未找到对应的可复现扫描命令。该模块总数及下述导入环计数由阶段 28 的复核替代；以下扇入表保留为历史盘点记录，不作为当前精确计数：
 
 | 模块 | 生产导入者数 | 当前判断 |
 |---|---:|---|
@@ -813,7 +813,7 @@ K-P1 的实机数据、失败根因和“不合并”结论保留在本报告的
 | `codey.runtime.core.operation_payload` | 30 | durable operation payload 解析和序列化共享层 |
 | `codey.runtime.effects.effect_records` | 27 | effect intent/settlement/recovery 事实源 |
 
-导入图发现 13 个强连通分量，其中较大的分量包括：Research answer/tool contract 与 toolchain schema、kernel 编排模块、durable checkpoint 与 runtime delivery。进一步追踪后发现：
+早期导入图曾记录 13 个强连通分量，这个计数未能按阶段 28 的规范化口径复现，已撤回。Research answer/tool contract 与 toolchain schema、kernel 编排模块、durable checkpoint 与 runtime delivery 的回边关系仍然存在。进一步追踪后发现：
 
 - kernel 分量主要由函数级延迟导入和共享 driver/context/task loop 互相协作形成；
 - durable checkpoint ↔ runtime delivery 通过恢复投影互相读取事实；
@@ -869,7 +869,7 @@ K-P1 的实机数据、失败根因和“不合并”结论保留在本报告的
 
 主树提交：`ec6a63f0 refactor(kernel): isolate provider request preparation`。
 
-AST 导入图的强连通分量总数仍为 13，因为 kernel 还存在 `context ↔ control` 以及 Research continuation/task loop 的真实协作边。这个提交只清除一个明确的反向动态依赖，没有用搬 import 的方式假装整体循环消失。
+本阶段曾沿用“强连通分量总数仍为 13”的结论，该计数已撤回，当前分类结果见阶段 28。kernel 仍存在 Research continuation/task loop 的运行时回边；`control → context` 则属于类型导入。这个提交只清除一个明确的反向动态依赖，不代表整体循环消失。
 
 ## 阶段 26：移除 provider request 兼容尾巴（2026-11-05）
 
@@ -884,14 +884,14 @@ AST 导入图的强连通分量总数仍为 13，因为 kernel 还存在 `contex
 
 ## 阶段 27：导入图最终分类（2026-11-05）
 
-移除兼容导出后重新计算导入图，并区分三种情况：模块顶层运行时导入、`TYPE_CHECKING` 类型导入、函数内延迟导入。当前 **模块顶层运行时导入图没有强连通分量**。
+移除兼容导出后区分三种情况：模块顶层运行时导入、`TYPE_CHECKING` 类型导入、函数内延迟导入。经阶段 28 用仓库内工具复核，当前 580 个生产 Python 模块的**显式顶层运行时导入图没有包含至少两个模块的强连通分量**；加入函数内导入后为 17 个，再加入类型导入后为 18 个。
 
-剩余的 13 个强连通分量只在把函数内延迟导入和类型导入也纳入图时出现，主要是 kernel 编排、durable/delivery 恢复投影和 Research/toolchain 合同之间的协作。它们不会造成模块启动时的循环导入；但仍代表运行时职责之间存在回边，后续只能按具体事实所有权继续拆。
+这些分量包括 kernel 编排、durable/delivery 恢复投影和 Research/toolchain 合同之间的协作。静态分类只说明 import 语句的定义位置，不能推出“不会造成模块启动时的循环导入”：模块初始化可以调用含延迟导入的函数，阶段 28 已实际观测到这种路径。类型导入本身也不等于运行时执行。
 
 当前导入整理结论：
 
 - provider request 的反向回边已清除，旧兼容导出也已删除；
-- 顶层运行时导入方向已经无环；
+- 当前显式顶层运行时导入图无环，但这不是任意启动路径安全的证明；
 - durable/delivery 与 Research/toolchain 不再做表面拆分，避免复制恢复和合同校验；
 - 后续若继续整理，验收重点应是减少函数级动态依赖和职责回边，而不是追求 AST 环数量归零。
 
@@ -916,3 +916,48 @@ docs/reports/kernel-carpet-audit-20261104.zh-CN.md
 
 报告依赖的 `.e2e-artifacts/kernel-audit-20261104/` 证据目录需要与主树一起保留。后续内核清理只在 `D:\codey` `master` 上进行，审计 worktree 和 `audit/kernel-audit-20261104` 分支在报告提交后删除。
 
+## 阶段 28：导入图统计与冷导入复核（2026-11-05）
+
+复核基线：主树 `9f26082d`。生产代码没有变更。本轮新增可复现工具 [tools/kernel_import_audit.py](../../tools/kernel_import_audit.py)，结果保留在 `.e2e-artifacts/kernel-audit-20261104/import-boundary-20261105.json`。
+
+### 扫描口径
+
+- 只扫描仓库根目录下 `codey/**/*.py`，共 580 个文件；`__init__.py` 规范化为所属包名，测试、工具和历史 worktree 不计入。
+- `import a.b` 指向对应模块；`from package import child` 在 `child` 为源码子模块时指向该子模块，否则指向 `package`；相对导入按所属包解析。
+- 函数体内的 import 标记为延迟导入；直接位于 `if TYPE_CHECKING` 或 `if typing.TYPE_CHECKING` 分支中的 import 标记为类型导入，优先于函数体分类；其他条件分支保守计入潜在运行时依赖。模块级类体中的 import 属于顶层分类。
+- 只统计显式 `Import` / `ImportFrom` 边；不展开 Python 导入时的隐式父包初始化边，也不解析 `importlib.import_module()`、`__import__()` 或跨函数调用关系。因此静态分类不是启动时序模型。
+- 此处“强连通分量”仅指包含至少两个模块的分量；单模块自引用另列于 JSON 的 `self_imports`，本次三个口径均为 0。
+
+| 纳入的显式依赖 | 强连通分量数 |
+|---|---:|
+| 仅顶层运行时 import | 0 |
+| 顶层运行时 import + 函数内延迟 import | 17 |
+| 再加入 `TYPE_CHECKING` import | 18 |
+
+旧“13 个”缺少可复核口径，本次未能复现，不能继续用作当前验收数字。完整分量及三组重点循环的具体边、行号和类型见 JSON。
+
+### 独立进程冷导入
+
+工具对三组重点分量中的 18 个模块，以及 `codey.durable`、`codey.operations.provider_request`、`codey.app.cli`、`codey.app.server`，分别在独立 Python 进程中冷导入，共 **22 个入口，22 个成功，0 个未处理异常**。这里只执行模块导入，没有启动服务、调用模型或执行恢复任务。
+
+导入探针记录 `builtins.__import__` 调用及其 Python 调用栈，实际观测到两处初始化期间的函数内导入，均发生在冷导入 `codey.research.tool_contract` 时：
+
+1. `tool_contract.py:246` 构造 `TOOL_CONTRACTS`，调用 `report_sections_schema()` → `coverage_record_schema()`，后者在 `knowledge_schema.py:57` 导入 `reviews.research_coverage.QUESTION_STATES`。
+2. `tool_contract.py:273` 在模块顶层调用 `_question_contract()`，后者在 `tool_contract.py:261` 导入 `research.questions.QUESTION_BOUND_TOOLS`。
+
+另观测到 15 处不同源码位置请求了仍在初始化的父包，例如 `durable.session` 中的 `from codey.durable import admission, conversation_ops`。这些是成功的子模块加载请求，不是已发现的初始化失败；静态规范化边与 Python 父包初始化顺序不能混为一谈。
+
+因此本轮证据支持：**显式顶层运行时导入图无环，选定的 22 个冷导入入口通过，且初始化期间确实会执行函数内导入。** 不将其扩展为“任意启动入口、模块加载顺序、可选依赖环境或业务调用路径都不会发生循环导入”。当前未发现需要修改生产导入结构的启动失败。
+
+### 可复现命令与验证
+
+从仓库根目录运行：
+
+```powershell
+python -B tools/kernel_import_audit.py --probe-imports --output .e2e-artifacts/kernel-audit-20261104/import-boundary-20261105.json
+python -B -m pytest -q tests/test_kernel_import_audit.py tests/durable/test_kernel_boundary.py tests/test_kernel_dependency_direction.py
+python -m ruff check tools/kernel_import_audit.py tests/test_kernel_import_audit.py
+git diff --check
+```
+
+新增审计工具测试为 **3 passed**：覆盖包子模块与相对导入规范化、类型导入分类，以及“顶层图无环但顶层调用延迟导入函数”的成功/失败两种真实冷导入场景。后者确认静态图无环并不能保证模块初始化成功。连同 durable kernel 隔离和 kernel 依赖方向测试，共 **11 passed**。Ruff 和差异空白检查通过。
