@@ -118,3 +118,10 @@ self-review，其结果也不等于第二模型独立审查。
 - scope 说明精简首轮已确认实际处理生效：memory 请求仍有 owner 写说明，memory_compact
   请求计数为零；保留 facts、store、检索与独立 suite。目前已完成冷启动两题和续作首题，
   均通过。等待完整反序结果后再改生产 `knowledge_context.py`，不覆盖原版证据。
+- 只读说明 A/B 和反序共 16 行全部通过；每个 arm 为 8/8。原 memory 44 请求、257814
+  输入 token；compact 43 请求、247475 输入 token。首请求减少 102–107 token，固定删除
+  455 字符写入说明；总 token 降幅约 4.0% 还含一次请求路径差异，不全归给固定删字。
+- 已接入 `knowledge_context.py`：仅 knowledge.write 被授权时提供写入 scope 指南。
+  新回归先红（只读仍收到写入说明）后绿，并证明真实作用域内 recall 仍存在、可写任务
+  继续收到原指南。定向知识/上下文/harness 组 69 passed；Ruff 与三种生产类型检查通过。
+  下一步用无 monkeypatch 的标准 memory arm 和真实 headless edit/project_review 再验生产。

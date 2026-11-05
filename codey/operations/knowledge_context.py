@@ -32,7 +32,7 @@ def knowledge_background(tools: Any, session: Any, question: str) -> str:
         "Use scope=personal with that scope_id for authorized user facts and their private inferences; "
         "scope=session is limited to the current conversation. Retain observation time and user_statement origin. "
         "Durable research defaults to personal scope without a project, or project scope with one. "
-        "Global is explicitly public; temporary content uses session scope.\n")
+        "Global is explicitly public; temporary content uses session scope.\n") if allows("knowledge.write") else ""
     if getattr(policy, "strict_research", False):
         from codey.research.answer_contract import whole_research
 
