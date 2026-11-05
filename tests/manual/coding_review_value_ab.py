@@ -52,7 +52,7 @@ def seed_files(name, correct):
     return {"tags.py": "def render_title(value):\n    return value.title()\n\ndef parse_tags(text):\n" + implementation}
 
 
-def run_arm(provider, case, correct, arm):
+def run_arm(provider, case, correct, arm, *, seed_override=None, reviewer_factory=None):
     mark, started = provider.mark(), time.monotonic()
     row = {"case": case.name, "seed": "correct" if correct else "flawed", "arm": arm,
            "reviews": [], "repairs": [], "events": []}
@@ -61,7 +61,7 @@ def run_arm(provider, case, correct, arm):
         root.mkdir()
         write_files(root, case.files)
         tracker = ChangeTracker(root)
-        for rel, content in seed_files(case.name, correct).items():
+        for rel, content in (seed_override or seed_files)(case.name, correct).items():
             tracker.capture_before(rel)
             write_files(root, {rel: content})
             tracker.capture_after(rel)
@@ -83,7 +83,8 @@ def run_arm(provider, case, correct, arm):
                     kwargs.pop("writer_id")
                     outcome = run_review_attempt(ctx, **kwargs,
                         review_impact_map=safe_review_impact_map(root, kwargs["changes"]),
-                        reviewer_id="local", reviewer=provider, self_review=True,
+                        reviewer_id="local", reviewer=(reviewer_factory(provider, root, case.task, kwargs, row)
+                            if reviewer_factory is not None else provider), self_review=True,
                         run_id=f"review-ab-{time.time_ns()}")
                     row["reviews"].append(review_result_payload(outcome[1]))
                     return outcome

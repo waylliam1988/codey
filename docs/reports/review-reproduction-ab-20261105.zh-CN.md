@@ -38,3 +38,8 @@ Mypy/Pyrefly/ty 按生产 Python 3.11 检查。分批 commit，逐步记录失�
 
 - 2026-11-05：已核对现有生产调用与旧实验边界；开始构造可执行测试与静态上下文独立
   对照。当前生产代码未修改，原始结果计划保存在 tests/manual/results/review-reproduction-*。
+- 开发批进行中：折扣缺陷三个 arm 都真实返修后通过；baseline 与 independent 仍漏检
+  标签大小写去重。reproduce 已真实运行折扣边界脚本，修前失败、修后通过，正确折扣控制
+  无误报。生成测试按需求核对，不把 AssertionError 本身当作语义判决。
+- 执行器和独立评分定向测试 16 passed；覆盖原工作区不写入、无授权禁止执行、导入错误、
+  0 tests、四类候选的正确/缺陷独立判定。Ruff 实验脚本通过。尚未接入生产。
