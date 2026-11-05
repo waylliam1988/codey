@@ -67,10 +67,16 @@ def _request_entry_offenders(tree: ast.Module) -> list[int]:
             if (isinstance(node, ast.Call) and len(node.args) == 1
                     and isinstance(node.args[0], ast.Name) and node.args[0].id in parameters):
                 forwarded.add(id(node))
+    # Manual probes may define a local helper named ``run`` for the lower-level
+    # kernel itself. That helper is not the project adapter entry and must not
+    # be mistaken for an untyped ``run(AgentRequest)`` call.
+    local_function_names = {
+        node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+    }
     return [node.lineno for node in ast.walk(tree)
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
             and node.func.id in {"run", "run_agent"} and id(node) not in forwarded
-            and node.func.id not in {item.name for item in tree.body if isinstance(item, ast.FunctionDef)}]
+            and node.func.id not in local_function_names]
 
 
 def test_manual_scripts_construct_or_forward_agent_request() -> None:
