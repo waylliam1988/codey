@@ -59,6 +59,43 @@ def test_production_review_uses_distinct_api_reviewer_with_frozen_writer(tmp_pat
     assert attempt.call_args.kwargs["reviewer"] == "review-provider"
 
 
+def test_local_writer_can_select_enabled_cross_connection_api_reviewer(tmp_path, monkeypatch):
+    from codey.app import review_service
+    from codey.providers import api_connections
+
+    reviewer = ApiRunSelection("cline", "fixture-cline", "cline-reviewer", "openai-completions", False)
+
+    class Connection:
+        @staticmethod
+        def model_payload():
+            return {"models": [{"id": "cline-reviewer", "review_eligible": True}]}
+
+        @staticmethod
+        def capture_selection(payload):
+            assert payload == {"model": "cline-reviewer"}
+            return reviewer
+
+    enable_models(tmp_path, cline=["cline-reviewer"])
+    context = SimpleNamespace(
+        providers=ProviderRegistry(tmp_path),
+        lock=threading.Lock(),
+        run_registry=SimpleNamespace(api_selection_for=lambda _: None),
+        emit=lambda _: None,
+    )
+    monkeypatch.setattr(api_connections, "connection_for", lambda _: Connection)
+    monkeypatch.setattr(api_connections, "open_selection", lambda selection: "cline-review-provider")
+    with patch("codey.app.provider_services.reviewer_candidates", return_value=()), \
+            patch.object(review_service, "run_review_attempt", return_value=("cline", "approved")) as attempt, \
+            patch("codey.app.provider_services.connect_fresh_provider_tab", side_effect=RuntimeError("self-review")):
+        result = review_service.run_review(
+            context, session_id="s", project="fixture", task="task", writer_summary="done",
+            changes={}, recent_log="", writer_id="local", run_id="r", review_impact_map="",
+        )
+    assert result == ("cline", "approved")
+    assert attempt.call_args.kwargs["self_review"] is False
+    assert attempt.call_args.kwargs["reviewer"] == "cline-review-provider"
+
+
 def test_reviewer_selection_survives_restart_and_cannot_be_rebound(tmp_path):
     import pytest
 

@@ -399,6 +399,9 @@ def _connect_review_model(
         ctx.set_provider_session(reviewer_id, None)
         return reviewer_id, reviewer, False
     cancellation.check()
+    selected = _selected_cross_connection_reviewer(ctx, session_id, run_id, writer_id, leases=leases)
+    if selected is not None:
+        return selected[0], selected[1], False
     selected = _selected_api_reviewer(ctx, session_id, run_id, writer_id, leases=leases) if self_review_allowed else None
     if selected is not None:
         return selected[0], selected[1], False
@@ -408,6 +411,76 @@ def _connect_review_model(
     reviewer_id = normalize_provider_id(writer_id) or DEFAULT_PROVIDER_ID
     leases.enter_context(providers.use_model(ctx, reviewer_id))
     return reviewer_id, providers.connect_fresh_provider_tab(reviewer_id), True
+
+
+def _selected_cross_connection_reviewer(
+    ctx: TaskState,
+    session_id: str,
+    run_id: str,
+    writer_id: str,
+    *,
+    leases: contextlib.ExitStack | None = None,
+) -> tuple[str, Any] | None:
+    """Use an enabled API model as an independent reviewer for any Writer.
+
+    Website reviewers retain priority. This path is reached when none is
+    available, and it honours the saved per-source model allowlist.
+    """
+    from codey.providers.api_connections import (
+        capture_cross_connection_reviewer,
+        open_selection,
+    )
+    from codey.providers.catalog import API_CONNECTIONS
+    from codey.runtime.core.api_selection import ApiRunSelection
+
+    durable = getattr(ctx, "durable", None)
+    checkpoint = None
+    if durable is not None:
+        try:
+            checkpoint = durable.task(run_id)
+        except (KeyError, ValueError, TypeError):
+            checkpoint = None
+    state: Mapping[str, object] = getattr(checkpoint, "state", {}) if checkpoint is not None else {}
+    stored = state.get("reviewer_selection") if isinstance(state, Mapping) else None
+    if isinstance(stored, Mapping) and stored:
+        try:
+            selection = ApiRunSelection.from_payload(dict(stored))
+            if selection.connection_id == writer_id or selection.connection_id not in API_CONNECTIONS:
+                return None
+            if not ctx.providers.model_preferences.allows(selection.connection_id, selection.model_id):
+                return None
+            if leases is not None:
+                leases.enter_context(providers.use_model(ctx, selection.connection_id, selection.model_id))
+            return selection.connection_id, open_selection(selection)
+        except (ValueError, RuntimeError):
+            return None
+
+    snapshot = ctx.providers.model_preferences.snapshot()
+    sources = snapshot.get("sources", {})
+    allowed: dict[str, set[str]] = {}
+    for connection_id in API_CONNECTIONS:
+        if not isinstance(sources, Mapping):
+            break
+        source = sources.get(connection_id)
+        if not isinstance(source, Mapping) or source.get("enabled") is not True:
+            continue
+        models = source.get("models", [])
+        if isinstance(models, list):
+            allowed[connection_id] = {model for model in models if isinstance(model, str)}
+    if not allowed:
+        return None
+    try:
+        connection_id, selection = capture_cross_connection_reviewer(
+            excluded_connections={writer_id},
+            allowed_models_by_connection=allowed,
+        )
+    except (ValueError, RuntimeError, OSError):
+        return None
+    if checkpoint is not None and durable is not None:
+        durable.record_reviewer_selection(run_id, selection.to_payload())
+    if leases is not None:
+        leases.enter_context(providers.use_model(ctx, connection_id, selection.model_id))
+    return connection_id, open_selection(selection)
 
 
 def _selected_api_reviewer(

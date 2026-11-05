@@ -34,3 +34,33 @@ def capture_reviewer_selection(writer: ApiRunSelection, *, allowed_models: set[s
         if model["id"] != writer.model_id and model.get("review_eligible") is not False:
             return capture_selection(writer.connection_id, {"model": model["id"]})
     raise ValueError("no independent API reviewer model is currently available")
+
+
+def capture_cross_connection_reviewer(
+    *,
+    excluded_connections: set[str] | None = None,
+    allowed_models_by_connection: dict[str, set[str]] | None = None,
+) -> tuple[str, ApiRunSelection]:
+    """Select one enabled model from another API connection for Review.
+
+    The caller supplies the user's enabled model scope. Discovery is still
+    connector-owned, so this helper never invents an endpoint or credentials.
+    """
+    excluded = excluded_connections or set()
+    allowed = allowed_models_by_connection or {}
+    for connection_id in API_CONNECTIONS:
+        if connection_id in excluded:
+            continue
+        connection = connection_for(connection_id)
+        models = connection.model_payload().get("models", [])
+        selected = allowed.get(connection_id, set())
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+            model_id = model.get("id")
+            if not isinstance(model_id, str) or model_id not in selected:
+                continue
+            if model.get("review_eligible") is False:
+                continue
+            return connection_id, connection.capture_selection({"model": model_id})
+    raise ValueError("no independent API reviewer model is currently available")
