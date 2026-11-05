@@ -289,7 +289,10 @@ def _normalize_edit(
             call_args["base_result_ref"] = ref
     else:
         if "base_result_ref" in args:
-            raise ToolArgsRepairError("base_result_ref requires content mode")
+            raise ToolArgsRepairError(
+                "base_result_ref requires content mode. For replacements, remove the base_result_ref key "
+                "and keep path and replacements; do not change only the reference value."
+            )
         replacements = args["replacements"]
         if not isinstance(replacements, list) or not replacements:
             raise ToolArgsRepairError("edit replacements must be a non-empty list", repair_kind="invalid_args")

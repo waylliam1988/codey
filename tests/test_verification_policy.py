@@ -13,6 +13,7 @@ from codey.completion.verification_policy import (
     check_matches_candidate,
     discover_verification_candidates,
     node_package_manager_for_directory,
+    preferred_verification_candidate,
     select_verification_candidate,
     selected_verification_candidate_lines,
     verification_candidate_lines,
@@ -636,6 +637,31 @@ class VerificationPolicyTests(unittest.TestCase):
             )
         )
 
+    def test_preferred_verification_candidate_prioritizes_project_pytest(self) -> None:
+        preferred = preferred_verification_candidate(
+            (
+                VerificationCandidate("python -m pytest", ".", "pytest.ini"),
+                VerificationCandidate("python -m unittest discover", ".", "unittest test files"),
+            )
+        )
+
+        self.assertIsNotNone(preferred)
+        self.assertEqual(preferred.command, "python -m pytest")
+
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
+    def test_unittest_cannot_substitute_for_pytest_suite(self, _which) -> None:
+        candidate = VerificationCandidate("python -m pytest", ".", "pytest.ini")
+        for command in ("python -m unittest", "python -m unittest discover"):
+            with self.subTest(command=command):
+                self.assertFalse(check_covers_selected_candidate(
+                    candidate, command, ".", ("src/app.py",), root=_ROOT))
+
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
+    def test_unittest_default_discovery_can_cover_unittest_candidate(self, _which) -> None:
+        self.assertTrue(check_covers_selected_candidate(
+            VerificationCandidate("python -m unittest discover", "."),
+            "python -m unittest", ".", ("src/app.py",), root=_ROOT))
+
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
     def test_pytest_output_flags_can_cover_unittest_fallback(self, _which) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
@@ -712,6 +738,26 @@ class VerificationPolicyTests(unittest.TestCase):
 
         self.assertEqual(lines, ("pkg sub/: python -m pytest Injected:",))
         self.assertFalse(any("\n" in line or "\r" in line for line in lines))
+
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
+    def test_unittest_explicit_current_directory_covers_default_discovery(self, _which) -> None:
+        candidate = VerificationCandidate("python -m unittest discover", ".")
+        for args in ("discover .", "discover -v .", "discover -s .", "discover --start-directory .",
+                     "discover --start-directory=.", "-q"):
+            with self.subTest(args=args):
+                self.assertTrue(check_covers_selected_candidate(
+                    candidate, f"python -m unittest {args}", ".", ("app.py",), root=_ROOT,
+                ))
+
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
+    def test_unittest_narrow_or_different_discovery_does_not_cover_default(self, _which) -> None:
+        candidate = VerificationCandidate("python -m unittest discover", ".")
+        for args in ("discover tests", "discover -s tests", "discover ..", "discover -p test_one.py",
+                     "discover . -p test_one.py", "test_app", "discover --start-directory=tests"):
+            with self.subTest(args=args):
+                self.assertFalse(check_covers_selected_candidate(
+                    candidate, f"python -m unittest {args}", ".", ("app.py",), root=_ROOT,
+                ))
 
     def test_selected_verification_candidate_lines_returns_only_selected_candidate(self) -> None:
         lines = selected_verification_candidate_lines(

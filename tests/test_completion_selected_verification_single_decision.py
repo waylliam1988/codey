@@ -48,7 +48,8 @@ def _context(session, tmp_path, run_id="selected-check"):
 @pytest.mark.parametrize("with_evidence", [False, True])
 @pytest.mark.parametrize(
     "observed, expected",
-    [("python -m compileall", False), ("python -m pytest", True)],
+    [("python -m compileall", False), ("python -m unittest", False),
+     ("python -m unittest discover", False), ("python -m pytest", True)],
 )
 def test_selected_verification_is_not_replaced(tmp_path, with_evidence, observed, expected):
     session = make_session(tmp_path)
@@ -61,6 +62,24 @@ def test_selected_verification_is_not_replaced(tmp_path, with_evidence, observed
     context = _context(session, tmp_path) if with_evidence else None
     verdict = evaluate(session, "done", context=context)
     assert verdict.complete is expected
+
+
+@pytest.mark.parametrize("with_evidence", [False, True])
+@pytest.mark.parametrize("args, expected", [("discover .", True), ("discover -s .", True),
+                                          ("-q", True), ("discover tests", False),
+                                          ("discover . -p test_one.py", False)])
+def test_default_unittest_discovery_coverage_reaches_completion(tmp_path, with_evidence, args, expected):
+    (tmp_path / "tests").mkdir()
+    session = make_session(tmp_path)
+    session.selected_verification = VerificationCandidate("python -m unittest discover", ".")
+    session.record_verification(
+        f"python -m unittest {args}", 1, True, exit_code=0,
+        workspace_revision=session.workspace_revision,
+        workspace_fingerprint=session.workspace_fingerprint,
+        cwd=".",
+    )
+    context = _context(session, tmp_path) if with_evidence else None
+    assert evaluate(session, "done", context=context).complete is expected
 
 
 @pytest.mark.parametrize("with_evidence", [False, True])

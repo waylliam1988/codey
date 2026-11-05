@@ -189,6 +189,7 @@ TOOL_DEFINITIONS = (
         ),
         description=(
             f"Edit existing files with up to {MAX_REPLACEMENTS} exact replacements, preserving unrelated code. "
+            "For replacements, omit content and base_result_ref. "
             "Create new files with content. For a whole-file update, use content plus base_result_ref. "
             "base_result_ref must be a complete read_file receipt from this task; changed versions are rejected. "
             + EXACT_REPLACEMENT_CONTEXT_HINT
@@ -202,7 +203,7 @@ TOOL_DEFINITIONS = (
                 "Complete file text; preserve unrelated content. Prefer replacements for focused edits."}),
             ("base_result_ref", {
                 "type": "string",
-                "description": FULL_READ_REFERENCE_HINT,
+                "description": "Only for content mode; omit this field with replacements. " + FULL_READ_REFERENCE_HINT,
             }),
             (
                 "replacements",

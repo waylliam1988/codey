@@ -652,7 +652,7 @@ def _command_family(command: str) -> str:
         if len(args) >= 2 and args[0] == "-m":
             module = args[1]
             if module in {"pytest", "unittest"}:
-                return "python:test"
+                return f"python:{module}"
             if module == "mypy":
                 return "python:typecheck"
             if module == "ruff":
@@ -660,7 +660,7 @@ def _command_family(command: str) -> str:
             if module == "py_compile":
                 return "python:compile"
     if exe == "pytest":
-        return "python:test"
+        return "python:pytest"
     if exe == "mypy":
         return "python:typecheck"
     if exe == "ruff":
@@ -674,6 +674,26 @@ def _command_family(command: str) -> str:
 
 def _pytest_full_suite_args(args: list[str]) -> bool:
     return all(arg in PYTEST_FULL_SUITE_FLAGS for arg in args)
+
+
+def _unittest_full_discovery_args(args: list[str]) -> bool:
+    if not args or args[0] != "discover":
+        return all(arg in UNITTEST_DISCOVER_FLAGS for arg in args)
+    rest = iter(args[1:])
+    has_start = False
+    for arg in rest:
+        if arg in UNITTEST_DISCOVER_FLAGS:
+            continue
+        if arg in {"-s", "--start-directory"}:
+            start = next(rest, "")
+        elif arg.startswith("--start-directory="):
+            start = arg.partition("=")[2]
+        else:
+            start = arg
+        if has_start or start != ".":
+            return False
+        has_start = True
+    return True
 
 
 def _is_full_family_command(command: str) -> bool:
@@ -703,11 +723,7 @@ def _is_full_family_command(command: str) -> bool:
             if module == "pytest":
                 return _pytest_full_suite_args(rest)
             if module == "unittest":
-                if rest in ([], ["discover"]):
-                    return True
-                return bool(rest) and rest[0] == "discover" and all(
-                    item in UNITTEST_DISCOVER_FLAGS for item in rest[1:]
-                )
+                return _unittest_full_discovery_args(rest)
             if module == "mypy":
                 return rest in ([], ["."])
             if module == "ruff":
@@ -784,6 +800,26 @@ def _effective_source_priority(candidate: VerificationCandidate) -> int:
     return max(priority_int, 100 if candidate.previously_passed else 0)
 
 
+def preferred_verification_candidate(
+    candidates: Sequence[VerificationCandidate],
+) -> VerificationCandidate | None:
+    """Choose the best project-level check to show as the first option.
+
+    This is only prompt guidance before changed paths are known. Completion
+    still uses ``select_verification_candidate`` against the actual diff.
+    """
+
+    if not candidates:
+        return None
+    def score(item: VerificationCandidate) -> tuple[int, int]:
+        return _effective_source_priority(item), _command_priority(item)
+
+    best = max(candidates, key=score)
+    if any(item != best and score(item) == score(best) for item in candidates):
+        return None
+    return best
+
+
 def check_covers_changes(
     command: str,
     cwd: str,
@@ -808,9 +844,14 @@ def check_covers_selected_candidate(
 ) -> bool:
     if check_matches_candidate(candidate, command, cwd):
         return True
+    selected_family = _command_family(candidate.command)
+    actual_family = _command_family(command)
     return (
-        bool(_command_family(candidate.command))
-        and _command_family(candidate.command) == _command_family(command)
+        bool(selected_family)
+        and (
+            selected_family == actual_family
+            or (selected_family == "python:unittest" and actual_family == "python:pytest")
+        )
         and _is_full_family_command(command)
         and check_covers_changes(command, cwd, changed_paths, root=root)
     )
@@ -861,3 +902,32 @@ def _verification_candidate_line(item: VerificationCandidate) -> str:
     cwd_text = (item.cwd or ".").replace("\r", " ").replace("\n", " ").strip() or "."
     cwd = PurePosixPath(cwd_text.replace("\\", "/")).as_posix()
     return command if cwd == "." else f"{cwd.rstrip('/')}/: {command}"
+
+
+def render_verification_guidance(candidates: Sequence[VerificationCandidate]) -> str:
+    """Prefer checks within each directory and runtime, preserving ties."""
+    scopes: dict[tuple[str, str], list[VerificationCandidate]] = {}
+    for item in candidates:
+        runtime = _command_family(item.command).split(":", 1)[0] or item.command
+        scopes.setdefault((item.cwd, runtime), []).append(item)
+    lines: list[str] = []
+    count = 0
+    for choices in scopes.values():
+        preferred = preferred_verification_candidate(choices)
+        visible = (preferred,) if preferred is not None else choices
+        lines.append("Preferred verification command after edits:" if preferred is not None else
+                     "Verification candidates (no unique preference):")
+        for item in visible:
+            if count >= 5:
+                break
+            command = item.command.replace("\r", " ").replace("\n", " ")[:240]
+            cwd = item.cwd.replace("\r", " ").replace("\n", " ")[:120]
+            source = item.source.replace("\r", " ").replace("\n", " ")[:120]
+            lines.append(f"- {command} (cwd: {cwd}; source: {source})")
+            count += 1
+        if count >= 5:
+            break
+    if lines:
+        lines.append("Run the preferred command in the cwd covering your changes. "
+                     "If it cannot run, inspect the project and report the reason before substituting a different test runner.")
+    return "\n".join(lines)
