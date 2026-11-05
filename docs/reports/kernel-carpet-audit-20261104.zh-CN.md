@@ -860,7 +860,8 @@ K-P1 的实机数据、失败根因和“不合并”结论保留在本报告的
 
 将 `KernelContext.freeze()` 反向导入 `kernel_driver.prepare_provider_request()` 改为依赖新的 `codey.operations.provider_request`：
 
-- `kernel_driver.prepare_provider_request` 仍然保留为兼容导出，现有测试和调用者不变；
+- 所有生产调用、测试和手工脚本都已改为直接导入 `codey.operations.provider_request`；
+- `kernel_driver` 不再保留 `prepare_provider_request` 兼容导出；
 - provider request payload、effect identity、durable mutation 和恢复格式完全保持原样；
 - `kernel_driver` 继续作为动作驱动器，provider request 冻结职责单独归位；
 - prepared request、not-sent continuation、kernel recovery、dependency direction、architecture 和 durable boundary 选择集为 **169 passed、450 个子断言通过**；
@@ -869,6 +870,30 @@ K-P1 的实机数据、失败根因和“不合并”结论保留在本报告的
 主树提交：`ec6a63f0 refactor(kernel): isolate provider request preparation`。
 
 AST 导入图的强连通分量总数仍为 13，因为 kernel 还存在 `context ↔ control` 以及 Research continuation/task loop 的真实协作边。这个提交只清除一个明确的反向动态依赖，没有用搬 import 的方式假装整体循环消失。
+
+## 阶段 26：移除 provider request 兼容尾巴（2026-11-05）
+
+继续清理后，`kernel_driver.prepare_provider_request` 兼容导出也已删除：
+
+- `tests/durable` 和 `tests/support` 直接导入 `codey.operations.provider_request`；
+- Research 手工探针直接 patch 新模块；
+- `kernel_driver` 只保留 provider action driver 和 `decode_provider_invocation` 等自身职责；
+- 全仓搜索不再发现旧导入路径。
+
+重新回归：**156 passed、450 个子断言通过**；Ruff 和编译检查通过。这个改动没有改变 prepared request payload、effect identity、恢复格式或模型输入。
+
+## 阶段 27：导入图最终分类（2026-11-05）
+
+移除兼容导出后重新计算导入图，并区分三种情况：模块顶层运行时导入、`TYPE_CHECKING` 类型导入、函数内延迟导入。当前 **模块顶层运行时导入图没有强连通分量**。
+
+剩余的 13 个强连通分量只在把函数内延迟导入和类型导入也纳入图时出现，主要是 kernel 编排、durable/delivery 恢复投影和 Research/toolchain 合同之间的协作。它们不会造成模块启动时的循环导入；但仍代表运行时职责之间存在回边，后续只能按具体事实所有权继续拆。
+
+当前导入整理结论：
+
+- provider request 的反向回边已清除，旧兼容导出也已删除；
+- 顶层运行时导入方向已经无环；
+- durable/delivery 与 Research/toolchain 不再做表面拆分，避免复制恢复和合同校验；
+- 后续若继续整理，验收重点应是减少函数级动态依赖和职责回边，而不是追求 AST 环数量归零。
 
 ## 阶段 24：durable / delivery 循环处理决定（2026-11-05）
 

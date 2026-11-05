@@ -472,7 +472,7 @@ def compile_knowledge_updates(submission, scope, evidence_bindings, store, *, su
 | B | `ApiProvider._exchange` | [codey/providers/api_provider.py](../codey/providers/api_provider.py:478) |
 | B | `ApiProvider._payload` | [codey/providers/api_provider.py](../codey/providers/api_provider.py:740) |
 | B | `ApiProvider._admit_request` | [codey/providers/api_provider.py](../codey/providers/api_provider.py:784) |
-| B | `prepare_provider_request` | [codey/operations/kernel_driver.py](../codey/operations/kernel_driver.py:50) |
+| B | `prepare_provider_request` | [codey/operations/provider_request.py](../codey/operations/provider_request.py:33) |
 | B | `decode_provider_invocation` | [codey/operations/kernel_driver.py](../codey/operations/kernel_driver.py:112) |
 | B | `answer_context` | [codey/research/answer_context.py](../codey/research/answer_context.py:26) |
 | C | `_repair_prompt` | [codey/operations/kernel_prompt.py](../codey/operations/kernel_prompt.py:186) |
