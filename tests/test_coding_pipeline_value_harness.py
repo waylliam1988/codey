@@ -71,7 +71,7 @@ def test_wire_accounting_preserves_native_and_missing_reported_tokens():
     assert observed.evidence(observed.mark())["http_requests"] == 0
 
 
-def test_empty_memory_adds_nothing_and_persisted_checks_reload(tmp_path):
+def test_empty_fact_projection_and_persisted_checks_reload(tmp_path):
     root, state = tmp_path / "project", tmp_path / "state"
     root.mkdir()
     write_files(root, BY_NAME["discount-bug"].files)

@@ -27,14 +27,15 @@ from tests.manual.coding_current_context_ab import CountingProvider, _changed_fi
 from tests.manual.coding_pipeline_cases import BY_NAME, CASES, CodingCase
 from tests.support.kernel_runtime import run_agent, run_project_audit_advisor
 
-ARMS = ("baseline", "map", "context", "plan", "audit")
+ARMS = ("baseline", "map", "context", "combined", "plan", "audit")
 
 
 def source_metadata():
     root = Path(__file__).resolve().parents[2]
-    paths = ("codey/operations/kernel_context.py", "codey/operations/completion_gate.py",
+    paths = ("codey/operations/kernel_context.py", "codey/operations/completion_gate.py", "codey/operations/knowledge_context.py",
              "codey/completion/verification_policy.py", "tests/manual/coding_pipeline_value_ab.py",
-             "tests/manual/coding_pipeline_cases.py")
+             "tests/manual/coding_pipeline_cases.py", "tests/manual/coding_memory_value_ab.py",
+             "tests/manual/coding_review_value_ab.py")
     return {"source_sha256": {path: hashlib.sha256((root / path).read_bytes()).hexdigest() for path in paths},
             "git_head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()}
 
@@ -145,10 +146,10 @@ def event_rows(events):
              if event.outcome else None} for event in events]
 
 
-def run_arm(provider, case, arm, *, max_turns=24):
+def run_arm(provider, case, arm, *, max_turns=24, background=False):
     mark = provider.mark()
     start = time.monotonic()
-    row: dict[str, Any] = {"case": case.name, "arm": arm}
+    row: dict[str, Any] = {"case": case.name, "arm": arm, "background_map_context": background}
     with tempfile.TemporaryDirectory() as temporary:
         root, state = Path(temporary) / "project", Path(temporary) / "state"
         root.mkdir()
@@ -188,8 +189,8 @@ def run_arm(provider, case, arm, *, max_turns=24):
                 if audit:
                     task = project_audit_change_brief(task, (audit,)).apply_to_task(task)
             result, events = writer(provider, case, root, state, task=task, max_turns=max_turns,
-                                    project_map=context.project_map if arm == "map" else "",
-                                    context=arm == "context", events_out=events)
+                                    project_map=context.project_map if background or arm in {"map", "combined"} else "",
+                                    context=background or arm in {"context", "combined"}, events_out=events)
             row.update(stop_reason=result.stop_reason, summary=result.summary, turns=result.turns,
                        checks_passed=result.checks_passed, events=event_rows(events))
         except Exception as exc:
@@ -214,6 +215,7 @@ def main():
     parser.add_argument("--case", action="append", choices=tuple(BY_NAME))
     parser.add_argument("--arm", action="append", choices=ARMS)
     parser.add_argument("--max-turns", type=int, default=24)
+    parser.add_argument("--background", action="store_true", help="Keep production map/current context on in both stage arms")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     controls.begin_task_context("coding-pipeline-value-ab")
@@ -222,11 +224,11 @@ def main():
     arms = args.arm or ("baseline", "map", "context")
     payload = {"model": provider.model, "native_tools": provider.native_tools,
                "api_protocol": provider.api_protocol, "max_turns": args.max_turns,
-               "arms": arms, "rows": [], **source_metadata()}
+               "arms": arms, "background_map_context": args.background, "rows": [], **source_metadata()}
     try:
         for case in cases:
             for arm in arms:
-                row = run_arm(provider, case, arm, max_turns=args.max_turns)
+                row = run_arm(provider, case, arm, max_turns=args.max_turns, background=args.background)
                 payload["rows"].append(row)
                 save(args.output, payload)
                 print(json.dumps({key: row.get(key) for key in ("case", "arm", "success", "quality_score",

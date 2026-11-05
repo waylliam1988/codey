@@ -7,15 +7,17 @@ import shutil
 import sys
 import tempfile
 import time
-from contextlib import closing
+from contextlib import closing, nullcontext
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.knowledge.store import KnowledgeStore
+from codey.operations import knowledge_context
 from codey.operations.task_context import ProjectTaskContextBuilder
 from codey.operations.task_execution import build_research_tools, close_research_tools
 from codey.providers import controls
@@ -31,6 +33,15 @@ from tests.manual.coding_pipeline_value_ab import (
     write_files,
     writer,
 )
+
+
+def without_write_guidance(original):
+    def render(tools, session, question):
+        text = original(tools, session, question)
+        if not session.policy.allows("knowledge.write") and text.startswith("Personal knowledge owner for this isolated knowledge space:"):
+            return text.partition("\n")[2]
+        return text
+    return render
 
 
 def followup(seed, files):
@@ -78,21 +89,25 @@ def memory_row(provider, case, root, state, arm, phase):
     events = []
     try:
         with closing(KnowledgeStore(state / "vault")) as store:
-            builder = ProjectTaskContextBuilder(project_facts=ProjectFactsStore(state) if arm == "memory" else None,
-                                               knowledge_store=store if arm == "memory" else None)
+            enabled = arm != "none"
+            builder = ProjectTaskContextBuilder(project_facts=ProjectFactsStore(state) if enabled else None,
+                                               knowledge_store=store if enabled else None)
             def context():
                 return builder.build(project=root, task=case.task, session_id="memory-history",
                     run_id="memory-followup", continue_task=False, provider_session_changed=False)
             prepared = context()
             row.update(facts=prepared.verified_facts, knowledge_context=prepared.knowledge_context,
                        candidate_sources=[vars(item) for item in prepared.verification_candidates])
-            tools = build_research_tools(SimpleNamespace(knowledge_store=store if arm == "memory" else None),
+            tools = build_research_tools(SimpleNamespace(knowledge_store=store if enabled else None),
                                          session_id="memory-history", project=str(root))
             try:
-                result, events = writer(provider, case, root, state / f"revision-{phase}-{arm}",
-                    facts=prepared.verified_facts, research=prepared.research_context, research_tools=tools,
-                    candidates=prepared.verification_candidates,
-                    candidate_loader=lambda: context().verification_candidates, max_turns=24, events_out=events)
+                treatment = (patch.object(knowledge_context, "knowledge_background",
+                    without_write_guidance(knowledge_context.knowledge_background)) if arm == "memory_compact" else nullcontext())
+                with treatment:
+                    result, events = writer(provider, case, root, state / f"revision-{phase}-{arm}",
+                        facts=prepared.verified_facts, research=prepared.research_context, research_tools=tools,
+                        candidates=prepared.verification_candidates,
+                        candidate_loader=lambda: context().verification_candidates, max_turns=24, events_out=events)
             finally:
                 close_research_tools(tools)
             row.update(stop_reason=result.stop_reason, turns=result.turns, summary=result.summary)
@@ -110,6 +125,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--phase", action="append", choices=("cold", "warm"))
     parser.add_argument("--reverse", action="store_true")
+    parser.add_argument("--arm", action="append", choices=("none", "memory", "memory_compact"))
     args = parser.parse_args()
     controls.begin_task_context("coding-memory-value-ab")
     provider = EvidenceProvider(connect_provider("local"))
@@ -138,7 +154,8 @@ def main():
                         case = followup(name, grade(root, case)["files"])
                     backup = Path(temporary) / "baseline"
                     shutil.copytree(root, backup)
-                    for arm in (("memory", "none") if args.reverse else ("none", "memory")):
+                    arms = args.arm or ("none", "memory")
+                    for arm in reversed(arms) if args.reverse else arms:
                         assert root.resolve().parent == Path(temporary).resolve()
                         shutil.rmtree(root)
                         shutil.copytree(backup, root)

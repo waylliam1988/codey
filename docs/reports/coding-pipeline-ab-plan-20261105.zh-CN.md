@@ -75,3 +75,19 @@ self-review，其结果也不等于第二模型独立审查。
   与已知失败不重发组 92 passed；归档可逆性与 oracle 等新增 harness 测试 5 passed。
   各组有交集，不相加宣称独立测试数；一次测试命令引用不存在的文件后未执行任何测试，
   用 rg 确认真实模块名后重跑，是命令编写问题，不是测试落后或生产故障。
+- stage 首轮完成：plan 两题与 baseline 两题均未终态完成，产品外部行为各 4/4；不能由
+  双方失败证明规划必要。audit 三题已产出可用报告、只读范围未变，但质量成功为 2/3，
+  同批 baseline 3/3。重构 audit 准确给出三文件修改建议，Writer 却重复读 report.py。
+  wire 核对显示 Writer 新聊天已清空 audit 会话、写工具仍可用、报告已交付，没有角色/历史
+  泄漏。请求额外成本与模型未执行建议分别记账。
+- 首轮只测各候选独立存在；补登记组合验证：加 `combined`（map+context）补齐 2×2 角，
+  并在两边保留 map/current context 的条件下确认 plan/audit。不能把关闭其他候选后的结果
+  直接外推为整条默认生产管线删除收益。
+- 记忆首轮 8/8 成功，真实 headless 历史两条均 done、各持久化 implementation/verification
+  两笔；两道续作 memory 事实注入分别 312/355 字符。没有显式 knowledge_search/read。
+  仅看 builder 的 knowledge_context 为空还不够：共享内核另有 knowledge_background 检索。
+  核对实际 wire，本批未召回笔记正文，冷启动也注入了约 105–110 token 的 owner/写入范围
+  说明。因此冷启动不是完全相同提示，不把少一两次读文件直接归因于“空记忆里的事实”。
+- 新增精简候选：`memory_compact` 只移除不具备 knowledge.write 时的 owner/写入作用域
+  说明，保留全部事实、background recall、检索工具与服务端权限。先在同一真实历史和相同
+  目录上与原 memory 双向 A/B，确认后才接入生产。原 memory/none 批次仍按原版保留。
