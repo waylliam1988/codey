@@ -1102,8 +1102,7 @@ class AppContext(GhostStoreAccessors):
         if not self._wait_shell_executions():
             return False
 
-        resources_closed = True
-        self.providers.shutdown_controls()
+        resources_closed = self.providers.shutdown_controls()
 
         def close_store(store: object) -> bool:
             close = getattr(store, "close", None)

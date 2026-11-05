@@ -173,8 +173,9 @@ def make_provider(target: GateTarget, directory: Path):
 
         provider = open_selection(ApiRunSelection.from_payload(target.api_selection))
         provider.recorder_id = uuid.uuid4().hex
-        provider.runtime._gate_recorder_id = provider.recorder_id
-        provider.runtime.timeout = target.request_timeout
+        runtime = getattr(provider, "runtime", provider)
+        runtime._gate_recorder_id = provider.recorder_id
+        runtime.timeout = target.request_timeout
         return provider
     return RecordingProvider(target, directory)
 

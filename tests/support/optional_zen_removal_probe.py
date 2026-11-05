@@ -11,24 +11,25 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-class MissingZen(importlib.abc.MetaPathFinder):
-    def __init__(self):
+class MissingConnection(importlib.abc.MetaPathFinder):
+    def __init__(self, removed):
         self.attempted = []
+        self.module = "codey.providers." + removed
 
     def find_spec(self, fullname, path=None, target=None):
-        if fullname == "codey.providers.zen" or fullname.startswith("codey.providers.zen."):
+        if fullname == self.module or fullname.startswith(self.module + "."):
             self.attempted.append(fullname)
-            raise ModuleNotFoundError("Zen package is absent")
+            raise ModuleNotFoundError("optional connection package is absent")
         return None
 
 
-def probe(root):
-    missing = MissingZen()
+def probe(root, removed="zen"):
+    missing = MissingConnection(removed)
     sys.meta_path.insert(0, missing)
     from codey.providers.catalog import API_CONNECTIONS, PROVIDER_LABELS
 
-    API_CONNECTIONS.pop("zen", None)
-    PROVIDER_LABELS.pop("zen", None)
+    API_CONNECTIONS.pop(removed, None)
+    PROVIDER_LABELS.pop(removed, None)
     from codey.app.api import api_models_response, provider_catalog_response
     from codey.app.cli import main as cli_main
     from codey.app.context import AppContext
@@ -167,7 +168,7 @@ def probe(root):
             assert bootstrap["connections"][0]["models"]
             status, catalog = provider_catalog_response()
             assert status == 200
-            assert not any(item["id"] == "zen" for item in catalog["providers"])
+            assert not any(item["id"] == removed for item in catalog["providers"])
 
         with contextlib.redirect_stdout(io.StringIO()):
             try:
@@ -176,25 +177,26 @@ def probe(root):
                 assert exc.code == 0
 
         ui = UiStateStore(root)
-        ui.save({"sessions": [{"id": "old", "provider": "zen", "messages": [{"role": "assistant", "text": "History"}]}],
+        ui.save({"sessions": [{"id": "old", "provider": removed, "messages": [{"role": "assistant", "text": "History"}]}],
                  "active_id": "old", "projects": []}, base_revision=0)
-        assert UiStateStore(root).load()["sessions"][0]["provider"] == "zen"
+        assert UiStateStore(root).load()["sessions"][0]["provider"] == removed
         ledger = RunLedgerStore(root)
-        writer = ledger.open(run_id="old-run", session_id="old", project=project, task="Read", provider="zen", mode="chat")
-        writer.finish(summary="Read", stop_reason="done", turns=1, max_turns=3, provider="zen")
+        writer = ledger.open(run_id="old-run", session_id="old", project=project, task="Read", provider=removed, mode="chat")
+        writer.finish(summary="Read", stop_reason="done", turns=1, max_turns=3, provider=removed)
         assert load_run_details(run_ledgers=RunLedgerStore(root), run_traces=RunTraceStore(root),
                                 session_id="old", run_id="old-run").available
         try:
-            connect_provider("zen")
+            connect_provider(removed)
         except ValueError:
             pass
         else:
-            raise AssertionError("removed Zen connection was silently replaced")
+            raise AssertionError("removed connection was silently replaced")
         metadata = _metadata(GateTarget(base, "fixture", 32768, 8192, 12000))
-        assert not any("providers/zen/" in path for path in metadata["production_hashes"])
+        assert not any(f"providers/{removed}/" in path for path in metadata["production_hashes"])
         assert not missing.attempted
         return {"local_protocols": protocols, "bootstrap": True, "cli": True, "old_history": True,
-                "old_connection_rejected": True, "local_gate": True, "zen_imports": missing.attempted, "usage_without_zen": True, "workspace_shell_without_zen": True}
+                "old_connection_rejected": True, "local_gate": True, f"{removed}_imports": missing.attempted,
+                f"usage_without_{removed}": True, f"workspace_shell_without_{removed}": True}
     finally:
         server.shutdown()
         server.server_close()

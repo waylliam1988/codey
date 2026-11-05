@@ -52,12 +52,18 @@ class ProviderRegistry:
         with self._model_uses_lock:
             return tuple(self.model_uses)
 
-    def shutdown_controls(self) -> None:
+    def shutdown_controls(self) -> bool:
+        closed = True
         for _, module_path in tuple(API_CONNECTIONS.values()):
             module = sys.modules.get(module_path)
             shutdown = getattr(module, "shutdown_controls", None)
             if callable(shutdown):
-                shutdown()
+                try:
+                    shutdown()
+                except Exception:
+                    closed = False
+                    logger.error("Connection controls could not close: %s", module_path)
+        return closed
 
     def failover_order(
         self,

@@ -14,6 +14,7 @@ DEFAULT_PROVIDER_ID = "deepseek"
 API_CONNECTIONS = {
     "local": ("Local", "codey.providers.local_connection"),
     "zen": ("OpenCode Zen", "codey.providers.zen.connection"),
+    "cline": ("Cline", "codey.providers.cline.connection"),
 }
 PROVIDER_LABELS = {
     "deepseek": "DeepSeek",

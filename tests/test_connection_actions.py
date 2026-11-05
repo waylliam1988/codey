@@ -79,3 +79,29 @@ def test_safe_connection_error_preserves_status(tmp_path, monkeypatch):
     monkeypatch.setattr(connection_actions, "connection_for", lambda _: module)
     assert connection_actions.action_response(context(tmp_path), {"source": "fixture", "action": "login"}) == (
         401, {"ok": False, "code": "reauth_required", "error": "Sign in."})
+
+
+def test_control_shutdown_continues_after_failure_and_does_not_import_missing_packages(monkeypatch, caplog):
+    import sys
+
+    from codey.app import provider_registry
+
+    calls = []
+
+    def fail():
+        calls.append("first")
+        raise RuntimeError("SECRET_MARKER")
+
+    monkeypatch.setattr(provider_registry, "API_CONNECTIONS", {
+        "first": ("First", "test_controls.first"),
+        "missing": ("Missing", "not_installed_connector.controls"),
+        "last": ("Last", "test_controls.last"),
+    })
+    monkeypatch.setitem(sys.modules, "test_controls.first", SimpleNamespace(shutdown_controls=fail))
+    monkeypatch.setitem(sys.modules, "test_controls.last", SimpleNamespace(shutdown_controls=lambda: calls.append("last")))
+    registry = object.__new__(provider_registry.ProviderRegistry)
+    assert registry.shutdown_controls() is False
+    assert calls == ["first", "last"]
+    assert "not_installed_connector.controls" not in sys.modules and "SECRET_MARKER" not in caplog.text
+    monkeypatch.setattr(sys.modules["test_controls.first"], "shutdown_controls", lambda: None)
+    assert registry.shutdown_controls() is True

@@ -78,7 +78,8 @@ def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool],
              on_event: Callable[[dict[str, Any]], None] = lambda event: None,
              control: AttemptControl | None = None,
              idle_timeout: float | None = None,
-             chat_accumulator_factory: Callable[[], ChatStreamAccumulator] = DefaultChatAccumulator) -> dict[str, Any]:
+             chat_accumulator_factory: Callable[[], ChatStreamAccumulator] = DefaultChatAccumulator,
+             error_detail_filter: Callable[[int, str], str] | None = None) -> dict[str, Any]:
     from codey.providers.api_transport import (
         MAX_RESPONSE_BYTES,
         BoundedBodyReader,
@@ -123,7 +124,10 @@ def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool],
                 raise GenerationUnknownError("Responses stream ended without a response object")
             return result
         if kind == "error" or "error" in event:
-            raise RuntimeError(f"generation stream error: {str(event.get('error', event))[:400]}")
+            detail = str(event.get('error', event))
+            if error_detail_filter is not None:
+                detail = error_detail_filter(502, detail)
+            raise RuntimeError(f"generation stream error: {detail[:400]}")
         for choice in event.get("choices", []):
             if choice.get("index", 0) != 0:
                 raise GenerationUnknownError("multiple streamed choices are unsupported; not resent")
@@ -136,6 +140,9 @@ def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool],
     if chat_finish and chat_done:
         if cancelled():
             raise GenerationUnknownError("generation cancelled; late response discarded")
-        chat = accumulator.finish_message()
+        try:
+            chat = accumulator.finish_message()
+        except ValueError as exc:
+            raise GenerationUnknownError(f"malformed streamed message: {exc}; not resent") from exc
         return {"choices": [{"message": chat, "finish_reason": chat_finish}]}
     raise GenerationUnknownError("generation stream ended without a valid terminal event; not resent")

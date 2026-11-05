@@ -90,7 +90,9 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
                 body = read_sse(response, deadline=started + timeout, cancelled=cancelled,
                                 on_event=on_event, control=control, idle_timeout=idle_timeout,
                                 chat_accumulator_factory=cast(Callable[[], ChatStreamAccumulator],
-                                    (transport_options or {}).get("chat_accumulator_factory", DefaultChatAccumulator)))
+                                    (transport_options or {}).get("chat_accumulator_factory", DefaultChatAccumulator)),
+                                error_detail_filter=cast(Callable[[int, str], str] | None,
+                                    (transport_options or {}).get("error_detail_filter")))
             else:
                 control.enter_phase("body")
                 control.reset_body_timer()

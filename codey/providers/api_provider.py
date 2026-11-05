@@ -593,7 +593,7 @@ class ApiProvider:
         from codey.providers import api_transport
 
         with self._state_lock:
-            if generation != self._generation:
+            if generation != self._generation or self._is_cancelled():
                 raise api_transport.GenerationUnknownError("generation cancelled; late response discarded")
             if base_revision != self._history_revision:
                 candidate = self._prepare_exchange(pending, tools)

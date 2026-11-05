@@ -48,18 +48,23 @@ def dispatch(ctx: Any, body: object, *, read_only: bool = False) -> tuple[int, d
                     raise ConnectionActionError("connection_in_use", "Stop tasks using this source first.", 409)
                 authentication = execute(action, attempt)
                 if action == "clear_data":
-                    preferences_for(ctx).clear_source(source)
+                    try:
+                        preferences_for(ctx).clear_source(source)
+                    except (OSError, ValueError, RuntimeError):
+                        raise ConnectionActionError("cleanup_incomplete", "Connection preferences still need cleanup.",
+                                                    503, pending_cleanup=("model_preferences",)) from None
         else:
             assert callable(execute)
             authentication = execute(action, attempt)
         cached = getattr(connector, "cached_model_payload", None)
-        payload = cached() if callable(cached) else {"id": source, "models": []}
+        payload: dict[str, Any] = cached() if callable(cached) else {"id": source, "models": []}
         coordinator = getattr(ctx, "connection_status", None)
         if coordinator is not None:
             coordinator.observe_catalog(source, payload)
         status = 202 if authentication.get("state") in {"starting", "awaiting_authorization", "exchanging"} else 200
         return status, {"ok": True, "authentication": authentication, "source": payload}
     except ConnectionActionError as exc:
-        return exc.status, {"ok": False, "code": exc.code, "error": str(exc)}
+        return exc.status, {"ok": False, "code": exc.code, "error": str(exc),
+                            **({"pending_cleanup": list(exc.pending_cleanup)} if exc.pending_cleanup else {})}
     except (OSError, ValueError, RuntimeError):
         return 503, {"ok": False, "code": "connection_action_failed", "error": "Connection operation failed; retry."}
