@@ -94,4 +94,27 @@ describe('ui state persistence boundary', () => {
     });
     expect(session.messages).toHaveLength(1);
   });
+
+  it('restores a required reasoning reselection instead of silently sending defaults', () => {
+    window.UiState.apply({
+      sessions: [
+        {
+          id: 's1',
+          provider: 'zen',
+          modelSelection: {
+            connection_id: 'zen',
+            model: 'fixture',
+            effort: null,
+            efforts: {},
+            reasoning_reselect_required: true,
+          },
+        },
+      ],
+    });
+    expect((window.__testSessions[0] as Session).modelSelection).toMatchObject({
+      effort: null,
+      efforts: {},
+      reasoning_reselect_required: true,
+    });
+  });
 });

@@ -201,6 +201,7 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
                 **({"name": _str(selection["name"], 160)} if isinstance(selection.get("name"), str) else {}),
                 "effort": effort,
                 **({"thinking": selection["thinking"]} if type(selection.get("thinking")) is bool else {}),
+                **({"reasoning_reselect_required": True} if selection.get("reasoning_reselect_required") is True else {}),
                 "efforts": efforts,
             }
         sessions.append(entry)

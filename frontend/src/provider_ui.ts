@@ -39,6 +39,7 @@ export interface ProviderUiApi {
     session: Session | undefined,
     provider: string,
   ): {
+    selection_error?: string;
     model_selection?: {
       connection_id?: string;
       base_url?: string;
@@ -76,6 +77,7 @@ export interface ProviderUiApi {
     effort?: string | null;
     thinking?: boolean | null;
     efforts: Record<string, string>;
+    reasoning_reselect_required?: boolean;
   }
   function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
@@ -455,6 +457,7 @@ export interface ProviderUiApi {
             name: typeof stored.name === 'string' ? stored.name : undefined,
             effort: typeof stored.effort === 'string' ? stored.effort : null,
             thinking: typeof stored.thinking === 'boolean' ? stored.thinking : null,
+            ...(stored.reasoning_reselect_required ? { reasoning_reselect_required: true } : {}),
             efforts: isRecord(stored.efforts)
               ? Object.fromEntries(
                   Object.entries(stored.efforts).filter(
@@ -469,12 +472,40 @@ export interface ProviderUiApi {
             model: '',
             efforts: {},
           };
-    return {
+    return reconcileReasoning(s, id, {
       ...old,
       effort: old.effort || null,
       thinking: typeof old.thinking === 'boolean' ? old.thinking : null,
       efforts: old.efforts || {},
+    });
+  }
+  function reconcileReasoning(s: Session | undefined, id: string, selection: ModelSelection): ModelSelection {
+    const models = apiModels[id]?.models;
+    const model = models?.find((item) => item.id === selection.model);
+    // An absent model remains an unavailable historic selection. Do not
+    // reinterpret a missing directory as an authoritative capability update.
+    if (!model) return selection;
+    const invalid =
+      (!!selection.effort && !model.efforts?.includes(selection.effort)) ||
+      (selection.thinking != null && (!model.thinking_toggle || !!model.efforts?.length));
+    const efforts = Object.fromEntries(
+      Object.entries(selection.efforts).filter(([key, value]) =>
+        models?.find((item) => item.id === key)?.efforts?.includes(value),
+      ),
+    );
+    if (!invalid && JSON.stringify(efforts) === JSON.stringify(selection.efforts)) return selection;
+    const next = {
+      ...selection,
+      effort: invalid ? null : selection.effort,
+      thinking: invalid ? null : selection.thinking,
+      efforts,
+      ...(invalid ? { reasoning_reselect_required: true } : {}),
     };
+    if (s?.modelSelection?.connection_id === id) {
+      s.modelSelection = next;
+      deps.persistActiveNow();
+    }
+    return next;
   }
   function selectedKey() {
     const id = currentProviderId();
@@ -571,6 +602,7 @@ export interface ProviderUiApi {
         s.modelSelection = model?.efforts?.length
           ? {
               ...selection,
+              reasoning_reselect_required: false,
               effort: option === 'default' ? null : option,
               thinking: null,
               efforts:
@@ -579,7 +611,12 @@ export interface ProviderUiApi {
                   : Object.fromEntries(Object.entries(selection.efforts).filter(([id]) => id !== selection.model)),
             }
           : model?.thinking_toggle
-            ? { ...selection, thinking: option === 'default' ? null : option === 'on', effort: null }
+            ? {
+                ...selection,
+                thinking: option === 'default' ? null : option === 'on',
+                effort: null,
+                reasoning_reselect_required: false,
+              }
             : {
                 ...selection,
                 effort: option,
@@ -587,6 +624,7 @@ export interface ProviderUiApi {
               };
         deps.persistActiveNow();
         syncProviderUI(currentProviderId());
+        runtime.Composer.updateSend();
         closeEffortMenu(true);
       };
       menu.appendChild(row);
@@ -644,8 +682,9 @@ export interface ProviderUiApi {
   }
   function runSelection(s: Session | undefined, provider: string) {
     const selection = sessionSelection(s, provider);
+    if (selection.reasoning_reselect_required)
+      return { selection_error: 'Thinking options changed. Select the model or a thinking option again.' };
     if (!apiModels[provider] && !selection.model) return {};
-    const options = thinkingOptions(s, provider);
     const model = apiModels[provider]?.models?.find((item) => item.id === selection.model);
     if (model?.efforts?.length) {
       const effort = selectedEffort(s, provider);
@@ -674,9 +713,15 @@ export interface ProviderUiApi {
           }
         : {};
     }
-    const effort = options.length ? selectedEffort(s, provider) : selection.effort;
     return selection.model
-      ? { model_selection: { connection_id: provider, base_url: selection.base_url, model: selection.model, effort } }
+      ? {
+          model_selection: {
+            connection_id: provider,
+            base_url: selection.base_url,
+            model: selection.model,
+            effort: null,
+          },
+        }
       : {};
   }
 

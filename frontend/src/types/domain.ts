@@ -298,6 +298,7 @@ export interface Session {
     effort?: string | null;
     thinking?: boolean | null;
     efforts?: Record<string, string>;
+    reasoning_reselect_required?: boolean;
   };
   _toolKeys?: Set<string>;
   _eventKeys?: Set<string>;

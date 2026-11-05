@@ -204,16 +204,19 @@ export interface ComposerApi {
     if (!deps) return;
     document.querySelector('main')?.classList.toggle('empty-conversation', !deps.activeSession?.()?.messages.length);
     const has = $<HTMLTextAreaElement>('task').value.trim();
-    const selection = runtime.ProviderUI.runSelection(deps.activeSession(), currentProviderId()).model_selection;
-    const reason = runtime.Models.reason(currentProviderId(), selection?.model);
+    const chosen = runtime.ProviderUI.runSelection(deps.activeSession(), currentProviderId());
+    const selection = chosen.model_selection;
+    const reason = chosen.selection_error || runtime.Models.reason(currentProviderId(), selection?.model);
     const notice = $('model-notice');
     const unselected =
       !currentProviderId() ||
       (!selection?.model &&
         runtime.Models.connections().some((source: { id: string }) => source.id === currentProviderId()));
-    notice.hidden = !reason || unselected;
+    notice.hidden = !reason || (unselected && !chosen.selection_error);
     notice.replaceChildren();
-    if (reason && !unselected) {
+    if (chosen.selection_error) {
+      notice.textContent = chosen.selection_error;
+    } else if (reason && !unselected) {
       notice.append(
         runtime.Models.hasAny()
           ? 'This model is ' + reason.toLowerCase() + '. Choose another model or enable it in '
@@ -560,6 +563,13 @@ export interface ComposerApi {
     const task = $<HTMLTextAreaElement>('task').value.trim();
     const provider = currentProviderId();
     if (!task) return;
+    if (
+      !runtime.Models.allows(
+        provider,
+        runtime.ProviderUI.runSelection(deps.findSession(sessionId), provider).model_selection?.model,
+      )
+    )
+      return;
     // Claim this session before the state reconciliation below. Without the
     // early claim, the composer appears idle while the first /api/state call
     // is in flight and a second click can start a duplicate request.

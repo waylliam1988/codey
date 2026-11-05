@@ -313,6 +313,9 @@ export interface UiStateApi {
                 ...(typeof item.modelSelection.thinking === 'boolean'
                   ? { thinking: item.modelSelection.thinking }
                   : {}),
+                ...(item.modelSelection.reasoning_reselect_required === true
+                  ? { reasoning_reselect_required: true }
+                  : {}),
                 efforts: Object.fromEntries(
                   Object.entries(isRecord(item.modelSelection.efforts) ? item.modelSelection.efforts : {})
                     .slice(0, 50)

@@ -251,7 +251,10 @@ def test_local_model_title_and_connection_dot_survive_online_and_offline_reload(
         monkeypatch.delenv(key, raising=False)
     model = 'koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M'
     base_url = 'http://127.0.0.1:5001/v1'
-    selection = {'connection_id': 'local', 'base_url': base_url, 'model': model, 'effort': 'low', 'efforts': {model: 'low'}}
+    # This fixture publishes no reasoning capability. Keep the title/offline
+    # test's selection valid; stale reasoning and cache invalidation have their
+    # own three-connector browser regression in the dynamic API menu tests.
+    selection = {'connection_id': 'local', 'base_url': base_url, 'model': model, 'effort': None, 'efforts': {}}
     state = {'active_id': 'a', 'sessions': [
         {'id': 'a', 'title': 'Local chat', 'provider': 'local', 'messages': [], 'modelSelection': selection},
     ], 'projects': []}

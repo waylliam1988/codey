@@ -20,3 +20,13 @@ def test_removed_connection_cannot_open_but_old_chat_is_readable(tmp_path, monke
     with pytest.raises(ValueError, match="unsupported provider"):
         connect_provider("zen")
     assert store.load()["sessions"][0]["provider"] == "zen"
+
+
+@pytest.mark.parametrize("provider", ["local", "zen", "cline"])
+def test_reasoning_reselection_survives_ui_store_restart(tmp_path, provider):
+    selection = {"connection_id": provider, "base_url": "", "model": "fixture", "effort": None,
+                 "efforts": {}, "reasoning_reselect_required": True}
+    store = UiStateStore(tmp_path)
+    store.save({"sessions": [{"id": "chat", "provider": provider, "modelSelection": selection}],
+                "active_id": "chat", "projects": []}, base_revision=0)
+    assert UiStateStore(tmp_path).load()["sessions"][0]["modelSelection"] == selection

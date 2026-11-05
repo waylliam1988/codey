@@ -1,4 +1,5 @@
 """API directory updates and per-chat effort use the generic composer path."""
+import pytest
 from playwright.sync_api import expect
 
 from tests.test_ui_workflow import (  # noqa: F401 -- shared real HTTP/browser fixtures
@@ -183,3 +184,76 @@ def test_selecting_default_removes_saved_effort_before_switching_models(page):  
     expect(page.locator("#effort-name")).to_have_text("Default")
     selection = page.evaluate("ProviderUI.runSelection(UiState.current().sessions[0], 'cline')")["model_selection"]
     assert selection["effort"] is None
+
+
+@pytest.mark.parametrize("provider", ["cline", "zen", "local"])
+def test_removed_thinking_control_clears_cache_and_requires_explicit_reselection(page, provider):  # noqa: F811
+    payload = {"id": provider, "label": provider, "models": [
+        {"id": "fixture", "name": "Fixture", "efforts": ["low", "high"]},
+    ]}
+    select_connection_models(page, payload)
+    page.evaluate("""id => ProviderUI.applyConfig({default:'deepseek',providers:[
+      {id:'deepseek',label:'DeepSeek'},{id,label:id}]})""", provider)
+    page.locator("#provider-button").click()
+    page.locator('[data-model="fixture"]').click()
+    page.locator("#effort-button").click()
+    page.get_by_role("button", name="Thinking effort: High", exact=True).click()
+    page.evaluate("switchSession('b')")
+    payload["models"][0]["efforts"] = []
+    page.evaluate("ProviderUI.applyApiModels", [payload])
+    choice = page.evaluate("id => ProviderUI.runSelection(window.sessions.find(s=>s.id==='a'), id)", provider)
+    assert "model_selection" not in choice
+    assert "select" in choice["selection_error"].lower()
+    saved = page.evaluate("UiState.current().sessions.find(s=>s.id==='a').modelSelection")
+    assert saved.get("effort") is None and "fixture" not in saved["efforts"]
+    assert saved["reasoning_reselect_required"] is True
+    page.evaluate("switchSession('a')")
+    expect(page.locator("#effort-chooser")).to_be_hidden()
+    expect(page.locator("#model-notice")).to_contain_text("Thinking options changed")
+    page.locator("#task").fill("continue")
+    expect(page.locator("#send")).to_be_disabled()
+    requests = []
+    page.route("**/api/run", lambda route: (requests.append(route.request.post_data_json), route.fulfill(json={})))
+    page.locator("#task").press("Enter")
+    assert requests == []
+    page.locator("#provider-button").click()
+    page.locator('[data-model="fixture"]').click()
+    expect(page.locator("#model-notice")).to_be_hidden()
+    expect(page.locator("#send")).to_be_enabled()
+    choice = page.evaluate("id => ProviderUI.runSelection(UiState.current().sessions.find(s=>s.id==='a'), id)", provider)
+    assert choice["model_selection"].get("effort") is None
+    payload["models"][0]["efforts"] = ["low", "high"]
+    page.evaluate("ProviderUI.applyApiModels", [payload])
+    expect(page.locator("#effort-name")).to_have_text("Default")
+
+
+@pytest.mark.parametrize("provider", ["cline", "zen", "local"])
+@pytest.mark.parametrize("change", ["effort_removed", "effort_to_toggle", "toggle_to_effort"])
+def test_changed_reasoning_axis_requires_new_choice_and_never_sends_stale_fields(page, provider, change):  # noqa: F811
+    model = {"id": "fixture", "name": "Fixture", "efforts": ["low", "high"]}
+    if change == "toggle_to_effort":
+        model.update(efforts=[], thinking_toggle=True, thinking_default_allowed=True)
+    payload = {"id": provider, "label": provider, "models": [model]}
+    select_connection_models(page, payload)
+    page.locator("#provider-button").click()
+    page.locator('[data-model="fixture"]').click()
+    page.locator("#effort-button").click()
+    page.get_by_role("button", name="Thinking: On" if change == "toggle_to_effort" else "Thinking effort: High", exact=True).click()
+    model.update(efforts=["low"], thinking_toggle=False)
+    if change == "effort_to_toggle":
+        model.update(efforts=[], thinking_toggle=True, thinking_default_allowed=True)
+    page.evaluate("ProviderUI.applyApiModels", [payload])
+    expect(page.locator("#effort-chooser")).to_be_visible()
+    expect(page.locator("#model-notice")).to_contain_text("Thinking options changed")
+    page.locator("#task").fill("continue")
+    expect(page.locator("#send")).to_be_disabled()
+    saved = page.evaluate("UiState.current().sessions.find(s=>s.id==='a').modelSelection")
+    assert saved.get("effort") is None and saved.get("thinking") is None
+    assert saved["efforts"] == {}
+    page.locator("#effort-button").click()
+    page.locator("#effort-menu").get_by_role("button", name="Thinking: Default" if change == "effort_to_toggle" else "Thinking effort: Low", exact=True).click()
+    expect(page.locator("#model-notice")).to_be_hidden()
+    expect(page.locator("#send")).to_be_enabled()
+    choice = page.evaluate("id => ProviderUI.runSelection(window.sessions.find(s=>s.id==='a'), id)", provider)["model_selection"]
+    assert choice.get("effort") == (None if change == "effort_to_toggle" else "low")
+    assert choice.get("thinking") is None
