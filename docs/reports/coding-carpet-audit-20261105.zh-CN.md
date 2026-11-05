@@ -683,6 +683,31 @@ suppression，未把“无错误”写成“无警告”。
 净收益与项目记忆的完整候选 A/B，仍按阶段 12 的未完成范围处理；不能由这次五题推导
 “整个编码管线的每个机制都有收益”。
 
+## 阶段 16：六候选真实成本与最终质量 A/B（2026-11-05，运行中）
+
+本轮按 [预注册与逐步日志](coding-pipeline-ab-plan-20261105.zh-CN.md) 继续执行六类消融，
+不再把导航回复命中、Review verdict 或模型自己写的测试通过单独当成最终编码质量。
+独立项目外 oracle 同时覆盖已有 bug、功能、跨文件重构、两个从零任务。
+
+先修复两个实机定位的问题，提交 `7f05b589`：
+
+1. native continuation 跳过了 coding current context 的持续交付。因此修复前 context arm
+   不是完整有效处理，原十五行批次仅保留为诊断证据，不能据此裁定 current context 无用。
+2. 从零任务运行指定 unittest 文件成功，仍不等于完成门要求的全量 discovery。旧拒绝只给
+   泛化“缺少验证”，没有交付所需命令；模型反复 done。现在拒绝时指出实际要求的命令与 cwd，
+   不放宽验证覆盖、不自动执行命令。两道题随后都在 6 轮 done、独立检查各 4/4。
+
+确定性回归覆盖 current context 开/关、request-scoped 与其他 native provider，真实创建、
+局部验证、被拒 done、补齐验证再 done。扩大恢复、冻结请求、native delivery、失败关闭与
+候选选择相关定向测试为 127 passed、3 skipped、20 subtests；三类生产类型检查无错误。
+
+本轮记录真实 HTTP request 和实际输入 tokenizer 计数；当前 SSE 不报告 token usage，
+未知为 null，不能写成 0。完整原始回复、wire 请求、usage、工具回执与最终文件逐行保存。
+新 harness 首个 pilot 的零用量展示是实验统计错误，不是生产报告零消耗，原始记录保留。
+
+接下来只在固定修复版本比较候选：地图/current context、同模型规划/只读 audit、真实成功
+历史后的项目记忆与固定 diff 的 Review/一次返修。正式数值与决策待批次完成后补齐。
+
 ## 记录格式
 
 每一步追加日期、范围、事实、证据路径、当前判断、未证明部分、下一步和提交号。
