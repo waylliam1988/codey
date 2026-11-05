@@ -12,7 +12,8 @@ from typing import Any
 from codey.durable.checkpoint import checkpoint_entries
 from codey.durable.model import thaw_json
 from codey.operations import kernel_actions as wiring
-from codey.operations import kernel_events, kernel_prompt, kernel_protocol, kernel_transport
+from codey.operations import kernel_events, kernel_prompt, kernel_protocol
+from codey.operations.kernel_capabilities import KernelCapabilityView
 from codey.operations.kernel_contracts import (
     ClosingDecision,
     KernelDecision,
@@ -52,8 +53,10 @@ class KernelContext:
         session.max_turns = min(session.max_turns, max(0, admitted.turn_budget - admitted.turns_used))
         self.effect_scope = self.transport.effect_scope
         self.provider = self.transport.provider
-        self.native = kernel_transport.provider_uses_native(self.provider, provider_id=self.transport.provider_id)
-        self.window = getattr(self.provider, "window_ref", None) or self.transport.window_ref
+        self.capabilities = KernelCapabilityView.from_provider(
+            self.provider, provider_id=self.transport.provider_id, fallback_window_ref=self.transport.window_ref)
+        self.native = self.capabilities.native_tools
+        self.window = self.capabilities.window_ref
         self.completion_context = wiring._completion_context_with_ignores(
             self.observation.completion_context, self.execution.workspace_ignored_paths)
         if self.execution.research_tools is not None and isinstance(self.completion_context, dict):
@@ -75,12 +78,12 @@ class KernelContext:
 
     @property
     def request_scoped_context(self) -> bool:
-        return not self.native and (getattr(self.provider, "text_tool_format", "plain") == "json_schema"
-                                    or getattr(self.provider, "request_scoped_tool_context", False) is True)
+        return not self.native and (self.capabilities.text_tool_format == "json_schema"
+                                    or self.capabilities.request_scoped_tool_context)
 
     @property
     def request_scoped_observations(self) -> bool:
-        return self.request_scoped_context or getattr(self.provider, "request_scoped_tool_context", False) is True
+        return self.request_scoped_context or self.capabilities.request_scoped_tool_context
 
     def load_view(self) -> Any:
         task, effects = self.durable.task_facts(self.sink.run_id)
@@ -356,7 +359,7 @@ class KernelContext:
             options["tool_call_contract"] = kernel_prompt._text_request_prompt("", snapshot)
             if text_result_spans:
                 options["tool_call_results"] = text_result_spans
-        if scoped_contract and getattr(self.provider, "text_tool_format", "plain") == "json_schema":
+        if scoped_contract and self.capabilities.text_tool_format == "json_schema":
             from codey.providers.text_tool_schema import text_tool_schema
 
             options.update(tool_call_json=True, tool_call_schema=text_tool_schema(tools))
