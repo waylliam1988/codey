@@ -86,6 +86,12 @@ revisions. Polling cannot overwrite unsaved model choices. Operator-authenticate
 `attempt_id`. Login controls are optional connector functions, with no Cline UI
 branch. Tokens, device codes and credential-store paths are never returned.
 
+Rejected Cline credentials retain a private `reauth_required` flag in the secure
+record. A failed, expired or cancelled replacement login cannot restore them to
+Connected, including after backend restart. Retry sign-in remains available;
+only a successful replacement authentication restores admission. A late rejection
+is matched to its account and token version before invalidating credentials.
+
 The initial secure storage implementation requires Windows Credential Manager;
 there is no plaintext fallback on another OS. Free eligibility comes only from
 Cline's `free` array (five-minute cache). Capabilities come from exact IDs or
@@ -97,7 +103,12 @@ The composer retains `[model] [thinking]`. Connectors may opt into a three-state
 toggle: Default sends no override, On/Off send explicit booleans. Missing opt-in
 preserves existing toggle behavior. Unsupported stored efforts are rejected at
 admission rather than silently becoming Default. Cline sends gateway `reasoning`
-fields and does not add an agent identity/system prompt.
+fields and does not add an agent identity/system prompt. If a catalog removes a
+selected effort or changes its reasoning control, the shared UI clears invalid
+fields/caches and persists a reselection requirement for Cline, Zen and Local.
+It shows “Thinking options changed” and blocks sending until the user chooses
+the model or a valid thinking option again. Hidden controls cannot send old
+efforts, and a later capability refresh cannot revive the discarded cache.
 
 ## Request budgets and usage
 
@@ -215,9 +226,14 @@ to fit the viewport. Selected checks retain padding; long labels use ellipsis.
 Command approval belongs only to the command card's Allow / Deny buttons, without
 a duplicate composer notice. Model-disabled/removed feedback remains with Settings.
 
-Zen's Node fetch and custom request-ID headers live in its optional package;
+Zen's Bun fetch and custom request-ID headers live in its optional package;
 Local keeps Python HTTP. Packaging and CI discover existing JS/MJS resources.
 Remove its registration/package together with dedicated tests, gates and manifest
 entries; old history remains readable, and removed connections cannot send.
-The current live free-model matrix is not all green: two Ling thinking-enabled
-cases remain unresolved. See the [maintenance audit](ui_maintenance_audit_2026-10-13.zh-CN.md).
+The current live matrix includes eight successful SSE conversations, two real
+code repairs and approval continuations, plus upstream region/429 failures.
+Non-streamed JSON probes were rejected while controlled SSE probes succeeded;
+later SSE requests were also rejected. An error named FreeUsageLimitError alone
+does not establish actual quota exhaustion. See the
+[current evidence](reports/zen-live-validation-20261105.zh-CN.md); historical Ling
+results in the maintenance audit do not describe the current catalog.

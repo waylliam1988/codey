@@ -102,10 +102,22 @@ history/revision stay unchanged. `test_zen_vpn_direct_fallback.py` also covers S
 before fallback and during decode after a direct reply, with tunnel cleanup.
 
 The live Zen gate is separate from deterministic CI:
-`python -m tools.zen_free_model_gate --run-dir .e2e-artifacts/zen-free-new --timeout 120`.
-The directory must be new. It uses a fresh catalog and tests chat/read/approved
-shell, plus default/Off/On variants for toggle models; retain failed cases.
-Two Ling thinking-enabled cases remain unresolved; see the current report.
+`python -m tools.zen_free_model_gate --run-dir .e2e-artifacts/zen-free-new --timeout 180`.
+The directory must be new. It forces a fresh catalog and checks JSON/SSE two-turn
+recall, read/edit/approved shell, and default plus advertised reasoning settings.
+`--models` and `--cases` select smaller batches. Efforts take precedence over a
+simultaneously advertised toggle, matching production. Each result is checkpointed;
+failures remain failures, and a RegionError stops the remaining cases of that
+model. Current JSON/429 and region limits are recorded in
+[the live report](../docs/reports/zen-live-validation-20261105.zh-CN.md).
+`test_zen_free_model_gate.py` covers frozen selections, both stream modes,
+reasoning admission, retained failures, terminal refusals and Windows stdout.
+
+`test_cline_auth.py` covers failed/expired/cancelled replacement login, durable
+invalid-credential state, retry success and late-rejection account/version fences.
+`test_dynamic_api_model_menu_and_per_chat_effort.py` uses actual browser assets to
+verify capability removal/axis changes, cache clearing, explicit reselection and
+send blocking for Cline, Zen and Local, including an inactive chat.
 
 ## Native installed OpenCode comparison
 

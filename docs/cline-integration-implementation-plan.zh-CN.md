@@ -93,9 +93,14 @@ class CredentialRecord:
     expires_at: float          # UTC Unix 秒
     account_epoch: str         # 每次完成新登录生成 UUID；刷新不改变
     token_version: int         # 每次成功刷新递增
+    reauth_required: bool = False  # 已明确拒绝，独立于最近一次 OAuth 尝试状态
 ```
 
 禁止自动 dataclass repr 打印 token；异常不得携带完整 HTTP 请求或 OAuth 响应。TokenStore 以整条记录保存，避免 access/refresh 分别写入导致半更新。Windows 初版用系统凭证存储；失败时显示存储错误，不静默降级成明文 JSON。
+
+明确失效的凭证必须保留 `reauth_required`，重新登录失败/过期/取消、后端重启均不能
+凭“存储里有记录”恢复 ready。按账号 epoch 与 token version 匹配迟到拒绝；只有新认证
+成功写入的记录恢复准入。该标记不返回前端，旧记录缺字段按 false 读取。
 
 ### 4.2 公开的认证快照
 
@@ -327,8 +332,11 @@ ProviderRegistry 新增通用的关闭连接控制资源方法，只遍历已初
 - thinkingOptions：efforts 非空仍返回 default 加真实等级；toggle 且 thinking_default_allowed=true 时返回 default/off/on；旧模型缺字段保持原行为。
 - selectedEffort：新模型 thinking===null/undefined 且允许默认时返回 default，不能用 `===true ? on : off` 抹掉三态。
 - runSelection：default 发送 null；on/off 精确传 true/false；不要把 null 强制变 false。
-- 模型切换清除不适用的另一控制轴。对缓存的旧非法等级提示重新选择；后端仍做最终验证。
-- 不修改别的聊天的选择；新聊天与现有“保留模型/等级”规则一致。
+- 模型切换清除不适用的另一控制轴。目录移除等级/控件或变更控制轴时，清理失效字段及
+  缓存，并持久化 UI 专用 `reasoning_reselect_required`。提示重新选择模型或有效选项，
+  在此之前阻止发送；隐藏控件不能继续发送旧等级。后端仍做最终验证。
+- 每个聊天只按自身模型核对；不把当前聊天控制值复制到其他聊天。非当前聊天在提交前
+  同样核对；新聊天与现有“保留模型/等级”规则一致，不能绕过待重新选择状态。
 - 同名条目可显示来源辅助文字，但选中按钮继续只显示模型名。
 
 ## 10. 历史和 SSE：防止第一轮成功、续聊失败

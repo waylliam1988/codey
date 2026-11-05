@@ -2,6 +2,46 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Zen live matrix and credential/reasoning boundary fixes (2026-11-05)
+
+Both reported P2 issues reproduced before production changes: three failed
+replacement-login paths restored rejected credentials to Ready; three real
+browser paths (Cline/Zen/Local) sent a hidden stale thinking effort. Rejected
+credentials now retain a secure, backward-compatible invalidity flag across
+restart, separate from the latest OAuth attempt. Late rejection is fenced by
+account/version. The shared UI clears invalid controls/caches, persists an
+explicit reselection requirement, and blocks sending until a new valid choice.
+
+**336 distinct focused pytest cases validated**, without full pytest:
+
+| Scope | Result |
+|---|---|
+| Cline auth/protocol/catalog/cleanup, cross-process refresh, connection actions, both optional-package removal probes, live tooling, model settings and UI storage | 164 passed, 42.05s |
+| Zen/Local cancellation, VPN fallback, real Bun, SSE, reliability, tools/approval, catalog/compaction and frozen model admission | 110 passed, 26.23s |
+| Dynamic model/thinking browser cases and existing UI workflows | 62 distinct cases: 59 passed on expansion; all 23 dynamic/affected cases passed on final rerun (32.43s) |
+| Frontend | TypeScript, Biome, 294 Vitest tests in 53 files, Vite build and packaged-source fingerprint check passed |
+| Python | Ruff codey/tests/tools, mypy 597 files, Pyrefly and ty targeting Python 3.11 passed; no new suppressions |
+| Shipped scripts | Node syntax checks for 60 JS/MJS files passed; git whitespace and packaged frontend consistency checks passed |
+
+The three expanded UI failures were old label/offline fixtures that advertised
+no thinking control yet required unsupported Low to survive indefinitely. Their
+title fixture now uses a valid default; new three-connector tests explicitly
+assert stale-field removal, send blocking and recovery. New tests also corrected
+snapshot-versus-live-session assumptions, the existing cancellation timeout
+contract and menu scoping; a missing send-state refresh in the new recovery path
+was fixed in production. No upstream failure is recorded as a pass.
+
+Live Zen facts: eight models passed SSE two-turn recall initially; DeepSeek V4.1
+Flash and Nemotron Super passed real fixture repairs and same-run Shell approval;
+Big Pickle and Flint also passed reads. Sixteen of 27 attempted reasoning
+settings obtained nonempty responses. Beam and Crouton returned RegionError.
+Controlled identical-body requests showed SSE success and JSON
+FreeUsageLimitError; later SSE requests also returned 429, including the final
+DeepSeek control. This does not establish actual quota exhaustion, and the
+matrix is **not all green**. Network/VPN/proxy/DNS/route snapshots matched.
+See [sanitized report](docs/reports/zen-live-validation-20261105.zh-CN.md) and
+[per-case evidence](docs/reports/zen-live-validation-20261105.json).
+
 ## Zen cancellation and VPN routing follow-up (2026-11-05)
 
 **70 focused tests passed in 23.35s** across Zen cancellation, VPN fallback,

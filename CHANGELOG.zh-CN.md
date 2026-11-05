@@ -4,6 +4,9 @@
 
 ## 未发布
 
+- 修复 Cline 新登录失败后旧失效凭证重新显示已连接的问题，失效标记跨重启保留；共享前端在能力更新后清理旧思考等级/缓存，Cline、Zen、Local 均要求明确重选后才能发送。
+- 扩展 Zen 实机门禁：JSON/SSE 两轮、真实修复、审批续接及公布等级；分别记录编码成功与上游 429/区域限制，见[实机报告](docs/reports/zen-live-validation-20261105.zh-CN.md)。
+
 - 新增可移除 Cline 连接：浏览器设备授权、Windows 安全凭证、跨进程刷新协调、明确免费资格与能力匹配、结构化思考历史、SSE 工具调用和每聊天思考设置。通用登录控件保留尚未保存的模型勾选。
 - 新增凭证/缓存/偏好清理及 fresh-process 缺包验收，覆盖 Local、Zen、历史、审批和真实子进程；修复取消在响应解码期间到达仍可提交历史的共享竞态。
 - 完成 Cline JSON/SSE 多轮对话、实机编码、Shell 审批续接与公布思考选项验证，范围及限制见[验收报告](docs/reports/cline-integration-validation-20261105.zh-CN.md)。

@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+- Preserve rejected Cline credential state across failed replacement login and
+  backend restart. Clear invalid thinking selections/caches and require explicit
+  reselection after capability changes for Cline, Zen and Local.
+- Extend the Zen live gate to two-turn JSON/SSE, real edits, approval continuation
+  and advertised efforts. Record successful coding and upstream 429/region limits
+  separately; see the [live report](docs/reports/zen-live-validation-20261105.zh-CN.md).
+
 - Add removable Cline integration with browser device authorization, Windows
   Credential Manager, coordinated refresh, verified free catalog/capabilities,
   structured reasoning history, streaming tools and per-chat thinking settings.
