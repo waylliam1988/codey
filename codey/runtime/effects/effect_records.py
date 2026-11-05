@@ -580,7 +580,6 @@ class RecoverySummary:
     interrupted_writes: int = 0
     unconfirmed_provider_calls: int = 0
     retryable_read_only: int = 0
-    interrupted_repairs: int = 0
     replayed_reads: int = 0
     replayed_lookups: int = 0
     explanation_lines: tuple[str, ...] = ()
@@ -881,7 +880,6 @@ class RuntimeEffectStore:
         interrupted_writes = 0
         unconfirmed_provider_calls = 0
         retryable_read_only = 0
-        interrupted_repairs = 0
         replayed_reads = 0
         replayed_lookups = 0
 
@@ -925,7 +923,6 @@ class RuntimeEffectStore:
             interrupted_writes=interrupted_writes,
             unconfirmed_provider_calls=unconfirmed_provider_calls,
             retryable_read_only=retryable_read_only,
-            interrupted_repairs=interrupted_repairs,
             replayed_reads=replayed_reads,
             replayed_lookups=replayed_lookups,
             explanation_lines=tuple(lines),

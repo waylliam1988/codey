@@ -155,7 +155,6 @@ def _load_recovery_summary(
             or summary.interrupted_writes > 0
             or summary.unconfirmed_provider_calls > 0
             or summary.retryable_read_only > 0
-            or summary.interrupted_repairs > 0
         )
     )
 
@@ -206,7 +205,6 @@ def _load_recovery_summary(
         interrupted_writes=summary.interrupted_writes,
         unconfirmed_provider_calls=summary.unconfirmed_provider_calls,
         retryable_read_only=summary.retryable_read_only,
-        interrupted_repairs=summary.interrupted_repairs,
         replayed_reads=final_reads,
         replayed_lookups=final_lookups,
         explanation_lines=tuple(lines),
