@@ -46,9 +46,36 @@ export interface ModelUse {
   provider: string;
   model?: string;
 }
+export interface ProviderModel {
+  id: string;
+  name?: string;
+  protocol?: string;
+  efforts?: string[];
+  thinking_toggle?: boolean;
+  thinking_default_allowed?: boolean;
+  availability?: 'available' | 'unavailable' | 'capability_unknown';
+  unavailable_reason?: string;
+  trial?: boolean;
+}
+export type ConnectionAction = 'login' | 'reopen_login' | 'cancel_login' | 'logout' | 'clear_data';
+export interface ConnectionAuthentication {
+  kind: 'oauth_device';
+  state: string;
+  revision: number;
+  attempt_id?: string | null;
+  expires_at?: number | null;
+  user_code?: string | null;
+  error_code?: string | null;
+  actions: ConnectionAction[];
+}
 export interface ModelSource {
   id: string;
-  models: Array<{ id: string; name?: string }>;
+  label?: string;
+  discoverable?: boolean;
+  connection_editor?: boolean;
+  models: ProviderModel[];
+  authentication?: ConnectionAuthentication;
+  state?: string;
   unavailable_models?: Array<{ id: string; name?: string; status?: string }>;
   stale?: boolean;
   error?: string;

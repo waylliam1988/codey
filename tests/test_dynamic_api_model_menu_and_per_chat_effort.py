@@ -133,3 +133,53 @@ def test_explicit_selection_fixture_keeps_availability_catalog_consistent(page):
     page.wait_for_load_state("networkidle")
     page.locator("#provider-button").click()
     expect(page.locator('[data-model="selected"]')).to_be_visible()
+
+
+def test_optional_default_toggle_preserves_all_three_values_and_per_chat_selection(page):  # noqa: F811
+    payload = {"id": "cline", "label": "Cline", "models": [
+        {"id": "toggle-fixture", "name": "Toggle Fixture", "efforts": [],
+         "thinking_toggle": True, "thinking_default_allowed": True},
+    ]}
+    select_connection_models(page, payload)
+    page.evaluate("""() => ProviderUI.applyConfig({default:'deepseek',providers:[
+      {id:'deepseek',label:'DeepSeek'},{id:'cline',label:'Cline'}]})""")
+    page.locator("#provider-button").click()
+    page.locator('[data-model="toggle-fixture"]').click()
+    expect(page.locator("#provider-name")).to_have_text("Toggle Fixture")
+    expect(page.locator("#effort-name")).to_have_text("Default")
+
+    def selected():
+        return page.evaluate("ProviderUI.runSelection(UiState.current().sessions.find(s=>s.id==='a'), 'cline')")["model_selection"]
+
+    assert selected()["thinking"] is None
+    for label, value in (("On", True), ("Off", False), ("Default", None)):
+        page.locator("#effort-button").click()
+        page.get_by_role("button", name="Thinking: " + label, exact=True).click()
+        assert selected()["thinking"] is value
+        expect(page.locator("#effort-name")).to_have_text(label)
+    page.evaluate("switchSession('b')")
+    expect(page.locator("#effort-chooser")).to_be_hidden()
+    assert selected()["thinking"] is None
+    page.evaluate("switchSession('a')")
+    expect(page.locator("#effort-name")).to_have_text("Default")
+
+
+def test_selecting_default_removes_saved_effort_before_switching_models(page):  # noqa: F811
+    payload = {"id": "cline", "label": "Cline", "models": [
+        {"id": "effort-fixture", "name": "Effort Fixture", "efforts": ["low", "high"]},
+        {"id": "other-fixture", "name": "Other Fixture", "efforts": []},
+    ]}
+    select_connection_models(page, payload)
+    page.evaluate("""() => ProviderUI.applyConfig({default:'deepseek',providers:[
+      {id:'deepseek',label:'DeepSeek'},{id:'cline',label:'Cline'}]})""")
+    page.locator("#provider-button").click()
+    page.locator('[data-model="effort-fixture"]').click()
+    for label in ("High", "Default"):
+        page.locator("#effort-button").click()
+        page.get_by_role("button", name="Thinking effort: " + label, exact=True).click()
+    for model in ("other-fixture", "effort-fixture"):
+        page.locator("#provider-button").click()
+        page.locator('[data-model="' + model + '"]').click()
+    expect(page.locator("#effort-name")).to_have_text("Default")
+    selection = page.evaluate("ProviderUI.runSelection(UiState.current().sessions[0], 'cline')")["model_selection"]
+    assert selection["effort"] is None

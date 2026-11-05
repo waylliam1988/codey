@@ -12,13 +12,28 @@ import type { ModelSource, ModelState } from './types/domain';
   function catalogTime(source: ModelSource): number {
     return source.checked_at ?? source.updated_at ?? 0;
   }
+  function mergeSource(current: ModelSource | undefined, source: ModelSource): ModelSource {
+    if (!current) return source;
+    const nextAuth = source.authentication;
+    const currentAuth = current.authentication;
+    const newerAuth = nextAuth && (!currentAuth || nextAuth.revision >= currentAuth.revision);
+    const auth = newerAuth ? nextAuth : currentAuth;
+    const base = catalogTime(source) < catalogTime(current) ? current : { ...current, ...source };
+    return {
+      ...base,
+      ...(auth ? { authentication: auth } : {}),
+      ...((newerAuth ? source.state : currentAuth ? current.state : source.state) !== undefined
+        ? { state: newerAuth ? source.state : currentAuth ? current.state : source.state }
+        : {}),
+    };
+  }
   function applySettings(data: ModelState): void {
     if (!data?.preferences || !Array.isArray(data.sources)) throw new Error('Model settings unavailable');
     if (data.preferences.revision < state.preferences.revision) return;
     const next = structuredClone(data);
     next.sources = next.sources.map((source) => {
       const current = state.sources.find((item) => item.id === source.id);
-      return current && catalogTime(current) > catalogTime(source) ? structuredClone(current) : source;
+      return mergeSource(current, source);
     });
     state = next;
     listeners.forEach((listener) => listener());
@@ -66,8 +81,7 @@ import type { ModelSource, ModelState } from './types/domain';
   function observeCatalog(source: ModelSource): void {
     const index = state.sources.findIndex((item) => item.id === source.id);
     if (index < 0) return;
-    if (catalogTime(source) < catalogTime(state.sources[index])) return;
-    state.sources[index] = { ...state.sources[index], ...source };
+    state.sources[index] = mergeSource(state.sources[index], source);
     listeners.forEach((listener) => listener());
   }
   runtime.Models = {

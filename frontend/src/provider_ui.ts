@@ -1,12 +1,7 @@
 import { runtime } from './runtime';
-import type { Session } from './types/domain';
+import type { ProviderModel, Session } from './types/domain';
 import { decodeProviderCatalog, decodeProviderStatus } from './domain/protocol';
-export interface ProviderModel {
-  id: string;
-  name?: string;
-  thinking_toggle?: boolean;
-  efforts?: string[];
-}
+export type { ProviderModel } from './types/domain';
 export interface ProviderConnection {
   id: string;
   base_url?: string;
@@ -503,7 +498,7 @@ export interface ProviderUiApi {
         ? ['off', ...model.efforts.filter((value) => value !== 'off')]
         : ['default', ...model.efforts];
     }
-    return model?.thinking_toggle ? ['off', 'on'] : [];
+    return model?.thinking_toggle ? (model.thinking_default_allowed ? ['default', 'off', 'on'] : ['off', 'on']) : [];
   }
   const effortLabels: Record<string, string> = {
     default: 'Default',
@@ -523,11 +518,14 @@ export interface ProviderUiApi {
     const selected = model?.efforts?.length
       ? selection.effort || 'default'
       : model?.thinking_toggle
-        ? selection.thinking === true
-          ? 'on'
-          : 'off'
+        ? model.thinking_default_allowed && selection.thinking == null
+          ? 'default'
+          : selection.thinking === true
+            ? 'on'
+            : 'off'
         : selection.effort || undefined;
     const normalized = selected || '';
+    if (selection.effort && model?.efforts?.length && !options.includes(selection.effort)) return selection.effort;
     return options.includes(normalized) ? normalized : options[0] || '';
   }
   function closeEffortMenu(restoreFocus = false) {
@@ -545,7 +543,7 @@ export interface ProviderUiApi {
       value = selectedEffort();
     $('effort-chooser').hidden = !options.length;
     button.disabled = $<HTMLButtonElement>('provider-button').disabled;
-    const label = effortLabels[value] || value;
+    const label = options.includes(value) ? effortLabels[value] || value : 'Select thinking';
     $('effort-name').textContent = label;
     const model = apiModels[currentProviderId()]?.models?.find((item) => item.id === sessionSelection().model);
     button.setAttribute('aria-label', (model?.efforts?.length ? 'Thinking effort: ' : 'Thinking: ') + label);
@@ -578,10 +576,10 @@ export interface ProviderUiApi {
               efforts:
                 selection.model && option !== 'default'
                   ? { ...selection.efforts, [selection.model]: option }
-                  : selection.efforts,
+                  : Object.fromEntries(Object.entries(selection.efforts).filter(([id]) => id !== selection.model)),
             }
           : model?.thinking_toggle
-            ? { ...selection, thinking: option === 'on', effort: null }
+            ? { ...selection, thinking: option === 'default' ? null : option === 'on', effort: null }
             : {
                 ...selection,
                 effort: option,
@@ -670,7 +668,8 @@ export interface ProviderUiApi {
               base_url: selection.base_url,
               model: selection.model,
               effort: null,
-              thinking: selection.thinking === true,
+              thinking:
+                model.thinking_default_allowed && selection.thinking == null ? null : selection.thinking === true,
             },
           }
         : {};

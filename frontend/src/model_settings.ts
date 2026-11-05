@@ -1,4 +1,5 @@
 import { runtime } from './runtime';
+import { mountConnectionAuthentication } from './connection_auth';
 import type { ModelChoice, ModelSource, ModelState, ModelUse } from './types/domain';
 export interface ModelSettingsDeps {
   close(): void;
@@ -136,6 +137,13 @@ export interface ModelSettingsDeps {
         sync();
       }),
     );
+    const page = generation;
+    const auth = mountConnectionAuthentication(body, source, {
+      current: () => page === generation && !!draft,
+      publish: (facts) => runtime.Models.observeCatalog(facts),
+      error,
+    });
+    catalogSubscriptions.push(() => auth.close());
     let query = '';
     const search = document.createElement('input');
     search.type = 'search';
@@ -295,6 +303,7 @@ export interface ModelSettingsDeps {
         const latest = runtime.Models.snapshot().sources.find((entry: ModelSource) => entry.id === source.id);
         if (!latest) return;
         Object.assign(source, latest);
+        auth.update(latest.authentication);
         syncModelRows();
         sync();
       }),
