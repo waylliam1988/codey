@@ -219,3 +219,36 @@ def test_external_account_changes_advance_public_revision_without_exposing_epoch
     store.delete()
     third = auth.snapshot()
     assert third["state"] == "signed_out" and third["revision"] > second["revision"]
+
+
+def test_backend_restart_advances_auth_revision_for_an_already_open_settings_page(tmp_path, monkeypatch):
+    tick = auth_module.time_ns()
+    monkeypatch.setattr(auth_module, "time_ns", lambda: tick)
+    store = MemoryStore(credential())
+    auth = Auth(store, ScriptHTTP(), tmp_path / "credentials")
+    connected = auth.snapshot()
+    auth.close()
+    restarted = Auth(store, ScriptHTTP(), tmp_path / "credentials")
+    restarted.logout()
+    signed_out = restarted.snapshot()
+    assert signed_out["state"] == "signed_out"
+    assert connected["revision"] < signed_out["revision"] < 2 ** 53
+
+
+def test_new_storage_error_advances_revision_and_recovery_clears_the_error(tmp_path, monkeypatch):
+    store = MemoryStore(credential())
+    auth = Auth(store, ScriptHTTP(), tmp_path / "credentials")
+    connected = auth.snapshot()
+    load = store.load
+
+    def fail():
+        raise ConnectionActionError("auth_storage_failed", "PRIVATE_FAILURE", 503)
+
+    monkeypatch.setattr(store, "load", fail)
+    failed = auth.snapshot()
+    assert failed["state"] == "error" and failed["revision"] > connected["revision"]
+    assert auth.snapshot() == failed and "PRIVATE_FAILURE" not in json.dumps(failed)
+    monkeypatch.setattr(store, "load", load)
+    recovered = auth.snapshot()
+    assert recovered["state"] == "ready" and recovered["error_code"] is None
+    assert recovered["revision"] > failed["revision"]

@@ -37,15 +37,17 @@
 - 新增取消竞态测试揭示共享生产缺陷：取消事件在 decode 完成前到达时，原 commit 只检查 generation。现已在提交门检查 `_is_cancelled()`；测试证实拒绝迟到写入。
 - 测试假设修正：通用 live gate 原假定所有非 Local provider 都有 Zen 的 `.runtime` 包装，改为通用可选包装解析；另一个新测试漏算请求级时钟消息，改为断言语义历史，保留生产时钟上下文。
 - mypy 全生产树 597 文件通过；Pyrefly/ty 指出的 codec 参数名契约和空容器注解已修正，三检查器全部复跑通过，无新增豁免。
-- 最终相关 pytest：Cline/通用登录/live gate 91 passed，共享 Local/Zen/历史/压缩/审批/鉴权/打包 214 passed，真实浏览器模型/思考 9 passed，共 314；没有运行全量 pytest。
+- 相关 pytest：Cline/通用登录/live gate 93 passed，共享 Local/Zen/历史/压缩/审批/鉴权/打包 214 passed，真实浏览器模型/思考 9 passed，设置页布局/保存范围与实际 wheel 打包 32 passed，共 348；没有运行全量 pytest。
 - 前端 `npm run check`：TypeScript、Biome 和 293 项 Vitest 通过；Vite 构建与随包前端发布/一致性检查通过。
 - Ruff `codey tests tools` 全通过。新增费用阻断重启持久化、损坏缓存拒绝准入、清理失败待办、浏览器迟到失败隔离、外部账号版本更新及磁盘 reasoning_details 往返测试。
 - 缺包探针仅移除注册并阻止导入，不修改生产逻辑；Local 双协议、Zen、辅助生成、正式独立审查、工具审批、历史、真实 CLI 与 headless 子进程均通过。补审查夹具时漏传 Local 必需 base_url，按现有契约修正测试，未放宽生产入场检查。
 - 实机新增：Beam JSON/SSE 两轮和 read；Nemotron Super JSON/SSE 两轮、read/edit；Lightning JSON/SSE 两轮、read，全部通过。
 - 当前公布的 17 个思考选项请求均被服务端接受；这不能证明模型内部实际预算执行程度。原 Beam 上游 Invalid request 本轮未复现，不宣称所有任务均已修复。
+- 收尾发现认证版本在后端重启后归零会被仍打开的前端误判为迟到响应；改为 JavaScript 安全整数范围内的微秒时间版本与进程递增计数，避免 Windows 同一时钟刻度内重建 runtime 导致版本倒退。补重启/退出及存储失败/恢复版本断言。加强 OAuth 完成自动发现新模型时仍保留未保存选择的前端测试，293 项复跑通过。
 
 ## 提交与后续接续点
 
 - `30dfd2ce`：通用连接操作、状态/codec/SSE/认证扩展边界与初始方案。
-- 下一批提交 Cline 后端、隔离凭证/刷新/清理/缺包测试和实机工具；随后提交前端、随包构建与文档。
+- `ae141d4f`：Cline 后端、隔离凭证/刷新/清理/缺包测试和实机工具。
+- 接续提交认证重启版本修复、前端/随包构建与文档。
 - 最后检查脱敏、diff、前端产物一致性后推送 origin/master，核对远端 HEAD；完成前不标记已推送。

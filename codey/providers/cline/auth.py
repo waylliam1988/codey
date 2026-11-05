@@ -9,6 +9,7 @@ import webbrowser
 from collections.abc import Callable, Generator
 from datetime import datetime
 from pathlib import Path
+from time import time_ns
 from typing import Any
 from uuid import uuid4
 
@@ -19,6 +20,16 @@ from codey.providers.connection_controls import ConnectionActionError
 from codey.storage.file_lock import LockTimeout, with_file_lock
 
 _ACTIVE = {"starting", "awaiting_authorization", "exchanging"}
+_REVISION_LOCK = threading.Lock()
+_LAST_REVISION = 0
+
+
+def _next_revision() -> int:
+    global _LAST_REVISION
+    with _REVISION_LOCK:
+        # Windows wall-clock reads can share a tick across runtime replacements.
+        _LAST_REVISION = max(_LAST_REVISION + 1, time_ns() // 1000)
+        return _LAST_REVISION
 
 
 def _text(value: object) -> str:
@@ -35,7 +46,9 @@ class Auth:
         self.browser, self.clock = browser, clock
         self.lock = threading.RLock()
         self.state = "signed_out"
-        self.revision = 0
+        # Microsecond UTC revisions fit JavaScript's safe integer range and
+        # continue advancing when a backend restarts while Settings stays open.
+        self.revision = _next_revision()
         self.attempt: str | None = None
         self.expires_at: float | None = None
         self.user_code: str | None = None
@@ -55,7 +68,7 @@ class Auth:
                 if epoch != self._observed_epoch:
                     previous_epoch = self._observed_epoch
                     self._observed_epoch = epoch
-                    self.revision += 1
+                    self._advance_revision()
                     if self.state == "reauth_required" and record is not None and previous_epoch is not None:
                         self.state = "ready"
                 if self.state not in _ACTIVE | {"reauth_required"}:
@@ -63,9 +76,10 @@ class Auth:
                 if previous != self.state:
                     if self.state in {"ready", "signed_out"}:
                         self.error_code = None
-                    self.revision += 1
+                    self._advance_revision()
             except ConnectionActionError:
-                self.state, self.error_code = "error", "auth_storage_failed"
+                if self.state != "error" or self.error_code != "auth_storage_failed":
+                    self._state("error", "auth_storage_failed")
             actions = (["logout", "clear_data"] if self.state == "ready" else
                        ["cancel_login", "reopen_login"] if self.state == "awaiting_authorization" else
                        ["cancel_login"] if self.state in _ACTIVE else ["login", "clear_data"])
@@ -73,9 +87,12 @@ class Auth:
                     "attempt_id": self.attempt, "expires_at": self.expires_at, "user_code": self.user_code,
                     "error_code": self.error_code, "actions": actions}
 
+    def _advance_revision(self) -> None:
+        self.revision = _next_revision()
+
     def _state(self, state: str, error: str | None = None) -> None:
         self.state, self.error_code = state, error
-        self.revision += 1
+        self._advance_revision()
         if state not in _ACTIVE:
             self.user_code, self.expires_at, self._url = None, None, ""
 
@@ -180,7 +197,7 @@ class Auth:
             with self.lock:
                 if generation == self._generation and self.state == "awaiting_authorization":
                     self.error_code = "browser_open_failed"
-                    self.revision += 1
+                    self._advance_revision()
 
     def cancel_login(self, attempt: str | None) -> dict[str, Any]:
         with self.lock:
