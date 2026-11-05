@@ -19,6 +19,7 @@ from codey.research.knowledge_schema import (
     object_schema,
     report_sections_schema,
 )
+from codey.research.questions import QUESTION_BOUND_TOOLS
 
 PROTOCOL_NO_JSON = "no_json"
 PROTOCOL_UNKNOWN_TOOL = "unknown_tool"
@@ -258,8 +259,6 @@ TOOL_CONTRACTS = {
 
 
 def _question_contract(contract: ToolContract) -> ToolContract:
-    from codey.research.questions import QUESTION_BOUND_TOOLS
-
     if contract.name not in QUESTION_BOUND_TOOLS:
         return contract
     schema = copy.deepcopy(dict(contract.input_schema))
@@ -275,8 +274,6 @@ TOOL_CONTRACTS = {name: _question_contract(contract) for name, contract in TOOL_
 
 def question_bound_spec(spec: Any, *, required: bool = False) -> Any:
     """One question argument contract shared by ordinary and strict research."""
-    from codey.research.questions import QUESTION_BOUND_TOOLS
-
     if spec.name not in QUESTION_BOUND_TOOLS:
         return spec
     if "question_ref" in dict(spec.parameters):

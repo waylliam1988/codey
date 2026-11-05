@@ -3,6 +3,7 @@
 from typing import Any
 
 from codey.knowledge.model import CONDITION_STATES, KINDS, ORIGINS, SCOPES, STATUSES
+from codey.reviews.research_coverage import QUESTION_STATES
 
 
 def text_schema(minimum: int = 1, maximum: int = 4000) -> dict[str, Any]:
@@ -54,8 +55,6 @@ def note_evidence_schema() -> dict[str, Any]:
 
 
 def coverage_record_schema() -> dict[str, Any]:
-    from codey.reviews.research_coverage import QUESTION_STATES
-
     return object_schema({"question_ref": {"type": "string", "pattern": "^q[1-8]$"},
         "state": {"type": "string", "enum": list(QUESTION_STATES)}, "answer": text_schema(),
         "findings": array_schema({"type": "string", "pattern": "^f[1-9][0-9]*$"}, 0, 16),

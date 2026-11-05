@@ -961,3 +961,55 @@ git diff --check
 ```
 
 新增审计工具测试为 **3 passed**：覆盖包子模块与相对导入规范化、类型导入分类，以及“顶层图无环但顶层调用延迟导入函数”的成功/失败两种真实冷导入场景。后者确认静态图无环并不能保证模块初始化成功。连同 durable kernel 隔离和 kernel 依赖方向测试，共 **11 passed**。Ruff 和差异空白检查通过。
+
+## 阶段 29：显式声明 Research 合同初始化依赖（2026-11-05）
+
+先以 `7add79e8 test(kernel): make import boundary audit reproducible` 提交阶段 28 的工具、测试和报告，再处理已观测到的两处初始化期间的函数内导入：
+
+- `knowledge_schema.py` 在模块级导入唯一所有者 `reviews.research_coverage.QUESTION_STATES`；
+- `tool_contract.py` 在模块级导入唯一所有者 `research.questions.QUESTION_BOUND_TOOLS`，`_question_contract()` 和 `question_bound_spec()` 共用这个依赖；
+- 移除三条函数内 import，不新增协议、兼容导出、常量副本或恢复投影，也不继续拆其他强连通分量。
+
+这些依赖原本就在合同初始化时执行，本次将其声明为显式模块依赖。新增测试先在旧实现上得到 **1 failed、4 passed**，失败准确捕获原来的两处隐式依赖；修改后五种入口顺序全部通过。测试同时比较普通 Research、evidence followup 和 whole-answer 模式的 text/native 合同、工具声明、schema 和示例，确认导入顺序不影响模型可见合同。
+
+### 前后证据
+
+- 580 个生产模块的三种图仍为 **0 / 17 / 18**；本次没有宣称消除了 Research/toolchain 的整体循环。
+- 22 个独立进程冷导入入口全部成功；已观测到的初始化期间函数内 import 位置从 **2 处降为 0 处**。这仍只覆盖选定入口与本次环境，不扩展为所有启动路径安全。
+- `.e2e-artifacts/kernel-audit-20261104/research-contract-imports-before.json` 与 `research-contract-imports-after.json` **逐字节一致**。
+- 合同表面经排序、紧凑 JSON 序列化后的 SHA-256 前后均为 `4e31e891e527095161fbc57ad745d8e6fe9ca9a58d196ea8c140843e5af06b40`。
+- 最终导入图及冷导入记录：`.e2e-artifacts/kernel-audit-20261104/import-boundary-explicit-contracts-20261105.json`。
+
+### 扩大检查中的失败归因
+
+| 失败 | 根因与处理 |
+|---|---|
+| Zen 全树类型检查失败 | 先前已提交的 `zen/direct.py` 存在 socket 类型名遮蔽、HTTP handler 覆写签名不兼容、空列表类型推断问题。其中 `log_message(format=...)` 的真实调用也会抛出 `TypeError`，已先补断言复现，再修正生产签名和注解。提交 `9f11dc62`；不改变隧道授权、目标白名单或路由行为。 |
+| Zen 传输测试 8 项失败 | 测试启动器隔离 HOME 后隐藏了真实用户目录中的 Bun 1.4.4，既不是生产传输失败，也不是拒绝类型断言应该放宽。测试 bootstrap 现在先保留已安装 Bun 的发现路径；新增三种安装情形验证 PATH 优先级、缺失时仍失败、重复初始化稳定及 HOME 继续隔离。提交 `532f65a9`；没有增加 Node fallback 或跳过测试。 |
+| Research 重启测试 3 项失败 | 回归执行期间修改了 Zen 源文件，使父进程缓存的 `runtime_implementation_id()` 与稍后启动的子进程不同。恢复层拒绝执行是正确行为，属于本轮验证操作失误。单独重跑已通过，固定生产源码后重跑完整扩大选集也通过；没有修改恢复指纹、兼容性判定或测试预期。 |
+
+前两类分别在生产边界和测试环境所有者修正，采用独立提交。第三类只修正验证操作顺序。恢复测试证明的是同版本源码下的恢复；已有实现版本不兼容时仍须拒绝执行，不能用合同表面相同替代实现身份校验。
+
+### 最终回归
+
+| 选集 | 结果 |
+|---|---|
+| 导入工具、Research 合同与问题归属、示例、嵌套 schema | 74 passed，15 个子断言通过 |
+| Research 完成与发布、durable 重启、恢复、协议、权限及架构 | 479 passed，450 个子断言通过 |
+| Zen 隧道与传输、请求预算、HOME 隔离、Bun 与 Playwright 依赖保留 | 68 passed |
+
+三组选集文件互不重叠，合计 **621 passed，465 个子断言通过，0 failed，0 skipped**；没有运行全量 pytest。全仓 Ruff 通过；面向 Python 3.11 的 Mypy、Pyrefly、ty 全生产树检查通过（Mypy 580 个源文件；Pyrefly 0 errors、35 suppressed、79 warnings）；差异空白检查通过。本次未运行模型 A/B，也不声称模型性能收益。
+
+首次失败与最终通过的 JUnit XML 均保留在同一证据目录：`explicit-contracts-source-change-failures.xml`、`explicit-contracts-expanded.xml`、`zen-missing-runtime-failures.xml`、`zen-direct-typing.xml`。精确测试文件列表与静态检查命令保存在 `explicit-contracts-validation.json`；JUnit 的 testcase 总数包含子断言，不能直接当作 pytest 主用例数。
+
+复跑三组选集时，从仓库根目录执行，并在测试进程退出前保持生产源码不变：
+
+```powershell
+$validation = Get-Content -Raw .e2e-artifacts/kernel-audit-20261104/explicit-contracts-validation.json | ConvertFrom-Json
+$focusedTests = @($validation.pytest_focused_files)
+$expandedTests = @($validation.pytest_expanded_files)
+$zenTests = @($validation.pytest_zen_files)
+python -B -m pytest -q @focusedTests
+python -B -m pytest -q @expandedTests
+python -B -m pytest -q @zenTests
+```
