@@ -28,7 +28,9 @@ def fork_auxiliary(self: ApiProvider) -> ApiProvider:
         input_limit_tokens=budget.input_limit_tokens, reasoning_effort=self.reasoning_effort,
         thinking_enabled=self.thinking_enabled, tool_choice="auto", request_headers=self.request_headers,
         request_counter=self.request_counter, usage_parser=self.usage_parser,
-        configure_request=self.configure_request, budget_source=budget.source, purpose="compaction")
+        configure_request=self.configure_request, budget_source=budget.source, purpose="compaction",
+        request_context_headers=self.request_context_headers, codec=self._codec if self.codec_revision else None,
+        codec_revision=self.codec_revision, connection_revision=self.connection_revision)
     client.request_policy = self.request_policy
     client.transport_options = self.transport_options
     client.http_session = self.http_session

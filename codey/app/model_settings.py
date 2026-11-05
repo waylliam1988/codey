@@ -46,8 +46,12 @@ def settings_response(ctx: Any) -> tuple[int, dict[str, Any]]:
         }
     ]
     for key, (label, _) in API_CONNECTIONS.items():
-        cached_payload = getattr(connection_for(key), "cached_model_payload", None)
+        connector = connection_for(key)
+        cached_payload = getattr(connector, "cached_model_payload", None)
         facts = cached_payload() if callable(cached_payload) else store.catalog(key)
+        authentication = getattr(connector, "authentication_payload", None)
+        if callable(authentication):
+            facts = {**facts, "authentication": authentication()}
         sources.append(
             {**facts, "id": key, "label": label, "discoverable": True, "connection_editor": key == "local"}
         )

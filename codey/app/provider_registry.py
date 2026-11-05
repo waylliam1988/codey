@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 from collections import Counter
 from collections.abc import Callable
@@ -50,6 +51,13 @@ class ProviderRegistry:
     def model_uses_snapshot(self) -> tuple[tuple[str, str], ...]:
         with self._model_uses_lock:
             return tuple(self.model_uses)
+
+    def shutdown_controls(self) -> None:
+        for _, module_path in tuple(API_CONNECTIONS.values()):
+            module = sys.modules.get(module_path)
+            shutdown = getattr(module, "shutdown_controls", None)
+            if callable(shutdown):
+                shutdown()
 
     def failover_order(
         self,

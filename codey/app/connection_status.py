@@ -186,8 +186,9 @@ class ConnectionStatusCoordinator:
         """Publish explicit discovery without letting an older probe replace it."""
         revision = self._revision(provider_id)
         models = payload.get("models", [])
+        explicit = payload.get("state")
         snapshot = ConnectionSnapshot(
-            provider_id, state="ready" if models else "unavailable",
+            provider_id, state=explicit if isinstance(explicit, str) and explicit in {"ready", "unavailable", "blocked"} else ("ready" if models else "unavailable"),
             freshness="stale" if payload.get("stale") is True else "fresh", source="api_catalog",
             checked_at=time.time(), error=str(payload.get("error") or "")[:240],
             data={"models": models, "payload": payload},

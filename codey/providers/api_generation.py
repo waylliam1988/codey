@@ -14,7 +14,7 @@ from typing import Any, cast
 
 from codey.providers import api_transport as transport
 from codey.providers.api_request_policy import AttemptBudget
-from codey.providers.api_stream import read_sse
+from codey.providers.api_stream import ChatStreamAccumulator, DefaultChatAccumulator, read_sse
 
 
 def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str, str], *, timeout: float,  # noqa: C901, PLR0912, PLR0915
@@ -88,7 +88,9 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
                 control.enter_phase("body")
                 control.reset_body_timer()
                 body = read_sse(response, deadline=started + timeout, cancelled=cancelled,
-                                on_event=on_event, control=control, idle_timeout=idle_timeout)
+                                on_event=on_event, control=control, idle_timeout=idle_timeout,
+                                chat_accumulator_factory=cast(Callable[[], ChatStreamAccumulator],
+                                    (transport_options or {}).get("chat_accumulator_factory", DefaultChatAccumulator)))
             else:
                 control.enter_phase("body")
                 control.reset_body_timer()
@@ -170,6 +172,9 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
             if declared_length is not None and len(raw_detail) != declared_length:
                 raise transport.GenerationUnknownError("rejection body framing is incomplete; not resent") from exc
             detail = raw_detail.decode("utf8", "replace")
+        detail_filter = (transport_options or {}).get("error_detail_filter")
+        if callable(detail_filter):
+            detail = str(detail_filter(exc.code, detail))
         if errors.classify_http_error(exc.code, detail) == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
             raise errors.ContextOverflowError(detail[:400]) from exc
         request_id = exc.headers.get("X-Request-Id")

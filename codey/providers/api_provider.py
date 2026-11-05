@@ -8,7 +8,7 @@ import inspect
 import json
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, replace
 from functools import partial
 from typing import Any, cast
@@ -80,6 +80,9 @@ class ApiProvider:
         tool_choice: str = "auto",
         output_tokens: int | None = None,
         request_headers: Any = None,
+        request_context_headers: Callable[[RequestContext], Mapping[str, str]] | None = None,
+        codec: ApiCodec | None = None,
+        codec_revision: str = "",
         native_tools: bool | None = None,
         text_tool_format: str = "plain",
         text_decoder: Callable[[str], str | AssistantTurn] | None = None,
@@ -144,7 +147,10 @@ class ApiProvider:
             raise ValueError("unsupported API protocol")
         from codey.providers import api_chat, api_responses
 
-        self._codec = cast(ApiCodec, {"openai-completions": api_chat, "openai-responses": api_responses}[api_protocol])
+        if codec is not None and not codec_revision:
+            raise ValueError("custom API codec requires a revision")
+        self._codec = codec or cast(ApiCodec, {"openai-completions": api_chat, "openai-responses": api_responses}[api_protocol])
+        self.codec_revision = codec_revision
         self.api_protocol = api_protocol
         self.stream = stream
         self.tool_choice = tool_choice
@@ -160,6 +166,7 @@ class ApiProvider:
         self.last_context_count = RequestContextCount(None, "unknown")
         self._last_output_estimate = 0
         self.request_headers = request_headers
+        self.request_context_headers = request_context_headers
         self.native_tools = native_tools
         self._text_decoder = text_decoder
         self._last_reasoned_reply: tuple[str, str] | None = None
@@ -191,6 +198,8 @@ class ApiProvider:
         )}
         if self.text_tool_format != "plain":
             settings["text_tool_format"] = self.text_tool_format
+        if self.codec_revision:
+            settings["codec_revision"] = self.codec_revision
         settings["context_budget"] = asdict(self.context_budget)
         return hashlib.sha256(json.dumps(settings, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
@@ -710,7 +719,7 @@ class ApiProvider:
             transport_options = dict(self.transport_options) if isinstance(self.transport_options, dict) else {}
             transport_options.update(getattr(self._request_receipt, "transport_options", {}))
             body = api_generation.generate(
-                f"{self.base_url}/{self._codec.endpoint}", payload, self._headers(),
+                f"{self.base_url}/{self._codec.endpoint}", payload, self._headers(self._request_context),
                 timeout=max(0.001, deadline - time.monotonic()), observe=self._notify_http_attempt,
                 cancelled=self._is_cancelled, opened=self._opened_response, on_control=self._opened_control,
                 on_event=observe,
@@ -910,12 +919,14 @@ class ApiProvider:
             or (task_event is not None and task_event.is_set())
         )
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, context: RequestContext | None = None) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         if self.request_headers is not None:
             headers.update(self.request_headers(self.base_url))
+        if context is not None and self.request_context_headers is not None:
+            headers.update(self.request_context_headers(context))
         return headers
 
     def acknowledge_tool_results(self, results: list[ProviderToolResult],

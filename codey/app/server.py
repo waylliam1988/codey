@@ -40,7 +40,7 @@ from urllib.parse import parse_qs, urlparse
 
 from codey import __version__
 from codey.app import api as app_api
-from codey.app import model_settings
+from codey.app import connection_actions, model_settings
 from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
 from codey.app.context import AppContext
@@ -285,6 +285,7 @@ _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, d
     "/api/inputs": inputs_response,
     "/api/questions": questions_response,
     "/api/model_settings": lambda ctx, _query: model_settings.settings_response(ctx),
+    "/api/connection_auth": connection_actions.authentication_response,
     "/api/state": lambda ctx, _query: (200, ctx.run_state_payload()),
     "/api/shell_approval": lambda ctx, query: _shell_approval_status_route(ctx, query),
     "/api/command_permissions": _command_permissions_route,
@@ -309,6 +310,7 @@ _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[s
     "/api/questions": question_answer_response,
     "/api/model_settings": model_settings.save_response,
     "/api/model_catalog": model_settings.discover_response,
+    "/api/connection_action": connection_actions.action_response,
     "/api/ui_state": app_api.save_ui_state_response,
     "/api/local_provider": lambda _ctx, body: app_api.save_local_provider_response(body),
     "/api/run": _run_submit_route,

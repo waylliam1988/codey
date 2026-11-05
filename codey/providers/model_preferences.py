@@ -104,6 +104,14 @@ class ModelPreferences:
     def catalog(self, source_id: str) -> dict[str, Any]:
         return copy.deepcopy(self._read()["catalogs"].get(source_id, {"id": source_id, "models": []}))
 
+    def clear_source(self, source_id: str) -> None:
+        with with_file_lock(self.path):
+            value = self._read()
+            value["sources"][source_id] = {"enabled": False, "models": []}
+            value["catalogs"].pop(source_id, None)
+            value["revision"] += 1
+            write_json_atomic(self.path, value)
+
     def observe_catalog(self, payload: dict[str, Any]) -> None:
         source_id = payload.get("id")
         if source_id not in API_CONNECTIONS:
@@ -118,7 +126,8 @@ class ModelPreferences:
         clean["models"] = [
             {
                 key: copy.deepcopy(model[key])
-                for key in ("id", "name", "efforts", "thinking_toggle", "protocol", "review_eligible")
+                for key in ("id", "name", "efforts", "thinking_toggle", "protocol", "review_eligible",
+                            "thinking_default_allowed", "availability", "unavailable_reason", "trial")
                 if key in model
             }
             for model in payload.get("models", [])

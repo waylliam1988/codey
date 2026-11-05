@@ -52,6 +52,7 @@ def request(httpd, method, path, *, body=None, headers=None):
 @pytest.mark.parametrize("method,path", [
     ("POST", "/api/shell_approval"), ("POST", "/api/run"), ("POST", "/api/stop"),
     ("GET", "/api/state"), ("GET", "/api/run_details"), ("GET", "/api/events"),
+    ("GET", "/api/connection_auth?source=fixture"), ("POST", "/api/connection_action"),
 ])
 def test_unauthenticated_http_never_reaches_control_or_state(httpd, method, path):
     with mock.patch.object(server.Handler, "_get_state", side_effect=AssertionError("unauthenticated dispatch")) as state:

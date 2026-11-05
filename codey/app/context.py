@@ -1103,6 +1103,7 @@ class AppContext(GhostStoreAccessors):
             return False
 
         resources_closed = True
+        self.providers.shutdown_controls()
 
         def close_store(store: object) -> bool:
             close = getattr(store, "close", None)

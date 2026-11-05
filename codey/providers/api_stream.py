@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from codey.providers.api_transport import AttemptControl
@@ -45,10 +45,40 @@ def _merge_call(calls: dict[int, dict[str, Any]], call: object) -> None:
         slot["function"][key] += fragment
 
 
+class ChatStreamAccumulator(Protocol):
+    def add_delta(self, delta: dict[str, Any]) -> None: ...
+    def finish_message(self) -> dict[str, Any]: ...
+
+
+class DefaultChatAccumulator:
+    def __init__(self) -> None:
+        self.chat: dict[str, Any] = {"content": "", "tool_calls": []}
+        self.calls: dict[int, dict[str, Any]] = {}
+
+    def add_delta(self, delta: dict[str, Any]) -> None:
+        self.chat["content"] += delta.get("content") or ""
+        for name in ("reasoning_content", "reasoning", "thinking"):
+            fragment = delta.get(name)
+            if isinstance(fragment, str):
+                self.chat[name] = self.chat.get(name, "") + fragment
+        for call in delta.get("tool_calls") or []:
+            try:
+                _merge_call(self.calls, call)
+            except ValueError as exc:
+                from codey.providers.api_transport import GenerationUnknownError
+
+                raise GenerationUnknownError(f"malformed streamed tool call: {exc}; not resent") from exc
+
+    def finish_message(self) -> dict[str, Any]:
+        self.chat["tool_calls"] = [self.calls[key] for key in sorted(self.calls)]
+        return self.chat
+
+
 def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool],
              on_event: Callable[[dict[str, Any]], None] = lambda event: None,
              control: AttemptControl | None = None,
-             idle_timeout: float | None = None) -> dict[str, Any]:
+             idle_timeout: float | None = None,
+             chat_accumulator_factory: Callable[[], ChatStreamAccumulator] = DefaultChatAccumulator) -> dict[str, Any]:
     from codey.providers.api_transport import (
         MAX_RESPONSE_BYTES,
         BoundedBodyReader,
@@ -58,8 +88,7 @@ def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool],
 
     data: list[bytes] = []
     total = 0
-    chat: dict[str, Any] = {"content": "", "tool_calls": []}
-    calls: dict[int, dict[str, Any]] = {}
+    accumulator = chat_accumulator_factory()
     chat_finish = ""
     chat_done = False
     reader = BoundedBodyReader(response, control=control, deadline=deadline, idle_timeout=idle_timeout)
@@ -96,19 +125,17 @@ def read_sse(response: Any, *, deadline: float, cancelled: Callable[[], bool],
         if kind == "error" or "error" in event:
             raise RuntimeError(f"generation stream error: {str(event.get('error', event))[:400]}")
         for choice in event.get("choices", []):
+            if choice.get("index", 0) != 0:
+                raise GenerationUnknownError("multiple streamed choices are unsupported; not resent")
             delta = choice.get("delta") or {}
-            chat["content"] += delta.get("content") or ""
-            for name in ("reasoning_content", "reasoning", "thinking"):
-                fragment = delta.get(name)
-                if isinstance(fragment, str):
-                    chat[name] = chat.get(name, "") + fragment
-            for call in delta.get("tool_calls") or []:
-                try:
-                    _merge_call(calls, call)
-                except ValueError as exc:
-                    raise GenerationUnknownError(f"malformed streamed tool call: {exc}; not resent") from exc
+            try:
+                accumulator.add_delta(delta)
+            except ValueError as exc:
+                raise GenerationUnknownError(f"malformed streamed message: {exc}; not resent") from exc
             chat_finish = choice.get("finish_reason") or chat_finish
     if chat_finish and chat_done:
-        chat["tool_calls"] = [calls[key] for key in sorted(calls)]
+        if cancelled():
+            raise GenerationUnknownError("generation cancelled; late response discarded")
+        chat = accumulator.finish_message()
         return {"choices": [{"message": chat, "finish_reason": chat_finish}]}
     raise GenerationUnknownError("generation stream ended without a valid terminal event; not resent")
