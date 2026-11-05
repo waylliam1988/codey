@@ -16,7 +16,6 @@ from typing import Any, cast
 from codey.app import provider_services as providers
 from codey.operations.task_state import TaskState
 from codey.policies.limits import REVIEW_TIMEOUT
-from codey.policies.task_policy import TaskPolicy
 from codey.providers import controls as provider_controls
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.reviews.core import REVIEW_REPAIR_PROMPT, ReviewResult, parse_review_response, parse_review_with_repair
@@ -67,8 +66,6 @@ def run_review_attempt(
     run_id: str = "",
     review_policy: str = WEB_IF_AVAILABLE,
     review_source_run_id: str = "",
-    parent_policy: TaskPolicy | None = None,
-    replay_probes: tuple[dict[str, object], ...] = (),
 ) -> tuple[str, ReviewResult]:
     from codey.reviews.identity import build_identity, capture_snapshot, review_model_identity, verify_snapshot
     from codey.reviews.input import prepare_review_input
@@ -87,14 +84,7 @@ def run_review_attempt(
             review_impact_map=review_impact_map,
             execution_evidence=execution_evidence,
         )
-        candidate = _probe_candidate(project, task, prepared, reviewer, parent_policy)
-        if candidate is not None:
-            independent = prepare_review_input(project=project, task=task, writer_summary="", changes=changes,
-                project_map=project_map, verification_map=verification_map, review_impact_map=review_impact_map)
-            prepared = replace(independent, prompt=independent.prompt + "\nRelevant current source files:\n" + candidate.context)
-        snapshot_paths = tuple(dict.fromkeys((*prepared.scope.provided_files,
-            *(candidate.source_paths if candidate is not None else ()))))
-        snapshot = capture_snapshot(project, snapshot_paths)
+        snapshot = capture_snapshot(project, prepared.scope.provided_files)
         early = _early_snapshot_result(ctx, session_id, reviewer_id, prepared, snapshot)
         if early is not None:
             return reviewer_id, early
@@ -102,7 +92,7 @@ def run_review_attempt(
         if not verify_snapshot(snapshot):
             return reviewer_id, _stale_before_send(ctx, session_id, reviewer_id, prepared)
         model_id = review_model_identity(reviewer)
-        if review_source_run_id and model_id and candidate is None:
+        if review_source_run_id and model_id:
             from codey.reviews.reuse import try_reuse_review
 
             identity = build_identity(prepared, reviewer_id=reviewer_id, policy=review_policy,
@@ -125,19 +115,7 @@ def run_review_attempt(
 
         bind_api_usage(reviewer, reviewer_id, trace_recorder)
         reviewer.new_chat()
-        observations: tuple[dict[str, object], ...] = ()
-        if candidate is not None and parent_policy is not None:
-            from codey.reviews.reproduction import candidate_current, final_review_prompt, native_submission_prompt
-
-            observations = _review_observations(reviewer, prepared.prompt, task, candidate,
-                parent_policy, replay_probes, trace_recorder)
-            prepared = replace(prepared, prompt=native_submission_prompt(
-                final_review_prompt(prepared.prompt, observations, prepared.scope.provided_files)))
-            reviewer.new_chat()
-        review = _request_review_result(reviewer, trace_recorder, prepared, snapshot, structured=candidate is not None)
-        review = replace(review, reproduction=observations)
-        if candidate is not None and not candidate_current(candidate, project):
-            review = replace(review, status="stale", diagnostics=("reproduction_candidate_stale",))
+        review = _request_review_result(reviewer, trace_recorder, prepared, snapshot)
         return reviewer_id, _finalize_review(
             ctx, session_id, project, reviewer_id, self_review,
             prepared, snapshot, review, trace_recorder, run_id, review_policy, model_id,
@@ -145,35 +123,6 @@ def run_review_attempt(
     finally:
         with contextlib.suppress(Exception):
             reviewer.close()
-
-
-def _probe_candidate(project: str, task: str, prepared: Any, reviewer: Any,
-                     parent_policy: TaskPolicy | None) -> Any:
-    from codey.agents.protocol import task_forbids_verification
-    from codey.reviews.reproduction import capture_candidate
-
-    if (parent_policy is None or not parent_policy.allows("project.read")
-            or not parent_policy.allows("project.verify") or not getattr(reviewer, "native_tools", False)
-            or task_forbids_verification(task) or not prepared.scope.is_complete
-            or not any(path.endswith(".py") for path in prepared.scope.provided_files)):
-        return None
-    try:
-        return capture_candidate(project, prepared.scope.provided_files)
-    except (OSError, ValueError):
-        # Larger/unsupported workspaces retain the original static Review.
-        return None
-
-
-def _review_observations(reviewer: Any, context: str, task: str, candidate: Any, parent_policy: TaskPolicy,
-                         replay_probes: tuple[dict[str, object], ...], trace_recorder: object | None) -> tuple[dict[str, object], ...]:
-    from codey.reviews.reproduction import execute_proposal, request_proposals, validate_proposals
-
-    if replay_probes:
-        proposals = validate_proposals({"probes": [{key: row.get(key) for key in
-            ("requirement_quote", "hypothesis", "script")} for row in replay_probes]}, task)
-        return tuple(execute_proposal(candidate, probe, parent_policy=parent_policy) for probe in proposals)
-    return request_proposals(reviewer, context, task, candidate, parent_policy=parent_policy,
-                             trace_recorder=trace_recorder, timeout=REVIEW_TIMEOUT)
 
 
 def _early_snapshot_result(ctx: Any, session_id: Any, reviewer_id: Any, prepared: Any, snapshot: Any) -> Any:
@@ -206,8 +155,7 @@ def _stale_before_send(ctx: Any, session_id: Any, reviewer_id: Any, prepared: An
     return review
 
 
-def _send_review_prompt(reviewer: Any, trace_recorder: Any, prompt: Any,
-                        *, structured_paths: tuple[str, ...] | None = None) -> Any:
+def _send_review_prompt(reviewer: Any, trace_recorder: Any, prompt: Any) -> Any:
     from codey.providers.api_transport import GenerationRejectedError
 
     trace = FailOpenPromptTrace(trace_recorder)
@@ -222,10 +170,6 @@ def _send_review_prompt(reviewer: Any, trace_recorder: Any, prompt: Any,
     )
     try:
         with provider_controls.suppress_assistance():
-            if structured_paths is not None:
-                from codey.reviews.reproduction import submit_review
-
-                return submit_review(reviewer, prompt, structured_paths, timeout=REVIEW_TIMEOUT)
             return reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded, GenerationRejectedError):
         raise
@@ -233,8 +177,7 @@ def _send_review_prompt(reviewer: Any, trace_recorder: Any, prompt: Any,
         raise ReviewSendUnknown(str(exc)) from exc
 
 
-def _request_review_result(reviewer: Any, trace_recorder: object | None, prepared: Any, snapshot: Any,
-                           *, structured: bool = False) -> ReviewResult:
+def _request_review_result(reviewer: Any, trace_recorder: object | None, prepared: Any, snapshot: Any) -> ReviewResult:
     """Known output truncation and malformed JSON share one format attempt.
 
     A completed generation cut short is distinct from an unknown send. Only
@@ -245,8 +188,7 @@ def _request_review_result(reviewer: Any, trace_recorder: object | None, prepare
     from codey.reviews.identity import verify_snapshot
 
     try:
-        reply = _send_review_prompt(reviewer, trace_recorder, prepared.prompt,
-                                    structured_paths=prepared.scope.provided_files if structured else None)
+        reply = _send_review_prompt(reviewer, trace_recorder, prepared.prompt)
     except ReviewSendUnknown as exc:
         if not isinstance(exc.__cause__, OutputLengthError):
             raise
@@ -396,8 +338,6 @@ def run_review(
     review_source_run_id: str = "",
     connect_reviewer: Callable[..., Any] | None = None,
     standalone: bool = False,
-    parent_policy: TaskPolicy | None = None,
-    replay_probes: tuple[dict[str, object], ...] = (),
 ) -> tuple[str, ReviewResult] | None:
     from codey.reviews.reuse import validate_source_run_id
 
@@ -421,7 +361,6 @@ def run_review(
             reviewer_id=reviewer_id, reviewer=reviewer, self_review=self_review,
             trace_recorder=trace_recorder, run_id=run_id, review_policy=review_policy,
             review_source_run_id=source,
-            parent_policy=parent_policy, replay_probes=replay_probes,
         )
 
 

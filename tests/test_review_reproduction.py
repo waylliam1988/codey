@@ -7,7 +7,7 @@ import pytest
 
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall
-from codey.reviews.reproduction import (
+from tests.manual.review_reproduction_support import (
     candidate_current,
     capture_candidate,
     execute_proposal,
@@ -172,33 +172,3 @@ def test_readonly_native_text_uses_existing_parser_without_fabricating_a_call():
     assert parse_review_response(reply).approved
     assert '```json' in reply
 
-
-def test_evidence_survives_artifact_reload_and_writer_handoff(tmp_path):
-    from codey.reviews.core import ReviewFinding, ReviewResult, render_writer_followup
-    from codey.reviews.input import ReviewScope
-    from codey.reviews.persistence import ReviewArtifactStore, load_review_artifact, save_review_artifact
-
-    observation = execute_proposal(candidate(tmp_path, 'def identity(x): return 0\n'), proposal(), parent_policy=POLICY)
-    result = ReviewResult('changes_requested', 'Wrong value.', [ReviewFinding('app.py', 'Return input.')],
-        scope=ReviewScope(total_changed_files=1, provided_files=('app.py',)), reproduction=(observation,))
-    store = ReviewArtifactStore(tmp_path / 'state')
-    assert save_review_artifact(store, session_id='s', run_id='r', attempt_id='a', result=result,
-        scope_digest='s', prompt_digest='p', snapshot_digest='snap', reviewer_id='local', policy='web_if_available')
-    loaded = load_review_artifact(store, session_id='s', run_id='r', attempt_id='a')
-    assert loaded.reproduction == (observation,)
-    followup = render_writer_followup('Return the input.', loaded)
-    assert 'PRE-REPAIR' in followup and json.dumps(proposal()['script']) in followup
-    assert 'do not add the scratch module' in followup
-
-
-def test_writer_handoff_preserves_passing_regressions_alongside_counterexample(tmp_path):
-    from codey.reviews.core import ReviewFinding, ReviewResult, render_writer_followup
-
-    frozen = candidate(tmp_path, 'def identity(x): return 0\n')
-    failed = execute_proposal(frozen, proposal(), parent_policy=POLICY)
-    passing = execute_proposal(frozen, proposal(expected=0), parent_policy=POLICY)
-    result = ReviewResult('changes_requested', 'Wrong value.', [ReviewFinding('app.py', 'Return input.')],
-                          reproduction=(failed, passing))
-    followup = render_writer_followup('Return the input.', result)
-    assert json.dumps(passing['script']) in followup
-    assert 'already-passing probes' in followup and 'not by copying a suggested patch' in followup

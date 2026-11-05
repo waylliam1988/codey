@@ -1,4 +1,4 @@
-"""Bounded model-authored Python checks on a disposable candidate copy.
+"""Experiment-only model-authored checks on a disposable candidate copy.
 
 Execution requires the parent's existing verification authorization. A disposable
 directory protects the working files; it is not an operating-system sandbox.

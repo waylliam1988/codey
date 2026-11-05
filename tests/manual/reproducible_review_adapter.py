@@ -160,7 +160,7 @@ class CandidateReproductionReviewer(ReproductionReviewer):
         if self.started:
             return self.delegate.send(prompt, timeout=timeout)
         from codey.policies.task_policy import TaskPolicy
-        from codey.reviews.reproduction import (
+        from tests.manual.review_reproduction_support import (
             capture_candidate,
             execute_proposal,
             final_review_prompt,

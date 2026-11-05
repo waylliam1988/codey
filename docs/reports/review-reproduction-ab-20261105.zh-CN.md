@@ -1,5 +1,49 @@
 # 独立 Review 与可执行复现 A/B（2026-11-05）
 
+## 当前决定（后续用户澄清后的收口）
+
+允许有限发现与漏检，不以“找出全部缺陷”验收。评价有效发现、误报、实际修复、回归、
+正常结束与成本。用户要求保留原生产 Review 默认，撤掉尚未启用且收益不稳的生产实验
+接线；复现 helper 移入 `tests/manual/review_reproduction_support.py`，不再由 `codey` 导入。
+撤掉可选 parent_policy/replay_probes API、ReviewResult 附加字段和复现持久化分支；移除
+只针对被撤实验服务的生命周期测试，保留实验执行/授权/候选冻结/独立 oracle 测试。
+
+新实例 HEAD 2096d91e 的三组共同完成 2 类任务 × 缺陷/正确候选（每组 4 行）：
+
+| 方案 | 修复/验证且正常结束 | 最终独立质量通过 | HTTP | 实际输入 token | 正确控制误修 |
+|---|---:|---:|---:|---:|---:|
+| baseline 原生产 Review | 3/4 | 3/4 | 10 | 38844 | 0/2 |
+| candidate_static 干净材料/结构化审查 | 3/4 | 3/4 | 10 | 41136 | 0/2 |
+| candidate 加可执行复现 | 2/4 | 3/4 | 27 | 245592 | 0/2 |
+
+candidate 发现两类缺陷，但折扣代码正确后重复旧写入/验证停 no_progress；标签 Writer
+引入多余 `}`，生产编辑器和 pytest 均已返回语法错误，模型重复旧 SEARCH 而未修复，
+最终质量从 3/4 降至 0/4。不能因为“成功发现”掩盖返修回归，也不能归因证据丢失。
+原方案/独立静态只修好折扣、漏标签；漏检本身不抹去折扣修复的收益。
+
+这一完整 A/B 批原计划 24 行，实际保存 13 行；跨文件静态组再度卡住后停止。上表只用
+三组共同完成的前 12 行，不是四类任务全部完成，也不把服务卡住的未完成行混入模型
+质量分母。更早开发组 candidate 曾 4/4、其他组各 3/4，不能挑成功批替代后续不稳。
+
+撤出前原样生产 headless `edit/project_review` 实机 2/2 通过，均 done，13 项 Review
+生命周期检查全通过。它验证原默认方案，未启用复现分支；smoke 不代表完整 release。
+
+## 服务卡住的独立根因
+
+KoboldCpp 1.117.1 连续两次在相同 malformed Gemma 工具文本（replacements 数组缺 `]`）
+生成 EOS 后不结束 HTTP。独立提取安装包原样 `toolcall_to_normalized_json` 与
+`fix_unquoted_keys`，不导入 Codey、不加载模型：补齐括号控制立即返回，原始文本 3 秒
+超时且 faulthandler 堆栈停在 `read_array`。当数组读到 `}` 时 read_value 不前进，
+read_array 又只认 `]`，因此无限循环。未修改 KoboldCpp 安装包。
+
+原先 native DLL 诊断无效：未加载模型时返回 null，首个控制还在 DLL 加载前超时，不能
+用它定位 native parser。Python fallback 隔离才锁定上述确定性缺陷。隔离脚本曾对
+TimeoutExpired.stdout 一律 decode，遇到 str 报错；已修实验脚本，非 Codey 生产问题。
+
+用户已授权自行重启；已恢复同模型服务。下一步仅在本地 provider 外层复用现有文本
+工具协议避开受影响的服务端工具解析，不猜测缺失括号、不伪造工具成功、不自动重发
+结果未知的请求；兼容验证与最终生产实机结果随后记录。
+
 ## 目标与准入
 
 用户授权先 A/B，确认后接入生产，再使用原样生产代码实机验证。主树 D:\codey；保留

@@ -61,7 +61,7 @@ def main():
     provider = EvidenceProvider(connect_provider('local'))
     payload = {'model': provider.model, 'seeded_candidates': True, 'rows': [], **source_metadata()}
     payload['experiment_sha256'] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in
-        [Path(__file__), Path(__file__).with_name('reproducible_review_adapter.py'), Path('codey/reviews/reproduction.py'),
+        [Path(__file__), Path(__file__).with_name('reproducible_review_adapter.py'), Path('tests/manual/review_reproduction_support.py'),
          Path('codey/app/review_service.py'), Path('codey/reviews/core.py'), Path('codey/reviews/persistence.py')]}
     try:
         for name in args.cases.split(','):
