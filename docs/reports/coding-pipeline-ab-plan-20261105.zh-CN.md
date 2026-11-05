@@ -52,3 +52,17 @@ self-review，其结果也不等于第二模型独立审查。
   4/4。修复不依赖 current context 开关、不放宽权限，也不把局部测试当完整覆盖。
 - 修复批定向验证：127 passed、3 skipped、20 subtests；Mypy 580 源文件无错误，
   Pyrefly 0 errors（保留既有 suppressed/warnings）、ty passed。后续正式 A/B 固定这版生产。
+- 固定版地图/current context 首轮 15 次：各 arm done+外部质量+范围合计均 4/5；外部
+  产品行为合计均 20/20。baseline/map/context 的请求总数 40/43/39，输入 tokenizer
+  总数 244053/284935/245105。五题不能只摘已有项目的地图节省：slug 从零题三边都失败。
+  baseline 重复未授权脚本与无审批通道 shell；map 除此之外多次无视门禁给出的 discovery；
+  context 自写测试错误地要求 apostrophe 被删除（合同要求替换为 hyphen），随后反复改正确
+  产品代码、复用已失效 read receipt。真实失败回执和提示完整，尚未发现该分支协议丢失。
+- 固定 diff Review 首轮 12 行：折扣缺陷 baseline/review-only/repair 外部得分 2/2/4；
+  标签大小写去重缺陷 3/3/3，后两边 reviewer 错误 approved。两份正确控制均 4/4且未返修。
+  缺陷折扣返修消耗 7 请求、35414 输入 token（含重新 Review）；正确代码审查各加 1 请求。
+  不能把 approved 当代码正确，也不能因一个漏检宣称 Review 全无收益。
+- 当前串行队列（session 35632）：同模型 plan→baseline 两个从零题；audit→baseline 三个
+  已有项目题；memory 冷启动/真实历史续作；context→map→baseline 反序确认五题；
+  repair→review→none 反序 Review 确认。原始输出均在 tests/manual/results/coding-value-*。
+  不同时向单个 KoboldCpp 服务发起多个实验。

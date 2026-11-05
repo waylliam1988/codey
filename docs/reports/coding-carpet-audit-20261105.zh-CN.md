@@ -704,6 +704,20 @@ suppression，未把“无错误”写成“无警告”。
 本轮记录真实 HTTP request 和实际输入 tokenizer 计数；当前 SSE 不报告 token usage，
 未知为 null，不能写成 0。完整原始回复、wire 请求、usage、工具回执与最终文件逐行保存。
 新 harness 首个 pilot 的零用量展示是实验统计错误，不是生产报告零消耗，原始记录保留。
+[诊断与首轮原始证据](coding-pipeline-diagnostic-evidence-20261105.json) 包括六个完整批次；
+归档只把重复 native messages/catalogs 按哈希合并，逐项重建校验与原 JSON 相等，无删失败。
+
+首轮正式五题中，baseline/map/context 最终成功均 4/5，外部产品行为分别为 20/20；
+三者 HTTP 请求总数为 40/43/39，输入 tokenizer 总数为 244053/284935/245105。
+地图在已有三题少用请求，但从零 slug 题增加循环，不能只摘有利样本。
+slug 的 context arm 自写了错误的 apostrophe 期望，随后试图修改正确实现、反复使用过期
+read receipt；其他两边主要重复未授权脚本命令与不可用审批。源码、回执和实际输入均保存，
+未发现这些调用被生产协议吞掉；修复反馈能解决部分样本，不保证每次模型都遵从。
+
+固定候选 diff 的 Review 首轮：折扣缺陷在关闭/只审查/审查加返修时，外部质量为
+2/4、2/4、4/4，真实返修加二次 Review 共 7 请求。标签大小写去重缺陷三个 arm 均 3/4，
+Review 错误 approved，没有触发返修。两份正确控制均无误改。这里分别衡量发现、拦截、
+修复与最终代码，不把 Review approved 当正确性证明。尚待反序确认，不改默认 Review 策略。
 
 接下来只在固定修复版本比较候选：地图/current context、同模型规划/只读 audit、真实成功
 历史后的项目记忆与固定 diff 的 Review/一次返修。正式数值与决策待批次完成后补齐。

@@ -163,20 +163,26 @@ def run_arm(provider, case, arm, *, max_turns=24):
                 if case.files:
                     raise ValueError("production new-project planning applies only to empty projects")
                 provider.new_chat()
+                stage_mark = provider.mark()
                 plan = provider.send(render_owner_draft_prompt(task=task, plan=True))
                 row["stage_output"] = plan
                 row["stage_usable"] = bool(plan.strip())
+                row["stage_cost"] = {key: value for key, value in provider.evidence(stage_mark).items()
+                                     if key in {"http_requests", "input_context_tokens"}}
                 task = new_project_change_brief(task, plan).apply_to_task(task)
             elif arm == "audit":
                 if not case.files:
                     raise ValueError("pre-audit applies only to existing projects")
                 provider.new_chat()
+                stage_mark = provider.mark()
                 before = _changed_files(root, case.files)
                 audit = run_project_audit_advisor(provider, root, task,
                     parent_policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.write", "project.verify"})),
                     context=context.project_map, advisor_id="local")
                 row["stage_output"] = audit
                 row["stage_usable"] = bool(audit.strip())
+                row["stage_cost"] = {key: value for key, value in provider.evidence(stage_mark).items()
+                                     if key in {"http_requests", "input_context_tokens"}}
                 assert _changed_files(root, case.files) == before, "read-only audit modified files"
                 if audit:
                     task = project_audit_change_brief(task, (audit,)).apply_to_task(task)

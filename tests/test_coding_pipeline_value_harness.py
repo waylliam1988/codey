@@ -8,9 +8,21 @@ import pytest
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.task_context import ProjectTaskContextBuilder
 from codey.workspace.facts import ProjectFactsStore
+from tests.manual.archive_coding_pipeline_evidence import compact, expand
 from tests.manual.coding_pipeline_cases import BY_NAME
 from tests.manual.coding_pipeline_value_ab import EvidenceProvider, grade, write_files
 from tests.manual.coding_review_value_ab import seed_files
+
+
+def test_evidence_archive_preserves_repeated_requests_and_unknown_usage():
+    request = {"model": "local", "messages": [{"role": "user", "content": "task"}],
+               "tools": [{"type": "function", "function": {"name": "done"}}]}
+    batches = {"batch": {"rows": [{"requests": [request, request], "reported_input_tokens": None}],
+                         "histories": [{"requests": [request]}]}}
+    archive = compact(batches)
+    assert expand(archive) == batches
+    assert len(archive["messages"]) == len(archive["tool_catalogs"]) == len(archive["requests"]) == 1
+    assert "requests" in batches["batch"]["rows"][0]
 
 
 @pytest.mark.parametrize("name,flawed_score", [("discount-bug", 2), ("tag-feature", 3)])
