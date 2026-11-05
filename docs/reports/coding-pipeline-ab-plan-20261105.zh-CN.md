@@ -35,3 +35,20 @@ self-review，其结果也不等于第二模型独立审查。
   独立行为 oracle 与授权文件范围判定，避免把“不做无意义测试改动”算失败。
 - 下一步：建立统一证据与计费观察，先跑地图/current context，再跑规划/audit、持久记忆与
   固定 diff 的 Review/返修。每批结果追加到本日志和主审计报告。
+- 2026-11-05：新 native 实机已有项目的 bug、功能、跨文件重构都完成并通过独立检查。
+  两道从零题代码正确，却停在反复执行未授权的 `python test_*.py` 与不可用的 shell approval。
+  进一步定位：native continuation 提前返回，coding current context 只在初始请求准备，
+  没有在后续请求交付。修复为 native 每次请求冻结前刷新投影；支持 request-scoped 的
+  provider 通过临时 observations 交付，其他 native provider 通过保留 call id 的结果旁文交付。
+  确定性回归先红后绿，包含开/关、两类 native provider。修复前十五行批次单独保留，
+  不把那个未真正生效的 context arm 当作有效候选消融。
+- 计费观察：当前服务没有在 SSE usage 中报告 token；保留 `missing/null`，使用实际请求
+  送出前的 KoboldCpp tokenizer 计数比较输入，另记录真实 HTTP attempt。最初 pilot 显示的
+  usage 0 是新脚本把未知值当零的错误，原始 usage 已保留；后续已修为 null，并单列 tokenizer
+  计数。不是生产计费报告零用量，也不据此判断服务故障。
+- 从零题复测继续定位：模型改为合法 `python -m unittest test_*.py`，运行确实成功，但门禁
+  选择的是完整 discovery；保守覆盖判定不应放宽。原拒绝反馈没有写出缺少的具体命令，
+  模型反复 done。补充门禁失败时的所需命令与 cwd 后，两道题各 6 轮 done、独立检查
+  4/4。修复不依赖 current context 开关、不放宽权限，也不把局部测试当完整覆盖。
+- 修复批定向验证：127 passed、3 skipped、20 subtests；Mypy 580 源文件无错误，
+  Pyrefly 0 errors（保留既有 suppressed/warnings）、ty passed。后续正式 A/B 固定这版生产。

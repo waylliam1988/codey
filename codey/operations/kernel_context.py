@@ -27,6 +27,7 @@ from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
 from codey.operations.kernel_trace import record_outbound, record_turn
+from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_guidance import task_result_context, task_working_context
 from codey.operations.task_session import TaskSession
 from codey.protocols.text_turn import decode_text_turn
@@ -35,6 +36,7 @@ from codey.runtime.core import operation_payload
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
 from codey.runtime.log.session_view import driver_for_state, load_session_view, not_sent_continuation_effect
+from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import admit_ghost_context
 
 
@@ -336,6 +338,13 @@ class KernelContext:
         else:
             method, args = ("send_turn", (prompt, tools)) if self.native else ("send", (prompt,))
         options: dict[str, Any] = {}
+        coding = ""
+        if self.native and not acknowledge:
+            prepared = prepare_coding_context(self.session, completion_context=self.completion_context)
+            coding = render_coding_context(prepared, native=True) if prepared is not None else ""
+            if coding and coding not in prompt and not self.request_scoped_observations and messages:
+                messages[-1] = replace(messages[-1], user_content="\n\n".join(
+                    part for part in (messages[-1].user_content, coding) if part))
         if self.request_scoped_observations and not (self.native and acknowledge):
             observations = task_working_context(
                 self.session, getattr(self.execution.research_tools, "ledger", None),
@@ -346,7 +355,8 @@ class KernelContext:
             # carry its frozen context without relying on a warm wire history.
             context = self.transport.context_text
             options["tool_call_observations"] = "\n\n".join(part for part in (
-                context if context and context not in prompt else "", observations) if part)
+                context if context and context not in prompt else "", observations,
+                coding if coding and coding not in prompt else "") if part)
             if self.session.task_kind == "research" and self.session.policy.strict_research:
                 options["output_token_limit"] = 4096
                 from codey.research.answer_contract import AnswerScope

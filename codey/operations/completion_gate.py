@@ -469,6 +469,15 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
         "Model claims alone do not complete."
     )
     followup = f"Not done yet ({reason or 'checks incomplete'}). " + instruction
+    if "relevant_verification" in failed_ids:
+        selected = getattr(session, "selected_verification", None) or _context_get(context, "selected_check")
+        if selected is not None:
+            command = str(selected.command).replace("\r", " ").replace("\n", " ")[:240]
+            cwd = str(selected.cwd or ".").replace("\r", " ").replace("\n", " ")[:120]
+            followup += (f"\n\nRequired verification for the current changes: {command} (path: {cwd}). "
+                         "A passing narrower or different check may not cover this requirement. "
+                         "Run this check against the current files before proposing done again; "
+                         "if it cannot run, report the actual failure.")
     feedback = research_completion_feedback(session, text, context, deduped)
     if feedback:
         followup += "\n\n" + feedback
