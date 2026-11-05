@@ -86,7 +86,8 @@ def test_native_plan_acknowledged_and_actual_script_in_final_packet(tmp_path):
     class Provider:
         native_tools = True
 
-        def send_turn(self, prompt, tools, timeout):
+        def send_turn(self, prompt, tools, timeout, *, require_tool_call):
+            assert require_tool_call is True
             assert 'interactions between required behaviors' in prompt
             assert tools[0].name == 'submit_review_probes'
             return AssistantTurn(tool_calls=(ProviderToolCall('probe1', 'submit_review_probes', {'probes': [proposal()]}),))
@@ -134,7 +135,8 @@ def test_native_final_submission_preserves_quotes_and_anchors():
     class Provider:
         native_tools = True
 
-        def send_turn(self, prompt, tools, timeout):
+        def send_turn(self, prompt, tools, timeout, *, require_tool_call):
+            assert require_tool_call is True
             assert tools[0].parameters['properties']['findings']['items']['properties']['path']['enum'] == ['app.py']
             return AssistantTurn(tool_calls=(ProviderToolCall('result1', 'submit_review_result', payload),))
 

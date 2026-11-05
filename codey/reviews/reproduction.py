@@ -194,7 +194,7 @@ def request_proposals(provider: Any, context: str, task: str, candidate: ReviewC
     tools = [ProviderToolDefinition("submit_review_probes", "Propose unittest scripts for isolated execution.", PROBE_SCHEMA)]
     with controls.suppress_assistance():
         if native:
-            turn = provider.send_turn(prompt, tools, timeout=timeout)
+            turn = provider.send_turn(prompt, tools, timeout=timeout, require_tool_call=True)
             for call in turn.tool_calls:
                 provider.acknowledge_tool_results([ProviderToolResult(call.id, "Proposal archived, not a correctness verdict.")], tools)
             value = turn.tool_calls[0].arguments if len(turn.tool_calls) == 1 and turn.tool_calls[0].name == "submit_review_probes" else None
@@ -226,7 +226,8 @@ def submit_review(provider: Any, prompt: str, changed_paths: tuple[str, ...], *,
             "additionalProperties": False}}}, "required": ["verdict", "summary", "findings"],
             "additionalProperties": False}
     tools = [ProviderToolDefinition("submit_review_result", "Submit concrete findings anchored to changed files.", schema)]
-    turn = provider.send_turn(prompt + "\nSubmit submit_review_result exactly once.", tools, timeout=timeout)
+    turn = provider.send_turn(prompt + "\nSubmit submit_review_result exactly once.", tools,
+                              timeout=timeout, require_tool_call=True)
     if len(turn.tool_calls) != 1 or turn.tool_calls[0].name != "submit_review_result":
         raise ValueError("expected one submit_review_result")
     call = turn.tool_calls[0]

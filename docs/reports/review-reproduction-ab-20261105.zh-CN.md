@@ -79,3 +79,11 @@ Mypy/Pyrefly/ty 按生产 Python 3.11 检查。分批 commit，逐步记录失�
 - 新一轮使用候选生产 helper，比较 baseline / candidate_static / candidate。后两者完全相同
   的干净材料和 native 最终提交，仅 candidate 增加实际复现；返修后重跑原失败脚本，避免
   二审重新出题漏过旧问题。parent_policy 尚未从自动编码入口接入，因此未改变默认执行行为。
+- 候选 helper 固定版首批暴露确定性协议接线错误：native 提交声明了工具，但没有设置
+  provider 已支持的 require_tool_call；模型合法输出普通 JSON，候选却只接受 tool_call，
+  导致正确控制也无法完成 Review。已停止该批以免重复浪费推理，部分结果保留，不计作有效
+  质量消融。修复为 proposal/final 两次请求均 require_tool_call=True，后续核对实际 wire。
+- 新服务回归曾把 Path 误传给要求 ReviewArtifactStore 的读取函数；修正测试调用，非生产
+  问题。新增授权/新对话/实际执行/持久化/原样重跑/未改调用方陈旧/未知发送不重试测试，
+  修正后 26 passed。此前扩大现有 Review、coordinator、自动流程组 71 passed；
+  Mypy 581 文件、Pyrefly（35 suppressed/80 warnings）、ty 无错误。
