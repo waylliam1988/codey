@@ -406,9 +406,19 @@ def run_case_process(case: str, directory: Path, target: GateTarget, *, timeout:
         result.update(ok=False, failure_stage="harness_error", error=f"{type(exc).__name__}: {exc}")
     finally:
         artifact_errors = []
+        artifact_warnings = []
         try:
             shutil.copytree(project, directory / "project", symlinks=True, ignore=shutil.ignore_patterns("__pycache__"))
+        except Exception as exc:
+            artifact_errors.append(f"{type(exc).__name__}: {exc}")
+        try:
             shutil.copytree(state, directory / "state", symlinks=True)
+        except Exception as exc:
+            if _is_transient_state_snapshot_error(exc):
+                artifact_warnings.append(f"{type(exc).__name__}: {exc}")
+            else:
+                artifact_errors.append(f"{type(exc).__name__}: {exc}")
+        try:
             result["provider_metrics"] = _provider_metrics(directory)
             if result.get("ok") is True and result["provider_metrics"]["capture_incomplete"]:
                 raise ValueError("successful worker has a truncated provider record")
@@ -425,6 +435,8 @@ def run_case_process(case: str, directory: Path, target: GateTarget, *, timeout:
             result["artifact_errors"] = artifact_errors
             if not result.get("failure_stage"):
                 result["failure_stage"] = "artifact_error"
+        if artifact_warnings:
+            result["artifact_warnings"] = artifact_warnings
         result = annotate_result(result)
         result.update(case=case, scope=case_scope(case), model=target.model, base_url=target.base_url,
                       seconds=round(time.perf_counter() - started, 3), project=str(directory / "project"),
@@ -435,6 +447,31 @@ def run_case_process(case: str, directory: Path, target: GateTarget, *, timeout:
             })
         write_json(directory / "result.json", result)
     return result
+
+
+def _is_transient_state_snapshot_error(exc: Exception) -> bool:
+    """Recognize durable-state files removed during a best-effort artifact copy.
+
+    Recovery cleanup may remove a baseline between ``copytree``'s directory
+    scan and its file copy.  The state snapshot is diagnostic evidence; a
+    missing ephemeral baseline must remain visible as a warning without
+    turning an otherwise successful production run into a failed task.  Any
+    other copy failure still fails the gate.
+    """
+    if isinstance(exc, FileNotFoundError):
+        return True
+    if not isinstance(exc, shutil.Error) or not exc.args:
+        return False
+    entries = exc.args[0]
+    if not isinstance(entries, list) or not entries:
+        return False
+    for entry in entries:
+        if not isinstance(entry, (tuple, list)) or len(entry) != 3:
+            return False
+        source, _destination, reason = entry
+        if Path(source).exists() or "No such file" not in str(reason) and "系统找不到" not in str(reason):
+            return False
+    return True
 
 
 def _remove_case_temp_tree(root: Path) -> None:

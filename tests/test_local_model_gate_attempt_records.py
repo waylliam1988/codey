@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -221,6 +222,31 @@ def test_timeout_does_not_become_artifact_error_on_partial_provider_record(tmp_p
         result = runner.run_case_process("edit", tmp_path / "edit", target, timeout=1)
     assert result["failure_stage"] == "case_timeout"
     assert result["provider_metrics"]["capture_incomplete"] is True
+
+
+def test_transient_state_snapshot_missing_file_is_warning_not_task_failure(tmp_path, monkeypatch):
+    target = runner.GateTarget("http://model.test/v1", "test-model", 32768, 8192, 12000)
+    original_copytree = runner.shutil.copytree
+
+    def copytree(source, destination, *args, **kwargs):
+        if Path(source).name.startswith("codey-gate-state-"):
+            missing = Path(source) / "projects" / "task" / "recovery" / "baseline.txt"
+            raise shutil.Error([(str(missing), str(Path(destination) / "baseline.txt"), "[WinError 3] 系统找不到指定的路径。")])
+        return original_copytree(source, destination, *args, **kwargs)
+
+    with (
+        mock.patch.object(runner, "start_process", return_value=(object(), object())),
+        mock.patch.object(runner, "wait_process", return_value=object()),
+        mock.patch.object(runner, "_child_result", return_value={"case": "edit", "ok": True}),
+        mock.patch.object(runner, "_provider_metrics", return_value={"capture_incomplete": False}),
+        mock.patch.object(runner.shutil, "copytree", side_effect=copytree),
+    ):
+        result = runner.run_case_process("edit", tmp_path / "edit", target, timeout=5)
+
+    assert result["ok"] is True, result
+    assert result.get("failure_stage", "") == ""
+    assert result["artifact_warnings"]
+    assert "artifact_errors" not in result
 
 
 def test_agent_uses_pinned_provider_and_preserves_failed_project(tmp_path):
