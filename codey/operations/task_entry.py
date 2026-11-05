@@ -20,13 +20,12 @@ from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.conversation_window import WindowActivationError, activate_window
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.ghost_context import ghost_control_enabled
+from codey.operations.kernel_request_builder import KernelRunRequestBuilder
 from codey.operations.result import ModeOutcome
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
-    KernelRunRequest,
-    KernelTransportDeps,
 )
 from codey.task.kind import ui_mode
 from codey.task.model import TaskSubmission
@@ -438,9 +437,7 @@ def _run_entry_kernel(  # noqa: PLR0915
         tracker = _entry_project_tracker(project_path, deps, policy, frame.run_id)
         result = run_task_kernel(
             session,
-            request=KernelRunRequest(
-                task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
-                transport=KernelTransportDeps(
+            request=KernelRunRequestBuilder(
                     provider=active_provider,
                     run_id=frame.run_id,
                     effect_scope="task",
@@ -455,8 +452,8 @@ def _run_entry_kernel(  # noqa: PLR0915
                         deps.state, "admit_hints", project=str(request.project or ""), session_id=request.session_id,
                     ),
                     window_ref=getattr(active_provider, "window_ref", None),
-                ),
-                execution=KernelExecutionDeps(
+                    task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
+                ).build(execution=KernelExecutionDeps(
                     executors={},
                     project_path=project_path,
                     tool_fns=tool_fns,
@@ -466,8 +463,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     workspace_ignored_paths=ignored,
                     workspace_revision_store=getattr(deps, "workspace_revisions", None),
                     ensure_workspace_writer=ensure_workspace_writer,
-                ),
-                observation=KernelObservationDeps(
+                ), observation=KernelObservationDeps(
                     intent_sink=intent_sink,
                     on_event=hooks.on_event,
                     on_shell_request=hooks.on_shell_request,
@@ -487,8 +483,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                         task_id=frame.run_id,
                         sink=intent_sink,
                     ),
-                ),
-            ),
+                )),
         )
     except Exception as exc:
         from codey.operations.kernel_errors import RecoveryFailed

@@ -28,12 +28,11 @@ from codey.agents.consensus import (
     advisor_ids,
 )
 from codey.agents.project_audit_tools import execute_read_only_call, visible_entries
+from codey.operations.kernel_request_builder import KernelRunRequestBuilder
 from codey.operations.provider_session import DeadlineProvider
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
-    KernelRunRequest,
-    KernelTransportDeps,
     run_task_kernel,
 )
 from codey.operations.task_session import TaskSession
@@ -195,20 +194,17 @@ def run_project_audit_advisor(
         with provider_controls.suppress_assistance():
             outcome = run_task_kernel(
                 session,
-                request=KernelRunRequest(
-                    transport=KernelTransportDeps(
+                request=KernelRunRequestBuilder(
                         provider=bounded_provider,
                         run_id=run_id,
                         effect_scope="audit",
                         provider_id=advisor_id or "audit",
                         user_task=prompt,
                         stop_flag=stop,
-                    ),
-                    execution=KernelExecutionDeps(
+                    ).build(execution=KernelExecutionDeps(
                         executors=cast(Mapping[str, Callable[[Any], Any]], _audit_kernel_executors(project_path)),
                         project_path=project_path,
-                    ),
-                    observation=KernelObservationDeps(
+                    ), observation=KernelObservationDeps(
                         intent_sink=sink,
                         on_boundary=durable_generation_boundary_callback(
                             durable=durable, session_id=run_id, task_id=run_id, sink=sink),
@@ -218,8 +214,7 @@ def run_project_audit_advisor(
                             "question": task,
                             "project": str(project_path),
                         },
-                    ),
-                ),
+                    )),
             )
     finally:
         timer.cancel()

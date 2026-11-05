@@ -8,13 +8,12 @@ from typing import Any
 
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.ghost_context import ghost_control_enabled
+from codey.operations.kernel_request_builder import KernelRunRequestBuilder
 from codey.operations.research_continuation import ResearchInvocation
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
-    KernelRunRequest,
-    KernelTransportDeps,
 )
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.run_result import ResearchRunResult
@@ -323,9 +322,7 @@ def run_research_iteration(
     outcome = history.kernel(
         session,
         invocation=invocation,
-        request=KernelRunRequest(
-            task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
-            transport=KernelTransportDeps(
+        request=KernelRunRequestBuilder(
                 provider=active_provider,
                 run_id=run_id,
                 effect_scope=f"research:{writer_attempt}",
@@ -338,13 +335,12 @@ def run_research_iteration(
                     deps.state, "admit_hints", project=project, session_id=session_id,
                 ),
                 stop_flag=stop_flag,
-            ),
-            execution=KernelExecutionDeps(
+                task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
+            ).build(execution=KernelExecutionDeps(
                 project_path=project or None,
                 research_tools=tools,
                 permission_profile="coding_writer" if policy.allows("project.write") else "research",
-            ),
-            observation=KernelObservationDeps(
+            ), observation=KernelObservationDeps(
                 intent_sink=intent_sink,
                 on_boundary=durable_generation_boundary_callback(
                     durable=admitted,
@@ -362,8 +358,7 @@ def run_research_iteration(
                     "source_ids": session.source_ids,
                     "research_prerequisites": prerequisites,
                 },
-            ),
-        ),
+            )),
     )
     if writer_attempt > 1 and outcome.stop_reason == "stopped":
         from codey.runtime.core.cancellation import TaskCancelled

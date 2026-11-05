@@ -13,13 +13,12 @@ from typing import Any, cast
 
 from codey.agents.request import AgentRequest
 from codey.operations.generation_boundary import durable_generation_boundary_callback
+from codey.operations.kernel_request_builder import KernelRunRequestBuilder
 from codey.operations.provider_session import ConversationProvider
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
-    KernelRunRequest,
-    KernelTransportDeps,
 )
 from codey.operations.task_session import session_checks_passed
 from codey.runtime.core.run_result import RunResult
@@ -242,9 +241,7 @@ def run(request: AgentRequest) -> RunResult:
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
     outcome = run_task_kernel(
         session,
-        request=KernelRunRequest(
-            task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
-            transport=KernelTransportDeps(
+        request=KernelRunRequestBuilder(
                 provider=provider,
                 run_id=request.run_id,
                 effect_scope=effect_scope,
@@ -255,8 +252,8 @@ def run(request: AgentRequest) -> RunResult:
                 ghost_sources=_project_ghost_sources(request),
                 stop_flag=request.stop_flag,
                 stagnant_turns=request.stagnant_turns,
-            ),
-            execution=KernelExecutionDeps(
+                task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
+            ).build(execution=KernelExecutionDeps(
                 project_path=request.project,
                 tool_fns=request.tool_fns,
                 change_tracker=request.change_tracker,
@@ -264,8 +261,7 @@ def run(request: AgentRequest) -> RunResult:
                 permission_profile=request.permission_profile,
                 workspace_revision_store=request.workspace_revision_store,
                 workspace_ignored_paths=request.workspace_ignored_paths,
-            ),
-            observation=KernelObservationDeps(
+            ), observation=KernelObservationDeps(
                 intent_sink=intent_sink,
                 on_boundary=durable_generation_boundary_callback(
                     durable=request.durable,
@@ -284,8 +280,7 @@ def run(request: AgentRequest) -> RunResult:
                 on_shell_request=request.on_shell_request,
                 propagate_provider_failure=True,
                 trace_recorder=request.trace_recorder,
-            ),
-        ),
+            )),
     )
     result = RunResult(
         summary=outcome.summary,
