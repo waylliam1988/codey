@@ -1035,3 +1035,6 @@ Pyrefly 既有 35 suppressed / 80 warnings 保留。
 - 本次新增生产接线的 Mypy、Pyrefly、ty：均通过；Ruff：通过。
 - 生产 headless smoke：本地 Gemma4 Writer + Cline Nemotron Super Reviewer，`done`、exit 0、Review 收据 `self_review=false`、pytest 通过。
 - 未运行全量 `pytest`。
+
+本阶段分批提交：`743bb055`（生产跨连接 Reviewer 接线、合同测试和实机 harness），
+`1b5f8588`（本报告与跨模型证据归档）。
