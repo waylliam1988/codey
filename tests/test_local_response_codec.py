@@ -13,6 +13,36 @@ from codey.providers.local_response_codec import (
 from tests.support.kernel_protocol_test_helpers import normalize_turn
 
 
+def test_gemma_thought_channel_is_display_data_only_final_json_proposes_an_action():
+    thought = '{"tool":"run","args":{"command":"wrong command"}}'
+    final = '{"tool":"read_file","args":{"path":"app.py"}}'
+    reply = normalize_local_reply('<|channel>thought\n' + thought + '<channel|>' + final)
+    assert isinstance(reply, AssistantTurn) and reply.reasoning == thought
+    assert reply.text == final and reply.raw['text_protocol'] is True
+    plan = normalize_turn(reply, policy=SimpleNamespace(allows=lambda _grant: True))
+    assert not plan.protocol_error and [call.name for call in plan.calls] == ['read_file']
+
+
+def test_gemma_thought_channel_keeps_final_frame_validation_and_literal_marker_strings():
+    final = '<|tool_call>call:read_file{path:"<channel|>.py"}<tool_call|>'
+    reply = normalize_local_reply('<|channel>thought\nInspect.<channel|>' + final)
+    assert isinstance(reply, AssistantTurn) and reply.reasoning == 'Inspect.'
+    assert reply.tool_calls[0].arguments == {'path': '<channel|>.py'}
+    malformed = normalize_local_reply('<|channel>thought\nInspect.<channel|><|tool_call>call:edit{')
+    assert isinstance(malformed, AssistantTurn) and normalize_turn(malformed).protocol_error
+
+
+def test_incomplete_or_repeated_thought_channels_cannot_execute_or_complete():
+    for text in ('<|channel>thought\n{"tool":"done","args":{}}',
+                 '<|channel>thought\n<channel|><|channel>thought\n<channel|>'):
+        reply = normalize_local_reply(text)
+        assert isinstance(reply, AssistantTurn)
+        plan = normalize_turn(reply)
+        assert plan.protocol_error and not plan.calls and plan.control is None
+    qwen = '<think>Consider.</think>{"tool":"done","args":{}}'
+    assert normalize_local_reply(qwen) == qwen
+
+
 def test_local_gemma_frame_normalizes_to_standard_tool_call() -> None:
     turn = normalize_local_reply(
         '<|tool_call>call:tool:read_file{args:{path:"app.py"}}<tool_call|>'

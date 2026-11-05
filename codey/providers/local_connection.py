@@ -5,6 +5,7 @@ from codey.providers import local_config as _local_config
 from codey.providers import local_discovery as _local_discovery
 from codey.providers.api_provider import ApiProvider
 from codey.providers.local_response_codec import normalize_local_reply
+from codey.providers.local_tool_compat import safe_native_tools
 from codey.providers.local_usage import configure_usage, parser_for
 from codey.runtime.core.api_selection import ApiRunSelection
 
@@ -100,6 +101,12 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
 
     counter, budget = admitted_context_budget(effective.base_url, effective.api_key, config.api_protocol, effective.context)
     window = budget.context_window_tokens
+    native_tools = safe_native_tools(effective.base_url, effective.model, api_protocol=config.api_protocol,
+                                     requested=effective.native_tools, api_key=effective.api_key)
+    thinking = (False if config.native_tools_mode == "json" and config.thinking_enabled is not True
+                else config.thinking_enabled if selection.base_url == config.base_url else None)
+    text_format = ("json_schema" if config.native_tools_mode == "json"
+                   or effective.native_tools and not native_tools and thinking is not True else "plain")
     return ApiProvider(
         effective.base_url,
         effective.model,
@@ -108,12 +115,11 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         context_reserve_tokens=budget.context_reserve_tokens,
         context_keep_recent_tokens=budget.context_keep_recent_tokens,
         output_tokens=budget.context_reserve_tokens,
-        thinking_enabled=(False if config.native_tools_mode == "json" and config.thinking_enabled is not True
-                          else config.thinking_enabled if selection.base_url == config.base_url else None),
+        thinking_enabled=False if text_format == "json_schema" else thinking,
         reasoning_effort=config.reasoning_effort if selection.base_url == config.base_url else None,
         api_protocol=config.api_protocol,
-        native_tools=effective.native_tools,
-        text_tool_format="json_schema" if config.native_tools_mode == "json" else "plain",
+        native_tools=native_tools,
+        text_tool_format=text_format,
         text_decoder=normalize_local_reply,
         usage_parser=parser_for(config.api_protocol), configure_request=configure_usage,
         request_counter=counter_for(counter, effective.base_url, effective.model, effective.api_key, window),
@@ -152,14 +158,19 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
 
     counter, budget = admitted_context_budget(config.base_url, config.api_key, config.api_protocol, budget)
     window = budget.context_window_tokens
+    requested_native = _local_config.resolve_local_native_tools(config)
+    native_tools = safe_native_tools(config.base_url, config.model, api_protocol=config.api_protocol,
+                                    requested=requested_native, api_key=config.api_key)
+    text_format = ("json_schema" if config.native_tools_mode == "json"
+                   or requested_native and not native_tools and config.thinking_enabled is not True else "plain")
     return ApiRunSelection("local", _target_revision(config), config.model, config.api_protocol,
-                           _local_config.resolve_local_native_tools(config), window,
+                           native_tools, window,
                            budget.context_reserve_tokens, min(budget.context_keep_recent_tokens, window - budget.context_reserve_tokens),
-                           config.thinking_enabled, config.reasoning_effort,
-                           stream=_local_config.resolve_local_native_tools(config),
+                           False if text_format == "json_schema" else config.thinking_enabled, config.reasoning_effort,
+                           stream=native_tools,
                            output_tokens=budget.context_reserve_tokens, token_counter=counter,
                            budget_source="server" if budget.source == "server" else "server_and_configuration" if counter == "koboldcpp" else "configuration",
-                           text_tool_format="json_schema" if config.native_tools_mode == "json" else "plain")
+                           text_tool_format=text_format)
 
 
 def _target_revision(config: _local_config.LocalProviderConfig) -> str:
@@ -192,6 +203,10 @@ def open_selection(selection: ApiRunSelection) -> ApiProvider:
     from codey.providers.local_tokens import counter_for
 
     config = config_for_selection(selection)
+    if selection.native_tools and not safe_native_tools(config.base_url, selection.model_id,
+            api_protocol=selection.protocol, requested=True, api_key=config.api_key):
+        raise ValueError("This saved run uses native tools affected by the KoboldCpp 1.117.1 Gemma parser hang. "
+                         "Start a new task to use text tools; the saved protocol was not changed and no request was sent.")
     # The admitted budgets/mode cannot be overwritten by environment changes.
     provider = ApiProvider(config.base_url, selection.model_id, api_key=config.api_key, api_protocol=selection.protocol,
                            text_tool_format=selection.text_tool_format,

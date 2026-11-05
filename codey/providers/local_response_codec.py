@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import replace
 from typing import cast
 
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
@@ -101,6 +102,19 @@ def normalize_local_reply(reply: str | AssistantTurn) -> str | AssistantTurn:
     """Convert a complete local text frame into the canonical provider turn."""
     if isinstance(reply, AssistantTurn):
         return reply
+    # Some Gemma templates leave the complete thought channel in content,
+    # even when the server also supplies an empty reasoning_content field.
+    # Only the final channel can propose an action; never mine the thought.
+    prefix = "<|channel>thought\n"
+    if reply.startswith(prefix):
+        thought, closed, final = reply[len(prefix):].partition("<channel|>")
+        if not closed or final.startswith("<|channel>"):
+            return AssistantTurn(text="", finish=TurnFinish.PROTOCOL_ERROR,
+                                 raw={"codec": "gemma-thought", "protocol_error": "Incomplete or repeated Gemma thought channel."})
+        normalized = normalize_local_reply(final)
+        return (replace(normalized, reasoning=thought) if isinstance(normalized, AssistantTurn)
+                else AssistantTurn(text=normalized, reasoning=thought,
+                                   raw={"codec": "gemma-thought", "text_protocol": True}))
     reasoning = parse_gemma_tool_reasoning(reply)
     if reasoning is not None:
         return reasoning

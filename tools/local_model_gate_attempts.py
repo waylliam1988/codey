@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -23,6 +24,7 @@ from pathlib import Path
 from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.local_response_codec import normalize_local_reply
+from codey.providers.local_tool_compat import safe_native_tools
 from codey.runtime.core.cancellation import start_process, wait_process
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -111,12 +113,18 @@ class RecordingProvider(ApiProvider):
     bytes. No authorization headers are saved.
     """
     def __init__(self, target: GateTarget, directory: Path):
+        native_tools = safe_native_tools(target.base_url, target.model, api_protocol=target.api_protocol,
+                                         requested=target.protocol == "native")
+        parser_compat = target.protocol == "native" and not native_tools
         super().__init__(
             target.base_url, target.model, temperature=target.temperature, timeout=target.request_timeout,
             context_window_tokens=target.context_window_tokens,
             context_reserve_tokens=target.context_reserve_tokens,
             context_keep_recent_tokens=target.context_keep_recent_tokens,
             api_protocol=target.api_protocol,
+            native_tools=native_tools,
+            text_tool_format="json_schema" if parser_compat else "plain",
+            thinking_enabled=False if parser_compat else None,
             text_decoder=normalize_local_reply,
         )
         self.directory = directory
@@ -469,7 +477,10 @@ def _is_transient_state_snapshot_error(exc: Exception) -> bool:
         if not isinstance(entry, (tuple, list)) or len(entry) != 3:
             return False
         source, _destination, reason = entry
-        if Path(source).exists() or "No such file" not in str(reason) and "系统找不到" not in str(reason):
+        # copytree stringifies OS exceptions, and worker output may use a
+        # different locale/encoding. Error identifiers survive that conversion.
+        missing = re.search(r"\[(?:WinError [23]|Errno 2)\]", str(reason)) is not None
+        if Path(source).exists() or not (missing or "No such file" in str(reason) or "系统找不到" in str(reason)):
             return False
     return True
 

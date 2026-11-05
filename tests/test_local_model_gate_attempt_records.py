@@ -224,14 +224,20 @@ def test_timeout_does_not_become_artifact_error_on_partial_provider_record(tmp_p
     assert result["provider_metrics"]["capture_incomplete"] is True
 
 
-def test_transient_state_snapshot_missing_file_is_warning_not_task_failure(tmp_path, monkeypatch):
+@pytest.mark.parametrize('reason', [
+    '[WinError 3] 系统找不到指定的路径。',
+    '[WinError 3] \u03f5\u0373\ufffd\u04b2\ufffd\u05b8\ufffd\ufffd\u00b7\ufffd',
+    '[WinError 2] Le fichier spécifié est introuvable.',
+    '[Errno 2] Datei nicht gefunden',
+])
+def test_transient_state_snapshot_missing_file_is_warning_not_task_failure(tmp_path, monkeypatch, reason):
     target = runner.GateTarget("http://model.test/v1", "test-model", 32768, 8192, 12000)
     original_copytree = runner.shutil.copytree
 
     def copytree(source, destination, *args, **kwargs):
         if Path(source).name.startswith("codey-gate-state-"):
             missing = Path(source) / "projects" / "task" / "recovery" / "baseline.txt"
-            raise shutil.Error([(str(missing), str(Path(destination) / "baseline.txt"), "[WinError 3] 系统找不到指定的路径。")])
+            raise shutil.Error([(str(missing), str(Path(destination) / "baseline.txt"), reason)])
         return original_copytree(source, destination, *args, **kwargs)
 
     with (
@@ -247,6 +253,16 @@ def test_transient_state_snapshot_missing_file_is_warning_not_task_failure(tmp_p
     assert result.get("failure_stage", "") == ""
     assert result["artifact_warnings"]
     assert "artifact_errors" not in result
+
+
+def test_state_snapshot_classifier_keeps_permission_destination_and_mixed_errors_fatal(tmp_path):
+    missing, existing = tmp_path / 'missing.txt', tmp_path / 'existing.txt'
+    existing.write_text('source exists', encoding='utf-8')
+    missing_row = (str(missing), str(tmp_path / 'copy.txt'), '[WinError 3] unavailable')
+    denied_row = (str(missing), str(tmp_path / 'copy.txt'), '[WinError 5] Access denied')
+    destination_row = (str(existing), str(tmp_path / 'absent' / 'copy.txt'), '[WinError 3] unavailable')
+    for entries in ([denied_row], [destination_row], [missing_row, denied_row]):
+        assert not runner._is_transient_state_snapshot_error(shutil.Error(entries))
 
 
 def test_agent_uses_pinned_provider_and_preserves_failed_project(tmp_path):
