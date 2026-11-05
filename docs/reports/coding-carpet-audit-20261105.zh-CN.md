@@ -47,7 +47,8 @@
 - 起始提交：`6ab91052`。
 - 主树保留一个与本审计无关的未跟踪文档 `docs/cline-integration-implementation-plan.zh-CN.md`，本审计没有修改它。
 - 旧报告记录的 `D:\codey-kernel-audit` 已不存在。
-- 当前阶段：已完成第一轮候选实机，发现并修复两个确定性边界问题；继续扩大完整编码链路样本。
+- 当前阶段：验证命令提示完成 native A/B、生产接入及 Writer/Project Review 复测；
+  原有其他候选的净收益结论仍按下表保留未完成状态。最新证据与归因修正见阶段 14～15。
 
 ## 阶段 0：静态盘点（2026-11-05）
 
@@ -424,8 +425,10 @@ advisor provider 时追加。若 treatment 只增加 token/轮数而没有提高
 | context | protocol，0 个工具调用 | 两次空回复，无代码变化 |
 
 前一轮同一模型的独立成功样本中，`context` 曾完成 1/1；更早的三题运行也出现过两边
-同时空回复。当前 KoboldCpp 生成波动覆盖了实验对照，因而这批结果按“模型/运行环境失效样本”
-剔除，不能写成地图或 current context 导致失败。完整四类 Writer A/B 仍缺少成对有效样本，
+同时显示空回复。这里的“空回复”来自渲染后的事件，不能证明 provider 原始响应为空。
+当时把这些样本统一归为 KoboldCpp 波动并剔除并不充分；阶段 13～14 发现了真实 codec 缺口和
+实验包装器改变协议的问题。这批应保留为未完成、归因需核验的历史样本，不能写成地图或
+current context 导致失败。完整四类 Writer A/B 仍缺少成对有效样本，
 因此 C-P6、C-P7 都没有新的 E3 净收益结论。
 
 当前仍可确认的事实是：Project Map 和 coding current context 都会增加 prompt 输入；已有成功
@@ -463,7 +466,7 @@ KoboldCpp 先生成 bounded plan 或只读 audit，再把结果按私有 notes �
 
 `plan` 这次确实帮助模型完成了编辑和检查，但仍没有形成 `done`；其额外阶段和较长上下文
 也使请求从 2 次增加到 7 次。`audit` 只增加了一次阶段请求，没有改善 Writer。样本只有一题，
-且仍受 KoboldCpp 空回复影响，不能据此合并规划或 audit；它支持继续做成对四类题实验，
+且存在尚未正确归因的协议停机（修正见阶段 14），不能据此合并规划或 audit；它支持继续做成对四类题实验，
 同时把“额外阶段导致的终态/请求成本”作为硬指标。
 
 ### Writer 后 consensus、Review 返修与项目记忆
@@ -501,13 +504,13 @@ KoboldCpp 先生成 bounded plan 或只读 audit，再把结果按私有 notes �
 | C-P3 Writer 后 consensus | 暂不合并/删除 | 触发条件已证实，当前单模型无 advisor，缺少质量 A/B |
 | C-P4 自动 Review | 暂不合并/删除 | native 生命周期成功；缺少无 Review 的同题最终质量对照 |
 | C-P5 Review 返修 | 暂不合并/删除 | 一次返修和再验证边界已证实；缺少真实缺陷留出集 |
-| C-P6 Project/Symbol Map | 暂不合并/删除 | 导航 probe 非 Writer；Writer 级样本被模型波动污染 |
+| C-P6 Project/Symbol Map | 暂不合并/删除 | 导航 probe 非 Writer；旧 Writer 样本存在协议兼容和实验接线问题 |
 | C-P7 coding current context | 暂不合并/删除 | 成功样本输入增加，未取得稳定质量收益 |
 | C-P10 项目记忆 | 暂不合并/删除 | 写入条件和关联有 E2，缺少冷启动/续作 E3 |
 | C-P11 Review impact map | 默认保留 | 跨文件 Review 诊断命中和质量分提升，成本增加按质量优先接受 |
 
 这批证据不能支持“每个流程都已经证明有用”，也不能支持大规模删除。下一步最有价值的
-工作是让 KoboldCpp 输出稳定后，按预注册四类任务继续做 C-P6/C-P7 与 C-P1/C-P2 的成对
+工作是先排除协议与实验接线问题，再按预注册四类任务继续做 C-P6/C-P7 与 C-P1/C-P2 的成对
 Writer 实验，再以真实缺陷留出题验证 C-P4/C-P5，并单独做项目记忆的冷启动/续作对照。
 
 ## 阶段 13：重启 KoboldCpp 后发现的真实协议兼容 bug（2026-11-05）
@@ -528,7 +531,8 @@ Writer 实验，再以真实缺陷留出题验证 C-P4/C-P5，并单独做项目
 不允许命名空间中的点号，因此合法的 `tools.grep` 被判成 protocol error。baseline 偶尔
 返回 OpenAI JSON/native tool call，所以同一个模型在另一 arm 看起来可以工作；这不是
 Project Map 或 current context 本身导致的质量退步，而是提示变化触发了未覆盖的本地文本协议
-变体。
+变体。阶段 14 进一步确认旧包装器没有保留 native 能力，所以上述“返回 native”的描述仅是
+当时对回复形状的观察，不能作为已经使用生产 native 协议的证据。
 
 修复放在本地 provider response codec，而不是 kernel 或 Gemma 专属业务逻辑：
 
@@ -538,11 +542,146 @@ Project Map 或 current context 本身导致的质量退步，而是提示变化
 - 未来若有其他模板变体，再增加独立 codec 分支，不扩大通用工具名正则。
 
 修复后的 project_map 实机已经能完成读取、编辑并通过 pytest；本轮终态停在
-`no_progress` 是模型随后反复选择未匹配的 `python -m unittest`，属于验证命令选择/模型
-行为问题，不再是协议或工具执行失败。
+`no_progress` 同时伴随模型选择 `python -m unittest`。这个终态本身不足以断定模型能力问题；
+阶段 14 继续发现 runner 覆盖判定错误、discovery 等价命令漏判和提示格式歧义，分别修复并复测。
 
 定向回归：`51 passed`，覆盖本地文本 codec、native tool 解码、API context 协议和编码 harness；
-Ruff 通过。该生产修复待与本轮报告一起单独提交。
+Ruff 通过。该生产修复已提交为 `8e5f65c7`。
+
+## 阶段 14：验证命令提示 A/B 的重新归因（2026-11-05）
+
+本阶段直接在 `D:\codey` 工作，目标是减少 pytest/unittest 选择歧义，先做 Writer A/B，
+再接入生产提示并跑不替换提示的生产入口。前述阶段 10～13 的“空回复”和 `no_progress`
+不能统一归因为 KoboldCpp 波动或模型能力；原始回复、生产覆盖策略和实验包装器均发现了
+可具体定位的问题。本节修正此前的原因判断，历史失败样本保留，不与修复后批次混算。
+
+### 已定位的原因和边界
+
+1. **生产验证覆盖误判**：`verification_policy._command_family` 原先把 pytest 与 unittest
+   合为 `python:test`，导致 unittest 成功可被算成覆盖 pytest。unittest 不执行普通 pytest
+   函数测试，这个替代不成立。现在区分两类 runner；原有 pytest 覆盖 unittest fallback 的
+   合同保留，反向替代拒绝。此前探针把 unittest 记成命中 pytest 的统计不能继续引用。
+2. **实验接线改变了协议**：旧 `CountingProvider` 只转发 `send`，没有保留 native 的
+   `send_turn` / `send_tool_results`，使原本支持 native 的本地 provider 走文本协议。
+   改为继承生产 `ProviderAdapter` 并记录 native 回复，增加 native 能力和解码转发回归。
+   旧实验不能宣称验证了原样的生产 native 链路。记录的发送文本字符也不等同于实际 HTTP
+   输入 token；native 的本地终态收据确认不应被计作模型请求。
+3. **编辑合同反馈不清**：恢复 native 后，四次 pilot 都在验证之前失败。模型先没有读取
+   文件，随后读取了却把 `base_result_ref` 和 `replacements` 混用，并重复无效调用。
+   生产工具描述现在明确二者互斥；错误反馈明确要求删除该 key，而不是改引用值。
+   没有自动删除参数、放松 read-before-edit 或变更校验。补清合同后，同样两题 × 两种
+   验证提示的四次 native Writer 都以 `done` 完成并通过独立检查。
+4. **生产覆盖漏判**：扩展批次旧提示一次把 `(cwd: .)` 抄入命令；改成合法的
+   `python -m unittest discover .` 后测试通过，却被完成门拒绝。确定性测试先复现失败，
+   再补认同一 cwd 下默认 discovery 的显式 `.`、`-s .`、`--start-directory .` 等形式。
+   子目录、`..`、指定测试名和 pattern 筛选仍不算完整默认发现，pytest 也不能由它替代。
+
+### A/B 设计与运行记录
+
+新增 `tests/manual/verification_candidate_prompt_ab.py`，每个 arm 运行生产 Writer adapter、
+共享 kernel、本地 native provider 和真实读写/执行工具。两边均关闭 coding current context、
+不注入项目地图，仅替换项目上下文末尾的验证候选段。当前模型为 KoboldCpp
+`Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`，`openai-completions` 传输；
+没有第二模型或 seed 对照，不把小样本解释为普遍的能力提升。
+
+- flat：冻结旧的候选平铺文本。
+- preferred：沿用现有可信来源和命令优先级，在各 cwd、各运行时中选唯一首选；同分保留
+  选项，保留不同目录和语言的验证入口，仍最多展示五条。内部候选集和按实际 diff 选择的
+  completion gate 不缩减；配置与成功历史优先级保持不变。
+- 新脚本在找不到候选段时直接报错，防止“两个 arm 实际同提示”。CLI 对失败终态或
+  首命令未覆盖候选返回非零。扩展题都先运行独立检查确认初始失败，结束后重新检查，
+  并要求只修改授权文件和终态为 `done`；原始回复、文件内容和失败尾部上下文均保存。
+
+| 批次 | flat | preferred | 说明 |
+|---|---:|---:|---|
+| native pilot，未补清编辑合同 | 0/2 | 0/2 | 均在编辑前失败，不能比较命令选择 |
+| clear-edit，两类 runner | 2/2 | 2/2 | 两边首命令均匹配且独立检查通过 |
+| expanded，反转为 preferred→flat，五题 | 4/5 | 5/5 | flat 一题的 discovery `.` 被完成门漏判；首命令另有 cwd 注释误抄 |
+
+扩展五题为 pytest 配置、unittest 布局、clamp 边界 bug、整数辅助函数功能增加、
+根目录 Python/子目录 npm 的 monorepo。补上 discovery 等价形式后的完整复跑、生产提示
+接入和不替换上下文的实机结果记录在阶段 15。旧结果没有被成功重跑覆盖。
+
+## 阶段 15：确认批次、生产接入与最终验证（2026-11-05）
+
+### 同题确认与决策
+
+补上 discovery 等价形式后，恢复 flat→preferred 顺序，完整复跑五题。两边使用相同的
+修复代码、native 协议、600 秒请求超时和 18 轮 Writer 预算，唯一处理差异仍是验证候选提示。
+
+| 批次 | flat 最终完成/首命令匹配 | preferred 最终完成/首命令匹配 |
+|---|---:|---:|
+| expanded，补认 discovery `.` 之前 | 4/5、4/5 | 5/5、5/5 |
+| confirmation，补认之后 | 5/5、4/5 | 5/5、5/5 |
+
+确认批次 flat 的 unittest 题再次误抄 `(cwd: .)`，随后运行 `discover .` 成功，这次完成门
+正确接受并终态 `done`。它的 CLI 仍返回非零，因为脚本同时要求首命令匹配；这不等于最终
+编码失败。新提示在两轮五题里最终完成和首命令选择均为 5/5，故接入
+`project_adapter._project_context` 的生产 Writer 上下文。
+
+这支持“提示更明确、减少已观察到的命令误抄”，不支持宣称提高了普遍编码成功率、
+显著节省 token 或证明所有流程值得保留。修复后的旧提示也能完成全部五题；更早的编辑
+合同修正同样对两边生效，其收益不能归给验证候选提示。
+
+新提示增加了来源和使用说明。按当前五题的验证候选段文本计算，pytest 题增加 145 字符，
+unittest 题增加 193 字符，monorepo 题增加 223 字符。Writer 探针的 `prompt_chars` 只统计
+记录到的逻辑消息文本，未包含完整 native 历史与工具 schema，也可能包括本地终态确认，
+不能当作真实 HTTP 请求数或输入 token。这里没有声称节省成本。
+
+### 原样生产复测
+
+接入生产后再运行 `--arm production`，不 monkeypatch `_project_context`：
+
+| 任务 | 首个运行命令 / cwd | 完成 / 独立检查 |
+|---|---|---|
+| pytest-configured | `python -m pytest` / `.` | done / PASS |
+| unittest-configured-by-layout | `python -m unittest discover` / `.` | done / PASS |
+| pytest-edge-bug | `python -m pytest` / `.` | done / PASS |
+| unittest-feature | `python -m unittest discover` / `.` | done / PASS |
+| monorepo-selected-check | `npm test` / `frontend` | done / PASS |
+
+另外运行真实 headless Project 入口，覆盖 Writer 之后的生产生命周期：
+
+```powershell
+python -B -m tools.local_model_release_gate --cases edit,project_review --profile smoke --protocol native --timeout 600 --run-dir .e2e-artifacts/coding-verification-production-20261105 --json
+```
+
+- `edit`：PASS，6 个 Writer turn，独立 unittest 检查通过，唯一可信完成收据。
+- `project_review`：PASS，Writer、一次真实本地 self-review、Review 持久化、只读检查、
+  最终验证和终态顺序等 13 项生命周期检查全部通过；不是第二模型独立 Review。
+- 两条入口各记录 7 次实际 HTTP attempt，重试为 0；本批没有观察到 KoboldCpp 服务故障。
+  这是选定两条 smoke 场景通过，`release_ready=false` 是未跑其他发布场景的范围标记，
+  不能改写为全产品发布矩阵通过。
+
+生产 gate 启动时 HEAD 为 `27981df2`，生产提示尚在工作区；归档逐项核对了实际运行时
+四个改动生产文件的 SHA-256，并确认其文本与随后提交 `48938eee` 一致，避免仅凭 HEAD
+误认运行代码版本。
+
+### 回归、类型检查与归档
+
+没有运行全量 pytest。验证覆盖、completion、工具参数、审计接线第一组为
+`188 passed, 115 subtests passed`；扩大到 native 工具、终态收据、项目完成与恢复、
+候选刷新失败等另一组为 `125 passed, 77 subtests passed`。两组存在交集，不相加冒充
+独立测试数。最终补测生产提示和 native 包装器为 `16 passed`。
+
+新增测试曾错误使用不存在的 `planning` 权限 profile，已按真实合同改为
+`planning_readonly`；这是测试编写错误，没有改生产权限去迎合测试。discovery 显式当前目录
+回归则先得到六个预期失败，再修复生产覆盖判定，正反例和 completion 有/无 evidence 路径
+均通过。
+
+Ruff 检查生产 `codey` 及本轮修改的 harness/测试通过；`mypy codey --python-version 3.11`
+检查 580 个源文件通过，Pyrefly 和 ty 同目标版本均无错误。Pyrefly 仍有既存 warning/
+suppression，未把“无错误”写成“无警告”。
+
+- 正确性与编辑合同：`27981df2`。
+- 生产提示、native 包装器和 A/B harness：`48938eee`。
+- [完整实机证据归档](coding-verification-evidence-20261105.json)：保留十个批次的原始
+  JSON（包括旧接线 pilot、超时和失败样本）、源文件哈希、精确提示差异、生产 gate 事件、
+  原始模型回复及 wire attempt 记录。旧 pilot 不与 native 确认批次混算。
+
+本次验证命令提示优化已完成并接入主树。项目地图、current context、规划/audit、Review
+净收益与项目记忆的完整候选 A/B，仍按阶段 12 的未完成范围处理；不能由这次五题推导
+“整个编码管线的每个机制都有收益”。
 
 ## 记录格式
 
