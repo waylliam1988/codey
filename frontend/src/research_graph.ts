@@ -250,8 +250,8 @@ export interface GraphOptions {
     return [
       node.kind || node.note_type || 'note',
       node.status || '',
-      node.interpretation_review === 'unreviewed' ? '解释未审查' : '',
-      node.dependencies_changed ? '前提已变化' : '',
+      node.interpretation_review === 'unreviewed' ? 'Interpretation unreviewed' : '',
+      node.dependencies_changed ? 'Dependencies changed' : '',
       node.path || '',
       node.url || '',
     ]

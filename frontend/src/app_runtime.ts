@@ -1724,6 +1724,21 @@ function applyRunState(data: RunState) {
   if (data.last_shell_result) handleServerEvent(data.last_shell_result);
   if (data.last_terminal_event) handleServerEvent(data.last_terminal_event, 'snapshot');
   if (data.pending_event) handleServerEvent(data.pending_event);
+  // Only withdraw the provisional HTTP admission after its follow-up snapshot.
+  // Confirmed task events/revisions keep their lifecycle authority.
+  const acknowledged = data.response_ack_run_id;
+  if (
+    acknowledged &&
+    data.task_states &&
+    !owners.has(acknowledged) &&
+    !data.task_states.some((task) => task.run_id === acknowledged) &&
+    runLifecycle.forgetAdmission(acknowledged)
+  ) {
+    activeRuns.delete(acknowledged);
+    const primary = [...activeRuns.entries()].at(-1);
+    runningRunId = primary?.[0] ?? null;
+    runningSessionId = primary?.[1] ?? null;
+  }
   markResearchRestoreAvailability(data.research_restore_runs || []);
   runtime.Requests.reconcile({
     session_id: data.session_id ?? '',

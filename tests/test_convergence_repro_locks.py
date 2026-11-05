@@ -205,36 +205,23 @@ class SecondRoundWebPromptTests(unittest.TestCase):
             def send(self, prompt, timeout=None):
                 sent_prompts.append(str(prompt))
                 if len(sent_prompts) == 1:
-                    return '{"tool":"web_search","args":{"query":"hi","question_ref":"q1"}}'
+                    return '{"tool":"web_search","args":{"query":"hi"}}'
                 return '{"tool":"done","args":{"summary":"结论\n来源\nx"}}'
 
             def send_tool_results(self, messages, tools, timeout=None):
                 return self.send("tool results")
 
-        # Minimal research tools stub: web_search returns URLs, open allowed after.
-        class FakeTools:
-            def __init__(self):
-                from codey.research.ledger import ResearchLedger
+        from codey.research.tools import ResearchTools
 
-                self.ledger = ResearchLedger()
-                self.ledger.questions = questions
-                self.sources_read = set()
-                self.search_result_urls = set()
-
-            def web_search(self, q, **kwargs):
-                from codey.research.tools import ResearchToolOutput
-                self.ledger.record_search(q, [
+        class Search:
+            def search(self, query, limit=8):
+                return [
                     {"title": "A", "url": "https://example.com/a", "snippet": "a"},
                     {"title": "B", "url": "https://example.com/b", "snippet": "b"},
-                ])
-                return ResearchToolOutput("r1: https://example.com/a\nr2: https://example.com/b", ok=True)
+                ]
 
-            def open_url(self, url, **kwargs):
-                from types import SimpleNamespace as SN
-                return SN(model_text=f"Title: T\nBody for {url}", receipt_text=f"Body for {url}", ok=True)
-
-        # Provide executors via research_tools through delegate? Use direct executors for simplicity:
-        # run_test_kernel with research_tools FakeTools will handle web_search/open via delegate.
+        tools = ResearchTools(Search(), store=None, changes=None)
+        tools.ledger.questions = questions
         from unittest.mock import patch
 
         with patch("codey.operations.kernel_transport.provider_uses_native", return_value=False):
@@ -248,7 +235,7 @@ class SecondRoundWebPromptTests(unittest.TestCase):
                     ),
                     execution=KernelExecutionDeps(
                         executors={},
-                        research_tools=FakeTools(),
+                        research_tools=tools,
                     ),
                     observation=KernelObservationDeps(
                         completion_context=None,
@@ -259,9 +246,10 @@ class SecondRoundWebPromptTests(unittest.TestCase):
         second = sent_prompts[1]
         # Second-round web prompt must carry the new tool contract + change reason,
         # not just result refs. Contract JSON for open_result plus visible-tools line.
-        self.assertIn('{"tool":"open_result"', second)
+        self.assertEqual(session.search_results, {"r1": "https://example.com/a", "r2": "https://example.com/b"})
+        self.assertIn('"tool":"open_result"', second)
         self.assertTrue(("Visible tools" in second) or ("Tool contract" in second))
-        self.assertNotIn('{"tool":"open_result"', sent_prompts[0])
+        self.assertNotIn('"tool":"open_result"', sent_prompts[0])
 
 
 class DoneReceiptFailureTests(unittest.TestCase):

@@ -28,6 +28,18 @@ const input = (
   source: LifecycleInput['source'] = 'event',
 ): LifecycleInput => ({ runId: 'r', sessionId: 's', state, revision, source, active: state === 'running' });
 
+it('withdraws only provisional admission and preserves confirmed lifecycle authority', () => {
+  const projection = new RunLifecycleProjection();
+  projection.transition(input('running', undefined, 'admission'));
+  expect(projection.forgetAdmission('r')).toBe(true);
+  expect(projection.current('r')).toBeUndefined();
+  for (const source of ['event', 'snapshot'] as const) {
+    projection.transition(input('running', 1, source));
+    expect(projection.forgetAdmission('r')).toBe(false);
+    expect(projection.current('r')?.active).toBe(true);
+  }
+});
+
 it('fences buffered waiting events using the durable task revision', () => {
   const projection = new RunLifecycleProjection();
   projection.transition({ ...input('approval', 2), sequence: 20 });

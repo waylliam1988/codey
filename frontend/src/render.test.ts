@@ -36,7 +36,7 @@ describe('render boundaries', () => {
           limitation_refs: ['limit:observed'],
         },
       }),
-    ).toBe('Completed\n依据：source:verified\n限制：limit:observed');
+    ).toBe('Completed\nEvidence: source:verified\nLimitations: limit:observed');
     expect(
       window.Render.receiptSummary({
         display: { summary: 'Completed', evidence_refs: ['model claim'] },

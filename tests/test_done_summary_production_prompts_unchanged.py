@@ -71,9 +71,10 @@ def test_initial_result_and_repair_prompt_surfaces_have_frozen_hashes() -> None:
     assert "not evidence that the host has no network access" in initial
     assert _sha256(initial) == "c56b7f57796bc20e5ec1b896e682904de23ac951e714818c257977532bca381f"
     assert _sha256(result) == "591c80828028a2103608e4d5a081bfd484d6d0fb755950c423cf8241b9876522"
-    # Reviewed: ordinary done repair preserves its task format; structured report
+    # Reviewed: JSON Schema keys now use canonical sorted order. Ordinary done
+    # repair preserves its task format; structured report
     # examples are supplied only by the frozen report task contract.
-    assert _sha256(repair) == "0f0816d7864c4e82b38afcaee82d2dc06a0b84e0cce993a0bddcef00a6e32d43"
+    assert _sha256(repair) == "575bf736319b09d736d2ed999055392e33b1f7cf2043b0ff8dbf11646e7e841f"
 
 
 def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> None:
@@ -97,10 +98,12 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert len(provider.prompts) == 1
     prompt = (provider.prompts[0].replace(str(project), "<PROJECT>")
               .replace(json.dumps(str(project))[1:-1], "<PROJECT>"))
-    # Reviewed with pinned knowledge references and structured report arguments.
+    # Reviewed after whole-answer convergence removed the retired assessment tool.
+    # Knowledge references remain pinned; CodeMode still uses the frozen tools.
     # The live prompt is hashed as one canonical surface so CodeMode/tool
     # contract changes cannot be silently accepted by a stale fixture.
     assert "ask_user" in prompt
+    assert "submit_research_review" not in prompt
     assert "Calls return {ok:true, value}" in prompt
     assert "Only frozen read-only tools" not in prompt
-    assert _sha256(prompt) == "da4e3ab68be0fb259ab239c0338c8fcbfefcb224b316a416b6ff91bded5a5191"
+    assert _sha256(prompt) == "05214630186bd00dd1c2617aea271cc4f73e297ca0060ec67c080c6c8e4d100f"

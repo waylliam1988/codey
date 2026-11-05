@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from codey.codemode.protocol import parse_codemode_args
+from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.operations.kernel_prompt import kernel_prompt_for_session
 from codey.policies.command_line import ShellSpec, resolve_shell
 
@@ -21,8 +21,9 @@ def test_shell_lookup_guidance_is_capability_driven_not_topic_driven(native):
 
 
 def test_codemode_rejection_explains_the_scope_without_executing_network_code():
-    with pytest.raises(ValueError, match='not a host network denial'):
+    with pytest.raises(CodeModeInputError, match="rejected before execution.*'fetch'.*denied") as rejected:
         parse_codemode_args({'code': 'return await fetch("https://example.com")'})
+    assert rejected.value.code == 'sandbox_denied'
 
 
 @pytest.mark.parametrize('native',[False,True])

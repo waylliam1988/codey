@@ -117,8 +117,8 @@ it('wakes a settled graph during drag, keeps its neighbors moving and cleans up 
   pointer('pointerdown', x, y);
   pointer('pointerup', x, y);
   expect(panel.querySelector('.research-graph-detail-meta')?.textContent).toContain('candidate');
-  expect(panel.querySelector('.research-graph-detail-meta')?.textContent).toContain('解释未审查');
-  expect(panel.querySelector('.research-graph-detail-meta')?.textContent).toContain('前提已变化');
+  expect(panel.querySelector('.research-graph-detail-meta')?.textContent).toContain('Interpretation unreviewed');
+  expect(panel.querySelector('.research-graph-detail-meta')?.textContent).toContain('Dependencies changed');
   pointer('pointerdown', edgeX, edgeY);
   pointer('pointerup', edgeX, edgeY);
   expect(panel.querySelector('.research-graph-detail-body')?.textContent).toContain('Pinned evidence version 1');

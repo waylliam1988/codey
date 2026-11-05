@@ -1,8 +1,8 @@
 """planning 只做收窄与上下文，不再自建任务准备。
 
-共同准备（策略一次确定、run 身份、授权资源、恢复行）必须完整传入
+共同准备（策略一次确定、run 身份、授权资源、持久恢复来源）必须完整传入
 AgentRequest：复用 frame.entry_policy；run/session 身份齐全；持久运行
-资源（mutations/managed_outputs/恢复行）齐全；允许联网时具备 Research
+资源（mutations/managed_outputs/durable）齐全；允许联网时具备 Research
 执行器。
 """
 
@@ -11,7 +11,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 
-def _planning_request(*, requested=(), entry_policy=None, recovered=(), settled=(), knowledge_store=None):
+def _planning_request(*, requested=(), entry_policy=None, durable=None, knowledge_store=None):
     from unittest import mock
 
     from codey.operations.planning_flow import PlanningFlowDeps, run_planning_readonly_mode
@@ -43,15 +43,13 @@ def _planning_request(*, requested=(), entry_policy=None, recovered=(), settled=
         conversation=conversation, fresh_chat=False, handoff="",
         provider_session_changed=False, preflight_switches=0,
         trace=SimpleNamespace(call=lambda *a, **k: None),
-        recovered_tool_outcomes=tuple(recovered),
-        settled_tool_outcomes=tuple(settled),
-        recovered_tool_result_batch_id="",
         entry_policy=entry_policy,
     )
     state = SimpleNamespace(
         run_registry=SimpleNamespace(stop_flag=SimpleNamespace(is_set=lambda: False)),
         runtime_mutations=mock.Mock(spec=["mark_writer_running"]),
         managed_outputs="OUT",
+        durable=durable,
         emit=lambda _e: None,
         set_provider_session=lambda *a, **k: None,
     )
@@ -85,18 +83,18 @@ def test_planning_reuses_entry_policy_and_full_run_identity():
     assert req.task_policy.allows("project.write") is False
 
 
-def test_planning_forwards_recovery_rows_and_denied_capabilities():
-    from codey.agents.request import RecoveredToolOutcome
-    from codey.runtime.core.models import ToolCall
-    from codey.toolchain.runtime import ToolOutcome
+def test_planning_forwards_the_canonical_durable_recovery_source():
+    from codey.durable import DurableSession, MemoryDurableStore
 
-    row = RecoveredToolOutcome(
-        call=ToolCall("read_file", {"path": "a.py"}, "c1"),
-        outcome=ToolOutcome("x", True), turn=0, tool_index=0, effect_id="e1",
-    )
-    req = _planning_request(recovered=(row,), settled=(row,))
-    assert tuple(req.recovered_tool_outcomes) == (row,)
-    assert tuple(req.settled_tool_outcomes) == (row,)
+    durable = DurableSession(MemoryDurableStore())
+    try:
+        durable.admit_input(conversation_id="s-plan", request_id="input-plan", task_id="r-plan",
+                            text="plan this", provider_snapshot={})
+        req = _planning_request(durable=durable)
+        assert req.durable is durable
+        assert req.durable.task(req.run_id).conversation_id == req.session_id
+    finally:
+        durable.close()
 
 
 def test_planning_with_web_read_gets_research_executors():

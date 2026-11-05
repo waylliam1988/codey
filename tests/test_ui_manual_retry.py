@@ -227,12 +227,32 @@ def test_unlinked_error_never_guesses_a_question_to_retry(page):
 
 def test_accepted_attempt_missing_from_authoritative_state_does_not_spin_forever(page):
     page.route("**/api/run", lambda route: route.fulfill(json={"run_id": route.request.post_data_json["run_id"]}))
-    page.route("**/api/state", lambda route: route.fulfill(json={"busy": False}))
+    page.route("**/api/state", lambda route: route.fulfill(json={"busy": False, "task_states": []}))
     page.locator("#task").fill("hello")
     page.locator("#send").click()
     page.wait_for_function("!Composer.isSending()")
     expect(page.locator(".request-status")).to_contain_text("Response was not confirmed")
     expect(page.get_by_role("button", name="Retry", exact=True)).to_be_enabled()
+    assert page.evaluate("runningRunId") is None
+    expect(page.locator(".process-summary .spinner")).to_have_count(0)
+
+
+@pytest.mark.parametrize("confirmation", ["event", "snapshot"])
+def test_missing_ack_snapshot_cannot_withdraw_a_confirmed_attempt(page, confirmation):
+    calls, state = backend(page)
+    run_id = send(page, calls, "confirmed question")
+    task = {"run_id": run_id, "session_id": "a", "task_revision": 1, "task_status": "running"}
+    if confirmation == "event":
+        page.evaluate("handleServerEvent", {**task, "type": "task_start"})
+    else:
+        page.evaluate("applyRunState", {"busy": True, "run_id": run_id, "session_id": "a", "task_states": [task]})
+    state.clear()
+    state.update(busy=False, task_states=[])
+    page.evaluate("applyRunState", {**state, "response_ack_run_id": run_id})
+    assert page.evaluate("runningRunId") == run_id
+    expect(page.locator(".request-status")).to_be_hidden()
+    expect(page.locator(".process-summary .spinner")).to_have_count(1)
+    expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
 
 
 def test_terminal_event_before_ack_is_not_revived_and_double_retry_is_blocked(page):
@@ -276,6 +296,8 @@ def test_restored_request_recovers_in_place(page, tmp_path, restored, request):
     durable.append_message("a", "display_message", {**messages[1], "requestId": user.entry_id})
     calls, state = backend(page)
     state.update(busy=restored == "running", run_id=run_id, session_id="a")
+    if restored == "running":
+        state["task_states"] = [{"run_id": run_id, "session_id": "a", "task_revision": 1, "task_status": "running"}]
     page.reload()
     page.wait_for_function("sessions.find(s => s.id === activeId)?.messages.length === 2")
     assert page.evaluate("sessions.find(s => s.id === activeId).messages[0].entryId") == user.entry_id
@@ -285,7 +307,11 @@ def test_restored_request_recovers_in_place(page, tmp_path, restored, request):
     if restored == "running":
         expect(page.locator(".request-status")).to_be_hidden()
         expect(page.locator(".process-summary")).to_contain_text("Waiting for reply")
-        finish(page, state, run_id)
+        event = {"type": "task_done", "session_id": "a", "run_id": run_id, "task_revision": 2,
+                 "task_status": "failed", "stop_reason": "error", "summary": "ERROR: Original failure"}
+        state.clear()
+        state.update(busy=False, last_terminal_event=event)
+        page.evaluate("handleServerEvent", event)
     else:
         expect(page.locator(".request-status")).to_contain_text("Original failure" if restored == "failed" else "Response was not confirmed")
     retry(page)

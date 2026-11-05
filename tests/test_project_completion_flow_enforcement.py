@@ -556,10 +556,12 @@ def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         project = _pytest_project(Path(td))
         state = server.AppContext(Path(td) / "state")
+        collect_changes = mock.Mock(return_value=unavailable_changes)
+        run_review = mock.Mock(return_value=None)
         runner = TaskRunDeps(state=state,
             agent_run=writer,
-            collect_changes=mock.Mock(return_value=unavailable_changes),
-            run_review=mock.Mock(return_value=None),
+            collect_changes=collect_changes,
+            run_review=run_review,
             capture_provider_failure=task_submit.capture_provider_failure,
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
@@ -576,6 +578,8 @@ def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> 
         event = _run(runner, state, project)
 
         assert len(writer.calls) == 1
+        collect_changes.assert_called_once()
+        run_review.assert_not_called()
         assert event["stop_reason"] == "blocked"
         assert "[Completion blocked:" in str(event["summary"])
         assert event["receipt"]["verification"]["checks_passed"] is False

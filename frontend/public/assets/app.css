@@ -1513,7 +1513,7 @@
   .command-card .command-result > .command-latest { top: auto; bottom: 8px; opacity: 1; pointer-events: auto; border: 1px solid var(--border); border-radius: 50%; background: var(--panel); color: var(--text-dim); }
   .document-pane button:not(.icon-action):hover { background: var(--hover); }
   .command-card pre, .command-card .shell-output { margin: 0; padding: 0; border: 0; background: transparent; max-height: 9rem; overflow: auto; white-space: pre; overflow-wrap: normal; font: 12px/1.6 var(--font-mono); }
-  .command-card .shell-output { --output-fade-top: 0px; --output-fade-bottom: 0px; mask-image: linear-gradient(to bottom, transparent, #000 var(--output-fade-top), #000 calc(100% - var(--output-fade-bottom)), transparent); }
+  .command-card .shell-output { --output-fade-top: 0px; --output-fade-bottom: 0px; mask-image: linear-gradient(to bottom, transparent, var(--mask-solid) var(--output-fade-top), var(--mask-solid) calc(100% - var(--output-fade-bottom)), transparent); }
   .command-card .shell-output:focus, .command-card .shell-output:focus-visible { outline: none; box-shadow: none; }
   .command-panel ::-webkit-scrollbar-corner { background: transparent; }
   .command-panel ::-webkit-scrollbar { width: 7px; height: 7px; }

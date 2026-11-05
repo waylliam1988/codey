@@ -53,7 +53,7 @@ def test_allow_updates_during_a_live_reply_and_cannot_be_submitted_twice(page):
     page.locator('[data-approval-id="pending"] .approval-allow').click()
     expect(page.get_by_role('button', name='Allow once', exact=True)).to_have_count(1)
     expect(page.locator('[data-approval-id="pending"] .approval-allow')).to_have_count(0)
-    expect(page.locator('.command-label')).to_have_text('Allowed; command queued')
+    expect(page.locator('.command-label')).to_have_text('Queued')
     assert requests == ['POST']
     assert page.evaluate('window.savedAnswer === document.querySelector(".msg.asst")')
     assert page.evaluate('window.otherCard === document.querySelector("[data-approval-id=other]")')

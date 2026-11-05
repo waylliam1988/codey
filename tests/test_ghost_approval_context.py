@@ -19,6 +19,16 @@ from codey.providers.base import ProviderToolCall
 from codey.task.model import ResolveShellApproval, StartTask, TaskSubmission
 from tests.test_ghost_attempt_gate_lifecycle import PROTOCOLS, _reply
 
+pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
+
+
+@pytest.fixture(autouse=True)
+def no_local_discovery(monkeypatch):
+    def unexpected_discovery(**_kwargs):
+        pytest.fail("Scripted approval tests must not discover a model on the host")
+
+    monkeypatch.setattr("codey.providers.local_discovery.resolve_local_endpoint", unexpected_discovery)
+
 
 @pytest.mark.parametrize("protocol", PROTOCOLS)
 @pytest.mark.parametrize("restart", [False, True], ids=["warm", "restart"])

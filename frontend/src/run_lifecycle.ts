@@ -38,6 +38,11 @@ export class RunLifecycleProjection {
     return this.rows.get(runId);
   }
 
+  forgetAdmission(runId: string): boolean {
+    if (this.rows.get(runId)?.source !== 'admission') return false;
+    return this.rows.delete(runId);
+  }
+
   restoreTerminal(sessionId: string, runId: string): void {
     if (!this.rows.has(runId))
       this.rows.set(runId, {

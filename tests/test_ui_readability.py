@@ -102,7 +102,7 @@ def test_settings_explanations_are_readable_and_load_errors_keep_error_tone(page
     for hint in hints:
         assert_readable(hint)
         expect(hint).to_have_css("font-size", "11.5px")
-    expect(page.locator(".settings-section-label").first).to_have_css("color", "rgb(107, 107, 107)")
+    assert_readable(page.locator("#local-advanced > summary"))
     expect(page.locator("#local-key-status")).to_have_css("color", "rgb(107, 107, 107)")
     page.keyboard.press("Escape")
     page.route("**/api/local_provider", lambda route: route.fulfill(status=503, json={}))

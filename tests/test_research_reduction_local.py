@@ -12,10 +12,33 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests/fixtures/research_reduction_cases.json"
 
 
+def _frozen_fixture_sha256(path):
+    # These pre-inference rubrics recorded a CRLF checkout. Reconstruct only
+    # Git's newline translation, preserving every other byte and the old rubric.
+    raw = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+    return hashlib.sha256(raw).hexdigest()
+
+
+@pytest.mark.parametrize("fixture,rubric_name", [
+    ("research_reduction_cases.json", "research-reduction-heldout-rubric-20261101.json"),
+    ("research_whole_expanded_cases.json", "research-whole-expanded-rubric-20261101.json"),
+])
+def test_frozen_fixture_hash_accepts_checkout_newlines_but_rejects_content_changes(tmp_path, fixture, rubric_name):
+    source = ROOT / "tests/fixtures" / fixture
+    expected = json.loads((ROOT / "docs/reports" / rubric_name).read_text(encoding="utf-8"))["fixture_sha256"]
+    lf = source.read_bytes().replace(b"\r\n", b"\n")
+    copy = tmp_path / fixture
+    for raw in (lf, lf.replace(b"\n", b"\r\n")):
+        copy.write_bytes(raw)
+        assert _frozen_fixture_sha256(copy) == expected
+    copy.write_bytes(lf.replace(b'"question"', b'"changed_question"', 1))
+    assert _frozen_fixture_sha256(copy) != expected
+
+
 def test_heldout_pairs_keep_same_question_complete_alternatives_and_private_rubric():
     cases = load_cases(FIXTURES)
     rubric = json.loads((ROOT / "docs/reports/research-reduction-heldout-rubric-20261101.json").read_text(encoding="utf-8"))
-    assert hashlib.sha256(FIXTURES.read_bytes()).hexdigest() == rubric["fixture_sha256"]
+    assert _frozen_fixture_sha256(FIXTURES) == rubric["fixture_sha256"]
     assert len(cases) == 6
     for topic in ("queue", "tempfile", "rlock"):
         direct, adjacent = cases[topic + "-direct"], cases[topic + "-adjacent"]
@@ -45,7 +68,7 @@ def test_expanded_cases_use_the_same_frozen_material_for_both_frameworks(tmp_pat
 
     source = ROOT / "tests/fixtures/research_whole_expanded_cases.json"
     rubric = json.loads((ROOT / "docs/reports/research-whole-expanded-rubric-20261101.json").read_text(encoding="utf-8"))
-    assert hashlib.sha256(source.read_bytes()).hexdigest() == rubric["fixture_sha256"]
+    assert _frozen_fixture_sha256(source) == rubric["fixture_sha256"]
     (tmp_path / "fixtures.json").write_bytes(source.read_bytes())
     (tmp_path / "material-channel.json").write_text('{"mode":"read","protocol":"native"}')
     cases = load_cases(source)

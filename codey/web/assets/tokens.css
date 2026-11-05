@@ -17,6 +17,7 @@
     --muted:     #6b6b6b;
     --faint:     #4a4a4a;
     --scrollbar-thumb: #333333;
+    --mask-solid: #000000;
     --scrollbar-thumb-hover: #444444;
     --green-rgb: 120, 165, 139;
     --green: rgb(var(--green-rgb));

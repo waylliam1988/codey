@@ -566,8 +566,8 @@ const renderApi = (function () {
     const limitations = refs(proof.limitation_refs);
     return [
       summary,
-      evidence.length ? `依据：${evidence.join(', ')}` : '',
-      limitations.length ? `限制：${limitations.join(', ')}` : '',
+      evidence.length ? `Evidence: ${evidence.join(', ')}` : '',
+      limitations.length ? `Limitations: ${limitations.join(', ')}` : '',
     ]
       .filter(Boolean)
       .join('\n');

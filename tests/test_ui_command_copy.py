@@ -31,14 +31,16 @@ def test_command_and_output_copy_reveal_only_in_their_own_hover_region(page):
     page.locator('.command-result pre').first.hover()
     expect(output).to_have_css('opacity', '1')
     expect(command).to_have_css('opacity', '0')
-    page.locator('.command-panel-label').hover()
+    page.locator('.command-status').hover()
     expect(command).to_have_css('opacity', '0')
     expect(output).to_have_css('opacity', '0')
 
 
 def test_copy_vectors_and_rendered_sizes_match_code_blocks(page):
     prepare(page)
-    icons = page.locator('.code-copy svg,.command-source .icon-action svg,.command-result .icon-action svg')
+    icons = page.get_by_role('button', name='Copy code', exact=True).or_(
+        page.get_by_role('button', name='Copy command', exact=True)
+    ).or_(page.get_by_role('button', name='Copy output', exact=True)).locator('svg')
     expect(icons).to_have_count(3)
     shapes = icons.evaluate_all("""nodes => nodes.map(e => ({
         viewBox:e.getAttribute('viewBox'), body:e.innerHTML,

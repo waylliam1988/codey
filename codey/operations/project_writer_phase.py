@@ -411,7 +411,11 @@ def _run_writer_phase(ctx: ProjectRun) -> None:
         ctx.result = replace(ctx.result, checks_passed=True)
     ctx.task_changes = ctx.deps.verification.collect_changes(ctx.project, ctx.tracker)
     collected_changed = change_state(ctx.task_changes)
-    ctx.task_changes_dirty = collected_changed is None
+    # A failed measurement is an observed failure, not a stale cache. Only a
+    # later workspace mutation can justify collecting a different snapshot.
+    ctx.task_changes_dirty = False
+    if collected_changed is None and not ctx.work.evidence.changed_files:
+        raise RuntimeError("task change projection is unavailable")
     # Observed edits remain evidence when the net diff cannot be measured.
     # Keep the failed measurement intact for the completion gate; it must
     # produce a blocked proof rather than an execution error or a clean diff.
