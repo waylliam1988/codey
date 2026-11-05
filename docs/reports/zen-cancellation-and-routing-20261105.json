@@ -1,0 +1,85 @@
+{
+  "date": "2026-11-05",
+  "platform": "Windows",
+  "production_changes_in_followup": false,
+  "focused_pytest": {
+    "passed": 70,
+    "seconds": 23.35,
+    "full_pytest_run": false
+  },
+  "old_condition_reproduction": {
+    "old_commit_gate_in_memory_only": true,
+    "exit_code": 1,
+    "failed": 12,
+    "passed": 0
+  },
+  "regression_scope": [
+    "Zen production factory",
+    "real Bun loopback HTTP",
+    "Chat Completions and Responses",
+    "JSON and SSE",
+    "Stop during text/tool decode and decode-error handling",
+    "accepted history and ledger revision unchanged",
+    "Stop on VPN quota prevents fallback",
+    "Stop after direct reply closes tunnel and discards late history"
+  ],
+  "live": [
+    {
+      "ok": false,
+      "read_only_network_snapshot": true,
+      "active_virtual_adapters_before": 4,
+      "model": "beam-free",
+      "protocol": "openai-completions",
+      "attempts": [
+        "current_network",
+        "physical_interface"
+      ],
+      "fallbacks": [
+        {
+          "selected": true,
+          "failure": "GenerationRejectedError",
+          "status": 429,
+          "error_type": "FreeUsageLimitError"
+        },
+        {
+          "selected": false,
+          "failure": "GenerationRejectedError",
+          "status": 403,
+          "error_type": "RegionError"
+        }
+      ],
+      "failure": "GenerationRejectedError",
+      "status": 403,
+      "route_state_cleared": true,
+      "system_network_unchanged": true,
+      "proxy_environment_unchanged": true,
+      "active_virtual_adapters_after": 4
+    },
+    {
+      "ok": true,
+      "read_only_network_snapshot": true,
+      "active_virtual_adapters_before": 4,
+      "model": "deepseek-v4.1-flash-free",
+      "protocol": "openai-completions",
+      "attempts": [
+        "current_network",
+        "physical_interface"
+      ],
+      "fallbacks": [
+        {
+          "selected": true,
+          "failure": "GenerationRejectedError",
+          "status": 429,
+          "error_type": "FreeUsageLimitError"
+        }
+      ],
+      "marker_returned": true,
+      "seconds": 6.359,
+      "route_state_cleared": true,
+      "system_network_unchanged": true,
+      "proxy_environment_unchanged": true,
+      "active_virtual_adapters_after": 4
+    }
+  ],
+  "scope_limit": "One successful current-network-to-physical-interface model check; Beam remains region-rejected. Not a full Zen model matrix."
+}

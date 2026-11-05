@@ -2,6 +2,30 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Zen cancellation and VPN routing follow-up (2026-11-05)
+
+**70 focused tests passed in 23.35s** across Zen cancellation, VPN fallback,
+real Bun fetch, shared SSE, request policy, tool permissions and workspace approval.
+Ruff passed. This follow-up changes tests/docs only; no production prompt or Zen
+implementation changed, and no full pytest was run.
+
+The new production-factory regression exercises both protocols, JSON/SSE and
+Stop during text/tool decoding or its exception path: 12 cases. Restoring only
+the old generation-only commit condition in an isolated pytest process makes
+all 12 fail. The shipped cancellation check passes all 12, keeps previously
+accepted history/revision unchanged and returns no late executable call.
+Additional route tests cover Stop on a VPN quota response and Stop during decode
+after a direct reply, with no new fallback/history and full tunnel cleanup.
+
+Live `deepseek-v4.1-flash-free` received a complete current-network
+`429 FreeUsageLimitError`, switched once to the physical interface, and returned
+the requested marker (6.359s). Live `beam-free` also switched but then received
+`403 RegionError`; this remains an upstream model access restriction, not a
+successful model check. Both requests cleared route state. Read-only snapshots
+of adapters, IPv4 routes, DNS servers and system proxy settings matched before/
+after each check; process proxy environment values were unchanged. No system VPN,
+proxy, DNS or routes were modified. See [sanitized live evidence](docs/reports/zen-cancellation-and-routing-20261105.json).
+
 ## Cline optional integration (2026-11-05)
 
 Windows validation passed **348 focused pytest tests**, plus **293 frontend tests**

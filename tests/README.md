@@ -95,6 +95,12 @@ retry accounting (`test_gate_records_policy_retries_once.py`), verified approval
 continuation (`test_shell_approval_text_result_reconstruction.py`), UI persistence
 and menu behavior, and coverage scope/minima (`test_coverage_gate.py`).
 
+`test_zen_cancel_during_decode.py` runs the production Zen factory with real Bun
+loopback HTTP for both protocols, JSON/SSE, late text/tool calls and decode errors.
+It sets the task Stop event without changing generation and checks that accepted
+history/revision stay unchanged. `test_zen_vpn_direct_fallback.py` also covers Stop
+before fallback and during decode after a direct reply, with tunnel cleanup.
+
 The live Zen gate is separate from deterministic CI:
 `python -m tools.zen_free_model_gate --run-dir .e2e-artifacts/zen-free-new --timeout 120`.
 The directory must be new. It uses a fresh catalog and tests chat/read/approved

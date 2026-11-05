@@ -54,3 +54,13 @@
 - `41a47f8a`：README 双语、能力说明双语、职责地图双语、设计规则、模型管理/清理、请求可靠性、用量、测试索引、TEST_REPORT、变更日志、实施状态及脱敏实机报告。
 - 2026-11-05：实现与文档已推送 origin/master；`git ls-remote` 确认远端 HEAD 与本地 `41a47f8a3e41f34ea91f91727c02010e360f9268` 一致，工作树干净。本回执另随最终文档提交同步。
 - 收尾只读核对 Cline 认证仍为 ready；未清除用户实机账号。所有清理验证只使用隔离目标。
+
+## 后续核对：Zen 共享取消与 VPN（2026-11-05）
+
+- 用户询问四项诊断文案失败是否涉及 prompt，并要求核对 Zen 是否受共享取消竞态影响。
+- Git 差异确认：Cline 实施没有修改 `codey/agents/`、`codey/toolchain/` 或 Zen 包生产代码；四项断言针对 SSE 的 `malformed streamed tool call` 异常字符串，原文案已保留。
+- [完成] 新增 Zen 生产工厂、真实 Bun HTTP/两协议 JSON/SSE 的 decode 期间取消回归，覆盖文本、工具调用、解码异常共 12 项。只在隔离 pytest 进程内恢复旧提交条件，12 项全部复现失败；正式代码通过。先前历史和 ledger 版本保持不变，generation 不变，证明测试覆盖任务 Stop 事件而非仅 abandon。
+- 新增 VPN 配额响应时 Stop 不启动回退，以及物理直连响应解码期间 Stop 不提交历史且关闭隧道的用例。相关传输、重试、工具权限和审批扩大回归 **70 passed（23.35s）**，Ruff 通过；未运行全量 pytest。
+- 实机 DeepSeek V4.1 Flash：当前网络完整 429 FreeUsageLimitError → 物理网卡请求级回退 → 正常返回 ZEN_OK（6.359s）；路由状态清空。Beam 相同回退后返回 403 RegionError，属于该模型上游区域拒绝，未继续换出口或伪造成功。
+- 实机前后只读对比：网卡状态、IPv4 路由、DNS 服务端和系统代理快照一致，进程代理环境不变；没有关闭/修改系统 VPN。脱敏证据见 `docs/reports/zen-cancellation-and-routing-20261105.json`。
+- 本次只新增测试与更新说明，没有再次修改生产代码或 prompt；提交与推送回执以本轮最终答复为准。

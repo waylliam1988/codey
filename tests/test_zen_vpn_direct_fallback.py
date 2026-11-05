@@ -14,7 +14,9 @@ from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
 from codey.providers.api_transport import GenerationNotSentError, GenerationRejectedError, GenerationUnknownError
 from codey.providers.zen import direct, routing
+from codey.providers.zen.connection import ZenProvider
 from codey.providers.zen.reliability import ZenRequestCoordinator, ZenRequestPolicy, make_control_scope
+from codey.runtime.core import cancellation
 
 
 @pytest.fixture
@@ -129,6 +131,53 @@ def test_proven_unsubmitted_network_failure_can_use_direct_route(routed, monkeyp
     monkeypatch.setattr(api_generation, "generate", generate)
     assert provider.send("hello") == "OK"
     assert len(attempts) == 2 and tunnels[0].closed
+
+
+def test_stop_during_decode_after_direct_reply_discards_history_and_closes_tunnel(routed, monkeypatch):
+    runtime, tunnels, routes, original_options = routed
+    provider = ZenProvider(runtime)
+    stop = threading.Event()
+    attempts = []
+
+    def generate(*args, **kwargs):
+        attempts.append(dict(kwargs["transport_options"]))
+        if "fetch_proxy" not in kwargs["transport_options"]:
+            raise quota()
+        return reply()
+
+    original = runtime._codec.decode_exchange
+
+    def decode(*args, **kwargs):
+        result = original(*args, **kwargs)
+        stop.set()
+        return result
+
+    monkeypatch.setattr(api_generation, "generate", generate)
+    monkeypatch.setattr(runtime._codec, "decode_exchange", decode)
+    generation = runtime._generation
+    with cancellation.scope(stop), pytest.raises(GenerationUnknownError, match="late response discarded"):
+        provider.send("Stop the direct-route reply")
+    assert ["fetch_proxy" in options for options in attempts] == [False, True]
+    assert runtime._generation == generation and not runtime.context_ledger.view
+    assert len(tunnels) == 1 and tunnels[0].closed and routes._routes == {}
+    assert original_options == {"request_id_headers": ("X-OpenCode-Log-Id",)}
+
+
+def test_stop_on_vpn_quota_prevents_physical_fallback(routed, monkeypatch):
+    provider, tunnels, routes, _ = routed
+    stop = threading.Event()
+    attempts = []
+
+    def generate(*args, **kwargs):
+        attempts.append(kwargs)
+        stop.set()
+        raise quota()
+
+    monkeypatch.setattr(api_generation, "generate", generate)
+    with cancellation.scope(stop), pytest.raises(GenerationRejectedError):
+        provider.send("Do not start a fallback after Stop")
+    assert len(attempts) == 1 and tunnels == [] and routes._routes == {}
+    assert not provider.context_ledger.view
 
 
 def test_physical_dns_rejects_fake_ip_and_truncated_responses():
