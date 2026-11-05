@@ -44,6 +44,7 @@ class RequestLease:
         self._released = False
         self._lock = threading.Lock()
         self.receipt: object | None = None
+        self.transport_options: dict[str, object] = {}
 
     def release(self) -> None:
         with self._lock:

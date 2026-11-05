@@ -3,16 +3,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from dataclasses import replace
 
 from codey.providers.base import ProviderToolDefinition, tools_from_specs
 from codey.toolchain.tool_spec import spec_for_tool, thaw_schema_value
 
 WIRE_NAMES = {"list_dir": "ls", "read_file": "read", "grep": "search", "find_references": "references"}
-TRANSPORT_CONTRACT = "unavailable-read-shell-v1"
+TRANSPORT_CONTRACT = "unavailable-read-shell-env-v2"
 TEXT_PROMPT_PREFIX = "Reply with text only. The declared tools are unavailable for this request; do not call them.\n\n"
 _REQUIRED_NAMES = ("read_file", "shell")
 _UNAVAILABLE = "Unavailable for this request. Do not call this tool. Declared for transport compatibility only. "
+
+
+def system_prompt() -> str:
+    """Supply truthful environment context without inventing a workspace grant."""
+    return (
+        "You are a coding assistant.\n\n"
+        "<env>\n"
+        f"  Platform: {sys.platform}\n"
+        "  Working directory: the current task supplies its authorized workspace. "
+        "Resolve paths through its declared tools; the transport grants no filesystem access.\n"
+        "</env>\n"
+    )
 
 
 def prepare_declarations(tools: list[ProviderToolDefinition] | None) -> tuple[list[ProviderToolDefinition], dict[str, str]]:

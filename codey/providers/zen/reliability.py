@@ -17,6 +17,7 @@ from codey.providers.api_request_policy import (
     RetryDirective,
 )
 from codey.providers.api_transport import GenerationNotSentError, GenerationRejectedError
+from codey.providers.zen.routing import ZenRoutes
 
 Scope = tuple[str, str, str]
 
@@ -197,18 +198,41 @@ class ZenRequestPolicy:
     # OpenCode permits five retries in addition to the initial attempt.
     max_attempts = 6
 
-    def __init__(self, coordinator: ZenRequestCoordinator, scope: ControlScope) -> None:
+    def __init__(self, coordinator: ZenRequestCoordinator, scope: ControlScope, *, routes: ZenRoutes | None = None) -> None:
         self.coordinator = coordinator
         self.scope = scope
+        self.routes = routes
 
     def register(self, context: RequestContext) -> PendingRequest:
-        return self.coordinator.register(context)
+        pending = self.coordinator.register(context)
+        if self.routes is None:
+            return pending
+        self.routes.register(context)
+
+        def close() -> None:
+            try:
+                pending.close()
+            finally:
+                assert self.routes is not None
+                self.routes.close(context)
+
+        return PendingRequest(close, registration_token=pending.registration_token)
 
     def acquire(self, pending: PendingRequest, context: RequestContext) -> RequestLease:
-        return self.coordinator.acquire(pending, context, scope=self.scope, model_id=context.model_id)
+        lease = self.coordinator.acquire(pending, context, scope=self.scope, model_id=context.model_id)
+        try:
+            if self.routes is not None:
+                lease.transport_options = self.routes.transport_options(context)
+            return lease
+        except BaseException:
+            lease.release()
+            raise
 
     def observe_failure(self, context: RequestContext, receipt: object, failure: BaseException,
                         budget: AttemptBudget) -> RetryDirective:
+        if self.routes is not None and self.routes.fallback(context, failure):
+            self.coordinator.settle(scope=self.scope, model_id=context.model_id, receipt=getattr(receipt, "receipt", None))
+            return RetryDirective(True, reason="direct_fallback")
         if isinstance(failure, GenerationNotSentError) and failure.reason_code == "pre_submission_network_error":
             return RetryDirective(True, time.monotonic() + min(30.0, 2.0 ** max(1, budget.used)), "not_submitted")
         if not isinstance(failure, GenerationRejectedError):

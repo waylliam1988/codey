@@ -123,3 +123,35 @@ def test_stop_before_async_submission_receipt_is_unknown_when_peer_received_post
             release.set()
             thread.join(1)
             provider.close()
+
+
+def test_peer_closing_after_receiving_post_is_unknown_without_resubmission(monkeypatch):
+    import socket
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    received = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_POST(self):
+            received.append(self.rfile.read(int(self.headers["Content-Length"])))
+            self.connection.shutdown(socket.SHUT_RDWR)
+            self.connection.close()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}/v1"
+    monkeypatch.setattr(node_http, "validate_generation_url", lambda _: url)
+    provider = ApiProvider(url, "fixture", timeout=3, transport_options={"opener": node_http.open_request})
+    try:
+        with pytest.raises(GenerationUnknownError):
+            provider.send("hello")
+        assert len(received) == 1
+    finally:
+        provider.close()
+        server.shutdown()
+        server.server_close()
+        thread.join(2)

@@ -8,7 +8,10 @@
 - 本地 provider：OpenAI-compatible endpoint，可选 API key，在 Settings → Advanced
   明确选择 Chat Completions 或 Responses。
 - OpenCode Zen：合作公共连接动态获取协议受支持的零费用模型；每次请求资格由上游
-  检查，免费列表不保证所有任务模式都可用。实机范围见[测试报告](../TEST_REPORT.md)。
+  检查。Zen 需要 Bun（PATH 或 `~/.bun/bin`）。Windows 每个请求先走现有网络/VPN；
+  收到完整免费用量拒绝或确认提交前连接失败后，可通过该请求专属的物理网卡隧道回退一次。
+  连接不会修改 VPN 配置、系统代理、DNS 或路由；流中断和结果不明不会自动重发。免费列表不保证所有任务模式都可用。
+  实机范围见[测试报告](../TEST_REPORT.md)。
   Muse Spark 1.3 与其他连接共用 Chat 工具和 Shell 审批；连接适配不增加权限。
   本轮实机与确定性测试范围集中记录在测试报告。独立 API 审查使用本次所选模型。
 - 网页 provider 不需要 API key；你在专用 Edge 或 Chrome profile 里登录已有账号。

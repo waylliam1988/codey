@@ -10,7 +10,11 @@ overview, not a release gate.
   explicit Chat Completions or Responses protocol in Settings → Advanced.
 - OpenCode Zen: dynamically discovered supported zero-cost models using the
   agreed public partner connection. The service checks access for every request;
-  a free listing does not guarantee all task modes. See [live validation](../TEST_REPORT.md).
+  Zen requires Bun (on PATH or in `~/.bun/bin`). On Windows, each request starts
+  on the existing network/VPN route; a complete free-usage refusal or a proven
+  pre-submission network failure can fall back once through a request-scoped
+  physical-interface tunnel. This does not modify the VPN, DNS or system routes.
+  A free listing does not guarantee all task modes. See [live validation](../TEST_REPORT.md).
   Muse Spark 1.3 shares the Chat tools and Shell approval with other connections.
   Its removable profile cannot grant permission. Current live and deterministic coverage are recorded in the test report. Standalone API review uses the selected model.
 - No API key is required for web providers; you log in through a dedicated Edge

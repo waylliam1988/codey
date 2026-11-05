@@ -14,10 +14,11 @@ from codey.providers.base import AssistantTurn, ProviderToolDefinition, Provider
 from codey.providers.error_classification import OutputLengthError
 from codey.providers.token_accounting import RequestContextCount
 from codey.providers.zen.catalog import ZenCatalog
-from codey.providers.zen.declarations import TEXT_PROMPT_PREFIX, prepare_declarations, transport_identity
+from codey.providers.zen.declarations import TEXT_PROMPT_PREFIX, prepare_declarations, system_prompt, transport_identity
 from codey.providers.zen.identity import CONNECTION_REVISION, ZenIdentity, revision_for_endpoint
 from codey.providers.zen.node_http import open_request as open_zen_request
 from codey.providers.zen.reliability import ZenRequestPolicy, ZenResourcesRegistry, make_control_scope
+from codey.providers.zen.routing import ZenRoutes
 from codey.providers.zen.usage import configure_usage, parser_for
 from codey.runtime.core import cancellation
 from codey.runtime.core.api_selection import ApiRunSelection
@@ -200,7 +201,8 @@ class ZenProvider:
         return self._exchange("send_turn", prompt, tools, timeout,
                               tool_call_observations=tool_call_observations,
                               tool_call_history_groups=tool_call_history_groups,
-                              output_token_limit=output_token_limit, require_tool_call=require_tool_call)
+                              output_token_limit=output_token_limit,
+                              **({"require_tool_call": True} if require_tool_call else {}))
 
     def send_tool_results(self, results: Any, tools: list[ProviderToolDefinition] | None = None,
                   timeout: float | None = None, *, tool_call_observations: str = "",
@@ -209,7 +211,8 @@ class ZenProvider:
         return self._exchange("send_tool_results", results, tools, timeout,
                               tool_call_observations=tool_call_observations,
                               tool_call_history_groups=tool_call_history_groups,
-                              output_token_limit=output_token_limit, require_tool_call=require_tool_call)
+                              output_token_limit=output_token_limit,
+                              **({"require_tool_call": True} if require_tool_call else {}))
 
     def send_tool_results_bound(self, results: Any, window_ref: Any,
                                 tools: list[ProviderToolDefinition] | None = None,
@@ -223,7 +226,8 @@ class ZenProvider:
             turn: Any = self.runtime.send_tool_results_bound(
                 results, window_ref, declared, timeout=timeout, delivery_commit=delivery_commit,
                 tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
-                output_token_limit=output_token_limit, require_tool_call=require_tool_call,
+                output_token_limit=output_token_limit,
+                **({"require_tool_call": True} if require_tool_call else {}),
             )
             self._check_generation(generation)
         if isinstance(turn, AssistantTurn):
@@ -311,10 +315,10 @@ def open_selection(selection: ApiRunSelection) -> ZenProvider:
                            context_window_tokens=selection.context_window_tokens, context_reserve_tokens=selection.context_reserve_tokens,
                            context_keep_recent_tokens=selection.context_keep_recent_tokens, reasoning_effort=selection.reasoning_effort,
                            thinking_enabled=selection.thinking_enabled,
-                           system_prompt="You are a coding assistant.",
+                           system_prompt=system_prompt(),
                            usage_parser=parser_for(selection.protocol), configure_request=configure_usage,
                            budget_source=selection.budget_source, input_limit_tokens=selection.input_limit_tokens,
-                           request_policy=ZenRequestPolicy(coordinator, scope),
+                           request_policy=ZenRequestPolicy(coordinator, scope, routes=ZenRoutes()),
                            connection_revision=selection.connection_revision,
                            http_session=http_session,
                            transport_options={"body_idle_timeout": 30.0, "opener": open_zen_request,

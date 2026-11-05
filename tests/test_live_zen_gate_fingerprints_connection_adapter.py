@@ -13,5 +13,7 @@ def test_zen_live_metadata_fingerprints_the_actual_adapter_and_protocol_sources(
                  "codey/providers/zen/identity.py", "codey/providers/zen/catalog.py", "codey/providers/zen/access.py",
                  "codey/providers/api_responses.py", "codey/providers/api_chat.py", "codey/providers/api_transport.py",
                  "codey/providers/api_stream.py", "codey/providers/api_http.py", "codey/providers/api_request_policy.py",
-                 "codey/providers/zen/reliability.py", "codey/providers/zen/usage.py"):
+                 "codey/providers/zen/reliability.py", "codey/providers/zen/usage.py",
+                 "codey/providers/zen/direct.py", "codey/providers/zen/routing.py",
+                 "codey/providers/zen/node_http.py", "codey/providers/zen/node_http.mjs"):
         assert metadata["production_hashes"][path] == hashlib.sha256((attempts.REPO_ROOT / path).read_bytes()).hexdigest()

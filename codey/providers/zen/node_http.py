@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import base64
 import contextlib
-import importlib.util
 import json
 import os
 import shutil
@@ -21,18 +20,17 @@ from codey.providers.api_transport import AttemptControl, GenerationNotSentError
 from codey.providers.zen.identity import validate_generation_url
 
 
-def node_runtime() -> str:
-    # Playwright already supplies Node on every supported installation. Finding
-    # its package does not import the browser stack or require a browser binary.
-    spec = importlib.util.find_spec("playwright")
-    if spec is not None and spec.origin:
-        path = Path(spec.origin).parent / "driver" / ("node.exe" if os.name == "nt" else "node")
-        if path.is_file():
-            return str(path)
-    path_text = shutil.which("node")
+def fetch_runtime() -> str:
+    # The partner service currently rejects Node's fetch transport with the
+    # same FreeUsageLimitError used for real quotas. Use the supported Bun
+    # transport, without falling back to a known-incompatible runtime.
+    path_text = shutil.which("bun")
     if path_text:
         return path_text
-    raise GenerationNotSentError("Zen requires the Node runtime bundled with Playwright")
+    path = Path.home() / ".bun" / "bin" / ("bun.exe" if os.name == "nt" else "bun")
+    if path.is_file():
+        return str(path)
+    raise GenerationNotSentError("OpenCode Zen requires Bun; install Bun and restart Codey")
 
 
 class NodeResponse:
@@ -128,7 +126,7 @@ def open_request(request: urllib.request.Request, timeout: float, *, control: At
         creationflags = subprocess.CREATE_NO_WINDOW
     else:
         creationflags = 0
-    process = subprocess.Popen([node_runtime(), str(Path(__file__).with_suffix(".mjs"))],
+    process = subprocess.Popen([fetch_runtime(), str(Path(__file__).with_suffix(".mjs"))],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         creationflags=creationflags)
     response = NodeResponse(process)
@@ -137,7 +135,8 @@ def open_request(request: urllib.request.Request, timeout: float, *, control: At
         assert process.stdin is not None
         payload = {"url": request.full_url, "headers": dict(request.header_items()),
                    "body": base64.b64encode(request.data or b"").decode("ascii"), "timeout": timeout,
-                   "idleTimeout": (transport_options or {}).get("body_idle_timeout")}
+                   "idleTimeout": (transport_options or {}).get("body_idle_timeout"),
+                   "proxy": (transport_options or {}).get("fetch_proxy")}
         active.mark_submission_possible()
         process.stdin.write(json.dumps(payload).encode() + b"\n")
         process.stdin.close()

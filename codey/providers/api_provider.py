@@ -707,6 +707,8 @@ class ApiProvider:
                     raise
                 except Exception as exc:
                     raise RequestPrepError(f"provider payload admission failed: {exc}") from exc
+            transport_options = dict(self.transport_options) if isinstance(self.transport_options, dict) else {}
+            transport_options.update(getattr(self._request_receipt, "transport_options", {}))
             body = api_generation.generate(
                 f"{self.base_url}/{self._codec.endpoint}", payload, self._headers(),
                 timeout=max(0.001, deadline - time.monotonic()), observe=self._notify_http_attempt,
@@ -716,7 +718,7 @@ class ApiProvider:
                 idle_timeout=(self.transport_options or {}).get("body_idle_timeout")
                 if isinstance(self.transport_options, dict) else None,
                 http_session=self.http_session,
-                transport_options=self.transport_options if isinstance(self.transport_options, dict) else None,
+                transport_options=transport_options or None,
             )
             outcome = "response"
             return body

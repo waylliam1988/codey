@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
 
 ZEN_BASE_URL = "https://opencode.ai/inference/openai/v1"
-CONNECTION_REVISION = "zen-public-partner-openai-v1"
+CONNECTION_REVISION = "zen-public-partner-bun-env-route-v3"
 _ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 _LOCK = threading.Lock()
 _COUNTER = 0

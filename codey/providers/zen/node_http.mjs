@@ -29,6 +29,7 @@ try {
   const response = await fetch(request.url, {
     method: 'POST', headers: request.headers, body: Buffer.from(request.body, 'base64'),
     redirect: 'manual', signal: controller.signal,
+    ...(request.proxy ? {proxy: {url: request.proxy, respectNoProxy: false}} : {}),
   });
   const headers = Object.fromEntries(response.headers);
   // Fetch decodes compressed bodies; their wire length no longer frames the
@@ -48,7 +49,13 @@ try {
   }
   await emit({type: 'end'});
 } catch (error) {
-  await emit({type: 'error', requestSubmitted: submitted, connectionFailed, code: error.cause?.code ?? error.code,
+  const code = error.cause?.code ?? error.code;
+  // Bun does not publish Undici's submission events. Only failures that prove
+  // no connection was established can authorize a pre-submission retry.
+  // Resets, timeouts and aborts remain unknown, including before headers.
+  const refusedBeforeConnect = typeof Bun !== 'undefined' && !submitted &&
+    ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN'].includes(code);
+  await emit({type: 'error', requestSubmitted: submitted, connectionFailed: connectionFailed || refusedBeforeConnect, code,
     message: error.name + ': ' + error.message + (error.cause?.message ? ': ' + error.cause.message : '')});
 } finally {
   clearTimeout(deadline);
