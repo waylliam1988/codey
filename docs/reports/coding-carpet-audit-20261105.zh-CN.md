@@ -965,3 +965,73 @@ Pyrefly 既有 35 suppressed / 80 warnings 保留。
 ## 记录格式
 
 每一步追加日期、范围、事实、证据路径、当前判断、未证明部分、下一步和提交号。
+
+## 阶段 19：跨模型审计——本地 Writer 与 Cline advisor/Reviewer（2026-11-06）
+
+### 实验边界
+
+本阶段按用户指定的连接方式运行：本地 KoboldCpp Gemma4 作为 Writer，Cline 在线模型
+只承担只读规划、前置 audit、consensus advisor 或 Review。没有把同一个本地模型的第二次
+请求冒充独立意见，也没有把 Cline 的输出直接当作完成证明。使用到的 Cline 模型包括：
+
+- `reflection/beam-free`（Beam）
+- `cline-free/nemotron-3.5-super-vl`（Nemotron Super）
+- `nvidia/nemotron-3.5-lightning-free`（Nemotron Lightning）
+- `cline-free/solar-mini4`（Solar Mini 4）
+
+四个模型均通过真实 Cline 连接返回过响应；这不是四个模型的统计性质量排名。
+
+### 结果
+
+| 项目 | 实机结果 | 成本与边界 | 当前判断 |
+|---|---|---|---|
+| 独立第二 advisor provider | Nemotron Super 与 Nemotron Lightning 在同一 consensus 题中分别返回独立建议，`advisor_count=2`，未发生降级 | 两个额外在线请求；模型身份和 provider 连接独立记录 | 接线可用；不证明每个任务都值得启动 |
+| 第二模型自动规划 | 5 个题中 3 个完成；已有题 `discount-bug`、`tag-feature`、从零 `zero-slug` 成功；`cross-file-rename`、`zero-inventory` 停在 `no_progress` | 每题增加一个 Cline 规划请求；失败题中本地 baseline 分别成功 | 不强制开启，保留为按需候选 |
+| 第二模型前置 audit | 3 个已有项目题全部完成，独立测试通过 | 每题增加 Cline 只读工具循环（本批 3～5 个请求）和更长 Writer 输入 | 诊断可用，但没有超过对应 baseline 的最终质量；不强制开启 |
+| 跨模型 consensus | 两个从零题均完成；`zero-slug` 的 baseline 在同批停在 `no_progress`，consensus 完成 | `zero-inventory` 产生 2 个 advisor 请求并增加 owner/aggregate 请求；总成本显著高于 baseline | 有潜在救援价值，但样本太小、成本高，保持显式可选 |
+| 本地 Writer + Beam Review | 4 个实际 Writer 题中 3 个正常完成；一题 Reviewer 两次返回空/非法 Review JSON，生产解析器正确拒绝 | Review 不会把无效结果写成 approved；该模型不适合直接作为唯一 Reviewer 的证据仍不足 | 记录为模型协议遵循限制，不能归因生产 parser bug |
+| 本地 Writer + Nemotron Super Review | 实际题 `tag-feature`、`cross-file-rename` 均完成并返回合法 `approved`；控制题发现确定性大小写去重 bug | Review、Writer 返修、二次 Review 各自独立请求；最终 pytest 和外部 oracle 通过 | 支持保留有界跨模型 Review |
+
+控制题的证据最清楚：人为在 Writer 完成后注入可复现的大小写去重缺陷，未 Review 组为
+`quality 3/4`，Nemotron Review 指出具体路径和触发输入，Writer 修复后为 `quality 4/4`，
+二次 Review 返回 `approved`。这只证明“发现一个可信问题并修好”有收益，不证明 Reviewer
+能找全问题。
+
+证据文件：
+
+- [跨模型规划与 audit A/B](cross-model-planning-expanded-20261106.json)
+- [跨模型 Review A/B](cross-model-review-expanded-20261106.json)
+- [Nemotron Review 复核](cross-model-review-nemotron-20261106.json)
+- [跨模型 consensus 与单模型对照](cross-model-stages-smoke-20261106.json)
+- [从零 baseline 对照](cross-model-baseline-zero-20261106.json)、[zero-slug 对照](cross-model-baseline-zero-slug-20261106.json)
+- [确定性 Review 返修控制题](cross-model-seeded-review-nemotron-20261106.json)
+- [生产 headless smoke](cross-model-production-gate-20261106.json)
+
+### 生产接线发现与修复
+
+审计发现，原生产 Reviewer 选择对本地 Writer 只寻找网页模型；Cline 虽已有连接和模型目录，
+却不会被本地 Writer 的自动 Review 选择。已补上一个遵守模型偏好的跨连接选择路径：
+
+- 只有用户在 Settings 中启用并选中的 API 模型才有资格成为 Reviewer；不会自动打开或绕过授权。
+- 网页 Reviewer 仍保持优先；没有可用网页 Reviewer 时，才尝试已启用的 API Reviewer。
+- 选择的 `connection_id/model_id` 写入 durable state，重启后保持同一 Reviewer，不能静默换模型。
+- Reviewer 仍是只读的；Review approved 仍不替代本地验证、diff 和 completion proof。
+
+新增生产入口位于 `codey/providers/api_connections.py` 的
+`capture_cross_connection_reviewer()`，选择逻辑位于 `codey/app/review_service.py`。
+这次改动只打通了“可以使用独立 Cline Reviewer”的能力，不会让所有单模型任务额外付出
+第二模型成本。当前用户状态里的 Cline source 仍是 disabled；启用后才会进入自动选择。
+
+### 当前决定
+
+1. **独立 advisor 接线完成，但不默认强制规划或前置 audit。** 本批规划结果混合且有两道题退化；audit 增加请求却没有提高最终质量。
+2. **跨模型 consensus 保留为显式候选。** 它在一个 baseline 停机的从零题上完成了任务，但成本和样本都不足以成为默认流程。
+3. **有界跨模型 Review 值得保留。** Nemotron Super 在控制题中找到并修复了可信缺陷；Beam 的空/非法响应说明实际部署必须继续 fail-closed，并按模型观察协议成功率。
+4. **Writer + 独立 Reviewer 的“最终质量、成本、回归”已经有第一轮真实证据，但还不是 E4 完成。** 还需要更多留出题、不同任务顺序、不同 Cline 模型和更大项目，才能决定默认 Reviewer 模型与预算。
+
+### 验证
+
+- 跨模型连接、选择、Review 生命周期和偏好边界：`124 passed`。
+- 本次新增生产接线的 Mypy、Pyrefly、ty：均通过；Ruff：通过。
+- 生产 headless smoke：本地 Gemma4 Writer + Cline Nemotron Super Reviewer，`done`、exit 0、Review 收据 `self_review=false`、pytest 通过。
+- 未运行全量 `pytest`。

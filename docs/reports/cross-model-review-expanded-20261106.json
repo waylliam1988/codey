@@ -1,0 +1,566 @@
+{
+  "writer_model": "local",
+  "advisor_model": "cline-free/nemotron-3.5-super-vl",
+  "second_advisor_model": "nvidia/nemotron-3.5-lightning-free",
+  "reviewer_model": "reflection/beam-free",
+  "cases": [
+    "discount-bug",
+    "tag-feature",
+    "cross-file-rename",
+    "zero-inventory"
+  ],
+  "arms": [
+    "baseline",
+    "review"
+  ],
+  "rows": [
+    {
+      "case": "discount-bug",
+      "arm": "baseline",
+      "writer_model": "local",
+      "event_count": 10,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": ".                                                                        [100%]\n1 passed in 0.01s\n",
+        "command": [
+          "-m",
+          "pytest",
+          "-q"
+        ]
+      },
+      "changed_files": [
+        "pricing.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 4,
+      "writer_summary": "Fixed the `discounted_price` function in `pricing.py`. The function now correctly applies a percent discount (using `1 - percent / 100`), accepts values from 0 to 100, and raises a `ValueError` if the percent is outside this range. The signature and existing tests remain unchanged and passed successfully.",
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": ".                                                                        [100%]\n1 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "pricing.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 5946,
+      "writer_requests": 4,
+      "seconds": 16.5
+    },
+    {
+      "case": "discount-bug",
+      "arm": "review",
+      "writer_model": "local",
+      "event_count": 16,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": ".                                                                        [100%]\n1 passed in 0.01s\n",
+        "command": [
+          "-m",
+          "pytest",
+          "-q"
+        ]
+      },
+      "changed_files": [
+        "pricing.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 6,
+      "writer_summary": "Fixed the `discounted_price` function in `pricing.py` to correctly apply a percent discount (subtracting from the original price) and added validation to ensure the percent is between 0 and 100 inclusive. The function now raises a `ValueError` if the percent is out of this range. Verified the fix with `pytest`, which confirmed that `discounted_price(100, 20)` correctly returns `80`.",
+      "review": {
+        "model": "reflection/beam-free",
+        "result": {
+          "verdict": "approved",
+          "status": "complete",
+          "origin": "fresh",
+          "finding_count": 0,
+          "attempt_id": "e156a66a9f99",
+          "artifact_sha256": "eb742f81ea1e2163b7699fc59af24ac6ca8e5c73935efd7b5de40b4d797f3002",
+          "source_review_run_id": ""
+        },
+        "needs_writer_repair": false,
+        "approved": true,
+        "prompt_chars": 4639,
+        "requests": 2,
+        "events": [
+          {
+            "type": "review",
+            "session_id": "cross-model-review",
+            "text": "cline:reflection/beam-free approved",
+            "review": {
+              "verdict": "approved",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 0,
+              "attempt_id": "e156a66a9f99",
+              "artifact_sha256": "eb742f81ea1e2163b7699fc59af24ac6ca8e5c73935efd7b5de40b4d797f3002",
+              "source_review_run_id": ""
+            }
+          }
+        ]
+      },
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": ".                                                                        [100%]\n1 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "pricing.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 7037,
+      "writer_requests": 6,
+      "seconds": 26.188
+    },
+    {
+      "case": "tag-feature",
+      "arm": "baseline",
+      "writer_model": "local",
+      "event_count": 13,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+        "command": [
+          "-m",
+          "pytest",
+          "-q"
+        ]
+      },
+      "changed_files": [
+        "tags.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 5,
+      "writer_summary": "Implemented `parse_tags(text)` in `tags.py`. The function now correctly splits the input string by commas, strips whitespace from each tag, converts them to lowercase, removes blank entries, eliminates duplicates using a set, and returns the final list sorted alphabetically. The `render_title` function and existing tests were preserved. Verification via `pytest` confirmed all tests passed.",
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "tags.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 6546,
+      "writer_requests": 5,
+      "seconds": 17.39
+    },
+    {
+      "case": "tag-feature",
+      "arm": "review",
+      "writer_model": "local",
+      "event_count": 13,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+        "command": [
+          "-m",
+          "pytest",
+          "-q"
+        ]
+      },
+      "changed_files": [
+        "tags.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 5,
+      "writer_summary": "Implemented `parse_tags(text)` in `tags.py`. The function correctly splits the input string by commas, strips whitespace from each tag, converts them to lowercase, removes blank entries, and returns a sorted list of unique tags. Verified with `pytest` which passed all tests.",
+      "review": {
+        "model": "reflection/beam-free",
+        "result": {
+          "verdict": "approved",
+          "status": "complete",
+          "origin": "fresh",
+          "finding_count": 0,
+          "attempt_id": "104add3ef56e",
+          "artifact_sha256": "279fbfd8470f21f3290e0c610b8f830590a132fc2a80e40c75e28c70fedcb85e",
+          "source_review_run_id": ""
+        },
+        "needs_writer_repair": false,
+        "approved": true,
+        "prompt_chars": 3993,
+        "requests": 1,
+        "events": [
+          {
+            "type": "review",
+            "session_id": "cross-model-review",
+            "text": "cline:reflection/beam-free approved",
+            "review": {
+              "verdict": "approved",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 0,
+              "attempt_id": "104add3ef56e",
+              "artifact_sha256": "279fbfd8470f21f3290e0c610b8f830590a132fc2a80e40c75e28c70fedcb85e",
+              "source_review_run_id": ""
+            }
+          }
+        ]
+      },
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "tags.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 6546,
+      "writer_requests": 5,
+      "seconds": 22.735
+    },
+    {
+      "case": "cross-file-rename",
+      "arm": "baseline",
+      "writer_model": "local",
+      "event_count": 25,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+        "command": [
+          "-m",
+          "pytest",
+          "-q"
+        ]
+      },
+      "changed_files": [
+        "report.py",
+        "test_totals.py",
+        "totals.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 9,
+      "writer_summary": "Renamed `legacy_total` to `total` across the project. \n\nChanges made:\n1.  **totals.py**: Renamed the function `legacy_total` to `total`.\n2.  **report.py**: Updated the import to `from totals import total` and replaced the call to `legacy_total(values)` with `total(values)`.\n3.  **test_totals.py**: Updated the import to `from totals import total` and replaced the call to `legacy_total([2,3])` with `total([2,3])`.\n\nThe `render(values)` behavior remains preserved, and all tests passed successfully.",
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "report.py",
+          "test_totals.py",
+          "totals.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 8686,
+      "writer_requests": 9,
+      "seconds": 31.844
+    },
+    {
+      "case": "cross-file-rename",
+      "arm": "review",
+      "writer_model": "local",
+      "event_count": 25,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+        "command": [
+          "-m",
+          "pytest",
+          "-q"
+        ]
+      },
+      "changed_files": [
+        "report.py",
+        "test_totals.py",
+        "totals.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 9,
+      "writer_summary": "Renamed `legacy_total` to `total` across `totals.py`, `report.py`, and `test_totals.py`. Updated all imports and function calls accordingly while preserving the `render(values)` behavior. Verified the changes with `python -m pytest`, which passed successfully.",
+      "review": {
+        "model": "reflection/beam-free",
+        "result": {
+          "verdict": "approved",
+          "status": "complete",
+          "origin": "fresh",
+          "finding_count": 0,
+          "attempt_id": "917e45904ff7",
+          "artifact_sha256": "1ec1c2272ba3cca62adbf866dbe10a4845d8460ecb3eaeecf921aa8c9410ac9e",
+          "source_review_run_id": ""
+        },
+        "needs_writer_repair": false,
+        "approved": true,
+        "prompt_chars": 5850,
+        "requests": 2,
+        "events": [
+          {
+            "type": "review",
+            "session_id": "cross-model-review",
+            "text": "cline:reflection/beam-free approved",
+            "review": {
+              "verdict": "approved",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 0,
+              "attempt_id": "917e45904ff7",
+              "artifact_sha256": "1ec1c2272ba3cca62adbf866dbe10a4845d8460ecb3eaeecf921aa8c9410ac9e",
+              "source_review_run_id": ""
+            }
+          }
+        ]
+      },
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "report.py",
+          "test_totals.py",
+          "totals.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 8686,
+      "writer_requests": 9,
+      "seconds": 36.922
+    },
+    {
+      "case": "zero-inventory",
+      "arm": "baseline",
+      "writer_model": "local",
+      "event_count": 14,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK\n",
+        "command": [
+          "-m",
+          "unittest",
+          "discover"
+        ]
+      },
+      "changed_files": [
+        "inventory.py",
+        "test_inventory.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 6,
+      "writer_summary": "Created `inventory.py` with an `Inventory` class that supports adding items with nonnegative counts and calculating the total sum. Created `test_inventory.py` with `unittest` coverage for normal, zero, and negative counts, as well as verifying instance independence. All tests passed successfully via `python -m unittest discover`.",
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK\n",
+          "command": [
+            "-m",
+            "unittest",
+            "discover"
+          ]
+        },
+        "changed_files": [
+          "inventory.py",
+          "test_inventory.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 6878,
+      "writer_requests": 6,
+      "seconds": 28.672
+    },
+    {
+      "case": "zero-inventory",
+      "arm": "review",
+      "writer_model": "local",
+      "event_count": 14,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK\n",
+        "command": [
+          "-m",
+          "unittest",
+          "discover"
+        ]
+      },
+      "changed_files": [
+        "inventory.py",
+        "test_inventory.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 6,
+      "writer_summary": "Created `inventory.py` with an `Inventory` class that supports adding items with nonnegative counts and calculating the total sum. Created `test_inventory.py` with `unittest` coverage for normal, zero, and negative counts, as well as verifying instance independence. All tests passed successfully under both `python -m unittest test_inventory.py` and `python -m unittest discover`.",
+      "review": {
+        "model": "reflection/beam-free",
+        "result": {
+          "verdict": "changes_requested",
+          "status": "incomplete",
+          "origin": "fresh",
+          "finding_count": 1,
+          "attempt_id": "3a1ff5686463",
+          "artifact_sha256": "36d0f70a13c213c956639f88ba06346b5a8cbb660d5f3cff0dd7e2cc4437e684",
+          "source_review_run_id": ""
+        },
+        "needs_writer_repair": true,
+        "approved": false,
+        "prompt_chars": 6292,
+        "requests": 1,
+        "events": [
+          {
+            "type": "review",
+            "session_id": "cross-model-review",
+            "text": "cline:reflection/beam-free incomplete",
+            "review": {
+              "verdict": "changes_requested",
+              "status": "incomplete",
+              "origin": "fresh",
+              "finding_count": 1,
+              "attempt_id": "3a1ff5686463",
+              "artifact_sha256": "36d0f70a13c213c956639f88ba06346b5a8cbb660d5f3cff0dd7e2cc4437e684",
+              "source_review_run_id": ""
+            }
+          }
+        ]
+      },
+      "error": "AttributeError: 'types.SimpleNamespace' object has no attribute 'summary'",
+      "traceback": "Traceback (most recent call last):\n  File \"D:\\codey\\tests\\manual\\cross_model_coding_ab.py\", line 250, in _run_case\n    followup = render_writer_followup(case.task, SimpleNamespace(**review[\"result\"]), change_brief=\"\")\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\codey\\codey\\reviews\\core.py\", line 618, in render_writer_followup\n    review.summary,\n    ^^^^^^^^^^^^^^\nAttributeError: 'types.SimpleNamespace' object has no attribute 'summary'\n",
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK\n",
+          "command": [
+            "-m",
+            "unittest",
+            "discover"
+          ]
+        },
+        "changed_files": [
+          "inventory.py",
+          "test_inventory.py"
+        ],
+        "scope_ok": true
+      },
+      "success": false,
+      "writer_prompt_chars": 6878,
+      "writer_requests": 6,
+      "seconds": 75.188
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "count": 4,
+      "success": 4,
+      "errors": 0,
+      "review_repairs": 0
+    },
+    "review": {
+      "count": 4,
+      "success": 3,
+      "errors": 1,
+      "review_repairs": 1
+    }
+  }
+}

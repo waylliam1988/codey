@@ -1,0 +1,26 @@
+{
+  "writer_model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "reviewer_model": "cline-free/nemotron-3.5-super-vl",
+  "result": {
+    "exit_code": 0,
+    "run_id": "run_ef536ffcff3d4f1989ece3e38db57779",
+    "session_id": "headless_0931f20f8199",
+    "stop_reason": "done",
+    "ledger_path": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\tmps29uyc2q\\state\\run_ledgers\\239b38acbb7194ab0708cb0a\\run_ef536ffcff3d4f1989ece3e38db57779.jsonl"
+  },
+  "review_events": [
+    {
+      "schema_version": 1,
+      "type": "review",
+      "run_id": "run_ef536ffcff3d4f1989ece3e38db57779",
+      "session_id": "headless_0931f20f8199",
+      "text": "Unavailable. Continued with one model."
+    }
+  ],
+  "persisted_review": {},
+  "pytest_ok": true,
+  "pytest_output": ".                                                                        [100%]\n1 passed in 0.01s\n",
+  "changed_files": [
+    "pricing.py"
+  ]
+}

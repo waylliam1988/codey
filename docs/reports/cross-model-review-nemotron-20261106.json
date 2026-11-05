@@ -1,0 +1,195 @@
+{
+  "writer_model": "local",
+  "advisor_model": "cline-free/nemotron-3.5-super-vl",
+  "second_advisor_model": "nvidia/nemotron-3.5-lightning-free",
+  "reviewer_model": "cline-free/nemotron-3.5-super-vl",
+  "cases": [
+    "tag-feature",
+    "cross-file-rename"
+  ],
+  "arms": [
+    "review"
+  ],
+  "rows": [
+    {
+      "case": "tag-feature",
+      "arm": "review",
+      "writer_model": "local",
+      "event_count": 13,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+        "command": [
+          "-m",
+          "pytest",
+          "-q"
+        ]
+      },
+      "changed_files": [
+        "tags.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 5,
+      "writer_summary": "Implemented `parse_tags(text)` in `tags.py`. The function now correctly splits the input string by commas, strips whitespace from each tag, converts them to lowercase, removes blank entries, eliminates duplicates using a set, and returns the final list sorted alphabetically. Verification via `pytest` confirmed that all tests passed.",
+      "review": {
+        "model": "cline-free/nemotron-3.5-super-vl",
+        "result": {
+          "verdict": "approved",
+          "status": "complete",
+          "origin": "fresh",
+          "finding_count": 0,
+          "attempt_id": "1cabddac835f",
+          "artifact_sha256": "67463190e5db8dd3b394b02266335244787fdfbeac9e8529240d045d9518aaf4",
+          "source_review_run_id": ""
+        },
+        "needs_writer_repair": false,
+        "approved": true,
+        "prompt_chars": 4064,
+        "requests": 1,
+        "raw_replies": [
+          "{\"verdict\":\"approved\",\"summary\":\"parse_tags is implemented correctly: splits on commas, strips whitespace, lowercases, removes blanks and duplicates, and returns sorted tags. render_title and tests remain unchanged.\"}"
+        ],
+        "events": [
+          {
+            "type": "review",
+            "session_id": "cross-model-review",
+            "text": "cline:cline-free/nemotron-3.5-super-vl approved",
+            "review": {
+              "verdict": "approved",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 0,
+              "attempt_id": "1cabddac835f",
+              "artifact_sha256": "67463190e5db8dd3b394b02266335244787fdfbeac9e8529240d045d9518aaf4",
+              "source_review_run_id": ""
+            }
+          }
+        ]
+      },
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "tags.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 6546,
+      "writer_requests": 5,
+      "seconds": 24.953
+    },
+    {
+      "case": "cross-file-rename",
+      "arm": "review",
+      "writer_model": "local",
+      "event_count": 25,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+        "command": [
+          "-m",
+          "pytest",
+          "-q"
+        ]
+      },
+      "changed_files": [
+        "report.py",
+        "test_totals.py",
+        "totals.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 9,
+      "writer_summary": "Renamed `legacy_total` to `total` across `totals.py`, `report.py`, and `test_totals.py`. Updated all imports and function calls accordingly. Verified the changes with `python -m pytest`, which passed successfully.",
+      "review": {
+        "model": "cline-free/nemotron-3.5-super-vl",
+        "result": {
+          "verdict": "approved",
+          "status": "complete",
+          "origin": "fresh",
+          "finding_count": 0,
+          "attempt_id": "f23dda738e0a",
+          "artifact_sha256": "b40d374696a83394641f6479650817fafafd76b30090827b79717965407cab4d",
+          "source_review_run_id": ""
+        },
+        "needs_writer_repair": false,
+        "approved": true,
+        "prompt_chars": 5245,
+        "requests": 1,
+        "raw_replies": [
+          "{\"verdict\":\"approved\",\"summary\":\"The rename is complete and correct: legacy_total -> total in totals.py, report.py, and test_totals.py, with imports and calls updated. No legacy_total alias or references remain, and render(values) behavior is preserved.\"}"
+        ],
+        "events": [
+          {
+            "type": "review",
+            "session_id": "cross-model-review",
+            "text": "cline:cline-free/nemotron-3.5-super-vl approved",
+            "review": {
+              "verdict": "approved",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 0,
+              "attempt_id": "f23dda738e0a",
+              "artifact_sha256": "b40d374696a83394641f6479650817fafafd76b30090827b79717965407cab4d",
+              "source_review_run_id": ""
+            }
+          }
+        ]
+      },
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "report.py",
+          "test_totals.py",
+          "totals.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 8686,
+      "writer_requests": 9,
+      "seconds": 32.5
+    }
+  ],
+  "summary": {
+    "review": {
+      "count": 2,
+      "success": 2,
+      "errors": 0,
+      "review_repairs": 0
+    }
+  }
+}

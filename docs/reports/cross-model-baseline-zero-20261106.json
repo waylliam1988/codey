@@ -1,0 +1,73 @@
+{
+  "writer_model": "local",
+  "advisor_model": "cline-free/nemotron-3.5-super-vl",
+  "second_advisor_model": "nvidia/nemotron-3.5-lightning-free",
+  "reviewer_model": "reflection/beam-free",
+  "cases": [
+    "zero-inventory"
+  ],
+  "arms": [
+    "baseline"
+  ],
+  "rows": [
+    {
+      "case": "zero-inventory",
+      "arm": "baseline",
+      "writer_model": "local",
+      "event_count": 14,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK\n",
+        "command": [
+          "-m",
+          "unittest",
+          "discover"
+        ]
+      },
+      "changed_files": [
+        "inventory.py",
+        "test_inventory.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 6,
+      "writer_summary": "Created `inventory.py` with an `Inventory` class that supports adding items with nonnegative counts and calculating the total count. Created `test_inventory.py` with `unittest` coverage for normal, zero, and negative counts, as well as verifying instance independence. All tests passed successfully via `python -m unittest discover`.",
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.000s\n\nOK\n",
+          "command": [
+            "-m",
+            "unittest",
+            "discover"
+          ]
+        },
+        "changed_files": [
+          "inventory.py",
+          "test_inventory.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 6878,
+      "writer_requests": 6,
+      "seconds": 29.078
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "count": 1,
+      "success": 1,
+      "errors": 0,
+      "review_repairs": 0
+    }
+  }
+}

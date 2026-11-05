@@ -1,0 +1,259 @@
+{
+  "writer_model": "local",
+  "advisor_model": "cline-free/nemotron-3.5-super-vl",
+  "second_advisor_model": "nvidia/nemotron-3.5-lightning-free",
+  "reviewer_model": "cline-free/nemotron-3.5-super-vl",
+  "cases": [
+    "tag-feature"
+  ],
+  "arms": [
+    "seeded_baseline",
+    "review_seeded"
+  ],
+  "rows": [
+    {
+      "case": "tag-feature",
+      "arm": "seeded_baseline",
+      "writer_model": "local",
+      "event_count": 13,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+        "command": [
+          "-m",
+          "pytest",
+          "-q"
+        ]
+      },
+      "changed_files": [
+        "tags.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 5,
+      "writer_summary": "Implemented `parse_tags(text)` in `tags.py`. The function now correctly splits the input string by commas, strips whitespace from each tag, converts them to lowercase, removes any blank entries, eliminates duplicates, and returns the final list sorted alphabetically. Verification via `pytest` confirmed that all tests passed. \n\n```python\ndef parse_tags(text):\n    tags = [tag.strip().lower() for tag in text.split(',')]\n    # Remove blank entries and duplicates, then sort alphabetically\n    unique_tags = sorted(list(set(tag for tag in tags if tag)))\n    return unique_tags\n```",
+      "seeded_defect": "case-sensitive duplicate removal in parse_tags",
+      "final_before_review": {
+        "quality_passed": false,
+        "quality_score": 3,
+        "product_behavior_passed": false,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "tags.py"
+        ],
+        "scope_ok": true
+      },
+      "final": {
+        "quality_passed": false,
+        "quality_score": 3,
+        "product_behavior_passed": false,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "tags.py"
+        ],
+        "scope_ok": true
+      },
+      "success": false,
+      "writer_prompt_chars": 6546,
+      "writer_requests": 5,
+      "seconds": 21.422
+    },
+    {
+      "case": "tag-feature",
+      "arm": "review_seeded",
+      "writer_model": "local",
+      "event_count": 13,
+      "quality_passed": true,
+      "quality_score": 4,
+      "product_behavior_passed": true,
+      "visible_suite": {
+        "ok": true,
+        "exit_code": 0,
+        "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+        "command": [
+          "-m",
+          "pytest",
+          "-q"
+        ]
+      },
+      "changed_files": [
+        "tags.py"
+      ],
+      "scope_ok": true,
+      "writer_stop_reason": "done",
+      "writer_turns": 5,
+      "writer_summary": "Implemented `parse_tags(text)` in `tags.py`. The function now correctly splits the input string by commas, strips whitespace from each tag, converts them to lowercase, removes blank entries, eliminates duplicates, and returns the final list sorted alphabetically. Verified with `pytest` which passed all tests.",
+      "seeded_defect": "case-sensitive duplicate removal in parse_tags",
+      "final_before_review": {
+        "quality_passed": false,
+        "quality_score": 3,
+        "product_behavior_passed": false,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "tags.py"
+        ],
+        "scope_ok": true
+      },
+      "review": {
+        "model": "cline-free/nemotron-3.5-super-vl",
+        "result": {
+          "verdict": "changes_requested",
+          "status": "complete",
+          "origin": "fresh",
+          "finding_count": 1,
+          "attempt_id": "cac4a83903c7",
+          "artifact_sha256": "2bf82b0344199393e68d1efe01c68bcafaa476f3dc1c9a1012d4838b6cbac2fd",
+          "source_review_run_id": ""
+        },
+        "needs_writer_repair": true,
+        "approved": false,
+        "prompt_chars": 3989,
+        "requests": 1,
+        "raw_replies": [
+          "{\"verdict\":\"changes_requested\",\"summary\":\"parse_tags deduplicates before lowercasing, so tags differing only by case (e.g. \\\"Apple,apple\\\") are not collapsed and can appear twice in the result. Lowercase before dedup.\",\"findings\":[{\"path\":\"tags.py\",\"issue\":\"Duplicates are removed via a set of stripped-but-not-lowercased tags, so case-variant duplicates survive into the sorted output (e.g. \\\"Apple,apple\\\" yields [\\\"apple\\\", \\\"apple\\\"]).\",\"suggested_fix\":\"Lowercase before dedup: return sorted({tag.strip().lower() for tag in text.split(',') if tag.strip()})\",\"hunk_index\":0,\"old_line\":5,\"new_line\":5}]}"
+        ],
+        "events": [
+          {
+            "type": "review",
+            "session_id": "cross-model-review",
+            "text": "cline:cline-free/nemotron-3.5-super-vl suggested changes",
+            "review": {
+              "verdict": "changes_requested",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 1,
+              "attempt_id": "cac4a83903c7",
+              "artifact_sha256": "2bf82b0344199393e68d1efe01c68bcafaa476f3dc1c9a1012d4838b6cbac2fd",
+              "source_review_run_id": ""
+            }
+          }
+        ]
+      },
+      "repair": {
+        "event_count": 10,
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "tags.py"
+        ],
+        "scope_ok": true,
+        "stop_reason": "done",
+        "turns": 4
+      },
+      "post_review": {
+        "model": "cline-free/nemotron-3.5-super-vl",
+        "result": {
+          "verdict": "approved",
+          "status": "complete",
+          "origin": "fresh",
+          "finding_count": 0,
+          "attempt_id": "e361f921f6d1",
+          "artifact_sha256": "717588757f4898555ec81fe62c75f68224271ebd745b8e561d4ec76c217e46c4",
+          "source_review_run_id": ""
+        },
+        "needs_writer_repair": false,
+        "approved": true,
+        "prompt_chars": 4309,
+        "requests": 1,
+        "raw_replies": [
+          "{\"verdict\":\"approved\",\"summary\":\"parse_tags is implemented correctly: splits on commas, strips whitespace, lowercases, drops blank entries via the set comprehension guard, deduplicates via the set, and returns sorted alphabetically. render_title and tests are untouched, matching the task requirements.\",\"findings\":[]}"
+        ],
+        "events": [
+          {
+            "type": "review",
+            "session_id": "cross-model-review",
+            "text": "cline:cline-free/nemotron-3.5-super-vl approved",
+            "review": {
+              "verdict": "approved",
+              "status": "complete",
+              "origin": "fresh",
+              "finding_count": 0,
+              "attempt_id": "e361f921f6d1",
+              "artifact_sha256": "717588757f4898555ec81fe62c75f68224271ebd745b8e561d4ec76c217e46c4",
+              "source_review_run_id": ""
+            }
+          }
+        ]
+      },
+      "final": {
+        "quality_passed": true,
+        "quality_score": 4,
+        "product_behavior_passed": true,
+        "visible_suite": {
+          "ok": true,
+          "exit_code": 0,
+          "output": "..                                                                       [100%]\n2 passed in 0.01s\n",
+          "command": [
+            "-m",
+            "pytest",
+            "-q"
+          ]
+        },
+        "changed_files": [
+          "tags.py"
+        ],
+        "scope_ok": true
+      },
+      "success": true,
+      "writer_prompt_chars": 14846,
+      "writer_requests": 9,
+      "seconds": 59.063
+    }
+  ],
+  "summary": {
+    "seeded_baseline": {
+      "count": 1,
+      "success": 0,
+      "errors": 0,
+      "review_repairs": 0
+    },
+    "review_seeded": {
+      "count": 1,
+      "success": 1,
+      "errors": 0,
+      "review_repairs": 1
+    }
+  }
+}
