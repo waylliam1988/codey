@@ -190,6 +190,17 @@ def _preserve_playwright_browser_cache() -> None:
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(cache / "ms-playwright")
 
 
+def _preserve_bun_runtime() -> None:
+    """Keep an installed fetch runtime discoverable after isolating the state home."""
+    import shutil
+
+    if shutil.which("bun"):
+        return
+    runtime = Path.home() / ".bun" / "bin" / ("bun.exe" if os.name == "nt" else "bun")
+    if runtime.is_file():
+        os.environ["PATH"] = str(runtime.parent) + os.pathsep + os.environ.get("PATH", "")
+
+
 def _install_isolated_state_home() -> Path:
     """Give every pytest process a writable home before application imports.
 
@@ -199,6 +210,7 @@ def _install_isolated_state_home() -> Path:
     at the real user profile.
     """
     _preserve_playwright_browser_cache()
+    _preserve_bun_runtime()
     existing = os.environ.get("PYTEST_STATE_HOME")
     if existing:
         root = Path(existing).resolve()
