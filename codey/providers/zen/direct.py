@@ -21,6 +21,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socket import socket as Socket
 from urllib.parse import urlsplit
 
 from codey.providers.api_transport import GenerationNotSentError
@@ -48,7 +49,7 @@ class PhysicalInterface:
     address: str
     dns: tuple[str, ...]
 
-    def socket(self, kind: int) -> socket.socket:
+    def socket(self, kind: int) -> Socket:
         sock = socket.socket(socket.AF_INET, kind)
         try:
             # Windows IP_UNICAST_IF takes the interface index in network order.
@@ -176,7 +177,7 @@ class DirectTunnel:
                     with owner._lock:
                         owner._sockets.discard(self.connection)
 
-            def log_message(self, *_: object) -> None:
+            def log_message(self, format: str, *args: object) -> None:
                 pass
 
             def do_CONNECT(self) -> None:
@@ -234,8 +235,9 @@ class DirectTunnel:
             handler.send_response(200, "Connection established")
             handler.end_headers()
             handler.wfile.flush()
+            empty: list[socket.socket] = []
             while not self._closed.is_set() and not self.cancelled() and time.monotonic() < self.deadline:
-                readable, _, _ = select.select([handler.connection, remote], [], [], 0.05)
+                readable, _, _ = select.select([handler.connection, remote], empty, empty, 0.05)
                 for source in readable:
                     data = source.recv(65536)
                     if not data:

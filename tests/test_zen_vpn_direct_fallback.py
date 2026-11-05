@@ -173,6 +173,9 @@ def test_direct_tunnel_is_authenticated_host_scoped_opaque_and_closed(monkeypatc
         return client, header
 
     try:
+        handler_class = tunnel.server.RequestHandlerClass
+        handler = handler_class.__new__(handler_class)
+        handler.log_message(format="ignored")
         for host, authorized in [("opencode.ai", False), ("unapproved.test", True)]:
             client, header = connect(host, authorized)
             with client:
