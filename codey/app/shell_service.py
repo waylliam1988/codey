@@ -531,6 +531,17 @@ def execute_approved_shell(
             return _stopped_shell_result()
         except Exception:
             generation = 0
+    # Resolve the approval epoch before shell discovery. ``resolve_shell`` may
+    # probe the host interpreter by starting a short-lived process; an
+    # unreadable or stale approval must prevent even that side effect.
+    if not _approval_generation_current(ctx, generation):
+        return _stopped_shell_result()
+    stop_flag_for = getattr(getattr(ctx, "run_registry", None), "stop_flag_for", None)
+    stop_flag = (stop_flag_for(str(getattr(ctx, "run_id", "") or "shell"))
+                 if callable(stop_flag_for)
+                 else getattr(getattr(ctx, "run_registry", None), "stop_flag", None))
+    if stop_flag is not None and stop_flag.is_set():
+        return _stopped_shell_result()
     shell = resolve_shell()
     ticket = ShellExecutionTicket(
         command=command,
