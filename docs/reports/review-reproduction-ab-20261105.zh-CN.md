@@ -40,9 +40,79 @@ read_array 又只认 `]`，因此无限循环。未修改 KoboldCpp 安装包。
 用它定位 native parser。Python fallback 隔离才锁定上述确定性缺陷。隔离脚本曾对
 TimeoutExpired.stdout 一律 decode，遇到 str 报错；已修实验脚本，非 Codey 生产问题。
 
-用户已授权自行重启；已恢复同模型服务。下一步仅在本地 provider 外层复用现有文本
-工具协议避开受影响的服务端工具解析，不猜测缺失括号、不伪造工具成功、不自动重发
-结果未知的请求；兼容验证与最终生产实机结果随后记录。
+用户已授权自行重启；已恢复同模型服务。本地 provider 外层在冻结新任务协议前，识别
+标准 `/v1` 地址、`KoboldCpp` 精确版本 `1.117.1` 和 Gemma 4 模型名，复用现有文本工具
+避开服务端 native 工具解析。其他模型（含 Qwen）、版本、Responses、自定义代理路径、
+未知元数据均不改变。复用已有受限元数据读取：0.8 秒、262144 字节、禁止重定向转发密钥。
+不修改安装包或保存偏好，不猜缺括号，不重发结果未知的生成。旧任务若冻结了受影响的
+native 协议，恢复前明确拒绝并提示新建任务，不在恢复中偷换协议。
+
+### 文本兼容实机中的第二个问题
+
+首批纯文本 gate 在 grep/read 成功后重复生成 `<|channel>thought` / `<channel|>`，服务
+仍持续生成 token。保存生成现场后主动 abort，因此该批不算通过，也不能称为 parser
+再次死循环。同一实际请求以 128 token 对照：默认与 thinking=false 均重复标记；
+thinking=true 正常推理。给 true 1024 token 后 249 token 正常结束，但服务把完整思考段
+留在 content，reasoning_content 只有空白。同题 thinking=false 加既有 JSON Schema
+约束，90 token 返回合法 edit。请求/响应/实际模板保留，不靠修改采样 seed 挑成功。
+
+因此未开启 thinking（false/null）时选择既有 `json_schema` 文本协议并显式 false；null
+沿用本模板原先 false 的默认值，不把用户显式 false 改成 true。明确开启时保留 true/plain，
+本地 codec 只分离以已知标记开头且完整关闭的思考段，最终段仍经过既有文本/工具校验。
+思考段中的工具不执行；缺失/重复 channel 拒绝，最终工具缺括号仍拒绝；不影响 Qwen 格式。
+
+首轮回归暴露新测试漏配 WorkspaceRevisionStore，实际 edit 和 pytest 通过而 done 正确
+被拒；补齐测试依赖，未放松生产完成证明。思考段测试又漏配读取授权、误把协议层
+read_file 名称写成执行层 read，修正测试；不是生产错误。
+
+第二批 `edit/references/project_review`：edit done、独立验证通过；Project Review done、
+13 项生命周期与独立文件检查通过，但 gate 复制临时 baseline 时再次报 artifact_error。
+根因是原分类只匹配中英文系统错误文字；子进程解码后本地文字乱码。新故障注入先得到
+3 failed / 2 passed，再按稳定的 `[WinError 2/3]` / `[Errno 2]` 标识判断，仍要求源文件
+确已不存在；权限、源仍存在但目标缺失、混合错误继续失败。修后相关 gate/兼容 43 passed。
+
+references 的失败已定位到模型提出不存在的 SEARCH（先添加 Tuna，后使用字面量 `\\n`
+与尾随空格），并重复旧参数；源码、精确编辑错误、测试失败均完整回传。模型在预算内
+未修好，不能算成功；不把保留准确匹配守卫称为生产 bug，也不放宽为猜测替换。
+### 最终生产复核与剩余边界
+
+- 修后 `edit/project_review` gate **2/2 PASS**，都真实修改、执行 unittest 并 done。
+  Project Review 的 13 项生命周期检查全通过，包括只读、持久结果、当前文件的验证与
+  终态顺序。12 个实际 HTTP 请求全部没有 API tools/tool_choice，其中 10 个编码请求
+  使用 JSON Schema，另 2 个是原 Review 请求。`--protocol native` 是请求偏好，实际
+  已被兼容层改为文本；不能把这一结果写成 native wire 通过。smoke 的 release_ready=false
+  来自未跑完整 release 矩阵，不能写作完整发布认证。
+- 额外使用 `run_headless` 的**默认生产 registry/connector**，只包 HTTP 观察器，未替换
+  provider 工厂或工具行为。默认 thinking=null 在准入时冻结 false/json_schema；5 次实际
+  HTTP 无 API tools，真实编辑、unittest、完整性、当前验证及 done 通过。本轮原策略
+  返回 Reviewer unavailable，随后正常单模型交付，不能把它冒充成功的 Review。
+- 显式 thinking=true 的默认连接器补测：完整思考段第一次成功分离并执行 find_references，
+  下一请求推理后反复 channel 标记。服务仍持续生成，保留现场后人工 abort，任务 error，
+  不能写成通过或 server parser hang。第一次脚本错误把自动发现前的空地址当作选择，
+  准入拒绝且未发模型请求；改为先正常发现端点，未更改生产身份验证。
+- 因此本兼容**绕过已定位的服务端解析死循环**，没有证明显式 thinking/plain 在该量化
+  模型上稳定，也没有保证跨文件编码质量。保留用户显式 thinking，不靠强制关闭或换 seed
+  隐藏失败；未开启 thinking 的现有 JSON 路径已获得真实完成证据。无需把所有模型失败
+  都强行改造成工程 bug，也不能把未完成任务算成成功。
+
+最终相关 provider/协议/冻结/终态回归 **172 passed**；JSON 工具、恢复、原 Review、
+实验 helper、快照与只读/冷复用扩大组 **144 passed**；gate 错误码修复后 gate/兼容组
+**43 passed**。组间重叠，不相加声称独立测试总数。未运行全量 pytest。Ruff、生产树
+Mypy（581 文件）、Pyrefly、ty 通过；Pyrefly 保留原有 35 suppressed / 80 warnings。
+
+- [A/B 与服务诊断原始证据](review-reproduction-ab-evidence-20261105.json)：19 个 JSON
+  批次/诊断，含失败与部分批；13.41 MB 去重为 6.79 MB，expand 后与原解析对象逐项相等。
+  含安装包原函数全文/哈希、括号控制/超时堆栈、同请求 thinking/JSON 对照、原输出及回复。
+- [生产与兼容实机证据](kobold-parser-compat-production-evidence-20261105.json)：172 份
+  文本（含 8 份相关源代码），2.93 MB，逐文件 SHA-256 校验通过；含原生产、失败/中止批、
+  最终 gate 与默认连接器的输入、provider/events、结果、文件、Review 与 ledger/trace。
+  未归档 SQLite、重复 managed-output、链接、缓存和完整日志，不称为完整 durable 镜像。
+
+当前采用：原 Review 保留，复现只留测试目录；本地兼容接入正式选择路径，不新增内核
+专用业务规则或服务端补丁。更大任务和显式 thinking 的稳定性仍有上述实测限制。
+分批提交：`9ab73efc` 撤出生产实验；`9830a558` 本地兼容、思考段 codec 与 gate 错误码
+修复。最终实机测量时为待提交的同一份源码；640 份生产、39 份工具源码哈希均与测量
+metadata 相等，提交没有夹入测量期间的新生产改动。
 
 ## 目标与准入
 

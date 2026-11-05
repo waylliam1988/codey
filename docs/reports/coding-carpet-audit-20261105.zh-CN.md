@@ -47,8 +47,8 @@
 - 起始提交：`6ab91052`。
 - 主树保留一个与本审计无关的未跟踪文档 `docs/cline-integration-implementation-plan.zh-CN.md`，本审计没有修改它。
 - 旧报告记录的 `D:\codey-kernel-audit` 已不存在。
-- 当前阶段：六候选的本地单模型 A/B、反序确认、组合对照和生产复测已完成，
-  最新决策见阶段 17。阶段 0～16 保留为历史与诊断记录，不能当最新状态。
+- 当前阶段：六候选的本地单模型审计见阶段 17；后续 Review 实验收口与 KoboldCpp
+  兼容见阶段 18。早期阶段保留为历史与诊断记录，不能当最新状态。
 
 ### 当前可执行结论
 
@@ -915,6 +915,52 @@ ty 在最后生产改动后通过；Pyrefly 保留既有 35 suppressed / 80 warn
 
 六项本地单模型候选审计已完成本轮。仍未验证的是跨模型、真正独立 advisor/consensus、
 更大项目和长时间记忆价值，不能将这一局部结论改写成“整条编码管线所有代码都必要”。
+
+## 阶段 18：撤出未用 Review 实验与 KoboldCpp 解析器兼容（2026-11-05）
+
+用户明确允许 Review 漏检：只要修掉可信问题且未引入回归，这轮就有价值；不以找全
+种入缺陷验收。共同完成的相同四个候选上，原方案/独立静态/可执行复现分别正常完成且
+质量通过 3/4、3/4、2/4，HTTP 10、10、27；正确控制均未被误改。复现组虽发现两类
+问题，却发生一次返修语法回归和一次代码正确后未结束。更早开发组的 4/4 未稳定重现。
+
+原生产 Review 保留。提交 `9ab73efc` 已撤出没有正式入口启用的 parent_policy/replay_probes
+服务分支、ReviewResult 复现字段及相关持久化；复现 helper 移到 tests/manual，生产
+模块不再引用它。只测试被撤分支的测试同步撤出，实验授权/执行/候选冻结测试仍保留。
+撤出后 Review/helper/快照/只读/生命周期组 96 passed。
+
+KoboldCpp 1.117.1 在 Gemma edit 文本缺 `]` 时 EOS 后卡住：独立提取安装包原函数，
+不导入 Codey、不加载模型，补括号立即返回，原输出 3 秒超时且堆栈锁定 read_array。
+根因是遇 `}` 时 read_value 不前进，而 read_array 只等 `]`。这是服务端确定性缺陷。
+
+Codey 的兼容位于 local provider 任务协议选择层：只对已确认版本和 Gemma 4 选择已有
+文本工具，避免 API `tools` 触发坏解析器。未开启 thinking 用已有 JSON 约束，开启则保留
+设置，并由 local_response_codec 分离完整 Gemma thought/final 段。所有最终调用继续
+经过权限、schema、精确编辑、验证新鲜度与完成证明。既有 native 任务恢复不偷换协议。
+Qwen、其他版本、未知服务及代理路径不推定受影响；未修改 KoboldCpp 安装包。
+
+首批无约束文本实机失败及 thinking/JSON 对照、第二批跨文件 SEARCH 失败、gate 乱码
+误判均保留。gate 修复改用稳定错误码，仍要求源文件确实缺失，权限和目标错误不放过。
+最终 `edit/project_review` smoke **2/2 PASS**，后者 13 项生命周期全通过；12 次 HTTP
+均没有 API tools，其中 10 次编码请求有 JSON 约束。请求的 native 偏好已降为文本，
+不能冒称 native wire 成功。另用默认生产 registry/connector 真改文件、unittest、
+done 通过；该轮 Review unavailable 如实降级，不能算 Review 成功。
+
+显式 thinking=true 的默认连接器能解码第一次完整思考/最终段，但下一次又重复 channel
+生成，保存现场后人工 abort，任务未完成。这不同于缺 `]` 后的服务端解析死循环；
+兼容没有保证该模型所有模式/任务稳定。跨文件题重复字面量 `\\n` 和错误 SEARCH 的失败
+也未抹掉，不通过放松编辑守卫或强制关闭用户 thinking 把它伪装成成功。
+
+最终 provider/协议回归 172 passed，JSON/恢复/Review 扩大组 144 passed，gate 修复组
+43 passed；组间有重叠。未全量 pytest。Ruff、Mypy（581 文件）、Pyrefly、ty 通过，
+Pyrefly 既有 35 suppressed / 80 warnings 保留。
+
+[A/B 与诊断归档](review-reproduction-ab-evidence-20261105.json) 保留 19 个原 JSON，
+13.41 MB 去重至 6.79 MB，可逆核对相等；[生产实机归档](kobold-parser-compat-production-evidence-20261105.json)
+保留 172 份文本与相关源码，2.93 MB，逐文件哈希核对。不含 SQLite 等完整 state 镜像。
+兼容与 gate 错误码修复已提交 `9830a558`；实机期间冻结的 640 份生产和 39 份工具源码
+哈希均一致，测试的是这份正式实现。
+
+详见 [独立 Review 与复现逐步记录](review-reproduction-ab-20261105.zh-CN.md)。
 
 ## 记录格式
 
