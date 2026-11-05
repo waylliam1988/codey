@@ -18,12 +18,22 @@ from codey.providers.local_literal import parse_mapping, parse_mapping_diagnosti
 
 _FRAME_PREFIXES = ("<|tool_call>call:tool:", "<|tool_call>call:")
 _FRAME_SUFFIX = "<tool_call|>"
-_TOOL_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+_TOOL_NAME_RE = re.compile(r"(?:[A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z_][A-Za-z0-9_]*\Z")
 _GEMMA_REASONING_RE = re.compile(
     r"^\s*\[TOOLCALL\s+REASONING\]\s*:\s*(\{.*\})\s*$",
     re.DOTALL,
 )
 _GEMMA_METADATA_LIMIT = 64 * 1024
+
+
+def _canonical_tool_name(name: str) -> str | None:
+    """Normalize local template namespaces without accepting arbitrary aliases."""
+
+    if name.startswith("tools."):
+        name = name[len("tools."):]
+    if "." in name or _TOOL_NAME_RE.fullmatch(name) is None:
+        return None
+    return name
 
 
 def parse_local_tool_markup(text: str) -> ProviderToolCall | None:
@@ -42,8 +52,8 @@ def parse_local_tool_markup(text: str) -> ProviderToolCall | None:
     brace = body.find("{")
     if brace <= 0 or not body.endswith("}"):
         return None
-    name = body[:brace]
-    if _TOOL_NAME_RE.fullmatch(name) is None:
+    name = _canonical_tool_name(body[:brace])
+    if name is None:
         return None
     arguments = parse_mapping(body[brace:])
     if arguments is None:
@@ -98,7 +108,10 @@ def normalize_local_reply(reply: str | AssistantTurn) -> str | AssistantTurn:
     if call is None:
         if reply.lstrip().startswith("<|tool_call>"):
             frame = reply.strip()
-            name = re.match(r"<\|tool_call>call:(?:tool:)?([A-Za-z_][A-Za-z0-9_]*)\{", frame)
+            name = re.match(
+                r"<\|tool_call>call:(?:tool:)?((?:[A-Za-z_][A-Za-z0-9_]*\.)*[A-Za-z_][A-Za-z0-9_]*)\{",
+                frame,
+            )
             detail = ("Local tool frame is missing the closing <tool_call|> marker. "
                       "Resend a complete call as bare JSON, without tool-call markers."
                       if not frame.endswith(_FRAME_SUFFIX) else
@@ -109,9 +122,10 @@ def normalize_local_reply(reply: str | AssistantTurn) -> str | AssistantTurn:
                 if problem:
                     detail = ("Local tool frame has invalid argument syntax. " + problem
                               if problem.startswith("The argument object ended") else detail + " " + problem)
+            protocol_tool_name = _canonical_tool_name(name.group(1)) if name is not None else ""
             return AssistantTurn(text="", finish=TurnFinish.PROTOCOL_ERROR,
                                  raw={"codec": "local-text", "malformed_tool_frame": True,
-                                      "protocol_error": detail, "protocol_tool_name": name.group(1) if name else ""})
+                                      "protocol_error": detail, "protocol_tool_name": protocol_tool_name or ""})
         return reply
     return AssistantTurn(text="", tool_calls=(call,), raw={"codec": "local-text"})
 

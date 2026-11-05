@@ -510,6 +510,40 @@ KoboldCpp 先生成 bounded plan 或只读 audit，再把结果按私有 notes �
 工作是让 KoboldCpp 输出稳定后，按预注册四类任务继续做 C-P6/C-P7 与 C-P1/C-P2 的成对
 Writer 实验，再以真实缺陷留出题验证 C-P4/C-P5，并单独做项目记忆的冷启动/续作对照。
 
+## 阶段 13：重启 KoboldCpp 后发现的真实协议兼容 bug（2026-11-05）
+
+重启 KoboldCpp 后重新运行同一题的三个 Writer arm：
+
+- baseline：真实读取、编辑、pytest、`done` 全部通过；
+- project_map / coding current context：首轮都收到空回复并停在 protocol，0 个工具调用。
+
+为了区分 provider 状态和生产逻辑，把两个 arm 分别放入新进程，并记录原始 provider 回复。
+模型返回的是完整 KoboldCpp 文本工具帧：
+
+```text
+<|tool_call>call:tools.grep{args:{query:"RATE",path:"."}}<tool_call|>
+```
+
+`codey/providers/local_response_codec.py` 原先只接受 `grep` 或 `tool:grep`，工具名正则
+不允许命名空间中的点号，因此合法的 `tools.grep` 被判成 protocol error。baseline 偶尔
+返回 OpenAI JSON/native tool call，所以同一个模型在另一 arm 看起来可以工作；这不是
+Project Map 或 current context 本身导致的质量退步，而是提示变化触发了未覆盖的本地文本协议
+变体。
+
+修复放在本地 provider response codec，而不是 kernel 或 Gemma 专属业务逻辑：
+
+- 只接受明确的 `tools.` 命名空间并规范化为 canonical `grep` 等工具名；
+- 任意其他命名空间仍拒绝；
+- Qwen 等模型使用 OpenAI native `tool_calls` 时继续走 native 解码路径，不受影响；
+- 未来若有其他模板变体，再增加独立 codec 分支，不扩大通用工具名正则。
+
+修复后的 project_map 实机已经能完成读取、编辑并通过 pytest；本轮终态停在
+`no_progress` 是模型随后反复选择未匹配的 `python -m unittest`，属于验证命令选择/模型
+行为问题，不再是协议或工具执行失败。
+
+定向回归：`51 passed`，覆盖本地文本 codec、native tool 解码、API context 协议和编码 harness；
+Ruff 通过。该生产修复待与本轮报告一起单独提交。
+
 ## 记录格式
 
 每一步追加日期、范围、事实、证据路径、当前判断、未证明部分、下一步和提交号。

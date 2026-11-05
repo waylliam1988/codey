@@ -34,6 +34,22 @@ def test_local_gemma_frame_accepts_direct_argument_object() -> None:
     assert call.arguments == {"path": "app.py"}
 
 
+def test_local_gemma_frame_accepts_tools_namespace() -> None:
+    call = parse_local_tool_markup(
+        '<|tool_call>call:tools.grep{args:{query:"RATE",path:"."}}<tool_call|>'
+    )
+
+    assert call is not None
+    assert call.name == "grep"
+    assert call.arguments == {"query": "RATE", "path": "."}
+
+
+def test_local_gemma_frame_rejects_unknown_namespace() -> None:
+    assert parse_local_tool_markup(
+        '<|tool_call>call:other.grep{query:"RATE"}<tool_call|>'
+    ) is None
+
+
 def test_local_gemma_variant_frame_accepts_json_style_literals_and_escaped_quotes() -> None:
     call = parse_local_tool_markup(
         '<|tool_call>call:grep{before_context:1,include:".py",literal:true,query:<|\\"|>needle<|\\"|>}<tool_call|>'
