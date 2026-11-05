@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -59,6 +60,8 @@ def main():
     controls.begin_task_context('review-reproduction-ab')
     provider = EvidenceProvider(connect_provider('local'))
     payload = {'model': provider.model, 'seeded_candidates': True, 'rows': [], **source_metadata()}
+    payload['experiment_sha256'] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in
+        [Path(__file__), Path(__file__).with_name('reproducible_review_adapter.py')]}
     try:
         for name in args.cases.split(','):
             for correct in (False, True):

@@ -81,8 +81,8 @@ def run_arm(provider, case, correct, arm, *, seed_override=None, reviewer_factor
 
                 def review(**kwargs):
                     kwargs.pop("writer_id")
+                    kwargs["review_impact_map"] = safe_review_impact_map(root, kwargs["changes"])
                     outcome = run_review_attempt(ctx, **kwargs,
-                        review_impact_map=safe_review_impact_map(root, kwargs["changes"]),
                         reviewer_id="local", reviewer=(reviewer_factory(provider, root, case.task, kwargs, row)
                             if reviewer_factory is not None else provider), self_review=True,
                         run_id=f"review-ab-{time.time_ns()}")

@@ -17,6 +17,10 @@ from codey.workspace.paths import safe_join
 
 PROPOSAL = """Independently investigate concrete bugs in this candidate against the original task.
 Propose at most TWO small Python unittest scripts covering distinct realistic edge cases.
+First identify a concrete hypothesis about an expression or operation in the current source
+that may violate the task. Choose inputs that distinguish that implementation from the
+required behavior. Test interactions between required behaviors, not only each behavior in
+isolation; happy paths already covered by existing tests are low-value checks.
 Each script imports the real project modules, defines unittest.TestCase test methods, and
 uses assertions whose expected behavior follows the task. It will run in a disposable project
 copy using python -m unittest. Do not change files, dependencies, process state or use network.
@@ -28,7 +32,8 @@ This is a test proposal, not a final review verdict. Call submit_review_probes e
 
 SCHEMA = {"type": "object", "properties": {"probes": {"type": "array", "maxItems": 2,
     "items": {"type": "object", "properties": {"requirement_quote": {"type": "string"},
-        "script": {"type": "string"}}, "required": ["requirement_quote", "script"],
+        "hypothesis": {"type": "string"}, "script": {"type": "string"}},
+        "required": ["requirement_quote", "hypothesis", "script"],
         "additionalProperties": False}}}, "required": ["probes"], "additionalProperties": False}
 
 
