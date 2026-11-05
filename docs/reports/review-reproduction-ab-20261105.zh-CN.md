@@ -50,3 +50,10 @@ Mypy/Pyrefly/ty 按生产 Python 3.11 检查。分批 commit，逐步记录失�
 - 复核实验接线：baseline 的 impact map 先前单独传给生产服务，factory 未拿到同一字段；
   已统一 kwargs，保证 independent/reproduce 两边材料相同；新增实验源码 SHA-256。
   首批因此仍为开发诊断，不与修正后的确认数据混算。生产仍未修改。
+- 假设版开发批：reproduce 4/4；baseline、independent 各 3/4，均仅漏标签缺陷。
+  标签复现生成 'Apple, apple, APPLE, Banana'，真实得到重复 apple，需求明确要求 lowercase
+  后去重；Writer 修复后独立 oracle 全过。不是靠手工向模型提供反例。所有正确控制无误报。
+  CLI 因 baseline 漏检返回 1，不能误写成 reproduce 失败。
+- 扩大前补证据交回：程序直接把真实失败脚本/输出带回 Writer，并在最终文件上原样重跑
+  同一脚本，不只信 Reviewer 的自然语言摘要。初版补丁缩进错误由 Ruff 立即发现并修正，
+  未进入模型运行或生产。接下来跑跨文件/默认值两类扩大题及四类反序确认。

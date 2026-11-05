@@ -90,6 +90,12 @@ def run_arm(provider, case, correct, arm, *, seed_override=None, reviewer_factor
                     return outcome
 
                 def repair(task, checkpoint):
+                    observations = [o for episode in row.get("reproduction", []) for o in episode["observations"]
+                                    if o.get("observation_kind") == "assertion_failed"]
+                    if observations:
+                        task += ("\nActual isolated reproduction observations (expectations require checking against the task):\n"
+                                 + json.dumps(observations, ensure_ascii=False))
+                        row["reproduction_handoff"] = observations
                     repair_events = []
                     repaired, _events = writer(provider, case, root, state / "revisions", task=task,
                         project_map=project_map(), context=True, tracker=tracker,
@@ -121,6 +127,10 @@ def run_arm(provider, case, correct, arm, *, seed_override=None, reviewer_factor
         except Exception as exc:
             row["error"] = f"{type(exc).__name__}: {exc}"
         row.update(grade(root, case))
+        if row.get("reproduction_handoff"):
+            from tests.manual.reproducible_review_adapter import execute_probe
+            row["reproduction_replay"] = [execute_probe(root, observation, authorized=True)
+                                          for observation in row["reproduction_handoff"]]
     row["seconds"] = round(time.monotonic() - started, 3)
     row["success"] = (row.get("stop_reason") == "done" and row["quality_passed"] and row["scope_ok"]
                       and (arm == "none" or row.get("approved_current_snapshot", False)))
