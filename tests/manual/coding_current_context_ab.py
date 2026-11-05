@@ -35,7 +35,7 @@ from codey.workspace.revision import WorkspaceRevisionStore
 from tests.manual.project_task_context import render_production_project_map
 from tests.support.kernel_runtime import run_agent as _agent_kernel_request
 
-ARMS = ("baseline", "context")
+ARMS = ("baseline", "project_map", "context")
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 IGNORED_CHANGED_PARTS = frozenset({
@@ -117,6 +117,47 @@ CASES = (
         check_command=("npm", "test"),
         check_cwd="frontend",
     ),
+    ContextCase(
+        name="feature-add-helper",
+        task="Add an is_even(number) helper to app.py. Keep current_rate unchanged and add focused unittest coverage in test_app.py.",
+        files={
+            "app.py": "RATE = 5\n\n\ndef current_rate():\n    return RATE\n",
+            "test_app.py": (
+                "import unittest\n"
+                "from app import current_rate, is_even\n\n"
+                "class AppTests(unittest.TestCase):\n"
+                "    def test_current_rate(self):\n"
+                "        self.assertEqual(current_rate(), 5)\n\n"
+                "    def test_is_even(self):\n"
+                "        self.assertTrue(is_even(4))\n"
+                "        self.assertFalse(is_even(5))\n"
+            ),
+        },
+        expected_changed=("app.py", "test_app.py"),
+        check_command=(sys.executable, "-B", "-m", "unittest", "-q"),
+    ),
+    ContextCase(
+        name="cross-file-refactor",
+        task="Rename the public function legacy_total to total across the project, updating its caller and tests. Do not leave legacy_total references.",
+        files={
+            "totals.py": "def legacy_total(values):\n    return sum(values)\n",
+            "report.py": "from totals import legacy_total\n\ndef render(values):\n    return str(legacy_total(values))\n",
+            "test_report.py": (
+                "from report import render\n\n"
+                "def test_render():\n"
+                "    assert render([2, 3]) == '5'\n"
+            ),
+        },
+        expected_changed=("report.py", "test_report.py", "totals.py"),
+        check_command=(sys.executable, "-B", "-m", "pytest", "-q"),
+    ),
+    ContextCase(
+        name="from-zero-generation",
+        task="Create calculator.py with add(a, b) and a unittest file test_calculator.py covering positive and negative inputs. Then run the tests.",
+        files={},
+        expected_changed=("calculator.py", "test_calculator.py"),
+        check_command=(sys.executable, "-B", "-m", "unittest", "-q"),
+    ),
 )
 
 
@@ -149,11 +190,12 @@ def _ignored_changed_path(rel: str) -> bool:
 
 
 def _run_process(root: Path, command: tuple[str, ...], cwd: str = ".") -> bool:
-    if shutil.which(command[0]) is None:
+    resolved = shutil.which(command[0])
+    if resolved is None:
         return False
     try:
         completed = subprocess.run(
-            command,
+            (resolved, *command[1:]),
             cwd=root / cwd,
             text=True,
             stdout=subprocess.PIPE,
@@ -301,7 +343,11 @@ def _run_arm(
                 on_event=events.append,
                 fresh_chat=True,
                 provider_id=getattr(provider, "id", ""),
-                project_map=render_production_project_map(root, task=case.task),
+                project_map=(
+                    render_production_project_map(root, task=case.task)
+                    if arm == "project_map"
+                    else ""
+                ),
                 verification_candidates=candidates,
                 verification_candidate_loader=lambda: discover_verification_candidates(root),
                 coding_context_enabled=arm == "context",
@@ -335,6 +381,7 @@ def _run_arm(
         "selected_check_passed_after_edit": selected_passed,
         "selected_run_count_after_edit": selected_run_count,
         "context_prompt_count": sum("Coding current local context:" in prompt for prompt in prompts),
+        "project_map_prompt_count": sum("Project Map:" in prompt for prompt in prompts),
         "sent_chars": sum(len(prompt) for prompt in prompts),
         "success": bool(
             result.stop_reason == "done"
@@ -365,6 +412,7 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "turns": sum(int(row.get("turns") or 0) for row in arm_rows),
             "tool_calls": sum(int(row.get("tool_calls") or 0) for row in arm_rows),
             "sent_chars": sum(int(row.get("sent_chars") or 0) for row in arm_rows),
+            "project_map_prompt_count": sum(int(row.get("project_map_prompt_count") or 0) for row in arm_rows),
         }
     baseline = summary["arms"].get("baseline", {})
     context = summary["arms"].get("context", {})
@@ -380,6 +428,7 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "turns",
                 "tool_calls",
                 "sent_chars",
+                "project_map_prompt_count",
             )
         }
     return summary

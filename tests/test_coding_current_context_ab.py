@@ -82,3 +82,20 @@ def test_changed_files_ignores_test_cache_artifacts() -> None:
         changed = probe._changed_files(root, {"app.py": "before\n"})
 
     assert changed == ("app.py",)
+
+
+def test_manual_independent_check_resolves_windows_command_shim(monkeypatch, tmp_path) -> None:
+    from types import SimpleNamespace
+
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(probe.shutil, "which", lambda _name: "C:/node/npm.CMD")
+
+    def fake_run(command, **kwargs):
+        seen["command"] = command
+        seen["kwargs"] = kwargs
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(probe.subprocess, "run", fake_run)
+
+    assert probe._run_process(tmp_path, ("npm", "test"))
+    assert seen["command"] == ("C:/node/npm.CMD", "test")

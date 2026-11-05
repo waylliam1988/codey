@@ -397,6 +397,119 @@ create 在同一模型上通过：3 个文件正确、`unittest` 通过、`stop_
 advisor provider 时追加。若 treatment 只增加 token/轮数而没有提高最终代码质量或减少返工，
 该阶段就没有保留理由。
 
+## 阶段 10：项目地图与 coding current context 的 Writer 级复核（2026-11-05）
+
+### 实验接线
+
+原有 `coding_current_context_ab.py` 的 baseline 两边都传入了 Project Map，因此它不能作为
+“地图有/无”的单变量实验。本轮把 Writer 级 harness 改成三个互斥 arm：
+
+- `baseline`：不传 Project Map，关闭 coding current context；
+- `project_map`：只传生产 Project Map，关闭 coding current context；
+- `context`：不传 Project Map，只打开生产 coding current context。
+
+同时把固定题扩展为 bug、功能增加、跨文件重构、从零生成四类，成功条件仍是终态 `done`、
+独立检查通过、changed files 与任务要求完全相等。独立检查命令现在先用
+`shutil.which()` 的解析路径启动，Windows `.CMD` shim 与生产 `run` 的语义一致；该接线回归在
+`tests/test_coding_current_context_ab.py` 中覆盖。
+
+### 本轮实机结果与失效原因
+
+本轮在 KoboldCpp 当前会话上先跑 `edit-then-verify` 的三个 arm。结果为：
+
+| arm | 结果 | 证据 |
+|---|---|---|
+| baseline | protocol，0 个工具调用 | 两次空回复，无代码变化 |
+| project_map | generation deadline exceeded | 没有可判定的 Writer 结果 |
+| context | protocol，0 个工具调用 | 两次空回复，无代码变化 |
+
+前一轮同一模型的独立成功样本中，`context` 曾完成 1/1；更早的三题运行也出现过两边
+同时空回复。当前 KoboldCpp 生成波动覆盖了实验对照，因而这批结果按“模型/运行环境失效样本”
+剔除，不能写成地图或 current context 导致失败。完整四类 Writer A/B 仍缺少成对有效样本，
+因此 C-P6、C-P7 都没有新的 E3 净收益结论。
+
+当前仍可确认的事实是：Project Map 和 coding current context 都会增加 prompt 输入；已有成功
+样本中 context 输入约 94,344→113,872 字符，并没有同时证明最终行为改善。按奥卡姆与质量优先
+规则，二者暂不删除，也不能声称已经证明值得保留；下一次实机需在模型输出稳定后按三个 arm
+重新跑四类题，并至少取得每类一对有效终态。
+
+## 阶段 11：单模型下自动规划与前置 audit 的可测范围（2026-11-05）
+
+### 生产可用性边界
+
+生产 `advisor_ids()` 会排除当前 Writer provider。当前只有 KoboldCpp `local` 时：
+
+```text
+advisor_ids("local", {"local": True}, ("local",)) == ()
+```
+
+所以新项目自动规划、已有项目的前置 audit、Writer 后 consensus 在真实生产链路中没有第二个
+advisor 可调用；它们会按设计返回无 advisor/继续单模型路径。此条件下不能把同一模型的第二次
+请求伪装成独立意见，也不能用“没有发生调用”证明这些机制没有价值。
+
+### 同模型阶段性探针
+
+为测量“额外阶段自身是否有用”，新增 `tests/manual/single_model_stage_ab.py`，让同一个
+KoboldCpp 先生成 bounded plan 或只读 audit，再把结果按私有 notes 形状交给同一 Writer；
+这只回答额外请求的因果成本，不回答独立 advisor 质量。
+
+`edit-then-verify` 单题结果：
+
+| arm | 阶段输出 | Writer/验证 | 终态 | 总输入字符 |
+|---|---:|---|---|---:|
+| none | 0 | 无编辑，protocol | 失败 | 35,860 |
+| plan | 198 | `app.py` 改对，pytest 通过 | `no_progress` | 97,616 |
+| audit | 625 | 无编辑，protocol | 失败 | 39,108 |
+
+`plan` 这次确实帮助模型完成了编辑和检查，但仍没有形成 `done`；其额外阶段和较长上下文
+也使请求从 2 次增加到 7 次。`audit` 只增加了一次阶段请求，没有改善 Writer。样本只有一题，
+且仍受 KoboldCpp 空回复影响，不能据此合并规划或 audit；它支持继续做成对四类题实验，
+同时把“额外阶段导致的终态/请求成本”作为硬指标。
+
+### Writer 后 consensus、Review 返修与项目记忆
+
+- Writer 后 consensus 的生产分支只在 `done`、没有文件修改、且没有前置 audit 时触发；当前
+  单模型时 advisor 集合为空，因此没有额外请求。静态分支测试和 consensus/audit 合同回归
+  已通过，但没有独立模型的质量 A/B。
+- Review 返修的生产链路已有 Project Review native 成功样本，且 `validate_candidate` 会把
+  返修限制为一次并要求重新验证与重新 Review。已有 Review/返修定向测试证明生命周期和
+  fail-closed 边界；尚未取得“有返修/无返修”同题的真实缺陷留出集，因此不能把 Review 返修
+  宣称为净收益，也不能删掉它。
+- 项目记忆只在可信 `done`、任务确有变更、检查可信通过且存在文件时写入 implementation
+  与 verification notes。记忆、knowledge repository、facts persistence 的定向测试证明了
+  写入条件、关联和异常吞吐；尚未完成冷启动/续作同题 A/B，不能证明记忆增加的上下文一定
+  值得其 token 成本，也不能据此删除持久化。
+
+## 阶段 12：本轮验证与当前候选结论（2026-11-05）
+
+本轮没有运行全量 `pytest`。针对新增 harness、规划/audit、Review、completion 和 memory
+边界运行：
+
+- `171 passed`：consensus、project audit advisor、Review gate、Project completion、
+  completion enforcement、knowledge/memory 等定向合同；
+- 新增/修改的编码上下文 harness：`5 passed`；
+- Ruff：新增与修改的 manual harness、测试全部通过；
+- Windows 独立验证接线新增回归：确认 `npm` 会先解析为 `npm.CMD` 再交给
+  `subprocess(shell=False)`。
+
+当前候选状态：
+
+| 候选 | 当前结论 | 证据边界 |
+|---|---|---|
+| C-P1 自动规划 | 暂不合并/删除 | 单模型生产不触发独立 advisor；同模型 plan 仅一题，编辑改善但终态未完成 |
+| C-P2 前置 audit | 暂不合并/删除 | 单模型生产不触发；同模型 audit 未改善单题 Writer |
+| C-P3 Writer 后 consensus | 暂不合并/删除 | 触发条件已证实，当前单模型无 advisor，缺少质量 A/B |
+| C-P4 自动 Review | 暂不合并/删除 | native 生命周期成功；缺少无 Review 的同题最终质量对照 |
+| C-P5 Review 返修 | 暂不合并/删除 | 一次返修和再验证边界已证实；缺少真实缺陷留出集 |
+| C-P6 Project/Symbol Map | 暂不合并/删除 | 导航 probe 非 Writer；Writer 级样本被模型波动污染 |
+| C-P7 coding current context | 暂不合并/删除 | 成功样本输入增加，未取得稳定质量收益 |
+| C-P10 项目记忆 | 暂不合并/删除 | 写入条件和关联有 E2，缺少冷启动/续作 E3 |
+| C-P11 Review impact map | 默认保留 | 跨文件 Review 诊断命中和质量分提升，成本增加按质量优先接受 |
+
+这批证据不能支持“每个流程都已经证明有用”，也不能支持大规模删除。下一步最有价值的
+工作是让 KoboldCpp 输出稳定后，按预注册四类任务继续做 C-P6/C-P7 与 C-P1/C-P2 的成对
+Writer 实验，再以真实缺陷留出题验证 C-P4/C-P5，并单独做项目记忆的冷启动/续作对照。
+
 ## 记录格式
 
 每一步追加日期、范围、事实、证据路径、当前判断、未证明部分、下一步和提交号。
