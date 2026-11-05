@@ -125,3 +125,23 @@ self-review，其结果也不等于第二模型独立审查。
   新回归先红（只读仍收到写入说明）后绿，并证明真实作用域内 recall 仍存在、可写任务
   继续收到原指南。定向知识/上下文/harness 组 69 passed；Ruff 与三种生产类型检查通过。
   下一步用无 monkeypatch 的标准 memory arm 和真实 headless edit/project_review 再验生产。
+- 最终生产复测完成，固定 HEAD `c4bbb18e`：标准 memory arm 冷启动两题、真实历史续作
+  两题全部 done、产品行为/可见测试/范围通过，23 请求、133155 输入；本批实际 seed
+  历史两条也 done 且质量通过。全部请求不含只读写入指南，没有替换生产函数。
+- 完整 headless smoke 选定 edit / project_review 均 PASS；前者 5 Writer turn / 6 HTTP
+  attempt，后者 7 HTTP attempt / 一次真实 self-review，13 项生命周期检查全过；无 retry。
+  最终独立验证通过。gate 的 `release_ready=false` 是其余发布矩阵未跑，不是选定任务失败。
+  metadata 中生产文件哈希已与当前源码逐项核对，运行时无未提交生产修改。
+- 正式证据已归档 `coding-pipeline-value-evidence-20261105.json`：14 批、107 行任务/控制、
+  8 条实际成功历史；675 个不同请求条目，30.25 MB 去重为 7.85 MB，expand 与原始解析
+  JSON 完全一致。107 行包括无模型调用的固定 diff 控制，不叫 107 次模型编码。
+  `coding-pipeline-production-evidence-20261105.json` 保存 33 份生产文本制品，明确排除
+  SQLite 与重复 managed-output，不冒充完整 state 快照。失败与旧证据均未删除。
+- 主报告阶段 17 已收口六项结论：保留地图/当前上下文组合；不强制同模型规划和 audit；
+  记忆保留可信事实/命令、删除无权限写指南；保留有界 Review 返修与二次 Review，公开漏检。
+  两个生产接线/反馈修复 `7f05b589`，提示精简 `c4bbb18e`。尚未测试独立多 provider、
+  跨模型、大项目与长时间记忆，不再把“本地六候选本轮完成”写成所有代码都必要。
+- 收口复查：harness/只读知识指南/native 实际编辑与完成门禁 12 passed（13.98s）；
+  14 批可逆归档、8 条成功历史、33 份 gate 文本哈希、639 个生产源文件哈希、
+  2 条生产任务和 13 项 Review 生命周期、证据链接逐项通过。只改报告/归档后未无故重跑
+  已通过的全套类型检查；未运行全量 pytest，未触碰用户未跟踪的 cline 计划文档。
