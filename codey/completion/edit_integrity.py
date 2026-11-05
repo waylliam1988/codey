@@ -290,8 +290,13 @@ def _observe(
     )
 
     sections = _diff_file_sections(diff_text)
-    diff_observed = bool(sections)
-    section_paths = {_normalize_diff_path(section.path) for section in sections}
+    empty_added_paths = _empty_added_paths(changes)
+    diff_observed = bool(sections) or bool(empty_added_paths)
+    section_paths = {
+        _normalize_diff_path(section.path) for section in sections
+    } | {
+        _normalize_diff_path(path) for path in empty_added_paths
+    }
     saturated_section_paths = {
         _normalize_diff_path(section.path)
         for section in sections
@@ -632,6 +637,31 @@ def _normalize_diff_path(path: object) -> str:
 
 def _changes_diff_truncated(changes: object) -> bool:
     return isinstance(changes, dict) and bool(changes.get("truncated"))
+
+
+def _empty_added_paths(changes: object) -> tuple[str, ...]:
+    """Recognize exact metadata for newly-created zero-byte files.
+
+    Unified diffs have no hunk for an empty file, so the normal parser cannot
+    observe that path even though the snapshot collector has exact file
+    metadata. Only an explicit added file with zero additions and deletions is
+    accepted; binary and partial diffs remain fail-closed.
+    """
+    if not isinstance(changes, dict):
+        return ()
+    rows = changes.get("files")
+    if not isinstance(rows, (list, tuple)):
+        return ()
+    paths: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("status") != "A":
+            continue
+        if row.get("additions") != 0 or row.get("deletions") != 0:
+            continue
+        path = _normalize_diff_path(row.get("path"))
+        if path and path not in paths:
+            paths.append(path)
+    return tuple(paths)
 
 
 def _removed_import_modules(removed: Sequence[str]) -> list[str]:

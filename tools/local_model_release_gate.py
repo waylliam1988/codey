@@ -169,8 +169,8 @@ def _task_for(case: str) -> tuple[str, str, int]:
             "Create math_utils.py with add(a, b) returning a + b. "
             "Create tests/__init__.py (empty) and tests/test_math_utils.py with a unittest for add(2, 3) == 5. "
             "Use edit with content to create the files; edit creates parent directories automatically. "
-            "Do not run mkdir or request shell commands. Run python -m unittest discover "
-            "and finish with done. Do not remove or weaken tests.",
+            "Do not run mkdir or request shell commands. Run exactly python -m unittest discover "
+            "with no directory or filter arguments, then finish with done. Do not remove or weaken tests.",
             "project",
             10,
         )

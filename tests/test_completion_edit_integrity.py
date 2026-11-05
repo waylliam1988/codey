@@ -443,6 +443,25 @@ class ScanSaturationTests(unittest.TestCase):
 
 
 class DiffPathIdentityTests(unittest.TestCase):
+    def test_empty_added_file_is_observed_from_snapshot_metadata(self) -> None:
+        observation = observe_edit_integrity(
+            task="Create the project package marker and update src/app.py",
+            changes={
+                "changed_count": 2,
+                "files": [
+                    {"path": "tests/__init__.py", "status": "A", "additions": 0, "deletions": 0},
+                    {"path": "src/app.py", "status": "M", "additions": 1, "deletions": 1},
+                ],
+                "diff": _diff("VALUE = 1\n", "VALUE = 2\n", path="src/app.py"),
+                "truncated": False,
+            },
+            diff=_diff("VALUE = 1\n", "VALUE = 2\n", path="src/app.py"),
+            files=("tests/__init__.py", "src/app.py"),
+        )
+
+        self.assertEqual(observation.status, STATUS_CLEAN)
+        self.assertNotIn(REASON_DIFF_UNAVAILABLE, observation.reason_codes)
+
     def test_global_diff_truncation_is_unobserved(self) -> None:
         diff = _diff("VALUE = 1\n", "VALUE = 2\n", path="src/mod.py")
         observation = _observe(diff=diff, paths=("src/mod.py",), truncated=True)
