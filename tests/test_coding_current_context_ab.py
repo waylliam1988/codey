@@ -5,6 +5,34 @@ def test_coding_current_context_ab_self_test() -> None:
     probe._self_test()
 
 
+def test_counting_provider_preserves_native_transport_and_normalization() -> None:
+    from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolResult
+    from codey.providers.native_tools import supports_native_tools
+
+    class NativeProvider:
+        native_tools = True
+
+        def normalize_reply(self, reply):
+            return reply
+
+        def send_turn(self, text, tools, **kwargs):
+            return AssistantTurn(tool_calls=(ProviderToolCall("c1", "read_file", {"path": "app.py"}),))
+
+        def send_tool_results(self, results, tools, **kwargs):
+            return AssistantTurn(tool_calls=(ProviderToolCall("c2", "done", {"summary": "read"}),))
+
+    provider = probe.CountingProvider(NativeProvider(), timeout=30, new_chat_timeout=10)
+    assert supports_native_tools(provider, "local")
+    turn = provider.send_turn("read app.py", [])
+    assert turn.tool_calls[0].name == "read_file"
+    assert provider.normalize_reply(turn) == turn
+    assert provider.prompts == ["read app.py"]
+    turn = provider.send_tool_results([ProviderToolResult("c1", "VALUE = 1")], [])
+    assert turn.tool_calls[0].name == "done"
+    assert '"call_id": "c1"' in provider.prompts[-1]
+    assert '"name": "done"' in provider.replies[-1]
+
+
 def test_run_arm_uses_production_context_toggle() -> None:
     case = probe.ContextCase(
         name="read-only-test",

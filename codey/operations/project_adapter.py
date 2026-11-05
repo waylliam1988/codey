@@ -63,13 +63,10 @@ def _project_context(request: AgentRequest) -> str:
     candidate_text = ""
     if request.permission_profile == "coding_writer" and request.verification_candidates:
         from codey.agents.protocol import task_forbids_verification
+        from codey.completion.verification_policy import render_verification_guidance
 
         if not task_forbids_verification(request.task):
-            lines = [
-                f"- {item.command[:240]} (cwd: {item.cwd[:120]})"
-                for item in request.verification_candidates[:5]
-            ]
-            candidate_text = "Trusted verification candidates after edits:\n" + "\n".join(lines)
+            candidate_text = render_verification_guidance(request.verification_candidates)
     return f"{rendered.text}\n\n{candidate_text}" if candidate_text else rendered.text
 
 

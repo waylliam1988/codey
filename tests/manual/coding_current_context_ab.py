@@ -28,6 +28,7 @@ from codey.completion.verification_policy import (
     discover_verification_candidates,
     select_verification_candidate,
 )
+from codey.operations.provider_session import ProviderAdapter, reply_text_for_accounting
 from codey.providers import controls as provider_controls
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.runtime.observe.events import RunEvent, render_run_event
@@ -273,9 +274,9 @@ def _protocol_errors(events: list[RunEvent]) -> int:
     )
 
 
-class CountingProvider:
+class CountingProvider(ProviderAdapter):
     def __init__(self, provider, *, timeout: float, new_chat_timeout: float) -> None:
-        self.provider = provider
+        super().__init__(provider)
         self.timeout = timeout
         self.new_chat_timeout = new_chat_timeout
         self.prompts: list[str] = []
@@ -286,10 +287,17 @@ class CountingProvider:
     def new_chat(self, timeout: float | None = None) -> object:
         return self.provider.new_chat(timeout=timeout or self.new_chat_timeout)
 
-    def send(self, text: str, timeout: float | None = None) -> str:
+    def _send(self, name: str, *args, **kwargs):
+        text = args[0] if args else ""
+        if not isinstance(text, str):
+            text = json.dumps([
+                {"call_id": item.call_id, "content": item.content} for item in text
+            ], ensure_ascii=False)
         self.prompts.append(text)
-        reply = self.provider.send(text, timeout=timeout or self.timeout)
-        self.replies.append(reply)
+        if kwargs.get("timeout") is None:
+            kwargs["timeout"] = self.timeout
+        reply = super()._send(name, *args, **kwargs)
+        self.replies.append(reply_text_for_accounting(reply))
         return reply
 
     def close(self) -> None:
