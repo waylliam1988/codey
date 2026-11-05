@@ -311,7 +311,7 @@ class KernelContext:
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None,
                text_result_spans: list[dict[str, Any]] | None = None) -> None:
-        from codey.operations.kernel_driver import prepare_provider_request
+        from codey.operations.provider_request import prepare_provider_request
 
         scoped_contract = self.request_scoped_context
         if not self.native and not scoped_contract and state.leaf not in {operation_payload.LEAF_WRITER_RUNNING, operation_payload.LEAF_REPAIR_RUNNING}:
