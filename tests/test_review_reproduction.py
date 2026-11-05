@@ -188,3 +188,16 @@ def test_evidence_survives_artifact_reload_and_writer_handoff(tmp_path):
     followup = render_writer_followup('Return the input.', loaded)
     assert 'PRE-REPAIR' in followup and json.dumps(proposal()['script']) in followup
     assert 'do not add the scratch module' in followup
+
+
+def test_writer_handoff_preserves_passing_regressions_alongside_counterexample(tmp_path):
+    from codey.reviews.core import ReviewFinding, ReviewResult, render_writer_followup
+
+    frozen = candidate(tmp_path, 'def identity(x): return 0\n')
+    failed = execute_proposal(frozen, proposal(), parent_policy=POLICY)
+    passing = execute_proposal(frozen, proposal(expected=0), parent_policy=POLICY)
+    result = ReviewResult('changes_requested', 'Wrong value.', [ReviewFinding('app.py', 'Return input.')],
+                          reproduction=(failed, passing))
+    followup = render_writer_followup('Return the input.', result)
+    assert json.dumps(passing['script']) in followup
+    assert 'already-passing probes' in followup and 'not by copying a suggested patch' in followup

@@ -97,3 +97,29 @@ Mypy/Pyrefly/ty 按生产 Python 3.11 检查。分批 commit，逐步记录失�
   现有 parser 保守转 changes_requested。不能删除这些守卫来让控制通过。补齐 native 合同
   的三字段要求与“只报告当前未修缺陷，批准时 findings=[]”语义。只读最终回复若为普通
   文本，交给原 strict parser/一次格式修复，不捏造成工具执行；此兼容与具体模型无关。
+- verdict-contract pilot（HEAD 184518bf）两行通过：缺陷折扣由真实脚本锁定并返修、
+  正确折扣不返修；最终均 done、4/4 外部检查及当前快照 approved。分别 10/2 请求、
+  71259/3890 实际输入 token。不能由此推断四类全部通过，继续固定版本 24 行三组 A/B。
+- 本轮扩大相关回归（helper、实际 Review 服务、实验 oracle、自动同模型生命周期、
+  身份、只读和冷启动复用）68 passed。模型批次运行时未修改生产/实验源码。
+- 固定版 A/B 标签缺陷出现真实返修失败：生成用例以 `Apple, apple` 锁定重复，另一个
+  blank/trim 用例原本通过；Reviewer 建议 replacement 遗漏 `strip()`，Writer 照做后
+  旧 pytest 2/2 仍通过、原复现仍失败，二审正确拒绝批准。模型/回执均完整，非服务中断。
+  这不能记为成功，也不能把 one-repair 限制解除直到碰巧通过。待本批冻结运行完，检查
+  Reviewer 是否应只交回证据/被破坏的不变量、避免不经验证的 replacement，以及交回与
+  重跑全部相关用例（包含原本通过的保留行为），而不是只保留失败用例。
+- 扩大执行/快照/完成/收据回归 136 passed、2 skipped、82 subtests；Ruff 与完整生产树
+  Mypy（581 files）、Pyrefly、ty 通过。Pyrefly 既有 35 suppressed/80 warnings 未改。
+- 首轮 fixed-ab 在跨文件静态组的 Writer 请求卡住：已有 13 行完整结果，后续样本未完成。
+  服务 `/generate/check` 留有完整工具文本，`perf.total_gens=1529` 长时间不变且 idle=0，
+  Python 连接仍 Established；不能凭这些局部状态判定 GPU/服务内部根因，也不能把缓存
+  文本当作已完成的 HTTP 工具调用。用户确认 KoboldCpp 卡住并授权自行重启。停止仅本次
+  实验 PID 3152，保存 server-stall JSON 后重启原 exe 的父/子进程。原批保留为部分诊断，
+  不补写成功或跨服务实例合成同批结论。
+- 重启读取已有 `Gemma4-12B-QAT/2.kcpps`，同模型、262144 context、jinja/jinja_tools、
+  GPU0；使用隐藏窗口，stdout/stderr 保存。旧实例运行时 GUI 设置无完整快照，因此新
+  实例必须重新同批比较各组，不将新旧实例视为完全相同配置。服务已恢复 /models。
+- 根据标签根因，候选改为只报告实际反例与被违背的需求，suggested_fix 为可选的高层
+  不变量说明，不要求未经验证的 replacement 代码；Writer 交回与复核保留全部生成用例，
+  包括原本通过的行为，避免修好一个断言却破坏另一个约束。仍仅一次有界返修。新增保留
+  passing regression 测试，相关 59 passed、Ruff 通过；自动生产入口仍未接入。

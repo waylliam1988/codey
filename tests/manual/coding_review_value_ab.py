@@ -91,10 +91,13 @@ def run_arm(provider, case, correct, arm, *, seed_override=None, reviewer_factor
 
                 def repair(task, checkpoint):
                     observations = [o for episode in row.get("reproduction", []) for o in episode["observations"]
-                                    if o.get("exit_code") not in (None, 0) and o.get("script")]
-                    if observations:
+                                    if o.get("script")]
+                    if any(o.get("exit_code") not in (None, 0) for o in observations):
                         task += ("\nHistorical observations from the PRE-REPAIR candidate, not the current state after an edit. "
-                                 "Check expectations against the task. Once the valid issue is fixed and current checks pass, "
+                                 "Check expectations against the task. Derive the minimal patch from the original task and "
+                                 "current source, not by copying a suggested patch. Preserve ALL requirements. Both failing "
+                                 "and already-passing probes are regression obligations; passing the old suite alone does not "
+                                 "cover these counterexamples. Once the valid issue is fixed and current checks pass, "
                                  "call done; do not reapply an already completed patch.\nActual isolated reproduction observations:\n"
                                  + json.dumps(observations, ensure_ascii=False))
                         row["reproduction_handoff"] = observations

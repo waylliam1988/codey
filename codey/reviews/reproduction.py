@@ -169,6 +169,9 @@ def final_review_prompt(context: str, observations: tuple[dict[str, object], ...
         "Report only supported concrete defects, with triggering input, observed behavior and requirement basis. "
         "Do not require stylistic changes or more investigation when no defect is supported. "
         "Before requesting changes, confirm the expectation agrees with the exact task wording. "
+        "Report the violated requirement and actual counterexample, not replacement source code. "
+        "Suggested fixes should describe the invariant to restore while preserving ALL other task requirements; "
+        "the Writer must derive the patch. A proposed patch is not validated by a failing test. "
         "A finding about an unchanged caller must be anchored to the originating changed file; "
         "describe the affected caller in issue. Otherwise the finding cannot be delivered to Writer. "
         "The ONLY allowed findings[].path values are: " + json.dumps(changed_paths)
@@ -222,7 +225,8 @@ def submit_review(provider: Any, prompt: str, changed_paths: tuple[str, ...], *,
         "summary": {"type": "string"}, "findings": {"type": "array", "maxItems": 8,
         "items": {"type": "object", "properties": {
             "path": {"type": "string", "enum": list(changed_paths)}, "issue": {"type": "string"},
-            "suggested_fix": {"type": "string"}}, "required": ["path", "issue", "suggested_fix"],
+            "suggested_fix": {"type": "string", "description": "Requirement-level repair guidance, not replacement source code."}},
+            "required": ["path", "issue"],
             "additionalProperties": False}}}, "required": ["verdict", "summary", "findings"],
             "additionalProperties": False}
     tools = [ProviderToolDefinition("submit_review_result", "Submit concrete findings anchored to changed files.", schema)]
