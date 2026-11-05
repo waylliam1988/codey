@@ -15,7 +15,7 @@ from codey.providers.registry import connect_provider
 from tests.manual.coding_pipeline_cases import BY_NAME, CodingCase
 from tests.manual.coding_pipeline_value_ab import EvidenceProvider, save, source_metadata
 from tests.manual.coding_review_value_ab import run_arm, seed_files
-from tests.manual.reproducible_review_adapter import ReproductionReviewer
+from tests.manual.reproducible_review_adapter import CandidateReproductionReviewer, ReproductionReviewer
 
 DEFAULTS = CodingCase('preserve-defaults', 'Implement apply_defaults(settings, defaults) in settings.py. '
     'Return a new dictionary containing settings plus defaults for absent keys. '
@@ -61,15 +61,17 @@ def main():
     provider = EvidenceProvider(connect_provider('local'))
     payload = {'model': provider.model, 'seeded_candidates': True, 'rows': [], **source_metadata()}
     payload['experiment_sha256'] = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in
-        [Path(__file__), Path(__file__).with_name('reproducible_review_adapter.py')]}
+        [Path(__file__), Path(__file__).with_name('reproducible_review_adapter.py'), Path('codey/reviews/reproduction.py'),
+         Path('codey/app/review_service.py'), Path('codey/reviews/core.py'), Path('codey/reviews/persistence.py')]}
     try:
         for name in args.cases.split(','):
             for correct in (False, True):
                 for arm in arms:
-                    if arm not in {'baseline', 'independent', 'reproduce'}:
+                    if arm not in {'baseline', 'independent', 'reproduce', 'candidate', 'candidate_static'}:
                         raise ValueError(arm)
-                    factory = None if arm == 'baseline' else lambda p, root, task, kw, row, arm=arm: ReproductionReviewer(
-                        p, root, task, kw, row, execute=arm == 'reproduce')
+                    factory = None if arm == 'baseline' else lambda p, root, task, kw, row, arm=arm: (
+                        CandidateReproductionReviewer if arm in {'candidate', 'candidate_static'} else ReproductionReviewer)(
+                        p, root, task, kw, row, execute=arm in {'reproduce', 'candidate'})
                     row = run_arm(provider, CASES[name], correct, 'repair', seed_override=candidates,
                                   reviewer_factory=factory)
                     row['arm'] = arm

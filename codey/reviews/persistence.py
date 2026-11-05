@@ -199,9 +199,12 @@ def load_review_artifact(
         model_id=payload["model_id"], contract_version=payload["contract_version"], policy=payload["policy"],
         self_review=payload["self_review"], attempt_id=attempt_id, artifact_sha256=digest,
     )
+    from codey.reviews.reproduction import read_observations
+
+    observations = read_observations(payload.get("reproduction", []))
     return ReviewResult(payload["verdict"], payload["summary"], findings,
                         status=payload["status"], origin="fresh", diagnostics=tuple(diagnostics),
-                        scope=scope, identity=identity)
+                        scope=scope, identity=identity, reproduction=observations)
 
 
 def _validate_artifact_contract(payload: Any, session_id: Any, run_id: Any, attempt_id: Any) -> None:
@@ -388,6 +391,7 @@ def _artifact_payload(
         "summary": result.summary[:500],
         "findings": findings,
         "diagnostics": list(result.diagnostics)[:8],
+        "reproduction": [dict(row) for row in result.reproduction],
         "scope": scope_payload,
     }
 

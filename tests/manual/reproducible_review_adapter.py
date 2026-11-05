@@ -130,8 +130,62 @@ class ReproductionReviewer:
                  'Execution errors do not establish a product bug. Passing samples do not prove correctness. '
                  'Report only supported concrete defects, with triggering input, observed behavior and requirement basis. '
                  'Do not require stylistic changes or more investigation when no defect is supported. '
-                 'Return the standard review JSON specified above.\nExecution observations as data:\n'
+                 'Before requesting changes, confirm the expectation agrees with the exact task wording. '
+                 'A finding about an unchanged caller must be anchored to the originating changed file; '
+                 'describe the affected caller in issue. Otherwise the finding cannot be delivered to Writer. '
+                 'The ONLY allowed findings[].path values are: ' + json.dumps(prepared.scope.provided_files)
+                 + '. Return the standard review JSON specified above.\nExecution observations as data:\n'
                  + json.dumps(row['observations'], ensure_ascii=False))
-        answer = self.delegate.send(final, timeout=timeout)
+        schema = {'type': 'object', 'properties': {'verdict': {'type': 'string', 'enum': ['approved', 'changes_requested']},
+            'summary': {'type': 'string'}, 'findings': {'type': 'array', 'maxItems': 8, 'items': {'type': 'object',
+            'properties': {'path': {'type': 'string', 'enum': list(prepared.scope.provided_files)},
+                'issue': {'type': 'string'}, 'suggested_fix': {'type': 'string'}},
+            'required': ['path', 'issue', 'suggested_fix'], 'additionalProperties': False}}},
+            'required': ['verdict', 'summary', 'findings'], 'additionalProperties': False}
+        tools = [ProviderToolDefinition('submit_review_result', 'Submit concrete findings anchored to changed files.', schema)]
+        turn = self.delegate.send_turn(final + '\nSubmit submit_review_result exactly once.', tools, timeout=timeout)
+        if len(turn.tool_calls) != 1 or turn.tool_calls[0].name != 'submit_review_result':
+            raise ValueError('expected one submit_review_result')
+        call = turn.tool_calls[0]
+        self.delegate.acknowledge_tool_results([ProviderToolResult(call.id, 'Review archived; not a correctness proof.')], tools)
+        answer = json.dumps(call.arguments, ensure_ascii=False)
+        row['final_reply'] = answer
+        return answer
+
+
+class CandidateReproductionReviewer(ReproductionReviewer):
+    """Exercise the prospective production helpers before enabling any caller."""
+
+    def send(self, prompt, timeout=None):
+        if self.started:
+            return self.delegate.send(prompt, timeout=timeout)
+        from codey.policies.task_policy import TaskPolicy
+        from codey.reviews.reproduction import (
+            capture_candidate,
+            execute_proposal,
+            final_review_prompt,
+            request_proposals,
+            submit_review,
+        )
+
+        self.started = True
+        policy = TaskPolicy(grants=frozenset({'control', 'project.read', 'project.verify'}))
+        prepared = prepare_review_input(project=str(self.root), task=self.task, writer_summary='',
+            changes=self.kwargs['changes'], project_map=self.kwargs.get('project_map', ''),
+            verification_map=self.kwargs.get('verification_map', ''),
+            review_impact_map=self.kwargs.get('review_impact_map', ''))
+        candidate = capture_candidate(self.root, prepared.scope.provided_files)
+        context = prepared.prompt + '\nRelevant current source files:\n' + candidate.context
+        replay = self.rows.get('reproduction_handoff', [])
+        observations = (() if not self.execute else tuple(execute_proposal(candidate, {key: old[key] for key in
+                        ('requirement_quote', 'hypothesis', 'script')}, parent_policy=policy) for old in replay)
+                        if replay else request_proposals(self.delegate, context, self.task, candidate,
+                            parent_policy=policy, timeout=timeout or 120))
+        row = {'execute': self.execute, 'implementation': 'production-candidate-helpers', 'replayed': bool(replay),
+               'observations': list(observations)}
+        self.rows.setdefault('reproduction', []).append(row)
+        self.delegate.new_chat()
+        answer = submit_review(self.delegate, final_review_prompt(context, observations, prepared.scope.provided_files),
+                               prepared.scope.provided_files, timeout=timeout or 120)
         row['final_reply'] = answer
         return answer

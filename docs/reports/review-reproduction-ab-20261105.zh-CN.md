@@ -57,3 +57,25 @@ Mypy/Pyrefly/ty 按生产 Python 3.11 检查。分批 commit，逐步记录失�
 - 扩大前补证据交回：程序直接把真实失败脚本/输出带回 Writer，并在最终文件上原样重跑
   同一脚本，不只信 Reviewer 的自然语言摘要。初版补丁缩进错误由 Ruff 立即发现并修正，
   未进入模型运行或生产。接下来跑跨文件/默认值两类扩大题及四类反序确认。
+- 扩大批定位到跨文件结论接线边界：模型正确发现未改 report.py 的 import，但把 finding
+  path 写成未修改的 report.py；生产仅接纳 Changed files 的锚点，格式重试也重复错误路径，
+  导致真实问题未交回 Writer。保留守卫，最终提示末尾明确列出允许的锚点，要求调用方问题
+  绑定到引发它的 changed definition；不把未改文件伪造成 diff。
+- 导入失败也要保留真实脚本/输出：本题不是第三方依赖缺失，而是候选自身旧符号 import。
+  交回所有已执行的非零脚本，由 Writer 核实，不仅收 AssertionError。独立静态组的默认值
+  二审还把显式保留 falsy 的需求读反，显示无证据的意见仍会误报，不能用 verdict 代替质量。
+- 候选执行模块和边界回归已编写但未接入生产调用，28 项真实执行/授权/冻结文件与实验
+  独立评分测试通过；单模块 Mypy、Ruff 通过。仍等待修正后扩大与确认数据。
+- 扩大默认值 reproduce 已真实锁定 10 != 0，却在自由文本最终 JSON 的 issue 中输出未转义
+  双引号；一次格式修复仍无效，结论未交回 Writer。这里是输出协议脆弱，不能说模型没找到
+  bug。候选改为 native `submit_review_result` 结构化提交，path 用本次 changed-files enum，
+  仍经过既有 Review 解析/路径守卫；不做盲目字符串修补或放宽锚点。下一批冻结源码后验证。
+- 早期队列的 confirmation 实际加载的仍是自由文本最终提交版本（adapter hash
+  8dd62d20893e53cbcf61b2e6a1529c8662f6d14668f71548989d5d6ee612693d，wire 无
+  submit_review_result）；不能把它算作 native 修复确认。旧数据完整保留为诊断。
+  此批跨文件代码和独立检查已正确，但 Writer 通过 pytest 后重复原 edit，最终 no_progress；
+  实际 current context 和错误回执完整，不放宽门禁。交回证据明确标记 PRE-REPAIR，修好且
+  当前检查通过应 done，旧输出不是当前文件仍坏的指令。此后每个模型批次运行期间冻结相关源码。
+- 新一轮使用候选生产 helper，比较 baseline / candidate_static / candidate。后两者完全相同
+  的干净材料和 native 最终提交，仅 candidate 增加实际复现；返修后重跑原失败脚本，避免
+  二审重新出题漏过旧问题。parent_policy 尚未从自动编码入口接入，因此未改变默认执行行为。
