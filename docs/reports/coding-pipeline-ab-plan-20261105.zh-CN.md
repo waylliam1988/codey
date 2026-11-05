@@ -91,3 +91,12 @@ self-review，其结果也不等于第二模型独立审查。
 - 新增精简候选：`memory_compact` 只移除不具备 knowledge.write 时的 owner/写入作用域
   说明，保留全部事实、background recall、检索工具与服务端权限。先在同一真实历史和相同
   目录上与原 memory 双向 A/B，确认后才接入生产。原 memory/none 批次仍按原版保留。
+- 反序确认结束：map/current context 三组仍各 4/5，slug 的 context 再次生成错误测试并
+  重复无效编辑。Review 反序完全复现：折扣缺陷能修复、标签去重缺陷漏检、正确控制无误改。
+- 扩大评分边界：最初四个 oracle 只评估产品行为；现在另用项目外进程执行最终可见测试，
+  unittest 0 tests 不算通过，并补足 slug oracle 的 apostrophe 断言。`quality_score` 保留
+  四项产品行为计数，`quality_passed` 同时要求可见测试通过。旧 raw 不重写，新增
+  evaluate_coding_pipeline_results.py 从存档文件离线重评（不再次调用模型）。
+- 当前串行 session 33297：combined 五题；保留生产上下文的 baseline→plan 两题与
+  baseline→audit 三题；memory→memory_compact 冷/暖四题；反序四题。生产代码仍固定
+  7f05b589；本轮候选精简尚未接入。离线重评 session 32270 可与推理并行，不访问模型。

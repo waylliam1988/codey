@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -109,9 +110,22 @@ def grade(root: Path, case: CodingCase) -> dict[str, Any]:
                          "output": (result.stdout + result.stderr)[-3000:]})
         except subprocess.TimeoutExpired:
             rows.append({"name": name, "ok": False, "output": "independent check timed out"})
+    suite_command = [sys.executable, "-B", "-m", "pytest", "-q"] if "pytest.ini" in case.files else [
+        sys.executable, "-B", "-m", "unittest", "discover"]
+    try:
+        suite = subprocess.run(suite_command, cwd=root, capture_output=True, text=True, timeout=30)
+        output = suite.stdout + suite.stderr
+        match = re.search(r"Ran (\d+) tests?", output)
+        suite_ok = suite.returncode == 0 and ("pytest.ini" in case.files or bool(match and int(match[1]) > 0))
+        visible_suite = {"ok": suite_ok, "exit_code": suite.returncode, "output": output[-4000:],
+                         "command": suite_command[2:]}
+    except subprocess.TimeoutExpired:
+        visible_suite = {"ok": False, "exit_code": None, "output": "independent suite timed out", "command": suite_command[2:]}
     changed = _changed_files(root, case.files)
     scope_ok = set(changed) <= set(case.allowed) and set(case.required) <= set(changed)
-    return {"quality": rows, "quality_passed": all(row["ok"] for row in rows),
+    product_passed = all(row["ok"] for row in rows)
+    return {"quality": rows, "quality_passed": product_passed and visible_suite["ok"],
+            "product_behavior_passed": product_passed, "visible_suite": visible_suite,
             "quality_score": sum(row["ok"] for row in rows), "scope_ok": scope_ok,
             "changed_files": changed,
             "files": {path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")

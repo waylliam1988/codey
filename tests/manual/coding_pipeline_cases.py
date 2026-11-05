@@ -76,7 +76,7 @@ CASES = (
         "covering normal and edge inputs, run the tests, and create only these two files.",
         {}, ("slug.py", "test_slug.py"), ("slug.py", "test_slug.py"),
         (("normal", "from slug import slugify as f\nassert f(' Hello World ')== 'hello-world'"),
-         ("punctuation", "from slug import slugify as f\nassert f('A__B...C')=='a-b-c'"),
+         ("punctuation", "from slug import slugify as f\nassert f('A__B...C')=='a-b-c' and f(\"That's cool\")== 'that-s-cool'"),
          ("empty", "from slug import slugify as f\nassert f('')=='' and f('!!!')==''"),
          ("ascii", "from slug import slugify as f\nassert f('CAFÉ 42')=='caf-42'")),
     ),

@@ -25,6 +25,17 @@ def test_evidence_archive_preserves_repeated_requests_and_unknown_usage():
     assert "requests" in batches["batch"]["rows"][0]
 
 
+def test_correct_product_with_incorrect_generated_tests_is_not_quality_success(tmp_path):
+    case = BY_NAME["zero-slug"]
+    write_files(tmp_path, {"slug.py": "import re\ndef slugify(text):\n    return re.sub('[^a-z0-9]+', '-', text.strip().lower()).strip('-')\n",
+        "test_slug.py": "import unittest\nfrom slug import slugify\nclass Tests(unittest.TestCase):\n"
+                        "    def test_apostrophe(self):\n        self.assertEqual(slugify(\"That's\"), 'thats')\n"})
+    result = grade(tmp_path, case)
+    assert result["quality_score"] == 4 and result["product_behavior_passed"]
+    assert not result["visible_suite"]["ok"]
+    assert not result["quality_passed"]
+
+
 @pytest.mark.parametrize("name,flawed_score", [("discount-bug", 2), ("tag-feature", 3)])
 def test_external_oracle_catches_flaws_hidden_by_visible_tests(tmp_path, name, flawed_score):
     case = BY_NAME[name]
