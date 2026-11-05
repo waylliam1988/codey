@@ -66,3 +66,12 @@ self-review，其结果也不等于第二模型独立审查。
   已有项目题；memory 冷启动/真实历史续作；context→map→baseline 反序确认五题；
   repair→review→none 反序 Review 确认。原始输出均在 tests/manual/results/coding-value-*。
   不同时向单个 KoboldCpp 服务发起多个实验。
+- 记忆实机开始前补齐 harness：除生产 facts/context 外，开启组也连接生产
+  `build_research_tools` 与实际 store，使模型可以主动 knowledge_search/read；关闭组使用同
+  一构造器但无 store。不能因为实验漏接检索工具而宣称知识笔记无价值。两边均按生产释放
+  搜索资源；不额外提示模型去检索，也不把手工搜索结果塞进提示。
+- 扩大定向测试：上下文/门禁/恢复组 127 passed、3 skipped；记忆/Review/audit 组
+  68 passed；headless 与完成生命周期组 57 passed；consensus、自动 Review、snapshot
+  与已知失败不重发组 92 passed；归档可逆性与 oracle 等新增 harness 测试 5 passed。
+  各组有交集，不相加宣称独立测试数；一次测试命令引用不存在的文件后未执行任何测试，
+  用 rg 确认真实模块名后重跑，是命令编写问题，不是测试落后或生产故障。

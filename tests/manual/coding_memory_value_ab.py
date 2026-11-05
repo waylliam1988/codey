@@ -9,6 +9,7 @@ import tempfile
 import time
 from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -16,6 +17,7 @@ if __package__ in (None, ""):
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.task_context import ProjectTaskContextBuilder
+from codey.operations.task_execution import build_research_tools, close_research_tools
 from codey.providers import controls
 from codey.providers.registry import connect_provider
 from codey.workspace.facts import ProjectFactsStore
@@ -84,10 +86,15 @@ def memory_row(provider, case, root, state, arm, phase):
             prepared = context()
             row.update(facts=prepared.verified_facts, knowledge_context=prepared.knowledge_context,
                        candidate_sources=[vars(item) for item in prepared.verification_candidates])
-            result, events = writer(provider, case, root, state / f"revision-{phase}-{arm}",
-                facts=prepared.verified_facts, research=prepared.research_context,
-                candidates=prepared.verification_candidates,
-                candidate_loader=lambda: context().verification_candidates, max_turns=24, events_out=events)
+            tools = build_research_tools(SimpleNamespace(knowledge_store=store if arm == "memory" else None),
+                                         session_id="memory-history", project=str(root))
+            try:
+                result, events = writer(provider, case, root, state / f"revision-{phase}-{arm}",
+                    facts=prepared.verified_facts, research=prepared.research_context, research_tools=tools,
+                    candidates=prepared.verification_candidates,
+                    candidate_loader=lambda: context().verification_candidates, max_turns=24, events_out=events)
+            finally:
+                close_research_tools(tools)
             row.update(stop_reason=result.stop_reason, turns=result.turns, summary=result.summary)
     except Exception as exc:
         row["error"] = f"{type(exc).__name__}: {exc}"

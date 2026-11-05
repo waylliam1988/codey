@@ -120,7 +120,7 @@ def grade(root: Path, case: CodingCase) -> dict[str, Any]:
 
 def writer(provider, case, root, state, *, task=None, project_map="", facts="", context=False,
            max_turns=24, tracker=None, changed=(), successful_checks=(), events_out=None,
-           candidates=None, candidate_loader=None, research=""):
+           candidates=None, candidate_loader=None, research="", research_tools=None):
     events = [] if events_out is None else events_out
     candidates = discover_verification_candidates(root) if candidates is None else candidates
     result = run_agent(AgentRequest(
@@ -132,6 +132,7 @@ def writer(provider, case, root, state, *, task=None, project_map="", facts="", 
         verification_candidate_loader=candidate_loader or (lambda: discover_verification_candidates(root)),
         verification_changed_files=changed, verification_successful_checks=successful_checks,
         project_map=project_map, project_facts=facts, research_context=research, coding_context_enabled=context,
+        research_tools=research_tools,
     ))
     return result, events
 
