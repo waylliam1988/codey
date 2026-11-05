@@ -106,4 +106,5 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert "submit_research_review" not in prompt
     assert "Calls return {ok:true, value}" in prompt
     assert "Only frozen read-only tools" not in prompt
-    assert _sha256(prompt) == "05214630186bd00dd1c2617aea271cc4f73e297ca0060ec67c080c6c8e4d100f"
+    # Reviewed after read-only tasks stopped receiving knowledge-write guidance.
+    assert _sha256(prompt) == "0e29152b37ee62562c1ea5a08906d4ffc6f5643f275453bdddaaaeb24ab69242"

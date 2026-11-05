@@ -37,8 +37,11 @@ class ZenRoutes:
         not_sent = (isinstance(failure, GenerationNotSentError)
                     and failure.reason_code == "pre_submission_network_error")
         with self._lock:
-            route = self._routes.get(context.logical_id)
-            if route is None or route.direct or not (rejected or not_sent):
+            try:
+                route = self._routes[context.logical_id]
+            except KeyError:
+                return False
+            if route.direct or not (rejected or not_sent):
                 return False
             route.direct = True
             return True

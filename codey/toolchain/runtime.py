@@ -1081,9 +1081,9 @@ def _process_argv(argv: list[str]) -> list[str]:
     if not executable or "/" in executable or "\\" in executable or Path(executable).suffix:
         return argv
     resolved = shutil.which(executable)
-    if not resolved:
+    if resolved is None:
         return argv
-    return [resolved, *argv[1:]]
+    return [str(resolved), *argv[1:]]
 
 
 def run_command_raw(

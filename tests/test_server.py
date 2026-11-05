@@ -5934,7 +5934,7 @@ class SessionThreadingTests(unittest.TestCase):
                 on_event(
                     RunEvent.tool_finished(
                         2,
-                        ToolCall("run", {"command": "python -m unittest", "path": "."}),
+                        ToolCall("run", {"command": "python -m pytest", "path": "."}),
                         ToolOutcome("OK", True, exit_code=0),
                     )
                 )
@@ -5984,7 +5984,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("1 file changed · checks passed", impl.body)
         self.assertEqual(verification.type, "verification")
         self.assertEqual(verification.sources, [impl.id])
-        self.assertIn("python -m unittest (cwd .)", verification.body)
+        self.assertIn("python -m pytest (cwd .)", verification.body)
         self.assertIn(
             {"src_id": synthesis.id, "dst_id": impl.id, "kind": "implements"},
             links,
