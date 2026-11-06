@@ -14,6 +14,7 @@ import sys
 import tempfile
 import time
 import traceback
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,7 +28,8 @@ from codey.operations.task_context import ProjectTaskContextBuilder
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import controls
 from codey.providers.cline.connection import capture_selection, open_selection
-from codey.providers.registry import connect_provider
+from codey.providers.local_connection import capture_selection as capture_local_selection
+from codey.providers.local_connection import open_selection as open_local_selection
 from codey.reviews.core import render_writer_followup, review_result_payload
 from codey.reviews.impact_map import safe_review_impact_map
 from codey.workspace.change_brief import ChangeBrief, new_project_change_brief, project_audit_change_brief
@@ -99,8 +101,14 @@ def summarize(rows):
     return summary
 
 
-def provider(model, records, purpose):
-    raw = connect_provider("local") if model == "local" else open_selection(capture_selection(online_selection(model)))
+def provider(model, records, purpose, *, local_output_tokens=4096):
+    if model == "local":
+        selection = capture_local_selection()
+        raw = open_local_selection(replace(selection, output_tokens=min(
+            local_output_tokens, selection.output_tokens or selection.context_reserve_tokens,
+        )))
+    else:
+        raw = open_selection(capture_selection(online_selection(model)))
     observed = EvidenceProvider(raw, timeout=300 if model == "local" else 180)
     observed.id = model
     observed.model_id = raw.model
@@ -212,7 +220,7 @@ def run_case(case, arm, repeat, config):
         write_files(root, case.files)
         tracker = ChangeTracker(root)
         try:
-            local = provider("local", records, "writer")
+            local = provider("local", records, "writer", local_output_tokens=config.local_output_tokens)
             row["writer_model"] = local.model
             project_map = ProjectTaskContextBuilder().build(
                 project=root, task=case.task, session_id="quality-ab", run_id="prepare",
@@ -271,17 +279,21 @@ def main():
     parser.add_argument("--order-seed", type=int, default=61106)
     parser.add_argument("--max-turns", type=int, default=32)
     parser.add_argument("--audit-turns", type=int, default=8)
+    parser.add_argument("--local-output-tokens", type=int, default=4096)
     parser.add_argument("--advisor", default="nvidia/nemotron-3.5-lightning-free")
     parser.add_argument("--second-advisor", default="cline-free/solar-mini4")
     parser.add_argument("--reviewer", default="cline-free/solar-mini4")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
+    if args.local_output_tokens <= 0:
+        parser.error("--local-output-tokens must be positive")
     cases = tuple(FIXTURE_BY_NAME[name].case for name in args.case) if args.case else tuple(f.case for f in FIXTURES)
     arms = args.arm or ARMS
     planned = schedule(cases, arms, args.repeats, args.order_seed)
     metadata = {"advisor": args.advisor, "second_advisor": args.second_advisor, "reviewer": args.reviewer,
                 "max_turns": args.max_turns, "audit_turns": args.audit_turns,
+                "local_output_tokens": args.local_output_tokens, "local_request_timeout_seconds": 300,
                 "schedule": planned, "order_seed": args.order_seed,
                 "model_seed_controlled": False, "map_and_current_context": True,
                 "online_selections": {model: online_selection(model) for model in (

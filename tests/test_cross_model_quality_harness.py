@@ -1,4 +1,6 @@
 """The live experiment must distinguish artifacts, workflow and treatment delivery."""
+import json
+
 import pytest
 
 from tests.manual.coding_pipeline_value_ab import grade, write_files
@@ -57,3 +59,28 @@ def test_repair_uses_remaining_total_budget_and_production_cap():
 def test_model_control_is_explicit_and_limited_to_the_experiment_model():
     assert online_selection("nvidia/nemotron-3.5-lightning-free")["thinking"] is False
     assert online_selection("cline-free/solar-mini4") == {"model": "cline-free/solar-mini4"}
+
+
+def test_local_response_cap_reaches_wire_without_changing_saved_context(monkeypatch):
+    from codey.providers import api_transport, local_config
+    from tests.manual.cross_model_quality_ab import provider
+    from tests.test_api_generation_observations_no_replay import Response
+    from tests.test_local_kobold_tool_parser_compat import configured
+
+    saved = configured(monkeypatch, False)
+    wire = []
+    def reply(request, timeout=None, **kwargs):
+        wire.append(json.loads(request.data))
+        return Response(json.dumps({'choices': [{'finish_reason': 'stop',
+            'message': {'role': 'assistant', 'content': 'READY'}}]}).encode())
+    monkeypatch.setattr(api_transport, 'open_request', reply)
+    observed = provider('local', [], 'writer', local_output_tokens=2048)
+    try:
+        assert observed.send('Reply READY.') == 'READY'
+        assert wire[0]['max_tokens'] == 2048 and wire[0]['stream'] is True
+        budget = observed.context_budget
+        assert budget.output_tokens + budget.safety_tokens == saved.context.context_reserve_tokens
+        assert budget.input_limit == saved.context.context_window_tokens - saved.context.context_reserve_tokens
+        assert local_config.load_local_config() is saved
+    finally:
+        observed.close()
