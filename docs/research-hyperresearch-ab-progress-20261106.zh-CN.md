@@ -57,3 +57,7 @@
 ### 2026-11-07：4B v5e 开发接线通过
 
 v5b/v5c 的失败分别是 harness 使用 `__main__` 启动子进程，以及传入生产不支持的 `reasoning_effort=none`；两批封存，不混入结果。修复后新冻结 `.e2e-artifacts/research-revision-4b-dev-v5e/` 使用三份单一 `[e1]` 自然原稿（语义错误、交付遗漏、原本正确），完成 12/12 真实 writer 运行，均实际 `open_url`、`submit_research_answer` 并完成隔离保存。S/V 各完成 3 次独立 reviewer 调用，再进入 writer 修订；`review.json` 共 6 份。该轮只证明四臂接线和真实提交路径有效，不证明语义净收益；`decision.json` 允许进入独立冻结的正式合同。正式合同仍需 12 份新自然原稿 × 2 seed × U/R/S/V，共 96 次运行，未开始。
+
+### 2026-11-07：2A v2 开发验证完成
+
+新增 `.e2e-artifacts/research-live-web-2a-dev-v3/`，4 个开发题 × baseline/browser-after-connector 两臂共 8/8 真实联网、真实 writer、真实提交成功。四个配对都出现连接器 2 条命中；baseline 浏览器调用 0 次，candidate 浏览器调用 4 次，且浏览器结果实际进入各自运行的检索轨迹。该轮只证明取消早停的接线和机制触发有效，尚未完成语义答案评分，不作为生产收益证据。下一步可按新失败规则冻结 12 个正式新题 × 2 seed × 2 臂。
