@@ -11,7 +11,10 @@ from codey.research.knowledge_schema import condition_map_schema, object_schema
 
 MAX_UPDATES = 16
 _KEY_PATTERN = r"[A-Za-z][A-Za-z0-9_-]{0,63}"
-_REF_PATTERN = rf"(?:{_KEY_PATTERN}|\[{_KEY_PATTERN}\])"
+# Keep the same reference language using ordinary grouping: local GBNF
+# compilers (including KoboldCpp 1.117.1) reject non-capturing groups and
+# otherwise silently discard the complete structured-output grammar.
+_REF_PATTERN = rf"({_KEY_PATTERN}|\[{_KEY_PATTERN}\])"
 _EVIDENCE_LABEL = re.compile(r"e[1-9][0-9]*")
 _RELATIONS = {"claim": {"supported_by", "limited_by", "refuted_by"},
               "inference": {"depends_on"}, "question": {"motivated_by"}}

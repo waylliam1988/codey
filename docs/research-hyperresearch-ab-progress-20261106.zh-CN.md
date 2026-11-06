@@ -5,12 +5,23 @@
 
 ## 最近的有效运行
 
-- 源码提交：`ec29f5f8`；此前 `f325820e`、`cad44f9f`、`fcce55cf` 为分批实验基础设施提交。
+- 当前正式冻结源码提交：`77838e44`；此前 `f325820e`、`cad44f9f`、`fcce55cf`、`ec29f5f8` 为分批实验基础设施提交。
 - 运行工具：`tests/manual/research_live_web_matrix.py`。
-- 当前目录：`.e2e-artifacts/research-live-web-2a-dev-json-frozen-v4/`。
-- 当前命令：`python -m tests.manual.research_live_web_matrix run --root .e2e-artifacts/research-live-web-2a-dev-json-frozen-v4`。
-- 工具会话：`24762`，应先轮询，**不可另起第二批推理**。
-- 当前已完成：四个开发题两臂共 8/8 成功，工具会话 `24762` 已结束。
+- 开发目录：`.e2e-artifacts/research-live-web-2a-dev-json-frozen-v4/`，四题两臂 8/8 成功，工具会话 `24762` 已结束。
+- 当前正式目录：`.e2e-artifacts/research-live-web-2a-formal-json-v1/`。
+- 当前命令：`python -m tests.manual.research_live_web_matrix run --root .e2e-artifacts/research-live-web-2a-formal-json-v1`。
+- 工具会话 `75913` 已结束；本合同依停止规则封存为 inconclusive，**不可用新源码继续本目录**。
+- 正式计划 48 runs，实际 10 次尝试，9 发布、1 失败，全部保留。失败是 arthritis candidate 未读引用被拒绝后控制串循环。
+- 找到生产 schema 正则不兼容：`(?:...)` 导致 KoboldCpp 1.117.1 丢弃整个 grammar。
+  已将 `knowledge_updates._REF_PATTERN` 改为等价捕获组，真实编译成功且原失败 payload 三 seed 合法 JSON。
+  artifact：`kobold-recovery-20261106/schema-compiler-probe.json`、`fixed-reference-schema-replays.json`。
+- 下一步：提交此确定性 bug 修复；在修复后基线上重新开发与冻结新的 2A 合同，排除已运行正式题。
+  当前没有模型批次在运行。Mypy 会话 `53659` 待轮询；Pyrefly/Ty 通过；新定向测试 74 项通过。
+- 首题两臂 connector 都未返回命中，因此早停机制未触发；不能将组间差异计为机制收益。
+  四份答案均从 UpToDate 导航/目录页推断治疗建议，严格成功皆否；独立复核保存为
+  `semantic-ratings.json`，匿名材料为 `review-packets.json`。后续必须继续完成其余任务并更新评分。
+- 2B 尚未运行；适配器草案放在 `.e2e-artifacts/research-next-candidate-drafts/fulltext_live.py`，
+  不属于被冻结 manual 源码，尚未检查/采用。后续独立开发时再迁入实际实验目录。
 - 共同条件：32k context、8192 reserve；生产工具调用实际 cap=4096；temperature=.3；
   constrained JSON；`enable_thinking=false` 与实验请求层 `reasoning_effort=none`；真实网络与真实 writer。
 - `none` 不属于生产可选 effort，不能写进生产配置；仅在隔离 adapter 的 `ApiProvider` 构造时包裹

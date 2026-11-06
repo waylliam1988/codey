@@ -792,3 +792,27 @@ Pyrefly、Ty 通过；Pyrefly 同时保留既有 warnings/suppressions，不声�
 这只验证当前共同条件下的执行入口，不代表候选答案净收益。随后补齐 connector/browser 各次实际
 返回 URL 记录，以及每例模型 ID / 后端版本核对，准备正式 12 个未用主题 × 两 seed × 两臂。
 源码与行为变更只在隔离实验；额外的当前整篇答案／kernel 回归测试 30 项通过。
+
+### 真实 schema 编译缺陷与最小生产修复
+
+正式 2A `.e2e-artifacts/research-live-web-2a-formal-json-v1/` 计划 48 runs，实际执行 10 次：
+9 次发布，1 次在未读引用被正确拒绝后控制串循环并截断，依冻结停止规则终止。10 次都没有达到
+连接器两条命中，因而早停机制没有有效触发；前四份 pneumonitis 答案经准确原文复核均失败，
+其余已发布答案尚未完成逐份语义裁定，不宣称整体质量增益。`run-inventory.json`、
+`semantic-ratings.json`、`decision.json` 保留全部尝试；本合同判 **inconclusive**，不补跑并混入新源码结果。
+
+随后找到确定性兼容缺陷：KoboldCPP 1.117.1 的 JSON-to-GBNF 编译器不支持引用 schema 中的
+非捕获分组 `(?:...)`。日志持续显示 `JSON to GBNF failed: Unsupported pattern syntax`，
+后端丢弃 grammar，故请求携带 `response_format` 不代表约束实际生效。真实
+`/api/extra/json_to_grammar` 探针原 schema 返回失败、将分组改为普通捕获组后返回成功，
+生成 12555 字符 grammar。原始请求、编译返回和三 seed 修复请求重放保存在
+`.e2e-artifacts/kobold-recovery-20261106/schema-compiler-probe.json` 与
+`fixed-reference-schema-replays.json`；后者 3/3 输出合法 JSON 并先读取来源。
+
+最小生产修复仅在 `codey/research/knowledge_updates.py` 将分组换为等价正则写法；合法引用集合、
+标准化身份、提交校验和发布语义不变。这是已复现的协议兼容 bug 修复，不是搜索候选的生产采用，
+也不能据此声称普遍消除 plain 协议生成退化。新增引用边界测试连同整篇答案／kernel 测试
+共 74 项通过，Ruff 通过，Pyrefly/Ty 通过（Mypy 复核运行中）。
+
+下一份 2A 合同须以修复后基线、未用新题独立冻结：一部分题事先要求短主题搜索来触发早停条件，
+另一部分保留自由搜索；两种任务分别汇报，不能把之前未触发机制的随机差异当成候选收益。
