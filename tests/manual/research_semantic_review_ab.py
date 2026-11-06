@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 
 from tests.manual.research_semantic_review_cases import cases
 
-ROOT = Path("tests/manual/results/research-semantic-review-20261106")
+ROOT = Path("tests/manual/results/research-semantic-review-v2-20261106")
 BASE = "http://127.0.0.1:5001"
 LABELS = {"entailed", "partially", "contradicted", "unverified", "not_claim"}
 BAD = {"partially", "contradicted", "unverified"}
@@ -128,13 +128,24 @@ def get(path):
         return json.load(response)
 
 
+def idle_backend():
+    # Kobold may finish the HTTP response just before updating its idle flag.
+    # This waits only for settlement; inference requests are never retried.
+    deadline = time.monotonic() + 10
+    while True:
+        perf = get("/api/extra/perf")
+        if perf.get("idle") == 1 and perf.get("queue") == 0:
+            return perf
+        if time.monotonic() >= deadline:
+            raise RuntimeError("backend remains busy; stop rather than share inference")
+        time.sleep(.2)
+
+
 def run_one(root, case, seed, arm, model):
     target = root / "runs" / f"{case['id']}-{seed}-{arm}.json"
     if target.exists():
         return
-    perf = get("/api/extra/perf")
-    if perf.get("idle") != 1 or perf.get("queue") != 0:
-        raise RuntimeError("backend busy; do not contaminate another experiment")
+    perf = idle_backend()
     payload = {"model": model, "messages": [{"role": "system", "content": PROMPTS[arm]},
                {"role": "user", "content": json.dumps(model_input(case), ensure_ascii=False)}],
                "temperature": .3, "top_p": .9, "seed": seed, "max_tokens": 1100,

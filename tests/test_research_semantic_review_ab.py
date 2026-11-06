@@ -53,3 +53,18 @@ def test_dataset_has_positive_controls_and_uncited_assertions_in_both_splits():
         assert any("not_claim" in case["gold"] for case in selected)
         assert any(not unit["evidence_refs"] and gold in ab.BAD for case in selected
                    for unit, gold in zip(ab.units(case["markdown"]), case["gold"], strict=True))
+
+
+def test_backend_settlement_waits_without_replaying_inference(monkeypatch):
+    states = iter([{"idle": 0, "queue": 0}, {"idle": 1, "queue": 0}])
+    monkeypatch.setattr(ab, "get", lambda _: next(states))
+    monkeypatch.setattr(ab.time, "sleep", lambda _: None)
+    assert ab.idle_backend() == {"idle": 1, "queue": 0}
+
+
+def test_backend_persistent_busy_stops(monkeypatch):
+    ticks = iter([0, 11])
+    monkeypatch.setattr(ab.time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(ab, "get", lambda _: {"idle": 0, "queue": 1})
+    with pytest.raises(RuntimeError, match="backend remains busy"):
+        ab.idle_backend()
