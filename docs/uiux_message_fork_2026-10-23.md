@@ -8,9 +8,11 @@ follow `DESIGN.md`. The existing navigation, Settings and composer are retained.
 
 - User actions: Copy, Edit, Fork; assistant actions: Copy, Fork. Actions remain
   below the message and appear on hover, keyboard focus or touch.
-- Clicking Fork opens a compact destination dialog directly. Git projects offer
-  the current workspace/worktree and a new worktree. Ordinary directories fork
-  directly into the current directory.
+- Clicking Fork opens a compact destination dialog directly and waits for an
+  explicit choice, including in ordinary directories and projectless chats.
+  The local destination remains available while checking Git. A new worktree
+  is enabled only after a successful capability check; unsupported destinations
+  show their reason, and failed checks offer Retry without blocking local forks.
 - A message fork retains its complete turn, excludes later turns and creates an
   independent chat without starting a provider task. Existing History controls
   retain their explicit entry-based behavior.
@@ -60,3 +62,22 @@ preview under `artifacts/uiux-preview/2026-10-23/`.
 The review page uses the real packaged frontend and routes with an isolated
 state directory and two English example turns. It does not replace the user's
 existing chat database or restart an existing Codey service.
+
+## Explicit destination selection revision — 2026-11-06
+
+Capability checks no longer submit a local fork. Both destinations remain in
+the dialog, including for projectless chats, ordinary directories and empty Git
+repositories. Git failures (missing executable, missing directory, timeout or
+other command errors) are distinct from unsupported workspaces and provide an
+explicit workspace-check retry. Creation retries retain the accepted request
+identity and never enable an unavailable worktree destination. Late checks and
+dismissed dialogs cannot create chats or re-enable submitting controls.
+
+Validation for this revision: 35 scoped frontend tests passed, including 21 fork
+dialog tests; 20 scoped Python capability/worktree tests and 53 ancestry,
+branch-revision, workflow-fork and frontend-publication regression tests passed.
+Four headless Chromium tests used the shipped frontend and real fork routes for
+projectless, ordinary-directory, Git and timeout/retry scenarios, including
+checking, dismissal, explicit selection, navigation and inherited history.
+TypeScript, scoped Ruff and mypy checks passed, and production resources were
+rebuilt and checked with `tools.publish_frontend`. Full pytest was not run.

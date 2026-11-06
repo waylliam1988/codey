@@ -57,8 +57,12 @@ answer, updating the mounted node without duplicates. Bind the confirmed durable
 entry identity when it arrives, independently of deferred history rendering;
 never infer a fork target from answer text or an unrelated run.
 Fork opens the compact `Fork chat from here` destination dialog directly; it does not open History.
-Offer `Fork in this workspace` (or `Fork in this worktree`) and `Fork in a new
-worktree` for supported Git projects. Without Git, fork in the current directory.
+Always keep the destination dialog open until the user chooses a destination.
+Offer `Fork in this workspace` (or `Fork in this worktree`); projectless chats use
+`Fork in the current environment`. Show `Fork in a new worktree` disabled while
+checking Git capabilities or when unsupported, with the specific reason. Check
+failures offer Retry independently of the local choice. Capability checks never
+create chats; only an explicit destination choice submits a fork.
 Retain the complete selected turn, focus the new chat's composer when ready,
 and show a `Continued from chat` source link at the inherited-history boundary.
 Worktree setup has factual pending, error and retry states; block sending until

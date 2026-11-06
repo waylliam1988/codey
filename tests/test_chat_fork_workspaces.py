@@ -149,6 +149,7 @@ def test_no_git_directory_has_only_current_workspace_and_rejects_worktree(source
     ctx.save_ui_state(state, base_revision=state['revision'])
     _, info = fork_response(ctx, {'session_id': ['chat'], 'capabilities': ['1']})
     assert info['worktree'] is False
+    assert info['worktree_status'] == 'unavailable' and info['worktree_reason'] == 'not_git'
     status, _ = request(ctx, question, destination='worktree')
     assert status == 409
 
@@ -161,7 +162,8 @@ def test_capabilities_detect_existing_worktree_and_request_cannot_change_destina
     git(root, 'worktree', 'add', '--detach', str(separate), 'HEAD')
     from codey.app.fork_workspaces import capabilities
 
-    assert capabilities(str(separate)) == {'worktree': True, 'is_worktree': True}
+    assert capabilities(str(separate)) == {'worktree': True, 'is_worktree': True, 'worktree_status': 'available',
+                                          'worktree_reason': '', 'worktree_message': ''}
     assert subprocess.run(['git', '-C', str(root), 'status', '--porcelain'], capture_output=True).returncode == 0
 
 

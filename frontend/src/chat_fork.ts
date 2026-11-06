@@ -9,6 +9,9 @@ interface ForkResult {
 interface Metadata extends Partial<ForkResult> {
   worktree?: boolean;
   is_worktree?: boolean;
+  worktree_status?: 'available' | 'unavailable' | 'error';
+  worktree_reason?: string;
+  worktree_message?: string;
   origin?: { session_id: string; entry_id: string } | null;
 }
 interface Deps {
@@ -30,7 +33,13 @@ interface Deps {
 export class ChatFork {
   readonly dialog = document.createElement('dialog');
   private notice = document.createElement('p');
+  private capabilityNotice = document.createElement('p');
   private options = document.createElement('div');
+  private localOption = this.destination('Fork in the current environment', 'Keep this chat’s environment', 'local');
+  private worktreeOption = this.destination('Fork in a new worktree', 'Checking Git workspace…', 'worktree');
+  private capability: Metadata | null = null;
+  private capabilityError = '';
+  private checkGeneration = 0;
   private origin = new Map<string, Metadata>();
   private generation = 0;
   private submitting = false;
@@ -61,7 +70,10 @@ export class ChatFork {
     heading.textContent = 'Fork chat from here';
     this.notice.className = 'chat-fork-notice';
     this.notice.setAttribute('role', 'status');
-    this.dialog.append(heading, this.options, this.notice);
+    this.capabilityNotice.className = 'chat-fork-notice';
+    this.capabilityNotice.setAttribute('role', 'status');
+    this.options.append(this.localOption, this.worktreeOption);
+    this.dialog.append(heading, this.options, this.capabilityNotice, this.notice);
     this.dialog.addEventListener('click', (event) => {
       if (event.target !== this.dialog) return;
       const rect = this.dialog.getBoundingClientRect();
@@ -95,34 +107,74 @@ export class ChatFork {
     this.trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const generation = ++this.generation;
     this.target = { session, entry };
-    this.notice.textContent = 'Checking workspace…';
-    this.options.replaceChildren();
+    this.notice.textContent = '';
     this.dialog.showModal();
+    await this.checkWorkspace(session, generation);
+  }
+
+  private async checkWorkspace(session: string, generation: number): Promise<void> {
+    const check = ++this.checkGeneration;
+    this.capability = null;
+    this.capabilityError = '';
+    this.updateOptions();
     try {
       const metadata = await requestJson<Metadata>(
         `/api/conversation_fork?${new URLSearchParams({ session_id: session, capabilities: '1' })}`,
       );
-      if (generation !== this.generation) return;
-      this.notice.textContent = '';
-      if (!metadata.worktree) {
-        await this.create('local');
-        return;
-      }
-      this.options.append(
-        this.destination(
-          metadata.is_worktree ? 'Fork in this worktree' : 'Fork in this workspace',
-          metadata.is_worktree
-            ? 'Fork from this message in the same worktree'
-            : 'Fork from this message in the current workspace',
-          'local',
-        ),
-      );
-      this.options.append(
-        this.destination('Fork in a new worktree', 'Fork from this message in a new worktree', 'worktree'),
-      );
+      if (generation !== this.generation || check !== this.checkGeneration) return;
+      if (typeof metadata?.worktree !== 'boolean') throw new Error('Could not verify Git workspace capabilities.');
+      this.capability = metadata;
+      if (metadata.worktree_status === 'error')
+        this.capabilityError = metadata.worktree_message || 'Could not check the Git workspace.';
     } catch (error) {
-      if (generation === this.generation) this.failure(error, () => void this.open(session, entry));
+      if (generation !== this.generation || check !== this.checkGeneration) return;
+      this.capabilityError = error instanceof Error ? error.message : 'Could not check the Git workspace.';
     }
+    this.updateOptions();
+  }
+
+  private canUseWorktree(): boolean {
+    return this.capability?.worktree === true && !this.capabilityError;
+  }
+
+  private updateOptions(): void {
+    const metadata = this.capability;
+    const worktree = metadata?.is_worktree || (!metadata && !!this.target && this.deps.isWorktree(this.target.session));
+    const environment = !metadata || metadata.worktree_reason === 'no_project';
+    this.localOption.querySelector('strong')!.textContent = worktree
+      ? 'Fork in this worktree'
+      : environment
+        ? 'Fork in the current environment'
+        : 'Fork in this workspace';
+    this.localOption.querySelector('small')!.textContent = worktree
+      ? 'Fork from this message in the same worktree'
+      : environment
+        ? 'Keep this chat’s environment and retained history'
+        : 'Fork from this message in the current workspace';
+    this.worktreeOption.querySelector('small')!.textContent =
+      this.capabilityError ||
+      (metadata
+        ? metadata.worktree_message ||
+          (metadata.worktree
+            ? 'Fork from this message in a new worktree'
+            : 'A Git project is required for a new worktree.')
+        : 'Checking Git workspace…');
+    this.localOption.disabled = this.submitting;
+    this.worktreeOption.disabled = this.submitting || !this.canUseWorktree();
+    this.capabilityNotice.replaceChildren();
+    if (this.capabilityError && !this.submitting && this.target) {
+      const { session } = this.target;
+      const generation = this.generation;
+      this.retry(this.capabilityNotice, () => void this.checkWorkspace(session, generation), 'Retry workspace check');
+    }
+  }
+
+  private retry(container: HTMLElement, action: () => void, label = 'Retry creation'): void {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.onclick = action;
+    container.append(button);
   }
 
   private destination(label: string, description: string, destination: 'local' | 'worktree'): HTMLButtonElement {
@@ -142,27 +194,20 @@ export class ChatFork {
 
   private failure(error: unknown, retry: () => void): void {
     this.submitting = false;
-    this.options.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
-      button.disabled = false;
-    });
+    this.updateOptions();
     this.notice.replaceChildren(
       document.createTextNode(`${error instanceof Error ? error.message : 'Could not create chat.'} `),
     );
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = 'Retry';
-    button.onclick = retry;
-    this.notice.append(button);
+    this.retry(this.notice, retry);
   }
 
   private async create(destination: 'local' | 'worktree'): Promise<void> {
     const target = this.target;
-    if (!target || this.submitting) return;
+    if (!target || this.submitting || (destination === 'worktree' && !this.canUseWorktree())) return;
     this.submitting = true;
     const generation = this.generation;
-    this.options.querySelectorAll<HTMLButtonElement>('button').forEach((button) => {
-      button.disabled = true;
-    });
+    this.notice.replaceChildren();
+    this.updateOptions();
     let baseline: Record<string, unknown>;
     const key = `codey:message-fork:${target.session}:${target.entry}:${destination}`;
     try {

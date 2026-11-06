@@ -12,6 +12,12 @@ from typing import Any, cast
 from codey.storage.local_store import read_json_strict, write_json_atomic
 
 
+class GitCommandError(ValueError):
+    def __init__(self, message: str, returncode: int) -> None:
+        super().__init__(message)
+        self.returncode = returncode
+
+
 def git(root: Path, *args: str, env: dict[str, str] | None = None, data: bytes | None = None, timeout: int = 120) -> str:
     environment = dict(os.environ)
     for key in ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY',
@@ -23,20 +29,43 @@ def git(root: Path, *args: str, env: dict[str, str] | None = None, data: bytes |
         env=environment, timeout=timeout, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
     )
     if result.returncode:
-        raise ValueError(result.stderr.decode('utf8', 'replace').strip()[:1000] or 'Git worktree setup failed.')
+        raise GitCommandError(
+            result.stderr.decode('utf8', 'replace').strip()[:1000] or 'Git worktree setup failed.', result.returncode,
+        )
     return result.stdout.decode('utf8', 'replace').strip()
+
+
+def _unavailable(reason: str, message: str, *, error: bool = False) -> dict[str, object]:
+    return {'worktree': False, 'is_worktree': False, 'worktree_status': 'error' if error else 'unavailable',
+            'worktree_reason': reason, 'worktree_message': message}
 
 
 def capabilities(path: str) -> dict[str, object]:
     if not path:
-        return {'worktree': False, 'is_worktree': False}
-    root = Path(path)
+        return _unavailable('no_project', 'This chat is not linked to a Git project.')
     try:
-        git(root, 'rev-parse', '--verify', 'HEAD', timeout=5)
-        top = Path(git(root, 'rev-parse', '--show-toplevel', timeout=5)).resolve()
-        return {'worktree': True, 'is_worktree': (top / '.git').is_file()}
-    except (OSError, ValueError, subprocess.TimeoutExpired):
-        return {'worktree': False, 'is_worktree': False}
+        root = Path(path)
+        if not root.is_dir():
+            return _unavailable('invalid_path', 'The project directory is missing or inaccessible.', error=True)
+        # Git diagnostics must be stable across the desktop's display languages.
+        env = {'LC_ALL': 'C', 'LANG': 'C'}
+        top = Path(git(root, 'rev-parse', '--show-toplevel', timeout=5, env=env)).resolve()
+        try:
+            git(root, 'rev-parse', '--verify', '--quiet', 'HEAD', timeout=5, env=env)
+        except GitCommandError as error:
+            if error.returncode == 1:
+                return _unavailable('no_commits', 'Create a commit in this repository before using a new worktree.')
+            raise
+        return {'worktree': True, 'is_worktree': (top / '.git').is_file(), 'worktree_status': 'available',
+                'worktree_reason': '', 'worktree_message': ''}
+    except FileNotFoundError:
+        return _unavailable('git_missing', 'Git could not be found. Install Git or check its PATH, then retry.', error=True)
+    except subprocess.TimeoutExpired:
+        return _unavailable('timeout', 'Checking the Git workspace timed out. Retry to check again.', error=True)
+    except (OSError, ValueError) as error:
+        if isinstance(error, GitCommandError) and 'not a git repository' in str(error).lower():
+            return _unavailable('not_git', 'This project directory is not a Git working directory.')
+        return _unavailable('git_error', f'Could not check the Git workspace: {error}', error=True)
 
 
 class ForkWorkspaces:
