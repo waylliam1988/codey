@@ -39,3 +39,8 @@
 ## 验证范围
 
 本轮使用定向测试、Ruff 和相关类型检查；没有运行全量 pytest。所有正式失败、请求、回执、答案、知识库和成本记录保留在对应 `.e2e-artifacts` 目录。
+
+### ③ 覆盖比较面上下文保留
+
+新候选脚本与单元测试已完成。开发目录 esearch-window-coverage-dev-v7 的 4 次真实运行只有 1 次 baseline-only overflow，候选没有成对溢出，decision.json 判 inconclusive；未启动正式矩阵。
+
