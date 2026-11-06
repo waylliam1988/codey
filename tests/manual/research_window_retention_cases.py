@@ -80,10 +80,10 @@ def cases():
         "documents": [
             document("Vela V1", "Version rules", [
                 "V1 local mode permits 5 writers only when the license flag is active; remote mode permits 2 writers independently of that flag.",
-                "V1 does not support read-only opening."], padding=110),
+                "V1 does not support read-only opening."], padding=250),
             document("Vela V2", "Version rules", [
                 "V2 local mode permits 9 writers with the license flag and 3 without it; remote mode permits 4 independently of that flag.",
-                "V2 supports read-only opening."], padding=110),
+                "V2 supports read-only opening."], padding=250),
         ],
         "rubric": ["V1 and V2 limits remain separate", "read-only differs by version", "license conditions preserved"],
         "keys": [], "forbidden": ["version mixing", "flag condition omitted"],
@@ -93,7 +93,7 @@ def cases():
         "question": "Explain Seno Q7 read-only alternatives and export requirements. Preserve the OR exception, necessary versus sufficient conditions, and limits. Answer in Chinese.",
         "documents": [document("Seno Q7", "Access rules", [
             "Read-only opening succeeds if EITHER readable sidecars exist OR the directory is writable; A and B need not both hold.",
-            "A valid key is necessary but not sufficient for export: an approved account is also required."], padding=125)],
+            "A valid key is necessary but not sufficient for export: an approved account is also required."], padding=260)],
         "rubric": ["OR alternative preserved", "necessary is not sufficient", "approved account requirement preserved"],
         "keys": [], "forbidden": ["AND required", "key alone sufficient"],
     }
@@ -101,8 +101,8 @@ def cases():
         "id": "coverage_objects", "split": "dev",
         "question": "Compare object Alpha and object Beta restrictions, exceptions, and measured versus unmeasured performance. Answer in Chinese and preserve the limitations.",
         "documents": [
-            document("Alpha", "Restrictions", ["Alpha requires token and administrator; offline export is unavailable.", "A local preview does not measure remote performance."], padding=100),
-            document("Beta", "Restrictions", ["Beta requires an approved account; offline export is unavailable.", "A benchmark result measures only the tested local workload."], padding=100),
+            document("Alpha", "Restrictions", ["Alpha requires token and administrator; offline export is unavailable.", "A local preview does not measure remote performance."], padding=250),
+            document("Beta", "Restrictions", ["Beta requires an approved account; offline export is unavailable.", "A benchmark result measures only the tested local workload."], padding=250),
         ],
         "rubric": ["Alpha/Beta rules separate", "offline limits preserved", "measurement scope preserved"],
         "keys": [], "forbidden": ["object mixing", "local preview proves remote performance"],
