@@ -1,5 +1,10 @@
 # Codey 编码地毯式精简审计（2026-11-05）
 
+> 2026-11-06 证据更正：阶段 19 的生产 headless smoke 归档实际包含 Review unavailable，
+> `persisted_review={}`。旧 harness 将一条 Review 事件误当成成功，因此撤回该阶段
+> “独立 Reviewer 生产 smoke 已通过”的结论。独立模型的直接 Review/种入缺陷修复证据
+> 不受此更正影响。后续严格复核与质量实验见阶段 20。
+
 ## 目的
 
 沿用 `docs/reports/kernel-carpet-audit-20261104.zh-CN.md` 与
@@ -1033,8 +1038,35 @@ Pyrefly 既有 35 suppressed / 80 warnings 保留。
 
 - 跨模型连接、选择、Review 生命周期和偏好边界：`124 passed`。
 - 本次新增生产接线的 Mypy、Pyrefly、ty：均通过；Ruff：通过。
-- 生产 headless smoke：本地 Gemma4 Writer + Cline Nemotron Super Reviewer，`done`、exit 0、Review 收据 `self_review=false`、pytest 通过。
+- 生产 headless smoke（事后更正）：`done`、exit 0、pytest 通过，但归档为 Review unavailable、
+  `persisted_review={}`；没有独立 Reviewer 成功收据，不能证明跨连接 Review 的生产执行成功。
 - 未运行全量 `pytest`。
 
 本阶段分批提交：`743bb055`（生产跨连接 Reviewer 接线、合同测试和实机 harness），
 `1b5f8588`（本报告与跨模型证据归档）。
+
+## 阶段 20：只看最终质量的扩大跨模型复核（2026-11-06，进行中）
+
+依据用户最新标准，请求成本和耗时不参与删留判断。统一 Writer → 独立 Review → 最多一次
+返修 → 二次 Review，再比较增加 plan/audit/一或两个 consensus advisor 的最终文件。
+预注册、题目、运行顺序与模型配置见
+[本轮方案](cross-model-quality-plan-20261106.zh-CN.md)。
+
+本轮发现并区分：
+
+- **测试误判**：旧 production smoke 的 `len(review_events)==1` 接受 unavailable；
+  新入口要求真实 HTTP、完整 Review、同一独立模型收据、只读快照和最终验证。
+  更严格入口的首轮 11 项检查已真实通过，Solar 为 Reviewer；未注入或强制选择 Reviewer。
+- **生产边界问题**：私有 audit 暴露用户问题工具，顾问发问后遗留待结算 effect，收尾抛错；
+  文本/native 确定性复现均失败，再通过收窄同一工具快照修复，保留统一 kernel 和结算守卫。
+- **生产偏好边界问题**：跨连接选择在过滤启用模型前先读取禁用来源目录；
+  现先过滤再导入/读取。这个问题被确定性测试证实，不将其冒称旧 unavailable 的唯一原因。
+- **夹具接口问题**：新增 TraceProvider 回归最初没有接受 DeadlineProvider 的 timeout 参数，
+  造成与目标异常不同的 unknown outcome；修复夹具签名后才得到真实 pending-effect 复现。
+- **模型产物问题**：Pilot LRU 产品行为正确，但生成测试的缺省返回值期望错误；
+  Writer 重复无变化编辑而停机。保留失败，不手工改成实验成功。
+- **上游/模型输出问题**：Super 不在当前目录且返回 404；Solar 曾输出不完整 JSON；
+  Lightning 默认思考曾耗尽输出预算。原始证据保留，正式配置明确记录。
+
+生产修复后定向扩大组 119 passed；Ruff、Mypy 597 文件、Pyrefly（0 errors、35 suppressed、
+81 warnings）、ty 通过。未运行全量 pytest。正式 A/B 将在修复后的统一源码上重新运行。
