@@ -1,0 +1,80 @@
+{
+  "date": "2026-11-06",
+  "codey_baseline": "379049a0",
+  "hyperresearch_baseline": "aece65f",
+  "scope": "Read-only in-process probes with synthetic inputs and in-memory SQLite; no network, model calls, or production changes. These demonstrate local behavior, not end-to-end task error rates.",
+  "probes": [
+    {
+      "name": "connector_abstract_identity",
+      "calls": [
+        "FetchedSource.from_document(connector_id='arxiv', source_ref='example', source_id='2401.12345', document=source)",
+        "codey.research.connector_search._page_from_fetched(fetched)",
+        "ResearchSourceGateway(None, ResearchLedger())._source_document_from_fetch(source.final_url, page)",
+        "render_opened_source(result, result.text, read_window=(0, len(result.text)))"
+      ],
+      "input": {
+        "document_type": "SourceDocument",
+        "requested_url": "https://arxiv.org/abs/2401.12345",
+        "final_url": "https://arxiv.org/abs/2401.12345",
+        "title": "Example abstract",
+        "content_kind": "abstract",
+        "mime_type": "application/xml",
+        "text": "This is only the abstract. Methods and limitations are in the paper."
+      },
+      "observed": {
+        "connector_content_kind": "abstract",
+        "gateway_content_kind": "html",
+        "material_kind_label_in_rendered_metadata": false,
+        "terminal_message": "End of available extracted source text; there is no later text window in this snapshot."
+      },
+      "interpretation": "Material identity is lost. The terminal message is accurate about available snapshot text but does not disclose abstract-only scope. Actual semantic harm was not measured."
+    },
+    {
+      "name": "hyperresearch_non_numeric_clause_overreach",
+      "call": "hyperresearch.core.citecheck.triage_pairs(pairs, conn)",
+      "sqlite_schema": "CREATE TABLE claims(note_id TEXT, claim TEXT, quoted_support TEXT, numbers TEXT)",
+      "input": {
+        "note_id": "source1",
+        "claim_and_quoted_support": "The system supports concurrent writes only when the feature is enabled.",
+        "numbers": null,
+        "sentence": "The system supports concurrent writes only when the feature is enabled, and it also supports them when the feature is disabled.",
+        "strong": false
+      },
+      "observed": {
+        "total": 1,
+        "supported_mechanical": 1,
+        "needs_llm": 0,
+        "verdict": "supported-mechanical"
+      },
+      "interpretation": "A matching six-word span can auto-pass a sentence containing an additional unsupported and contradictory clause. This is a triage counterexample, not an end-to-end model trial."
+    },
+    {
+      "name": "hyperresearch_independence_cluster_weight",
+      "call": "hyperresearch.core.independence.compute_independence(vault)",
+      "sqlite_schema": [
+        "CREATE TABLE notes(id TEXT, source TEXT, title TEXT, created TEXT, independence REAL, type TEXT)",
+        "CREATE TABLE note_content(note_id TEXT, body_plain TEXT)",
+        "CREATE TABLE tags(note_id TEXT, tag TEXT)"
+      ],
+      "input": {
+        "notes": "n0..n4; sources https://example0.org/story .. https://example4.org/story; type=source; title=Same story; created=2026-11-01 .. 2026-11-05",
+        "same_body_for_all": "This identical source text is republished by multiple outlets and contains the same factual claims.",
+        "shingle_size": 3
+      },
+      "observed": {
+        "cluster_count": 1,
+        "cluster_kind": "body",
+        "root": "n0",
+        "weights": [1.0, 0.2, 0.2, 0.2, 0.2],
+        "sum": 1.8
+      },
+      "interpretation": "Summing stored independence weights does not implement one vote per cluster. The step-3 instruction mentions both approaches, so reuse should explicitly count clusters instead of copying this sum."
+    },
+    {
+      "name": "hyperresearch_weak_pair_sampling",
+      "call": "hyperresearch.core.citecheck.sample_needs_llm([{'verdict':'needs-llm','strong':False} for _ in range(5)])",
+      "observed": {"weak_pairs": 5, "selected": 3},
+      "interpretation": "The default 0.6 sampling rate is not complete semantic review of all remaining non-strong pairs."
+    }
+  ]
+}

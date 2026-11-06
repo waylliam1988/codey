@@ -1,5 +1,13 @@
 # Research 全流程与分支删减审查（2026-11-03）
 
+## 冻结自然答案的修订收益 D（2026-11-06）
+
+**D 证明一次受限修订有实际收益，但没有证明 B 反馈优于普通自查；生产代码未改。** 本轮冻结 6 份此前由 Gemma4 12B 生成的自然 Research 答案，在相同任务、原稿和已读证据下比较三组：原稿直接交付、普通自查后修订一次、B 详细审查反馈后修订一次。两个修订组各使用两次额外模型调用，共 36 个最终答案、48 次模型调用；没有新增搜索、来源读取或生产发布路径。
+
+校正后的任务完整性代理结果为：对照组 58/68，普通自查 62/68，B 反馈 62/68。两种修订都补回了 `known_url` 和 `two_errors` 中原稿遗漏的明确候选 claim；B 反馈另外改善了部分引用和 OR 条件表达，但整体没有超过普通自查。该评分是透明的完整性代理，不是语义证明；本轮不能证明 B 能稳定修复条件、因果、版本或引用语义错误，也不能据此接入发布 gate 或自动修订。
+
+因此保留 B 作为候选的发布前诊断和受限修订输入，继续保留普通自查作为必要对照，暂不接入生产 Research。完整结果见[D 实验结果](research-semantic-review-d-results-20261106.zh-CN.md)、[D 实验说明](research-semantic-review-d-experiment-20261106.zh-CN.md)、[原始记录](reports/research-semantic-review-d-20261106.json)和[校正分析](reports/research-semantic-review-d-analysis-20261106.json)，提交为 `66db40bd`。
+
 ## 最新结论与实验结果（2026-11-06）
 
 **C 候选的 A/B/C 已完成，C 有局部收益，但没有整体优于 B；生产代码未改。** 在冻结 C 提示后编写 16 个新报告，各两个种子、三组共 96 次调用，另有 12 次旧题开发回放，总计 108 次。三组统一使用新的绑定证据与准确引文 anchors 合同，因此以下 A/B 不能直接与上一轮旧合同分数相减。
@@ -712,6 +720,7 @@ ID 连字符抄成下划线是模型选择错误。原实现拒绝它，不会�
 - 已实施代码：`d42ba1d5`（四处清理）、`fedc334b`（ledger 兼容修复）；新增正式回归为 `tests/test_research_audit_reuse.py`。实施后的[验证汇总](../.e2e-artifacts/research-production-cleanup-20261103/validation-summary.json)与本节以下的审查基线工件分开保存。
 
 - 新报告：[本报告的机器汇总](reports/research-branch-review-20261103.json)、[全部模块/定义/边界清单](reports/research-branch-inventory-20261103.json)。
+- HyperResearch 对照：[第一性原理对比](research-hyperresearch-first-principles-comparison-20261106.zh-CN.md)、[结合 D 的流程收敛复核](research-hyperresearch-convergence-review-20261106.zh-CN.md)及[最小复现记录](reports/research-hyperresearch-comparison-probes-20261106.json)。这些材料用于说明可借鉴的研究方法与已复现的边界，不代表生产流程已改为 HyperResearch 多阶段架构。
 - 新实机工具：`tests/manual/research_branch_review.py`；干预有效性测试：`tests/test_research_branch_review.py`；实际分支对照：`tests/test_research_branch_boundaries.py`。
 - 原始工件：`.e2e-artifacts/research-branch-review-20261103-final/`，其中 `preregistration.json`、`fixtures.json`、冻结摘要、源码压缩包、wire、logs、每例隔离数据库、正式正文、独立内容审查、逐版机械审计及测试结果均保留。
 - 上一轮：[全链条 88 次审查](research-full-process-review-20261103.zh-CN.md)、[早期 40 次三方案对照](research-workflow-ablation-20261102.zh-CN.md)。旧实验的基线和范围不同，不混入本轮分母，也不把旧基线的重复规则节省再次计算。
