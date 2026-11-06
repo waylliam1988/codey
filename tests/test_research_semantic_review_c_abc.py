@@ -105,3 +105,52 @@ def test_separate_new_and_reused_cases_and_counterexamples():
     assert len([c for c in data if c["split"] == "stress"]) == 4
     assert all(len(c["gold"]) == 4 for c in data if c["split"] != "dev")
     assert {c["category"] for c in data if c["split"] != "dev"} >= {"necessity", "injection", "binding", "inference"}
+
+
+def test_ellipsis_is_not_silently_accepted_as_a_contiguous_quote():
+    unit = abc.model_input(fresh_cases()[1])["units"][1]
+    with pytest.raises(ValueError, match="not exact text"):
+        abc.validate_anchors(review(quote="Opening a Dexo archive requires... a sealed index"), unit)
+
+
+def test_raw_scoring_exposes_false_alarm_hidden_by_anchor_rejection():
+    row = {"gold": "entailed", "predicted": "invalid", "model_verdict": "partially", "evidence_refs": ["e1"]}
+    run = {"rows": [row], "error": "anchor_validation_failed", "framing_error": None,
+           "anchor_errors": {"u1": "missing anchor"}, "seconds": 1, "response": {}}
+    assert abc.scored([run])["good_false_positive"] == 0
+    assert abc.scored([run], raw=True)["good_false_positive"] == 1
+    assert abc.scored([run])["validity"] == 0
+    assert abc.scored([run])["four_class_accuracy"] == 0
+
+
+def test_paired_counts_both_repairs_and_regressions():
+    before = [{"id": "u1", "text": "first", "gold": "entailed", "predicted": "partially"},
+              {"id": "u2", "text": "second", "gold": "unverified", "predicted": "unverified"}]
+    after = [{**before[0], "predicted": "entailed"}, {**before[1], "predicted": "entailed"}]
+    runs = [{"case": "example", "seed": 1, "arm": "B", "rows": before},
+            {"case": "example", "seed": 1, "arm": "C", "rows": after}]
+    paired = abc.paired(runs)
+    assert paired["repaired"] == 1
+    assert paired["regressed"] == 1
+
+
+def test_freeze_rejects_production_change(tmp_path, monkeypatch):
+    monkeypatch.setattr(abc, "production_identity", lambda: {"production": "original"})
+    abc.freeze(tmp_path)
+    monkeypatch.setattr(abc, "production_identity", lambda: {"production": "changed"})
+    with pytest.raises(RuntimeError, match="production changed"):
+        abc.freeze(tmp_path)
+
+
+def test_audit_does_not_confuse_guard_rejection_with_semantic_detection():
+    from tests.manual.research_semantic_review_c_audit import tradeoffs
+
+    rows = [{"gold": "unverified", "model_verdict": "entailed", "predicted": "invalid"},
+            {"gold": "entailed", "model_verdict": "entailed", "predicted": "invalid"}]
+    run = {"rows": rows, "response": {"choices": [{"finish_reason": "stop"}]}}
+    result = tradeoffs([run])
+    assert result["raw_false_acceptances"] == 1
+    assert result["validated_false_acceptances"] == 0
+    assert result["guard_blocked_false_acceptances"] == 1
+    assert result["correct_verdict_but_invalid_anchor"] == 1
+    assert result["unresolved_factual_units"] == 2
