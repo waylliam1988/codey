@@ -1,0 +1,27 @@
+{
+  "decision": "reject",
+  "phase": "formal",
+  "planned_runs": 32,
+  "completed_runs": 32,
+  "mechanism": {
+    "candidate_fulltext_attempts": 16,
+    "recovered": 14,
+    "no_public_link": 2,
+    "baseline_fulltext_attempts": 0
+  },
+  "reason": "All 32 packets were conservatively source-reviewed and strict success was 0/16 in both arms. The candidate also exceeded the preregistered cost gate: median elapsed ratio 1.414, prompt-token ratio 1.167 and total-token ratio 1.170; paired latency ratio is also above 1.25. Candidate recovery was real (14/16), but selected material was often wrong for the task and did not improve final delivery.",
+  "production_candidate": "reject",
+  "next": "2B is closed as reject. Do not run confirmation tasks or promote the candidate; proceed to the separately contracted ③ and 4A/4B work.",
+  "quality": {
+    "baseline_strict_successes": 0,
+    "candidate_strict_successes": 0,
+    "candidate_positive_tasks": 0,
+    "candidate_negative_tasks": 8
+  },
+  "cost": {
+    "median_elapsed_ratio": 1.414,
+    "median_prompt_token_ratio": 1.167,
+    "median_total_token_ratio": 1.17,
+    "gate_max": 1.25
+  }
+}
