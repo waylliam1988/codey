@@ -13,7 +13,10 @@ from tests.manual.research_experiment_identity import freeze_experiment, verify_
 from tests.manual.research_window_retention_cases import cases
 
 DEV_IDS = ("dev_early", "held_early", "held_decoy", "held_middle")
-ARMS = ("baseline", "coverage")
+# The retained worker parser accepts the historical name ``relevance``.  The
+# module patched below is the coverage candidate; the artifact labels this arm
+# as coverage in its decision metadata.
+ARMS = ("baseline", "relevance")
 
 
 def write(path, value):
@@ -29,9 +32,9 @@ def prepare(root: Path, base_url: str):
     write(root / "material-channel.json", {"mode": "read", "protocol": "plain"})
     clock = Path("tests/fixtures/research_local_clock.txt").read_text(encoding="utf8")
     (root / "clock-context.txt").write_text(clock.replace("2026-11-01", "2026-11-07"), encoding="utf8")
-    contract = {"phase": "dev-v2", "seeds": [1701], "arms": ARMS, "cases": DEV_IDS,
+    contract = {"phase": "dev-v3", "seeds": [1701], "arms": ARMS, "cases": DEV_IDS,
                 "work_view_cap": 4096, "provider_window": 32768,
-                "treatment": "Only overflow eviction changes: preserve object/version/limit facets and remove redundant windows first.",
+                "treatment": "Only overflow eviction changes: coverage candidate preserves object/version/limit facets and removes redundant windows first; artifact arm relevance is a transport alias for coverage.",
                 "mechanism": "Both arms must admit the same task with actual overflow; selected windows and read receipts are retained.",
                 "gate": "At least two paired real-writer overflows; no production change; semantic quality scored separately."}
     with urlopen(base.framework.UPSTREAM + "/api/v1/model", timeout=10) as response:

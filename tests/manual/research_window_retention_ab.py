@@ -132,7 +132,7 @@ def worker(root, directory, base_url, case_id, seed, arm):
     original_stage = probe.stage
 
     def plain_stage(*args, **kwargs):
-        return original_stage(*args, **{**kwargs, "native": False, "constrained_text": False})
+        return original_stage(*args, **{**kwargs, "native": False, "constrained_text": True})
 
     with ExitStack() as stack:
         stack.enter_context(patch.object(context, "work_view_limits", limits))
