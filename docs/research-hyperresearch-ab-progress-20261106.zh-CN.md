@@ -75,3 +75,14 @@ v10 首对真实阅读状态显示 baseline 可提交，但 coverage 候选把�
 ### 2026-11-07：③ v12 开发结案
 
 覆盖候选修正后，新合同 v12 完成 4 题 × 两臂、seed 1701，共 8/8 真实 writer、真实读取和提交成功。压力校准后只有 `coverage_exceptions` 一题在 baseline 与 candidate 两臂都 overflow；版本、限制和对象题两臂都未成对 overflow。按预注册要求，只有一组成对机制触发不足以进入正式矩阵，`decision.json` 判 `inconclusive`，生产保持不变；不再通过追加 padding 追求触发。此前无模型重放的两组成对 overflow 仍只作算法机制证据，不能替代真实 writer 对照。
+
+### 2026-11-07：4B 正式双 seed 结案
+
+新合同 `.e2e-artifacts/research-revision-4b-formal-v2/` 已完成 12 份自然原稿 × 2 个 seed × U/R/S/V 四臂，共 96/96 个回执。真实 writer、真实 `open_url`、真实 `submit_research_answer` 和隔离知识库均保留；S/V 各执行 24 次独立 reviewer 调用。运行级失败按合同保留在分母：U 22/24、R 22/24、S 23/24、V 22/24。
+
+汇总成本（总墙钟秒）为 U 1093.1、R 1134.2、S 1569.0、V 1615.0；相对 U 的比值分别为 R 1.038、S 1.435、V 1.477。S 在执行成功数上比 U 多 1 次，但同时出现 1 次回归，且没有形成可由冻结任务/证据合同支持的语义净收益；R 和 V 也没有建立任务级语义优势。知识候选保存数为 U 37、R 41、S 56、V 42，不能替代答案正确性证据。
+
+正式结论写入 `.e2e-artifacts/research-revision-4b-formal-v2/decision.json`：`reject`。R 没有收益，S/V 超过 1.25 成本门槛且没有净收益；生产保持基线，不合入额外 reviewer 或修订调用。审查输出只作诊断，未把 reviewer 自身判定当作金标。
+
+
+验证：`tests/test_research_window_coverage_candidate.py` 3 passed；Ruff 通过；`mypy codey/research` 76 个生产文件通过；4B/窗口实验脚本 `py_compile` 通过。对手工 harness 运行 mypy 仍报告既有未标注函数和 persistent_research_local.py 的历史类型问题，未因本次文档/实验结案修改生产代码。
