@@ -197,10 +197,11 @@ class ResearchSourceGateway:
                 mime_type=mime_type or "application/pdf",
                 pages=pages or PDF_DEFAULT_PAGES,
             )
-        return SourceDocument.html(
+        return SourceDocument(
             requested_url=requested_url,
             final_url=final_url,
             title=str(page.get("title") or ""),
+            content_kind="abstract" if content_kind == "abstract" else "html",
             text=str(page.get("text") or ""),
             mime_type=mime_type or "text/html",
             truncated=bool(page.get("truncated")),

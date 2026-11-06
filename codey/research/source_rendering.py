@@ -85,7 +85,10 @@ def _metadata_lines(document: SourceDocument) -> list[str]:
 
 
 def _source_kind_line(document: SourceDocument) -> str:
-    if str(getattr(document, "content_kind", "") or "").lower() != "pdf":
+    kind = str(getattr(document, "content_kind", "") or "").lower()
+    if kind == "abstract":
+        return "Kind: abstract only - the full paper has not been acquired in this snapshot."
+    if kind != "pdf":
         return ""
     bits = ["PDF", _pages_meta(document.pages_read, document.page_count)]
     if bool(getattr(document, "truncated", False)):

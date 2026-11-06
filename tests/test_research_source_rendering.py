@@ -75,3 +75,12 @@ def test_end_of_a_truncated_extraction_does_not_claim_complete_source_coverage()
     text = render_opened_source(doc, doc.text, read_window=(0, len(doc.text)))
     assert "End of available extracted source text" in text
     assert "unseen source content may remain" in text
+
+
+def test_abstract_end_does_not_imply_full_paper_was_read():
+    doc = SourceDocument(requested_url="https://example.test/abs", final_url="https://example.test/abs",
+                         content_kind="abstract", text="The abstract reports improved response.")
+    rendered = render_opened_source(doc, doc.text, read_window=(0, len(doc.text)))
+    assert "Kind: abstract only" in rendered
+    assert "full paper has not been acquired" in rendered
+    assert "End of available extracted source text" in rendered

@@ -21,6 +21,37 @@ def record_submission(session, args):
 
 
 @pytest.mark.usefixtures("public_source_dns")
+def test_abstract_scope_survives_context_omission_replay_and_archive(tmp_path, monkeypatch):
+    from codey.operations.kernel_facts import project_result_observation
+    from codey.research.answer_context import _render_context
+    from codey.research.context_view import read_evidence_projection
+    from codey.research.ledger import ResearchLedger
+
+    store, tools, session, delegate = setup(tmp_path)
+    monkeypatch.setattr(tools.search, "fetch", lambda url: {
+        "status": "ok", "url": url, "title": "Study abstract", "content_kind": "abstract",
+        "mime_type": "application/xml", "text": "Only an abstract: response was faster."})
+    try:
+        opened = execute(delegate, tools, session, "open_url", {"url": URL})
+        session._memory_results["read1"] = opened
+        scope = answer_scope(session)
+        assert "(abstract only)" in _render_context(session, tools.ledger, scope, scope.aliases)
+        hidden = _render_context(session, tools.ledger, scope, ())
+        assert '"content_kind":"abstract"' in hidden
+        recovered = ResearchLedger()
+        project_result_observation(session, opened.call, opened, ok=True, research_ledger=recovered)
+        projection = read_evidence_projection(session, recovered)
+        assert projection["packets"][0]["passages"][0]["content_kind"] == "abstract"
+        assert all(row["content_kind"] == "abstract" for row in projection["locators"] if "source_hash" in row)
+        record_submission(session, {"state": "partial", "markdown": "摘要报告响应更快。[e1]\n全文方法尚未取得。"})
+        report = compile_answer_report(session, recovered, store, project="", session_id="first")
+        archived = [row["value"] for row in report.knowledge_mutations if row["value"]["kind"] == "source"]
+        assert archived[0]["provenance"]["content_kind"] == "abstract"
+    finally:
+        store.close()
+
+
+@pytest.mark.usefixtures("public_source_dns")
 def test_cross_source_submission_prepares_one_atomic_archive_without_claims(tmp_path):
     store, tools, session, delegate = setup(tmp_path)
     try:

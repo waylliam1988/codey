@@ -83,6 +83,7 @@ def test_connector_aware_search_adds_pubmed_result_and_open_url_reads_connector_
         store.close()
 
     assert "hepatotoxicity" in opened
+    assert "Kind: abstract only" in opened
     assert results[0]["url"] in tools.sources_read
     assert base.fetches == []
     assert tools.ledger.opened_sources_payload()[0]["final_url"] == results[0]["url"]

@@ -80,6 +80,15 @@ class GatewaySearchTests(unittest.TestCase):
 
 
 class GatewayOpenTests(unittest.TestCase):
+    def test_open_abstract_preserves_scope_in_ledger(self) -> None:
+        page = dict(_HTML_PAGE, content_kind="abstract", mime_type="application/xml")
+        gateway, ledger, _failures = _gateway(pages={page["url"]: page})
+        outcome = gateway.open(page["url"])
+        self.assertEqual(outcome.status, "ok")
+        self.assertEqual(outcome.document.content_kind, "abstract")
+        self.assertEqual(ledger.opened_sources[0].content_kind, "abstract")
+        self.assertEqual(outcome.document.mime_type, "application/xml")
+
     def test_open_html_records_and_reports_read_urls(self) -> None:
         gateway, ledger, failures = _gateway(pages={"https://example.com/article": _HTML_PAGE})
         outcome = gateway.open("https://example.com/article")

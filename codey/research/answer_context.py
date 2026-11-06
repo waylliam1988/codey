@@ -171,7 +171,8 @@ def _render_context(session: Any, ledger: Any, scope: AnswerScope,
         passage = ledger.read_passages.get(ref) if ledger is not None else None
         if passage is None:
             raise ValueError("frozen research evidence is unavailable")
-        lines.append(f"[{label}] {passage.source.title} — {passage.source.final_url}\n{passage.excerpt}")
+        kind = " (abstract only)" if passage.source.content_kind == "abstract" else ""
+        lines.append(f"[{label}] {passage.source.title}{kind} — {passage.source.final_url}\n{passage.excerpt}")
     if not visible:
         lines.append("No original excerpts are repeated in this view. Previously read snapshots are indexed below."
                      if scope.aliases else "No original excerpt has been read for this task yet. "
@@ -191,6 +192,7 @@ def _render_context(session: Any, ledger: Any, scope: AnswerScope,
         if passage is None:
             raise ValueError("frozen research evidence is unavailable")
         retained.append({"label": label, "url": passage.source.final_url, "source_hash": passage.source.text_hash,
+                         "content_kind": passage.source.content_kind,
                          "start": passage.start, "end": passage.end,
                          **({"knowledge_source": list(passage.source_version)} if passage.source_version else {})})
     latest = list(session._memory_results.values())[-1:]

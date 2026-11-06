@@ -82,6 +82,7 @@ def read_evidence_projection(session: Any, ledger: Any, *, question_ref: str = "
         for ref in refs:
             passage = ledger.read_passages[ref]
             rows.append({**passage.descriptor(), "url": passage.source.final_url,
+                "content_kind": passage.source.content_kind,
                 "source_hash": passage.source.text_hash, "page": passage.page, "text": passage.excerpt,
                 "available_length": len(passage.source_text), "acquisition_truncated": passage.source.truncated})
         packets.append({"investigation_ref": label, "passages": rows, "complete_observed_window": True,
@@ -107,6 +108,7 @@ def read_evidence_projection(session: Any, ledger: Any, *, question_ref: str = "
         ranges = [(p.start, p.end) for p in ledger.read_passages.values()
                 if (p.source.final_url, p.source.text_hash) == (source.final_url, source.text_hash)]
         locators.append({**navigation, "url": source.final_url, "source_hash": source.text_hash,
+            "content_kind": source.content_kind,
             "available_length": len(text), **read_intervals(len(text), ranges),
             "sections": section_locators(text, content_kind=source.content_kind),
             "kind": "locator_not_evidence"})
