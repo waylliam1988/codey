@@ -675,6 +675,10 @@ ID 连字符抄成下划线是模型选择错误。原实现拒绝它，不会�
 
 ## 10. 复核资料
 
+2026-11-06 后续：[语义核查 A/B 与扩展回放](research-semantic-review-results-20261106.zh-CN.md)
+完成 112 次正式模型调用，候选未达误报门槛，没有进入生产发布流程；仅独立修复已复现的摘要身份丢失。
+本轮为离线诊断，不与本报告历史 proof 指标混算，亦不推翻此前展示实验未达合入门槛的结论。
+
 - 已实施代码：`d42ba1d5`（四处清理）、`fedc334b`（ledger 兼容修复）；新增正式回归为 `tests/test_research_audit_reuse.py`。实施后的[验证汇总](../.e2e-artifacts/research-production-cleanup-20261103/validation-summary.json)与本节以下的审查基线工件分开保存。
 
 - 新报告：[本报告的机器汇总](reports/research-branch-review-20261103.json)、[全部模块/定义/边界清单](reports/research-branch-inventory-20261103.json)。

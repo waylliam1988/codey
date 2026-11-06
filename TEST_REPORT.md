@@ -2,6 +2,34 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Research semantic-review experiment and abstract identity (2026-11-06)
+
+**123 focused tests passed across 11 files in 47.34s; no full pytest run.**
+This covers source gateway/rendering, connectors, whole-answer publication,
+read-receipt restoration, context and prior knowledge, pipeline/completion, and
+the experiment's identity, parsing, isolation and scoring contracts. Three new
+regressions first reproduced the production loss of abstract identity, then
+passed after its narrow fix; the archive/replay path also preserves that scope.
+
+Ruff `codey tests tools`, mypy's 597 production files, Pyrefly and ty targeting
+Python 3.11 passed. Pyrefly reports its existing 35 suppressions and 81 warnings.
+An unused import in the older HyperResearch experiment was removed after Ruff
+identified it. No typing exemptions were added.
+
+The frozen live diagnostic experiment completed **112 requests**, plus a retained
+two-request interrupted pilot excluded from scores. The candidate failed its
+promotion threshold: heldout correct-claim false alarms were 12.5%, above 10%;
+development also exposed invalid multi-JSON responses. Robustness and exact
+historical-sentence replay found citation misbinding and source-instruction
+contamination. Isolating each sentence's cited evidence improved error detection
+but increased false alarms. **No semantic gate or automatic revision entered
+production.** Only the deterministic abstract-identity bug fix did.
+
+See [results and limits](docs/research-semantic-review-results-20261106.zh-CN.md)
+and [scores, fixtures and evidence checksums](docs/reports/research-semantic-review-ab-20261106.json).
+All raw-file and lossless-archive hashes were verified after export. These
+offline diagnostic scores do not establish end-to-end answer-quality gains.
+
 ## Cross-model code-quality expansion (2026-11-06)
 
 **562 focused pytest tests passed in 101.18s across 64 files. No full-repository
