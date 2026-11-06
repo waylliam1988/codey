@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from unittest.mock import Mock
+import io
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -46,3 +47,24 @@ def test_candidate_preserves_cancellation():
     candidate, _ = provider(experiment.BrowserAfterConnector, HITS, cancellation.TaskCancelled())
     with pytest.raises(cancellation.TaskCancelled):
         candidate.search("PubMed evidence")
+
+
+def test_run_applies_backend_budget_after_local_selection_and_records_it(tmp_path):
+    import json
+
+    def fake_stage(*args, **kwargs):
+        from codey.providers.api_provider import ApiProvider
+
+        assert kwargs.get("reasoning_effort") is None
+        provider = ApiProvider("http://127.0.0.1:5001/v1", "test")
+        payload = {}
+        provider.configure_request(payload)
+        assert payload["reasoning_effort"] == "none"
+
+    response = io.BytesIO(b'{"idle":1,"queue":0}')
+    with patch.object(experiment, "urlopen", return_value=response), patch.object(
+        experiment.stage_module, "stage", side_effect=fake_stage
+    ):
+        experiment.run(tmp_path, "pubmed_myocarditis", "baseline", 1202, "http://127.0.0.1:5001", "test")
+    row = json.loads((tmp_path / "pubmed_myocarditis-1202-baseline/search-observations.json").read_text())
+    assert row["reasoning_effort"] == "none"

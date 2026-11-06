@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import urlopen
 
+from codey.providers import api_provider
 from codey.research import connector_search as production
 from codey.runtime.core import cancellation
 from tests.manual import persistent_research_local as stage_module
@@ -95,7 +96,7 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
 
     holder = {}
 
-    class ZeroReasoningProvider(stage_module.ApiProvider):
+    class ZeroReasoningProvider(api_provider.ApiProvider):
         """Experiment-only request control; leave production effort options alone."""
 
         def __init__(self, *args, **kwargs):
@@ -127,7 +128,7 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
             return save_config(replace(config, context=context))
 
         stack.enter_context(patch.object(local_config, "save_local_config", save_with_output_budget))
-        stack.enter_context(patch.object(stage_module, "ApiProvider", ZeroReasoningProvider))
+        stack.enter_context(patch.object(api_provider, "ApiProvider", ZeroReasoningProvider))
         stack.enter_context(patch("codey.operations.task_execution.default_research_search_provider", provider_factory, create=True))
         stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", provider_factory))
         old_context = ssl._create_default_https_context
