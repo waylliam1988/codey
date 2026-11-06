@@ -185,7 +185,16 @@ def provider_availability(ctx: TaskState) -> dict[str, bool]:
                 snapshot = coordinator.refresh(provider_id)
                 if getattr(snapshot, "state", "") == "checking":
                     snapshot = coordinator.wait_for(provider_id, timeout=2.0)
-                api_statuses[provider_id] = bool(getattr(snapshot, "available", False))
+                # The coordinator keeps the last good state for UI continuity
+                # when a refresh fails. That stale snapshot is displayable,
+                # but it is not a current advisor admission.
+                api_statuses[provider_id] = bool(
+                    getattr(snapshot, "available", False)
+                    and not (
+                        getattr(snapshot, "freshness", "") == "stale"
+                        and bool(getattr(snapshot, "error", ""))
+                    )
+                )
             except Exception:
                 # Availability is advisory. A failed connector probe must not
                 # make the whole task fail or make an unavailable advisor look
