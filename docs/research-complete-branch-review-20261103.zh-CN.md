@@ -751,3 +751,29 @@ ID 连字符抄成下划线是模型选择错误。原实现拒绝它，不会�
 新增实验适配器 `tests/manual/research_fulltext_recovery_ab.py`，固定 12 个来源状态：8 个摘要明确不足且存在公开正文，2 个摘要已足够，2 个正文不可得。候选只尝试来源自身提供的一个公开全文 URL；失败时保留摘要身份、URL 和缺口，不把下载成功当成已读全文。
 
 机制重放结果保存在 `.e2e-artifacts/research-fulltext-recovery-20261106.json`：8/8 个需要正文的状态成功恢复，来源身份保持，2 个不可得状态均回退为摘要。该结果证明了隔离适配器的回退边界，但没有真实网络快照、writer 答案、引用绑定或生产 `source_gateway` 端到端证据，因此 2B 当前判定为 `inconclusive`，不增加生产依赖、不改变默认获取路径。
+
+### 2A 真实联网续测：生成稳定性与协议开发检查
+
+已接入当前 `persistent_research_local.stage(live_web=True)`，实验适配器为
+`tests/manual/research_live_web_local_ab.py`，使用真实连接器、浏览器、KoboldCPP writer、
+`submit_research_answer` 和每例隔离知识库。生产 provider 和默认指导不变。
+候选保留生产浏览器异常回退、取消传播及合并去重，只移除连接器条数早停。
+
+早期 plain 工具协议的共同失败不是答案过长：wire 出现反复的 channel/thought 控制串，
+并以 `OutputLengthError` 截断。将共同 reserve 从 8192 提到 12000 未解决；工具调用实际
+输出上限仍为 4096，已恢复 reserve=8192。失败保留在
+`.e2e-artifacts/research-live-web-2a-dev-budget8192/`、`research-live-web-2a-dev-budget12000/`
+及 `research-live-web-2a-dev-recovered-v1/`，不将它们归因为搜索策略优劣。
+一次重叠开发批处理造成后端排队，已停止全部测试客户端，并通过现有 `2.kcpps` 配置重启；
+启动日志位于 `.e2e-artifacts/kobold-recovery-20261106/`。现在运行前检查后端空闲并持有进程锁，
+失败立即停止矩阵，且失败也保存来源观察。
+
+恢复后 hepatotoxicity 两臂真实联网均提交成功；基线正文存在将病例报告推广为一般管理建议的风险，
+不能以工具成功计为严格答案成功。myocarditis 的 plain 基线仍首轮退化，而生产已有的约束 JSON
+协议在相同开发题与 seed 下完成提交，保存在 `.e2e-artifacts/research-live-web-2a-dev-json-v1/`。
+这只是共同协议的开发诊断，尚未证明约束模式稳定或候选有效。
+
+新矩阵工具 `tests/manual/research_live_web_matrix.py` 将开发 4 题、正式 12 个未用主题和复核
+8 个新主题分开；源码、问题、模型、共同协议、预算、评分、成本与门槛均需在运行前冻结。
+约束 JSON 为两臂共有条件，不能把 plain 和约束结果混算，也不能外推到其他 provider。
+当前仍处于 2A 开发阶段；2B、③、4A/4B 的本轮真实端到端正式矩阵尚未完成，生产不采用任何候选。
