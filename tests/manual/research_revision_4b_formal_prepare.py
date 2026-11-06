@@ -39,7 +39,7 @@ def extract(folder):
 
 def prepare(root):
     root.mkdir(parents=True, exist_ok=False)
-    folders = sorted(SOURCE_ROOT.glob("*-baseline"))
+    folders = sorted(SOURCE_ROOT.glob("*-1601-baseline"))
     if len(folders) != 12:
         raise RuntimeError(f"expected 12 natural baseline drafts, found {len(folders)}")
     fixtures = {folder.name.removesuffix("-baseline"): extract(folder) for folder in folders}
