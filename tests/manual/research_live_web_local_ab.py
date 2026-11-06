@@ -95,6 +95,19 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
 
     holder = {}
 
+    class ZeroReasoningProvider(stage_module.ApiProvider):
+        """Experiment-only request control; leave production effort options alone."""
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            configure = self.configure_request
+
+            def zero_reasoning(payload):
+                configure(payload)
+                payload["reasoning_effort"] = "none"
+
+            self.configure_request = zero_reasoning
+
     def provider_factory():
         from codey.research.browser_search import BrowserSearchProvider
 
@@ -114,6 +127,7 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
             return save_config(replace(config, context=context))
 
         stack.enter_context(patch.object(local_config, "save_local_config", save_with_output_budget))
+        stack.enter_context(patch.object(stage_module, "ApiProvider", ZeroReasoningProvider))
         stack.enter_context(patch("codey.operations.task_execution.default_research_search_provider", provider_factory, create=True))
         stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", provider_factory))
         old_context = ssl._create_default_https_context
@@ -122,7 +136,7 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
         try:
             stage_module.stage(directory, "research", base_url, model, native=False, live_web=True,
                                question=QUESTIONS[case], max_turns=12, seed=seed, provider_timeout=180,
-                               constrained_text=constrained_text, reasoning_effort="none")
+                               constrained_text=constrained_text)
         finally:
             ssl._create_default_https_context = old_context
             observations = holder["provider"].observations if "provider" in holder else {}
