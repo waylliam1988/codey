@@ -49,7 +49,9 @@ def test_one_progress_summary_survives_tool_failure_and_waits_without_spinning_f
         addToSession('a', {type:'tool',runId,toolKey:'denied',kind:'run',path:'python probe.py',error:true,result:'command_not_allowed'});
     }""", run_id)
     expect(page.locator(".process-summary")).to_contain_text("Working")
-    expect(page.locator(".process-alerts")).to_contain_text("command_not_allowed")
+    expect(page.locator(".process-summary")).to_contain_text("1 failed tool")
+    page.locator('.process-summary').click()
+    expect(page.locator(".process-body")).to_contain_text("command_not_allowed")
     page.evaluate("""runId => {
         addToSession('a', {type:'shell_request',runId,id:'pending-card',command:'python probe.py',cwd:'E:/project-alpha',riskDetail:'Must not render reason'});
     }""", run_id)

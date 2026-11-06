@@ -4,6 +4,12 @@
 
 ## Unreleased
 
+- Keep tool calls in their first-observed slots through completion, failure and
+  command-card promotion. Group consecutive pending reads without merging across
+  intervening operations; retain CodeMode child order, disclosures and output
+  reading positions. Failed-tool counts remain visible in the process summary.
+  See the [implementation and verification record](docs/uiux_tool_stream_2026-11-06.md).
+
 - Preserve rejected Cline credential state across failed replacement login and
   backend restart. Clear invalid thinking selections/caches and require explicit
   reselection after capability changes for Cline, Zen and Local.

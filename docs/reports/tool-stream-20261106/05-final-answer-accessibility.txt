@@ -1,0 +1,118 @@
+Window: "Codey | Tool stream review", App: python.exe.
+	0 窗口 Codey | Tool stream review Secondary Actions: Raise
+		1 窗格 ID: 15468946
+			8 窗格 Codey - [InPrivate]
+				22 窗格 (disabled)
+				9 区域 Codey - Web 内容 (InPrivate)
+					10 区域
+						11 区域
+						12 区域
+							13 区域
+								14 区域
+								15 区域
+									16 区域
+										17 区域
+											18 区域
+												19 区域
+												23 文档 Codey Value: http://127.0.0.1:56648/ ID: RootWebArea
+													24 组
+														25 补充 ID: aside
+															26 缩略图 Resize sidebar Value: 260 ID: sidebar-resize
+															27 按钮 Collapse sidebar Description: Collapse sidebar ID: toggle-sidebar
+																28 图形
+															29 按钮 New chat Ctrl+N ID: btn-new-chat
+															30 按钮 Add project ID: btn-add-project
+																31 图形
+															32 按钮 Search chats and projects ID: chat-search-toggle
+																33 图形
+															56 文本 PROJECTS
+															57 文本 No projects
+															58 文本 CHATS
+															59 组
+																60 按钮 Tool stream review
+															39 按钮 Settings ID: btn-settings
+																40 图形
+														41 主要
+															61 按钮 Rename chat Description: Rename chat
+															43 按钮 More ID: topbar-more
+																44 图形
+															45 按钮 Open workspace Description: Open workspace
+															46 组 ID: chat
+																155 文本 YOU
+																156 文本 Fix the login form and verify the changes.
+																157 按钮 Copy message
+																158 按钮 Edit message Description: Edit message
+																159 按钮 Fork chat from here Description: Fork chat from here
+																160 文本 CODEY
+																161 详细信息
+																	162 开合三角标记
+																		163 状态
+																			164 文本 Worked for 1s · read 2 files · edited 1 file · ran 1 command · 1 failed tool
+																165 文本 DONE
+																166 文本 Updated the login form. The follow-up checks passed.
+																167 按钮 Details
+																168 按钮 Copy message
+																169 文本 Updated the login form. The follow-up checks passed.
+																170 按钮 Copy message
+																171 按钮 Fork chat from here Description: Fork chat from here
+															47 组 ID: composer-context
+																172 按钮 Choose folder ID: ctx-folder
+																173 文本 ·
+																174 切换按钮 Research ID: ctx-research
+															51 编辑 (settable, string) Send a message to Codey… Description: Send a message to Codey… ID: task
+															52 按钮 Choose model: Choose model ID: provider-button
+															175 文本 Enter
+															153 按钮 (disabled) Send message Description: Send ID: send
+																154 图形
+								20 区域
+						21 区域
+		2 标题栏 (settable, string) Value: Codey | Tool stream review
+			3 菜单栏 系统 ID: MenuBar
+				4 菜单项 系统
+			5 按钮 最小化
+			6 按钮 最大化
+			7 按钮 关闭
+
+Document text: ```
+Resize sidebar
+￼
+New chat
+Ctrl+N
+￼
+Add project
+￼
+Search
+PROJECTS
+No projects
+CHATS
+Tool stream review
+￼
+Settings
+Tool stream review
+￼
+￼
+Open workspace
+YOU
+Fix the login form and verify the changes.
+Copy message
+Edit message
+Fork chat from here
+CODEY
+Worked for 1s · read 2 files · edited 1 file · ran 1 command · 1 failed tool
+DONE
+Updated the login form. The follow-up checks passed.
+Details
+Copy message
+Updated the login form. The follow-up checks passed.
+Copy message
+Fork chat from here
+￼
+Choose folder
+·
+Research
+￼
+￼
+Choose model
+Enter
+￼
+```

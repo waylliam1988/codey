@@ -2,6 +2,19 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Stable tool stream positions (2026-11-06)
+
+**333 frontend tests passed** across 54 files; production typecheck/build,
+published-asset verification, formatting and scoped Ruff passed. **90 scoped
+Python/browser tests passed** covering tool order, nested calls, inline failures,
+command promotion, history, process toggles, Retry, narrow layouts, frontend
+publication and SSE boundaries. No full pytest run.
+
+The native Windows Codey review used production assets, an isolated local
+service, real SSE and controlled tool fixtures to compare the approved
+eight-stage preview with the actual UI. Fixed UI text remains English. See
+[behavior, commands, evidence and limits](docs/uiux_tool_stream_2026-11-06.md).
+
 ## Research frozen-answer revision D (2026-11-06)
 
 No production code changed. The D experiment replayed six previously generated

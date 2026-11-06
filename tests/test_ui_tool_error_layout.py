@@ -43,7 +43,8 @@ def test_tool_errors_do_not_overlap_or_overflow(layout_browser, assets, width, c
         }""", compact)
         measurements = page.locator(".tool-line").evaluate_all("""rows => rows.map(row => {
           const bounds = row.getBoundingClientRect();
-          const result = row.querySelector('.tl-result').getBoundingClientRect();
+              const output = row.querySelector('.tl-result');
+              const result = output.getBoundingClientRect();
           const path = row.querySelector('.tl-path').getBoundingClientRect();
           const kind = row.querySelector('.tl-kind');
           const name = kind && kind.getBoundingClientRect();
@@ -55,8 +56,8 @@ def test_tool_errors_do_not_overlap_or_overflow(layout_browser, assets, width, c
             textOverlapsPath: !!text && text.getBoundingClientRect().right > path.left + 1,
             errorBelowHeader: !row.classList.contains('error') ||
               result.top >= Math.max(path.bottom, name ? name.bottom : path.bottom) - 1,
-            resultInsideRow: result.left >= bounds.left - 1 && result.right <= bounds.right + 1 &&
-              result.bottom <= bounds.bottom + 1,
+                resultInsideRow: !output.textContent || (result.left >= bounds.left - 1 && result.right <= bounds.right + 1 &&
+                  result.bottom <= bounds.bottom + 1),
             beforeNextRow: !row.nextElementSibling ||
               bounds.bottom <= row.nextElementSibling.getBoundingClientRect().top + 1
           };

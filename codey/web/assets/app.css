@@ -431,7 +431,7 @@
   .process-body { padding-top: 10px; }
   .process-diagnostic { margin-top: 8px; color: var(--text-dim); font-size: 12px; }
   .thinking-section + .thinking-section { margin-top: 12px; }
-  .process-body .msg.tool { margin-bottom: 6px; }
+  .process-body .msg:is(.tool, .command-card) { margin-bottom: 6px; }
   .process-alerts { margin-top: 8px; }
   .process-alerts:empty { display: none; }
   .thinking { margin: 0 0 8px; }
@@ -515,6 +515,7 @@
   }
   .tool-line .tl-arrow { color: var(--faint); }
   .tool-line .tl-result { color: var(--text-dim); min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .tool-line.no-result .tl-result { display: none; }
   .tool-line .tl-result.err { color: var(--err-text); }
   .tool-line.pending .tl-result { color: var(--muted); }
   .tool-line.compact { grid-template-columns: 12px minmax(0, 1fr) 12px minmax(0, 2fr); }
@@ -1602,7 +1603,7 @@
   .task-list-item-checkbox { accent-color: var(--text-dim); margin-right: 8px; }
   .md hr { border: 0; border-top: 1px solid var(--border); margin: 18px 0; }
   .tool-disclosure { min-width: 0; }
-  .tool-disclosure > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) 12px; align-items: baseline; gap: 8px; color: var(--text-dim); }
+  .tool-disclosure > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: minmax(0, 1fr) 12px; align-items: center; gap: 8px; color: var(--text-dim); }
   .tool-disclosure > summary::-webkit-details-marker { display: none; }
   .tool-disclosure > summary::after { content: ''; width: 12px; height: 12px; flex-shrink: 0; background: currentColor; mask: url('/assets/chevron-down.svg') center / contain no-repeat; }
   .tool-disclosure[open] > summary::after { transform: rotate(180deg); }

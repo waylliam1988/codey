@@ -425,7 +425,7 @@ Assistant reply in sans, --text.
 **Role labels:** use `You` / `Codey` where needed to identify the author. Contiguous
 process and answer content does not require a repeated uppercase label per fragment.
 
-**Process disclosure:** one group per user request; continuation after approval uses the same group. Ordinary tools and optional thinking belong inside it. The final answer stays outside and expanded; errors and approval cards remain visible outside the disclosure.
+**Process disclosure:** one group per user request; continuation after approval uses the same group. Tools, their retained failures and optional thinking belong inside it. The final answer stays outside and expanded. The summary includes failed-tool counts even when closed; task recovery actions and approval cards remain visible outside the disclosure.
 
 ```
 ▸ Worked · read 4 files · edited 2 files · ran 1 command
@@ -438,6 +438,25 @@ Running copy is `Working · <current action>` or `Working · Waiting for reply`;
 `Thinking` appears only for nonempty reasoning text returned separately by the model. It defaults to closed, retains its source language, and has a Copy action. Never infer thinking from wait time, parse it out of answer text, or scrape model websites to manufacture this section. The same rendering applies to every connection.
 
 **Tool lines:** compact text summaries without a resting container. Read shows the file and observed line range; search shows the query and retained match count (`+` means more results); edit shows the actual file and measured `+n −n`. Expand a tool to inspect its retained content or bounded edit diff. Counts and diffs come from the content actually written, never model claims. Missing before-content or a preview budget limit means `Changed · preview unavailable`, never fabricated statistics. Failed tools use a short actionable explanation; keep the complete retained error inside Details. Use `--err-text` only for the failure text.
+
+**Stable tool order:** reserve a call's position when it is first observed within
+its run and parent scope. Completion, failure and repeated observations update
+that position; they never append the call again or sort by completion time.
+CodeMode retains its position and its children's first-observed sibling order.
+An orphan may attach when its explicit parent arrives; missing identities never
+justify inventing a parent or execution timestamp. Shell results promote the
+matching generic call into a command card at the same position.
+
+Fold only consecutive calls of the same kind, run, turn and parent. Pending and
+failed calls retain membership; intervening operations or reasoning break the
+segment. A read after an edit starts a new segment. Show counts such as
+`2 files · 1 running · 1 failed` in the group summary. Failures remain in their
+original slot and contribute to the process summary's `1 failed tool` count.
+Preserve explicit expansion and retained output scroll positions through updates
+and history reconciliation. Focused result controls retain focus during in-place
+call updates. Added content may grow a row; it must not change the call's
+chronological slot. See the
+[implementation and verification record](docs/uiux_tool_stream_2026-11-06.md).
 
 **Status rows** (done, pause, limit, error):
 
@@ -975,8 +994,9 @@ Process history defaults to one collapsed summary per user request, including
 while tools are running. Show live activity in the summary; preserve a user's
 explicit expansion across updates and chat changes. Keep one Thinking entry
 with ordered reasoning sections rather than a repeated row per turn. Omit the
-step-number footer. Tool failures and approval controls stay outside the folded
-history so required actions remain available.
+step-number footer. Tool failures stay in their original history slots with a
+visible failed-tool count in the summary. Task recovery actions and approval
+controls stay outside the folded history so required actions remain available.
 
 Local memory/maintenance warnings do not mean the command or task is paused.
 Keep them in request Details or the process diagnostic body, deduplicated and

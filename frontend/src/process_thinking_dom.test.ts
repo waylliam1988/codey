@@ -136,6 +136,7 @@ describe('process thinking DOM', () => {
   beforeEach(() => {
     document.body.innerHTML = '<div id="chat"></div>';
     window.Render = {
+      breakToolGroup: vi.fn(),
       renderMarkdown: vi.fn((element: HTMLElement, text: string) => {
         element.textContent = text;
       }),
@@ -163,6 +164,7 @@ describe('process thinking DOM', () => {
 it('keeps one quiet process disclosure and one thinking entry for repeated turns', async () => {
   await import('./process');
   window.Render = {
+    breakToolGroup: vi.fn(),
     renderMarkdown: (el: HTMLElement, text: string) => {
       el.textContent = text;
     },

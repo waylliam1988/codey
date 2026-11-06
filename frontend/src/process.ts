@@ -11,6 +11,7 @@ export interface ProcessSnapshot {
   thinking: boolean[];
   tools: boolean[];
   details?: Record<string, boolean>;
+  outputReading?: Record<string, { top: number; left: number }>;
 }
 export interface ProcessApi {
   append(
@@ -219,6 +220,8 @@ export interface ProcessToolRecord {
               : pending.activity || pending.kind + ' ' + pending.path)
           : ' · Waiting for reply';
     else if (counts.length) text += ' · ' + counts.join(' · ');
+    const failures = tools.filter((record) => record.error || record.status === 'error').length;
+    if (failures) text += ` · ${failures} failed tool${failures === 1 ? '' : 's'}`;
     const title = block.querySelector<HTMLElement>('.process-title');
     if (title)
       title.textContent =
@@ -259,6 +262,7 @@ export interface ProcessToolRecord {
     const key = String(step || 0) + ':' + text;
     if (block._process.reasoning.has(key)) return;
     block._process.reasoning.add(key);
+    runtime.Render.breakToolGroup(block.querySelector<HTMLElement>('.process-body')!);
     let details = block.querySelector<HTMLDetailsElement>('.thinking');
     if (!details) {
       details = document.createElement('details');
@@ -277,6 +281,7 @@ export interface ProcessToolRecord {
   }
 
   function tool(block: ProcessBlock, m: ToolRecord): void {
+    if (m.status === 'error' && !m.error) m = { ...m, error: true };
     // Approved shell executions also publish a command card. Match the
     // original call identity so its generic tool projection stays singular.
     if (
@@ -295,31 +300,33 @@ export interface ProcessToolRecord {
           (el) => el.dataset.toolKey === m.toolKey,
         )
       : undefined;
-    const target = block.querySelector<HTMLElement>(m.error ? '.process-alerts' : '.process-body');
+    const target = block.querySelector<HTMLElement>('.process-body');
     if (!target) return;
     const children = existing?.querySelector(':scope > .tool-children');
-    const disclosures = existing
-      ? Array.from(existing.querySelectorAll<HTMLDetailsElement>('details')).map((detail) => detail.open)
-      : [];
-    if (existing) existing.remove();
-    if (m.pending || m.error || m.parentCallId || m.toolName === 'codemode')
-      target.append(runtime.Render.standaloneToolEl(m));
-    else runtime.Render.appendOrFoldTool(target, m);
-    if (m.callId) {
-      const node = Array.from(target.querySelectorAll<HTMLElement>('[data-tool-key]')).find(
-        (element) => element.dataset.toolKey === m.toolKey,
-      );
-      if (node) {
-        node.dataset.callId = m.callId;
-        node.dataset.callScope = m.runId || '';
-        if (m.entryId) node.dataset.entryId = m.entryId;
-        if (children) node.append(children);
-        node.querySelectorAll<HTMLDetailsElement>('details').forEach((detail, index) => {
-          if (disclosures[index] !== undefined) detail.open = disclosures[index];
-        });
-      }
-      syncToolTree(block);
+    const disclosure = existing?.querySelector<HTMLDetailsElement>(':scope > .tool-disclosure');
+    const output = disclosure?.querySelector<HTMLElement>('pre');
+    const outputReading = output ? { top: output.scrollTop, left: output.scrollLeft } : null;
+    const focused =
+      disclosure?.contains(document.activeElement) && document.activeElement instanceof HTMLElement
+        ? document.activeElement.tagName
+        : '';
+    const node = runtime.Render.standaloneToolEl(m, !!existing?.closest('.tool-group')) as HTMLElement;
+    if (existing) node.dataset.foldsegment = existing.dataset.foldsegment || '';
+    if (children) node.append(children);
+    const nextDisclosure = node.querySelector<HTMLDetailsElement>(':scope > .tool-disclosure');
+    if (nextDisclosure && disclosure) nextDisclosure.open = disclosure.open;
+    // Status updates keep their slot, including inside a folded group or a parent.
+    if (existing) existing.replaceWith(node);
+    else if (m.parentCallId || m.toolName === 'codemode') target.append(node);
+    else runtime.Render.appendOrFoldTool(target, m, node);
+    runtime.Render.refreshToolGroup(node);
+    const nextOutput = nextDisclosure?.querySelector<HTMLElement>('pre');
+    if (outputReading && nextOutput) {
+      nextOutput.scrollTop = outputReading.top;
+      nextOutput.scrollLeft = outputReading.left;
     }
+    if (focused) nextDisclosure?.querySelector<HTMLElement>(focused.toLowerCase())?.focus({ preventScroll: true });
+    syncToolTree(block);
     summary(block);
   }
 
@@ -334,7 +341,7 @@ export interface ProcessToolRecord {
     for (const record of records) {
       const own = `${record.runId}:${record.callId}`;
       const node = nodes.get(own);
-      if (!node || !record.parentCallId || record.error) continue;
+      if (!node || !record.parentCallId) continue;
       const parent = nodes.get(`${record.runId}:${record.parentCallId}`);
       let cursor: ToolRecord | undefined = record;
       const seen = new Set<string>();
@@ -357,7 +364,10 @@ export interface ProcessToolRecord {
         parent.append(children);
       }
       node.dataset.toolDepth = String(depth);
-      children.append(node);
+      // A completion must not pull an existing child out of its group or move
+      // siblings. Only newly observed/orphaned calls need attachment.
+      if (node.parentElement === children || node.closest('.tool-group')?.parentElement === children) continue;
+      runtime.Render.appendOrFoldTool(children, record, node);
     }
   }
   function state(block: ProcessBlock, value: ProcessStatus, explicit = true): void {
@@ -400,12 +410,31 @@ export interface ProcessToolRecord {
     if (!m.runId) return false;
     if (m.type === 'shell_result') {
       const block = ensure(chat, m.runId);
-      const key = `approval:${m.id || m.runId}`;
-      m = mergeCommandResult(block._process.tools.get(key), m);
-      const target = block.querySelector<HTMLElement>('.process-body')!;
-      const existing = Array.from(target.querySelectorAll<HTMLElement>('.command-card')).find(
-        (node) => node.dataset.approvalId === m.id,
+      const generic = m.callId
+        ? [...block._process.tools].find(
+            ([, record]) => record.type !== 'shell_result' && record.runId === m.runId && record.callId === m.callId,
+          )
+        : undefined;
+      const accepted = [...block._process.tools].find(
+        ([, record]) =>
+          record.type === 'shell_result' &&
+          record.runId === m.runId &&
+          (m.id ? record.id === m.id : !!m.callId && record.callId === m.callId),
       );
+      const key =
+        accepted?.[0] || generic?.[0] || (m.callId ? `${m.runId}:${m.callId}` : `approval:${m.id || m.runId}`);
+      m = mergeCommandResult(block._process.tools.get(key), m);
+      if (!m.parentCallId && generic?.[1].parentCallId) m = { ...m, parentCallId: generic[1].parentCallId };
+      const target = block.querySelector<HTMLElement>('.process-body')!;
+      let existing = Array.from(target.querySelectorAll<HTMLElement>('.command-card')).find(
+        (node) =>
+          node.dataset.callScope === m.runId &&
+          (m.id ? node.dataset.approvalId === m.id : !!m.callId && node.dataset.callId === m.callId),
+      );
+      if (!existing && generic)
+        existing = Array.from(target.querySelectorAll<HTMLElement>('[data-tool-key]')).find(
+          (node) => node.dataset.toolKey === generic[0],
+        );
       const open = existing?.querySelector<HTMLDetailsElement>('details')?.open;
       const outputReading = captureCommandOutput(existing);
       let children = existing?.querySelector(':scope > .tool-children');
@@ -416,17 +445,18 @@ export interface ProcessToolRecord {
             (element) => element.dataset.toolKey === toolKey,
           );
           children ||= node?.querySelector(':scope > .tool-children');
-          node?.remove();
-          block._process.tools.delete(toolKey);
+          existing ||= node;
+          if (node && node !== existing) node.remove();
+          if (toolKey !== key) block._process.tools.delete(toolKey);
         }
       }
       const fragment = document.createElement('div');
       render(fragment, m);
       const card = fragment.firstElementChild;
       if (card) {
-        if (m.callId && card instanceof HTMLElement) {
-          card.dataset.callId = m.callId;
+        if (card instanceof HTMLElement) {
           card.dataset.callScope = m.runId || '';
+          if (m.callId) card.dataset.callId = m.callId;
         }
         if (children) card.append(children);
         const details = card.querySelector<HTMLDetailsElement>('details');
@@ -440,7 +470,12 @@ export interface ProcessToolRecord {
         toolKey: key,
         kind: 'shell',
         pending: ['queued', 'running'].includes(m.shellStatus || ''),
-        error: m.approved !== true || (m.shellStatus === 'exit' && m.exitCode !== 0),
+        error:
+          m.approved !== true ||
+          (m.shellStatus === 'exit' && m.exitCode !== 0) ||
+          ['stopped', 'timeout', 'spawn_error', 'wait_error', 'output_read_error', 'drain_timeout'].includes(
+            m.shellStatus || '',
+          ),
       });
       syncToolTree(block);
       // Results end the approval wait; late results never restart a terminal run.
@@ -549,6 +584,14 @@ export interface ProcessToolRecord {
             el.open,
           ]),
         ),
+        outputReading: Object.fromEntries(
+          Array.from(processBlock.querySelectorAll<HTMLDetailsElement>('.tool-disclosure[data-tool-key]')).flatMap(
+            (el) => {
+              const output = el.querySelector('pre');
+              return output ? [[el.dataset.toolKey!, { top: output.scrollTop, left: output.scrollLeft }]] : [];
+            },
+          ),
+        ),
       };
     });
   }
@@ -573,6 +616,12 @@ export interface ProcessToolRecord {
       block.querySelectorAll<HTMLDetailsElement>('.tool-disclosure[data-tool-key]').forEach((el) => {
         const open = item.details?.[el.dataset.toolKey!];
         if (open !== undefined) el.open = open;
+        const reading = item.outputReading?.[el.dataset.toolKey!];
+        const output = el.querySelector('pre');
+        if (reading && output) {
+          output.scrollTop = reading.top;
+          output.scrollLeft = reading.left;
+        }
       });
     }
   }

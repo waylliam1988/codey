@@ -154,7 +154,7 @@ describe('render boundaries', () => {
     expect(group.querySelector('.tg-count')?.textContent).toBe('2 files');
   });
 
-  it('keeps reads in one group when reasoning appears between calls', () => {
+  it('keeps a new read after the intervening reasoning instead of folding it backwards', () => {
     const host = document.createElement('div');
     window.Render.appendOrFoldTool(host, { kind: 'read', path: 'README.md', result: 'one' });
     const reasoning = document.createElement('details');
@@ -165,10 +165,9 @@ describe('render boundaries', () => {
       path: 'docs/影像零售技术栈发展方案.md',
       result: 'two',
     });
-    const group = host.querySelector<HTMLElement>('.tool-group')!;
-    expect(host.querySelectorAll('.tool-group')).toHaveLength(1);
-    expect(group.querySelector('.tg-count')?.textContent).toBe('2 files');
-    expect(group.textContent).toContain('docs/影像零售技术栈发展方案.md');
+    expect(host.querySelectorAll('.tool-group')).toHaveLength(0);
+    expect(host.children[1]).toBe(reasoning);
+    expect(host.children[2].textContent).toContain('docs/影像零售技术栈发展方案.md');
   });
 
   it('does not ellipsize a file path when there is no result column', () => {

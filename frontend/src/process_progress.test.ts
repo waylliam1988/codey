@@ -108,7 +108,7 @@ it('attaches a child arriving before its parent, retains it through settlement a
   expect(chat.querySelectorAll('[data-call-id="child"]')).toHaveLength(1);
 });
 
-it('does not nest cycles or hide child failures inside the collapsed parent', () => {
+it('does not nest cycles and keeps failures in their original stream with a visible failure count', () => {
   const chat = document.createElement('div');
   const make = (id: string, parent: string, error = false) => ({
     type: 'tool',
@@ -124,5 +124,7 @@ it('does not nest cycles or hide child failures inside the collapsed parent', ()
   window.Process.append(chat, make('b', 'a'), () => {});
   expect(chat.querySelector('.tool-children')).toBeNull();
   window.Process.append(chat, make('error', 'a', true), () => {});
-  expect(chat.querySelector('.process-alerts [data-call-id="error"]')).not.toBeNull();
+  expect(chat.querySelector('.process-body [data-call-id="error"]')).not.toBeNull();
+  expect(chat.querySelector('.process-alerts [data-call-id="error"]')).toBeNull();
+  expect(chat.querySelector('.process-title')?.textContent).toContain('1 failed tool');
 });
