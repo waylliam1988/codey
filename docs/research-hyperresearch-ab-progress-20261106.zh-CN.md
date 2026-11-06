@@ -35,3 +35,7 @@
 ## 验证范围
 
 本轮使用定向测试、Ruff 和相关类型检查；没有运行全量 pytest。
+
+### 4A 正式结案
+
+4A v1 在第 13 次 task-level `no_progress` 失败处封存为 `inconclusive`。新合同 v2 将此类失败计入样本并继续健康矩阵，48/48 完成：baseline 发布 9、失败 15；delivery 发布 8、失败 16。两臂知识保存题均有 8 个运行保存 candidate claim，候选没有增加保存成功，且多一次失败；`decision.json` 为 `reject`。4A 提示不进入生产，4B 尚未开始。
