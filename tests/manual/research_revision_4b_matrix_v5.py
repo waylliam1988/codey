@@ -91,7 +91,7 @@ def worker(root, case, arm, seed):
         feedback = review["feedback"]
     probe.stage(directory, "research", "http://127.0.0.1:5001", read(root / "contract.json")["model"],
                 native=False, live_web=False, question=question(fixture, arm, feedback), max_turns=12,
-                seed=seed, provider_timeout=180, constrained_text=True, reasoning_effort="none")
+                seed=seed, provider_timeout=180, constrained_text=True)
 
 
 def prepare(root):
