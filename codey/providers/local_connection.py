@@ -119,6 +119,9 @@ def connect_local( *, config: _local_config.LocalProviderConfig | None = None,
         reasoning_effort=config.reasoning_effort if selection.base_url == config.base_url else None,
         api_protocol=config.api_protocol,
         native_tools=native_tools,
+        # Text tool compatibility changes framing, not transport ownership.
+        # KoboldCpp only monitors client disconnects for streamed requests.
+        stream=effective.native_tools,
         text_tool_format=text_format,
         text_decoder=normalize_local_reply,
         usage_parser=parser_for(config.api_protocol), configure_request=configure_usage,
@@ -167,7 +170,7 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
                            native_tools, window,
                            budget.context_reserve_tokens, min(budget.context_keep_recent_tokens, window - budget.context_reserve_tokens),
                            False if text_format == "json_schema" else config.thinking_enabled, config.reasoning_effort,
-                           stream=native_tools,
+                           stream=requested_native,
                            output_tokens=budget.context_reserve_tokens, token_counter=counter,
                            budget_source="server" if budget.source == "server" else "server_and_configuration" if counter == "koboldcpp" else "configuration",
                            text_tool_format=text_format)

@@ -1,6 +1,8 @@
 """Known server parser defect: protocol admission, real wire and execution."""
 import json
+import threading
 from dataclasses import replace
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -36,8 +38,8 @@ def test_workaround_is_limited_to_reproduced_backend_and_format(monkeypatch, met
     assert all(url == 'http://fixture/api/extra/version' and key == 'test-key' for url, key in seen)
 
 
-def configured(monkeypatch, thinking=True):
-    saved = local_config.LocalProviderConfig(base_url=BASE, model=MODEL, native_tools_mode='on',
+def configured(monkeypatch, thinking=True, base=BASE):
+    saved = local_config.LocalProviderConfig(base_url=base, model=MODEL, native_tools_mode='on',
         connection_revision='fixture', thinking_enabled=thinking,
         context=local_config.LocalContextBudget(32768, 8192, 12000))
     monkeypatch.setenv('NATIVE_TOOLS', '1')
@@ -45,7 +47,7 @@ def configured(monkeypatch, thinking=True):
     monkeypatch.setattr(local_selection, 'load_local_config', lambda: saved)
     monkeypatch.setattr(local_selection, '_metadata_json', lambda *_: VERSION)
     monkeypatch.setattr('codey.providers.local_discovery.resolve_local_endpoint',
-                        lambda **_: LocalEndpoint(BASE, (MODEL,)))
+                        lambda **_: LocalEndpoint(base, (MODEL,)))
     monkeypatch.setattr(local_tokens, 'admitted_context_budget', lambda *args: ('estimated', args[-1]))
     return saved
 
@@ -53,14 +55,14 @@ def configured(monkeypatch, thinking=True):
 def test_capture_freezes_safe_protocol_without_changing_preferences_or_thinking(monkeypatch):
     saved = configured(monkeypatch)
     selection = local_connection.capture_selection()
-    assert not selection.native_tools and not selection.stream
+    assert not selection.native_tools and selection.stream
     assert selection.text_tool_format == 'plain' and selection.thinking_enabled is True
     assert local_config.load_local_config() is saved and saved.native_tools_mode == 'on'
     restored = ApiRunSelection.from_payload(selection.to_payload())
     monkeypatch.setattr(local_selection, '_metadata_json', lambda *_: pytest.fail('frozen text mode does not probe'))
     provider = local_connection.open_selection(restored)
     try:
-        assert provider.native_tools is False and provider.thinking_enabled is True
+        assert provider.native_tools is False and provider.thinking_enabled is True and provider.stream
     finally:
         provider.close()
 
@@ -72,16 +74,65 @@ def test_old_unsafe_native_selection_is_not_silently_changed_mid_run(monkeypatch
         local_connection.open_selection(selection)
 
 
+def test_old_text_selection_keeps_its_frozen_transport(monkeypatch):
+    configured(monkeypatch)
+    selection = replace(local_connection.capture_selection(), stream=False)
+    provider = local_connection.open_selection(ApiRunSelection.from_payload(selection.to_payload()))
+    try:
+        assert not provider.native_tools and not provider.stream
+    finally:
+        provider.close()
+
+
+def test_text_fallback_timeout_closes_stream_and_discards_partial_edit(monkeypatch):
+    from codey.providers.api_transport import GenerationUnknownError
+
+    disconnected, received = threading.Event(), []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            received.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/event-stream')
+            self.end_headers()
+            # A truncated edit frame must never become committed history.
+            self.wfile.write(b'data: {"choices":[{"delta":{"content":"{\\"tool\\":\\"edit\\"')
+            self.wfile.flush()
+            self.connection.settimeout(3)
+            if self.connection.recv(1) == b'':
+                disconnected.set()
+
+        def log_message(self, *_args):
+            pass
+
+    with ThreadingHTTPServer(('127.0.0.1', 0), Handler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        configured(monkeypatch, False, base=f'http://127.0.0.1:{server.server_port}/v1')
+        provider = local_connection.open_selection(local_connection.capture_selection())
+        try:
+            with pytest.raises(GenerationUnknownError):
+                provider.send('Edit app.py only after reading it.', timeout=0.5)
+            assert disconnected.wait(2), 'backend did not observe client disconnect'
+            assert not provider.has_transport_history
+            assert len(received) == 1 and received[0]['stream'] is True
+            assert 'tools' not in received[0]
+        finally:
+            provider.close()
+            server.shutdown()
+            thread.join(2)
+
+
 @pytest.mark.parametrize('thinking', [False, None])
 def test_no_thinking_uses_existing_json_constraints_at_admission_and_direct_connect(monkeypatch, thinking):
     saved = configured(monkeypatch, thinking)
     selection = local_connection.capture_selection()
-    assert not selection.native_tools and not selection.stream
+    assert not selection.native_tools and selection.stream
     assert selection.text_tool_format == 'json_schema' and selection.thinking_enabled is False
     assert saved.thinking_enabled is thinking
     for provider in (local_connection.connect_local(), local_connection.open_selection(selection)):
         try:
-            assert not provider.native_tools and provider.text_tool_format == 'json_schema'
+            assert not provider.native_tools and provider.text_tool_format == 'json_schema' and provider.stream
             assert provider.thinking_enabled is False
         finally:
             provider.close()
