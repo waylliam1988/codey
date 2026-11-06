@@ -69,7 +69,7 @@ def prepare(root: Path, phase: str, base_url: str) -> None:
         "model": backend["data"][0]["id"], "backend_version": version,
         "base_url": base_url, "context_window": 32768, "output_tokens": live.OUTPUT_TOKENS,
         "turns": 12, "provider_timeout_seconds": 180, "process_timeout_seconds": 900,
-        "protocol": "production constrained JSON tool calls; thinking disabled; temperature 0.3",
+        "protocol": "production constrained JSON tool calls; enable_thinking=false AND reasoning_effort=none; temperature 0.3",
         "constrained_text": True,
         "sole_treatment": "remove connector hit-count early stop; preserve browser error fallback, cancellation, merge and dedup",
         "network": "live connector and browser; original retrieved snapshots and actual wire retained per run; SSL verification disabled in both development adapters",
@@ -77,7 +77,8 @@ def prepare(root: Path, phase: str, base_url: str) -> None:
             "strict_success": "all requested facets answered correctly, important claims supported by actually read exact sources, limitations preserved, no severe scope/citation error, answer atomically saved",
             "per_facet": "review original task and actual source snapshots; score each requested facet correct/incorrect/missing; invented certainty fails",
             "review": "independent source-based assessment; writer declarations and keyword counts are not gold",
-            "ordinary_tasks": ["arxiv_self_rag", "arxiv_react", "arxiv_ragas", "arxiv_ragtruth"],
+            "ordinary_tasks": (["arxiv_self_rag", "arxiv_react", "arxiv_ragas", "arxiv_ragtruth"]
+                               if phase != "confirm" else [name for name, _ in CONFIRM_TOPICS if name.startswith("arxiv_")]),
         },
         "mechanism": "at least two connector hits and suppressed browser in baseline; browser results returned to writer in candidate; report triggered subset and all runs",
         "gate": {"positive_tasks_min": 3, "negative_tasks_max": 1, "strict_success_delta_min": 0.10,

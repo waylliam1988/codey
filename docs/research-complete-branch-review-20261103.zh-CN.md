@@ -777,3 +777,11 @@ ID 连字符抄成下划线是模型选择错误。原实现拒绝它，不会�
 8 个新主题分开；源码、问题、模型、共同协议、预算、评分、成本与门槛均需在运行前冻结。
 约束 JSON 为两臂共有条件，不能把 plain 和约束结果混算，也不能外推到其他 provider。
 当前仍处于 2A 开发阶段；2B、③、4A/4B 的本轮真实端到端正式矩阵尚未完成，生产不采用任何候选。
+
+约束模式四题开发 v1 在第二个运行停止：hepatotoxicity baseline 成功，candidate 搜索后仍控制串
+循环并截断；完整失败保存在 `research-live-web-2a-dev-json-frozen-v1/`。后续对同一实际 payload
+做有界协议重放，显式 `reasoning_effort=none` 才返回正常 JSON 工具调用；重放请求与响应保存为
+`.e2e-artifacts/kobold-recovery-20261106/protocol-replays.json`。KoboldCPP v1.117.1 对
+`enable_thinking` 模板参数和 `reasoning_effort` 推理预算分别处理，关闭模板思考不等于推理预算为零。
+两臂共同增加后者后重新冻结开发 v2，旧结果不混入。此前 96 项相邻定向测试、Ruff、Mypy、
+Pyrefly、Ty 通过；Pyrefly 同时保留既有 warnings/suppressions，不声称零警告。

@@ -122,7 +122,7 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
         try:
             stage_module.stage(directory, "research", base_url, model, native=False, live_web=True,
                                question=QUESTIONS[case], max_turns=12, seed=seed, provider_timeout=180,
-                               constrained_text=constrained_text)
+                               constrained_text=constrained_text, reasoning_effort="none")
         finally:
             ssl._create_default_https_context = old_context
             observations = holder["provider"].observations if "provider" in holder else {}
@@ -130,6 +130,7 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
                 json.dumps({**observations, "elapsed_seconds": time.monotonic() - started,
                             "case": case, "arm": arm, "seed": seed, "model": model,
                             "constrained_text": constrained_text,
+                            "reasoning_effort": "none",
                             "output_tokens": OUTPUT_TOKENS}, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
