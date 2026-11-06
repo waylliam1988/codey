@@ -102,7 +102,7 @@ def prepare(root):
     with urlopen("http://127.0.0.1:5001/v1/models", timeout=10) as response:
         model = json.load(response)["data"][0]["id"]
     write(root / "contract.json", {"phase": "dev-v5", "cases": list(CASES), "arms": ARMS,
-                                    "seed": 4501, "model": model,
+                                    "seeds": [4501], "model": model,
                                     "review_calls": "S and V each use one separate reviewer call before one writer revision call",
                                     "evidence": "exact evidence_bindings and original labels from 4A answer provenance; no normalization"})
     identity = {name: hashlib.sha256(Path(name).read_bytes()).hexdigest()
@@ -125,18 +125,19 @@ def run(root):
     verify(root)
     contract = read(root / "contract.json")
     for case in contract["cases"]:
-        for arm in contract["arms"]:
-            name = f"{case}-{contract['seed']}-{arm}"
-            receipt = root / (name + ".json")
-            if receipt.exists():
-                continue
-            started = time.monotonic()
-            command = [sys.executable, "-m", "tests.manual.research_revision_4b_matrix_v5", "worker",
-                       "--root", str(root), "--case", case, "--arm", arm, "--seed", str(contract["seed"])]
-            result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
-            write(receipt, {"exit_code": result.returncode, "stdout": result.stdout, "stderr": result.stderr,
-                            "elapsed_seconds": time.monotonic() - started})
-            print(name, result.returncode, flush=True)
+        for seed in contract.get("seeds", [contract.get("seed", 4501)]):
+            for arm in contract["arms"]:
+                name = f"{case}-{seed}-{arm}"
+                command = [sys.executable, "-m", "tests.manual.research_revision_4b_matrix_v5", "worker",
+                           "--root", str(root), "--case", case, "--arm", arm, "--seed", str(seed)]
+                receipt = root / (name + ".json")
+                if receipt.exists():
+                    continue
+                started = time.monotonic()
+                result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
+                write(receipt, {"exit_code": result.returncode, "stdout": result.stdout, "stderr": result.stderr,
+                                "elapsed_seconds": time.monotonic() - started})
+                print(name, result.returncode, flush=True)
 
 
 def main():
