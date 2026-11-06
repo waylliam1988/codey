@@ -1,6 +1,6 @@
 import pytest
 
-from tests.manual.cross_model_quality_summary import compare
+from tests.manual.cross_model_quality_summary import compare, quality_delta
 
 
 def row(case, arm, *, passed, done=True, delivered=True, repeat=0, applicable=True):
@@ -36,3 +36,40 @@ def test_existing_plans_are_not_counted_as_production_greenfield_evidence():
             row("existing", "baseline", passed=True), row("existing", "plan", passed=False, applicable=False)]
     assert compare(rows, "plan", production_plan=True)["wins"] == 1
     assert compare(rows, "plan", production_plan=False)["losses"] == 1
+
+
+def quality(*passed):
+    return {"quality": [{"name": str(i), "ok": value} for i, value in enumerate(passed)],
+            "quality_passed": all(passed), "quality_score": sum(passed),
+            "visible_suite": {"ok": True}, "scope_ok": True}
+
+
+def test_fixing_some_bugs_is_a_gain_without_requiring_every_bug_to_be_found():
+    before, after = quality(True, False, False), quality(True, True, False)
+    delta = quality_delta(before, after)
+    assert delta["verified_gain_without_regression"]
+    assert delta["fixed_behavior_checks"] == ["1"] and not after["quality_passed"]
+    assert delta["outcome"] == "benefit"
+    mixed = quality_delta(before, quality(False, True, False))
+    assert mixed["outcome"] == "mixed" and not mixed["verified_gain_without_regression"]
+
+
+def test_local_writer_only_and_online_review_compare_the_exact_same_candidate():
+    initial, final = quality(True, False, False), quality(True, True, False)
+    data = row("a", "baseline", passed=False)
+    data["initial"] = {"quality": initial}
+    data["final"] = final
+    result = compare([data], "baseline", baseline_stage="initial")
+    assert result["count"] == result["verified_benefits"] == 1
+    assert result["wins"] == result["losses"] == 0
+    assert result["checked_regressions"] == result["mixed_changes"] == 0
+
+
+def test_failed_local_writer_is_not_dropped_from_cooperation_comparison():
+    baseline = row("a", "baseline", passed=False, done=False)
+    baseline["final"] = quality(False, False)
+    candidate = row("a", "plan", passed=True)
+    candidate["final"] = quality(True, True)
+    result = compare([baseline, candidate], "plan", baseline_stage="initial")
+    assert result["count"] == result["verified_benefits"] == 1
+    assert not result["pairs"][0]["baseline_initial_available"]

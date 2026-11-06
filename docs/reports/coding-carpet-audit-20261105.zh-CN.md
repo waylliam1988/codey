@@ -1052,6 +1052,10 @@ Pyrefly 既有 35 suppressed / 80 warnings 保留。
 预注册、题目、运行顺序与模型配置见
 [本轮方案](cross-model-quality-plan-20261106.zh-CN.md)。
 
+用户进一步明确：主要比较本地 Writer 单独产物与在线合作后的最终产物。修好可信问题且
+未破坏原有正确行为即记为本轮收益，不要求找全 bug、全题 oracle 通过或最终 approved。
+完整通过率另列，统一 Review 的 stage 对照用于判断额外规划/audit/consensus 的作用。
+
 本轮发现并区分：
 
 - **测试误判**：旧 production smoke 的 `len(review_events)==1` 接受 unavailable；
