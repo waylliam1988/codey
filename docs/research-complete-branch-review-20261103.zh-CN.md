@@ -733,3 +733,9 @@ ID 连字符抄成下划线是模型选择错误。原实现拒绝它，不会�
 开发冻结材料保存在 `.e2e-artifacts/research-gap-driven-ab-20261106-dev/`，使用当前 KoboldCPP `Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`，同一题 `synthetic_conditions`、seed `1001`，两臂均以 `stop_reason=done` 完成。baseline 与 candidate 都读到同一版本化来源并完成提交；candidate 正文额外明确了 C1 无只读支持和 OR 分支，但这是一题一次 seed 的机制筛查，不构成答案质量收益或生产采用证据。
 
 本轮结论：`inconclusive`，生产保持原样。后续正式实验仍需按冻结合同使用新题、双 seed、任务级金标评分，记录决定性材料是否更早进入实际请求、重复无效动作、完整交付、引用与成本；没有达到手册预先约定的正式和新题复核门槛前，不把该提示合入 `codey/research`。
+
+### 正式新题矩阵：2026-11-06
+
+随后冻结 `.e2e-artifacts/research-gap-driven-ab-20261106-formal-20261106/`，使用 12 个新题、seed `1101/1102`、baseline 与 `gap_directive` 两臂，共 48 次端到端运行。48 次均正常退出并完成 `submit_research_answer`；没有超时、协议失败或提交拒绝。候选提示在 24 个 candidate run 的 108 个实际 admitted payload 中均可见，baseline 为 0 次可见，说明机制确实进入了 wire。candidate 平均 admitted 输入字符约 7563，baseline 约 7231；这批运行的输入成本增量约 4.6%，低于合同的 25% 诊断上限。
+
+当前仍只生成了确定性 pattern 诊断，尚未完成独立语义金标复核；该诊断显示两臂整体没有稳定的任务级净改善，并出现个别条件保留差异。因此本批结论为 `inconclusive/reject pending semantic review`，不满足“正式集至少 3 个正向任务、至多 1 个负向任务、平均严格成功率增加 10 个百分点”的采用门槛，生产继续保持原样。正式结果摘要和全部 wire、回执、提交、隔离知识库保留在上述目录；不能把关键词命中或运行成功当作答案质量收益。
