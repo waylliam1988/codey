@@ -74,4 +74,48 @@ def cases():
         "forbidden": ["A AND B required", "key alone sufficient"]}
     logic["keys"] = [{"name": f"logic_{i}", "quote": line} for i, line in enumerate(logic["documents"][0]["text"].splitlines())
                      if line.startswith(("Seno Q7 read-only", "A valid key"))]
-    return [dev, fit, held, middle, versions, decoy, control, logic]
+    coverage_versions = {
+        "id": "coverage_versions", "split": "dev",
+        "question": "Compare V1 and V2 local and remote writer limits, read-only support, and exceptions. Answer in Chinese; preserve version conditions and do not mix V1 with V2.",
+        "documents": [
+            document("Vela V1", "Version rules", [
+                "V1 local mode permits 5 writers only when the license flag is active; remote mode permits 2 writers independently of that flag.",
+                "V1 does not support read-only opening."], padding=110),
+            document("Vela V2", "Version rules", [
+                "V2 local mode permits 9 writers with the license flag and 3 without it; remote mode permits 4 independently of that flag.",
+                "V2 supports read-only opening."], padding=110),
+        ],
+        "rubric": ["V1 and V2 limits remain separate", "read-only differs by version", "license conditions preserved"],
+        "keys": [], "forbidden": ["version mixing", "flag condition omitted"],
+    }
+    coverage_limits = {
+        "id": "coverage_limits", "split": "dev",
+        "question": "Explain Seno Q7 read-only alternatives and export requirements. Preserve the OR exception, necessary versus sufficient conditions, and limits. Answer in Chinese.",
+        "documents": [document("Seno Q7", "Access rules", [
+            "Read-only opening succeeds if EITHER readable sidecars exist OR the directory is writable; A and B need not both hold.",
+            "A valid key is necessary but not sufficient for export: an approved account is also required."], padding=125)],
+        "rubric": ["OR alternative preserved", "necessary is not sufficient", "approved account requirement preserved"],
+        "keys": [], "forbidden": ["AND required", "key alone sufficient"],
+    }
+    coverage_objects = {
+        "id": "coverage_objects", "split": "dev",
+        "question": "Compare object Alpha and object Beta restrictions, exceptions, and measured versus unmeasured performance. Answer in Chinese and preserve the limitations.",
+        "documents": [
+            document("Alpha", "Restrictions", ["Alpha requires token and administrator; offline export is unavailable.", "A local preview does not measure remote performance."], padding=100),
+            document("Beta", "Restrictions", ["Beta requires an approved account; offline export is unavailable.", "A benchmark result measures only the tested local workload."], padding=100),
+        ],
+        "rubric": ["Alpha/Beta rules separate", "offline limits preserved", "measurement scope preserved"],
+        "keys": [], "forbidden": ["object mixing", "local preview proves remote performance"],
+    }
+    coverage_exceptions = {
+        "id": "coverage_exceptions", "split": "dev",
+        "question": "State the primary rule and exception for Gamma export. Preserve the exception and explain what the evidence does not establish. Answer in Chinese.",
+        "documents": [document("Gamma", "Export policy", [
+            "Gamma export requires an approved account.",
+            "Exception: an emergency offline export is permitted only when the recovery token is present.",
+            "The record does not measure production throughput."], padding=130)],
+        "rubric": ["primary rule", "offline exception", "throughput limitation"],
+        "keys": [], "forbidden": ["offline always allowed", "throughput measured"],
+    }
+    return [dev, fit, held, middle, versions, decoy, control, logic,
+            coverage_versions, coverage_limits, coverage_objects, coverage_exceptions]

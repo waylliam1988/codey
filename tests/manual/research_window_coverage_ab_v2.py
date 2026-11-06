@@ -12,7 +12,7 @@ from tests.manual import research_window_retention_ab as base
 from tests.manual.research_experiment_identity import freeze_experiment, verify_experiment
 from tests.manual.research_window_retention_cases import cases
 
-DEV_IDS = ("dev_early", "held_early", "held_decoy", "held_middle")
+DEV_IDS = ("coverage_versions", "coverage_limits", "coverage_objects", "coverage_exceptions")
 # The retained worker parser accepts the historical name ``relevance``.  The
 # module patched below is the coverage candidate; the artifact labels this arm
 # as coverage in its decision metadata.
