@@ -61,3 +61,7 @@ v5b/v5c 的失败分别是 harness 使用 `__main__` 启动子进程，以及传
 ### 2026-11-07：2A v2 开发验证完成
 
 新增 `.e2e-artifacts/research-live-web-2a-dev-v3/`，4 个开发题 × baseline/browser-after-connector 两臂共 8/8 真实联网、真实 writer、真实提交成功。四个配对都出现连接器 2 条命中；baseline 浏览器调用 0 次，candidate 浏览器调用 4 次，且浏览器结果实际进入各自运行的检索轨迹。该轮只证明取消早停的接线和机制触发有效，尚未完成语义答案评分，不作为生产收益证据。下一步可按新失败规则冻结 12 个正式新题 × 2 seed × 2 臂。
+
+### 2026-11-07：2A 正式 v3 结案
+
+正式新题矩阵 `.e2e-artifacts/research-live-web-2a-formal-v3/` 已完成 12 个新题 × 2 seed × 两臂，共 48/48，全部真实联网、真实 writer、真实提交。机制在 20/24 个候选配对中有效触发（候选浏览器调用 24/24；基线 4/24，另外 20 个基线连接器达到两条后早停）。保守逐题语义评分为 baseline 11/24、candidate 20/24，严重错误均为 4/24；但候选中位时延比 1.363、配对时延比 1.396、admitted 输入字符比 1.332，均超过合同 1.25 成本门槛。`decision.json` 判 `reject`，不做确认集，生产保持基线。完整 `run-inventory-v3.json`、`semantic-ratings-v3.json`、wire、检索观察和提交工件保留；候选质量改善不能抵消预注册成本门槛。
