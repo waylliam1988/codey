@@ -25,7 +25,7 @@ from tests.manual.research_experiment_identity import freeze_experiment, verify_
 from tests.manual.research_semantic_review_ab import idle_backend
 from tests.manual.research_window_retention_cases import cases
 
-ROOT = Path(".e2e-artifacts/research-window-retention-v2-20261106")
+ROOT = Path(".e2e-artifacts/research-window-retention-v3-20261106")
 ARMS = ("baseline", "relevance")
 BASE_VIEW = context.answer_context
 BASE_LIMITS = context.work_view_limits
@@ -49,12 +49,14 @@ def prepare(root, phase):
     fixtures = [case for case in cases() if case["split"] == phase]
     write(root / "fixtures.json", {"schema_version": 1, "cases": fixtures})
     write(root / "limits.json", {"turns": 18, "requests": 10, "process_seconds": 660, "agent_seconds": 600})
-    write(root / "material-channel.json", {"mode": "read", "protocol": "native"})
+    write(root / "material-channel.json", {"mode": "read", "protocol": "plain"})
     clock = Path("tests/fixtures/research_local_clock.txt").read_text(encoding="utf-8")
     (root / "clock-context.txt").write_text(clock.replace("2026-11-01", "2026-11-06"), encoding="utf-8")
     write(root / "preregistration.json", {
         "phase": phase, "seeds": [901] if phase == "dev" else [911, 912], "arms": ARMS,
         "work_view_cap": 4096, "provider_window": 32768,
+        "common_protocol": "Existing production plain text tools, without server JSON-Schema sampling grammar. "
+                           "Kernel validation, scope and publication checks remain unchanged in both arms.",
         "pressure": "Both arms share a 4096-token experimental work-view cap; acquisition and display share it. "
                     "The real provider tokenizer and original 32768-token request admission remain active. "
                     "This stresses retention; it does not establish default 16384-token effect size.",
@@ -125,12 +127,20 @@ def worker(root, directory, base_url, case_id, seed, arm):
         return result
 
     task = fixture["question"] + "\n只研究并交完整答案，不修改已有知识；仅使用本轮来源，不使用材料外信息。"
+    from tests.manual import persistent_research_local as probe
+
+    original_stage = probe.stage
+
+    def plain_stage(*args, **kwargs):
+        return original_stage(*args, **{**kwargs, "native": False, "constrained_text": False})
+
     with ExitStack() as stack:
         stack.enter_context(patch.object(context, "work_view_limits", limits))
         stack.enter_context(patch.object(context, "answer_context", view))
         stack.enter_context(patch.object(framework, "verify_experiment", verify))
         stack.enter_context(patch.object(framework, "task_text", lambda _root, _case: task))
         stack.enter_context(patch.object(framework, "DEFAULT_CLOCK_FILE", root / "clock-context.txt"))
+        stack.enter_context(patch.object(probe, "stage", plain_stage))
         framework.codey_worker(root, directory, base_url, case_id, seed)
     verify(root)
 

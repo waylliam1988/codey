@@ -53,7 +53,8 @@ def inspect_run(root, result):
         "tool_calls": [{k: r.get(k) for k in ("tool_name", "ok", "args")} for r in tools],
         "overflow_views": sum(view["overflow"] for view in views),
         "actual_request_exposures": exposures,
-        "critical_removed_in_actual_requests": sum(key["removed_from_view"] for ex in exposures for key in ex["keys"]),
+        "critical_removed_in_actual_requests": sum(key["removed_from_view"] and not key["visible_in_actual_request"]
+                                                   for ex in exposures for key in ex["keys"]),
         "critical_never_read": [key["name"] for key in case["keys"]
             if not any(key["quote"] in p["excerpt"] for view in views for p in view["read_passages"])],
         "view_record_hash": hashlib.sha256((directory / "retention-views.jsonl").read_bytes()).hexdigest()
