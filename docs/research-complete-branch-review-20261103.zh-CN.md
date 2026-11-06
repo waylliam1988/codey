@@ -724,3 +724,12 @@ ID 连字符抄成下划线是模型选择错误。原实现拒绝它，不会�
 - 新实机工具：`tests/manual/research_branch_review.py`；干预有效性测试：`tests/test_research_branch_review.py`；实际分支对照：`tests/test_research_branch_boundaries.py`。
 - 原始工件：`.e2e-artifacts/research-branch-review-20261103-final/`，其中 `preregistration.json`、`fixtures.json`、冻结摘要、源码压缩包、wire、logs、每例隔离数据库、正式正文、独立内容审查、逐版机械审计及测试结果均保留。
 - 上一轮：[全链条 88 次审查](research-full-process-review-20261103.zh-CN.md)、[早期 40 次三方案对照](research-workflow-ablation-20261102.zh-CN.md)。旧实验的基线和范围不同，不混入本轮分母，也不把旧基线的重复规则节省再次计算。
+
+### 2026-11-06：缺口驱动研究实验开发筛查
+
+按 HyperResearch 收敛复核和 A/B 操作手册，新增隔离实验适配器
+`tests/manual/research_gap_driven_ab.py`。候选臂只在真实 Research worker 的子进程中追加一段短提示：下一次搜索或读取应解决一个可能改变答案的具体不确定点，并优先追踪原始限制或反例；工具、证据、提交、发布和知识保存路径均未改变。
+
+开发冻结材料保存在 `.e2e-artifacts/research-gap-driven-ab-20261106-dev/`，使用当前 KoboldCPP `Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M`，同一题 `synthetic_conditions`、seed `1001`，两臂均以 `stop_reason=done` 完成。baseline 与 candidate 都读到同一版本化来源并完成提交；candidate 正文额外明确了 C1 无只读支持和 OR 分支，但这是一题一次 seed 的机制筛查，不构成答案质量收益或生产采用证据。
+
+本轮结论：`inconclusive`，生产保持原样。后续正式实验仍需按冻结合同使用新题、双 seed、任务级金标评分，记录决定性材料是否更早进入实际请求、重复无效动作、完整交付、引用与成本；没有达到手册预先约定的正式和新题复核门槛前，不把该提示合入 `codey/research`。
