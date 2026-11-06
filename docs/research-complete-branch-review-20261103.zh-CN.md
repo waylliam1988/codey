@@ -893,3 +893,7 @@ Pyrefly、Ty 通过；Pyrefly 同时保留既有 warnings/suppressions，不声�
 无模型重放证明候选排序方向修正有效，但真实 writer v10 暴露了更具体的覆盖问题：中文任务要求分别比较三类来源，候选只把所有窗口归为一个 object facet，实际淘汰部署限制窗口，随后因重复读取进入 `no_progress`。v9 还发现旧 retention worker 不接受 coverage arm 名称及 plain 协议输出截断；这些都是实验接线/协议问题，不是生产行为。
 
 当前候选已增加独立来源覆盖和条件/限制识别，相关单元测试 3 项通过。v10 目录封存，不能续写；需新合同重跑至少一对真实 overflow，确认修正后再谈正式矩阵。
+
+### 2026-11-07：③ v12 真实 writer 结案
+
+候选修正后 v12 真实矩阵 8/8 成功，但 retention views 显示仅一题形成 paired overflow；其余三题没有同时触发溢出。由于原合同要求至少两组成对 overflow 才能进入正式集，判定 `inconclusive`。这轮同时确认真实接入、引用和提交路径无生产异常；不把单一成对差异外推为答案收益，也不继续人为扩大材料压力。
