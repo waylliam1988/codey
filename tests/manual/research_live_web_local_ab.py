@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import socket
 import ssl
@@ -11,7 +12,7 @@ from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from codey.providers import api_provider
 from codey.research import connector_search as production
@@ -107,6 +108,7 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
     directory.mkdir(parents=True, exist_ok=False)
 
     holder = {}
+    compiled_schemas = {}
 
     class ZeroReasoningProvider(api_provider.ApiProvider):
         """Experiment-only request control; leave production effort options alone."""
@@ -118,6 +120,23 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
             def zero_reasoning(payload):
                 configure(payload)
                 payload["reasoning_effort"] = "none"
+                response_format = payload.get("response_format", {})
+                if response_format.get("type") == "json_schema":
+                    schema = response_format["json_schema"]["schema"]
+                    digest = hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
+                    if digest not in compiled_schemas:
+                        request = Request(base_url + "/api/extra/json_to_grammar",
+                                          json.dumps({"schema": schema}).encode(),
+                                          {"Content-Type": "application/json"})
+                        with urlopen(request, timeout=10) as response:
+                            compilation = json.load(response)
+                        grammar = compilation.get("result", "")
+                        if not compilation.get("success") or not grammar:
+                            raise RuntimeError("Backend discarded experimental tool schema; stop before inference")
+                        compiled_schemas[digest] = {
+                            "grammar_hash": hashlib.sha256(grammar.encode()).hexdigest(),
+                            "grammar_length": len(grammar),
+                        }
 
             self.configure_request = zero_reasoning
 
@@ -158,6 +177,7 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
                             "case": case, "arm": arm, "seed": seed, "model": model,
                             "constrained_text": constrained_text,
                             "reasoning_effort": "none",
+                            "compiled_tool_schemas": compiled_schemas,
                             "output_tokens": OUTPUT_TOKENS}, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )

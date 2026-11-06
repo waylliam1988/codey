@@ -16,7 +16,11 @@
   已将 `knowledge_updates._REF_PATTERN` 改为等价捕获组，真实编译成功且原失败 payload 三 seed 合法 JSON。
   artifact：`kobold-recovery-20261106/schema-compiler-probe.json`、`fixed-reference-schema-replays.json`。
 - 下一步：提交此确定性 bug 修复；在修复后基线上重新开发与冻结新的 2A 合同，排除已运行正式题。
-  当前没有模型批次在运行。Mypy 会话 `53659` 待轮询；Pyrefly/Ty 通过；新定向测试 74 项通过。
+  生产修复提交 `a14172a8`；Mypy 全 597 文件、Pyrefly/Ty 均通过；新定向测试 74 项通过。
+  后续增加了真实工具 schema 编译预检，失败拒绝推理；相关引用／入口测试 51 项通过。
+- 当前准备修复后开发目录 `research-live-web-2a-dev-compiled-v1`（命令和会话待启动后更新）。
+- 新正式题池在 `research_live_web_matrix.py`：剔除已运行前三题，八个短主题首搜与四个自由搜索对照；
+  共同协议仍为约束 JSON + none effort，增加真实 GBNF 编译确认。不要复用旧 frozen-v4 或 formal-json-v1 目录。
 - 首题两臂 connector 都未返回命中，因此早停机制未触发；不能将组间差异计为机制收益。
   四份答案均从 UpToDate 导航/目录页推断治疗建议，严格成功皆否；独立复核保存为
   `semantic-ratings.json`，匿名材料为 `review-packets.json`。后续必须继续完成其余任务并更新评分。

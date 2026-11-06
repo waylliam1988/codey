@@ -68,3 +68,32 @@ def test_run_applies_backend_budget_after_local_selection_and_records_it(tmp_pat
         experiment.run(tmp_path, "pubmed_myocarditis", "baseline", 1202, "http://127.0.0.1:5001", "test")
     row = json.loads((tmp_path / "pubmed_myocarditis-1202-baseline/search-observations.json").read_text())
     assert row["reasoning_effort"] == "none"
+
+
+@pytest.mark.parametrize("compiled", [True, False])
+def test_actual_schema_must_compile_before_inference_and_is_checked_once(tmp_path, compiled):
+    import json
+
+    inference_ready = []
+
+    def fake_stage(*args, **kwargs):
+        from codey.providers.api_provider import ApiProvider
+
+        provider = ApiProvider("http://127.0.0.1:5001/v1", "test")
+        payload = {"response_format": {"type": "json_schema", "json_schema": {"schema": {"type": "object"}}}}
+        provider.configure_request(payload)
+        provider.configure_request(payload)
+        inference_ready.append(True)
+
+    responses = [io.BytesIO(b'{"idle":1,"queue":0}'),
+                 io.BytesIO(json.dumps({"success": compiled, "result": 'root ::= "{}"' if compiled else ""}).encode())]
+    with patch.object(experiment, "urlopen", side_effect=responses) as opened, patch.object(
+        experiment.stage_module, "stage", side_effect=fake_stage
+    ):
+        if compiled:
+            experiment.run(tmp_path, "pubmed_myocarditis", "baseline", 1202, "http://127.0.0.1:5001", "test")
+        else:
+            with pytest.raises(RuntimeError, match="discarded experimental tool schema"):
+                experiment.run(tmp_path, "pubmed_myocarditis", "baseline", 1202, "http://127.0.0.1:5001", "test")
+    assert opened.call_count == 2
+    assert bool(inference_ready) == compiled

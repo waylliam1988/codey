@@ -19,12 +19,12 @@ from tests.manual.research_experiment_identity import freeze_experiment, verify_
 
 DEV_CASES = tuple(live.QUESTIONS)[:4]
 FORMAL_TOPICS = (
-    ("pubmed_pneumonitis", "PubMed evidence on checkpoint inhibitor pneumonitis: diagnostic exclusion, initial management, escalation and evidence limitations"),
-    ("pubmed_colitis", "PubMed evidence on checkpoint inhibitor colitis: diagnosis, initial treatment, refractory disease and evidence limitations"),
-    ("pubmed_arthritis", "PubMed evidence on checkpoint inhibitor inflammatory arthritis: diagnostic scope, treatment, persistence after cessation and limitations"),
     ("pubmed_neuropathy", "PubMed evidence on checkpoint inhibitor peripheral neuropathy: differential diagnosis, management, outcome and limitations"),
     ("pubmed_pancreatitis", "PubMed evidence on checkpoint inhibitor pancreatic injury: distinguish asymptomatic enzyme elevation from pancreatitis, management and limitations"),
     ("pubmed_rechallenge", "PubMed evidence on checkpoint inhibitor rechallenge after severe adverse events: recurrence, selection conditions, study design and limitations"),
+    ("pubmed_encephalitis", "PubMed evidence on checkpoint inhibitor encephalitis: diagnostic exclusion, treatment, outcomes and study limitations"),
+    ("pubmed_uveitis", "PubMed evidence on checkpoint inhibitor uveitis: presentation, treatment, continuation of immunotherapy and evidence limitations"),
+    ("pubmed_sicca", "PubMed evidence on checkpoint inhibitor sicca syndrome: diagnosis, treatment, reversibility and evidence limitations"),
     ("arxiv_lost_middle", "arXiv evidence on Lost in the Middle: compare document positions, evaluated tasks, model scope and limits of generalization"),
     ("arxiv_self_rag", "arXiv evidence on Self-RAG: retrieval decisions, critique tokens, evaluated tasks and limitations"),
     ("arxiv_ragas", "arXiv evidence on RAGAS: distinguish faithfulness and answer relevance, required inputs, evaluation scope and limitations"),
@@ -32,6 +32,16 @@ FORMAL_TOPICS = (
     ("arxiv_needle", "arXiv evidence comparing needle-in-a-haystack tests with realistic long-context benchmarks: tasks, distractors, scoring and limits"),
     ("arxiv_ragtruth", "arXiv evidence on RAGTruth: hallucination annotation granularity, data scope, evaluation and limitations"),
 )
+SHORT_SEARCHES = {
+    "pubmed_neuropathy": "PubMed checkpoint inhibitor peripheral neuropathy",
+    "pubmed_pancreatitis": "PubMed checkpoint inhibitor pancreatic injury",
+    "pubmed_rechallenge": "PubMed immune checkpoint inhibitor rechallenge",
+    "pubmed_encephalitis": "PubMed checkpoint inhibitor encephalitis",
+    "arxiv_lost_middle": "arXiv Lost in the Middle",
+    "arxiv_self_rag": "arXiv self RAG",
+    "arxiv_ragas": "arXiv RAGAS evaluation",
+    "arxiv_react": "arXiv ReAct agents",
+}
 CONFIRM_TOPICS = (
     ("pubmed_myositis", "PubMed evidence on checkpoint inhibitor myositis: overlap syndrome, diagnosis, treatment and evidence limitations"),
     ("pubmed_cardiac_rechallenge", "PubMed evidence on rechallenge after checkpoint inhibitor myocarditis: selection, recurrence, study design and uncertainty"),
@@ -48,7 +58,9 @@ def fixtures(phase: str) -> dict[str, str]:
     if phase == "dev":
         return {key: live.QUESTIONS[key] for key in DEV_CASES}
     topics = FORMAL_TOPICS if phase == "formal" else CONFIRM_TOPICS
-    return {key: "Research " + topic + ". Read original sources. Answer every listed point in Chinese with exact [eN] citations. "
+    return {key: (f"Start with a web search for '{SHORT_SEARCHES[key]}'. Then research "
+                  if phase == "formal" and key in SHORT_SEARCHES else "Research ")
+            + topic + ". Read original sources. Answer every listed point in Chinese with exact [eN] citations. "
             "Distinguish source findings from inference, preserve conditions and uncertainty, and state any unresolved point."
             for key, topic in topics}
 
@@ -71,16 +83,18 @@ def prepare(root: Path, phase: str, base_url: str) -> None:
         "turns": 12, "provider_timeout_seconds": 180, "process_timeout_seconds": 900,
         "protocol": "production constrained JSON tool calls; enable_thinking=false AND reasoning_effort=none; temperature 0.3",
         "constrained_text": True,
+        "constraint_preflight": "Compile each distinct actual tool schema on the real backend before inference; fail closed if GBNF compilation fails",
         "sole_treatment": "remove connector hit-count early stop; preserve browser error fallback, cancellation, merge and dedup",
         "network": "live connector and browser; original retrieved snapshots and actual wire retained per run; SSL verification disabled in both development adapters",
         "scoring": {
             "strict_success": "all requested facets answered correctly, important claims supported by actually read exact sources, limitations preserved, no severe scope/citation error, answer atomically saved",
             "per_facet": "review original task and actual source snapshots; score each requested facet correct/incorrect/missing; invented certainty fails",
             "review": "independent source-based assessment; writer declarations and keyword counts are not gold",
-            "ordinary_tasks": (["arxiv_self_rag", "arxiv_react", "arxiv_ragas", "arxiv_ragtruth"]
+            "ordinary_tasks": (["pubmed_uveitis", "pubmed_sicca", "arxiv_needle", "arxiv_ragtruth"]
                                if phase != "confirm" else [name for name, _ in CONFIRM_TOPICS if name.startswith("arxiv_")]),
         },
         "mechanism": "at least two connector hits and suppressed browser in baseline; browser results returned to writer in candidate; report triggered subset and all runs",
+        "task_distribution": "Formal: eight predeclared short-topic initial searches to elicit early-stop opportunities, four ordinary free-search controls. Report these strata separately; do not extrapolate effect size to arbitrary natural tasks.",
         "gate": {"positive_tasks_min": 3, "negative_tasks_max": 1, "strict_success_delta_min": 0.10,
                  "new_severe_regressions_max": 0, "ordinary_regressions_max": 0,
                  "token_and_latency_ratio_max": 1.25, "confirm_new_tasks_required": True},
