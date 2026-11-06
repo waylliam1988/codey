@@ -1,0 +1,15 @@
+{
+  "experiment": "4B",
+  "phase": "dev-v4",
+  "decision": "inconclusive",
+  "production": "unchanged",
+  "contract": ".e2e-artifacts/research-revision-4b-dev-v4/preregistration.json",
+  "runs_completed": 21,
+  "runs_planned": 32,
+  "reason": "The frozen development matrix stopped at knowledge_rag-4301-U after a real writer no_progress failure. The ledger shows five repeated open_url calls with an empty path, so no source/evidence/claim could be submitted. This is a task-level writer execution failure, not a harness or source-identity failure; the retained failure makes the development mechanism check inconclusive under the stop contract.",
+  "evidence": [
+    ".e2e-artifacts/research-revision-4b-dev-v4/knowledge_rag-4301-U.json",
+    ".e2e-artifacts/research-revision-4b-dev-v4/runs/knowledge_rag-4301-U/state/run_ledgers/1ae4634777707f86d90da8cd/run_d9cf96318fbe45dcbe52a21e82df9dcb.jsonl"
+  ],
+  "next": "Do not start the formal 12-draft x 2-seed matrix. Preserve production baseline; if 4B is revisited, freeze a new contract that explicitly handles task-level writer failures and first fixes or bounds empty-path tool retries."
+}
