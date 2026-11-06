@@ -43,11 +43,17 @@ class BrowserAfterConnector(production.ConnectorAwareSearchProvider):
 
     def _connector_search_results(self, *args, **kwargs):
         self.observations["connector_calls"] += 1
-        return super()._connector_search_results(*args, **kwargs)
+        rows = super()._connector_search_results(*args, **kwargs)
+        self.observations.setdefault("connector_results", []).append(
+            {"query": args[0], "urls": [row["url"] for row in rows]})
+        return rows
 
     def _base_search(self, *args, **kwargs):
         self.observations["browser_calls"] += 1
-        return super()._base_search(*args, **kwargs)
+        rows = super()._base_search(*args, **kwargs)
+        self.observations.setdefault("browser_results", []).append(
+            {"query": args[0], "urls": [row["url"] for row in rows]})
+        return rows
 
     def search(self, query: str, limit: int = 8):  # type: ignore[no-untyped-def]
         query = " ".join((query or "").split())
@@ -78,11 +84,17 @@ class ObservedProduction(production.ConnectorAwareSearchProvider):
 
     def _connector_search_results(self, *args, **kwargs):
         self.observations["connector_calls"] += 1
-        return super()._connector_search_results(*args, **kwargs)
+        rows = super()._connector_search_results(*args, **kwargs)
+        self.observations.setdefault("connector_results", []).append(
+            {"query": args[0], "urls": [row["url"] for row in rows]})
+        return rows
 
     def _base_search(self, *args, **kwargs):
         self.observations["browser_calls"] += 1
-        return super()._base_search(*args, **kwargs)
+        rows = super()._base_search(*args, **kwargs)
+        self.observations.setdefault("browser_results", []).append(
+            {"query": args[0], "urls": [row["url"] for row in rows]})
+        return rows
 
 
 def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,

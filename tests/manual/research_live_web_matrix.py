@@ -145,6 +145,12 @@ def main() -> None:
         run(root)
     else:
         contract = verify(root)
+        with urlopen(contract["base_url"] + "/v1/models", timeout=10) as response:
+            model = json.load(response)["data"][0]["id"]
+        with urlopen(contract["base_url"] + "/api/extra/version", timeout=10) as response:
+            version = json.load(response)
+        if model != contract["model"] or version != contract["backend_version"]:
+            raise RuntimeError("Frozen backend identity changed; do not run this sample")
         live.QUESTIONS.update(json.loads((root / "fixtures.json").read_text(encoding="utf-8")))
         with live.socket.socket() as lock:
             if hasattr(live.socket, "SO_EXCLUSIVEADDRUSE"):

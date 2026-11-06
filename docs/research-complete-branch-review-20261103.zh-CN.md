@@ -785,3 +785,10 @@ ID 连字符抄成下划线是模型选择错误。原实现拒绝它，不会�
 `enable_thinking` 模板参数和 `reasoning_effort` 推理预算分别处理，关闭模板思考不等于推理预算为零。
 两臂共同增加后者后重新冻结开发 v2，旧结果不混入。此前 96 项相邻定向测试、Ruff、Mypy、
 Pyrefly、Ty 通过；Pyrefly 同时保留既有 warnings/suppressions，不声称零警告。
+
+开发 v2 因生产 effort 选项不支持 `none`、v3 因实验 patch 指向错误模块属性，均在模型推理前失败；
+修正为实验请求层注入并增加入口回归后，独立冻结的
+`.e2e-artifacts/research-live-web-2a-dev-json-frozen-v4/` 完成四题两臂 **8/8** 真实搜索、读取和提交。
+这只验证当前共同条件下的执行入口，不代表候选答案净收益。随后补齐 connector/browser 各次实际
+返回 URL 记录，以及每例模型 ID / 后端版本核对，准备正式 12 个未用主题 × 两 seed × 两臂。
+源码与行为变更只在隔离实验；额外的当前整篇答案／kernel 回归测试 30 项通过。
