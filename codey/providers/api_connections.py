@@ -54,8 +54,13 @@ def capture_cross_connection_reviewer(
         selected = allowed.get(connection_id, set())
         if not selected:
             continue
-        connection = connection_for(connection_id)
-        models = connection.model_payload().get("models", [])
+        try:
+            connection = connection_for(connection_id)
+            models = connection.model_payload().get("models", [])
+        except (ImportError, OSError, RuntimeError, ValueError):
+            # Discovery is a fallback queue: a broken connector must not
+            # prevent trying the next explicitly enabled API source.
+            continue
         for model in models:
             if not isinstance(model, dict):
                 continue

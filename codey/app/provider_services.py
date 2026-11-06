@@ -176,15 +176,36 @@ def provider_availability(ctx: TaskState) -> dict[str, bool]:
     allowed = {pid for pid in PROVIDER_LABELS if ctx.providers.model_preferences.allows(pid)}
     if not allowed:
         return {pid: False for pid in PROVIDER_LABELS}
+    api_allowed = allowed.intersection(API_CONNECTIONS)
+    api_statuses: dict[str, bool] = {}
+    coordinator = getattr(ctx.providers, "connection_status", None)
+    if coordinator is not None:
+        for provider_id in api_allowed:
+            try:
+                snapshot = coordinator.refresh(provider_id)
+                if getattr(snapshot, "state", "") == "checking":
+                    snapshot = coordinator.wait_for(provider_id, timeout=2.0)
+                api_statuses[provider_id] = bool(getattr(snapshot, "available", False))
+            except Exception:
+                # Availability is advisory. A failed connector probe must not
+                # make the whole task fail or make an unavailable advisor look
+                # usable.
+                api_statuses[provider_id] = False
     now = _time.monotonic()
     with _AVAIL_LOCK:
         cached_at = _AVAIL_AT[0]
         cached = dict(_AVAIL_STATUSES)
     if cached and now - cached_at < PROVIDER_AVAILABILITY_TTL_S:
-        return provider_availability_from_statuses(ctx, cached)
-    raw = provider_tab_availability(allowed=allowed)
+        cached_web = {
+            provider_id: cached[provider_id]
+            for provider_id in allowed.difference(API_CONNECTIONS)
+            if provider_id in cached
+        }
+        return provider_availability_from_statuses(ctx, {**cached_web, **api_statuses})
+    web_allowed = allowed.difference(API_CONNECTIONS)
+    raw = provider_tab_availability(allowed=web_allowed) if web_allowed else {}
     _note_availability_statuses(raw, now)
-    return provider_availability_from_statuses(ctx, raw)
+    return provider_availability_from_statuses(ctx, {**raw, **api_statuses})
 
 
 def provider_availability_from_statuses(
