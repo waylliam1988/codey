@@ -30,6 +30,8 @@
   但未达到完整任务净收益门槛。评分保存在 formal 目录 `semantic-ratings.json`。
 - 使用读取边界修复后的新源码重新冻结 `research-live-web-2a-formal-compiled-v2`，首个 baseline 运行重复打开同一 PubMed 结果，
   以 `no_progress` 结束且没有提交答案。按合同保留失败并停止，计划 48、实际 1，`decision.json` 判 `inconclusive`；不能据此采用或否定候选。
+- 2B 正式矩阵 `research-live-web-2b-formal-v1` 已完成 32/32 个真实运行。候选 16 次中 14 次恢复公开全文、2 次无公开链接，
+  所有运行均产生真实提交；尚未完成全量配对语义评分，因此 `decision.json` 判 `inconclusive`，生产不变。
 - 新正式题池在 `research_live_web_matrix.py`：剔除已运行前三题，八个短主题首搜与四个自由搜索对照；
   共同协议仍为约束 JSON + none effort，增加真实 GBNF 编译确认。不要复用旧 frozen-v4 或 formal-json-v1 目录。
 - 首题两臂 connector 都未返回命中，因此早停机制未触发；不能将组间差异计为机制收益。
