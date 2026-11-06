@@ -53,3 +53,7 @@
 ### 2026-11-07：③ 无模型成对溢出重放
 
 使用相同的观察窗口、原文片段和 token 权重完成两个无模型 A/B 重放，两个案例的 baseline 与 candidate 均真实触发 overflow。baseline 保留结果分别为 `b,c,d` 与 `b,c,d,e`，丢失 V1；覆盖候选保留 `a,b,c` 与 `a,b,c,d`，同时保住 V1/V2（第二题还保住 V3）和限制窗口。工件为 `.e2e-artifacts/research-window-coverage-replay-v3/replay.json`。这证明候选算法方向和版本覆盖测试有效，但仍不是 writer 答案收益证据；下一步需在相同真实阅读状态重放接入，再决定是否进行模型开发矩阵。
+
+### 2026-11-07：4B v5e 开发接线通过
+
+v5b/v5c 的失败分别是 harness 使用 `__main__` 启动子进程，以及传入生产不支持的 `reasoning_effort=none`；两批封存，不混入结果。修复后新冻结 `.e2e-artifacts/research-revision-4b-dev-v5e/` 使用三份单一 `[e1]` 自然原稿（语义错误、交付遗漏、原本正确），完成 12/12 真实 writer 运行，均实际 `open_url`、`submit_research_answer` 并完成隔离保存。S/V 各完成 3 次独立 reviewer 调用，再进入 writer 修订；`review.json` 共 6 份。该轮只证明四臂接线和真实提交路径有效，不证明语义净收益；`decision.json` 允许进入独立冻结的正式合同。正式合同仍需 12 份新自然原稿 × 2 seed × U/R/S/V，共 96 次运行，未开始。
