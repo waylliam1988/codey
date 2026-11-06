@@ -821,6 +821,13 @@ def open_request(request: urllib.request.Request, timeout: float, *, control: At
                 abort_response(value)
                 raise GenerationUnknownError("generation cancelled while opening request")
             return value
+        if control.cancelled and isinstance(value, http.client.HTTPException):
+            # Closing HTTPConnection can reset its state before getresponse()
+            # runs. The worker's error must retain the submission boundary,
+            # just like cancellation observed while waiting on the queue.
+            if control.submission_started or control.submission_possible:
+                raise GenerationUnknownError("generation cancelled while opening request") from value
+            raise GenerationNotSentError("generation cancelled before submission") from value
         raise value
 
 

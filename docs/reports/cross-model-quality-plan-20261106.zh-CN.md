@@ -115,7 +115,7 @@
 再提交 mutant，重新得到真实 diff。新增四项回归验证参考与缺陷候选都确有 diff。
 校准使用参考/构造候选，不冒充自然 Writer 缺陷或完整返修收益。
 
-### 本地通信根因与第三批冻结配置
+### 本地通信根因与恢复配置
 
 - 第二批保留 6 行后停止：范围解析的 Writer 在单次编辑中重复注释，32768 输出预算与
   实验 300 秒超时不匹配。超时后非流式后端继续运行，后续请求排队；用户关闭了后端，
@@ -128,6 +128,15 @@
   真实生产 admission 复测 2 秒超时后恢复 idle、queue=0，没有额外 abort。
 - 新增真实 HTTP 半帧回归：超时关闭连接，半截 edit 不进入历史，不重发请求。
   旧测试把 fallback 必须非流式当成要求，按已验证的传输合同更新断言；没有放宽工具解析。
-- 第三批 70 行仍使用相同题目、角色、顺序、turn 预算和一次返修；仅将本地单次输出上限
+- 恢复配置仍使用相同题目、角色、顺序、turn 预算和一次返修；仅将本地单次输出上限
   通过临时 ApiRunSelection 限为 4096，并记录 metadata。保留原有 context reserve/input
   边界，不修改用户持久配置。不用响应预算差异去混合比较旧批次的质量。
+- 恢复批完成 2 行后，扩大 socket 回归发现取消与 `getresponse()` 的状态竞态：
+  `HTTPConnection.close()` 已将状态重置为 Idle，工作线程的 `ResponseNotReady` 先于
+  排队等待器的取消检查返回，原样漏出。新五项确定性回归中修复前四项失败；现按真实
+  submission_started/submission_possible 将取消归为 not_sent 或 unknown，未取消异常
+  继续透传，已可能发送的请求仍禁止重发。恢复批明确 `source_unchanged=false`，仅作诊断。
+- 最终冻结批次为 `cross-model-quality-final-20261106.json`，在全部生产修复后重新运行
+  两轮完整 70 行；不拼接中断批次。扩大定向回归 437 passed；三种生产树类型检查和 Ruff
+  通过。过程中一个新增预算测试错误读取不存在的 reserve_tokens 字段，改用实际的
+  output_tokens + safety_tokens 验证，不修改生产预算类型以迎合测试。

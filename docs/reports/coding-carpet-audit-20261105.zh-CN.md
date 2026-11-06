@@ -1065,6 +1065,11 @@ Pyrefly 既有 35 suppressed / 80 warnings 保留。
   文本/native 确定性复现均失败，再通过收窄同一工具快照修复，保留统一 kernel 和结算守卫。
 - **生产偏好边界问题**：跨连接选择在过滤启用模型前先读取禁用来源目录；
   现先过滤再导入/读取。这个问题被确定性测试证实，不将其冒称旧 unavailable 的唯一原因。
+- **生产传输接线问题**：规避 Gemma 工具解析故障时将文本工具与非流式传输绑定，
+  KoboldCpp 在非流式客户端超时后继续生成。实机对照证实流式断开可自动停止；
+  现保留已请求的流式传输，文本工具、严格解析和旧运行冻结的 stream 均保留。
+- **生产取消竞态**：关闭 HTTPConnection 与工作线程 getresponse 竞争时，
+  ResponseNotReady('Idle') 原样漏出；确定性复现后按提交边界归类，已提交请求不重发。
 - **夹具接口问题**：新增 TraceProvider 回归最初没有接受 DeadlineProvider 的 timeout 参数，
   造成与目标异常不同的 unknown outcome；修复夹具签名后才得到真实 pending-effect 复现。
 - **模型产物问题**：Pilot LRU 产品行为正确，但生成测试的缺省返回值期望错误；
@@ -1073,4 +1078,5 @@ Pyrefly 既有 35 suppressed / 80 warnings 保留。
   Lightning 默认思考曾耗尽输出预算。原始证据保留，正式配置明确记录。
 
 生产修复后定向扩大组 119 passed；Ruff、Mypy 597 文件、Pyrefly（0 errors、35 suppressed、
-81 warnings）、ty 通过。未运行全量 pytest。正式 A/B 将在修复后的统一源码上重新运行。
+81 warnings）、ty 通过。后续扩大本地传输、Review、audit、consensus、预算与严格 smoke
+组 437 passed；类型检查及 Ruff 再通过。未运行全量 pytest。正式 A/B 在修复后的统一源码上运行。
