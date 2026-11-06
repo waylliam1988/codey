@@ -57,6 +57,10 @@ def main():
     for item in report["manifest"] + [report["archive"]]:
         assert hashlib.sha256(Path(item["path"]).read_bytes()).hexdigest() == item["sha256"]
     selected = [r for r in runs if r["split"] != "dev"]
+    common = {(r["case"], r["seed"]) for r in selected if r["arm"] == "B" and r["framing_error"] is None}
+    common &= {(r["case"], r["seed"]) for r in selected if r["arm"] == "C" and r["framing_error"] is None}
+    conditional = {arm: abc.scored([r for r in selected if r["arm"] == arm
+                                   and (r["case"], r["seed"]) in common], raw=True) for arm in ("B", "C")}
     summary = [{"arm": arm, "raw": abc.scored([r for r in selected if r["arm"] == arm], raw=True),
                 "validated": abc.scored([r for r in selected if r["arm"] == arm]),
                 "tradeoffs": tradeoffs([r for r in selected if r["arm"] == arm])} for arm in prompts.PROMPTS]
@@ -67,6 +71,7 @@ def main():
             targets.append({"category": category, "arm": arm, "raw": abc.scored(rr, raw=True), "validated": abc.scored(rr)})
     abc.old.write(OUTPUT, {"requests_verified": len(runs), "fresh_requests": len(selected), "groups": summary,
         "targets": targets, "paired_raw": abc.paired(selected, raw=True), "paired_validated": abc.paired(selected),
+        "posthoc_both_B_C_framed": conditional,
         "production_unchanged": abc.production_identity() == spec["identity"]["production"],
         "checks": ["complete expected matrix", "same model inputs and contract", "same sampling and seeds",
                    "no gold in requests", "idle before inference", "response replay matches recorded score",

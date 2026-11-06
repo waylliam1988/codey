@@ -2,6 +2,31 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Research candidate C, common-contract A/B/C (2026-11-06)
+
+**No production code changed.** Candidate C's prompt was committed before new
+fixtures were written. The frozen experiment completed 108 requests: 12 reused
+development observations, 72 fresh challenge runs and 24 new stress runs. All
+arms used the same anchors contract, input layout, backend and sampling.
+
+On the 16 new reports, raw factual-label accuracy was A/B/C =
+74.19% / 83.06% / 80.65%; correct-claim false alarms were
+8.06% / 6.45% / 9.68%. C repaired four B decisions and regressed seven. It fixed
+one necessary-condition false alarm and found additional source-instruction
+problems, but introduced other false alarms and one invalid-JSON response.
+The result is a comparison against B, not rejection based on the old 10% gate.
+
+44 focused tests passed across five experiment-related files; no full pytest.
+Ruff `codey tests tools`, mypy's 597 production files, Pyrefly and ty targeting
+Python 3.11 passed. Existing Pyrefly suppressions/warnings are unchanged.
+An independent audit checked all actual model/input/sampling/seed records,
+response replay, evidence/archive hashes and unchanged tracked production hashes.
+
+See [analysis, paired repairs and regressions](docs/research-semantic-review-c-results-20261106.zh-CN.md),
+[complete frozen results](docs/reports/research-semantic-review-c-abc-20261106.json)
+and [independent audit](docs/reports/research-semantic-review-c-audit-20261106.json).
+No semantic gate, repair loop or report compiler was added to production.
+
 ## Research overflow-retention experiment (2026-11-06)
 
 **123 focused tests passed across 11 files in 48.23s; no full pytest run.**
