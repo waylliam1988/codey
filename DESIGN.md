@@ -70,9 +70,10 @@ the backend confirms readiness. Details and verification scope are recorded in
 `docs/uiux_message_fork_2026-10-23.md`.
 
 The steering and approval revision places pending messages above the composer
-input, with inline Edit, Delete and Steer actions. Sending while a task runs
-queues the next turn by default; remove the delivery-mode selector beside the
-model. Steer promotes the existing receipt at a generation boundary, preserving
+input, with inline Edit and Delete actions. Sending while a task runs steers
+the current task by default; keep the delivery-mode selector out of the composer.
+Legacy next-turn receipts may still offer Steer to promote the existing receipt
+at a generation boundary, preserving
 its identity and preventing a second provider task. Editing retains unsaved text
 if placement wins the race; settled receipts disappear from the pending strip.
 
@@ -687,7 +688,7 @@ Choose folder · Research                     ← enabled context actions (11.5p
 - **Context row:** `Choose folder` and `Research` stay on the left of the quiet line above the input. Local-save failure/progress occupies the right side of that same line, on the same text baseline; it never adds a row or moves/resizes the input frame. Enabled actions use `--text-dim`; the separator stays `--faint`. Disabled inactive actions retain `--muted` and 0.55 opacity; active Research retains `--text`, including when disabled at 0.55 opacity. Long folder names truncate while retaining their complete accessible name; Research and save Retry remain visible. The main grid has one shrinkable content column; at viewport ≤ 720px, the overlay sidebar leaves a single full-width body column.
 - **Research token:** visible by default as text, not as a framed button. Hover changes text to `--text`; active Research uses brighter text only. No border, background, chip, underline, font-weight change, or accent color.
 - **Provider picker:** borderless; status dot + label + chevron. This is the only visible provider/model selector in the composer. Online state uses `--ok-dot`; offline state is the default solid gray `.dot`.
-- **Send / Stop:** 34px square **icon buttons** (`.icon-btn`) with 16px icons, transparent until hover; enabled Send uses `--text` and the original paper-plane outline. Send and Stop occupy one fixed position. No filled accent send button.
+- **Send / Stop:** one mutually exclusive action in a fixed 34px square position. A nonempty draft shows Send; an empty composer shows Stop while this chat is running or awaiting admission, otherwise disabled Send. Never show both actions. Use the existing 16px icons and transparent `.icon-btn` styling; enabled Send uses `--text` and the original paper-plane outline. Stop stops the selected chat's task. No filled accent send button.
 - **Model menu:** directly show the short catalog without a search input. Opening focuses the current model. Arrow keys navigate, Enter selects, Escape closes and returns focus. Do not invent unsupported model/effort controls. Menus have a viewport-bounded scroll area.
 - API connections show their actual model names; Local can supply an optional display name and the complete model ID in Settings. The menu contains only models explicitly selected in Settings from enabled sources; never invent a website's selected model version. Optional integrations contribute source and catalog data to the same controls, without vendor-specific UI branches, accents, cards or Settings panels. Discovery never selects a new model. Catalog availability does not promise successful generation. The model menu contains only models; connection configuration belongs in Settings.
 - A separate borderless effort selector sits beside the model name: `Gemma4 12B ⌄ Low ⌄`. The selector disappears for unsupported connections and website models. Accessible copy names `Thinking effort`; visible labels are `Off / Mini / Low / Med / High / XHigh / Max`, filtered by verified capabilities. The two borderless selectors sit 2px apart, without a separator. The model menu uses a stable 240px width independent of the selected name or effort label, shrinking to the available viewport width. Selected checks retain right-side padding. The effort menu uses a 160px width. Both menus are bounded by the viewport. Long model labels use ellipsis and retain their complete accessible name. Model and effort triggers and menu rows have no native hover tooltips. Each selector has its own menu, keyboard focus, and dismissal. Opening one closes the other.
@@ -1047,13 +1048,21 @@ a typing animation. Interrupted text stays readable with a quiet partial-respons
 notice. Rendering failures offer `Render again` beside source/details and cannot
 execute a tool, regenerate a model response or erase the remaining conversation.
 
-**Pending input.** The existing Send path queues the current draft for the next
-turn. The redesign adds a separate steering action for the current task; acceptance
-and consumption must follow the backend's actual generation boundary. Keep queued,
-accepted and consumed states distinct and retain a session-scoped Stop. Before sending, persist the chat and a unique delivery
+**Pending input.** Send during an active task submits the draft as `steer`.
+After retaining the delivery identity and exact submitted text locally, show it
+above the composer and clear only that unchanged draft revision, without waiting
+for HTTP confirmation. An empty active composer then shows Stop; typing a new
+draft switches the same action position to Send. Keep retained text visible after
+a lost response, with `Delivery unconfirmed` and `Check status`; a storage failure
+leaves the draft in place. A late acknowledgement never clears a newer draft or
+another chat's input. Acceptance and consumption follow the backend's actual
+generation boundary; if the previous task has already ended, retain the input for
+the next task. Keep queued, accepted and consumed states distinct and retain a
+session-scoped Stop. Before sending, persist the chat and a unique delivery
 identity. The server saves a version-1 SQLite receipt before admission and before
 dispatch; the browser retains only delivery identities awaiting confirmation.
-Queued inputs show `Queued · next turn`, `Return to draft` and `Remove`. Return to
+Queued steering inputs show `Steer at next boundary`; legacy follow-ups retain
+`Next turn`. Return to
 draft first removes the queued item with its current revision; it preserves newer
 draft text. Stop durably pauses queued work. Resume is explicit. A lost response,
 an interrupted dispatch, or an admitted run with no final receipt after restart

@@ -140,6 +140,7 @@ export interface ComposerApi {
       const box = $('task').closest('.composer-box');
       (box || $('task')).before(element);
       outbox = new InputOutbox(element, {
+        stored: (request, revision) => clearDraftIfUnchanged(request.session_id, request.task, revision),
         accepted: (request, revision) => clearDraftIfUnchanged(request.session_id, request.task, revision),
         edit: (session, text) => recallMessage(session, text),
         changed: () => updateSend(),
@@ -231,7 +232,6 @@ export interface ComposerApi {
     }
     const ownerSessionId = runningSessionId();
     const running = isRunningForSession(activeId());
-    const anotherSessionRunning = !!ownerSessionId && !running;
     const sendingCurrent = sendingSessionId === activeId() || admissions.has(activeId());
     const awaitingAnswer = !!runtime.UserQuestions?.pending(activeId());
     const task = $<HTMLTextAreaElement>('task');
@@ -246,25 +246,24 @@ export interface ComposerApi {
       pendingSend ||
       !!outbox?.blocked(activeId()) ||
       awaitingAnswer;
-    // A run belongs to its session. Other chats remain usable and can place
-    // an input in the outbox while the owner run is still active.
-    send.style.display = (running || sendingCurrent || pendingSend) && !has ? 'none' : '';
-    // Send and Stop share one fixed slot. A different chat's run is opened
-    // from the top status bar; it must not put a second action beside Send in
-    // the chat that is currently being composed.
-    stop.style.display = running || sendingCurrent || pendingSend ? '' : 'none';
+    // One primary action: a draft owns Send; an empty active composer owns Stop.
+    // Background chats never change this chat's action into Stop.
+    const showStop = !has && (running || sendingCurrent || pendingSend);
+    send.style.display = showStop ? 'none' : '';
+    stop.style.display = showStop ? '' : 'none';
     $('send-hint').textContent = awaitingAnswer
       ? 'Answer above'
-      : sendingCurrent
-        ? 'Sending…'
-        : running
-          ? has
-            ? 'Send next turn'
-            : 'Stop'
-          : anotherSessionRunning
-            ? 'Enter'
+      : showStop
+        ? 'Stop'
+        : sendingCurrent || pendingSend
+          ? 'Sending…'
+          : running
+            ? 'Steer'
             : 'Enter';
-    send.setAttribute('aria-label', sendingCurrent ? 'Sending message' : running ? 'Queue message' : 'Send message');
+    const sendLabel =
+      sendingCurrent || pendingSend ? 'Sending message' : running ? 'Steer current task' : 'Send message';
+    send.setAttribute('aria-label', sendLabel);
+    send.title = sendLabel;
     const owner = deps.findSession(running || sendingCurrent || pendingSend ? activeId() : ownerSessionId);
     stop.setAttribute('aria-label', owner ? 'Stop ' + owner.title : 'Stop');
     stop.title = owner ? 'Stop ' + owner.title : 'Stop';
@@ -596,7 +595,7 @@ export interface ComposerApi {
           task,
           provider,
           intent: deps.currentIntentForSession(sessionId),
-          input_mode: 'follow_up',
+          input_mode: 'steer',
           ...runtime.ProviderUI.runSelection(deps.findSession(sessionId), provider),
         };
         if (!(await runtime.UiState.ensureSaved())) {

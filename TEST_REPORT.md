@@ -2,6 +2,31 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## One composer action and default steering (2026-11-06)
+
+**335 frontend tests passed** across 54 files; production typecheck/build,
+published-asset verification, scoped Ruff and formatting passed. **91 scoped
+Python/browser tests passed**, including the storage-failure case. No full
+pytest run.
+
+The shipped browser UI verifies one fixed 34px Send/Stop action at desktop and
+narrow widths, immediate retained-message handoff, preservation of newer and
+other-chat drafts after delayed confirmation, visible unconfirmed text and no
+duplicate delivery. Real input-route/durable-boundary checks confirm that default
+steering is consumed by the current task, or remains a placed input when that
+task has already ended. The selection also covers existing composer workflows,
+admission cancellation, model snapshots, session/lifecycle reconciliation and
+durable queue revision/placement fences. Fixed UI and DESIGN.md copy stay English.
+
+```powershell
+# frontend/
+npm.cmd test
+npm.cmd run build
+# repository root
+.\.venv\Scripts\python.exe -m tools.publish_frontend --check
+.\.venv\Scripts\python.exe -m pytest -q tests/test_ui_composer_primary_action.py tests/test_ui_sending_stop.py tests/test_ui_workflow.py tests/test_ui_state_reconciliation.py tests/test_conversation_input_routes.py tests/durable/test_queued_input_revision.py tests/durable/test_generation_boundary_commit.py
+```
+
 ## Stable tool stream positions (2026-11-06)
 
 **333 frontend tests passed** across 54 files; production typecheck/build,

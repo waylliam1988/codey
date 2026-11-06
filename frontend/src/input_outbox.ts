@@ -22,6 +22,7 @@ export interface QueuedInput {
   entry_id?: string;
 }
 interface OutboxDeps {
+  stored?(request: QueuedRequest, revision: number): void;
   accepted(request: QueuedRequest, revision: number): void;
   edit(session: string, text: string): void;
   changed(): void;
@@ -121,6 +122,9 @@ export class InputOutbox {
       this.deps.changed();
       return false;
     }
+    // Once the delivery identity and text are retained locally, ownership moves
+    // above the composer. A slow/lost HTTP reply must not hold the draft there.
+    this.deps.stored?.(request, draftRevision);
     this.render();
     this.deps.changed();
     try {
@@ -283,7 +287,7 @@ export class InputOutbox {
               {
                 queued: item.request.input_mode === 'steer' ? 'Steer at next boundary' : 'Next turn',
                 consumed: 'Applied · current task',
-                sending: 'Queuing…',
+                sending: item.request.input_mode === 'steer' ? 'Steer · Sending…' : 'Queuing…',
                 dispatching: 'Sending…',
                 unconfirmed: 'Delivery unconfirmed',
                 paused: 'Paused · not sent',
@@ -357,7 +361,7 @@ export class InputOutbox {
           edit.text = input.value;
         };
         row.append(input);
-      } else if (item.state !== 'unconfirmed') row.append(text);
+      } else row.append(text);
       row.append(actions);
       if (item.error) {
         const details = document.createElement('details'),

@@ -1547,7 +1547,6 @@
 
   .document-tab { display: flex; align-items: center; flex: none; min-width: 0; }
   .document-tabs button { flex-shrink: 0; white-space: nowrap; }
-  .action-slot { display: flex; width: auto; gap: 2px; }
   .pending-inputs { margin: 0 12px 10px; }
   .pending-inputs[hidden] { display: none; }
   .pending-input { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); font-size: 13px; margin-bottom: 5px; }

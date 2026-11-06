@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+- Make composer Send and Stop mutually exclusive. Sending during an active task
+  now defaults to Steer; transfer the locally retained message above the composer
+  and clear its draft immediately. Preserve newer drafts, visible unconfirmed
+  content and the same delivery identity through delayed or lost responses.
+
 - Keep tool calls in their first-observed slots through completion, failure and
   command-card promotion. Group consecutive pending reads without merging across
   intervening operations; retain CodeMode child order, disclosures and output

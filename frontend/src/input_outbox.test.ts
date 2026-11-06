@@ -49,8 +49,60 @@ it('retains unsaved edits when placement wins and never creates another input', 
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   localStorage.clear();
+});
+
+it('hands off a retained steer before the HTTP confirmation arrives', async () => {
+  const request = {
+    session_id: 'chat',
+    run_id: 'run_one',
+    task: 'guide',
+    provider: 'local',
+    input_mode: 'steer' as const,
+  };
+  const host = document.createElement('div');
+  const stored = vi.fn(() =>
+    expect(JSON.parse(localStorage.getItem('codey:pending-input-delivery')!)[0].request).toEqual(request),
+  );
+  const accepted = vi.fn();
+  let confirm!: (response: unknown) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          confirm = resolve;
+        }),
+    ),
+  );
+  const box = new InputOutbox(host, { stored, accepted, edit: vi.fn(), changed: vi.fn(), observe: vi.fn() });
+  box.setSession('chat');
+  const delivery = box.enqueue(request, 3);
+  expect(stored).toHaveBeenCalledWith(request, 3);
+  expect(accepted).not.toHaveBeenCalled();
+  expect(host.textContent).toContain('Steer · Sending…');
+  const [item] = JSON.parse(localStorage.getItem('codey:pending-input-delivery')!);
+  confirm({ ok: true, json: async () => ({ item: { ...item, state: 'queued', revision: 1 } }) });
+  expect(await delivery).toBe(true);
+  expect(accepted).toHaveBeenCalledWith(request, 3);
+  expect(host.textContent).toContain('Steer at next boundary');
+});
+
+it('keeps ownership in the draft when the delivery cannot be stored', async () => {
+  const fetch = vi.fn(),
+    stored = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('storage unavailable');
+  });
+  const host = document.createElement('div');
+  const box = new InputOutbox(host, { stored, accepted: vi.fn(), edit: vi.fn(), changed: vi.fn(), observe: vi.fn() });
+  expect(await box.enqueue({ session_id: 'chat', run_id: 'one', task: 'retained', provider: 'local' }, 1)).toBe(false);
+  expect(stored).not.toHaveBeenCalled();
+  expect(fetch).not.toHaveBeenCalled();
+  expect(host.textContent).toContain('message was not sent');
 });
 it('retains a stable delivery identity across a lost response and restart', async () => {
   const request = { session_id: 'chat', run_id: 'run_one', task: '补充', provider: 'local' };
@@ -59,6 +111,7 @@ it('retains a stable delivery identity across a lost response and restart', asyn
   const box = new InputOutbox(host, { accepted: vi.fn(), edit: vi.fn(), changed: vi.fn(), observe: vi.fn() });
   box.setSession('chat');
   expect(await box.enqueue(request, 3)).toBe(false);
+  expect(host.textContent).toContain('补充');
   expect(box.blocked('chat')).toBe(true);
   const saved = JSON.parse(localStorage.getItem('codey:pending-input-delivery')!);
   expect(saved[0].request.run_id).toBe('run_one');
