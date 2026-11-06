@@ -745,3 +745,9 @@ ID 连字符抄成下划线是模型选择错误。原实现拒绝它，不会�
 生产代码的早停位置确认在 `codey/research/connector_search.py`：连接器结果达到 2 条时直接返回，浏览器 provider 不再调用。新增隔离适配器 `tests/manual/research_connector_early_stop_ab.py`，候选只取消这一条早停并复用生产合并/去重函数；没有改默认 provider。
 
 本轮冻结 12 个连接器命中状态，A/B 机制重放结果保存在 `.e2e-artifacts/research-connector-early-stop-20261106.json`：A 的 12/12 状态均出现 2 条连接器命中且浏览器调用为 0；B 的 12/12 状态均调用浏览器并加入官方/版本材料；两臂都保持结果上限。机制成立，但这批是搜索路由重放，没有真实 writer 的答案质量、引用和端到端提交证据，因此不能满足 2A 的生产采用门槛，判定为 `inconclusive`，生产保持原样。后续若继续 2A，必须用同一冻结路由接入真实 Research writer，并把额外浏览器成本和答案净收益纳入正式分母。
+
+### 2B：摘要不足时的公开全文恢复
+
+新增实验适配器 `tests/manual/research_fulltext_recovery_ab.py`，固定 12 个来源状态：8 个摘要明确不足且存在公开正文，2 个摘要已足够，2 个正文不可得。候选只尝试来源自身提供的一个公开全文 URL；失败时保留摘要身份、URL 和缺口，不把下载成功当成已读全文。
+
+机制重放结果保存在 `.e2e-artifacts/research-fulltext-recovery-20261106.json`：8/8 个需要正文的状态成功恢复，来源身份保持，2 个不可得状态均回退为摘要。该结果证明了隔离适配器的回退边界，但没有真实网络快照、writer 答案、引用绑定或生产 `source_gateway` 端到端证据，因此 2B 当前判定为 `inconclusive`，不增加生产依赖、不改变默认获取路径。
