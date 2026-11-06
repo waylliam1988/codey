@@ -1,0 +1,5354 @@
+{
+  "planned": 70,
+  "observed": 70,
+  "matrix_complete": true,
+  "source_unchanged": true,
+  "summary": {
+    "baseline": {
+      "count": 20,
+      "artifact_quality_passed": 12,
+      "writer_complete": 14,
+      "review_approved": 4,
+      "review_repairs": 8,
+      "review_repair_attempts": 8,
+      "execution_errors": 5,
+      "treatment_delivered": 20
+    },
+    "plan": {
+      "count": 20,
+      "artifact_quality_passed": 12,
+      "writer_complete": 14,
+      "review_approved": 2,
+      "review_repairs": 4,
+      "review_repair_attempts": 4,
+      "execution_errors": 2,
+      "treatment_delivered": 20
+    },
+    "audit": {
+      "count": 10,
+      "artifact_quality_passed": 7,
+      "writer_complete": 8,
+      "review_approved": 3,
+      "review_repairs": 5,
+      "review_repair_attempts": 5,
+      "execution_errors": 0,
+      "treatment_delivered": 7
+    },
+    "consensus_one": {
+      "count": 10,
+      "artifact_quality_passed": 8,
+      "writer_complete": 8,
+      "review_approved": 1,
+      "review_repairs": 1,
+      "review_repair_attempts": 1,
+      "execution_errors": 1,
+      "treatment_delivered": 10
+    },
+    "consensus_two": {
+      "count": 10,
+      "artifact_quality_passed": 6,
+      "writer_complete": 7,
+      "review_approved": 0,
+      "review_repairs": 0,
+      "review_repair_attempts": 0,
+      "execution_errors": 1,
+      "treatment_delivered": 9
+    }
+  },
+  "comparisons": {
+    "plan_greenfield": {
+      "candidate": "plan",
+      "baseline": "baseline",
+      "baseline_stage": "final",
+      "count": 10,
+      "candidate_passed": 6,
+      "baseline_passed": 8,
+      "wins": 2,
+      "losses": 4,
+      "ties": 4,
+      "verified_benefits": 2,
+      "checked_regressions": 4,
+      "mixed_changes": 0,
+      "checked_ties": 4,
+      "pairs": [
+        {
+          "case": "zero-expiry",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": false,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "chain",
+              "dynamic_ready",
+              "duplicates",
+              "cycle",
+              "unknown",
+              "empty",
+              "immutable"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        }
+      ]
+    },
+    "plan_existing_diagnostic": {
+      "candidate": "plan",
+      "baseline": "baseline",
+      "baseline_stage": "final",
+      "count": 10,
+      "candidate_passed": 6,
+      "baseline_passed": 4,
+      "wins": 3,
+      "losses": 1,
+      "ties": 6,
+      "verified_benefits": 4,
+      "checked_regressions": 1,
+      "mixed_changes": 1,
+      "checked_ties": 4,
+      "pairs": [
+        {
+          "case": "config-isolation",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "defaults_isolation",
+              "overrides_isolation",
+              "repeat"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "expand",
+              "dedup",
+              "empty",
+              "caller"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "no_old_references"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": true,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "config-isolation",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "overrides_isolation"
+            ],
+            "regressed_behavior_checks": [
+              "recursive",
+              "consumer"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "mixed"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 1,
+          "baseline_behavior_score": 1,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "types"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        }
+      ]
+    },
+    "audit": {
+      "candidate": "audit",
+      "baseline": "baseline",
+      "baseline_stage": "final",
+      "count": 10,
+      "candidate_passed": 7,
+      "baseline_passed": 4,
+      "wins": 4,
+      "losses": 1,
+      "ties": 5,
+      "verified_benefits": 4,
+      "checked_regressions": 1,
+      "mixed_changes": 1,
+      "checked_ties": 4,
+      "pairs": [
+        {
+          "case": "config-isolation",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "defaults_isolation",
+              "overrides_isolation",
+              "repeat"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 0,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": false,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "mixed"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "no_old_references"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": true,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": false,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "config-isolation",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "defaults_isolation",
+              "overrides_isolation",
+              "repeat"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 1,
+          "baseline_behavior_score": 1,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": false,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "types"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        }
+      ]
+    },
+    "consensus_one": {
+      "candidate": "consensus_one",
+      "baseline": "baseline",
+      "baseline_stage": "final",
+      "count": 10,
+      "candidate_passed": 8,
+      "baseline_passed": 8,
+      "wins": 2,
+      "losses": 2,
+      "ties": 6,
+      "verified_benefits": 2,
+      "checked_regressions": 2,
+      "mixed_changes": 0,
+      "checked_ties": 6,
+      "pairs": [
+        {
+          "case": "zero-expiry",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": false,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "chain",
+              "dynamic_ready",
+              "duplicates",
+              "cycle",
+              "unknown",
+              "empty",
+              "immutable"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        }
+      ]
+    },
+    "consensus_two": {
+      "candidate": "consensus_two",
+      "baseline": "baseline",
+      "baseline_stage": "final",
+      "count": 10,
+      "candidate_passed": 6,
+      "baseline_passed": 8,
+      "wins": 0,
+      "losses": 2,
+      "ties": 8,
+      "verified_benefits": 1,
+      "checked_regressions": 2,
+      "mixed_changes": 1,
+      "checked_ties": 6,
+      "pairs": [
+        {
+          "case": "zero-expiry",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 0,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "expiry_boundary",
+              "replace",
+              "nonpositive",
+              "purge",
+              "falsey",
+              "independent"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": true,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": false,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "chain",
+              "dynamic_ready",
+              "duplicates",
+              "cycle",
+              "unknown",
+              "empty",
+              "immutable"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "punctuation"
+            ],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "mixed"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": false,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        }
+      ]
+    },
+    "second_advisor_increment": {
+      "candidate": "consensus_two",
+      "baseline": "consensus_one",
+      "baseline_stage": "final",
+      "count": 10,
+      "candidate_passed": 6,
+      "baseline_passed": 8,
+      "wins": 2,
+      "losses": 4,
+      "ties": 4,
+      "verified_benefits": 2,
+      "checked_regressions": 4,
+      "mixed_changes": 0,
+      "checked_ties": 4,
+      "pairs": [
+        {
+          "case": "zero-expiry",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 0,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "expiry_boundary",
+              "replace",
+              "nonpositive",
+              "purge",
+              "falsey",
+              "independent"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": true,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": false,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "punctuation"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": false,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        }
+      ]
+    }
+  },
+  "cooperation_vs_local_writer_only": {
+    "baseline": {
+      "candidate": "baseline",
+      "baseline": "baseline",
+      "baseline_stage": "initial",
+      "count": 20,
+      "candidate_passed": 12,
+      "baseline_passed": 14,
+      "wins": 0,
+      "losses": 2,
+      "ties": 18,
+      "verified_benefits": 0,
+      "checked_regressions": 2,
+      "mixed_changes": 0,
+      "checked_ties": 18,
+      "pairs": [
+        {
+          "case": "config-isolation",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 0,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 0,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": false,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": true,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "config-isolation",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 1,
+          "baseline_behavior_score": 1,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "types"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        }
+      ]
+    },
+    "plan": {
+      "candidate": "plan",
+      "baseline": "baseline",
+      "baseline_stage": "initial",
+      "count": 20,
+      "candidate_passed": 12,
+      "baseline_passed": 14,
+      "wins": 3,
+      "losses": 5,
+      "ties": 12,
+      "verified_benefits": 4,
+      "checked_regressions": 5,
+      "mixed_changes": 1,
+      "checked_ties": 10,
+      "pairs": [
+        {
+          "case": "config-isolation",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "defaults_isolation",
+              "overrides_isolation",
+              "repeat"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "expand",
+              "dedup",
+              "empty",
+              "caller"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": false,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "chain",
+              "dynamic_ready",
+              "duplicates",
+              "cycle",
+              "unknown",
+              "empty",
+              "immutable"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "no_old_references"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": true,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "config-isolation",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "overrides_isolation"
+            ],
+            "regressed_behavior_checks": [
+              "recursive",
+              "consumer"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "mixed"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 1,
+          "baseline_behavior_score": 1,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        }
+      ]
+    },
+    "audit": {
+      "candidate": "audit",
+      "baseline": "baseline",
+      "baseline_stage": "initial",
+      "count": 10,
+      "candidate_passed": 7,
+      "baseline_passed": 6,
+      "wins": 2,
+      "losses": 1,
+      "ties": 7,
+      "verified_benefits": 2,
+      "checked_regressions": 1,
+      "mixed_changes": 1,
+      "checked_ties": 6,
+      "pairs": [
+        {
+          "case": "config-isolation",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "defaults_isolation",
+              "overrides_isolation",
+              "repeat"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 0,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": false,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "mixed"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "no_old_references"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": true,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": false,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "config-isolation",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "defaults_isolation",
+              "overrides_isolation",
+              "repeat"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 1,
+          "baseline_behavior_score": 1,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": false,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        }
+      ]
+    },
+    "consensus_one": {
+      "candidate": "consensus_one",
+      "baseline": "baseline",
+      "baseline_stage": "initial",
+      "count": 10,
+      "candidate_passed": 8,
+      "baseline_passed": 8,
+      "wins": 2,
+      "losses": 2,
+      "ties": 6,
+      "verified_benefits": 2,
+      "checked_regressions": 2,
+      "mixed_changes": 0,
+      "checked_ties": 6,
+      "pairs": [
+        {
+          "case": "zero-expiry",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": false,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "chain",
+              "dynamic_ready",
+              "duplicates",
+              "cycle",
+              "unknown",
+              "empty",
+              "immutable"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        }
+      ]
+    },
+    "consensus_two": {
+      "candidate": "consensus_two",
+      "baseline": "baseline",
+      "baseline_stage": "initial",
+      "count": 10,
+      "candidate_passed": 6,
+      "baseline_passed": 8,
+      "wins": 0,
+      "losses": 2,
+      "ties": 8,
+      "verified_benefits": 1,
+      "checked_regressions": 2,
+      "mixed_changes": 1,
+      "checked_ties": 6,
+      "pairs": [
+        {
+          "case": "zero-expiry",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 0,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "expiry_boundary",
+              "replace",
+              "nonpositive",
+              "purge",
+              "falsey",
+              "independent"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": true,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": false,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "chain",
+              "dynamic_ready",
+              "duplicates",
+              "cycle",
+              "unknown",
+              "empty",
+              "immutable"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "punctuation"
+            ],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "mixed"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": false,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        }
+      ]
+    }
+  },
+  "repairs": [
+    {
+      "case": "config-isolation",
+      "repeat": 0,
+      "arm": "audit",
+      "repair_execution_failed": false,
+      "initial_passed": true,
+      "final_passed": true,
+      "initial_behavior_score": 7,
+      "final_behavior_score": 7,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "config-isolation",
+      "repeat": 0,
+      "arm": "baseline",
+      "repair_execution_failed": false,
+      "initial_passed": false,
+      "final_passed": false,
+      "initial_behavior_score": 4,
+      "final_behavior_score": 4,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "range-validation",
+      "repeat": 0,
+      "arm": "audit",
+      "repair_execution_failed": false,
+      "initial_passed": false,
+      "final_passed": false,
+      "initial_behavior_score": 5,
+      "final_behavior_score": 0,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [
+          "expand",
+          "spaces",
+          "dedup",
+          "empty",
+          "caller"
+        ],
+        "suite_fixed": false,
+        "suite_regressed": true,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "regression"
+      }
+    },
+    {
+      "case": "zero-dependencies",
+      "repeat": 0,
+      "arm": "consensus_one",
+      "repair_execution_failed": false,
+      "initial_passed": true,
+      "final_passed": true,
+      "initial_behavior_score": 7,
+      "final_behavior_score": 7,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "event-revisions",
+      "repeat": 0,
+      "arm": "audit",
+      "repair_execution_failed": false,
+      "initial_passed": true,
+      "final_passed": true,
+      "initial_behavior_score": 6,
+      "final_behavior_score": 6,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "event-revisions",
+      "repeat": 0,
+      "arm": "baseline",
+      "repair_execution_failed": false,
+      "initial_passed": true,
+      "final_passed": false,
+      "initial_behavior_score": 6,
+      "final_behavior_score": 6,
+      "initial_scope_ok": true,
+      "final_scope_ok": false,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": true,
+        "verified_gain_without_regression": false,
+        "outcome": "regression"
+      }
+    },
+    {
+      "case": "event-revisions",
+      "repeat": 0,
+      "arm": "plan",
+      "repair_execution_failed": false,
+      "initial_passed": true,
+      "final_passed": true,
+      "initial_behavior_score": 6,
+      "final_behavior_score": 6,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "zero-expiry",
+      "repeat": 1,
+      "arm": "baseline",
+      "repair_execution_failed": false,
+      "initial_passed": true,
+      "final_passed": true,
+      "initial_behavior_score": 6,
+      "final_behavior_score": 6,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "event-revisions",
+      "repeat": 1,
+      "arm": "plan",
+      "repair_execution_failed": false,
+      "initial_passed": true,
+      "final_passed": true,
+      "initial_behavior_score": 6,
+      "final_behavior_score": 6,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "event-revisions",
+      "repeat": 1,
+      "arm": "baseline",
+      "repair_execution_failed": false,
+      "initial_passed": true,
+      "final_passed": true,
+      "initial_behavior_score": 6,
+      "final_behavior_score": 6,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "event-revisions",
+      "repeat": 1,
+      "arm": "audit",
+      "repair_execution_failed": false,
+      "initial_passed": false,
+      "final_passed": true,
+      "initial_behavior_score": 5,
+      "final_behavior_score": 6,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [
+          "tie"
+        ],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": true,
+        "outcome": "benefit"
+      }
+    },
+    {
+      "case": "zero-dependencies",
+      "repeat": 1,
+      "arm": "baseline",
+      "repair_execution_failed": false,
+      "initial_passed": true,
+      "final_passed": true,
+      "initial_behavior_score": 7,
+      "final_behavior_score": 7,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "config-isolation",
+      "repeat": 1,
+      "arm": "plan",
+      "repair_execution_failed": false,
+      "initial_passed": false,
+      "final_passed": false,
+      "initial_behavior_score": 3,
+      "final_behavior_score": 3,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "config-isolation",
+      "repeat": 1,
+      "arm": "baseline",
+      "repair_execution_failed": false,
+      "initial_passed": false,
+      "final_passed": false,
+      "initial_behavior_score": 4,
+      "final_behavior_score": 4,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "range-validation",
+      "repeat": 1,
+      "arm": "plan",
+      "repair_execution_failed": false,
+      "initial_passed": false,
+      "final_passed": false,
+      "initial_behavior_score": 5,
+      "final_behavior_score": 1,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [
+          "expand",
+          "spaces",
+          "dedup",
+          "caller"
+        ],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "regression"
+      }
+    },
+    {
+      "case": "range-validation",
+      "repeat": 1,
+      "arm": "baseline",
+      "repair_execution_failed": false,
+      "initial_passed": false,
+      "final_passed": false,
+      "initial_behavior_score": 1,
+      "final_behavior_score": 1,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "tie"
+      }
+    },
+    {
+      "case": "range-validation",
+      "repeat": 1,
+      "arm": "audit",
+      "repair_execution_failed": false,
+      "initial_passed": false,
+      "final_passed": false,
+      "initial_behavior_score": 5,
+      "final_behavior_score": 1,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [
+          "expand",
+          "spaces",
+          "dedup",
+          "caller"
+        ],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "regression"
+      }
+    },
+    {
+      "case": "atomic-transfer",
+      "repeat": 1,
+      "arm": "baseline",
+      "repair_execution_failed": false,
+      "initial_passed": true,
+      "final_passed": false,
+      "initial_behavior_score": 7,
+      "final_behavior_score": 6,
+      "initial_scope_ok": true,
+      "final_scope_ok": true,
+      "checked_quality_delta": {
+        "fixed_behavior_checks": [],
+        "regressed_behavior_checks": [
+          "types"
+        ],
+        "suite_fixed": false,
+        "suite_regressed": false,
+        "scope_fixed": false,
+        "scope_regressed": false,
+        "verified_gain_without_regression": false,
+        "outcome": "regression"
+      }
+    }
+  ],
+  "failures": [
+    {
+      "case": "config-isolation",
+      "arm": "baseline",
+      "repeat": 0,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "defaults_isolation",
+        "overrides_isolation",
+        "repeat"
+      ],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "range-validation",
+      "arm": "audit",
+      "repeat": 0,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "expand",
+        "spaces",
+        "dedup",
+        "empty",
+        "invalid",
+        "caller"
+      ],
+      "visible_suite_ok": false,
+      "scope_ok": true
+    },
+    {
+      "case": "range-validation",
+      "arm": "baseline",
+      "repeat": 0,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "expand",
+        "spaces",
+        "dedup",
+        "empty",
+        "invalid",
+        "caller"
+      ],
+      "visible_suite_ok": true,
+      "scope_ok": false
+    },
+    {
+      "case": "range-validation",
+      "arm": "plan",
+      "repeat": 0,
+      "stop_reason": "done",
+      "failure_stage": "review",
+      "error": "ValueError: review response did not contain a valid review object",
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "spaces",
+        "invalid"
+      ],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-expiry",
+      "arm": "consensus_two",
+      "repeat": 0,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "expiry_boundary",
+        "replace",
+        "nonpositive",
+        "purge",
+        "falsey",
+        "independent"
+      ],
+      "visible_suite_ok": false,
+      "scope_ok": false
+    },
+    {
+      "case": "zero-expiry",
+      "arm": "plan",
+      "repeat": 0,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": false,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-dependencies",
+      "arm": "baseline",
+      "repeat": 0,
+      "stop_reason": null,
+      "failure_stage": "writer",
+      "error": "OutputLengthError: model output truncated (finish_reason=length)",
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "chain",
+        "dynamic_ready",
+        "duplicates",
+        "cycle",
+        "unknown",
+        "empty",
+        "immutable"
+      ],
+      "visible_suite_ok": false,
+      "scope_ok": false
+    },
+    {
+      "case": "zero-dependencies",
+      "arm": "consensus_two",
+      "repeat": 0,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": false,
+      "scope_ok": true
+    },
+    {
+      "case": "atomic-transfer",
+      "arm": "plan",
+      "repeat": 0,
+      "stop_reason": "done",
+      "failure_stage": "review",
+      "error": "ValueError: review response did not contain a valid review object",
+      "artifact_quality_passed": true,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-lru",
+      "arm": "consensus_one",
+      "repeat": 0,
+      "stop_reason": null,
+      "failure_stage": "writer",
+      "error": "OutputLengthError: model output truncated (finish_reason=length)",
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": false,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-lru",
+      "arm": "plan",
+      "repeat": 0,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": false,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-slug",
+      "arm": "consensus_two",
+      "repeat": 0,
+      "stop_reason": "done",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "punctuation"
+      ],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-slug",
+      "arm": "baseline",
+      "repeat": 0,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": false,
+      "scope_ok": true
+    },
+    {
+      "case": "cross-file-rename",
+      "arm": "plan",
+      "repeat": 0,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "no_old_references"
+      ],
+      "visible_suite_ok": false,
+      "scope_ok": false
+    },
+    {
+      "case": "cross-file-rename",
+      "arm": "audit",
+      "repeat": 0,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "no_old_references"
+      ],
+      "visible_suite_ok": false,
+      "scope_ok": false
+    },
+    {
+      "case": "event-revisions",
+      "arm": "baseline",
+      "repeat": 0,
+      "stop_reason": "done",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": true,
+      "scope_ok": false
+    },
+    {
+      "case": "zero-expiry",
+      "arm": "consensus_one",
+      "repeat": 1,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": false,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-slug",
+      "arm": "baseline",
+      "repeat": 1,
+      "stop_reason": "done",
+      "failure_stage": "review",
+      "error": "ValueError: review response did not contain a valid review object",
+      "artifact_quality_passed": true,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-dependencies",
+      "arm": "plan",
+      "repeat": 1,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": false,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-dependencies",
+      "arm": "consensus_two",
+      "repeat": 1,
+      "stop_reason": "done",
+      "failure_stage": "review",
+      "error": "ValueError: review response did not contain a valid review object",
+      "artifact_quality_passed": true,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-intervals",
+      "arm": "plan",
+      "repeat": 1,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": false,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-intervals",
+      "arm": "baseline",
+      "repeat": 1,
+      "stop_reason": "done",
+      "failure_stage": "review",
+      "error": "ReviewSendUnknown: generation outcome unknown; request not resent: Remote end closed connection without response",
+      "artifact_quality_passed": true,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "zero-lru",
+      "arm": "consensus_two",
+      "repeat": 1,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": false,
+      "scope_ok": true
+    },
+    {
+      "case": "config-isolation",
+      "arm": "plan",
+      "repeat": 1,
+      "stop_reason": "done",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "recursive",
+        "defaults_isolation",
+        "consumer",
+        "repeat"
+      ],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "config-isolation",
+      "arm": "baseline",
+      "repeat": 1,
+      "stop_reason": "done",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "defaults_isolation",
+        "overrides_isolation",
+        "repeat"
+      ],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "range-validation",
+      "arm": "plan",
+      "repeat": 1,
+      "stop_reason": "done",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "expand",
+        "spaces",
+        "dedup",
+        "invalid",
+        "caller"
+      ],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "range-validation",
+      "arm": "baseline",
+      "repeat": 1,
+      "stop_reason": "no_progress",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "expand",
+        "spaces",
+        "dedup",
+        "invalid",
+        "caller"
+      ],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "range-validation",
+      "arm": "audit",
+      "repeat": 1,
+      "stop_reason": "done",
+      "failure_stage": null,
+      "error": null,
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "expand",
+        "spaces",
+        "dedup",
+        "invalid",
+        "caller"
+      ],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "cross-file-rename",
+      "arm": "baseline",
+      "repeat": 1,
+      "stop_reason": "done",
+      "failure_stage": "review",
+      "error": "ReviewSendUnknown: TLS connection failed before generation submission: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1000)",
+      "artifact_quality_passed": true,
+      "failed_behavior_checks": [],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    },
+    {
+      "case": "atomic-transfer",
+      "arm": "baseline",
+      "repeat": 1,
+      "stop_reason": "done",
+      "failure_stage": "post_review",
+      "error": "ValueError: review response did not contain a valid review object",
+      "artifact_quality_passed": false,
+      "failed_behavior_checks": [
+        "types"
+      ],
+      "visible_suite_ok": true,
+      "scope_ok": true
+    }
+  ],
+  "provenance": {
+    "generation_git_head": "41655deba1654ccf13e281925449bfe01a1b74a2",
+    "raw_matrix_sha256": "185b5d8faab506f00dd0eaff96abfd185755ea274862a472e7476b0d5dfe69fd",
+    "analysis_source_sha256": {
+      "tests/manual/cross_model_quality_summary.py": "801a741b978979701090c514e0c598792296abba98138cfe26cb06a925f26da9",
+      "tests/manual/archive_coding_pipeline_evidence.py": "85ce02bca245841acfd2cd0eb9e8aa919cf8696e3bf95ed43805f6f5c5a984f7"
+    },
+    "fixture_count": 10,
+    "repeats": 2,
+    "model_sampling_seed_controlled": false,
+    "model_roles": {
+      "writer": "local Gemma4",
+      "advisor": "Nemotron Lightning; thinking=false",
+      "second_advisor_and_common_reviewer": "Solar Mini4"
+    },
+    "limits": [
+      "Miniature Python fixtures; bounded behavior checks, not exhaustive bugs or architecture ratings.",
+      "Paired arms use independent model samples; only initial-to-final repairs compare identical candidates.",
+      "Cost and latency do not determine feature retention.",
+      "Second advisor and Reviewer share Solar identity; both online models use the same Cline service."
+    ]
+  },
+  "cooperation_by_production_scope": {
+    "plan_greenfield": {
+      "candidate": "plan",
+      "baseline": "baseline",
+      "baseline_stage": "initial",
+      "count": 10,
+      "candidate_passed": 6,
+      "baseline_passed": 8,
+      "wins": 2,
+      "losses": 4,
+      "ties": 4,
+      "verified_benefits": 2,
+      "checked_regressions": 4,
+      "mixed_changes": 0,
+      "checked_ties": 4,
+      "pairs": [
+        {
+          "case": "zero-expiry",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": false,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "chain",
+              "dynamic_ready",
+              "duplicates",
+              "cycle",
+              "unknown",
+              "empty",
+              "immutable"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": true,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "zero-expiry",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-slug",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "zero-dependencies",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-intervals",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "zero-lru",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        }
+      ]
+    },
+    "plan_existing_diagnostic": {
+      "candidate": "plan",
+      "baseline": "baseline",
+      "baseline_stage": "initial",
+      "count": 10,
+      "candidate_passed": 6,
+      "baseline_passed": 6,
+      "wins": 1,
+      "losses": 1,
+      "ties": 8,
+      "verified_benefits": 2,
+      "checked_regressions": 1,
+      "mixed_changes": 1,
+      "checked_ties": 6,
+      "pairs": [
+        {
+          "case": "config-isolation",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": false,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "win",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "defaults_isolation",
+              "overrides_isolation",
+              "repeat"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 0,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "expand",
+              "dedup",
+              "empty",
+              "caller"
+            ],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": true,
+            "scope_regressed": false,
+            "verified_gain_without_regression": true,
+            "outcome": "benefit"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 0,
+          "candidate_passed": false,
+          "baseline_passed": true,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "loss",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [
+              "no_old_references"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": true,
+            "scope_fixed": false,
+            "scope_regressed": true,
+            "verified_gain_without_regression": false,
+            "outcome": "regression"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 0,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "event-revisions",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 6,
+          "baseline_behavior_score": 6,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "config-isolation",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 3,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [
+              "overrides_isolation"
+            ],
+            "regressed_behavior_checks": [
+              "recursive",
+              "consumer"
+            ],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "mixed"
+          }
+        },
+        {
+          "case": "range-validation",
+          "repeat": 1,
+          "candidate_passed": false,
+          "baseline_passed": false,
+          "candidate_behavior_score": 1,
+          "baseline_behavior_score": 1,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "cross-file-rename",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 4,
+          "baseline_behavior_score": 4,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        },
+        {
+          "case": "atomic-transfer",
+          "repeat": 1,
+          "candidate_passed": true,
+          "baseline_passed": true,
+          "candidate_behavior_score": 7,
+          "baseline_behavior_score": 7,
+          "baseline_initial_available": true,
+          "candidate_treatment_delivered": true,
+          "outcome": "tie",
+          "checked_quality_delta": {
+            "fixed_behavior_checks": [],
+            "regressed_behavior_checks": [],
+            "suite_fixed": false,
+            "suite_regressed": false,
+            "scope_fixed": false,
+            "scope_regressed": false,
+            "verified_gain_without_regression": false,
+            "outcome": "tie"
+          }
+        }
+      ]
+    }
+  },
+  "repair_outcome_counts": {
+    "tie": 12,
+    "regression": 5,
+    "benefit": 1
+  },
+  "artifact_dimensions": {
+    "baseline": {
+      "initial_snapshot_available": 19,
+      "initial": {
+        "count": 20,
+        "behavior_all_passed": 15,
+        "suite_passed": 18,
+        "scope_passed": 18,
+        "artifact_all_passed": 14
+      },
+      "final": {
+        "count": 20,
+        "behavior_all_passed": 14,
+        "suite_passed": 18,
+        "scope_passed": 17,
+        "artifact_all_passed": 12
+      }
+    },
+    "plan": {
+      "initial_snapshot_available": 20,
+      "initial": {
+        "count": 20,
+        "behavior_all_passed": 16,
+        "suite_passed": 15,
+        "scope_passed": 19,
+        "artifact_all_passed": 12
+      },
+      "final": {
+        "count": 20,
+        "behavior_all_passed": 16,
+        "suite_passed": 15,
+        "scope_passed": 19,
+        "artifact_all_passed": 12
+      }
+    },
+    "audit": {
+      "initial_snapshot_available": 10,
+      "initial": {
+        "count": 10,
+        "behavior_all_passed": 6,
+        "suite_passed": 9,
+        "scope_passed": 9,
+        "artifact_all_passed": 6
+      },
+      "final": {
+        "count": 10,
+        "behavior_all_passed": 7,
+        "suite_passed": 8,
+        "scope_passed": 9,
+        "artifact_all_passed": 7
+      }
+    },
+    "consensus_one": {
+      "initial_snapshot_available": 9,
+      "initial": {
+        "count": 10,
+        "behavior_all_passed": 10,
+        "suite_passed": 8,
+        "scope_passed": 10,
+        "artifact_all_passed": 8
+      },
+      "final": {
+        "count": 10,
+        "behavior_all_passed": 10,
+        "suite_passed": 8,
+        "scope_passed": 10,
+        "artifact_all_passed": 8
+      }
+    },
+    "consensus_two": {
+      "initial_snapshot_available": 10,
+      "initial": {
+        "count": 10,
+        "behavior_all_passed": 8,
+        "suite_passed": 7,
+        "scope_passed": 9,
+        "artifact_all_passed": 6
+      },
+      "final": {
+        "count": 10,
+        "behavior_all_passed": 8,
+        "suite_passed": 7,
+        "scope_passed": 9,
+        "artifact_all_passed": 6
+      }
+    }
+  },
+  "root_cause_notes": {
+    "scope": "Manual root-cause checks of the frozen v5 batch; does not modify benchmark artifacts",
+    "rows": [
+      {
+        "repeat": 0,
+        "case": "range-validation",
+        "arm": "audit",
+        "classification": "model_repair_regression",
+        "evidence": "Initial behavior 5/6; Reviewer identified ASCII-only validation. Actual Writer edit arguments omit colons; final behavior 0/6. Subsequent exact SEARCH mismatch correctly rejected. No editor corruption."
+      },
+      {
+        "repeat": 0,
+        "case": "zero-expiry",
+        "arm": "plan",
+        "classification": "model_generated_test_expectation",
+        "evidence": "Product 6/6. Test starts clock=100, advances 5, resets ttl=10, then advances 10 to expiry=115 but expects a live value. Requirement expires at >= deadline; implementation is correct."
+      },
+      {
+        "repeat": 0,
+        "case": "zero-dependencies",
+        "arm": "consensus_two",
+        "classification": "model_generated_test_syntax_and_missing_read",
+        "evidence": "Product 7/7. Test contains literal backslash-n outside string at order_steps call. Subsequent edit lacks required read_file and is correctly rejected; no_progress after repeated tool failures."
+      },
+      {
+        "repeat": 0,
+        "case": "zero-dependencies",
+        "arm": "baseline",
+        "classification": "model_output_truncated",
+        "evidence": "OutputLengthError during Writer; final files empty. Do not replay or increase only this arm budget."
+      },
+      {
+        "repeat": 0,
+        "case": "atomic-transfer",
+        "arm": "plan",
+        "classification": "model_review_protocol_error",
+        "evidence": "Artifact passed independently; Review response lacked a valid review object. No invalid approval persisted."
+      },
+      {
+        "repeat": 0,
+        "case": "zero-lru",
+        "arm": "consensus_one",
+        "classification": "model_generated_test_expectation",
+        "evidence": "Product 6/6. Generated tests call get(missing) without a default argument but expect the literal string default. Contract default is None. consensus_one later truncates during Writer; plan stops after repeated failures. These are generated delivery-test errors, not Codey repository tests lagging a changed implementation."
+      },
+      {
+        "repeat": 0,
+        "case": "zero-lru",
+        "arm": "plan",
+        "classification": "model_generated_test_expectation",
+        "evidence": "Product 6/6. Generated tests call get(missing) without a default argument but expect the literal string default. Contract default is None. consensus_one later truncates during Writer; plan stops after repeated failures. These are generated delivery-test errors, not Codey repository tests lagging a changed implementation."
+      },
+      {
+        "repeat": 0,
+        "case": "zero-slug",
+        "arm": "consensus_two",
+        "classification": "model_product_requirement_violation_and_review_miss",
+        "evidence": "Product 3/4, suite passes. Writer removes apostrophes before replacing non-ASCII-alphanumeric runs, so an apostrophe does not become the required hyphen. Tests encode the same wrong convention. Reviewer reports no findings with incomplete scope. A miss is retained as a capability limitation; no new prompts or loops."
+      },
+      {
+        "repeat": 0,
+        "case": "zero-slug",
+        "arm": "baseline",
+        "classification": "model_generated_test_expectation",
+        "evidence": "Product 4/4. Test expects slugify(MiXedCaSe) to insert a hyphen despite no separator; implementation follows lowercase + replace non-alphanumeric contract. Test failure leads to no_progress."
+      },
+      {
+        "repeat": 0,
+        "case": "cross-file-rename",
+        "arm": "plan",
+        "classification": "model_incomplete_refactor",
+        "evidence": "New API and production caller correct, but test_totals.py still imports and calls legacy_total. Task explicitly requires updating all callers/tests; suite import fails, old-reference check fails, required delivery scope incomplete. This is a model missed edit, not a stale Codey test."
+      },
+      {
+        "repeat": 0,
+        "case": "cross-file-rename",
+        "arm": "audit",
+        "classification": "model_incomplete_refactor",
+        "evidence": "Same confirmed missed test_totals.py legacy_total references as plan. New API and caller work but tests fail import, score 3/4, required scope incomplete."
+      },
+      {
+        "repeat": 0,
+        "case": "event-revisions",
+        "arm": "baseline",
+        "classification": "model_repair_scope_regression",
+        "evidence": "Product 6/6 before and after. Review asks for more tests; Writer adds tests in test_events.py although task says existing tests unchanged and fixture permits only events.py. Suite passes; scope becomes false. This is scope-only regression, not a product-behavior regression or a positive effect of audit."
+      },
+      {
+        "repeat": 1,
+        "case": "zero-expiry",
+        "arm": "consensus_one",
+        "classification": "model_generated_test_expectation",
+        "evidence": "Product 6/6. Purge test advances clock to 4 but expects the ttl=5 entry to be expired; only ttl=2 has expired. Correct count=1, model expects 2."
+      },
+      {
+        "repeat": 1,
+        "case": "event-revisions",
+        "arm": "audit",
+        "classification": "verified_natural_review_repair_benefit",
+        "evidence": "Pre-audit advice was not delivered; do not attribute benefit to audit. Same Writer candidate fails only tie behavior (5/6): strict > keeps first equal revision. Review correctly suggests >=, Writer changes it, final 6/6 with suite and scope preserved. One repair only. Copy-field finding is false: dict.copy already retains arbitrary fields; changing to dict has no benefit or regression. Second Review asks for handling non-string ids outside the promised string-id contract and still does not approve. Bounded workflow stops rather than looping to approval."
+      },
+      {
+        "repeat": 1,
+        "case": "zero-intervals",
+        "arm": "plan",
+        "classification": "model_generated_test_expectation",
+        "evidence": "Product 7/7. Test passes intervals [(5,10),(1,3),(2,6)] but expects [(1,6),(5,10)] even though they overlap. Correct transitive merge is [(1,10)], matching implementation and independent contract."
+      },
+      {
+        "repeat": 1,
+        "case": "config-isolation",
+        "arm": "plan",
+        "classification": "model_product_missing_default_fallback",
+        "evidence": "Product 3/7. Iterates union of default/override keys but uses overrides.get(key) with no fallback; default-only entries become None. Baseline 4/7 has different shallow-alias defects, so paired change is mixed rather than a clean loss by score alone."
+      },
+      {
+        "repeat": 1,
+        "case": "range-validation",
+        "arm": "plan",
+        "classification": "false_review_finding_and_model_repair_regression",
+        "evidence": "Initial 5/6; real gap is non-ASCII digits/sign validation. Reviewer falsely says int does not accept surrounding whitespace. Writer replaces assignment from split hyphen_parts with start_str=start_str.strip()/end_str=end_str.strip(), leaving variables unbound. Final 1/6. Existing simple comma-only test passes because it does not exercise range branch. Actual model edit and artifact agree; not editor corruption. Post Review sees unbound-variable issue but misstates branch/trigger. One repair limit preserved."
+      },
+      {
+        "repeat": 0,
+        "case": "config-isolation",
+        "arm": "baseline",
+        "classification": "model_shallow_copy_aliasing",
+        "evidence": "Product 4/7: shallow list/dict copies preserve nested mutable aliases. Review repair does not restore full isolation."
+      },
+      {
+        "repeat": 1,
+        "case": "config-isolation",
+        "arm": "baseline",
+        "classification": "model_shallow_copy_aliasing",
+        "evidence": "Product 4/7: list(value) is shallow, default nested dicts are reused; defaults/overrides isolation and repeat independence fail."
+      },
+      {
+        "repeat": 0,
+        "case": "range-validation",
+        "arm": "baseline",
+        "classification": "model_no_required_edit",
+        "evidence": "Final ranges.py is unchanged starter comma-int parser. Product 0/6; required edit missing; old simple suite passes. Writer no_progress is appropriate."
+      },
+      {
+        "repeat": 0,
+        "case": "range-validation",
+        "arm": "plan",
+        "classification": "model_product_whitespace_and_ascii_gap",
+        "evidence": "Product 4/6. Range endpoints are not stripped before isdigit; isdigit accepts non-ASCII digits. Original suite insufficient; Review invalid JSON rejected."
+      },
+      {
+        "repeat": 0,
+        "case": "zero-expiry",
+        "arm": "consensus_two",
+        "classification": "model_wrong_api_and_missing_test",
+        "evidence": "Writer creates closure function expiring_cache instead of required ExpiringCache class and does not create test_expiry.py. Repeated attempts to run absent tests cause no_progress. Product 0/6 and required delivery incomplete."
+      },
+      {
+        "repeat": 1,
+        "case": "zero-dependencies",
+        "arm": "plan",
+        "classification": "model_generated_cyclic_test_graph",
+        "evidence": "Product 7/7. Test graph A->B and B->A (also A->C and C->A) contains cycles but expects a topological order. Implementation correctly raises ValueError. Subsequent SEARCH contains literal truncated marker and is correctly rejected."
+      },
+      {
+        "repeat": 1,
+        "case": "zero-lru",
+        "arm": "consensus_two",
+        "classification": "model_generated_test_expectation",
+        "evidence": "Product 6/6. Same missing get default argument versus literal default string mistake as first-round LRU failures."
+      },
+      {
+        "repeat": 1,
+        "case": "range-validation",
+        "arm": "baseline",
+        "classification": "model_product_range_hyphen_count",
+        "evidence": "Product 1/6. Initial parser requires part.count(hyphen) == 2, rejecting valid one-hyphen ranges, and still accepts non-ASCII/signs. Repair does not improve final behavior."
+      },
+      {
+        "repeat": 1,
+        "case": "range-validation",
+        "arm": "audit",
+        "classification": "false_review_findings_and_model_repair_regression",
+        "evidence": "No audit advice delivered. Initial 5/6; Reviewer falsely claims whitespace/zero/reversed checks fail although checks exist. Writer removes else from range/single-value split, so valid ranges fall through to digit check. Final 1/6. Original suite still passes. Post Review correctly identifies fallthrough but no second repair is allowed."
+      },
+      {
+        "repeat": 1,
+        "case": "atomic-transfer",
+        "arm": "baseline",
+        "classification": "false_review_requirement_and_model_repair_regression",
+        "evidence": "Initial 7/7. Reviewer contradicts explicit excluding bool requirement and asks to remove bool rejection. Writer follows suggestion; final accepts True and fails type check, 6/7. Existing test passes. Post Review now identifies bool bug but both JSON replies malformed and correctly rejected. No further repair loop."
+      }
+    ],
+    "quality_failure_coverage": {
+      "failed_artifacts": 25,
+      "with_root_cause_note": 25
+    },
+    "protocol_failure_notes": [
+      {
+        "repeat": 0,
+        "case": "range-validation",
+        "arm": "plan",
+        "failure_stage": "review",
+        "error": "ValueError: review response did not contain a valid review object",
+        "artifact_passed": false,
+        "classification": "invalid_review_json_rejected"
+      },
+      {
+        "repeat": 0,
+        "case": "zero-dependencies",
+        "arm": "baseline",
+        "failure_stage": "writer",
+        "error": "OutputLengthError: model output truncated (finish_reason=length)",
+        "artifact_passed": false,
+        "classification": "output_budget_truncation"
+      },
+      {
+        "repeat": 0,
+        "case": "atomic-transfer",
+        "arm": "plan",
+        "failure_stage": "review",
+        "error": "ValueError: review response did not contain a valid review object",
+        "artifact_passed": true,
+        "classification": "invalid_review_json_rejected"
+      },
+      {
+        "repeat": 0,
+        "case": "zero-lru",
+        "arm": "consensus_one",
+        "failure_stage": "writer",
+        "error": "OutputLengthError: model output truncated (finish_reason=length)",
+        "artifact_passed": false,
+        "classification": "output_budget_truncation"
+      },
+      {
+        "repeat": 1,
+        "case": "zero-slug",
+        "arm": "baseline",
+        "failure_stage": "review",
+        "error": "ValueError: review response did not contain a valid review object",
+        "artifact_passed": true,
+        "classification": "invalid_review_json_rejected"
+      },
+      {
+        "repeat": 1,
+        "case": "zero-dependencies",
+        "arm": "consensus_two",
+        "failure_stage": "review",
+        "error": "ValueError: review response did not contain a valid review object",
+        "artifact_passed": true,
+        "classification": "invalid_review_json_rejected"
+      },
+      {
+        "repeat": 1,
+        "case": "zero-intervals",
+        "arm": "baseline",
+        "failure_stage": "review",
+        "error": "ReviewSendUnknown: generation outcome unknown; request not resent: Remote end closed connection without response",
+        "artifact_passed": true,
+        "classification": "upstream_transport_failure_without_replay"
+      },
+      {
+        "repeat": 1,
+        "case": "cross-file-rename",
+        "arm": "baseline",
+        "failure_stage": "review",
+        "error": "ReviewSendUnknown: TLS connection failed before generation submission: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1000)",
+        "artifact_passed": true,
+        "classification": "upstream_transport_failure_without_replay"
+      },
+      {
+        "repeat": 1,
+        "case": "atomic-transfer",
+        "arm": "baseline",
+        "failure_stage": "post_review",
+        "error": "ValueError: review response did not contain a valid review object",
+        "artifact_passed": false,
+        "classification": "invalid_review_json_rejected"
+      }
+    ]
+  },
+  "artifact_regrade": {
+    "input": "cross-model-quality-v5-20261106.json",
+    "count": 70,
+    "all_match": true,
+    "method": "Rebuild final recorded files in fresh temporary directories and rerun all original behavior/suite/scope checks; normalize tuple changed_files to JSON lists. No model or source changes.",
+    "initial_checker_error": "Python tuple versus JSON list comparison caused only changed_files mismatches in all 70 rows; original attempt retained separately.",
+    "checks": [
+      {
+        "repeat": 0,
+        "case": "config-isolation",
+        "arm": "audit",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "config-isolation",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "config-isolation",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "range-validation",
+        "arm": "audit",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "range-validation",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "range-validation",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-expiry",
+        "arm": "consensus_two",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-expiry",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-expiry",
+        "arm": "consensus_one",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-expiry",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-dependencies",
+        "arm": "consensus_one",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-dependencies",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-dependencies",
+        "arm": "consensus_two",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-dependencies",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "atomic-transfer",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "atomic-transfer",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "atomic-transfer",
+        "arm": "audit",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-lru",
+        "arm": "consensus_two",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-lru",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-lru",
+        "arm": "consensus_one",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-lru",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-intervals",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-intervals",
+        "arm": "consensus_two",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-intervals",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-intervals",
+        "arm": "consensus_one",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-slug",
+        "arm": "consensus_two",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-slug",
+        "arm": "consensus_one",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-slug",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "zero-slug",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "cross-file-rename",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "cross-file-rename",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "cross-file-rename",
+        "arm": "audit",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "event-revisions",
+        "arm": "audit",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "event-revisions",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 0,
+        "case": "event-revisions",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-expiry",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-expiry",
+        "arm": "consensus_one",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-expiry",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-expiry",
+        "arm": "consensus_two",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "event-revisions",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "event-revisions",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "event-revisions",
+        "arm": "audit",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-slug",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-slug",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-slug",
+        "arm": "consensus_one",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-slug",
+        "arm": "consensus_two",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-dependencies",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-dependencies",
+        "arm": "consensus_two",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-dependencies",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-dependencies",
+        "arm": "consensus_one",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-intervals",
+        "arm": "consensus_one",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-intervals",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-intervals",
+        "arm": "consensus_two",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-intervals",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-lru",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-lru",
+        "arm": "consensus_one",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-lru",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "zero-lru",
+        "arm": "consensus_two",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "config-isolation",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "config-isolation",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "config-isolation",
+        "arm": "audit",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "range-validation",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "range-validation",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "range-validation",
+        "arm": "audit",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "cross-file-rename",
+        "arm": "audit",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "cross-file-rename",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "cross-file-rename",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "atomic-transfer",
+        "arm": "audit",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "atomic-transfer",
+        "arm": "plan",
+        "matches": true,
+        "mismatches": []
+      },
+      {
+        "repeat": 1,
+        "case": "atomic-transfer",
+        "arm": "baseline",
+        "matches": true,
+        "mismatches": []
+      }
+    ]
+  },
+  "production_smoke": {
+    "input": "cross-model-production-final-v5-20261106.json",
+    "ok": true,
+    "checks": {
+      "writer_done": true,
+      "single_terminal": true,
+      "real_writer_request": true,
+      "real_independent_review_request": true,
+      "complete_review": true,
+      "persisted_independent_review": true,
+      "verified_before_review": true,
+      "terminal_after_review": true,
+      "fresh_final_verification": true,
+      "review_read_only": true,
+      "independent_quality": true
+    }
+  }
+}

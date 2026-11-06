@@ -1,0 +1,252 @@
+{
+  "formal_matrix": "cross-model-quality-v5-20261106.json",
+  "diagnostic_archive": "cross-model-quality-diagnostics-20261106.json.gz",
+  "batches": [
+    {
+      "name": "cross-model-quality-balanced-20261106.json",
+      "kind": "interrupted_matrix_diagnostics",
+      "sha256": "dceae9e6cda0041e1d16ba6320fd90e1c93673c5a18d9aaa64df2113f51f2e94",
+      "rows": 5,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-balanced-fixed-20261106.json",
+      "kind": "interrupted_matrix_diagnostics",
+      "sha256": "330f304a06c08005d8569372b46204fe6f5780eac7686abf1bc08b816b34676c",
+      "rows": 6,
+      "source_unchanged": true
+    },
+    {
+      "name": "cross-model-quality-recovered-20261106.json",
+      "kind": "interrupted_matrix_diagnostics",
+      "sha256": "6c69e5e2f4ad6a331d25719eb74ec5c317da37361dc33a594d6b416fca2abcae",
+      "rows": 2,
+      "source_unchanged": false
+    },
+    {
+      "name": "cross-model-quality-final-20261106.json",
+      "kind": "interrupted_matrix_diagnostics",
+      "sha256": "d3234fd1577cb02572f8b52dd006a136a4d3f3cc4d1f2585609cd23bf327dc2f",
+      "rows": 4,
+      "source_unchanged": true
+    },
+    {
+      "name": "cross-model-quality-pilot-20261106.json",
+      "kind": "natural_writer_pilots",
+      "sha256": "865176f14757199d77afc7cdf40e48c561d416cb145f16e8b0cc02f09a508b9f",
+      "rows": 2,
+      "source_unchanged": true
+    },
+    {
+      "name": "cross-model-quality-redaction-fixed-pilot-20261106.json",
+      "kind": "natural_writer_pilots",
+      "sha256": "7800533296f754a3d2f0f43abf839bd04c21dcbe724b8c343a26aee238dfd7b1",
+      "rows": 1,
+      "source_unchanged": true
+    },
+    {
+      "name": "cross-model-quality-review-preflight-20261106.json",
+      "kind": "protocol_and_advisor_preflights",
+      "sha256": "9d8c83a3b44a50498bfd79e0cb83eb5fb98ef10e02bc11af75e2b4ce11d0db7a",
+      "rows": 4,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-beam-preflight-20261106.json",
+      "kind": "protocol_and_advisor_preflights",
+      "sha256": "6c32869427df0bfa04dcb221096bac97f86c4aedbba35a5ddf7b01c70838f5ee",
+      "rows": 0,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-solar-wire-diagnostic-20261106.json",
+      "kind": "protocol_and_advisor_preflights",
+      "sha256": "7894a961e168e66b2c978593e1392c3a7ee95e0ac836fc6057100eb8c0f28e1a",
+      "rows": 2,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-audit-fixed-preflight-20261106.json",
+      "kind": "protocol_and_advisor_preflights",
+      "sha256": "23a674196cb87c32e531584532fe99922ea2b6cb0eceabef516445ca1a460e8d",
+      "rows": 3,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-advisor-alternatives-20261106.json",
+      "kind": "protocol_and_advisor_preflights",
+      "sha256": "b979bdaf2585109e73009bddeb34b13ddd998214da7486ce54d4f0863d9b3d15",
+      "rows": 4,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-review-controls-20261106.json",
+      "kind": "review_controls",
+      "sha256": "77cf2cf2f773c83ffe41ffa47f0f2994133ef2f8817f3c3c8624944ce9a434b2",
+      "rows": 12,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-review-controls-corrected-20261106.json",
+      "kind": "review_controls",
+      "sha256": "b4d3dd9adda9c8e81598014b33db7b65ef066a2a64f5d39cc173a3f0e750e1c2",
+      "rows": 3,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-review-controls-expanded-20261106.json",
+      "kind": "review_controls",
+      "sha256": "7cfdf1853e5c0a39d7fa75abae13da1b4e24cf04629b4f319202a3dff7ba1af2",
+      "rows": 36,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-review-controls-redaction-fixed-20261106.json",
+      "kind": "review_controls",
+      "sha256": "bdf9592833bbd4b75b16deae8fd120689a9477976ab3d6f91198bdd9ad5771e7",
+      "rows": 24,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-local-repetition-diagnostic-20261106.json",
+      "kind": "transport_diagnostics",
+      "sha256": "ab770ba05824338a68ad79fd5db7a8add1a4aa4737837fd762d4efdc7e732ad3",
+      "rows": 0,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-local-abort-diagnostic-20261106.json",
+      "kind": "transport_diagnostics",
+      "sha256": "b63ac79820e037f5f1bcd320fab714828e477de6e87381130faecdce67978db1",
+      "rows": 0,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-kobold-timeout-diagnostic-20261106.json",
+      "kind": "transport_diagnostics",
+      "sha256": "d8ce7cb54f8e8161ed99d7bae482f624c4d9085e4d5b249bb70e09161f024e6d",
+      "rows": 2,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-kobold-timeout-fixed-20261106.json",
+      "kind": "transport_diagnostics",
+      "sha256": "c1f1f6b57ae519c392d11c2b19ce7b42a00d4f0896efc4be770f340dfc56a761",
+      "rows": 1,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-production-strict-before-20261106.json",
+      "kind": "strict_production_smokes",
+      "sha256": "5a26cd1fd1a4467ae82a7d5c0bd3a65a3e57a95a2c1fce843b2b0849de98d6e8",
+      "rows": 0,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-production-strict-fixed-20261106.json",
+      "kind": "strict_production_smokes",
+      "sha256": "04fd49f48f19fe96f3ba7590fb11b48561f68df96b99c55a8b27517337f92bd7",
+      "rows": 0,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-production-streaming-fixed-20261106.json",
+      "kind": "strict_production_smokes",
+      "sha256": "2f27776695ddeca16a860b4dad41dd7d366b998696c98047a7da0f60b0bfaca2",
+      "rows": 0,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-production-all-fixes-20261106.json",
+      "kind": "strict_production_smokes",
+      "sha256": "72f071bb5c401e2e4820149b4b7f68af1bdd190e11d6ea537c8c4d01650def3b",
+      "rows": 0,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-finding-validation-20261106.json",
+      "kind": "finding_validation",
+      "sha256": "55f1ff78935494bb9673e2d6ca96899b52f7081f7f954cf46ab353bb9b67d314",
+      "rows": 0,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-v5-20261106.json",
+      "kind": "frozen_formal_matrix",
+      "sha256": "185b5d8faab506f00dd0eaff96abfd185755ea274862a472e7476b0d5dfe69fd",
+      "rows": 70,
+      "source_unchanged": true
+    },
+    {
+      "name": "cross-model-production-final-v5-20261106.json",
+      "kind": "final_production_and_reconstruction_checks",
+      "sha256": "c66530eda67c476c11aabf207fda8f10cde373f66c1c549f32325965e8449f85",
+      "rows": 0,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-v5-regrade-20261106.json",
+      "kind": "final_production_and_reconstruction_checks",
+      "sha256": "423574fa8a34d195f1bcf8a231fef75491d8660a51319c0f919eefa2d2452f26",
+      "rows": 0,
+      "source_unchanged": null
+    },
+    {
+      "name": "cross-model-quality-v5-regrade-initial-type-mismatch-20261106.json",
+      "kind": "final_production_and_reconstruction_checks",
+      "sha256": "0c5e2667afb35ae98f5fd2ebabaf5361a81873d56d14adde14f79e487b2ac7b0",
+      "rows": 0,
+      "source_unchanged": null
+    }
+  ],
+  "limits": [
+    "Interrupted batches are not merged into the formal matrix.",
+    "Three config-isolation mutant rows in the first review-controls batch had no diff and are fixture diagnostics.",
+    "In the expanded 36-row pre-redaction controls, four affected tasks (range-validation, zero-lru, zero-dependencies, zero-intervals) were affected by false code-symbol redaction.",
+    "Reference implementations only certify bounded product checks; minimal reference tests can have legitimate coverage gaps.",
+    "Finding validation is bounded manual counterexample checking, not an exhaustive precision or recall estimate.",
+    "Final source/configuration is uniform; all interrupted/calibration batches remain separate from v5.",
+    "Artifact reconstruction initially compared Python tuple changed_files with JSON list; normalized retry matches all 70 artifacts. Both verification attempts retained.",
+    "The final production smoke validates wiring; it is not another formal quality sample."
+  ],
+  "diagnostic_archive_sha256": "68c497d473dfd2bd54b858351fef2ad98ea5137427956905230f771907c032d2",
+  "uncompressed_archive_sha256": "c33cf42be4f6d663394b39155661d10bc1abdb0fbfc67494ff16af13612a0bb7",
+  "lossless_reconstruction_verified": true,
+  "final_archives": [
+    {
+      "path": "cross-model-quality-v5-evidence-20261106.json.gz",
+      "kind": "frozen_formal_matrix",
+      "sha256": "a3b9c2062bb4eea6de42e8f1008c50225eceeaa50a1ac0145b966eadc1d2db13",
+      "bytes": 2639202,
+      "uncompressed_sha256": "54f5812ed842f3624cda2d273f60244dc88a0f80bb1ac999daa9061b33aa1937",
+      "uncompressed_bytes": 30430427,
+      "batches": [
+        "cross-model-quality-v5-20261106.json"
+      ],
+      "unique_requests": 687,
+      "lossless_reconstruction_verified": true
+    },
+    {
+      "path": "cross-model-quality-verification-20261106.json.gz",
+      "kind": "final_production_and_reconstruction_checks",
+      "sha256": "66c4daf0dc3f3cef82185f948e70dd98317cc3d0c31d68d40f3405a0fc9771fd",
+      "bytes": 83372,
+      "uncompressed_sha256": "cf3c03702809b365ea2bad2ba5b2db23bc8c5827770bff1f0da0d70621f52b92",
+      "uncompressed_bytes": 567905,
+      "batches": [
+        "cross-model-production-final-v5-20261106.json",
+        "cross-model-quality-v5-regrade-20261106.json",
+        "cross-model-quality-v5-regrade-initial-type-mismatch-20261106.json"
+      ],
+      "unique_requests": 10,
+      "lossless_reconstruction_verified": true
+    }
+  ],
+  "formal_complete": true,
+  "formal_rows": 70,
+  "formal_source_unchanged": true,
+  "readable_summary": {
+    "path": "cross-model-quality-summary-20261106.json",
+    "sha256": "92f0bdd8b04c34de9b77eb0b76021f03db44622497413686ea482cc1c120e6c6"
+  }
+}
