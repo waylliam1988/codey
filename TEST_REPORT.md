@@ -2,6 +2,37 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Research overflow-retention experiment (2026-11-06)
+
+**123 focused tests passed across 11 files in 48.23s; no full pytest run.**
+After adding the final exporter, the 11 retention tests passed again in 1.17s.
+Coverage includes exact all-fit rendering, immutable read/citation identity,
+whole-window selection, actual outgoing request visibility, and real read receipts
+through eviction and archive. An integration failure was a test-domain mismatch
+with the existing DNS fixture; only test data changed.
+
+Ruff `codey tests tools`, mypy's 597 production files, Pyrefly and ty targeting
+Python 3.11 passed. Pyrefly retains 35 suppressed diagnostics and 81 warnings.
+No production code changed in this experiment; no new typing exemption.
+
+All **36 Research runs** were retained: eight earlier pilot runs, four v3 dev
+runs, and 24 frozen v3 heldout runs. Heldout delivery was 4/12 in each arm;
+strict complete-task passes were 1/12 versus 2/12. The extra pass had no overflow,
+so the candidate never activated. No pair reached overflow in both arms.
+Generation failures and citation misbinding prevent a quality-gain claim.
+**The retention candidate remains test-only and was not promoted.**
+
+Actual requests demonstrate both FIFO loss of read conditions and candidate loss
+of a required version. Shared 4096-token stress budgets do not establish default
+16384-token behavior. End-of-run frozen source verification passed; the lossless
+archive, raw-file SHA256 manifest and ZIP contents were verified. Reviews are
+separate Codex inspection against prewritten rubrics, not external human blind
+grading or tested-model self-verdicts.
+
+See [results and limits](docs/research-window-retention-results-20261106.zh-CN.md),
+[per-run report](docs/reports/research-window-retention-ab-20261106.json), and
+[evidence manifest](docs/reports/research-window-retention-evidence-manifest-20261106.json).
+
 ## Research semantic-review experiment and abstract identity (2026-11-06)
 
 **123 focused tests passed across 11 files in 47.34s; no full pytest run.**
