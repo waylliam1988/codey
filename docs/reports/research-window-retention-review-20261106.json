@@ -1,0 +1,72 @@
+{
+  "review_method": "Codex separately reads final reports, frozen task rubrics, exact read snapshots and citation locators. This is not external human or blind review, and uses no tested-model self-grading or semantic verifier.",
+  "rubric_items": "Boolean entries follow each frozen case's rubric order. Non-delivery is not semantically scored and fails the strict task denominator.",
+  "reviews": {
+    "held_logic-912-relevance": {
+      "rubric_pass": [true, true],
+      "citation_supported": true,
+      "complete_task_pass": true,
+      "notes": ["Both logical conditions and approved-account requirement correct, supported by e1 0:412. No overflow in either paired run; paired baseline output truncation is not evidence of retention benefit."]
+    },
+    "held_logic-911-baseline": {
+      "rubric_pass": [true, true],
+      "citation_supported": true,
+      "complete_task_pass": true,
+      "notes": ["Correct OR condition, no simultaneous A+B requirement; key necessary but insufficient, approved account required. All facts supported by e1 0:412. No overflow; shared success, not retention benefit."]
+    },
+    "held_logic-911-relevance": {
+      "rubric_pass": [true, true],
+      "citation_supported": true,
+      "complete_task_pass": true,
+      "notes": ["Correct OR condition and necessary-versus-sufficient distinction; approved account preserved, e1 0:412 supports answer. No overflow; shared success, not retention benefit."]
+    },
+    "held_middle-911-baseline": {
+      "rubric_pass": [true, true, true, true],
+      "citation_supported": false,
+      "complete_task_pass": false,
+      "notes": [
+        "Reads all three documents and reaches handbook middle restrictions; body preserves BOTH conditions and offline unavailability, and declines to infer remote speed from preview.",
+        "Final e1=handbook 0:170, e2=170:247, e3=247:5994; these are introduction/overview/archive, not the cited claims. Relevant passages were e4 feature overview 0:287 and e6 handbook 13521:13730.",
+        "Correct facts with misbound citations are not strict task success."
+      ]
+    },
+    "held_versions-911-baseline": {
+      "rubric_pass": [true, true, false, false, false, false],
+      "citation_supported": true,
+      "complete_task_pass": false,
+      "notes": [
+        "Only Vela 1 actually read; its reported local/remote/flag/read-only facts match e1 0:352.",
+        "Explicitly leaves V2 and migration catalogue pending, so this is incomplete delivery rather than correct complete comparison."
+      ]
+    },
+    "held_versions-911-relevance": {
+      "rubric_pass": [true, true, false, false, false, false],
+      "citation_supported": false,
+      "complete_task_pass": false,
+      "notes": [
+        "All three documents read, but the candidate removes both V2 critical quotes from actual requests 5 through 10 while retaining V1.",
+        "Wrongly says V2 figures/read-only status were not specified and assigns V1 archive e2 to V2; assigns V2 e3/e4 to the migration catalogue.",
+        "V2 facts exist in e3 0:352. Reading all sources does not establish answer completeness or citation correctness."
+      ]
+    },
+    "held_versions-912-baseline": {
+      "rubric_pass": [false, false, true, true, false, false],
+      "citation_supported": false,
+      "complete_task_pass": false,
+      "notes": [
+        "Incorrectly gives V1 local=3 and claims remote/flag/read-only details are unspecified despite V1 rules in read e1.",
+        "V2 figures are correct, but e4 is V2 archive 352:5993 rather than rule-bearing e3 0:352.",
+        "Never reads migration catalogue and labels V1 archive e2/V2 rule e3 as migration sources; invented migration-path description is unsupported."
+      ]
+    },
+    "held_versions-912-relevance": {
+      "rubric_pass": [true, true, false, false, false, false],
+      "citation_supported": false,
+      "complete_task_pass": false,
+      "notes": [
+        "Only V1 read; V1 assertions use correct e1 but V2 and migration remain pending and use unread r2/r3 as table references.",
+        "Explicit partial answer; generic statements about migration paths and both specifications are not established by actual reads."
+      ]
+    }
+  }
+}
