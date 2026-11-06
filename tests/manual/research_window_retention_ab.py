@@ -25,7 +25,7 @@ from tests.manual.research_experiment_identity import freeze_experiment, verify_
 from tests.manual.research_semantic_review_ab import idle_backend
 from tests.manual.research_window_retention_cases import cases
 
-ROOT = Path(".e2e-artifacts/research-window-retention-20261106")
+ROOT = Path(".e2e-artifacts/research-window-retention-v2-20261106")
 ARMS = ("baseline", "relevance")
 BASE_VIEW = context.answer_context
 BASE_LIMITS = context.work_view_limits

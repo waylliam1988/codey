@@ -21,7 +21,9 @@ def early(identity, project, split, *, padding=58, decoy=False):
     return {"id": identity, "split": split,
         "question": f"请先搜索并核查 {project} 的部署资料，用中文回答 remote export 需要哪些条件（token、administrator），"
             "offline 时能否使用，fast local preview 是否证明远程生产环境更快。保留全部条件与证据边界，引用实际原文；"
-            "应核对搜索结果中的部署限制、功能说明和相关发布记录，不使用材料外知识。",
+            "另列来源对照表：Deployment restrictions、Feature overview、Release catalogue 各自明确说了什么；"
+            "Release catalogue 是否给出了操作规则？必须先分别实际读取这三类资料，再交完整答案，不能只读一份就回答。"
+            "不使用材料外知识。",
         "documents": [document(project, "Deployment restrictions", [restriction, offline], padding=padding),
             document(project, "Feature overview", [local], padding=padding),
             document(project, "Release catalogue", ["This catalogue contains filing labels and no operational policy."],
@@ -29,7 +31,7 @@ def early(identity, project, split, *, padding=58, decoy=False):
         "keys": [{"quote": restriction, "name": "both_conditions"}, {"quote": offline, "name": "offline_exception"},
                  {"quote": local, "name": "measurement_scope"}],
         "rubric": ["remote export requires token AND administrator", "offline still unavailable",
-                   "fast local preview does not prove remote production speed"],
+                   "fast local preview does not prove remote production speed", "all three sources read and correctly compared; catalogue has no operational rule"],
         "forbidden": ["token alone sufficient", "remote works offline", "local demo proves remote speed"]}
 
 
@@ -41,7 +43,8 @@ def cases():
     control = early("held_fit", "Mavo T5", "holdout", padding=0)
     versions = {"id": "held_versions", "split": "holdout",
         "question": "请先搜索并读取 Vela 1 和 Vela 2 的版本说明及迁移资料，用中文逐项比较 local/remote writer 上限、"
-            "license flag 的影响以及只读支持版本。不要将不同版本的规则混用；引用实际读取原文。",
+            "license flag 的影响以及只读支持版本。分别列出两份 Version specification 与 Migration catalogue 的来源对照表，"
+            "说明迁移目录是否提供版本规则。必须实际读取这三份材料，不要只读一份就回答。不要将不同版本的规则混用；引用实际读取原文。",
         "documents": [document("Vela 1", "Version specification", [
             "Vela 1 permits 5 local writers only when the license flag is active; remote mode permits 2 writers independently of that flag.",
             "Vela 1 does not support read-only opening."]),
@@ -50,7 +53,8 @@ def cases():
             "Vela 2 supports read-only opening."]),
             document("Vela", "Migration catalogue", ["This migration catalogue provides historical filing labels, not version rules."])],
         "rubric": ["V1 local 5 only with flag; no invented inactive limit", "V1 remote 2 independent of flag",
-                   "V2 local 9 with flag or 3 without", "V2 remote 4 independent of flag", "only V2 read-only"],
+                   "V2 local 9 with flag or 3 without", "V2 remote 4 independent of flag", "only V2 read-only",
+                   "all three sources read; migration catalogue supplies no version rules"],
         "forbidden": ["version mixing", "remote depends on flag", "V1 supports read-only"]}
     versions["keys"] = [{"name": f"version_rule_{i}", "quote": fact} for i, doc in enumerate(versions["documents"][:2])
                         for fact in doc["text"].splitlines() if fact.startswith("Vela")]
