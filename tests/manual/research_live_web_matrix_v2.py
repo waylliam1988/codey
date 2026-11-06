@@ -16,11 +16,11 @@ def write(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def prepare(root: Path, base_url: str):
-    base.prepare(root, "dev", base_url)
+def prepare(root: Path, base_url: str, phase: str):
+    base.prepare(root, phase, base_url)
     contract = json.loads((root / "preregistration.json").read_text(encoding="utf-8"))
     contract["experiment"] = "2A-v2"
-    contract["seeds"] = [1501]
+    contract["seeds"] = [1501] if phase == "dev" else [1601, 1602]
     contract["failure_policy"] = (
         "Task-level no_progress, repeated reads and incomplete answer are retained as failed runs and the matrix continues. "
         "Stop only for backend identity change, schema/compiler failure, protocol/infrastructure failure or process timeout."
@@ -69,13 +69,14 @@ def main():
     parser.add_argument("command", choices=("prepare", "run", "worker"))
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001")
+    parser.add_argument("--phase", choices=("dev", "formal"), default="dev")
     parser.add_argument("--case")
     parser.add_argument("--arm", choices=base.live.ARMS)
     parser.add_argument("--seed", type=int)
     args = parser.parse_args()
     root = args.root.resolve()
     if args.command == "prepare":
-        prepare(root, args.base_url)
+        prepare(root, args.base_url, args.phase)
     elif args.command == "run":
         run(root)
     else:
