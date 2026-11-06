@@ -51,6 +51,11 @@ source when one connector's catalog fails.
 fallback, connection-status cold start, consensus and server provider paths. Ruff
 passed on the changed production and test files. No full-repository pytest was run.
 
+The follow-up stale-status regression also passes: a source that was previously
+ready but whose refresh returns an error remains visible as `ready/stale/error` to
+the UI while being excluded from advisor admission. The final cross-module subset
+for this fix passed **104 tests**; Mypy, Pyrefly and ty passed as well.
+
 ## Zen live matrix and credential/reasoning boundary fixes (2026-11-05)
 
 Both reported P2 issues reproduced before production changes: three failed

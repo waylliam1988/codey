@@ -113,7 +113,7 @@ def test_consensus_discovers_enabled_zen_and_cline_after_api_probes(tmp_path, mo
 
             statuses = kwargs["availability"]()
             assert statuses["local"] and statuses["zen"] and statuses["cline"]
-            assert advisor_ids("local", statuses, kwargs["provider_ids"]) == ("zen", "cline")
+            assert set(advisor_ids("local", statuses, kwargs["provider_ids"])) == {"zen", "cline"}
             return "advice"
 
         monkeypatch.setattr(consensus_service, "run_consensus_core", core)

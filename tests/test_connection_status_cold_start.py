@@ -168,6 +168,33 @@ def test_failed_refresh_preserves_last_ready_result_as_stale(tmp_path, monkeypat
         ctx.close()
 
 
+def test_failed_stale_refresh_is_not_advisor_available(tmp_path, monkeypatch):
+    from codey.app import provider_services
+
+    responses = [
+        {"state": "ready", "source": "api_catalog", "models": [{"id": "model"}]},
+        {"state": "unavailable", "source": "api_catalog", "error": "timeout", "models": []},
+    ]
+    connector = SimpleNamespace(
+        status_key=lambda: "same",
+        probe_status=lambda _request: responses.pop(0),
+    )
+    monkeypatch.setattr("codey.providers.api_connections.connection_for", lambda _: connector)
+    ctx = AppContext(tmp_path)
+    _enable(ctx, "zen")
+    provider_services.reset_provider_availability_cache()
+    try:
+        ctx.connection_status.refresh("zen")
+        assert ctx.connection_status.wait_for("zen", timeout=5).state == "ready"
+        ctx.connection_status.refresh("zen", force=True)
+        snapshot = ctx.connection_status.wait_for("zen", timeout=5)
+        assert (snapshot.state, snapshot.freshness, snapshot.error) == ("ready", "stale", "timeout")
+        assert provider_services.provider_availability(ctx) == {"zen": False}
+    finally:
+        provider_services.reset_provider_availability_cache()
+        ctx.close()
+
+
 def test_refresh_keeps_last_ready_status_visible_while_probe_runs(tmp_path, monkeypatch):
     entered = threading.Event()
     release = threading.Event()

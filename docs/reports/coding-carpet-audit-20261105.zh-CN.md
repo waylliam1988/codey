@@ -1230,3 +1230,9 @@ consensus 使用的 `provider_availability()` 只读取网页标签与 Local 探
 新增回归覆盖 API 三来源 ready、checking 等待、Local → Zen/Cline 顾问发现，以及跨连接
 Review 的失败来源回退。相关定向组 **286 passed**；Ruff 通过。该修复尚未宣称 Zen/Cline
 模型能力优于其他模型，真实质量仍按阶段 20 的独立行为口径评估。
+
+随后复核发现一个 P2 边界：连接状态协调器在“上次 ready、本次探测失败”时会保留
+`ready/stale/error` 给界面展示；advisor 准入若只看 `available`，仍会把该来源送入顾问。
+现已在准入层排除带探测错误的 stale 状态，同时保留协调器的历史状态展示。新增真实协调器
+回归覆盖首次成功、强制刷新失败、`ready/stale/error` 和最终不可进入 advisor 候选；最终
+跨模块组 **104 passed**，没有运行全量 pytest。
