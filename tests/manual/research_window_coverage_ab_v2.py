@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from urllib.request import urlopen
 
 from tests.manual import research_window_coverage_candidate as coverage
 from tests.manual import research_window_retention_ab as base
@@ -33,7 +34,7 @@ def prepare(root: Path, base_url: str):
                 "treatment": "Only overflow eviction changes: preserve object/version/limit facets and remove redundant windows first.",
                 "mechanism": "Both arms must admit the same task with actual overflow; selected windows and read receipts are retained.",
                 "gate": "At least two paired real-writer overflows; no production change; semantic quality scored separately."}
-    with base.urlopen(base.framework.UPSTREAM + "/api/v1/model", timeout=10) as response:
+    with urlopen(base.framework.UPSTREAM + "/api/v1/model", timeout=10) as response:
         contract["model"] = json.load(response)
     write(root / "preregistration.json", contract)
     write(root / "contract-hash.json", {"sha256": hashlib.sha256((root / "preregistration.json").read_bytes()).hexdigest()})
