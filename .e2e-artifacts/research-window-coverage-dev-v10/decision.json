@@ -1,0 +1,11 @@
+{
+  "experiment": "③",
+  "phase": "dev-v3",
+  "decision": "inconclusive",
+  "planned_runs": 8,
+  "completed_runs": 3,
+  "valid_paired_overflows": 0,
+  "reason": "The first real baseline run succeeded, but the coverage arm removed the deployment restriction window because the task-level source/condition facets were not represented; it then repeated reads and stopped with no_progress. The first pair also used an old worker arm alias and the matrix was stopped before a valid comparison. Candidate facet logic was corrected afterward in a new source revision; v10 is sealed and must not be resumed.",
+  "production": "unchanged",
+  "next": "Run a new contract after source/condition facet tests; require at least two paired real overflows before any formal matrix."
+}
