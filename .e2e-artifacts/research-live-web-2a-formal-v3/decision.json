@@ -1,0 +1,29 @@
+{
+  "decision": "reject",
+  "phase": "formal-v3",
+  "planned_runs": 48,
+  "completed_runs": 48,
+  "production_candidate": "unchanged",
+  "mechanism": {
+    "candidate_browser_calls": 24,
+    "baseline_browser_calls": 4,
+    "paired_triggered": 20,
+    "paired_total": 24
+  },
+  "quality": {
+    "baseline_strict_successes": 11,
+    "candidate_strict_successes": 20,
+    "baseline_severe_errors": 4,
+    "candidate_severe_errors": 4,
+    "review": "semantic-ratings-v3.json"
+  },
+  "cost": {
+    "median_elapsed_baseline": 32.179500000027474,
+    "median_elapsed_candidate": 43.87499999994179,
+    "median_elapsed_ratio": 1.3634456719310224,
+    "paired_elapsed_ratio": 1.3959947696801616,
+    "median_admitted_chars_ratio": 1.3320824758907315,
+    "gate_max": 1.25
+  },
+  "reason": "Mechanism triggered and candidate showed a conservative task-level quality increase, but median latency, paired latency and admitted-input cost all exceed the preregistered 1.25 gate. Do not promote or run confirmation tasks."
+}

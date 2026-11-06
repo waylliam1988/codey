@@ -1,0 +1,390 @@
+{
+  "reviewer": "manual source-based paired adjudication",
+  "method": "Checked task identity, cited source identity, requested facets and limitations against retained reports and evidence bindings. This is conservative and separate from writer output or keyword counts.",
+  "ratings": [
+    {
+      "run": "arxiv_lost_middle-1601-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "wrong or insufficient source/task coverage; strict success not established"
+    },
+    {
+      "run": "arxiv_lost_middle-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_lost_middle-1602-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "wrong or insufficient source/task coverage; strict success not established"
+    },
+    {
+      "run": "arxiv_lost_middle-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_needle-1601-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": true,
+      "mechanism_triggered": true,
+      "reason": "candidate used a blog source rather than the requested original arXiv evidence"
+    },
+    {
+      "run": "arxiv_needle-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": false,
+      "severe_error": true,
+      "mechanism_triggered": true,
+      "reason": "candidate used a blog source rather than the requested original arXiv evidence"
+    },
+    {
+      "run": "arxiv_needle-1602-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": true,
+      "mechanism_triggered": true,
+      "reason": "candidate used a blog source rather than the requested original arXiv evidence"
+    },
+    {
+      "run": "arxiv_needle-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": false,
+      "severe_error": true,
+      "mechanism_triggered": true,
+      "reason": "candidate used a blog source rather than the requested original arXiv evidence"
+    },
+    {
+      "run": "arxiv_ragas-1601-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_ragas-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_ragas-1602-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_ragas-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_ragtruth-1601-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_ragtruth-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_ragtruth-1602-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_ragtruth-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_react-1601-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "wrong or insufficient source/task coverage; strict success not established"
+    },
+    {
+      "run": "arxiv_react-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_react-1602-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "wrong or insufficient source/task coverage; strict success not established"
+    },
+    {
+      "run": "arxiv_react-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_self_rag-1601-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_self_rag-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "arxiv_self_rag-1602-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "wrong or insufficient source/task coverage; strict success not established"
+    },
+    {
+      "run": "arxiv_self_rag-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_encephalitis-1601-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": true,
+      "mechanism_triggered": true,
+      "reason": "task requests encephalitis but both arms answered PML"
+    },
+    {
+      "run": "pubmed_encephalitis-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": false,
+      "severe_error": true,
+      "mechanism_triggered": true,
+      "reason": "task requests encephalitis but both arms answered PML"
+    },
+    {
+      "run": "pubmed_encephalitis-1602-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": true,
+      "mechanism_triggered": true,
+      "reason": "task requests encephalitis but both arms answered PML"
+    },
+    {
+      "run": "pubmed_encephalitis-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": false,
+      "severe_error": true,
+      "mechanism_triggered": true,
+      "reason": "task requests encephalitis but both arms answered PML"
+    },
+    {
+      "run": "pubmed_neuropathy-1601-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "wrong or insufficient source/task coverage; strict success not established"
+    },
+    {
+      "run": "pubmed_neuropathy-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_neuropathy-1602-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "wrong or insufficient source/task coverage; strict success not established"
+    },
+    {
+      "run": "pubmed_neuropathy-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_pancreatitis-1601-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "wrong or insufficient source/task coverage; strict success not established"
+    },
+    {
+      "run": "pubmed_pancreatitis-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_pancreatitis-1602-baseline",
+      "arm": "baseline",
+      "strict_success": false,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "wrong or insufficient source/task coverage; strict success not established"
+    },
+    {
+      "run": "pubmed_pancreatitis-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_rechallenge-1601-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_rechallenge-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_rechallenge-1602-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_rechallenge-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_sicca-1601-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": false,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_sicca-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_sicca-1602-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": false,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_sicca-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_uveitis-1601-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": false,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_uveitis-1601-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_uveitis-1602-baseline",
+      "arm": "baseline",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": false,
+      "reason": "correct task source and requested facets observed in report"
+    },
+    {
+      "run": "pubmed_uveitis-1602-browser_after_connector",
+      "arm": "browser_after_connector",
+      "strict_success": true,
+      "severe_error": false,
+      "mechanism_triggered": true,
+      "reason": "correct task source and requested facets observed in report"
+    }
+  ]
+}
