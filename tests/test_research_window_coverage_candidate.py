@@ -35,3 +35,19 @@ def test_eviction_does_not_remove_one_required_version_while_other_remains():
     labels = [next(ref for ref in row if ref in passages) for row in order]
     assert labels[0] == "d"
     assert set(labels[1:]) == {"a", "b", "c"}
+
+
+def test_source_comparison_marks_each_observed_source_as_required():
+    passages = {
+        "a": SimpleNamespace(excerpt="requires token", source=SimpleNamespace(title="Deployment restrictions")),
+        "b": SimpleNamespace(excerpt="fast preview does not measure production", source=SimpleNamespace(title="Feature overview")),
+        "c": SimpleNamespace(excerpt="catalogue has no operational rule", source=SimpleNamespace(title="Release catalogue")),
+    }
+    session = SimpleNamespace(
+        task_text="分别读取三类来源并列出来源对照：Deployment restrictions、Feature overview、Release catalogue。",
+        _memory_results={},
+    )
+    ledger = SimpleNamespace(read_passages=passages)
+    scope = SimpleNamespace(aliases=tuple((f"e{i}", ref) for i, ref in enumerate(passages, 1)))
+    order = _coverage_order(session, ledger, scope)
+    assert {next(ref for ref in row if ref in passages) for row in order} == set(passages)

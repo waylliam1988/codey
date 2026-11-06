@@ -26,6 +26,8 @@ def _required_facets(task: str) -> set[str]:
         required.add("limit")
     if objects:
         required.add("object")
+    if any(marker in task.casefold() for marker in ("source", "来源", "分别", "各自", "对照")):
+        required.add("source")
     return required
 
 
@@ -33,6 +35,10 @@ def _coverage_order(session, ledger, scope):
     windows = groups(session, scope)
     objects, versions, limits = _facet_terms(session.task_text)
     required = _required_facets(session.task_text)
+    source_required = "source" in required
+    required.discard("source")
+    if source_required:
+        required.update(f"source:{i}" for i in range(len(windows)))
     covered = [set() for _ in windows]
     for i, window in enumerate(windows):
         body = "\n".join(ledger.read_passages[ref].excerpt.lower() for ref in window)
@@ -41,8 +47,13 @@ def _coverage_order(session, ledger, scope):
         if terms & objects:
             covered[i].add("object")
         covered[i].update(f"version:{term}" for term in terms & versions)
-        if terms & limits:
+        if terms & limits or "limit" in required and terms & {
+            "requires", "required", "unavailable", "only", "not", "rule", "policy",
+            "condition", "conditions", "offline", "measurement", "does",
+        }:
             covered[i].add("limit")
+        if source_required:
+            covered[i].add(f"source:{i}")
     order = {ref: i for i, (_, ref) in enumerate(scope.aliases)}
     # Return *eviction* order.  A window is removable first when dropping it
     # leaves every required object/version/limit represented elsewhere.
