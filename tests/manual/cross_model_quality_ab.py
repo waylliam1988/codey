@@ -142,6 +142,7 @@ def prepare(local, case, root, context, arm, config, records, row):
             advisor, root, case.task,
             parent_policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.write", "project.verify"})),
             context=context, advisor_id=f"cline:{config.advisor}",
+            max_turns=config.audit_turns,
         )
         after = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*") if p.is_file()}
         if before != after:
@@ -269,6 +270,7 @@ def main():
     parser.add_argument("--repeats", type=int, default=2)
     parser.add_argument("--order-seed", type=int, default=61106)
     parser.add_argument("--max-turns", type=int, default=32)
+    parser.add_argument("--audit-turns", type=int, default=8)
     parser.add_argument("--advisor", default="nvidia/nemotron-3.5-lightning-free")
     parser.add_argument("--second-advisor", default="cline-free/solar-mini4")
     parser.add_argument("--reviewer", default="cline-free/solar-mini4")
@@ -279,7 +281,8 @@ def main():
     arms = args.arm or ARMS
     planned = schedule(cases, arms, args.repeats, args.order_seed)
     metadata = {"advisor": args.advisor, "second_advisor": args.second_advisor, "reviewer": args.reviewer,
-                "max_turns": args.max_turns, "schedule": planned, "order_seed": args.order_seed,
+                "max_turns": args.max_turns, "audit_turns": args.audit_turns,
+                "schedule": planned, "order_seed": args.order_seed,
                 "model_seed_controlled": False, "map_and_current_context": True,
                 "online_selections": {model: online_selection(model) for model in (
                     args.advisor, args.second_advisor, args.reviewer)},
@@ -296,11 +299,16 @@ def main():
             raise FileExistsError(args.output)
         payload = {"metadata": metadata, "rows": []}
     complete = {(r["repeat"], r["case"], r["arm"]) for r in payload["rows"]}
+    save(args.output, payload)
     controls.begin_task_context("cross-model-quality-ab")
     try:
         for repeat, name, arm in planned:
             if (repeat, name, arm) in complete:
                 continue
+            if args.output.with_suffix(".stop").exists():
+                payload["interruption"] = "stop sentinel; incomplete matrix is not success"
+                break
+            print(json.dumps({"starting": [repeat, name, arm]}, ensure_ascii=False), flush=True)
             row = run_case(FIXTURE_BY_NAME[name].case, arm, repeat, args)
             payload["rows"].append(row)
             payload["summary"] = summarize(payload["rows"])
@@ -313,7 +321,9 @@ def main():
         controls.end_task_context()
         payload["source_unchanged"] = source_hashes() == metadata["source_sha256"]
         save(args.output, payload)
-    return 0 if all(row["artifact_quality_passed"] for row in payload["rows"]) else 1
+    return 0 if len(payload["rows"]) == len(planned) and payload["rows"] and all(
+        row["artifact_quality_passed"] for row in payload["rows"]
+    ) else 1
 
 
 if __name__ == "__main__":
