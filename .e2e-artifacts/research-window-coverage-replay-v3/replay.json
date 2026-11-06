@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "kind": "paired_no_model_overflow_replay",
+  "cases": [
+    {
+      "case": "two_versions_and_limit",
+      "budget": 20,
+      "pair": {
+        "baseline": {
+          "arm": "baseline",
+          "overflow": true,
+          "visible": [
+            "b",
+            "c",
+            "d"
+          ],
+          "token_count": 20
+        },
+        "candidate": {
+          "arm": "candidate",
+          "overflow": true,
+          "visible": [
+            "a",
+            "b",
+            "c"
+          ],
+          "token_count": 20
+        }
+      }
+    },
+    {
+      "case": "three_versions_and_limit",
+      "budget": 24,
+      "pair": {
+        "baseline": {
+          "arm": "baseline",
+          "overflow": true,
+          "visible": [
+            "b",
+            "c",
+            "d",
+            "e"
+          ],
+          "token_count": 23
+        },
+        "candidate": {
+          "arm": "candidate",
+          "overflow": true,
+          "visible": [
+            "a",
+            "b",
+            "c",
+            "d"
+          ],
+          "token_count": 23
+        }
+      }
+    }
+  ]
+}
