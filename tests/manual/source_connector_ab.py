@@ -239,6 +239,11 @@ def run_case(
                 run_id=run_id,
             )
             for event in runner.run(case.question):
+                # The current ResearchIteration adapter yields the final
+                # ResearchRunResult; older probes yielded event envelopes.
+                # Keep the live harness compatible with both shapes.
+                if not hasattr(event, "kind"):
+                    continue
                 if event.kind == "turn":
                     model_actions.extend(_safe_model_actions(event.turn, event.reply)[:3])
                 if event.kind == "info":
