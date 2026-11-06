@@ -13,15 +13,26 @@ def _terms(text: str) -> set[str]:
 
 def _facet_terms(task: str) -> tuple[set[str], set[str], set[str]]:
     terms = _terms(task)
-    version = {t for t in terms if re.fullmatch(r"v\d+|\d{4}|version", t)}
+    version = {t for t in terms if re.fullmatch(r"v\d+|\d{4}", t)}
     limits = terms & {"limit", "limits", "limitation", "limitations", "exception", "exceptions", "only", "scope", "boundary"}
     objects = terms - version - limits
     return objects, version, limits
 
 
+def _required_facets(task: str) -> set[str]:
+    objects, versions, limits = _facet_terms(task)
+    required = {f"version:{term}" for term in versions}
+    if limits:
+        required.add("limit")
+    if objects:
+        required.add("object")
+    return required
+
+
 def _coverage_order(session, ledger, scope):
     windows = groups(session, scope)
     objects, versions, limits = _facet_terms(session.task_text)
+    required = _required_facets(session.task_text)
     covered = [set() for _ in windows]
     for i, window in enumerate(windows):
         body = "\n".join(ledger.read_passages[ref].excerpt.lower() for ref in window)
@@ -29,25 +40,24 @@ def _coverage_order(session, ledger, scope):
         terms = _terms(body + " " + title)
         if terms & objects:
             covered[i].add("object")
-        if terms & versions:
-            covered[i].add("version")
+        covered[i].update(f"version:{term}" for term in terms & versions)
         if terms & limits:
             covered[i].add("limit")
-    all_facets = {"object", "version", "limit"}
     order = {ref: i for i, (_, ref) in enumerate(scope.aliases)}
-    selected: set[str] = set()
-    remaining = set(all_facets)
-    ranked = []
+    # Return *eviction* order.  A window is removable first when dropping it
+    # leaves every required object/version/limit represented elsewhere.
+    remaining = set(range(len(windows)))
+    result = []
     while remaining:
-        candidates = [i for i, facets in enumerate(covered) if i not in selected]
-        if not candidates:
-            break
-        best = max(candidates, key=lambda i: (len(covered[i] & remaining), -min(order[r] for r in windows[i])))
-        selected.add(best)
-        remaining -= covered[best]
-        ranked.append(best)
-    ranked.extend(i for i in sorted(range(len(windows)), key=lambda j: min(order[r] for r in windows[j])) if i not in selected)
-    return [windows[i] for i in ranked]
+        removable = [i for i in remaining if required <= set().union(*(covered[j] for j in remaining if j != i))]
+        candidates = removable or list(remaining)
+        def key(i):
+            overlap = sum(bool(covered[i] & covered[j]) for j in remaining if j != i)
+            return (len(covered[i] & required), -overlap, min(order[r] for r in windows[i]))
+        chosen = min(candidates, key=key)
+        result.append(windows[chosen])
+        remaining.remove(chosen)
+    return result
 
 
 def answer_context(session, ledger, scope, *, count_tokens=production.estimate_tokens, token_budget=16384):
