@@ -44,3 +44,7 @@
 
 新候选脚本与单元测试已完成。开发目录 esearch-window-coverage-dev-v7 的 4 次真实运行只有 1 次 baseline-only overflow，候选没有成对溢出，decision.json 判 inconclusive；未启动正式矩阵。
 
+
+### 4A：交付完整性提示
+
+开发目录 `.e2e-artifacts/research-delivery-4a-dev-v1/` 已完成 4 题 × 2 臂真实运行。候选提示在 4 个 delivery 请求中均进入 wire；知识保存题产生真实 candidate claim，普通题未新增 claim。仅为开发接线证据，正式 12 题双 seed 尚未开始；4B 尚未开始。
