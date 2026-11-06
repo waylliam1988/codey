@@ -1210,3 +1210,23 @@ gzip 解压后为 coding-pipeline-evidence-v1，用
 `cdc55ea8`（取消边界）、`41655deb`（符号脱敏）。严格 gate、质量口径和预算工具另分批
 提交：`960e1312`、`bf424df9`、`afb97574`、`78f911da`、`20b4e2c5`。
 完整正式/诊断证据与可读汇总提交为 `aa2ad6ff`；最终报告及 TEST_REPORT 分开提交。
+## 阶段 21：API 顾问可用性接线修复（2026-11-06）
+
+上一轮复核发现，跨 API Review 已能选择 Local、Zen、Cline，但前置 audit、自动规划和
+consensus 使用的 `provider_availability()` 只读取网页标签与 Local 探针；Zen/Cline
+虽然有连接器和顾问连接函数，却在候选筛选前被漏掉。这样“连接代码支持”并不等于正常
+调用链会自动使用，尤其造成 Local Writer 无法发现 Zen/Cline 的不对称。
+
+本阶段已修复：
+
+- availability 同时读取已启用 API 来源的 `ConnectionStatusCoordinator`；ready 才进入
+  advisor 候选，checking 会等待有界的 2 秒，unavailable/blocked/探测异常保持不可用。
+- 网页探测只接收网页来源，禁用 API 或网页来源不会被导入、目录查询或连接。
+- 前置 consensus/audit 仍遵守 Writer 来源排除、用户勾选模型和最多两个 advisor 的既有
+ 规则；Local Writer 在 Zen、Cline 都 ready 时会按注册顺序得到 Zen、Cline。
+- 跨 API Review 的目录查询改为逐来源容错：Zen 目录失败时继续尝试 Cline，最终没有
+  可用来源才返回 unavailable；不会绕过授权或把失败当成 approved。
+
+新增回归覆盖 API 三来源 ready、checking 等待、Local → Zen/Cline 顾问发现，以及跨连接
+Review 的失败来源回退。相关定向组 **286 passed**；Ruff 通过。该修复尚未宣称 Zen/Cline
+模型能力优于其他模型，真实质量仍按阶段 20 的独立行为口径评估。

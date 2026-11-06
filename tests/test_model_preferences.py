@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -38,6 +39,92 @@ def test_all_sources_off_is_valid_and_does_not_reenable_default(tmp_path):
     save_sources(store, lambda s: [source.update(enabled=False) for source in s.values()])
     assert not any(store.allows(pid) for pid in ("deepseek", "qwen", "local", "zen"))
     assert not store_at(tmp_path).allows("deepseek")
+
+
+def test_enabled_api_sources_enter_advisor_availability_after_ready_probe(tmp_path, monkeypatch):
+    from codey.app import provider_services
+    from codey.app.context import AppContext
+
+    ctx = AppContext(tmp_path)
+    try:
+        save_sources(ctx.providers.model_preferences, lambda sources: [
+            sources["websites"].update(enabled=False, models=[]),
+            sources["local"].update(enabled=True, models=["local-model"]),
+            sources["zen"].update(enabled=True, models=["zen-model"]),
+            sources["cline"].update(enabled=True, models=["cline-model"]),
+        ])
+        ready = SimpleNamespace(state="ready", available=True)
+        refresh = Mock(return_value=ready)
+        wait_for = Mock(return_value=ready)
+        monkeypatch.setattr(ctx.providers.connection_status, "refresh", refresh)
+        monkeypatch.setattr(ctx.providers.connection_status, "wait_for", wait_for)
+        web_probe = Mock(side_effect=AssertionError("no browser source is enabled"))
+        monkeypatch.setattr(provider_services, "provider_tab_availability", web_probe)
+
+        statuses = provider_services.provider_availability(ctx)
+
+        assert statuses == {"local": True, "zen": True, "cline": True}
+        assert {call.args[0] for call in refresh.call_args_list} == {"local", "zen", "cline"}
+        wait_for.assert_not_called()
+        web_probe.assert_not_called()
+    finally:
+        ctx.close()
+
+
+def test_api_advisor_in_checking_state_is_not_reported_ready(tmp_path, monkeypatch):
+    from codey.app import provider_services
+    from codey.app.context import AppContext
+
+    ctx = AppContext(tmp_path)
+    try:
+        save_sources(ctx.providers.model_preferences, lambda sources: [
+            sources["websites"].update(enabled=False, models=[]),
+            sources["zen"].update(enabled=True, models=["zen-model"]),
+        ])
+        refresh = Mock(return_value=SimpleNamespace(state="checking", available=False))
+        wait_for = Mock(return_value=SimpleNamespace(state="unavailable", available=False))
+        monkeypatch.setattr(ctx.providers.connection_status, "refresh", refresh)
+        monkeypatch.setattr(ctx.providers.connection_status, "wait_for", wait_for)
+
+        assert provider_services.provider_availability(ctx) == {"zen": False}
+        wait_for.assert_called_once_with("zen", timeout=2.0)
+    finally:
+        ctx.close()
+
+
+def test_consensus_discovers_enabled_zen_and_cline_after_api_probes(tmp_path, monkeypatch):
+    from codey.app import consensus_service
+    from codey.app.context import AppContext
+
+    ctx = AppContext(tmp_path)
+    try:
+        save_sources(ctx.providers.model_preferences, lambda sources: [
+            sources["websites"].update(enabled=False, models=[]),
+            sources["local"].update(enabled=True, models=["local-model"]),
+            sources["zen"].update(enabled=True, models=["zen-model"]),
+            sources["cline"].update(enabled=True, models=["cline-model"]),
+        ])
+        ready = SimpleNamespace(state="ready", available=True)
+        monkeypatch.setattr(ctx.providers.connection_status, "refresh", Mock(return_value=ready))
+        monkeypatch.setattr(ctx.providers.connection_status, "wait_for", Mock(return_value=ready))
+
+        def core(**kwargs):
+            from codey.agents.consensus import advisor_ids
+
+            statuses = kwargs["availability"]()
+            assert statuses["local"] and statuses["zen"] and statuses["cline"]
+            assert advisor_ids("local", statuses, kwargs["provider_ids"]) == ("zen", "cline")
+            return "advice"
+
+        monkeypatch.setattr(consensus_service, "run_consensus_core", core)
+        assert consensus_service.run_consensus(
+            ctx,
+            selected_provider=None,
+            selected_provider_id="local",
+            task="plan",
+        ) == "advice"
+    finally:
+        ctx.close()
 
 
 @pytest.mark.parametrize("source_id", ["websites", "local", "zen"])

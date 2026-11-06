@@ -39,6 +39,18 @@ See [final quality report](docs/reports/coding-carpet-audit-20261105.zh-CN.md),
 [paired results and root causes](docs/reports/cross-model-quality-summary-20261106.json)
 and [lossless evidence manifest](docs/reports/cross-model-quality-evidence-manifest-20261106.json).
 
+## API advisor availability wiring (2026-11-06)
+
+The pre-audit/planning/consensus path now includes enabled Local, Zen and Cline
+API sources from the connection-status coordinator. It waits up to two seconds for
+an initial checking probe, excludes unavailable or disabled sources, and keeps the
+Writer source excluded. Cross-API Review discovery now continues to the next enabled
+source when one connector's catalog fails.
+
+**286 focused pytest tests passed** across model preferences, API connection
+fallback, connection-status cold start, consensus and server provider paths. Ruff
+passed on the changed production and test files. No full-repository pytest was run.
+
 ## Zen live matrix and credential/reasoning boundary fixes (2026-11-05)
 
 Both reported P2 issues reproduced before production changes: three failed
