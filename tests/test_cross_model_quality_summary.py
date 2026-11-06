@@ -1,6 +1,6 @@
 import pytest
 
-from tests.manual.cross_model_quality_summary import compare, quality_delta
+from tests.manual.cross_model_quality_summary import compare, quality_delta, report
 
 
 def row(case, arm, *, passed, done=True, delivered=True, repeat=0, applicable=True):
@@ -73,3 +73,14 @@ def test_failed_local_writer_is_not_dropped_from_cooperation_comparison():
     result = compare([baseline, candidate], "plan", baseline_stage="initial")
     assert result["count"] == result["verified_benefits"] == 1
     assert not result["pairs"][0]["baseline_initial_available"]
+
+
+def test_interrupted_repair_is_included_using_actual_final_files():
+    data = row('a', 'baseline', passed=False)
+    data.update(initial={'quality': quality(True, False, False)}, final=quality(True, True, False),
+                artifact_quality_passed=False, failure_stage='repair', error='OutputLengthError')
+    result = report({'metadata': {'schedule': [[0, 'a', 'baseline']]}, 'rows': [data]})
+    assert result['summary']['baseline']['review_repair_attempts'] == 1
+    assert result['summary']['baseline']['review_repairs'] == 0
+    assert result['repairs'][0]['repair_execution_failed']
+    assert result['repairs'][0]['checked_quality_delta']['verified_gain_without_regression']

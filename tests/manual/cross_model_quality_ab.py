@@ -95,6 +95,8 @@ def summarize(rows):
                 "writer_complete": sum(row.get("final_stop_reason") == "done" for row in selected),
                 "review_approved": sum(row.get("review_approved", False) for row in selected),
                 "review_repairs": sum("repair" in row for row in selected),
+                "review_repair_attempts": sum(row.get("repair_attempted", "repair" in row
+                    or row.get("failure_stage") == "repair") for row in selected),
                 "execution_errors": sum("error" in row for row in selected),
                 "treatment_delivered": sum(row.get("treatment_delivered", False) for row in selected),
             }
@@ -242,6 +244,7 @@ def run_case(case, arm, repeat, config):
                 remaining = repair_budget(config.max_turns, result.turns)
                 if reviewed.needs_writer_repair and remaining:
                     phase = "repair"
+                    row["repair_attempted"] = True
                     followup = render_writer_followup(
                         case.task, reviewed, change_brief=brief.render() if brief else "",
                     )

@@ -77,10 +77,11 @@ def report(payload):
                    for arm in ("baseline", "plan", "audit", "consensus_one", "consensus_two")}
     repaired = []
     for row in rows:
-        if "repair" not in row:
+        if not row.get("repair_attempted", "repair" in row or row.get("failure_stage") == "repair"):
             continue
         initial, final = row["initial"]["quality"], row["final"]
         repaired.append({"case": row["case"], "repeat": row["repeat"], "arm": row["arm"],
+                         "repair_execution_failed": row.get("failure_stage") == "repair",
                          "initial_passed": artifact_passed(initial), "final_passed": artifact_passed(final),
                          "initial_behavior_score": initial["quality_score"],
                          "final_behavior_score": final["quality_score"],
