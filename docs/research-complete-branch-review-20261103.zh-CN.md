@@ -908,3 +908,7 @@ Pyrefly、Ty 通过；Pyrefly 同时保留既有 warnings/suppressions，不声�
 
 
 本次结案验证使用定向测试、Ruff、生产研究包 mypy 和实验脚本 py_compile；未运行全量 pytest。手工实验 harness 的 mypy 历史未标注错误单独记录，不作为生产研究包失败。
+
+### 2026-11-07：③ v13 机制开发通过
+
+为修复 v12 只有一组成对 overflow 的证据不足问题，新建 `.e2e-artifacts/research-window-coverage-dev-v13/`，换用四个未参与 v12 的自然压力题，seed 1702，baseline/coverage 共 8/8 真实运行成功。三题在两臂均实际发生 overflow，一题两臂均未溢出，满足开发阶段至少两组成对机制触发门槛。`decision.json` 仅允许进入新的正式合同；它没有提供最终答案净收益证据，③候选仍未合入生产。正式阶段仍需 12 个新任务、两个 seed、两臂，并按任务级答案、条件/版本保留、引用和成本合同评分。

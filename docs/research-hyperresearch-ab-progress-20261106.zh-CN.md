@@ -86,3 +86,7 @@ v10 首对真实阅读状态显示 baseline 可提交，但 coverage 候选把�
 
 
 验证：`tests/test_research_window_coverage_candidate.py` 3 passed；Ruff 通过；`mypy codey/research` 76 个生产文件通过；4B/窗口实验脚本 `py_compile` 通过。对手工 harness 运行 mypy 仍报告既有未标注函数和 persistent_research_local.py 的历史类型问题，未因本次文档/实验结案修改生产代码。
+
+### 2026-11-07：③ v13 自然压力开发通过机制门槛
+
+新建 `.e2e-artifacts/research-window-coverage-dev-v13/`，使用未参加 v12 的四个自然压力题（`held_versions`、`held_middle`、`held_decoy`、`held_logic`），seed 1702，baseline/coverage 共 8/8 真实 writer、真实读取和提交成功。`held_versions`、`held_middle`、`held_decoy` 三题在两臂都实际发生 overflow，达到至少两组成对机制触发门槛；`held_logic` 两臂均未溢出。`decision.json` 判定 `proceed_to_formal_contract`，仅说明机制接线有效，不说明答案质量收益。下一步必须新建 12 个新自然任务 × 双 seed 正式合同，不能续写 v13，生产保持基线。
