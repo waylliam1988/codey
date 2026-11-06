@@ -32,6 +32,7 @@ from codey.providers.local_connection import capture_selection as capture_local_
 from codey.providers.local_connection import open_selection as open_local_selection
 from codey.reviews.core import render_writer_followup, review_result_payload
 from codey.reviews.impact_map import safe_review_impact_map
+from codey.runtime.observe.events import render_run_event
 from codey.workspace.change_brief import ChangeBrief, new_project_change_brief, project_audit_change_brief
 from codey.workspace.changes import ChangeTracker
 from codey.workspace.task_changes import collect_task_changes
@@ -184,7 +185,8 @@ def run_writer(local, case, root, state, tracker, task, project_map, budget):
     result, events = writer(local, case, root, state, tracker=tracker, task=task,
                             project_map=project_map, context=True, max_turns=budget)
     return result, {"stop_reason": result.stop_reason, "turns": result.turns,
-                    "summary": result.summary, "events": event_rows(events), "quality": grade(root, case)}
+                    "summary": result.summary, "events": event_rows(events), "quality": grade(root, case),
+                    "review_log": "\n".join(render_run_event(event) for event in events[-80:])}
 
 
 def review(case, root, state, tracker, result, brief, config, records, log):
@@ -198,7 +200,7 @@ def review(case, root, state, tracker, result, brief, config, records, log):
     reviewed = run_review_attempt(
         SimpleNamespace(emit=events.append, state_home=state), session_id="quality-ab",
         project=str(root), task=case.task, writer_summary=result.summary, changes=changes,
-        recent_log=json.dumps(log["events"], ensure_ascii=False)[-12000:],
+        recent_log=log.get("review_log", ""),
         change_brief=brief.render(audience="reviewer") if brief else "", project_map=project_map,
         verification_map=render_verification_map(root, changes, project_map=project_map),
         review_impact_map=safe_review_impact_map(root, changes), execution_evidence="",

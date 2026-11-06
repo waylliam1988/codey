@@ -291,9 +291,35 @@ def _redact_token(match: re.Match[str]) -> str:
         return token
     markers = list(SECRET_MARKER_RE.finditer(prefix))
     credential_value = bool(markers and re.fullmatch(r'''[\s:=?"']*''', prefix[markers[-1].end():]))
+    if not credential_value and _code_reference(match):
+        return token
     if _looks(token) or credential_value and _looks("api_key=" + token):
         return _REDACTED
     return token
+
+
+def _code_reference(match: re.Match[str]) -> bool:
+    """Recognize unquoted Python base classes and qualified calls lexically."""
+    import io
+    import tokenize
+
+    token = match.group(0)
+    if re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+", token) is None:
+        return False
+    prefix, suffix = match.string[:match.start()], match.string[match.end():]
+    base = re.search(r"\bclass\s+[A-Za-z_]\w*\s*\(\s*(?:[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\s*,\s*)*$", prefix)
+    call = re.match(r"\s*\(", suffix)
+    if not (base and re.match(r"\s*[,)]", suffix) or call):
+        return False
+    try:
+        for piece in tokenize.generate_tokens(io.StringIO(match.string).readline):
+            if piece.type in {tokenize.STRING, tokenize.COMMENT} and piece.start[1] <= match.start() < piece.end[1]:
+                return False
+            if piece.end[1] >= match.end():
+                return True
+    except (tokenize.TokenError, IndentationError):
+        return False
+    return False
 
 
 def _filter_diff_to_provided(diff: str, provided: set[str]) -> tuple[str, bool]:

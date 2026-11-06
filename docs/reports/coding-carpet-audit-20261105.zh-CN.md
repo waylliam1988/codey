@@ -33,6 +33,8 @@
 - 先使用当前 KoboldCpp 本地模型；关键候选再做跨模型复核。
 - 实机任务覆盖：已有项目修 bug、增加功能、跨文件重构、从零生成项目。
 - 不运行全量 `pytest`。测试按生命周期、权限、恢复、Review、验证和候选逐组运行。
+- 阶段 20 按用户后续要求，只以最终代码质量判断双模型功能的删留；成本/耗时仅描述。
+  以下早期成本取舍是历史结论，跨模型当前判断以阶段 20 为准。
 
 ## 证据等级
 
@@ -1070,6 +1072,8 @@ Pyrefly 既有 35 suppressed / 80 warnings 保留。
   现保留已请求的流式传输，文本工具、严格解析和旧运行冻结的 stream 均保留。
 - **生产取消竞态**：关闭 HTTPConnection 与工作线程 getresponse 竞争时，
   ResponseNotReady('Idle') 原样漏出；确定性复现后按提交边界归类，已提交请求不重发。
+- **生产 Review 输入问题**：高熵脱敏误遮盖 unittest.TestCase 和限定方法调用，
+  导致传入代码变形及假语法问题；按代码词法/语法上下文保留符号，真实凭证继续遮盖。
 - **夹具接口问题**：新增 TraceProvider 回归最初没有接受 DeadlineProvider 的 timeout 参数，
   造成与目标异常不同的 unknown outcome；修复夹具签名后才得到真实 pending-effect 复现。
 - **模型产物问题**：Pilot LRU 产品行为正确，但生成测试的缺省返回值期望错误；
@@ -1080,3 +1084,4 @@ Pyrefly 既有 35 suppressed / 80 warnings 保留。
 生产修复后定向扩大组 119 passed；Ruff、Mypy 597 文件、Pyrefly（0 errors、35 suppressed、
 81 warnings）、ty 通过。后续扩大本地传输、Review、audit、consensus、预算与严格 smoke
 组 437 passed；类型检查及 Ruff 再通过。未运行全量 pytest。正式 A/B 在修复后的统一源码上运行。
+Review 输入修复后的扩大组另有 372 passed（与前组有重叠，不相加）；Ruff、三种类型检查通过。

@@ -136,7 +136,24 @@
   排队等待器的取消检查返回，原样漏出。新五项确定性回归中修复前四项失败；现按真实
   submission_started/submission_possible 将取消归为 not_sent 或 unknown，未取消异常
   继续透传，已可能发送的请求仍禁止重发。恢复批明确 `source_unchanged=false`，仅作诊断。
-- 最终冻结批次为 `cross-model-quality-final-20261106.json`，在全部生产修复后重新运行
-  两轮完整 70 行；不拼接中断批次。扩大定向回归 437 passed；三种生产树类型检查和 Ruff
+- 通信修复后的批次为 `cross-model-quality-final-20261106.json`，原计划两轮 70 行，后因
+  新发现的 Review 脱敏问题停止在 4 行，全部保留作诊断。扩大定向回归 437 passed；三种生产树类型检查和 Ruff
   通过。过程中一个新增预算测试错误读取不存在的 reserve_tokens 字段，改用实际的
   output_tokens + safety_tokens 验证，不修改生产预算类型以迎合测试。
+
+### Review 输入质量修复
+
+- 扩大控制审查发现 `unittest.TestCase`、`self.assertIsNone` 被高熵规则误遮盖，
+  Reviewer 实际收到的测试代码因此变形。有些“测试语法错误”由生产输入造成，不能算模型误报。
+- 在 Review 投影内按 Python 词法与类基类/限定方法调用语法识别正常代码，保留已知密钥
+  形状和带凭证标记的值的遮盖；引号中的密钥形状调用、注释等不会获得代码符号豁免。
+  新回归修复前五项失败，修复后 Review 相关扩大组 372 passed；Ruff 和三种类型检查通过。
+- 实机 harness 的 recent_log 原来直接 JSON 序列化事件；改为使用生产相同的
+  render_run_event 与 80 事件窗口。完整事件和请求仍保留在证据中。
+- 修复后自然 Writer 的 LRU 预检产品 6/6、suite/scope 均通过，Reviewer 返回无问题。
+  原始回复日志中的引号字符串仍保守脱敏，状态如实为 incomplete；没有放宽批准或收据门禁。
+- 参考候选仅保证外部行为 oracle 与现有 suite 通过；从零候选的参考测试较少，不能把
+  Reviewer 指出真实测试覆盖不足也当成误报。对明确产品行为误报另用确定性输入核实，
+  不用“reference 收到 changes_requested”直接估算误报率。
+- 后续完整批次命名 `cross-model-quality-v5-20261106.json`；全部源码/预算/角色重新冻结，
+  不拼接旧批次。对脱敏受影响的四题控制审查另行复测，保留修复前后原始请求。

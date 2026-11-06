@@ -35,3 +35,25 @@ def test_declared_symbol_context_does_not_exempt_secret_values(text, secret):
     assert secret not in result.prompt
     assert result.scope.content_redacted
     assert not result.scope.is_complete
+
+
+@pytest.mark.parametrize('text', [
+    '+class Tests(unittest.TestCase):',
+    '+class Tests(package.BaseTestCase, other.SecondTestCase):',
+    '+        self.assertIsNone(cache.get("missing"))',
+    '+        self.assertRaises(ValueError, parse, "bad")',
+    '+        package.validationCallback(value)',
+])
+def test_code_base_classes_and_attribute_calls_are_not_credentials(text):
+    result = prepare(text)
+    assert text in result.prompt and result.scope.is_complete
+
+
+@pytest.mark.parametrize('secret', [
+    'unittest.TestCase', 'self.assertRaises', 'package.validationCallback',
+    'sk-Ab3dE5gH7jK9mN1pQ2rS4tU6',
+])
+def test_reference_syntax_does_not_exempt_quoted_or_marked_secret_values(secret):
+    for text in (f'api_key="{secret}()"', f'class Tests(Base): api_key="{secret}"'):
+        result = prepare(text)
+        assert secret not in result.prompt and result.scope.content_redacted
