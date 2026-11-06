@@ -39,3 +39,7 @@
 ### 4A 正式结案
 
 4A v1 在第 13 次 task-level `no_progress` 失败处封存为 `inconclusive`。新合同 v2 将此类失败计入样本并继续健康矩阵，48/48 完成：baseline 发布 9、失败 15；delivery 发布 8、失败 16。两臂知识保存题均有 8 个运行保存 candidate claim，候选没有增加保存成功，且多一次失败；`decision.json` 为 `reject`。4A 提示不进入生产，4B 尚未开始。
+
+### 4B：修订与独立审查（开发 v4）
+
+冻结合同为 4 个自然原稿 × 2 seed × U/R/S/V 四臂，共 32 次；每臂都使用真实 KoboldCPP writer、冻结 source fixture、`submit_research_answer`、隔离 knowledge store 和原子发布。`.e2e-artifacts/research-revision-4b-dev-v4/` 已完成 21 次，至 `knowledge_rag-4301-U` 停止。该次真实 writer 连续五次发出空路径 `open_url`，随后 `no_progress`，没有形成证据、提交或知识保存；源码、fixture 和工具协议均已进入运行，属于任务级 writer 执行失败。按冻结合同保留失败并停止，`decision.json` 判 `inconclusive`。不启动 4B 正式 12 原稿双 seed 矩阵，生产保持基线不变。若重做，必须新建合同并先处理空路径重试边界；不能续写 v4。

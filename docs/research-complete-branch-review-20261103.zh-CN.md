@@ -848,3 +848,7 @@ Pyrefly、Ty 通过；Pyrefly 同时保留既有 warnings/suppressions，不声�
 `response_format` 判断约束生效。预检缓存／失败拦截回归与引用边界共 51 项通过，Ruff 通过。
 新的正式题池排除了已经执行的 pneumonitis、colitis、arthritis；八题预先指定短主题首搜，
 四题保留自由搜索，仍使用生产 writer 自主选择读取及提交，没有预填证据或答案。
+
+### 2026-11-06：4B 修订实验开发 v4 结案
+
+4B v4 冻结了 4 个来自 4A 正式成功 baseline 的自然原稿、单一精确证据包、seed 4301/4302 和 U/R/S/V 四臂，使用真实 writer、真实提交、隔离知识库及原子发布。前 20 次运行完成；第 21 次 `knowledge_rag-4301-U` 的 writer 连续五次调用 `open_url` 但路径为空，随后以 `no_progress` 结束。该失败发生在真实任务执行层，未发现 harness、source identity 或生产提交校验缺陷。按合同的 retained task-level failure 停止规则，开发机制无法形成完整四臂比较，判定 `inconclusive`，不进入正式新题双 seed，不合入生产。工件和失败 ledger 保留于 `.e2e-artifacts/research-revision-4b-dev-v4/`，其中 `decision.json` 记录判定与后续条件。
