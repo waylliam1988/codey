@@ -2,6 +2,43 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Cross-model code-quality expansion (2026-11-06)
+
+**562 focused pytest tests passed in 101.18s across 64 files. No full-repository
+pytest was run.** The earlier 437/372-test groups overlap and are not added to
+this total. This delivery has no frontend changes requiring a new frontend run.
+
+| Scope | Result |
+|---|---|
+| Local/API transport and cancellation, tool fallback, Review input/lifecycle/repair, private audit, consensus, quality accounting and strict gate | 562 passed |
+| Frozen live matrix | 70/70 rows completed on 41655deb; production/generation hashes unchanged; failures retained |
+| Reconstructed final artifacts | All 70 matched the original behavior, suite, scope and changed-file checks |
+| Current production headless smoke | 11/11: actual independent Solar request, matching persisted receipt, self_review=false, read-only snapshots, fresh verification and final quality |
+| Python checks | Ruff codey/tests/tools, mypy 597 production files, Pyrefly and ty targeting Python 3.11 passed; no new suppressions |
+
+Pyrefly retains 35 suppressed diagnostics and 81 warnings. Historical full-suite
+counts below do not describe this revision.
+
+Five production bugs were reproduced and fixed: private audit exposed user
+interaction; disabled Reviewer sources were queried too early; Gemma text-tool
+fallback disabled requested streaming; cancellation leaked an HTTP state race;
+Review redaction corrupted qualified Python symbols. Tests also corrected stale
+fallback assumptions, a budget-field assumption and the old smoke's acceptance
+of unavailable Review. The reconstruction checker initially compared a tuple
+with its JSON list; normalization fixed that checker, and both attempts are kept.
+
+These are not all-green model outcomes. The 18 live repair attempts yielded one
+verified benefit, five regressions and twelve ties. A natural equal-revision bug
+was fixed from 5/6 to 6/6 without regressions; other repairs damaged range parsing,
+bool validation or allowed scope. Model-generated tests also contained incorrect
+expectations. Invalid Review JSON and uncertain network submissions were rejected
+without invented approval or unsafe replay. No benchmark artifacts were manually
+repaired and no prompt/repair loop was added to force success.
+
+See [final quality report](docs/reports/coding-carpet-audit-20261105.zh-CN.md),
+[paired results and root causes](docs/reports/cross-model-quality-summary-20261106.json)
+and [lossless evidence manifest](docs/reports/cross-model-quality-evidence-manifest-20261106.json).
+
 ## Zen live matrix and credential/reasoning boundary fixes (2026-11-05)
 
 Both reported P2 issues reproduced before production changes: three failed
