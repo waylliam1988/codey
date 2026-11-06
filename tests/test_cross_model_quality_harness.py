@@ -2,7 +2,7 @@
 import pytest
 
 from tests.manual.coding_pipeline_value_ab import grade, write_files
-from tests.manual.cross_model_quality_ab import artifact_passed, repair_budget, schedule, summarize
+from tests.manual.cross_model_quality_ab import artifact_passed, online_selection, repair_budget, schedule, summarize
 from tests.manual.cross_model_quality_cases import FIXTURES
 
 
@@ -52,3 +52,8 @@ def test_repair_uses_remaining_total_budget_and_production_cap():
     assert repair_budget(32, 10) == 12
     assert repair_budget(32, 30) == 2
     assert repair_budget(32, 32) == repair_budget(32, 33) == 0
+
+
+def test_model_control_is_explicit_and_limited_to_the_experiment_model():
+    assert online_selection("nvidia/nemotron-3.5-lightning-free")["thinking"] is False
+    assert online_selection("cline-free/solar-mini4") == {"model": "cline-free/solar-mini4"}

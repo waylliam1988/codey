@@ -55,3 +55,19 @@
 ## 后续记录
 
 运行结果、失败根因、修复、检查和提交记录在本文件及最终审计报告持续追加。
+
+### Pilot 与合同预检
+
+- Pilot 的 LRU 产品行为 6/6，但 Writer 生成测试把 `get(missing)` 的缺省值 `None`
+  错写成字符串 `'default'`，然后连续提交无变化编辑并 `no_progress`。这是模型生成测试的
+  真实交付缺陷；不是评估器期望过时，也不是生产编辑器丢了 patch。不手工改样本冒充成功。
+- Pilot 的原子转账最终代码质量通过，但 Solar 连续返回缺少 `]}` 的 Review JSON。
+  8192 输出预算实际只用了 209 token，不是客户端设置的长度上限；生产拒绝是正确行为。
+- Solar 的独立流式/非流式诊断均能返回完整 JSON，说明不是必现的流式尾部丢失；
+  其语义仍有误报，保留而不放宽 parser。
+- Lightning 的默认 thinking 模式在正确参考候选的 Review 合同预检耗尽输出预算并
+  `finish_reason=length`。目录声明它支持 thinking 开关，本轮正式实验将显式选择
+  `thinking=false`，仅作用于临时实验连接，写入 metadata 与真实 wire，不修改用户设置。
+  此后结论限定于该配置，不能外推默认 thinking=true 模式的表现。
+- 原 21 项定向门禁、扩大 160 项回归均通过。Mypy 597 文件通过；Pyrefly 0 errors，
+  35 suppressed / 81 warnings；ty 通过。不将警告描述成零。

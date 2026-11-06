@@ -39,6 +39,13 @@ from tests.support.kernel_runtime import run_project_audit_advisor
 
 ARMS = ("baseline", "plan", "audit", "consensus_one", "consensus_two")
 ROOT = Path(__file__).resolve().parents[2]
+LIGHTNING = "nvidia/nemotron-3.5-lightning-free"
+
+
+def online_selection(model):
+    # Explicit, experiment-local control supported by this model's catalog.
+    # Its default thinking mode exhausted the output budget in contract preflight.
+    return {"model": model, **({"thinking": False} if model == LIGHTNING else {})}
 
 
 def source_hashes():
@@ -86,14 +93,14 @@ def summarize(rows):
                 "writer_complete": sum(row.get("final_stop_reason") == "done" for row in selected),
                 "review_approved": sum(row.get("review_approved", False) for row in selected),
                 "review_repairs": sum("repair" in row for row in selected),
-                "harness_errors": sum("error" in row for row in selected),
+                "execution_errors": sum("error" in row for row in selected),
                 "treatment_delivered": sum(row.get("treatment_delivered", False) for row in selected),
             }
     return summary
 
 
 def provider(model, records, purpose):
-    raw = connect_provider("local") if model == "local" else open_selection(capture_selection({"model": model}))
+    raw = connect_provider("local") if model == "local" else open_selection(capture_selection(online_selection(model)))
     observed = EvidenceProvider(raw, timeout=300 if model == "local" else 180)
     observed.id = model
     observed.model_id = raw.model
@@ -197,6 +204,7 @@ def run_case(case, arm, repeat, config):
     records = []
     row = {"case": case.name, "arm": arm, "repeat": repeat,
            "treatment_delivered": False, "production_stage_applicable": True}
+    phase = "provider_setup"
     with tempfile.TemporaryDirectory(prefix="codey-quality-") as directory:
         root, state = Path(directory) / "project", Path(directory) / "state"
         root.mkdir()
@@ -209,18 +217,22 @@ def run_case(case, arm, repeat, config):
                 project=root, task=case.task, session_id="quality-ab", run_id="prepare",
                 continue_task=False, provider_session_changed=False,
             ).project_map
+            phase = "advice"
             brief = prepare(local, case, root, project_map, arm, config, records, row)
             task = brief.apply_to_task(case.task) if brief else case.task
+            phase = "writer"
             result, initial = run_writer(local, case, root, state, tracker, task, project_map, config.max_turns)
             row["initial"] = initial
             row["final_stop_reason"] = result.stop_reason
             if result.stop_reason == "done" and initial["quality"]["changed_files"]:
+                phase = "review"
                 reviewed, row["review"] = review(
                     case, root, state, tracker, result, brief, config, records, initial,
                 )
                 row["review_approved"] = reviewed.approved
                 remaining = repair_budget(config.max_turns, result.turns)
                 if reviewed.needs_writer_repair and remaining:
+                    phase = "repair"
                     followup = render_writer_followup(
                         case.task, reviewed, change_brief=brief.render() if brief else "",
                     )
@@ -229,12 +241,14 @@ def run_case(case, arm, repeat, config):
                     row["repair"] = repair
                     row["final_stop_reason"] = repaired.stop_reason
                     if repaired.stop_reason == "done":
+                        phase = "post_review"
                         _, row["post_review"] = review(
                             case, root, state, tracker, repaired, brief, config, records, repair,
                         )
                         row["review_approved"] = row["post_review"]["approved"]
         except Exception as exc:
             row["error"] = f"{type(exc).__name__}: {exc}"
+            row["failure_stage"] = phase
             row["traceback"] = traceback.format_exc(limit=15)
         finally:
             row["final"] = grade(root, case)
@@ -267,6 +281,8 @@ def main():
     metadata = {"advisor": args.advisor, "second_advisor": args.second_advisor, "reviewer": args.reviewer,
                 "max_turns": args.max_turns, "schedule": planned, "order_seed": args.order_seed,
                 "model_seed_controlled": False, "map_and_current_context": True,
+                "online_selections": {model: online_selection(model) for model in (
+                    args.advisor, args.second_advisor, args.reviewer)},
                 "total_writer_turn_budget": True, "review_repair_limit": 1, "review_fix_turns": 12,
                 "source_sha256": source_hashes(),
                 "git_head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()}
