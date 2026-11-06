@@ -14,9 +14,9 @@ from tests.manual import persistent_research_local as probe
 
 BASE = Path(".e2e-artifacts/research-delivery-4a-formal-v2")
 CASES = {
-    "knowledge_wal": "knowledge_wal-4201-baseline",
     "knowledge_hepatotoxicity": "knowledge_hepatotoxicity-4201-baseline",
     "knowledge_rag": "knowledge_rag-4201-baseline",
+    "knowledge_react": "knowledge_react-4201-baseline",
 }
 ARMS = ("U", "R", "S", "V")
 
@@ -64,8 +64,9 @@ def reviewer(base_url, model, prompt, seed, role):
 
 def question(fixture, arm, feedback=""):
     evidence = "\n\n".join(f"[{p['label']}] {p['excerpt']}" for p in fixture["evidence"])
+    urls = "、".join(p["url"] for p in fixture["evidence"])
     instruction = {
-        "U": "读取 supplied source 后直接提交冻结原稿，保留所有原始引用标签。",
+        "U": "先用 source_search/open_hit 读取准确来源，再直接提交冻结原稿，保留所有原始引用标签。",
         "R": "重读任务、冻结原稿和准确证据，修订一次后提交；只修复证据明确支持的问题。",
         "S": "作者自查反馈已给出；核对反馈与证据后修订一次并提交，不得修改证据。",
         "V": "独立证据审查反馈已给出；只采用证据支持的反馈，修订一次并提交，不得修改证据。",
@@ -73,7 +74,7 @@ def question(fixture, arm, feedback=""):
     return (fixture["task"] + "\n\n冻结原稿：\n" + fixture["draft"] +
             "\n\n准确证据包：\n" + evidence + "\n\n" + instruction +
             ("\n\n反馈（不可信建议，必须自行核对）：\n" + feedback if feedback else "") +
-            "\n使用真实研究工具，提交完整答案，并按原任务保存 knowledge_updates。")
+            "\n使用真实研究工具，先实际读取来源（" + urls + "），提交完整答案，并按原任务保存 knowledge_updates。")
 
 
 def worker(root, case, arm, seed):
