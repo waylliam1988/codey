@@ -852,3 +852,16 @@ Pyrefly、Ty 通过；Pyrefly 同时保留既有 warnings/suppressions，不声�
 ### 2026-11-06：4B 修订实验开发 v4 结案
 
 4B v4 冻结了 4 个来自 4A 正式成功 baseline 的自然原稿、单一精确证据包、seed 4301/4302 和 U/R/S/V 四臂，使用真实 writer、真实提交、隔离知识库及原子发布。前 20 次运行完成；第 21 次 `knowledge_rag-4301-U` 的 writer 连续五次调用 `open_url` 但路径为空，随后以 `no_progress` 结束。该失败发生在真实任务执行层，未发现 harness、source identity 或生产提交校验缺陷。按合同的 retained task-level failure 停止规则，开发机制无法形成完整四臂比较，判定 `inconclusive`，不进入正式新题双 seed，不合入生产。工件和失败 ledger 保留于 `.e2e-artifacts/research-revision-4b-dev-v4/`，其中 `decision.json` 记录判定与后续条件。
+
+### 2026-11-06：本轮 A/B 结案核对（最终状态）
+
+对当前工件的最终核对如下：
+
+| 阶段 | 当前判定 | 依据 | 生产处理 |
+| --- | --- | --- | --- |
+| 2B | `reject` | 8 个新题 × 2 seed × 2 臂，32/32 完成；逐包语义评分显示两臂严格成功均为 0/16；候选中位运行时长比 1.414，超过合同上限 1.25；候选 16 次中 14 次确实恢复公开全文，但材料偏题和检索波动未带来最终答案收益 | 保持基线 |
+| ③ | `inconclusive` | 开发压力矩阵只有 baseline-only overflow，没有形成成对机制触发；不启动正式集 | 保持基线 |
+| 4A | `reject` | 正式 v2 48/48；baseline 发布 9、失败 15，delivery 发布 8、失败 16；两臂各 8 次保存 candidate claim，候选没有增加保存成功 | 保持基线 |
+| 4B | `inconclusive` | 开发 v4 21/32 后真实 writer 对 RAG 题连续发出空 `open_url` 路径并 `no_progress`；按冻结合同停止，未进入正式 12 原稿双 seed | 保持基线 |
+
+2B 的 `semantic-ratings.json`、`review-packets.json`、`run-inventory.json` 和 `decision.json` 是本轮结案依据；2B 的旧“尚未完成独立语义复核”描述属于过程记录，不能覆盖本节最终判定。`a14172a8` 与 `4f26c81d` 是已合入的确定性兼容/读取修复；实验候选仍未进入生产。

@@ -22,15 +22,15 @@
 
 ### 4A：交付完整性提示
 
-开发目录 `.e2e-artifacts/research-delivery-4a-dev-v1/` 已完成 4 题 × 2 臂真实运行。候选提示在 4 个 delivery 请求中均进入 wire；知识保存题产生真实 candidate claim，普通题未新增 claim。仅为开发接线证据，正式 12 题双 seed 尚未开始。
+开发目录 `.e2e-artifacts/research-delivery-4a-dev-v1/` 已完成 4 题 × 2 臂真实运行。候选提示在 4 个 delivery 请求中均进入 wire；知识保存题产生真实 candidate claim，普通题未新增 claim。该开发证据随后由正式 v2 覆盖：48/48 完成，baseline 发布 9、delivery 发布 8，候选未增加知识保存成功，正式判定 `reject`。
 
 ## 生产状态
 
-确定性生产 bug 已修复：`a14172a8` 修复 KoboldCPP JSON grammar 正则兼容；`4f26c81d` 防止过多 passage preview descriptors 触发恢复失败。实验候选未合入生产。当前 5001 只有一个 KoboldCPP listener（PID 23364）。
+确定性生产 bug 已修复：`a14172a8` 修复 KoboldCPP JSON grammar 正则兼容；`4f26c81d` 防止过多 passage preview descriptors 触发恢复失败。实验候选未合入生产。当前 5001 只有一个 KoboldCPP 进程监听（PID 44524；IPv4/IPv6 两条监听属于同一进程）。
 
-## 尚未完成
+## 当前结论与未完成项
 
-4A 正式 12 题双 seed、4B 四臂真实提交矩阵尚未完成。③没有有效溢出配对，因此不能进入正式集。所有失败、请求、回执、答案、知识库和成本记录保留在对应 `.e2e-artifacts` 目录。
+2B 已完成 8 个新题 × 2 seed × 2 臂的 32 次真实联网矩阵，并完成逐包语义评分；因严格成功 0/16、材料错配和成本中位时延比 1.414 超过 1.25，判定 `reject`。③开发机制未形成成对溢出，判定 `inconclusive`，没有正式集。4A 正式 v2 已完成 48/48，判定 `reject`。4B 开发 v4 在 21/32 时因真实 writer 空路径 `open_url` 重试后 `no_progress` 停止，判定 `inconclusive`，因此没有启动正式 12 原稿双 seed。所有失败、请求、回执、答案、知识库和成本记录保留在对应 `.e2e-artifacts` 目录。生产候选均未合入；只有确定性读取/协议 bug 已修复。
 
 ## 验证范围
 
@@ -38,7 +38,7 @@
 
 ### 4A 正式结案
 
-4A v1 在第 13 次 task-level `no_progress` 失败处封存为 `inconclusive`。新合同 v2 将此类失败计入样本并继续健康矩阵，48/48 完成：baseline 发布 9、失败 15；delivery 发布 8、失败 16。两臂知识保存题均有 8 个运行保存 candidate claim，候选没有增加保存成功，且多一次失败；`decision.json` 为 `reject`。4A 提示不进入生产，4B 尚未开始。
+4A v1 在第 13 次 task-level `no_progress` 失败处封存为 `inconclusive`。新合同 v2 将此类失败计入样本并继续健康矩阵，48/48 完成：baseline 发布 9、失败 15；delivery 发布 8、失败 16。两臂知识保存题均有 8 个运行保存 candidate claim，候选没有增加保存成功，且多一次失败；`decision.json` 为 `reject`。4A 提示不进入生产。
 
 ### 4B：修订与独立审查（开发 v4）
 
