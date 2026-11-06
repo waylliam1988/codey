@@ -865,3 +865,9 @@ Pyrefly、Ty 通过；Pyrefly 同时保留既有 warnings/suppressions，不声�
 | 4B | `inconclusive` | 开发 v4 17/32 后真实 writer 对 RAG 题连续发出空 `open_url` 路径并 `no_progress`；按冻结合同停止，未进入正式 12 原稿双 seed | 保持基线 |
 
 2B 的 `semantic-ratings.json`、`review-packets.json`、`run-inventory.json` 和 `decision.json` 是本轮结案依据；2B 的旧“尚未完成独立语义复核”描述属于过程记录，不能覆盖本节最终判定。`a14172a8` 与 `4f26c81d` 是已合入的确定性兼容/读取修复；实验候选仍未进入生产。
+
+### 2026-11-07：③ 算法修正及 4B 新合同准备
+
+复核发现③候选的排序方向与调用语义相反：候选生成保留优先列表，但 `answer_context` 将列表逐项作为淘汰项；此外多个版本被压成单一 `version` facet。实验代码已修正为独立版本覆盖单元和明确淘汰顺序，并加入冗余窗口优先淘汰的定向测试；这只是隔离候选修复，尚未产生真实 writer 的收益证据。
+
+4B v4 的实际工件核对为 17 个回执/17 个 run 目录，已修正文档和 decision 计数。新 v5 接线合同保留完整证据片段和各自 eN 标签，且把 S/V 的审查与修订调用拆开；无模型合同测试已通过。旧 v4 结果仍为 `inconclusive`，不续写、不混入新合同。
