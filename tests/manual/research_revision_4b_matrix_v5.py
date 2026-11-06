@@ -130,7 +130,8 @@ def run(root):
             if receipt.exists():
                 continue
             started = time.monotonic()
-            command = [sys.executable, "-m", __name__, "worker", "--root", str(root), "--case", case, "--arm", arm, "--seed", str(contract["seed"])]
+            command = [sys.executable, "-m", "tests.manual.research_revision_4b_matrix_v5", "worker",
+                       "--root", str(root), "--case", case, "--arm", arm, "--seed", str(contract["seed"])]
             result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
             write(receipt, {"exit_code": result.returncode, "stdout": result.stdout, "stderr": result.stderr,
                             "elapsed_seconds": time.monotonic() - started})
