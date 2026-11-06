@@ -1,0 +1,146 @@
+[
+  {
+    "run": "knowledge_hepatotoxicity-4501-R",
+    "exit": 0,
+    "report_chars": 1370,
+    "knowledge_objects": 2,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 22.45299999997951
+  },
+  {
+    "run": "knowledge_hepatotoxicity-4501-S",
+    "exit": 0,
+    "report_chars": 1902,
+    "knowledge_objects": 1,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 43.90600000007544
+  },
+  {
+    "run": "knowledge_hepatotoxicity-4501-U",
+    "exit": 0,
+    "report_chars": 2808,
+    "knowledge_objects": 2,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 32.85999999998603
+  },
+  {
+    "run": "knowledge_hepatotoxicity-4501-V",
+    "exit": 0,
+    "report_chars": 1908,
+    "knowledge_objects": 2,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 45.561999999918044
+  },
+  {
+    "run": "knowledge_rag-4501-R",
+    "exit": 0,
+    "report_chars": 1034,
+    "knowledge_objects": 2,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 19.54700000002049
+  },
+  {
+    "run": "knowledge_rag-4501-S",
+    "exit": 0,
+    "report_chars": 1181,
+    "knowledge_objects": 2,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 30.31299999996554
+  },
+  {
+    "run": "knowledge_rag-4501-U",
+    "exit": 0,
+    "report_chars": 1034,
+    "knowledge_objects": 2,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 18.719000000040978
+  },
+  {
+    "run": "knowledge_rag-4501-V",
+    "exit": 0,
+    "report_chars": 1385,
+    "knowledge_objects": 2,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 35.92099999997299
+  },
+  {
+    "run": "knowledge_react-4501-R",
+    "exit": 0,
+    "report_chars": 1907,
+    "knowledge_objects": 2,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 27.625
+  },
+  {
+    "run": "knowledge_react-4501-S",
+    "exit": 0,
+    "report_chars": 2106,
+    "knowledge_objects": 1,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 37.39099999994505
+  },
+  {
+    "run": "knowledge_react-4501-U",
+    "exit": 0,
+    "report_chars": 1618,
+    "knowledge_objects": 2,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 4,
+    "seconds": 25.438000000081956
+  },
+  {
+    "run": "knowledge_react-4501-V",
+    "exit": 0,
+    "report_chars": 1889,
+    "knowledge_objects": 2,
+    "tools": [
+      "open_url",
+      "submit_research_answer"
+    ],
+    "admitted": 6,
+    "seconds": 53.64000000001397
+  }
+]

@@ -1,0 +1,124 @@
+{
+  "experiment": "4B",
+  "phase": "dev-v5e",
+  "decision": "mechanism_ready_for_formal_contract",
+  "planned_runs": 12,
+  "completed_runs": 12,
+  "successful_runs": 12,
+  "review_calls": 6,
+  "all_real_submit": true,
+  "all_real_open": true,
+  "all_review_arms_separate": true,
+  "rows": [
+    {
+      "run": "knowledge_hepatotoxicity-4501-R",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": false,
+      "seconds": 22.453,
+      "report_sha256": "86432b6318f659556909483a5af0dda55f69f8704f8bd7f78efaf25adb97d1ad"
+    },
+    {
+      "run": "knowledge_hepatotoxicity-4501-S",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": true,
+      "seconds": 43.906,
+      "report_sha256": "600798058d62d9d5c447d214e5373d2f6ef00770c3788b7c8e7ee26dbffe8825"
+    },
+    {
+      "run": "knowledge_hepatotoxicity-4501-U",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": false,
+      "seconds": 32.86,
+      "report_sha256": "1761bba2b84b79f9f3874a472a65f771bc2c37a38a38decce4d4e1b08c6543ae"
+    },
+    {
+      "run": "knowledge_hepatotoxicity-4501-V",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": true,
+      "seconds": 45.562,
+      "report_sha256": "fac0cf014743fb53155959f53d0aa258473f73a472d84d830b652695464291fe"
+    },
+    {
+      "run": "knowledge_rag-4501-R",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": false,
+      "seconds": 19.547,
+      "report_sha256": "08ad9d40afdfb1db4d6bbc80a016190a810f22041d3cecc9d4f207b1d0c53bb5"
+    },
+    {
+      "run": "knowledge_rag-4501-S",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": true,
+      "seconds": 30.313,
+      "report_sha256": "9ec7e5fd1edbd13b6dafa3197feb5bdf207fd45079001232eadbdd2581cf3abe"
+    },
+    {
+      "run": "knowledge_rag-4501-U",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": false,
+      "seconds": 18.719,
+      "report_sha256": "08ad9d40afdfb1db4d6bbc80a016190a810f22041d3cecc9d4f207b1d0c53bb5"
+    },
+    {
+      "run": "knowledge_rag-4501-V",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": true,
+      "seconds": 35.921,
+      "report_sha256": "1feb1b2af5a336f39bb9cf513ded652074a6bcd876eeefc7e5ca2beaf3df03da"
+    },
+    {
+      "run": "knowledge_react-4501-R",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": false,
+      "seconds": 27.625,
+      "report_sha256": "f532d3c358d7abf8c33a0d86c21128b611c850b1479f2f23ca5386545d7621ba"
+    },
+    {
+      "run": "knowledge_react-4501-S",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": true,
+      "seconds": 37.391,
+      "report_sha256": "4ba4d092d84ff6d1237065ea3602a58b767ac6ebfd87bedbb2eb9ceb526f3290"
+    },
+    {
+      "run": "knowledge_react-4501-U",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": false,
+      "seconds": 25.438,
+      "report_sha256": "84fd07f48694ef387dd6ca96a73f0b028ef5d99fdac915da45243af18213ce78"
+    },
+    {
+      "run": "knowledge_react-4501-V",
+      "exit_code": 0,
+      "real_submit": true,
+      "real_open": true,
+      "review_call": true,
+      "seconds": 53.64,
+      "report_sha256": "f3fdafe8d2baebf2f66a91403b3a458fed34f7a5efdbfb01a743cbb1aa653d51"
+    }
+  ],
+  "quality": "development wiring only; no promotion or semantic gain claim",
+  "next": "Freeze a separate formal contract with 12 new natural drafts and two seeds before running 96 U/R/S/V submissions."
+}
