@@ -4,7 +4,7 @@
   "decision": "inconclusive",
   "production": "unchanged",
   "contract": ".e2e-artifacts/research-revision-4b-dev-v4/preregistration.json",
-  "runs_completed": 21,
+  "runs_completed": 17,
   "runs_planned": 32,
   "reason": "The frozen development matrix stopped at knowledge_rag-4301-U after a real writer no_progress failure. The ledger shows five repeated open_url calls with an empty path, so no source/evidence/claim could be submitted. This is a task-level writer execution failure, not a harness or source-identity failure; the retained failure makes the development mechanism check inconclusive under the stop contract.",
   "evidence": [
