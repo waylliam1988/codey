@@ -1,0 +1,124 @@
+{
+  "basis": "frozen D runs; corrected deterministic rubric only; no model rerun",
+  "groups": [
+    {
+      "arm": "control",
+      "runs": 12,
+      "required_hit": 58,
+      "required_total": 68,
+      "forbidden_count": 0,
+      "citation_invalid": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "seconds": 0
+    },
+    {
+      "arm": "self_check",
+      "runs": 12,
+      "required_hit": 62,
+      "required_total": 68,
+      "forbidden_count": 0,
+      "citation_invalid": 0,
+      "input_tokens": 61125,
+      "output_tokens": 14213,
+      "seconds": 444.939
+    },
+    {
+      "arm": "b_feedback",
+      "runs": 12,
+      "required_hit": 62,
+      "required_total": 68,
+      "forbidden_count": 0,
+      "citation_invalid": 0,
+      "input_tokens": 58123,
+      "output_tokens": 14314,
+      "seconds": 444.407
+    }
+  ],
+  "changed_answers": [
+    {
+      "case": "known_url",
+      "seed": 941,
+      "arm": "self_check",
+      "required_delta": 1,
+      "forbidden_delta": 0,
+      "diff": "--- \n+++ \n@@ -11,3 +11,6 @@\n \n ## 引用来源\n [e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)\n+\n+## 候选 Claim\n+*   **候选 Claim：** SQLite 从 3.22.0 开始放宽只读 WAL 限制 [e1]。"
+    },
+    {
+      "case": "known_url",
+      "seed": 941,
+      "arm": "b_feedback",
+      "required_delta": 1,
+      "forbidden_delta": 0,
+      "diff": "--- \n+++ \n@@ -11,3 +11,7 @@\n \n ## 引用来源\n [e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)\n+\n+---\n+**候选 Claim：**\n+SQLite 从 3.22.0 开始放宽只读 WAL 限制 [e1]。"
+    },
+    {
+      "case": "known_url",
+      "seed": 942,
+      "arm": "self_check",
+      "required_delta": 1,
+      "forbidden_delta": 0,
+      "diff": "--- \n+++ \n@@ -11,3 +11,6 @@\n \n ## 引用来源\n [e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)\n+\n+## 候选 Claim\n+*   **候选 Claim：** SQLite 从 3.22.0 开始放宽只读 WAL 限制 [e1]。"
+    },
+    {
+      "case": "known_url",
+      "seed": 942,
+      "arm": "b_feedback",
+      "required_delta": 1,
+      "forbidden_delta": 0,
+      "diff": "--- \n+++ \n@@ -9,5 +9,8 @@\n 2. 包含数据库的目录具有写入权限，以便可以创建 `-shm` 和 `-wal` 文件。\n 3. 使用 `immutable` 查询参数打开数据库连接。\n \n+**候选 Claim：**\n+SQLite 从 3.22.0 开始放宽只读 WAL 限制 [e1]。\n+\n ## 引用来源\n [e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)"
+    },
+    {
+      "case": "source_discovery",
+      "seed": 941,
+      "arm": "b_feedback",
+      "required_delta": 0,
+      "forbidden_delta": 0,
+      "diff": "--- \n+++ \n@@ -1,4 +1,4 @@\n-从 SQLite 3.22.0 版本开始，支持在只读媒体或缺乏写入权限的情况下读取 WAL 模式数据库。\n+从 SQLite 3.22.0 版本开始 [e1]，支持在只读媒体或缺乏写入权限的情况下读取 WAL 模式数据库。\n \n 其完整的替代条件如下（满足其中任意一个即可）：\n - -shm 和 -wal 文件已经存在且可读 [e1]"
+    },
+    {
+      "case": "source_discovery",
+      "seed": 942,
+      "arm": "b_feedback",
+      "required_delta": 0,
+      "forbidden_delta": 0,
+      "diff": "--- \n+++ \n@@ -1,9 +1,9 @@\n-从 SQLite 3.22.0 版本开始，支持在只读媒体或缺乏写入权限的情况下读取 WAL 模式数据库。\n+从 SQLite 3.22.0 版本开始，支持在只读媒体或缺乏写入权限的情况下读取 WAL 模式数据库 [e1]。\n \n 其完整的替代条件如下（满足其中任意一个即可）：\n - -shm 和 -wal 文件已经存在且可读 [e1]\n-- 数据库所在的目录具有写入权限，以便可以创建 -shm 和 -wal 文件 [e1]\n-- 使用 `immutable` 查询参数打开数据库连接 [e1]\n+- OR 数据库所在的目录具有写入权限，以便可以创建 -shm 和 -wal 文件 [e1]\n+- OR 使用 `immutable` 查询参数打开数据库连接 [e1]\n \n ## 引用来源\n [e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)"
+    },
+    {
+      "case": "two_errors",
+      "seed": 941,
+      "arm": "self_check",
+      "required_delta": 1,
+      "forbidden_delta": 0,
+      "diff": "--- \n+++ \n@@ -9,5 +9,8 @@\n 2. 包含数据库的目录具有写入权限，以便可以创建 `-shm` 和 `-wal` 文件。\n 3. 使用 `immutable` 查询参数打开数据库连接。\n \n+**候选 Claim：**\n+* SQLite 从 3.22.0 开始放宽只读 WAL 限制 [e1]。\n+\n ## 引用来源\n [e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)"
+    },
+    {
+      "case": "two_errors",
+      "seed": 941,
+      "arm": "b_feedback",
+      "required_delta": 1,
+      "forbidden_delta": 0,
+      "diff": "--- \n+++ \n@@ -11,3 +11,6 @@\n \n ## 引用来源\n [e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)\n+\n+## 候选 Claim\n+*   **候选 Claim：** SQLite 从 3.22.0 开始放宽只读 WAL 限制 [e1]。"
+    },
+    {
+      "case": "two_errors",
+      "seed": 942,
+      "arm": "self_check",
+      "required_delta": 1,
+      "forbidden_delta": 0,
+      "diff": "--- \n+++ \n@@ -11,3 +11,6 @@\n \n ## 引用来源\n [e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)\n+\n+## 候选 Claim\n+*   **候选 Claim：** SQLite 从 3.22.0 开始放宽只读 WAL 限制 [e1]。"
+    },
+    {
+      "case": "two_errors",
+      "seed": 942,
+      "arm": "b_feedback",
+      "required_delta": 1,
+      "forbidden_delta": 0,
+      "diff": "--- \n+++ \n@@ -9,5 +9,8 @@\n 2. 包含数据库的目录具有写入权限，以便可以创建 `-shm` 和 `-wal` 文件。\n 3. 使用 `immutable` 查询参数打开数据库连接。\n \n+**候选 Claim：**\n+SQLite 从 3.22.0 开始放宽只读 WAL 限制 [e1]。\n+\n ## 引用来源\n [e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)"
+    }
+  ],
+  "production_unchanged": true,
+  "requests": 36,
+  "model_calls": 48,
+  "warning": "Required-term and forbidden-pattern checks are a transparent completeness proxy, not a semantic proof."
+}

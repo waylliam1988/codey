@@ -2,6 +2,25 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Research frozen-answer revision D (2026-11-06)
+
+No production code changed. The D experiment replayed six previously generated
+natural Research answers with two seeds in three arms: unchanged control,
+ordinary self-check plus one revision, and B evidence feedback plus one revision.
+It completed 36 final answers and 48 model calls without new search or source
+reads. Both revision arms restored an explicitly requested candidate claim that
+two frozen answers had omitted; B feedback also repaired a small citation/OR
+presentation issue. Corrected completeness proxy: control 58/68 required items,
+self-check 62/68, B feedback 62/68. This is a task-completeness proxy, not a
+semantic proof, and does not establish B feedback superiority over self-check.
+
+The initial run's speed wording proxy was corrected without rerunning models;
+the original and corrected scores are both retained. Twelve D contract/scoring
+tests passed; Ruff passed; production files are unchanged. See [D results and
+limits](docs/research-semantic-review-d-results-20261106.zh-CN.md), [run records]
+(docs/reports/research-semantic-review-d-20261106.json), and [independent
+post-run analysis](docs/reports/research-semantic-review-d-analysis-20261106.json).
+
 ## Research candidate C, common-contract A/B/C (2026-11-06)
 
 **No production code changed.** Candidate C's prompt was committed before new
