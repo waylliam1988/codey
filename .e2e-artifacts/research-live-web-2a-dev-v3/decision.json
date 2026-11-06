@@ -1,0 +1,79 @@
+{
+  "experiment": "2A",
+  "phase": "dev-v2",
+  "planned_runs": 8,
+  "completed_runs": 8,
+  "successful_runs": 8,
+  "paired_mechanism_runs": 4,
+  "baseline_browser_calls": 0,
+  "candidate_browser_calls": 4,
+  "decision": "mechanism_ready_for_formal_contract",
+  "quality": "development wiring and trigger evidence only; no semantic net-gain claim",
+  "rows": [
+    {
+      "run": "arxiv_long_context-1501-baseline",
+      "exit_code": 0,
+      "connector_calls": 1,
+      "connector_hits": 2,
+      "browser_calls": 0,
+      "browser_results": 0
+    },
+    {
+      "run": "arxiv_long_context-1501-browser_after_connector",
+      "exit_code": 0,
+      "connector_calls": 1,
+      "connector_hits": 2,
+      "browser_calls": 1,
+      "browser_results": 8
+    },
+    {
+      "run": "arxiv_rag-1501-baseline",
+      "exit_code": 0,
+      "connector_calls": 1,
+      "connector_hits": 2,
+      "browser_calls": 0,
+      "browser_results": 0
+    },
+    {
+      "run": "arxiv_rag-1501-browser_after_connector",
+      "exit_code": 0,
+      "connector_calls": 1,
+      "connector_hits": 2,
+      "browser_calls": 1,
+      "browser_results": 8
+    },
+    {
+      "run": "pubmed_hepatotoxicity-1501-baseline",
+      "exit_code": 0,
+      "connector_calls": 1,
+      "connector_hits": 2,
+      "browser_calls": 0,
+      "browser_results": 0
+    },
+    {
+      "run": "pubmed_hepatotoxicity-1501-browser_after_connector",
+      "exit_code": 0,
+      "connector_calls": 1,
+      "connector_hits": 2,
+      "browser_calls": 1,
+      "browser_results": 8
+    },
+    {
+      "run": "pubmed_myocarditis-1501-baseline",
+      "exit_code": 0,
+      "connector_calls": 1,
+      "connector_hits": 2,
+      "browser_calls": 0,
+      "browser_results": 0
+    },
+    {
+      "run": "pubmed_myocarditis-1501-browser_after_connector",
+      "exit_code": 0,
+      "connector_calls": 1,
+      "connector_hits": 2,
+      "browser_calls": 1,
+      "browser_results": 8
+    }
+  ],
+  "next": "Freeze 12 new formal topics x 2 seeds x 2 arms with retained task-level failure policy."
+}
