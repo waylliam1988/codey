@@ -1,0 +1,13 @@
+{
+  "experiment": "③",
+  "phase": "dev-v3",
+  "decision": "inconclusive",
+  "planned_runs": 8,
+  "completed_runs": 8,
+  "successful_runs": 8,
+  "paired_overflow_pairs": 1,
+  "mechanism": "Only coverage_exceptions produced overflow in both arms; versions, limits and objects did not overflow in both arms.",
+  "reason": "The real writer matrix completed without infrastructure failure, but it did not produce the required two paired overflow cases. No formal matrix is justified and no further padding escalation is planned.",
+  "production": "unchanged",
+  "evidence": "retention-views.jsonl in each run directory"
+}
