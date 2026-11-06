@@ -44,7 +44,12 @@ def fitting_full_read(session: Any, ledger: ResearchLedger, call: ToolCall,
     """Preview the actual work view; extend a default HTML read only if all fits."""
     from codey.research.answer_contract import answer_scope
     from codey.research.ledger_receipts import source_observation
-    from codey.research.passages import describe_document_window, render_passage_window, restore_passages
+    from codey.research.passages import (
+        MAX_READ_PASSAGES,
+        describe_document_window,
+        render_passage_window,
+        restore_passages,
+    )
     from codey.research.source_document import SourceDocument
     from codey.research.source_rendering import render_opened_source
     from codey.runtime.core.models import ToolResult
@@ -57,6 +62,8 @@ def fitting_full_read(session: Any, ledger: ResearchLedger, call: ToolCall,
     document = SourceDocument.html(requested_url=source.requested_url, final_url=source.final_url,
                                    title=source.title, text=text, mime_type=source.mime_type, truncated=source.truncated)
     rows = describe_document_window(document, source.text_hash, opened.read_passages[0]["start"], len(text), coherent=True)
+    if len(rows) > MAX_READ_PASSAGES:
+        return opened
     with session.projection_lock:
         preview = session.clone_projection()
         evidence = ledger.clone()

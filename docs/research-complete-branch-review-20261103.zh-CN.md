@@ -1,5 +1,13 @@
 # Research 全流程与分支删减审查（2026-11-03）
 
+## 2026-11-06 真实 2A 矩阵暂停与确定性读取缺陷修复
+
+修复后 2A 开发集 4 题 × 2 臂全部完成，实际 JSON tool schema 均在 KoboldCpp 1.117.1 编译成功。正式新题双 seed 矩阵随后在第 5 次运行暂停：候选读取真实 PMC 长文时，`fitting_full_read` 将章节窗口拆成超过恢复上限的 passage descriptors，生产恢复器拒绝并连续重读，最终以 `no_progress` 停止。该错误属于生产读取路径的确定性边界 bug，不是模型答案质量或连接器早停候选收益。
+
+生产修复只在 `fitting_full_read` 预览阶段检测 `MAX_READ_PASSAGES`，超过上限时保留原已结算读取，不进入无法恢复的扩展预览；恢复器同时使用命名上限常量。定向 Research whole-answer/findings 27 项、Ruff 和两文件 mypy 通过。失败运行和原始 wire 保留在 `.e2e-artifacts/research-live-web-2a-formal-compiled-v1/`；该冻结目录因源码身份变化停止，候选仍未合入生产策略。
+
+已完成的 2A 端到端评分样本（neuropathy，两个 seed、两臂）显示浏览器后搜索确实找到更相关的 PNS 原始综述，但四份答案严格完整任务成功均为 false；基线有摘要错用，候选仍遗漏诊断要求且一份倒置了分母。来源发现改善尚不足以证明最终答案净收益。详见该目录的 `semantic-ratings.json`、`run-inventory.json` 和 `review-packets.json`。
+
 ## 冻结自然答案的修订收益 D（2026-11-06）
 
 **D 证明一次受限修订有实际收益，但没有证明 B 反馈优于普通自查；生产代码未改。** 本轮冻结 6 份此前由 Gemma4 12B 生成的自然 Research 答案，在相同任务、原稿和已读证据下比较三组：原稿直接交付、普通自查后修订一次、B 详细审查反馈后修订一次。两个修订组各使用两次额外模型调用，共 36 个最终答案、48 次模型调用；没有新增搜索、来源读取或生产发布路径。

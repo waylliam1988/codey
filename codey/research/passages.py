@@ -48,6 +48,7 @@ def passage_ref(url: str, text_hash: str, start: int, end: int, *,
 
 
 _SENTENCE_END = re.compile(r'''[.!?。！？]["'’”）)\]】]*[ \t\r\n]+''')
+MAX_READ_PASSAGES = 32
 
 
 def preceding_context_offset(text: str, offset: int) -> int:
@@ -162,7 +163,7 @@ def restore_passages(ledger: ResearchLedger, observation: object, descriptors: o
     from codey.research.ledger_receipts import source_observation
 
     source, text, pages = source_observation(observation)
-    if not isinstance(descriptors, (list, tuple)) or len(descriptors) > 32:
+    if not isinstance(descriptors, (list, tuple)) or len(descriptors) > MAX_READ_PASSAGES:
         raise ValueError("invalid read passage descriptors")
     pending = {}
     for row in descriptors:

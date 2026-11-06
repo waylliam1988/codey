@@ -18,7 +18,16 @@
 - 下一步：提交此确定性 bug 修复；在修复后基线上重新开发与冻结新的 2A 合同，排除已运行正式题。
   生产修复提交 `a14172a8`；Mypy 全 597 文件、Pyrefly/Ty 均通过；新定向测试 74 项通过。
   后续增加了真实工具 schema 编译预检，失败拒绝推理；相关引用／入口测试 51 项通过。
-- 当前准备修复后开发目录 `research-live-web-2a-dev-compiled-v1`（命令和会话待启动后更新）。
+- 当前修复后开发目录 `.e2e-artifacts/research-live-web-2a-dev-compiled-v1/`，源码提交 `2fe2be83`。
+  正在运行 `python -m tests.manual.research_live_web_matrix run --root .e2e-artifacts/research-live-web-2a-dev-compiled-v1`，
+  会话 **76882**，必须先轮询；不要修改 manual 或 commit HEAD，避免破坏当前冻结。
+- 开发矩阵已完成 8/8；每次实际发送的 3 个 JSON tool schema 均有非空 GBNF 编译摘要。
+- 正式新题目录 `.e2e-artifacts/research-live-web-2a-formal-compiled-v1/` 在第 5 次运行暂停：
+  `pubmed_pancreatitis-1301-browser_after_connector` 读取 PMC 长文触发 `invalid read passage descriptors`，
+  随后 `no_progress`。根因是 `fitting_full_read` 预览产生超过 32 个章节 descriptors，而恢复器有 32 条上限。
+  已修复为超过上限直接保留原读取；该冻结目录因生产源码身份改变封存，不能续跑。
+- 2A 已完成的四个 neuropathy 样本已做独立证据复核，四份严格成功均为 false；候选的浏览器发现更相关摘要，
+  但未达到完整任务净收益门槛。评分保存在 formal 目录 `semantic-ratings.json`。
 - 新正式题池在 `research_live_web_matrix.py`：剔除已运行前三题，八个短主题首搜与四个自由搜索对照；
   共同协议仍为约束 JSON + none effort，增加真实 GBNF 编译确认。不要复用旧 frozen-v4 或 formal-json-v1 目录。
 - 首题两臂 connector 都未返回命中，因此早停机制未触发；不能将组间差异计为机制收益。
