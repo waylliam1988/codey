@@ -96,6 +96,27 @@ def test_local_writer_can_select_enabled_cross_connection_api_reviewer(tmp_path,
     assert attempt.call_args.kwargs["reviewer"] == "cline-review-provider"
 
 
+def test_cross_connection_selection_never_loads_disabled_connections(monkeypatch):
+    from codey.providers import api_connections
+
+    selection = ApiRunSelection("cline", "fixture", "online", "openai-completions", False)
+    loaded = []
+
+    def connection(connection_id):
+        loaded.append(connection_id)
+        if connection_id != "cline":
+            raise AssertionError("disabled source must not be queried")
+        return SimpleNamespace(model_payload=lambda: {"models": [{"id": "online"}]},
+                               capture_selection=lambda _: selection)
+
+    monkeypatch.setattr(api_connections, "connection_for", connection)
+    result = api_connections.capture_cross_connection_reviewer(
+        excluded_connections={"local"}, allowed_models_by_connection={"cline": {"online"}},
+    )
+    assert result == ("cline", selection)
+    assert loaded == ["cline"]
+
+
 def test_reviewer_selection_survives_restart_and_cannot_be_rebound(tmp_path):
     import pytest
 

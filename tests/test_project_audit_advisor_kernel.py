@@ -10,6 +10,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from codey.policies.task_policy import TaskPolicy
 
 
@@ -138,3 +140,35 @@ def test_audit_advisor_denies_write_without_side_effects():
         assert report == "no changes needed"
         assert (proj / "app.py").read_text(encoding="utf-8") == "original\n"
         assert len(provider.prompts) >= 2, "拒绝后必须给模型修复提示"
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_private_audit_cannot_open_a_user_question_or_leave_pending_effects(tmp_path, native):
+    from threading import Event
+
+    from tests.support.kernel_runtime import run_project_audit_advisor
+    from tests.support.operation_trace_probe import DONE, QUESTION, TraceProvider
+
+    class TimedProvider(TraceProvider):
+        def send(self, prompt, timeout=None):
+            return super().send(prompt)
+
+        def send_turn(self, prompt, tools, timeout=None):
+            return super().send_turn(prompt, tools)
+
+        def send_tool_results(self, results, tools, timeout=None):
+            return super().send_tool_results(results, tools)
+
+        def acknowledge_tool_results(self, results, declared_tools, timeout=None):
+            return super().acknowledge_tool_results(results, declared_tools)
+
+    trace = []
+    provider = TimedProvider([QUESTION, DONE], native=native, trace=trace, stop=Event())
+    report = run_project_audit_advisor(provider, tmp_path, "Inspect and report privately", parent_policy=_audit_policy())
+    assert report == "finished"
+    if native:
+        declarations = [row["tools"] for row in trace if "tools" in row]
+        assert declarations and all("ask_user" not in names for names in declarations)
+        assert all("done" in names for names in declarations)
+        assert all(set(names) == {"list_dir", "read_file", "grep", "find_references", "done"}
+                   for names in declarations)

@@ -51,9 +51,11 @@ def capture_cross_connection_reviewer(
     for connection_id in API_CONNECTIONS:
         if connection_id in excluded:
             continue
+        selected = allowed.get(connection_id, set())
+        if not selected:
+            continue
         connection = connection_for(connection_id)
         models = connection.model_payload().get("models", [])
-        selected = allowed.get(connection_id, set())
         for model in models:
             if not isinstance(model, dict):
                 continue

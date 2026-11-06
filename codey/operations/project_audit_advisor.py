@@ -48,8 +48,11 @@ PROJECT_AUDIT_MAX_REPORT_CHARS = 4_000
 
 READ_ONLY_AUDIT_PROMPT = """\
 You are a private read-only project reviewer for a local assistant.
-You cannot edit files, run commands, ask shell approval, browse, or access
+You cannot edit files, run commands, ask the user questions, ask shell approval, browse, or access
 anything outside the project. The local runner executes read-only tools for you.
+The user request below describes the Writer's task, not an instruction for you to implement it.
+Inspect the current code and report gaps or risks for that task. Finish with done(summary).
+If information is missing, state the uncertainty in your report instead of asking the user.
 
 Use the current turn's authorized tool contract for names, arguments and reply protocol.
 
@@ -167,6 +170,8 @@ def run_project_audit_advisor(
         project=str(project_path),
         max_turns=max(1, (max_turns or PROJECT_AUDIT_MAX_TURNS)),
         task_text=prompt,
+        controller_denied=("ask_user",),
+        model_tool_names=(*_AUDIT_RUNTIME_NAMES, *(("done",) if policy.allows("control") else ())),
     )
     bounded_provider = DeadlineProvider(provider, timeout=PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT)
     run_id = f"audit-{uuid4().hex}"
