@@ -739,3 +739,9 @@ ID 连字符抄成下划线是模型选择错误。原实现拒绝它，不会�
 随后冻结 `.e2e-artifacts/research-gap-driven-ab-20261106-formal-20261106/`，使用 12 个新题、seed `1101/1102`、baseline 与 `gap_directive` 两臂，共 48 次端到端运行。48 次均正常退出并完成 `submit_research_answer`；没有超时、协议失败或提交拒绝。候选提示在 24 个 candidate run 的 108 个实际 admitted payload 中均可见，baseline 为 0 次可见，说明机制确实进入了 wire。candidate 平均 admitted 输入字符约 7563，baseline 约 7231；这批运行的输入成本增量约 4.6%，低于合同的 25% 诊断上限。
 
 当前仍只生成了确定性 pattern 诊断，尚未完成独立语义金标复核；该诊断显示两臂整体没有稳定的任务级净改善，并出现个别条件保留差异。因此本批结论为 `inconclusive/reject pending semantic review`，不满足“正式集至少 3 个正向任务、至多 1 个负向任务、平均严格成功率增加 10 个百分点”的采用门槛，生产继续保持原样。正式结果摘要和全部 wire、回执、提交、隔离知识库保留在上述目录；不能把关键词命中或运行成功当作答案质量收益。
+
+### 2A：连接器命中后的浏览器早停
+
+生产代码的早停位置确认在 `codey/research/connector_search.py`：连接器结果达到 2 条时直接返回，浏览器 provider 不再调用。新增隔离适配器 `tests/manual/research_connector_early_stop_ab.py`，候选只取消这一条早停并复用生产合并/去重函数；没有改默认 provider。
+
+本轮冻结 12 个连接器命中状态，A/B 机制重放结果保存在 `.e2e-artifacts/research-connector-early-stop-20261106.json`：A 的 12/12 状态均出现 2 条连接器命中且浏览器调用为 0；B 的 12/12 状态均调用浏览器并加入官方/版本材料；两臂都保持结果上限。机制成立，但这批是搜索路由重放，没有真实 writer 的答案质量、引用和端到端提交证据，因此不能满足 2A 的生产采用门槛，判定为 `inconclusive`，生产保持原样。后续若继续 2A，必须用同一冻结路由接入真实 Research writer，并把额外浏览器成本和答案净收益纳入正式分母。
