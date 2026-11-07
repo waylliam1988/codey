@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
@@ -18,6 +18,10 @@ from codey.operations.kernel_contracts import (
     KernelTransportDeps,
 )
 from codey.workspace.context_admission import GhostContextSource
+
+if TYPE_CHECKING:
+    from codey.operations.kernel_contracts import StopSignal
+    from codey.runtime.core.protocol_window import ProtocolWindowRef
 
 _DEFAULT_EXECUTION = KernelExecutionDeps()
 _DEFAULT_OBSERVATION = KernelObservationDeps()
@@ -28,8 +32,8 @@ class KernelRunRequestBuilder:
     provider: Any
     run_id: str
     effect_scope: str
-    provider_id: object
-    user_task: object
+    provider_id: str
+    user_task: str
     task_guidance: str = ""
     context_text: str = ""
     context_scope: str = "request"
@@ -37,9 +41,9 @@ class KernelRunRequestBuilder:
     admit_hints: bool = True
     attempt_gate: Callable[[Any, dict[str, Any]], None] | None = None
     attempt_admit_hints: Callable[[], bool] | None = None
-    stop_flag: Any = None
+    stop_flag: StopSignal | None = None
     stagnant_turns: int | None = None
-    window_ref: Any = None
+    window_ref: ProtocolWindowRef | None = None
 
     def build(
         self,

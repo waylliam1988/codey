@@ -3,14 +3,30 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, Protocol, TypedDict, cast
 
 from codey.operations.generation_boundary import GenerationBoundaryRequest, GenerationBoundaryResult
-from codey.runtime.core.models import ToolCall
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.workspace.context_admission import GhostContextSource
 
 if TYPE_CHECKING:
+    from codey.agents.request import ChangeTracker
+    from codey.agents.shell_approval import ShellApprovalRequest
+    from codey.agents.tools import AgentToolFns
     from codey.completion.contract import CompletionProof
+    from codey.runs.trace import RunTraceRecorder
+    from codey.runtime.core.protocol_window import ProtocolWindowRef
+    from codey.runtime.observe.events import RunEvent
+    from codey.workspace.revision import WorkspaceRevisionStore
+
+
+ToolExecutor = Callable[[ToolCall], ToolResult]
+DeliveryStatus = Literal["not_required", "success", "failed", "unknown"]
+
+
+class StopSignal(Protocol):
+    def is_set(self) -> bool: ...
 
 
 @dataclass(frozen=True)
@@ -20,7 +36,7 @@ class KernelResult:
     turns: int
     stop_reason: str
     proof: CompletionProof | None = None
-    delivery: str = "not_required"
+    delivery: DeliveryStatus = "not_required"
     research_report: dict[str, Any] | None = None
 
     def to_payload(self) -> dict[str, Any]:
@@ -100,8 +116,8 @@ class KernelTransportDeps:
     provider: Any
     run_id: str = ""
     effect_scope: str = ""
-    provider_id: object = ""
-    user_task: object = ""
+    provider_id: str = ""
+    user_task: str = ""
     context_text: str = ""
     # Logical request authority, independent of an automatically allocated
     # execution workspace. Unscoped standalone requests use "request".
@@ -110,22 +126,22 @@ class KernelTransportDeps:
     admit_hints: bool = True
     attempt_gate: Callable[[Any, dict[str, Any]], None] | None = None
     attempt_admit_hints: Callable[[], bool] | None = None
-    stop_flag: Any = None
+    stop_flag: StopSignal | None = None
     stagnant_turns: int | None = None
-    window_ref: Any = None
+    window_ref: ProtocolWindowRef | None = None
 
 @dataclass(frozen=True)
 class KernelExecutionDeps:
     """Tool, project, and workspace resources for one kernel run."""
 
-    executors: Mapping[str, Callable[[ToolCall], Any]] | None = None
-    project_path: Any = None
-    tool_fns: Any = None
+    executors: Mapping[str, ToolExecutor] | None = None
+    project_path: Path | None = None
+    tool_fns: AgentToolFns | None = None
     research_tools: Any = None
-    change_tracker: Any = None
+    change_tracker: ChangeTracker | None = None
     permission_profile: str = "coding_writer"
-    workspace_ignored_paths: Any = ()
-    workspace_revision_store: Any = None
+    workspace_ignored_paths: tuple[str, ...] = ()
+    workspace_revision_store: WorkspaceRevisionStore | None = None
     ensure_workspace_writer: Callable[[], None] | None = None
 
 @dataclass(frozen=True)
@@ -134,9 +150,9 @@ class KernelObservationDeps:
 
     intent_sink: Any = None
     completion_context: Any = None
-    on_event: Callable[[Any], None] | None = None
-    on_shell_request: Callable[[Any], None] | None = None
-    trace_recorder: Any = None
+    on_event: Callable[[RunEvent], None] | None = None
+    on_shell_request: Callable[[ShellApprovalRequest], None] | None = None
+    trace_recorder: RunTraceRecorder | None = None
     propagate_provider_failure: bool = False
     # Called after a completed tool round or before final task handoff.  The
     # callback owns durable inbox placement; its returned text is appended to
