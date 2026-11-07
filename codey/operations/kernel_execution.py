@@ -11,11 +11,13 @@ never import ``execute_turn`` back (no cycles).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from contextlib import ExitStack
-from dataclasses import replace
-from typing import Any
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol
 
+from codey.operations.kernel_contracts import StopSignal, ToolExecutor
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
 from codey.operations.kernel_protocol import _validate_tool_args, frozen_custom_executor_map, frozen_spec_map
@@ -41,28 +43,100 @@ from codey.operations.kernel_result import (
     strict_exit_code_or_none,
 )
 from codey.operations.task_session import TaskSession, effect_coordinates, turn_effect_id
+from codey.research.ledger import ResearchLedger
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
+
+if TYPE_CHECKING:
+    from codey.agents.request import ChangeTracker
+    from codey.agents.tools import AgentToolFns
+    from codey.durable.store import DurableStore
+    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.task_effects import KernelEffectSink
+    from codey.research.answer_contract import AnswerScope
+    from codey.storage.managed_outputs import ManagedOutputStore
+    from codey.toolchain.tool_spec import ToolSpec
+    from codey.workspace.revision import WorkspaceRevisionStore
 
 __all__ = [
     "execute_turn",
 ]
 
 
+class ToolDelegate(Protocol):
+    def handles(self, name: str) -> bool: ...
+
+    def execute(
+        self,
+        call: ToolCall,
+        *,
+        turn: int = 0,
+        tool_index: int = 0,
+    ) -> tuple[ToolResult, bool, int | None]: ...
+
+
+class SettleToolResult(Protocol):
+    def __call__(
+        self,
+        identity: str,
+        call: ToolCall,
+        result: ToolResult,
+        ok: bool,
+        *,
+        exit_code: object = None,
+    ) -> ToolResult: ...
+
+
+class ReconcileToolResult(Protocol):
+    def __call__(self, identity: str, ok: bool, result: ToolResult) -> None: ...
+
+
+class ResearchToolsLike(Protocol):
+    ledger: ResearchLedger
+    sources_read: set[str]
+    search_result_urls: set[str]
+
+
+@dataclass(frozen=True)
+class ToolExecutionContext:
+    session: TaskSession
+    runnable: Mapping[str, ToolExecutor]
+    delegate: ToolDelegate | None
+    identity_ref: str
+    active_turn: int
+    base_index: int
+    delivered: Mapping[str, ToolResult]
+    intent_sink: KernelEffectSink | None
+    controller_allowed: Collection[str] | None
+    project_path: Path | None
+    ignored_paths: tuple[str, ...]
+    recovery: RecoveryContext
+    revision_store: WorkspaceRevisionStore | None
+    execution_evidence: ExecutionEvidence | None
+    settle: SettleToolResult
+    reconcile_intent_only: ReconcileToolResult
+    stop_flag: StopSignal | None
+    frozen_specs: dict[str, ToolSpec] | None
+    durable: DurableStore | None
+    managed_outputs: ManagedOutputStore | None
+    run_id: str
+
+
 def _build_delegate(
     session: TaskSession,
-    project_path: Any,
-    tool_fns: Any,
-    research_tools: Any,
-    change_tracker: Any = None,
-    managed_outputs: Any = None,
+    project_path: Path | None,
+    tool_fns: AgentToolFns | None,
+    research_tools: ResearchToolsLike | None,
+    change_tracker: ChangeTracker | None = None,
+    managed_outputs: ManagedOutputStore | None = None,
     session_id: str = "",
     run_id: str = "",
     permission_profile: str = "coding_writer",
-    frozen_specs: Any = None,
-    custom_executors: Any = None,
-    research_scope: Any = None,
-) -> Any:
+    frozen_specs: Mapping[str, ToolSpec] | None = None,
+    custom_executors: Mapping[str, ToolExecutor] | None = None,
+    research_scope: AnswerScope | None = None,
+) -> ToolDelegate | None:
     """Build the production delegate; fail closed when a project needs one."""
     try:
         from codey.operations.task_execution import ExecutionDelegate
@@ -71,7 +145,7 @@ def _build_delegate(
             raise RecoveryFailed(f"delegate unavailable with project path: {exc}") from exc
         return None
     try:
-        return ExecutionDelegate(
+        delegate: ToolDelegate = ExecutionDelegate(
             session=session,
             project_path=project_path,
             tool_fns=tool_fns,
@@ -89,6 +163,7 @@ def _build_delegate(
         if project_path is not None:
             raise RecoveryFailed(f"delegate construction failed with project path: {exc}") from exc
         return None
+    return delegate
 
 
 def run_ref(run_id: object) -> str:
@@ -96,7 +171,7 @@ def run_ref(run_id: object) -> str:
 
 
 def _explicit_policy_denial(
-    delegate: Any, call: ToolCall, *, project_path: Any = None
+    delegate: ToolDelegate | None, call: ToolCall, *, project_path: Path | None = None
 ) -> tuple[ToolResult, bool, int | None] | None:
     """Delegate guard for the explicit executor; fail-closed on outage.
 
@@ -148,15 +223,15 @@ def _explicit_policy_denial(
 
 
 def _run_via_delegate_or_fn(
-    delegate: Any,
-    runnable: Mapping[str, Any],
+    delegate: ToolDelegate | None,
+    runnable: Mapping[str, ToolExecutor],
     session: TaskSession,
     call: ToolCall,
     name: str,
     *,
     active_turn: int,
     tool_index: int,
-    project_path: Any = None,
+    project_path: Path | None = None,
 ) -> tuple[ToolResult, bool, int | None]:
     """Execute via explicit executor first, delegate as fallback.
 
@@ -203,27 +278,27 @@ def execute_turn(
     session: TaskSession,
     calls: list[ToolCall],
     *,
-    executors: Mapping[str, Callable[[ToolCall], Any]] | None = None,
-    run_id: object = "",
+    executors: Mapping[str, ToolExecutor] | None = None,
+    run_id: str = "",
     effect_scope: str = "",
-    turn: object | None = None,
-    tool_index_base: object = 0,
-    project_path: Any = None,
-    tool_fns: Any = None,
-    research_tools: Any = None,
-    change_tracker: Any = None,
-    managed_outputs: Any = None,
+    turn: int | None = None,
+    tool_index_base: int = 0,
+    project_path: Path | None = None,
+    tool_fns: AgentToolFns | None = None,
+    research_tools: ResearchToolsLike | None = None,
+    change_tracker: ChangeTracker | None = None,
+    managed_outputs: ManagedOutputStore | None = None,
     session_id: str = "",
     permission_profile: str = "coding_writer",
     delivered: Mapping[str, ToolResult] | None = None,
-    intent_sink: Any = None,
-    controller_allowed: Any = None,
-    execution_evidence: Any = None,
-    workspace_ignored_paths: Any = (),
-    workspace_revision_store: Any = None,
-    stop_flag: Any = None,
-    snapshot: Any = None,
-    durable: Any = None,
+    intent_sink: KernelEffectSink | None = None,
+    controller_allowed: Collection[str] | None = None,
+    execution_evidence: ExecutionEvidence | None = None,
+    workspace_ignored_paths: tuple[str, ...] = (),
+    workspace_revision_store: WorkspaceRevisionStore | None = None,
+    stop_flag: StopSignal | None = None,
+    snapshot: TurnSnapshot | None = None,
+    durable: DurableStore | None = None,
     nested: bool = False,
 ) -> list[ToolResult]:
     """Execute one turn; identity is run+turn+index with durable delivery first.
@@ -286,7 +361,7 @@ def execute_turn(
         with session.projection_lock:
             result = bind_source_identity(session, call, result, ok=ok)
             staged = session.clone_projection()
-            ledger = getattr(research_tools, "ledger", None)
+            ledger = research_tools.ledger if research_tools is not None else None
             staged_ledger = ledger.clone() if ledger is not None else None
             # Receipt validation and projection happen before the commit barrier,
             # on disposable views. A committed result is the sole replay input.
@@ -303,13 +378,14 @@ def execute_turn(
                     exit_code=exit_code if isinstance(exit_code, int) else None,
                 )
             if ledger is not None and staged_ledger is not None:
+                assert research_tools is not None
                 ledger.commit_projection(staged_ledger)
-                if hasattr(research_tools, "sources_read"):
-                    research_tools.sources_read.update(
-                        url for source in ledger.opened_sources for url in (source.requested_url, source.final_url)
-                    )
-                if hasattr(research_tools, "search_result_urls"):
-                    research_tools.search_result_urls.update(hit.url for search in ledger.searches for hit in search.results)
+                research_tools.sources_read.update(
+                    url for source in ledger.opened_sources for url in (source.requested_url, source.final_url)
+                )
+                research_tools.search_result_urls.update(
+                    hit.url for search in ledger.searches for hit in search.results
+                )
             session.commit_projection(staged)
             with _contextlib.suppress(Exception):
                 session._memory_results[identity] = result
@@ -341,27 +417,45 @@ def execute_turn(
         intent_sink, calls, session, delivered_map, identity_ref, active_turn, base_index,
         frozen_specs=frozen_specs, batch_scope=effect_scope,
     )
+    execution_context = ToolExecutionContext(
+        session=session,
+        runnable=runnable,
+        delegate=delegate,
+        identity_ref=identity_ref,
+        active_turn=active_turn,
+        base_index=base_index,
+        delivered=delivered_map,
+        intent_sink=intent_sink,
+        controller_allowed=controller_allowed,
+        project_path=project_path,
+        ignored_paths=ignores,
+        recovery=recovery_ctx,
+        revision_store=workspace_revision_store,
+        execution_evidence=execution_evidence,
+        settle=settle,
+        reconcile_intent_only=reconcile_intent_only,
+        stop_flag=stop_flag,
+        frozen_specs=frozen_specs,
+        durable=durable,
+        managed_outputs=managed_outputs,
+        run_id=run_ref_str,
+    )
     with cancellation.linked_scope(stop_flag):
-        return _execute_slots(
-            session, calls, runnable, delegate, identity_ref, active_turn, base_index,
-            delivered_map, intent_sink, controller_allowed, project_path,
-            workspace_ignored_paths, ignores, recovery_ctx, workspace_revision_store,
-            execution_evidence, settle, reconcile_intent_only, stop_flag, frozen_specs,
-            durable, managed_outputs, run_ref_str,
-        )
+        return _execute_slots(execution_context, calls)
 
 
 def _turn_setup(
-    session: TaskSession, calls: list[ToolCall], run_id: object, effect_scope: str,
-    turn: object | None, tool_index_base: object, delivered: Mapping[str, ToolResult] | None,
-    workspace_ignored_paths: Any, project_path: Any, workspace_revision_store: Any,
+    session: TaskSession, calls: list[ToolCall], run_id: str, effect_scope: str,
+    turn: int | None, tool_index_base: int, delivered: Mapping[str, ToolResult] | None,
+    workspace_ignored_paths: tuple[str, ...], project_path: Path | None,
+    workspace_revision_store: WorkspaceRevisionStore | None,
 ) -> tuple[int, int, str, str, dict[str, ToolResult], tuple[str, ...], RecoveryContext]:
     active_turn, base_index = effect_coordinates(session.turn if turn is None else turn, tool_index_base)
     run_ref_str = str(run_id or "")
     identity_ref = f"{run_ref_str}:{effect_scope}" if effect_scope else run_ref_str
     delivered_map = dict(delivered or {})
     try:
-        ignores = tuple(str(p) for p in (workspace_ignored_paths or ())) if workspace_ignored_paths else ()
+        ignores = tuple(workspace_ignored_paths)
     except Exception:
         ignores = ()
     recovery_ctx = RecoveryContext(
@@ -374,8 +468,9 @@ def _turn_setup(
 
 def _precheck_abort(
     session: TaskSession, calls: list[ToolCall], delivered_map: dict[str, ToolResult],
-    identity_ref: str, active_turn: int, base_index: int, project_path: Any,
-    workspace_revision_store: Any, ignores: tuple[str, ...], recovery_ctx: RecoveryContext,
+    identity_ref: str, active_turn: int, base_index: int, project_path: Path | None,
+    workspace_revision_store: WorkspaceRevisionStore | None, ignores: tuple[str, ...],
+    recovery_ctx: RecoveryContext,
 ) -> list[ToolResult] | None:
     if not calls:
         return None
@@ -386,16 +481,20 @@ def _precheck_abort(
         recovery_ctx=recovery_ctx,
     )
     if check.kind == "MISMATCH":
-        return _batch_aborted_results(list(calls))
+        aborted: list[ToolResult] = _batch_aborted_results(list(calls))
+        return aborted
     if check.kind == "FAILED":
-        return _batch_recovery_failed_results(list(calls), check.message or "recovery check failed")
+        failed: list[ToolResult] = _batch_recovery_failed_results(
+            list(calls), check.message or "recovery check failed"
+        )
+        return failed
     return None
 
 
 def _begin_pending_intents(
-    intent_sink: Any, calls: list[ToolCall], session: TaskSession,
+    intent_sink: KernelEffectSink | None, calls: list[ToolCall], session: TaskSession,
     delivered_map: dict[str, ToolResult], identity_ref: str, active_turn: int, base_index: int,
-    *, frozen_specs: Any = None, batch_scope: str = "",
+    *, frozen_specs: Mapping[str, ToolSpec] | None = None, batch_scope: str = "",
 ) -> None:
     if intent_sink is None or not calls:
         return
@@ -410,8 +509,8 @@ def _begin_pending_intents(
 
 
 def _settle_delivered_slot(
-    delivered_map: dict[str, ToolResult], identity: str, call: ToolCall,
-    settle: Any, results: list[ToolResult],
+    delivered_map: Mapping[str, ToolResult], identity: str, call: ToolCall,
+    settle: SettleToolResult, results: list[ToolResult],
 ) -> bool:
     slot = delivered_slot_typed(delivered_map, identity, call)
     if slot.disposition == "NO_MATCH":
@@ -423,8 +522,9 @@ def _settle_delivered_slot(
 
 def _reconcile_guarded_slot(
     session: TaskSession, identity: str, call: ToolCall, name: str,
-    project_path: Any, workspace_revision_store: Any, ignores: tuple[str, ...],
-    recovery_ctx: RecoveryContext, reconcile_intent_only: Any, settle: Any,
+    project_path: Path | None, workspace_revision_store: WorkspaceRevisionStore | None,
+    ignores: tuple[str, ...], recovery_ctx: RecoveryContext,
+    reconcile_intent_only: ReconcileToolResult, settle: SettleToolResult,
     guarded: ToolResult,
 ) -> None:
     """Settle or reconcile one guarded result without losing receipts.
@@ -469,15 +569,32 @@ def _reconcile_guarded_slot(
         reconcile_intent_only(identity, ok=orig_ok, result=slot.result)
 
 
-def _execute_slots(
-    session: TaskSession, calls: list[ToolCall], runnable: dict[str, Any], delegate: Any,
-    identity_ref: str, active_turn: int, base_index: int, delivered_map: dict[str, ToolResult],
-    intent_sink: Any, controller_allowed: Any, project_path: Any,
-    workspace_ignored_paths: Any, ignores: tuple[str, ...], recovery_ctx: RecoveryContext,
-    workspace_revision_store: Any, execution_evidence: Any, settle: Any,
-    reconcile_intent_only: Any, stop_flag: Any, frozen_specs: Any,
-    durable: Any, managed_outputs: Any, run_id: str,
+def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state machine
+    context: ToolExecutionContext,
+    calls: Sequence[ToolCall],
 ) -> list[ToolResult]:
+    session = context.session
+    runnable = context.runnable
+    delegate = context.delegate
+    identity_ref = context.identity_ref
+    active_turn = context.active_turn
+    base_index = context.base_index
+    delivered_map = context.delivered
+    intent_sink = context.intent_sink
+    controller_allowed = context.controller_allowed
+    project_path = context.project_path
+    workspace_ignored_paths = context.ignored_paths
+    ignores = context.ignored_paths
+    recovery_ctx = context.recovery
+    workspace_revision_store = context.revision_store
+    execution_evidence = context.execution_evidence
+    settle = context.settle
+    reconcile_intent_only = context.reconcile_intent_only
+    stop_flag = context.stop_flag
+    frozen_specs = context.frozen_specs
+    durable = context.durable
+    managed_outputs = context.managed_outputs
+    run_id = context.run_id
     results: list[ToolResult] = []
     workspace_unconfirmed = False
     for offset, call in enumerate(calls or []):

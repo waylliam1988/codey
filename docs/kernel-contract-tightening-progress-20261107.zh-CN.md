@@ -57,6 +57,7 @@
 - 最新类型验证：Pyrefly `0 errors`、mypy（四个核心模块，`--follow-imports=skip`）通过、ty 通过、相关 Ruff 通过；provider normalization 测试 51 passed；research staging/lifecycle 测试 46 passed；kernel restart/parity 测试 44 passed。
 - 精度基线验证：provider_session 的显式 `Any` 从 34 降至 32，已作为有意收窄更新基线；precision gate、其 3 个测试均通过。
 - 静态负例：新增真实导入核心 `ToolExecutor` / `DeliveryStatus` 的错误样例，分别由 mypy、Pyrefly 和 ty 拒绝，并要求诊断指向样例本身；machine contract gate 更新后为 `1444 passed, 14 subtests passed`。
+- 后续第一批：收紧 `kernel_execution.execute_turn`、delegate、settlement 回调和 `_execute_slots` 的具名执行上下文；`linked_scope` 同步接受最小取消信号协议。`kernel_execution.py` 的显式 `Any` 从 62 降至 8，保留运行时 `ToolResult` 校验和 settlement 顺序。
 
 ## 当前边界
 

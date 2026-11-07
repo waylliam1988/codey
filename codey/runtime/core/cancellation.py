@@ -34,6 +34,10 @@ class ProcessTreeOwner(Protocol):
     def close(self) -> None: ...
 
 
+class CancellationSignal(Protocol):
+    def is_set(self) -> bool: ...
+
+
 class _PopenWithHandle(Protocol):
     _handle: int
 
@@ -260,7 +264,7 @@ def deadline_scope(deadline: float | None) -> Generator[None, None, None]:
 class _LinkedEvent(threading.Event):
     """A local stop request also observes its enclosing cancellation sources."""
 
-    def __init__(self, parents: tuple[threading.Event, ...]) -> None:
+    def __init__(self, parents: tuple[CancellationSignal, ...]) -> None:
         super().__init__()
         self._parents = parents
 
@@ -279,7 +283,7 @@ class _LinkedEvent(threading.Event):
 
 @contextmanager
 def linked_scope(
-    event: threading.Event | None = None, *, deadline: float | None = None,
+    event: CancellationSignal | None = None, *, deadline: float | None = None,
 ) -> Generator[threading.Event, None, None]:
     """Own local cancellation without replacing the enclosing stop or deadline.
 
