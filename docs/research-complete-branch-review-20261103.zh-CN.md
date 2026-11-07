@@ -929,4 +929,5 @@ formal-v1 因生成任务复用了小写 URL slug，导致来源身份映射错�
 
 新建隔离 acquisition A/B：共同使用生产 2A 来源发现，候选仅增加多角度查询、原始材料/全文追踪、关键章节阅读和缺口驱动补搜指导。开发合同、真实联网 writer 工件和失败记录保存在 `.e2e-artifacts/research-hyperresearch-acquisition-dev-v1..v7/`；候选没有修改生产 Research。
 
-真实运行先发现 managed JSON artifact 的跨进程可见性竞态。生产修复采用 run 锁协调成对读写，并在写端释放锁前验证正文和 metadata 可见；定向测试、Ruff、`mypy codey/storage/managed_outputs.py` 均通过。修复后的 probe 可真实完成，但后续开发矩阵仍遭遇本地 Gemma 的 `OutputLengthError` / artifact 边界失败，尚无可评分的成对最终答案。按合同判定 acquisition 为 `inconclusive`，不进入正式双 seed、不合入候选指导；成本只记录，不作为质量否决条件。
+真实运行先发现 实验 wrapper 的 artifact 失败根因是 Windows 长路径：嵌套 `_live/.../browser_after_connector/state/...` 后失败路径约 286 字符，写端与读端使用的路径命名空间不一致。已统一 managed artifact 读写和锁路径的长路径命名空间，并增加长路径回归测试。修复后的 probe 可真实完成，但后续开发矩阵仍遭遇本地 Gemma 的 `OutputLengthError`，尚无可评分的成对最终答案。按合同判定 acquisition 为 `inconclusive`，不进入正式双 seed、不合入候选指导；成本只记录，不作为质量否决条件。
+

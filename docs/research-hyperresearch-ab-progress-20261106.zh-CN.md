@@ -111,6 +111,7 @@ v10 首对真实阅读状态显示 baseline 可提交，但 coverage 候选把�
 
 新增隔离脚本 `tests/manual/research_hyperresearch_acquisition_ab.py` 和定向测试 `tests/test_research_hyperresearch_acquisition_ab.py`。两臂共同使用已合入生产的 2A 搜索行为；`baseline` 保持当前问题，`multi_angle_gap` 只追加多角度搜索、原始材料追踪、关键章节阅读和会改变答案的缺口补搜指导。合同和冻结输入写入 `.e2e-artifacts/research-hyperresearch-acquisition-dev-v1..v7/`，生产候选没有合入。
 
-首次真实运行暴露了 managed JSON artifact 的跨进程可见性竞态：正文或 metadata 原子替换后，controller 可能在另一文件可见前读取并失败。已增加同一 run 锁下的成对读取、写端提交可见性校验，并由 `tests/test_managed_output_metadata_visibility.py` 覆盖；定向测试 4 项、Ruff 和 `mypy codey/storage/managed_outputs.py` 通过。旧 acquisition v1-v5 的竞态失败保留作根因证据，不能作为研究策略结果。
+首次真实运行暴露了 Windows 长路径问题：旧 wrapper 把 `_live/.../browser_after_connector/state/...` 多层嵌套，失败路径约 286 字符。写端使用长路径命名空间，读端仍使用普通 Win32 路径，导致 controller 报 `FileNotFoundError`，文件随后仍可在目录中看到。已让 managed artifact 的读、写端校验、metadata 读取和锁路径统一使用长路径命名空间，并由 `tests/test_managed_output_metadata_visibility.py` 覆盖；定向测试 5 项、Ruff 和 `mypy codey/storage/managed_outputs.py` 通过。旧 acquisition v2-v5/v7 失败保留作 harness 路径根因证据，不能作为研究策略结果。
 
 修复后的单题 probe 已至少一次真实完成；后续 v6/v7 又出现本地 Gemma 在 tool-call 前持续思考并触发 `OutputLengthError`，或在 artifact 可见性边界失败，尚未形成可评分的成对最终答案。因此 acquisition 开发矩阵当前判定 `inconclusive`，不能进入正式新题双 seed，也不能合入多角度/缺口指导。下一步需先在相同真实 writer 条件下稳定解决生成/提交边界，再重新冻结新的开发合同；不能把失败批次续写为正式证据。
+

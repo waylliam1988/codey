@@ -121,8 +121,8 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str) -
     # Reuse the validated 2A live harness: it sets output budget, disables
     # backend reasoning, compiles schemas once, and installs production 2A
     # source discovery.  Only the user-facing question is patched here.
-    scratch = root / "_live" / f"{case}-{seed}-{arm}"
-    scratch.mkdir(parents=True, exist_ok=False)
+    scratch = root / ("b" if arm == "baseline" else "m")
+    scratch.mkdir(parents=True, exist_ok=True)
     original = live.QUESTIONS[case]
     live.QUESTIONS[case] = question(case, arm)
     try:

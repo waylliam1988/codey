@@ -25,7 +25,7 @@ from codey.policies.action import (
 )
 from codey.runtime.core import cancellation
 from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
-from codey.storage.atomic_io import write_bytes_atomic
+from codey.storage.atomic_io import filesystem_path, write_bytes_atomic
 from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import session_key, write_json_atomic
 from codey.toolchain import runtime as tool_runtime
@@ -90,7 +90,7 @@ class ManagedOutputStore:
     ) -> ManagedOutputRef | None:
         try:
             run_dir = self._run_dir(session_id, run_id)
-            with with_file_lock(run_dir):
+            with with_file_lock(filesystem_path(run_dir)):
                 existing = tuple(run_dir.glob(f"{HANDLE_PREFIX}*.json")) if run_dir.exists() else ()
                 original_text = (text or "")
                 original_bytes = len(original_text.encode("utf-8"))
@@ -163,8 +163,8 @@ class ManagedOutputStore:
         import json as _json
 
         safe_handle = _safe_handle(handle)
-        text_path = self._handle_path(session_id, run_id, safe_handle, ".txt")
-        metadata_path = self._handle_path(session_id, run_id, safe_handle, ".json")
+        text_path = filesystem_path(self._handle_path(session_id, run_id, safe_handle, ".txt"))
+        metadata_path = filesystem_path(self._handle_path(session_id, run_id, safe_handle, ".json"))
         try:
             with metadata_path.open("rb") as stream:
                 metadata_bytes = stream.read(MAX_METADATA_BYTES + 1)
@@ -247,7 +247,7 @@ class ManagedOutputStore:
         digest = hashlib.sha256(raw).hexdigest()
         handle = f"artifact_{digest[:24]}"
         run_dir = self._run_dir(session_id, run_id)
-        with with_file_lock(run_dir):
+        with with_file_lock(filesystem_path(run_dir)):
             path = self._handle_path(session_id, run_id, handle, ".json")
             metadata_path = self._handle_path(session_id, run_id, handle, ".meta.json")
             write_bytes_atomic(path, raw)
@@ -268,7 +268,8 @@ class ManagedOutputStore:
             # the paired-file commit observable before any reader can proceed,
             # including Windows cross-process directory-cache behavior.
             expected_metadata = json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-            if path.read_bytes() != raw or metadata_path.read_bytes() != expected_metadata.encode("utf-8"):
+            if (filesystem_path(path).read_bytes() != raw
+                    or filesystem_path(metadata_path).read_bytes() != expected_metadata.encode("utf-8")):
                 raise OSError("managed JSON artifact commit was not observable")
         return ManagedJsonArtifactRef(session_id, run_id, handle, digest, schema_version)
 
@@ -303,7 +304,9 @@ class ManagedOutputStore:
         # lock.  Atomic replacement protects each file individually, but
         # without this shared lock a reader can observe the body between the
         # two replacements and reject a valid in-flight artifact.
-        with with_file_lock(self._run_dir(ref_session, ref_run)):
+        with with_file_lock(filesystem_path(self._run_dir(ref_session, ref_run))):
+            path = filesystem_path(path)
+            metadata_path = filesystem_path(metadata_path)
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             if not isinstance(metadata, dict):
                 raise ValueError("json artifact metadata is invalid")
@@ -325,7 +328,7 @@ class ManagedOutputStore:
         from codey.durable.model import ArtifactRecord
 
         self.read_json_artifact(ref)
-        path = self._handle_path(ref.session_id, ref.run_id, _safe_artifact_handle(ref.handle), ".json")
+        path = filesystem_path(self._handle_path(ref.session_id, ref.run_id, _safe_artifact_handle(ref.handle), ".json"))
         return ArtifactRecord(handle=ref.handle, sha256=ref.sha256, byte_count=path.stat().st_size,
             storage_path=str(path), owner_task_id=owner_task_id, owner_effect_id=owner_effect_id,
             created_at=_now(), metadata={**metadata, "ref": ref.to_payload()})
