@@ -62,13 +62,15 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
         assert outcome.event["stop_reason"] != "done"
 
 
-def test_research_iteration_supplies_guidance_through_actual_shared_kernel():
-    from codey.research.ledger import ResearchLedger
+def test_research_iteration_supplies_guidance_through_actual_shared_kernel(tmp_path, request):
+    from codey.knowledge.store import KnowledgeStore
+    from codey.research.tools import ResearchTools
     from tests.support.kernel_runtime import run_research_iteration
 
     provider = CaptureProvider()
-    tools = SimpleNamespace(ledger=ResearchLedger(), created_ids=[], updated_ids=[],
-                            links_created=0, sources_read=set(), search_result_urls=set())
+    store = KnowledgeStore(tmp_path / "knowledge")
+    request.addfinalizer(store.close)
+    tools = ResearchTools(search=None, store=store, changes=None)
     result = run_research_iteration(
         SimpleNamespace(
             state=SimpleNamespace(
@@ -76,7 +78,7 @@ def test_research_iteration_supplies_guidance_through_actual_shared_kernel():
                     control_enabled=lambda _name, **_kwargs: True,
                 ),
             ),
-            knowledge_store=object(), managed_outputs=None,
+            knowledge_store=store, managed_outputs=None,
         ),
         provider=provider, session_id="s", project="", task="research question", max_turns=1,
         on_event=lambda _event: None, stop_flag=None, provider_id="deepseek", run_id="r",

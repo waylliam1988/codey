@@ -5123,12 +5123,12 @@ class SessionThreadingTests(unittest.TestCase):
             _declare_protocol_window(provider)
             provider.name = "Local"
             provider.location = "http://localhost:1234"
-            from codey.providers.token_accounting import ContextBudget
+            from codey.providers.token_accounting import ContextBudget, RequestContextCount
             provider.context_budget = ContextBudget(32768, 8192, 0, 12000)
             provider.timeout = 30.0
             from codey.utils.text_budget import estimate_tokens
 
-            provider.count_text = lambda text, **_: SimpleNamespace(value=estimate_tokens(text))
+            provider.count_text = lambda text, **_: RequestContextCount(estimate_tokens(text), "estimated")
             provider.export_work_state.return_value = ""
             provider.send.side_effect = [
                 json.dumps({'tool': 'web_search', 'args': {'query': '2026 US Iran war predictions'}}),

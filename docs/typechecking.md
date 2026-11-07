@@ -24,6 +24,13 @@ Use `3.12` or `3.13` to check another target. These target-version checks do not
 replace running tests on the corresponding interpreter and operating system.
 Tests and experiment scripts are outside this full-production-tree typing gate.
 
+The machine contract gate does not generate invalid Python snippets and launch
+each checker against them. Those 24 checker subprocess tests were removed to
+avoid repeated analysis of imported production modules. Normal production-tree
+checks above and the lightweight kernel precision checks remain required.
+Run local checks serially; package installation and upgrade smoke tests belong
+to release validation and are not required for every ordinary code change.
+
 Mypy uses the strict settings in `pyproject.toml`. Pyrefly has an explicit
 `legacy` preset and error severities in that file. Warnings, existing suppression
 directives and active errors are separate facts: a successful error gate is not

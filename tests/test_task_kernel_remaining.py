@@ -455,7 +455,7 @@ class ThirdTaskTests(unittest.TestCase):
     def test_third_task_runs_without_kernel_change(self) -> None:
         from codey.operations import completion_gate as gate
         from codey.operations.task_session import TaskSession
-        from codey.runtime.core.models import ToolResult
+        from codey.runtime.core.models import ToolCall, ToolResult
         from codey.toolchain.tool_spec import register_custom_tool, unregister_custom_tool
 
         # Third-task adapters only: a ToolSpec row plus a profile-scoped check.
@@ -464,13 +464,20 @@ class ThirdTaskTests(unittest.TestCase):
                              parameters=(("text", {"type": "string"}),),
                              required=("text",), description="summarize text"))
         self.addCleanup(unregister_custom_tool, "summarize")
+        summaries: list[str] = []
+
+        def summarize(call: ToolCall) -> ToolResult:
+            summary = "summary: " + str(call.args["text"])
+            summaries.append(summary)
+            return ToolResult(ok=True, call=call, model_text=summary)
+
         gate.register_completion_check_provider(
             "summarize_present",
-            lambda session: [
+            lambda _inputs: [
                 gate.make_check(
                     "summary_present",
-                    "pass" if "summary:" in session.notes_text() else "not_run",
-                    "" if "summary:" in session.notes_text() else "summary_missing",
+                    "pass" if any(text.startswith("summary:") for text in summaries) else "not_run",
+                    "" if any(text.startswith("summary:") for text in summaries) else "summary_missing",
                 )
             ],
             profile="project",
@@ -500,11 +507,12 @@ class ThirdTaskTests(unittest.TestCase):
                                   provider=FakeWeb(),
                               ),
                               execution=KernelExecutionDeps(
-                                  executors={'summarize': lambda call: ToolResult(ok=True, call=call, model_text='summary: hello')},
+                                  executors={'summarize': summarize},
                               ),
                           ),
                       )
-            self.assertTrue(outcome.completed)
+            self.assertTrue(outcome.completed, outcome.summary)
+            self.assertEqual(summaries, ["summary: hello world"])
         finally:
             gate.unregister_completion_check_provider("summarize_present")
 

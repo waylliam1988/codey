@@ -59,7 +59,7 @@ the final codecs; Python-only checks cannot prove cross-language equivalence.
 
 ## Executable migration reference
 
-Run `python -m tools.kernel_go_differential` with Go on PATH or `CODEY_GO`
+Run `python -m tools.kernel_go_differential` with Go on PATH or `GO_EXECUTABLE`
 pointing to the compiler. It builds `tools/go_contract`, runs Go vet/test,
 and executes 615 deterministic differential cases (508 accepted, 107 rejected).
 The local validation used Go 1.27.3 on Windows; CI has a separate Linux job.

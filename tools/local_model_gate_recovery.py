@@ -26,6 +26,7 @@ from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_run import TaskRunDeps
 from codey.providers.api_provider import ApiProvider
 from codey.runtime.core.cancellation import start_process, wait_process
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.model import TaskSubmission
 from codey.workspace.changes import collect_changes, is_git_repository
 from tools.local_model_gate_attempts import REPO_ROOT, GateTarget, make_provider, record_api_generations, write_json
@@ -106,17 +107,22 @@ def _stage(directory: Path, stage: str, *, scripted: bool) -> int:
     execute = ExecutionDelegate._execute_project
     settle = KernelEffectSink.settle
 
-    def observed_execute(self, call):
+    def observed_execute(self: ExecutionDelegate, call: ToolCall) -> tuple[ToolResult, bool, int | None]:
         _append(directory / "executions.jsonl", {"stage": stage, "tool": call.name, "pid": os.getpid()})
         return execute(self, call)
 
-    def interrupted_settle(self, identity, ok, *, result=None, exit_code=None):
+    def interrupted_settle(
+        self: KernelEffectSink, identity: str, ok: bool, *,
+        result: ToolResult | None = None, exit_code: int | None = None,
+    ) -> None:
         settle(self, identity, ok, result=result, exit_code=exit_code)
         if stage == "prepare" and result is not None and result.call.name == "edit" and ok is True:
             policy = policy_from_durable_task(context.durable, task_id=RUN_ID)
+            if self.request_context is None:
+                raise RuntimeError("recovery interruption requires the original provider request context")
             write_json(directory / "interruption.json", {
                 "pid": os.getpid(), "effect_id": identity, "call_id": result.call.call_id,
-                "protocol": target.protocol, "window_ref": self._request_context["window"],
+                "protocol": target.protocol, "window_ref": self.request_context.to_payload()["window"],
                 "result_text": result.model_text, "policy": policy.to_payload(),
                 "file_sha256": hashlib.sha256((project / "checkpoint.py").read_bytes()).hexdigest(),
             })

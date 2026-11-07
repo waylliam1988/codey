@@ -417,6 +417,14 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
                 "final_evidence_count": 1,
                 "attempted_fresh_source_count": 0,
                 "attempted_new_evidence_count": 0,
+                "audit_diagnostics": [
+                    {"stage": stage, "phase": phase, "status": "ok", "reason_code": "", "error_type": ""}
+                    for stage, phase in (
+                        ("proof_review", "initial"), ("ledger_read", "final"), ("proof_review", "final"),
+                        ("snapshot", "final"), ("findings", "final"), ("planner_gaps", "final"),
+                        ("source_trust", "final"), ("brief", "final"),
+                    )
+                ],
             }
         ]
 

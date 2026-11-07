@@ -169,9 +169,11 @@ def test_recovery_of_admitted_provider_without_response_records_unknown_without_
         from codey.policies.task_policy import TaskPolicy
         from tests.durable.test_operation_control_actions import request_for
 
+        provider = Mock(window_ref=None, native_tools=False)
         failure = run_task_kernel(TaskSession(TaskPolicy(frozenset({"control"}))),
-            request=request_for(durable, sink, Mock()))
+            request=request_for(durable, sink, provider))
         assert failure.stop_reason == "recovery_failure"
+        provider.send.assert_not_called()
         assert len(durable.effects("r")) == 1
         assert durable.effect("original").settlement["sent_state"] == "maybe_sent"
         assert durable.task("r").phase == "running"
@@ -331,7 +333,7 @@ def test_history_projects_the_single_response_body_and_corruption_never_replays(
     session = TaskSession(TaskPolicy(frozenset({"project.read", "control"})), max_turns=4)
     sink.bind_request(build_turn_snapshot(session, native=True), logical_turn=1)
     reply = AssistantTurn(text="original body", tool_calls=(ProviderToolCall("one", "read_file", {"path": "a.py"}),))
-    provider = Mock(send=Mock(return_value=reply))
+    provider = Mock(window_ref=None, native_tools=False, send=Mock(return_value=reply))
     try:
         ProviderActions(provider, sink).send("inspect")
         state = operation_from_checkpoint(durable.task("r"), "s")

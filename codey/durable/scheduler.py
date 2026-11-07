@@ -349,13 +349,14 @@ class DurableTaskScheduler:
                 self._inflight.add(task_id)
                 # Consume this wakeup before dispatch. A later pending entry
                 # then represents a new durable requeue, not this invocation.
+                # Skip/error paths must preserve it too: their checkpoint or
+                # claim failure may predate an already committed continuation.
                 self._pending.discard(task_id)
             try:
                 task = self._session.task(task_id)
                 if task.state.get("input_state") == "queued":
                     # The inbox boundary owns placement. A queued input is a
                     # durable submission, not a runnable task.
-                    self._remove(task_id)
                     continue
                 block_reason = self._workflow_block_reason(task)
                 if block_reason is not None:
@@ -364,7 +365,6 @@ class DurableTaskScheduler:
                     # worker that cannot interpret its checkpoint.
                     with self._lock:
                         self._blocked[task_id] = block_reason
-                    self._remove(task_id)
                     continue
                 with self._lock:
                     self._blocked.pop(task_id, None)
@@ -373,15 +373,12 @@ class DurableTaskScheduler:
                         task_id,
                         reason=str(task.state.get("cancel_reason") or "cancelled"),
                     )
-                    self._remove(task_id)
                     continue
                 if task.status != TaskStatus.PENDING:
-                    self._remove(task_id)
                     continue
                 try:
                     self._session.claim_task(task_id)
                 except (CommitConflict, KeyError, ValueError):
-                    self._remove(task_id)
                     continue
                 claimed = self._session.task(task_id)
                 invocation = TaskInvocation(
@@ -408,7 +405,6 @@ class DurableTaskScheduler:
                             task_id,
                             reason=str(current.state.get("cancel_reason") or "cancelled"),
                         )
-                        self._remove(task_id)
                         continue
                     with self._lock:
                         # The snapshot predates this lock. A committed resume
@@ -426,7 +422,7 @@ class DurableTaskScheduler:
             except (KeyError, ValueError):
                 # A terminal or deleted task is no longer schedulable. The
                 # durable record remains available for audit and inspection.
-                self._remove(task_id)
+                continue
             except Exception:
                 # Dispatch errors are retried; the durable checkpoint remains
                 # the only authority and no speculative in-memory state is kept.
@@ -477,10 +473,6 @@ class DurableTaskScheduler:
         with self._lock:
             self._scheduled.discard(task_id)
             self._pending.add(task_id)
-
-    def _remove(self, task_id: str) -> None:
-        with self._lock:
-            self._pending.discard(task_id)
 
     def _workflow_block_reason(self, task: TaskCheckpoint) -> str | None:
         name = task.workflow_name

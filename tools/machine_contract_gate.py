@@ -10,7 +10,6 @@ import pytest
 
 CONTRACT_TESTS = (
     "tests/test_kernel_type_precision_gate.py",
-    "tests/test_kernel_static_contract_examples.py",
     "tests/test_tool_execution_lifecycle.py",
     "tests/test_read_result_contract.py",
     "tests/test_rg_search_contract.py",
@@ -28,6 +27,7 @@ CONTRACT_TESTS = (
     "tests/test_runtime_helper_boundaries.py",
     "tests/test_abab_cycle.py",
     "tests/test_approval_authorization_recovery.py",
+    "tests/durable/test_scheduler_wakeup_races.py",
     "tests/test_agent_effect_sandwich.py",
     "tests/test_ghost_post_turn_affinity.py",
     "tests/test_ghost_post_turn_work_queue.py",

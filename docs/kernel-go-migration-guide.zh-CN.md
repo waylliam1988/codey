@@ -178,7 +178,7 @@ python -m ruff check .
 python -m tools.kernel_go_differential
 ```
 
-最后一个命令要求真实 Go：从 PATH、`CODEY_GO` 或本地隔离工具链查找，
+最后一个命令要求真实 Go：从 PATH、`GO_EXECUTABLE` 或本地隔离工具链查找，
 构建 reference，运行 Go vet/test，再与 Python 比较输出；找不到 Go 会失败，不会 skip。
 CI 有独立的 `kernel-go-contract` job，检查失败会使该 job 失败；未修改远端分支保护设置。
 

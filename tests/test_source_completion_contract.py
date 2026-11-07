@@ -1,6 +1,7 @@
 """One source authority; contract-scoped citations never infer a read."""
 import pytest
 
+from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import _proof_evidence_refs, evaluate
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
@@ -24,7 +25,7 @@ def test_session_open_claim_cannot_replace_missing_committed_ledger():
     session, _ = state(citations=False)
     verdict = evaluate(session, "done")
     assert not verdict.complete and "research_ledger_missing" in verdict.followup
-    assert not any(ref.startswith("source:") for ref in _proof_evidence_refs(session, {}))
+    assert not any(ref.startswith("source:") for ref in _proof_evidence_refs(session, CompletionContext()))
 
 
 def test_ledger_is_sufficient_when_session_display_aliases_are_empty():
@@ -88,12 +89,12 @@ def test_long_source_proof_identity_uses_entire_url():
     first = "https://example.com/?id=" + "x" * 500
     for url in (first + "a", first + "b"):
         context["research_ledger"].record_open(url, url, "Long source", "Observed")
-    refs = [ref for ref in _proof_evidence_refs(session, context) if ref.startswith("source:")]
+    refs = [ref for ref in _proof_evidence_refs(session, CompletionContext.from_value(context)) if ref.startswith("source:")]
     assert len(refs) == len(set(refs)) == 3
 
 
 def test_source_proof_identity_binds_observed_body_version():
     session, context = state(citations=False)
-    before = _proof_evidence_refs(session, context)
+    before = _proof_evidence_refs(session, CompletionContext.from_value(context))
     context["research_ledger"].record_open(URL, URL, "Report", "Changed body")
-    assert _proof_evidence_refs(session, context) != before
+    assert _proof_evidence_refs(session, CompletionContext.from_value(context)) != before

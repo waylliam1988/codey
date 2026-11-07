@@ -5,7 +5,11 @@ import sys
 import threading
 from pathlib import Path
 
+import pytest
+
 from codey.durable import DurableSession, SQLiteDurableStore, TaskStatus
+from codey.durable.errors import CommitConflict
+from codey.durable.model import CommitResult, TaskCheckpoint
 from codey.durable.scheduler import DurableTaskScheduler
 
 
@@ -92,15 +96,16 @@ def test_completion_during_queue_scan_places_input_without_another_notification(
     release = threading.Event()
     dispatched = threading.Event()
     scheduler = DurableTaskScheduler(session, lambda task: dispatched.set() or True)
-    remove = scheduler._remove
+    read = session.task
 
-    def pause_before_removing_queued(task_id):
+    def pause_after_reading_queued(task_id):
+        task = read(task_id)
         if task_id == "queued" and not scanning.is_set():
             scanning.set()
             assert release.wait(5), "queue-scan barrier was not released"
-        remove(task_id)
+        return task
 
-    monkeypatch.setattr(scheduler, "_remove", pause_before_removing_queued)
+    monkeypatch.setattr(session, "task", pause_after_reading_queued)
     try:
         scheduler.start()
         assert scanning.wait(5)
@@ -158,3 +163,60 @@ def test_requeue_after_dispatch_snapshot_is_not_lost(tmp_path, monkeypatch):
     finally:
         scheduler.close()
         session.close()
+
+
+@pytest.mark.parametrize("boundary", ["not_pending", "claim_conflict"])
+def test_requeue_during_dispatch_skip_is_not_lost(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, boundary: str,
+) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "resume")
+    dispatched = threading.Event()
+    attempts: list[str] = []
+
+    def dispatch(task: TaskCheckpoint) -> bool:
+        attempts.append(task.attempt_token)
+        dispatched.set()
+        return True
+
+    scheduler = DurableTaskScheduler(session, dispatch)
+    read = session.task
+    claim = session.claim_task
+    interleaved = False
+
+    def external_worker_and_approval() -> TaskCheckpoint:
+        # Interleave the HTTP worker and approval after the scheduler's read
+        # or failed claim, before its skip path processes that observation.
+        nonlocal interleaved
+        interleaved = True
+        claim("resume")
+        session.start_task("resume", state={})
+        session.wait_task("resume", state={"wait_reason": "approval"})
+        waiting = read("resume")
+        session.advance_task(task_id="resume", phase="running", state={"next": "resume"})
+        session.unclaim_task("resume")
+        scheduler.notify("resume", start=False)
+        return waiting
+
+    def stale_task(task_id: str) -> TaskCheckpoint:
+        if not interleaved:
+            return external_worker_and_approval()
+        return read(task_id)
+
+    def conflicting_claim(task_id: str) -> CommitResult:
+        if not interleaved:
+            external_worker_and_approval()
+            raise CommitConflict("another worker claimed the observed attempt")
+        return claim(task_id)
+
+    monkeypatch.setattr(session, "task" if boundary == "not_pending" else "claim_task",
+                        stale_task if boundary == "not_pending" else conflicting_claim)
+    try:
+        scheduler.start()
+        assert dispatched.wait(2), "a dispatch skip erased the committed continuation notification"
+        assert interleaved
+        assert read("resume").status == TaskStatus.RUNNING
+    finally:
+        assert scheduler.close()
+        session.close()
+    assert len(attempts) == 1, "the continuation must be dispatched exactly once"

@@ -175,12 +175,12 @@ def python_result(case: JsonObject) -> JsonObject:
 
 
 def run() -> int:
-    go = os.environ.get("CODEY_GO") or shutil.which("go")
+    go = os.environ.get("GO_EXECUTABLE") or shutil.which("go")
     local = ROOT / ".e2e-artifacts/toolchains/go/bin/go.exe"
     if not go and local.is_file():
         go = str(local)
     if not go:
-        raise SystemExit("Go is required: install Go or set CODEY_GO to its executable (no skip fallback)")
+        raise SystemExit("Go is required: install Go or set GO_EXECUTABLE to its executable (no skip fallback)")
     executable = ROOT / ".e2e-artifacts" / ("go-contract.exe" if os.name == "nt" else "go-contract")
     executable.parent.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, "GOTOOLCHAIN": "local"}
