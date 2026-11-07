@@ -95,4 +95,6 @@ v10 首对真实阅读状态显示 baseline 可提交，但 coverage 候选把�
 
 正式合同 `.e2e-artifacts/research-window-coverage-formal-v3/` 完成 12 个新任务变体 × seed 1711/1712 × baseline/coverage，共 48/48 回执。12 个任务变体中有 8 个在两臂、两个 seed 下都实际 overflow，机制门槛有效。运行成功数为 baseline 22/24、coverage 21/24；保守冻结 rubric 结构代理完整任务数为 17 对 15。coverage 没有任务级净收益，且多 1 次失败，`decision.json` 判定 `reject`，生产保持 FIFO 基线。
 
+诊断上，溢出视图中关键原文命中率由 baseline 18/92（0.196）升至 coverage 36/108（0.333），说明候选确实改变了可见上下文；但可见性改善没有转化为最终答案净收益，不能据此合入。
+
 首轮 formal-v1 发现生成变体复用了小写 URL slug，造成材料身份映射错误；该目录已封存为 harness `inconclusive`，不进入 v3 评分。v3 修正了每个变体的 URL 身份并新建冻结目录，不能与 v1 混算。

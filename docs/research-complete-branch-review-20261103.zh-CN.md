@@ -917,4 +917,6 @@ Pyrefly、Ty 通过；Pyrefly 同时保留既有 warnings/suppressions，不声�
 
 新合同 `.e2e-artifacts/research-window-coverage-formal-v3/` 完成 12 个新任务变体、两个 seed、baseline/coverage 两臂，共 48/48。8/12 任务变体在两臂、两个 seed 下都实际发生 overflow，证明机制被有效检验。baseline 成功 22/24，coverage 成功 21/24；保守的冻结 rubric 结构代理完整任务数为 17 对 15。候选多一次任务失败且没有净质量改善，正式 `decision.json` 判定 **`reject`**，不合入生产。
 
+机制诊断显示溢出视图中的关键原文命中率从 baseline 18/92（0.196）升至 coverage 36/108（0.333），因此候选确实改变了窗口可见性；这项中间指标没有带来最终答案净收益，不能替代任务级正确性门槛。
+
 formal-v1 因生成任务复用了小写 URL slug，导致来源身份映射错误，已判定 harness `inconclusive` 并排除；v3 为新合同，修正每个变体的 URL 身份后重新运行。该修复是实验接线修复，不是生产行为变更。
