@@ -1,0 +1,332 @@
+{
+  "schema_version": 1,
+  "offset_unit": "unicode_codepoint",
+  "digest_encoding": "utf8-json-sort-keys-compact-ensure-ascii-false-allow-nan-false",
+  "provider_invocations": [
+    {
+      "method": "send",
+      "args": [
+        "原始请求 😀"
+      ],
+      "kwargs": {
+        "timeout": 12.5
+      }
+    },
+    {
+      "method": "send_turn",
+      "args": [
+        "原始请求 😀",
+        [
+          {
+            "name": "read_file",
+            "description": "Frozen original schema",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ]
+            }
+          }
+        ]
+      ],
+      "kwargs": {}
+    },
+    {
+      "method": "send_tool_results",
+      "args": [
+        [
+          {
+            "call_id": "call-original",
+            "content": "原始结果 😀 <>&\n",
+            "user_content": "边界输入"
+          }
+        ],
+        [
+          {
+            "name": "read_file",
+            "description": "Frozen original schema",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ]
+            }
+          }
+        ]
+      ],
+      "kwargs": {}
+    },
+    {
+      "method": "acknowledge_tool_results",
+      "args": [
+        [
+          {
+            "call_id": "call-original",
+            "content": "原始结果 😀 <>&\n",
+            "user_content": "边界输入"
+          }
+        ],
+        [
+          {
+            "name": "read_file",
+            "description": "Frozen original schema",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ]
+            }
+          }
+        ]
+      ],
+      "kwargs": {}
+    },
+    {
+      "method": "send_tool_results_bound",
+      "args": [
+        [
+          {
+            "call_id": "call-original",
+            "content": "原始结果 😀 <>&\n",
+            "user_content": "边界输入"
+          }
+        ],
+        {
+          "session_id": "s-golden",
+          "binding": {
+            "connection_id": "local",
+            "connection_revision": "1",
+            "model_id": "frozen-model",
+            "protocol": "native",
+            "history_contract_id": "history-v1"
+          },
+          "window_id": "window-golden"
+        },
+        [
+          {
+            "name": "read_file",
+            "description": "Frozen original schema",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ]
+            }
+          }
+        ]
+      ],
+      "kwargs": {}
+    },
+    {
+      "method": "acknowledge_tool_results_bound",
+      "args": [
+        [
+          {
+            "call_id": "call-original",
+            "content": "原始结果 😀 <>&\n",
+            "user_content": "边界输入"
+          }
+        ],
+        {
+          "session_id": "s-golden",
+          "binding": {
+            "connection_id": "local",
+            "connection_revision": "1",
+            "model_id": "frozen-model",
+            "protocol": "native",
+            "history_contract_id": "history-v1"
+          },
+          "window_id": "window-golden"
+        },
+        [
+          {
+            "name": "read_file",
+            "description": "Frozen original schema",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ]
+            }
+          }
+        ]
+      ],
+      "kwargs": {}
+    }
+  ],
+  "replies": [
+    {
+      "protocol": "text",
+      "text": "完成 😀 <>&"
+    },
+    {
+      "protocol": "native",
+      "text": "读取",
+      "reasoning": "",
+      "finish": "complete",
+      "raw": {},
+      "tool_calls": [
+        {
+          "id": "call-original",
+          "name": "read_file",
+          "arguments": {
+            "path": "中文.py"
+          }
+        }
+      ]
+    }
+  ],
+  "text_spans": [
+    {
+      "id": "unicode-combining-and-astral",
+      "text": "前缀😀\n[result: open_url]\n原文 é <>&\n用户更正",
+      "codepoints": 37,
+      "utf8_bytes": 57,
+      "spans": [
+        {
+          "start": 4,
+          "end": 32,
+          "digest": "e8da337911be02860a11a0c51499ed47ca7c1b7a4719ca465020af321056aae2",
+          "result_ref": "effect-original",
+          "tool": "open_url",
+          "ok": true
+        }
+      ],
+      "excerpts": [
+        "[result: open_url]\n原文 é <>&"
+      ]
+    }
+  ],
+  "passage_refs": [
+    {
+      "id": "unpinned",
+      "input": {
+        "url": "https://example.test/中文",
+        "text_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "start": 4,
+        "end": 32
+      },
+      "expected": "p60e0d676d5bc"
+    },
+    {
+      "id": "pinned",
+      "input": {
+        "url": "https://example.test/中文",
+        "text_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "start": 4,
+        "end": 32,
+        "source_version": [
+          "source-1",
+          3
+        ],
+        "evidence_version": [
+          "evidence-1",
+          2
+        ]
+      },
+      "expected": "p7cf5677b2f56"
+    }
+  ],
+  "verification_gaps": [
+    {
+      "id": "complete",
+      "row": {
+        "command": "python -m pytest tests/test_example.py",
+        "cwd": ".",
+        "revision": 3,
+        "exit_code": 0,
+        "workspace_revision": 7,
+        "workspace_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "passed": true
+      },
+      "expected": ""
+    },
+    {
+      "id": "missing_exit",
+      "row": {
+        "command": "python -m pytest tests/test_example.py",
+        "cwd": ".",
+        "revision": 3,
+        "workspace_revision": 7,
+        "workspace_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "passed": true
+      },
+      "expected": "verification_result_missing"
+    },
+    {
+      "id": "missing_identity",
+      "row": {
+        "command": "python -m pytest tests/test_example.py",
+        "cwd": ".",
+        "revision": 3,
+        "exit_code": 0,
+        "workspace_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "passed": true
+      },
+      "expected": "verification_identity_missing"
+    },
+    {
+      "id": "boolean_revision",
+      "row": {
+        "command": "python -m pytest tests/test_example.py",
+        "cwd": ".",
+        "revision": 3,
+        "exit_code": 0,
+        "workspace_revision": true,
+        "workspace_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "passed": true
+      },
+      "expected": "verification_identity_invalid"
+    },
+    {
+      "id": "invalid_fingerprint",
+      "row": {
+        "command": "python -m pytest tests/test_example.py",
+        "cwd": ".",
+        "revision": 3,
+        "exit_code": 0,
+        "workspace_revision": 7,
+        "workspace_fingerprint": "bad",
+        "passed": true
+      },
+      "expected": "verification_identity_invalid"
+    }
+  ],
+  "missing_state_action": {
+    "kind": "fail_invariant",
+    "leaf": "",
+    "reason": "missing_operation_state",
+    "effect_id": "",
+    "effect_ids": [],
+    "delivery_batch_id": "",
+    "driver": "",
+    "response_ref": "",
+    "request_ref": "",
+    "work_ref": ""
+  }
+}
