@@ -30,7 +30,8 @@
 ### 第二阶段：AppContext 协调器
 
 - [x] 抽出任务运行协调器。
-- [ ] 抽出审批协调器和 durable event bridge。
+- [x] 抽出审批协调器。
+- [ ] 抽出 durable event bridge。
 - [x] 让 `task_submit.py` 的 admission/spawn/slot 路径停止访问内部锁和私有字段。
 - [ ] 保留兼容代理，迁移完成后再删除。
 
@@ -41,6 +42,11 @@
 `tests/test_task_submit.py`、`tests/test_task_submit_durable.py` 和
 `tests/durable/test_scheduler_abort_handler.py` 共 34 passed。第一次命令误用了
 不存在的 `tests/test_task_submission.py`，按实际路径重跑后通过；属于测试命令路径问题。
+
+审批协调器批次把 shell approval 的内存投影、durable fact bridge、claim 和 receipt
+恢复从 `AppContext` 移到 `ShellApprovalCoordinator`；`AppContext` 保留同名兼容代理。
+审批相关定向回归（含任务提交和 shell approval workspace 保持测试）：43 passed；
+相关 Ruff 与 mypy 通过。
 
 ### 第三阶段：DurableSession 查询门面
 

@@ -33,6 +33,7 @@ from codey.app.knowledge_indexer import KnowledgeIndexer
 from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry, RunSnapshot
 from codey.app.runtime_adapters import DurableRuntimeAdapters
+from codey.app.shell_approval_coordinator import ShellApprovalCoordinator
 from codey.app.task_abort import abort_task_resources
 from codey.app.task_runtime import TaskRuntimeCoordinator
 from codey.durable.model import (
@@ -175,6 +176,7 @@ class AppContext(GhostStoreAccessors):
         self.shell_approval_records = ShellApprovalRecordStore(runtime_state_home)
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
+        self.shell_approval_coordinator = ShellApprovalCoordinator(self)
         # Rebuild the UI projection for untouched approvals before the first
         # /api/state request after a process restart.  Execution still requires
         # the durable atomic claim, so this only restores display state.
@@ -613,106 +615,36 @@ class AppContext(GhostStoreAccessors):
         return expire_shell_results_locked(self, **kwargs)
 
     def add_pending_shell_approval(self, approval_id: str, pending: dict[str, Any]) -> None:
-        fact: ShellApprovalFact | None = None
-        with self.lock:
-            config = self.run_registry.api_selection_for(str(pending.get("run_id") or ""))
-            if config is not None and pending.get("provider") == config.connection_id:
-                pending = {**pending, "_api_selection": config}
-            session_id = str(pending.get("session_id") or "")
-            source_run_id = str(pending.get("run_id") or "")
-            existing_approval = None
-            if session_id and source_run_id:
-                try:
-                    existing_approval = self.durable.approval(approval_id)
-                except (KeyError, OSError, TypeError, ValueError):
-                    existing_approval = None
-            if session_id and source_run_id and existing_approval is None:
-                fact = ShellApprovalFact(
-                    approval_id=approval_id,
-                    session_id=session_id,
-                    source_run_id=source_run_id,
-                    kind="requested",
-                    invocation_origin="native" if pending.get("call_id") else "text",
-                    command_ref=str(pending.get("command_ref") or ""),
-                    command_digest=str(pending.get("command_digest") or ""),
-                    cwd=str(pending.get("cwd") or "."),
-                )
-        # Durable commit publication can emit synchronously, so keep it
-        # outside the application coordination lock.
-        if fact is not None:
-            self.record_shell_approval_fact(fact)
-        with self.lock:
-            self.approvals.add_shell(approval_id, pending)
+        self.shell_approval_coordinator.add_pending(approval_id, pending)
 
     def record_shell_approval_fact(self, fact: ShellApprovalFact) -> bool:
-        from codey.app.shell_approval_durable import record_fact
-
-        return record_fact(self, fact)
+        return self.shell_approval_coordinator.record_fact(fact)
 
     def _commit_durable_shell_approval(self, fact: ShellApprovalFact) -> bool:
-        from codey.app.shell_approval_durable import commit_fact
-
-        return commit_fact(self, fact)
+        return self.shell_approval_coordinator.commit_fact(fact)
 
     def _claim_pending_shell_approval_locked(
         self, approval_id: str, *, claim_execution: bool = True,
     ) -> dict[str, Any] | None:
-        from codey.app.shell_approval_state import claim_pending_shell_approval_locked
-
-        return claim_pending_shell_approval_locked(self, approval_id, claim_execution=claim_execution)
+        value = self.shell_approval_coordinator.claim_locked(approval_id, claim_execution=claim_execution)
+        return cast(dict[str, Any] | None, value)
 
     def claim_pending_shell_approval(
         self, approval_id: str, *, claim_execution: bool = True,
     ) -> dict[str, Any] | None:
-        # Durable approval CAS must not run while the application lock is held:
-        # commit publication may be waiting for this lock on another worker.
-        # The shell spawn gate, owned by ``shell_service``, still fences the
-        # stop-versus-execution boundary.
-        from codey.app.shell_approval_state import (
-            _claim_decision_fact,
-            _claim_execution_fact,
-            _rebuild_pending_from_fact,
-        )
-
-        with self.lock:
-            pending = self.approvals.shell_snapshot().get(approval_id)
-        fact = None
-        if pending is None:
-            try:
-                record = self.durable.approval(approval_id)
-            except (KeyError, OSError, TypeError, ValueError):
-                record = None
-            if record is not None:
-                from codey.app.shell_approval_state import approval_record_facts
-                facts = approval_record_facts(record)
-                fact = facts[-1] if facts else None
-        if pending is None and fact is not None and fact.kind in {"requested", "approved"}:
-            pending = _rebuild_pending_from_fact(self, fact)
-        if pending is None:
-            return None
-        claimed = (
-            _claim_execution_fact(self, pending, approval_id)
-            if claim_execution
-            else _claim_decision_fact(self, pending, approval_id, "denied")
-        )
-        if not claimed:
-            return None
-        with self.lock:
-            self.approvals.pop_shell(approval_id)
-        return pending
+        value = self.shell_approval_coordinator.claim(approval_id, claim_execution=claim_execution)
+        return cast(dict[str, Any] | None, value)
 
     def resolve_shell_approval(self, approval_id: str) -> dict[str, Any] | None:
-        from codey.operations.shell_approval_receipt import resolve_shell_approval
-
-        return resolve_shell_approval(self.durable, self.managed_outputs, approval_id)
+        value = self.shell_approval_coordinator.resolve(approval_id)
+        return cast(dict[str, Any] | None, value)
 
     def approval_generation(self) -> int:
-        with self.lock:
-            return self.approvals.current_generation()
+        return self.shell_approval_coordinator.generation()
 
     def pending_shell_approvals(self) -> dict[str, dict[str, Any]]:
-        with self.lock:
-            return self.approvals.shell_snapshot()
+        value = self.shell_approval_coordinator.pending()
+        return cast(dict[str, dict[str, Any]], value)
 
     def add_pending_teach(self, teach_id: str, pending: dict[str, Any]) -> None:
         with self.lock:
