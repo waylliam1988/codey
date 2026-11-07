@@ -6,7 +6,7 @@ from tests.manual import research_hyperresearch_acquisition_ab as experiment
 def test_contract_has_two_arms_and_bounded_candidate() -> None:
     assert experiment.ARMS == ("baseline", "multi_angle_gap")
     assert len(experiment.ACQUISITION_GUIDANCE) < 1200
-    assert "primary source" in experiment.ACQUISITION_GUIDANCE
+    assert "primary or official source" in experiment.ACQUISITION_GUIDANCE
     assert "could change the answer" in experiment.ACQUISITION_GUIDANCE
 
 
