@@ -937,3 +937,9 @@ formal-v1 因生成任务复用了小写 URL slug，导致来源身份映射错�
 新的短路径开发合同修复了两项测试接线问题：避免 Windows 长路径，并强制 live harness 的实验输出预算覆盖默认配置。artifact 边界失败随之消失；严格研究 continuation 仍由 kernel 固定 `output_token_limit=4096`。
 
 seed 2101、1601 的 baseline 均可真实提交，`multi_angle_gap` 均在本地 Gemma 中进入连续 thought、未产生 tool call并以 `OutputLengthError` 结束。该候选提示与当前本地模型/工具循环格式不兼容，未形成成对质量证据；按合同判定 `inconclusive`，不启动正式双 seed、不合入生产。
+
+### 2026-11-07：multi_angle_gap 生成退化根因修复
+
+旧候选提示将 acquisition 指导重复注入用户任务，且先要求多角度研究、后要求补搜，没有明确禁止计划文本或要求首轮立即发工具调用。Gemma 因此在严格研究 continuation 的 4096 上限内连续生成 `<|channel>thought`，没有 tool call，触发 `OutputLengthError`。
+
+候选提示已压缩为静默 checklist，并明确首轮必须是 JSON `web_search`。seed 1601 的新 candidate 已真实完成联网搜索、来源读取与答案提交，连接器和浏览器结果均保留在检索观察中。该修复只恢复实验可运行性，不构成策略质量收益，正式矩阵仍未启动，生产保持不变。

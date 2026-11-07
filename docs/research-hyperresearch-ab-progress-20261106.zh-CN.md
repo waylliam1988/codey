@@ -121,3 +121,9 @@ v10 首对真实阅读状态显示 baseline 可提交，但 coverage 候选把�
 短路径合同 `.e2e-artifacts/rha-v6..v9/` 已重新运行。修复了 live harness 未覆盖默认 4096 continuation budget 的测试 bug：实验配置现在强制写入 16384 reserve，并增加定向测试。短路径后 artifact 失败消失；但 Research kernel 对严格研究 continuation 仍明确传入 `output_token_limit=4096`。
 
 在 seed 2101 和复核 seed 1601 上，baseline 至少各有一次真实提交成功；`multi_angle_gap` 候选在两枚 seed 都出现 Gemma 连续 `<|channel>thought`、没有 tool call、最终 `OutputLengthError`。因此当前提示候选会触发本地模型生成退化，尚无可评分的成对答案，实验保持 `inconclusive`。这不是 acquisition 质量收益或损害证据，也不改变生产 2A。
+
+### 2026-11-07：multi_angle_gap 生成退化根因与接线修复
+
+旧候选把 acquisition 指导拼接进用户任务；生产研究提示随后又重复包含完整任务和“立即调用工具”协议。候选文本以“先覆盖多个角度、再检查缺口”开头，没有明确禁止写计划或要求首轮立即调用工具，Gemma 在严格研究 continuation 的 4096 上限内进入重复 `<|channel>thought`，没有生成 tool call，最终 `OutputLengthError`。baseline 不触发该路径。
+
+修复后的候选指导压缩为短 checklist，并明确“静默执行、不要写计划或 reasoning、下一响应必须是一个 JSON web_search 调用”。短路径合同 `.e2e-artifacts/rha-v10/` 的 seed 1601 candidate 已真实完成搜索、来源读取和提交；`search-observations.json` 显示连接器和浏览器结果均进入实际轨迹。该轮证明接线修复有效，仍只是开发证据；正式新题双 seed 和生产合入尚未启动。
