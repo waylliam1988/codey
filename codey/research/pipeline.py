@@ -6,10 +6,10 @@ import contextlib
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from codey.research.audit_result import MAX_AUDIT_DIAGNOSTICS, AuditDiagnostic, AuditOutcome, AuditPhase, AuditStatus
-from codey.research.brief_projection import project_research_brief
+from codey.research.brief_projection import ResearchBriefProjection, project_research_brief
 from codey.research.context import ResearchContext
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.evidence_runtime import snapshot_from_research_record
@@ -21,6 +21,7 @@ from codey.research.source_trust import project_source_set
 from codey.research.tools import ResearchTools
 
 logger = logging.getLogger(__name__)
+T = TypeVar("T")
 
 
 class ResearchContinuationError(RuntimeError):
@@ -146,7 +147,7 @@ class ResearchPipeline:
             plan = self._plan(audit.value)
         review = audit.value
         self.context.trace.record_proof_review(review)
-        self._record_final_findings(result, review)
+        self._record_final_findings(result, review, diagnostics=diagnostics)
         self.context.trace.record_plan(plan)
         self._record_research_changes(tools)
         # Preserve the UI/trace payload shape. Acquisition belongs to the writer;
@@ -217,36 +218,55 @@ class ResearchPipeline:
         self,
         result: ResearchRunResult,
         review: ResearchProofReview | None,
+        *,
+        diagnostics: list[AuditDiagnostic],
     ) -> None:
-        """Audit-only projections: trace sink, never the planner.
-
-        Findings, planner gaps, source-trust rows, and the brief projection
-        are deterministic read models recorded for later inspection. Any
-        consumer that lets them influence search or prompts is a behavior
-        change and needs its own A/B per the roadmap.
-        """
-
-        if review is None:
-            return
+        """Independent audit projections; none of these diagnostics drive search."""
         record = getattr(result, "research_record", None)
-        try:
-            snapshot = snapshot_from_research_record(record, proof_review=review)
-            if snapshot is None:
-                return
-            findings = findings_from_proof_review(review, snapshot)
-            if findings:
-                self.context.trace.record_review_findings(findings)
-                gaps = planner_gaps_from_findings(findings)
-                if gaps:
-                    self.context.trace.record_planner_gaps(gaps)
-            self.context.trace.record_research_source_trust(
-                project_source_set(getattr(record, "sources", ()) or ())
-            )
-            brief = project_research_brief(record, snapshot=snapshot, findings=findings)
-            if brief is not None:
-                self.context.trace.record_research_brief_projection(brief.to_payload())
-        except Exception:
+        if record is None:
+            for stage in ("snapshot", "findings", "planner_gaps", "source_trust", "brief"):
+                _skip_audit_stage(stage, "missing_research_record", diagnostics)
             return
+        if review is None:
+            _skip_audit_stage("snapshot", "proof_review_unavailable", diagnostics)
+            snapshot = None
+        else:
+            snapshot = _run_audit_projection(
+                "snapshot", lambda: snapshot_from_research_record(record, proof_review=review),
+                diagnostics=diagnostics,
+            )
+        if snapshot is None:
+            _skip_audit_stage("findings", "snapshot_unavailable", diagnostics)
+            findings = None
+        else:
+            findings = _run_audit_projection(
+                "findings", lambda: findings_from_proof_review(review, snapshot),
+                record=self.context.trace.record_review_findings, diagnostics=diagnostics,
+            )
+        if findings is None:
+            _skip_audit_stage("planner_gaps", "findings_unavailable", diagnostics)
+        else:
+            _run_audit_projection(
+                "planner_gaps", lambda: planner_gaps_from_findings(findings),
+                record=self.context.trace.record_planner_gaps, diagnostics=diagnostics,
+            )
+        _run_audit_projection(
+            "source_trust", lambda: project_source_set(getattr(record, "sources", ()) or ()),
+            record=self.context.trace.record_research_source_trust, diagnostics=diagnostics,
+        )
+        if snapshot is None:
+            _skip_audit_stage("brief", "snapshot_unavailable", diagnostics)
+        elif findings is None:
+            _skip_audit_stage("brief", "findings_unavailable", diagnostics)
+        else:
+            def record_brief(brief: ResearchBriefProjection) -> None:
+                self.context.trace.record_research_brief_projection(brief.to_payload())
+
+            _run_audit_projection(
+                "brief", lambda: project_research_brief(record, snapshot=snapshot, findings=findings),
+                record=record_brief,
+                diagnostics=diagnostics,
+            )
 
     def _append_final_record(self, result: ResearchRunResult) -> EvidenceLedgerWriteResult | None:
         if result.accepted_report is not None and result.stop_reason != "done":
@@ -305,6 +325,35 @@ class ResearchPipeline:
         self.research_changes_sink(
             self.context.run_id, tools.changes, self.context.session_id
         )
+
+
+def _skip_audit_stage(stage: str, reason: str, diagnostics: list[AuditDiagnostic]) -> None:
+    diagnostics.append(AuditDiagnostic(stage, "skipped", "final", reason))
+
+
+def _run_audit_projection(
+    stage: str,
+    project: Callable[[], T | None],
+    *,
+    diagnostics: list[AuditDiagnostic],
+    record: Callable[[T], None] | None = None,
+) -> T | None:
+    """Isolate one read model, including its trace conversion and recording."""
+    try:
+        value = project()
+        if value is None:
+            _skip_audit_stage(stage, f"{stage}_unavailable", diagnostics)
+            return None
+        if record is not None:
+            record(value)
+    except Exception as exc:
+        logger.exception("Research audit projection failed (stage=%s)", stage)
+        diagnostics.append(AuditDiagnostic(
+            stage, "error", "final", f"{stage}_projection_failed", type(exc).__name__,
+        ))
+        return None
+    diagnostics.append(AuditDiagnostic(stage, "ok", "final"))
+    return value
 
 
 __all__ = [

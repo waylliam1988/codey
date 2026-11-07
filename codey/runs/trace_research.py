@@ -260,8 +260,7 @@ def project_audit_diagnostics(value: object) -> list[dict[str, object]]:
 def project_research_pipeline_result(result: object) -> dict[str, object] | None:
     if not isinstance(result, Mapping):
         return None
-    return {
-        "audit_diagnostics": project_audit_diagnostics(result.get("audit_diagnostics")),
+    payload: dict[str, object] = {
         "followup_applied": bool(result.get("followup_applied")),
         "followup_rounds": _bounded_int(result.get("followup_rounds"), 0, 3),
         "stop_reason": _safe_trace_code(result.get("stop_reason"), 80),
@@ -272,6 +271,9 @@ def project_research_pipeline_result(result: object) -> dict[str, object] | None
         "attempted_fresh_source_count": _nonnegative_int(result.get("attempted_fresh_source_count")),
         "attempted_new_evidence_count": _nonnegative_int(result.get("attempted_new_evidence_count")),
     }
+    if "audit_diagnostics" in result:
+        payload["audit_diagnostics"] = project_audit_diagnostics(result.get("audit_diagnostics"))
+    return payload
 
 
 def project_research_connector_error(item: object) -> dict[str, object] | None:

@@ -184,9 +184,15 @@ def ablation(arm):
 
             stack.enter_context(patch.object(KernelProgress, "repeat_feedback", lambda self: ""))
         if arm == "no_proof_audit":
+            from codey.research.audit_result import AuditDiagnostic, AuditOutcome
             from codey.research.pipeline import ResearchPipeline
 
-            stack.enter_context(patch.object(ResearchPipeline, "_review", lambda *a, **kw: None))
+            def skip_review(*_args, phase, diagnostics, **_kwargs):
+                diagnostic = AuditDiagnostic("proof_review", "skipped", phase, "experiment_disabled")
+                diagnostics.append(diagnostic)
+                return AuditOutcome(diagnostic)
+
+            stack.enter_context(patch.object(ResearchPipeline, "_review", skip_review))
             stack.enter_context(patch.object(ResearchPipeline, "_record_final_findings", lambda *a, **kw: None))
         yield
 

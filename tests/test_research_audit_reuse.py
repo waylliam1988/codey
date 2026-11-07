@@ -89,6 +89,10 @@ def test_accepted_publication_does_not_retry_an_unavailable_audit(tmp_path, revi
     assert output.final_result is result
     assert search.closed
     assert review.call_count == plan.call_count == 1
+    diagnostic = next(item for item in output.audit_diagnostics if item.stage == "proof_review")
+    assert diagnostic.status == "error"
+    assert diagnostic.reason_code == ("proof_review_failed" if review_failure else "invalid_proof_review_result")
+    assert diagnostic.phase == "initial"
     assert [(name, args) for name, args, _ in trace.calls if name == "record_proof_review"] == [
         ("record_proof_review", (None,)),
     ]

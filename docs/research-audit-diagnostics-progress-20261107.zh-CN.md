@@ -5,7 +5,7 @@
 ## 批次与验证
 
 1. 结构化 review/ledger 状态；诊断贯穿返回值、trace 与 operation payload；保持 accepted audit 复用，legacy 区分 initial/final，每次 run 独立收集。已实现并通过首轮验证。
-2. 按依赖隔离 snapshot/findings/gaps/source trust/brief；补充依赖跳过、空结果、异常及独立投影测试。待实施。
+2. 按依赖隔离 snapshot/findings/gaps/source trust/brief；补充依赖跳过、空结果、异常及独立投影测试。已实现。
 3. 扩展相关测试（不运行全量 pytest）、Ruff、类型检查，核对全部目标并更新此文档。待实施。
 
 ## 契约
@@ -29,3 +29,17 @@
 - 修改文件 Ruff 通过；修改的 4 个生产模块 mypy（`--follow-imports=silent --python-version 3.11`）通过。
 - 全生产树 mypy/Pyrefly/ty 已运行，存在其他模块既有错误；正在对修改前 HEAD 隔离副本做同环境对照，不将全树失败表述为通过。
 - 新增真实 RunTraceStore JSON 落盘与 operation payload 透传测试；accepted 异常只审计一次，legacy 首轮失败后最终恢复仍保留两阶段记录。
+
+## 第二批实现与失败分析
+
+- snapshot、findings、planner gaps、source trust、brief 各有异常边界；错误写堆栈，依赖跳过给原因，正常空集合保留成功状态。
+- source trust 在 record 存在时独立执行，包括 review 失败时；gaps 失败不阻止 brief。
+- 覆盖每个阶段异常、snapshot/brief 返回 None、trace 转换异常、真实 ledger 缺失/损坏/恢复，以及 outcome 约束。
+- 现有 A/B `no_proof_audit` 用旧 `None` 返回值替换私有方法，导致 AttributeError；根因是测试辅助代码未同步结构化返回契约，已更新辅助代码，保留禁用审计的原实验含义。
+- 旧 trace fixture 不携带新字段，被投影额外加空列表导致两个精确比较失败；已调整为仅当输入包含诊断字段时投影。新 pipeline 始终携带诊断，真实落盘和 operation 测试验证不会丢失；历史 golden 无需更新。
+- 扩展首轮 265 passed / 6 failed（另 23 subtests）；三项为以上契约/兼容问题，三项为冷恢复失败。冷恢复三项隔离重跑通过；按原顺序重跑前九个测试模块 148 passed、23 subtests，无修改恢复生产代码。冷恢复失败尚无可复现根因，不把单次重跑当作已修复，最终再运行完整相关组合并保留 JUnit 报告。
+- 修正后的 trace、A/B 和核心诊断组合：116 passed。
+- `python -m ruff check .` 与 `git diff --check` 通过。
+- 四个修改生产模块：mypy（follow-imports=silent）、Pyrefly、ty 的 Python 3.11 检查均通过。
+
+第一批提交：`bc80d027`。
