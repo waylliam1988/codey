@@ -287,16 +287,15 @@ class CountingProvider(ProviderAdapter):
     def new_chat(self, timeout: float | None = None) -> object:
         return self.provider.new_chat(timeout=timeout or self.new_chat_timeout)
 
-    def _send(self, name: str, *args, **kwargs):
-        text = args[0] if args else ""
-        if not isinstance(text, str):
-            text = json.dumps([
-                {"call_id": item.call_id, "content": item.content} for item in text
-            ], ensure_ascii=False)
-        self.prompts.append(text)
-        if kwargs.get("timeout") is None:
-            kwargs["timeout"] = self.timeout
-        reply = super()._send(name, *args, **kwargs)
+    def execute_request(self, request):
+        from dataclasses import replace
+
+        from codey.operations.provider_session import request_text_for_accounting
+
+        self.prompts.append(request_text_for_accounting(request))
+        if request.options.timeout is None:
+            request = replace(request, options=replace(request.options, timeout=self.timeout))
+        reply = super().execute_request(request)
         self.replies.append(reply_text_for_accounting(reply))
         return reply
 

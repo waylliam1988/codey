@@ -11,24 +11,17 @@ from typing import Any
 from codey.providers.base import ProviderToolResult
 
 
-def provider_uses_native(provider: Any, *, provider_id: object = "") -> bool:
+def provider_uses_native(provider: object, *, provider_id: object = "") -> bool:
     """Reuse the production native-tool decision; never bare hasattr checks.
 
     The protocol is decided once at task start. An identification failure
     raises instead of silently falling back to web: continuing on the wrong
     protocol would mis-deliver native call ids.
     """
-    from codey.operations.provider_session import ProviderAdapter
+    from codey.providers.compat_transport import unwrap_provider
     from codey.providers.native_tools import supports_native_tools
 
-    probe = provider
-    seen: set[int] = set()
-    while isinstance(probe, ProviderAdapter):
-        if id(probe) in seen:
-            raise ValueError("cyclic provider adapter chain")
-        seen.add(id(probe))
-        probe = probe.provider
-    return supports_native_tools(probe, str(provider_id or ""))
+    return supports_native_tools(unwrap_provider(provider), str(provider_id or ""))
 
 
 def _native_tool_results(

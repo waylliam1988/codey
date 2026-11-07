@@ -44,14 +44,17 @@ def test_normalization_calls_declared_hook_once() -> None:
     assert calls == ["r", "r"]
 
 
-def test_undeclared_hook_returns_reply_untouched() -> None:
+def test_undeclared_hook_validates_reply() -> None:
+    import pytest
+
     from codey.operations.provider_session import normalize_provider_reply
 
     class Plain:
         pass
 
-    sentinel = object()
-    assert normalize_provider_reply(Plain(), sentinel) is sentinel
+    assert normalize_provider_reply(Plain(), "valid") == "valid"
+    with pytest.raises(ValueError, match="unsupported response"):
+        normalize_provider_reply(Plain(), object())
 
 
 def test_dynamic_getattr_cannot_forge_normalizer() -> None:

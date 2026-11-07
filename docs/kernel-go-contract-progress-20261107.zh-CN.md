@@ -19,7 +19,7 @@
 | 2 | 共享 JSON、ToolCall/provider arguments、底层 codec | 完成 | 105 passed/4 subtests；静态负例及 codec 21 passed；三工具定向检查/Ruff 通过 |
 | 3 | TextResultSpan、execution、recovery | 完成 | 首轮85 passed；扩大134 passed；三工具/Ruff/gate 通过 |
 | 4 | 六种 provider 请求联合、回复、版本化 codec | 完成 | 扩大102 passed；补充80 passed；三工具/Ruff/gate通过 |
-| 5 | provider adapter、wrapper、capabilities | 待开始 | |
+| 5 | provider adapter、wrapper、capabilities | 完成 | 首轮122；扩大97及67 passed；三工具/Ruff/gate通过 |
 | 6 | contracts、builder、driver、context 主链 | 待开始 | |
 | 7 | completion 输入、verification observation、纯判定 | 待开始 | |
 | 8 | research 参数、报告、receipt、staging | 待开始 | |
@@ -31,7 +31,7 @@
 
 ## 接续工作位置
 
-第四批已完成。第五批处理 provider adapter、wrapper、capabilities，移除通用 __getattr__ 和 send 透传，收紧回复运行时校验；第六批贯穿 driver/context/contracts/builder。
+第五批已完成。第六批贯穿 driver/context/contracts/builder 与 provider_request，消除通用调用描述、重复 sink 和核心 Any；随后 completion/research 领域输入与最终 Go 差分验证仍待实施。
 
 ## 第一批验证记录
 
@@ -77,3 +77,14 @@
 - 持久化回复使用 TextReplyPayload/NativeReplyPayload，验证嵌套 arguments/raw、finish，不再返回未经验证的字典。
 - 扩大 codec/golden/static/durable response/snapshot/receipt/native/reply normalization/gate 回归102 passed；补充新增 codec/admission 与 prepared/not-sent 回归80 passed。六个修改生产文件 mypy --follow-imports=silent、Pyrefly、ty（3.12）通过；Ruff和精度门禁通过。
 - 原始十四模块 Any 181→180（driver 12→11）；下调基线。全树起始类型问题仍待最终清理。
+
+
+## 第五批变更与验证
+
+- ProviderAdapter 删除 __getattr__ 和通用 *args/**kwargs 发送。六个旧 API 有明确签名，并统一进入 ProviderTransport.execute_request(ProviderRequest)。Conversation/Deadline/Observed wrapper 都在这个具名请求端口拦截；BeforeSend 只接收 ProviderRequest。研究 topic continuity 观察及测试/手工探针随之迁移。
+- 第三方动态调用和能力查找集中 compat_transport；循环链先拒绝，normalizer 仅识别显式声明且只调用一次。原始 transport 回复仍为边界 object，由 normalize_provider_reply 严格验证、分离容器后才交给核心；未将开放 object 冒充已验证领域回复。
+- ContextBudget、窗口、text format、attempt gate、usage binding 通过明确边界保留。KernelCapabilityView.window_ref 由 object 收紧为 ProtocolWindowRef；字符串窗口测试是过时假设，改为真实结构并添加非法窗口拒绝测试。
+- 回复 codec 现在拒绝非法 finish、call 对象及嵌套非 JSON 参数；旧测试允许任意 sentinel 穿透 normalizer 的假设被删除。合法 text/native、local markup 的归一化仍通过。
+- Deadline 覆盖全部六协议，包含位置 timeout 不得与关键字重复；浮点 rounding 仍不扩大总预算。wrapper 自身 episode timeout 优先于底层 provider timeout。
+- 原十四模块显式 Any 180→148（provider_session 32→0）；没有新增开放动态模块接纳这些 Any。另修 research_iteration 的 project_path str→Path 起始类型问题。
+- 首轮协议/deadline/lifecycle/local codec/parity 回归122 passed；扩大 wrapper/admission/not-sent/static 回归97 passed；研究 topic/scoped projection/native receipt/capability/local codec 回归67 passed。十个修改生产模块三工具 target3.12通过，Ruff/gate通过。静态负例新增 observer 签名、非法 prompt 和不存在扩展方法的检查。

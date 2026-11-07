@@ -21,18 +21,31 @@ def test_real_advisor_send_never_rounds_above_total_budget(tmp_path):
     assert 0 < provider.send.call_args.kwargs["timeout"] <= 180.0
 
 
-@pytest.mark.parametrize("method", ["send", "send_turn", "send_tool_results"])
+@pytest.mark.parametrize("method", ["send", "send_turn", "send_tool_results", "acknowledge_tool_results",
+                                   "send_tool_results_bound", "acknowledge_tool_results_bound"])
 def test_each_protocol_uses_elapsed_budget_and_shorter_request_timeout(method):
+    from codey.providers.base import ProviderToolResult
+    from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
+
     provider = Mock(spec=[method])
+    if method == "send":
+        args = ("message",)
+    elif method == "send_turn":
+        args = ("message", [])
+    elif method.endswith("_bound"):
+        window = ProtocolWindowRef("session", ProviderBinding("id", "rev", "model", "native", "contract"), "window")
+        args = ([ProviderToolResult("call", "content")], window, [])
+    else:
+        args = ([ProviderToolResult("call", "content")], [])
     with patch("time.monotonic", return_value=1000.0):
         bounded = DeadlineProvider(provider, timeout=180.0)
     with patch("time.monotonic", return_value=1050.0):
-        getattr(bounded, method)("message")
+        getattr(bounded, method)(*args)
         assert getattr(provider, method).call_args.kwargs["timeout"] == 130.0
-        getattr(bounded, method)("message", timeout=5.0)
+        getattr(bounded, method)(*args, timeout=5.0)
         assert getattr(provider, method).call_args.kwargs["timeout"] == 5.0
     with patch("time.monotonic", return_value=1180.0), pytest.raises(TimeoutError):
-        getattr(bounded, method)("message")
+        getattr(bounded, method)(*args)
     assert getattr(provider, method).call_count == 2
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -234,14 +235,15 @@ def run_research_iteration(
             project=project,
         )
     from codey.operations.provider_session import ObservedProvider
+    from codey.providers.requests import ProviderRequest, SendTextRequest, SendTurnRequest
     from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
     from codey.workspace.context_admission import request_scope, source_from_value
     from codey.workspace.context_epoch import context_epoch_id
 
-    def observe_send(name: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
-        if name not in {"send", "send_turn"} or not args:
+    def observe_send(request: ProviderRequest) -> None:
+        if not isinstance(request, (SendTextRequest, SendTurnRequest)):
             return
-        prompt = args[0]
+        prompt = request.prompt
         if (not isinstance(prompt, str) or not topic_continuity_context
                 or topic_continuity_context not in prompt or not topic_continuity_payload
                 or topic_continuity_payload.get("admitted") is not True):
@@ -338,7 +340,7 @@ def run_research_iteration(
                 task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
             ).build(execution=KernelExecutionDeps(
                 intent_sink=intent_sink,
-                project_path=project or None,
+                project_path=Path(project) if project else None,
                 research_tools=tools,
                 permission_profile="coding_writer" if policy.allows("project.write") else "research",
             ), observation=KernelObservationDeps(

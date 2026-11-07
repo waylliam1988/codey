@@ -3,7 +3,13 @@ from __future__ import annotations
 
 from codey.durable.provider_response import validate_response
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
-from codey.types.json_value import JsonValue, encode_transport_value
+from codey.types.json_value import (
+    JsonObject,
+    JsonValue,
+    decode_json_object,
+    encode_transport_value,
+    require_json_string,
+)
 
 
 def json_value(value: object) -> JsonValue:
@@ -11,15 +17,28 @@ def json_value(value: object) -> JsonValue:
     return encode_transport_value(value)
 
 
+def _finish_value(value: object) -> str:
+    if not isinstance(value, TurnFinish):
+        raise ValueError("provider returned an invalid finish")
+    return value.value
+
+
+def _call_payload(value: object) -> JsonObject:
+    if not isinstance(value, ProviderToolCall):
+        raise ValueError("provider returned an invalid tool call")
+    return {"id": require_json_string(value.id, "call id"), "name": require_json_string(value.name, "call name"),
+            "arguments": decode_json_object(value.arguments)}
+
+
 def encode_reply(reply: object) -> dict[str, object]:
     if isinstance(reply, str):
         return {"protocol": "text", "text": reply}
     if not isinstance(reply, AssistantTurn):
         raise ValueError("provider returned an unsupported response type")
-    return {"protocol": "native", "text": reply.text, "reasoning": reply.reasoning,
-            "finish": reply.finish.value, "raw": json_value(reply.raw),
-            "tool_calls": [{"id": call.id, "name": call.name, "arguments": json_value(call.arguments)}
-                           for call in reply.tool_calls]}
+    return {"protocol": "native", "text": require_json_string(reply.text, "text"),
+            "reasoning": require_json_string(reply.reasoning, "reasoning"),
+            "finish": _finish_value(reply.finish), "raw": decode_json_object(reply.raw),
+            "tool_calls": [_call_payload(call) for call in reply.tool_calls]}
 
 
 def decode_reply(payload: object) -> str | AssistantTurn:

@@ -53,6 +53,17 @@ SendTextRequest(prompt=["not-text"])
 SendToolResultsBoundRequest(results=(), window_ref=None, tools=())
 '''
 
+BAD_PROVIDER_WRAPPER = '''
+from codey.operations.provider_session import ObservedProvider, ProviderAdapter
+
+def old_observer(method: str, args: tuple[object, ...], kwargs: dict[str, object]) -> None:
+    pass
+
+ObservedProvider(object(), old_observer)
+ProviderAdapter(object()).send(object())
+ProviderAdapter(object()).missing_extension()
+'''
+
 
 @pytest.mark.parametrize(
     ("tool", "arguments"),
@@ -90,8 +101,8 @@ def test_type_checker_rejects_invalid_kernel_contract(tool: str, arguments: tupl
         ("ty", ("check",)),
     ],
 )
-@pytest.mark.parametrize("source_text", [BAD_PROVIDER_CALL, BAD_JSON_ARGUMENTS, BAD_TEXT_SPAN, BAD_PROVIDER_REQUEST],
-                         ids=["provider-call", "json-args", "text-span", "provider-request"])
+@pytest.mark.parametrize("source_text", [BAD_PROVIDER_CALL, BAD_JSON_ARGUMENTS, BAD_TEXT_SPAN, BAD_PROVIDER_REQUEST, BAD_PROVIDER_WRAPPER],
+                         ids=["provider-call", "json-args", "text-span", "provider-request", "provider-wrapper"])
 def test_type_checker_rejects_untyped_provider_call_shape(
     tool: str, arguments: tuple[str, ...], source_text: str,
 ) -> None:

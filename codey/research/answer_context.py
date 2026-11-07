@@ -9,6 +9,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from codey.knowledge.model import canonical_json
+from codey.providers.compat_transport import optional_callable, provider_attribute
 from codey.research.answer_contract import ANSWER_GUIDANCE, AnswerScope
 from codey.research.context_view import read_evidence_projection
 from codey.research.questions import INVESTIGATION_TOOLS
@@ -24,14 +25,20 @@ def work_view_limits(provider: Any) -> tuple[Callable[[str], int], int]:
     """Use the same tokenizer and half-window limit for acquisition and display."""
     from codey.providers.token_accounting import ContextBudget
 
-    budget = getattr(provider, "context_budget", None)
-    counter = getattr(provider, "count_text", None)
+    budget = provider_attribute(provider, "context_budget")
+    counter = optional_callable(provider, "count_text")
     if not isinstance(budget, ContextBudget) or not callable(counter):
         return estimate_tokens, 16384
-    deadline = time.monotonic() + min(30.0, getattr(provider, "timeout", 30.0))
+    timeout = provider_attribute(provider, "timeout")
+    deadline = time.monotonic() + min(30.0, timeout if isinstance(timeout, (int, float)) else 30.0)
 
     def count(text: str) -> int:
-        value = counter(text, deadline=deadline).value
+        from codey.providers.token_accounting import RequestContextCount
+
+        counted = counter(text, deadline=deadline)
+        if not isinstance(counted, RequestContextCount):
+            raise ValueError("provider research token count is unavailable")
+        value = counted.value
         if type(value) is not int or value < 0:
             raise ValueError("provider research token count is unavailable")
         return value

@@ -117,8 +117,12 @@ class ResearchIteration:
         outer = self
 
         class ProbeProvider(ProviderAdapter):
-            def send(self, text: str, **kwargs: Any) -> str:
-                return outer._send_provider(text)
+            def execute_request(self, request):
+                from codey.providers.requests import SendTextRequest
+
+                if isinstance(request, SendTextRequest):
+                    return outer._send_provider(request.prompt)
+                return super().execute_request(request)
 
         intro = self._intro(question)
         extension = intro.removeprefix(str(question)).strip()

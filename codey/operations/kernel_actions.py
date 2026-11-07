@@ -26,6 +26,7 @@ from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.policies.command_line import ShellSpec
 from codey.providers.base import ProviderToolResult
+from codey.providers.compat_transport import optional_callable
 from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.protocol_window import ProtocolWindowRef
@@ -80,10 +81,9 @@ def _payload_strings(value: object) -> list[str]:
 def _bind_attempt_gate(
     provider: object, transport: KernelTransportDeps, trace_recorder: object,
 ) -> bool:
-    binder = getattr(provider, "bind_attempt_gate", None)
-    if not callable(binder):
+    binder = optional_callable(provider, "bind_attempt_gate")
+    if binder is None:
         return False
-    bind = cast(AttemptGateProvider, provider).bind_attempt_gate
     gate = cast(
         Callable[[AttemptGateClient, dict[str, object]], None] | None,
         transport.attempt_gate,
@@ -117,7 +117,7 @@ def _bind_attempt_gate(
                     epoch=ContextEpoch(epoch_id=context_epoch_id(prompt), admissions=admission.epoch.admissions),
                 )
                 record_outbound(trace_recorder, prompt, admission=admission)
-    bind(gate)
+    binder(gate)
     return gate is not None
 
 

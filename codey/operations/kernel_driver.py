@@ -17,7 +17,7 @@ from codey.operations.kernel_contracts import KernelDecision, KernelResult, Kern
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
 from codey.providers.base import AssistantTurn
-from codey.providers.compat_transport import execute_compat_request
+from codey.providers.compat_transport import execute_compat_request, optional_callable, provider_window_ref
 from codey.providers.request_codec import decode_provider_request
 from codey.providers.requests import ProviderRequest, SendTextRequest, SendTurnRequest
 from codey.runtime.core.operation_payload import (
@@ -103,13 +103,13 @@ def restore_provider_window(sink: Any, provider: Any, state: Any) -> dict[str, A
     if window is None:
         return payload
     ref = ProtocolWindowRef.from_payload(window)
-    if getattr(provider, "window_ref", None) == ref:
+    if provider_window_ref(provider) == ref:
         return payload
-    restore = getattr(provider, "restore_protocol_window", None)
+    restore = optional_callable(provider, "restore_protocol_window")
     if not callable(restore):
         raise RecoveryFailed("provider cannot restore the original protocol window")
     restore(ref)
-    if getattr(provider, "window_ref", None) != ref:
+    if provider_window_ref(provider) != ref:
         raise RecoveryFailed("provider did not restore the original protocol window")
     return payload
 
@@ -150,11 +150,11 @@ def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> Assist
 def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
                       invocation: ProviderRequest) -> AssistantTurn | str:
     try:
-        gate_prompt = getattr(provider, "set_attempt_gate_prompt", None)
+        gate_prompt = optional_callable(provider, "set_attempt_gate_prompt")
         if callable(gate_prompt):
             prompt = invocation.prompt if isinstance(invocation, (SendTextRequest, SendTurnRequest)) else ""
             gate_prompt(prompt if isinstance(prompt, str) else "")
-        result_refs = getattr(provider, "set_result_refs", None)
+        result_refs = optional_callable(provider, "set_result_refs")
         if callable(result_refs):
             result_refs(tuple(effect.effect_id for effect in sink.durable.effects(sink.run_id)
                               if effect.category == "tool_call" and effect.settlement is not None))
@@ -215,7 +215,7 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
                 original_request = restore_provider_window(context.sink, context.provider, state)
                 if original_request is not None:
                     context.restore_context(original_request)
-                context.window = getattr(context.provider, "window_ref", None) or context.transport.window_ref
+                context.window = provider_window_ref(context.provider) or context.transport.window_ref
                 window_restored = True
             outcome = _execute_kernel_action(context, view, action)
             if outcome is not None:

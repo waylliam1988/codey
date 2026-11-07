@@ -9,19 +9,21 @@ ad-hoc ``getattr`` probes at each decision point.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Protocol, cast, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from codey.operations import kernel_transport
+from codey.providers.compat_transport import provider_attribute, provider_window_ref
+from codey.runtime.core.protocol_window import ProtocolWindowRef
 
 TextToolFormat = Literal["plain", "json_schema"]
-ProviderWindowRef = object
+ProviderWindowRef = ProtocolWindowRef
 
 
 @runtime_checkable
 class ProviderCapabilitySource(Protocol):
     text_tool_format: str
     request_scoped_tool_context: bool
-    window_ref: object | None
+    window_ref: ProtocolWindowRef | None
 
 
 @dataclass(frozen=True)
@@ -39,15 +41,15 @@ class KernelCapabilityView:
         provider: object,
         *,
         provider_id: object = "",
-        fallback_window_ref: object | None = None,
+        fallback_window_ref: ProtocolWindowRef | None = None,
     ) -> KernelCapabilityView:
-        raw_format = getattr(provider, "text_tool_format", "plain")
-        text_tool_format = cast(TextToolFormat, raw_format) if raw_format in {"plain", "json_schema"} else "plain"
-        window_ref = getattr(provider, "window_ref", None) or fallback_window_ref
+        raw_format = provider_attribute(provider, "text_tool_format")
+        text_tool_format: TextToolFormat = "json_schema" if raw_format == "json_schema" else "plain"
+        window_ref = provider_window_ref(provider) or fallback_window_ref
         return cls(
             native_tools=kernel_transport.provider_uses_native(provider, provider_id=provider_id),
             text_tool_format=text_tool_format,
-            request_scoped_tool_context=getattr(provider, "request_scoped_tool_context", False) is True,
+            request_scoped_tool_context=provider_attribute(provider, "request_scoped_tool_context") is True,
             window_ref=window_ref,
         )
 
