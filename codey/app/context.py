@@ -34,6 +34,7 @@ from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry, RunSnapshot
 from codey.app.runtime_adapters import DurableRuntimeAdapters
 from codey.app.task_abort import abort_task_resources
+from codey.app.task_runtime import TaskRuntimeCoordinator
 from codey.durable.model import (
     CommitResult,
     DurableMutation,
@@ -160,6 +161,13 @@ class AppContext(GhostStoreAccessors):
         self.tool_result_delivery = self.runtime_adapters.delivery
         self.input_queue = self.conversation_runtime.inputs
         self.user_questions = self.conversation_runtime.questions
+        self.task_runtime = TaskRuntimeCoordinator(
+            self.run_registry,
+            self._active_providers,
+            self.lock,
+            self._shell_spawn_gate,
+            wake_input=self.input_queue.wake.set,
+        )
         self.execution_outputs = ExecutionOutputStore(runtime_state_home)
         from codey.storage.command_permissions import CommandPermissionStore
 
@@ -180,7 +188,7 @@ class AppContext(GhostStoreAccessors):
         self.ghost_sleep_daemon = GhostSleepDaemon(
             lock=self.lock,
             is_busy=self.is_busy,
-            stop_requested=lambda: any(run.stop_event.is_set() for run in self.run_registry.active_runs()),
+            stop_requested=lambda: any(run.stop_event.is_set() for run in self.task_runtime.active_runs()),
             run_once=self._run_ghost_sleep_once,
         )
         self._self_repair: SelfRepairSupervisor | None = None
@@ -208,15 +216,11 @@ class AppContext(GhostStoreAccessors):
 
     def register_active_provider(self, run_id: str, provider: object) -> None:
         """Register the raw provider transport for a live durable run."""
-        if not run_id or provider is None:
-            return
-        self._active_providers.register(run_id, provider)
+        self.task_runtime.register_active_provider(run_id, provider)
 
     def unregister_active_provider(self, run_id: str, provider: object | None = None) -> None:
         """Drop a run transport, preserving a newer replacement if present."""
-        if not run_id:
-            return
-        self._active_providers.unregister(run_id, provider)
+        self.task_runtime.unregister_active_provider(run_id, provider)
 
     def _publish_durable_commit(self, result: CommitResult, mutation: DurableMutation) -> None:
         if result.record is not None:
@@ -415,7 +419,7 @@ class AppContext(GhostStoreAccessors):
         stop-flag peek could not see a Stop landing between the peek and
         this reserve.
         """
-        return self.run_registry.reserve(
+        return self.task_runtime.reserve_run(
             session_id=session_id,
             project=project,
             task=task,
@@ -435,42 +439,41 @@ class AppContext(GhostStoreAccessors):
         Project scope compares resolved paths, so an active run started with
         a differently-spelled but identical directory still matches.
         """
-        return self.run_registry.active_for(session_id=session_id, project=project)
+        return self.task_runtime.active_run_for(session_id=session_id, project=project)
 
     def current_run(self) -> RunSnapshot | None:
-        return self.run_registry.current()
+        return self.task_runtime.current_run()
 
     def active_runs(self) -> tuple[RunSnapshot, ...]:
-        return self.run_registry.active_runs()
+        return self.task_runtime.active_runs()
 
     def stop_flag_for(self, run_id: str) -> threading.Event:
-        return self.run_registry.stop_flag_for(run_id)
+        return self.task_runtime.stop_flag_for(run_id)
 
     def is_busy(self) -> bool:
-        return self.run_registry.is_busy()
+        return self.task_runtime.is_busy()
 
     def run_status(self) -> str:
-        return self.run_registry.status()
+        return self.task_runtime.run_status()
 
     def replace_reserved_run(self, current_run_id: str, replacement: RunSnapshot) -> bool:
-        return self.run_registry.replace_active(current_run_id, replacement)
+        return self.task_runtime.replace_reserved_run(current_run_id, replacement)
 
     def has_active_run_for_project(self, project_key: str) -> bool:
         """True when the active run writes inside the given project."""
         return self.active_run_for(project=project_key) is not None
 
     def start_run(self, run_id: str) -> bool:
-        return self.run_registry.start(run_id)
+        return self.task_runtime.start_run(run_id)
 
     def set_run_status(self, status: str) -> None:
-        self.run_registry.set_status(status)
+        self.task_runtime.set_run_status(status)
 
     def switch_run_provider(self, run_id: str, provider_id: str) -> bool:
-        return self.run_registry.switch_provider(run_id, provider_id)
+        return self.task_runtime.switch_run_provider(run_id, provider_id)
 
     def release_run(self, run_id: str) -> None:
-        self.run_registry.release(run_id)
-        self.input_queue.wake.set()
+        self.task_runtime.release_run(run_id)
 
     def finish_run(self, run_id: str, event: dict[str, Any]) -> bool:
         from codey.app.task_lifecycle_projection import version_task_event

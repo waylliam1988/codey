@@ -233,7 +233,7 @@ def submit_task(
                 "is_error": resolved.get("ok") is not True,
             },)
     # Settings saves use this same lock: disabling and admission cannot cross.
-    with state._shell_spawn_gate, state.lock:
+    with state.task_runtime.admission_line():
         if service is not None and service.draining:
             return None
         if not state.providers.model_preferences.allows(provider_id, admitted_selection.model_id if admitted_selection else ""):
@@ -249,7 +249,7 @@ def submit_task(
                 "cancelled", "failed", "unavailable",
             }:
                 return None
-        existing_reservation = any(row.run_id == run_id for row in state.run_registry.active_runs()) if run_id else False
+        existing_reservation = any(row.run_id == run_id for row in state.task_runtime.active_runs()) if run_id else False
         reserved = state.reserve_run(
             session_id=session_id,
             project=project,
@@ -262,7 +262,7 @@ def submit_task(
             return None
         reserved_run_id = str(reserved.run_id)
         if admitted_selection is not None:
-            state.run_registry.bind_api_selection(reserved.run_id, admitted_selection)
+            state.task_runtime.bind_api_selection(reserved.run_id, admitted_selection)
     try:
         state.durable.admit_input(
             conversation_id=session_id,
@@ -390,7 +390,7 @@ def _task_input_payload(input: TaskInput | None) -> dict[str, object] | None:
 
 def dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) -> bool:
     """Resume one durable checkpoint after admission or process restart."""
-    with state._shell_spawn_gate:
+    with state.task_runtime.spawn_line():
         return _dispatch_durable_task(checkpoint, state=state)
 
 
@@ -523,7 +523,7 @@ def submit_task_after_slot_release(
         # abort_if_stopped reservation below, which closes the race where a
         # Stop lands between this peek and the reserve.
         state = get_state()
-        stop_flag = state.run_registry.stop_flag_for(previous_run_id) if previous_run_id else state.run_registry.stop_flag
+        stop_flag = state.task_runtime.stop_flag_for(previous_run_id) if previous_run_id else state.task_runtime.stop_flag
         if stop_flag.is_set():
             return None
         active = state.active_run_for(session_id=session_id)
@@ -553,7 +553,7 @@ def submit_task_after_slot_release(
         if time.monotonic() >= deadline:
             return None
         remaining = max(0.0, deadline - time.monotonic())
-        state.run_registry.wait_for_slot(remaining)
+        state.task_runtime.wait_for_slot(remaining)
 
 
 __all__ = [

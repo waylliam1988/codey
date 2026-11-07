@@ -29,10 +29,18 @@
 
 ### 第二阶段：AppContext 协调器
 
-- [ ] 抽出任务运行协调器。
+- [x] 抽出任务运行协调器。
 - [ ] 抽出审批协调器和 durable event bridge。
-- [ ] 让 `task_submit.py` 停止访问内部锁和私有字段。
+- [x] 让 `task_submit.py` 的 admission/spawn/slot 路径停止访问内部锁和私有字段。
 - [ ] 保留兼容代理，迁移完成后再删除。
+
+第二阶段首批只收敛运行槽位、输入唤醒和 shell gate 的所有权；复杂的
+`request_stop`、`finish_run` 和审批投影仍保留在 `AppContext`，下一批处理。
+
+第二阶段首批回归：`tests/test_task_runtime_coordinator.py`、
+`tests/test_task_submit.py`、`tests/test_task_submit_durable.py` 和
+`tests/durable/test_scheduler_abort_handler.py` 共 34 passed。第一次命令误用了
+不存在的 `tests/test_task_submission.py`，按实际路径重跑后通过；属于测试命令路径问题。
 
 ### 第三阶段：DurableSession 查询门面
 

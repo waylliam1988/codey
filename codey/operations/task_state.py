@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from codey.app.approval_registry import ApprovalRegistry
     from codey.app.provider_registry import ProviderRegistry
     from codey.app.run_registry import RunRegistry, RunSnapshot
+    from codey.app.task_runtime import TaskRuntimeCoordinator
     from codey.durable.scheduler import DurableTaskScheduler
     from codey.durable.session import DurableSession
     from codey.knowledge.store import KnowledgeStore
@@ -72,6 +73,7 @@ class TaskState(Protocol):
     lock: threading.Lock
     _shell_spawn_gate: threading.Lock
     run_registry: RunRegistry
+    task_runtime: TaskRuntimeCoordinator
     providers: ProviderRegistry
     approvals: ApprovalRegistry
     runtime_mutations: RuntimeMutationLine

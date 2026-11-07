@@ -6,8 +6,10 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey.app import task_submit
+from codey.app.active_provider_registry import ActiveProviderRegistry
 from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry
+from codey.app.task_runtime import TaskRuntimeCoordinator
 from codey.durable import DurableSession, MemoryDurableStore
 from tests import http_context
 
@@ -27,6 +29,13 @@ class _FakeState:
         self.released: list[str] = []
         self.expired: list[str] = []
         self.run_registry = RunRegistry()
+        self.task_runtime = TaskRuntimeCoordinator(
+            self.run_registry,
+            ActiveProviderRegistry(),
+            self.lock,
+            self._shell_spawn_gate,
+            wake_input=lambda: None,
+        )
 
     def admit_and_claim(self, session_id: str, run_id: str, task: str) -> None:
         self.durable.admit_input(
@@ -220,9 +229,15 @@ class TaskSubmitTests(unittest.TestCase):
 
     def test_after_slot_release_returns_none_when_stopped(self) -> None:
         state = _FakeState(reserved=True)
-        state.run_registry = SimpleNamespace(
-            stop_flag=SimpleNamespace(is_set=lambda: True),
-            wait_for_slot=mock.Mock(),
+        state.task_runtime = TaskRuntimeCoordinator(
+            SimpleNamespace(
+                stop_flag=SimpleNamespace(is_set=lambda: True),
+                wait_for_slot=mock.Mock(),
+            ),
+            ActiveProviderRegistry(),
+            state.lock,
+            state._shell_spawn_gate,
+            wake_input=lambda: None,
         )
         run_id = task_submit.submit_task_after_slot_release(
             "s", None, "t", 8, False, "deepseek", get_state=lambda: state
