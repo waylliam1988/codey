@@ -6,14 +6,20 @@ only the operation reducer chooses the next action.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 
 from codey.operations import kernel_prompt as _prompt
 from codey.operations import kernel_transport as _transport
 from codey.operations.completion_context import CompletionContext, CompletionContextInput
-from codey.operations.kernel_contracts import KernelResult, KernelTransportDeps
+from codey.operations.kernel_contracts import (
+    KernelResult,
+    KernelTransportDeps,
+    StopSignal,
+    ToolExecutor,
+)
 from codey.operations.kernel_execution import execute_turn as _execute_turn
 from codey.operations.kernel_trace import record_outbound
 from codey.operations.project_prompt_context import prepare_coding_context
@@ -21,14 +27,39 @@ from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.policies.command_line import ShellSpec
 from codey.providers.base import ProviderToolResult
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.core.protocol_window import ProtocolWindowRef
+from codey.runtime.observe.events import RunEvent
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import admit_ghost_context
 from codey.workspace.context_epoch import ContextEpoch, context_epoch_id
 
 if TYPE_CHECKING:
+    from codey.agents.request import ChangeTracker
+    from codey.agents.shell_approval import ShellApprovalRequest
+    from codey.agents.tools import AgentToolFns
+    from codey.durable.store import DurableStore
+    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.research.tools import ResearchTools
+    from codey.storage.managed_outputs import ManagedOutputStore
+    from codey.workspace.revision import WorkspaceRevisionStore
 
-def _payload_strings(value: Any) -> list[str]:
+
+class AttemptGateClient(Protocol):
+    purpose: Literal["conversation", "compaction"]
+    _attempt_gate_prompt: str
+
+
+class AttemptGateProvider(Protocol):
+    def bind_attempt_gate(
+        self,
+        gate: Callable[[AttemptGateClient, dict[str, object]], None] | None,
+    ) -> None: ...
+
+def _payload_strings(value: object) -> list[str]:
     if isinstance(value, str):
         return [value]
     if isinstance(value, Mapping):
@@ -45,19 +76,23 @@ def _payload_strings(value: Any) -> list[str]:
 
 
 def _bind_attempt_gate(
-    provider: Any, transport: KernelTransportDeps, trace_recorder: Any,
+    provider: object, transport: KernelTransportDeps, trace_recorder: object,
 ) -> bool:
     binder = getattr(provider, "bind_attempt_gate", None)
     if not callable(binder):
         return False
-    gate: Callable[[Any, dict[str, Any]], None] | None = transport.attempt_gate
+    bind = cast(AttemptGateProvider, provider).bind_attempt_gate
+    gate = cast(
+        Callable[[AttemptGateClient, dict[str, object]], None] | None,
+        transport.attempt_gate,
+    )
     if gate is None and transport.ghost_sources:
-        def gate(client: Any, payload: dict[str, Any]) -> None:
+        def gate(client: AttemptGateClient, payload: dict[str, object]) -> None:
             rendered = "\n".join(_payload_strings(payload))
             enabled = (transport.attempt_admit_hints() if transport.attempt_admit_hints is not None
                        else transport.admit_hints)
             sources = transport.ghost_sources
-            if getattr(client, "purpose", "conversation") == "compaction":
+            if client.purpose == "compaction":
                 # Auxiliary prompts may contain only a declared encoding of a
                 # source.  Gate the representations that are actually present;
                 # a missing source is not invented as a failure.
@@ -73,14 +108,14 @@ def _bind_attempt_gate(
                 rendered, sources, request_scope=transport.context_scope,
                 require_all=bool(sources), admit_hints=enabled,
             )
-            if getattr(client, "purpose", "conversation") == "conversation":
-                prompt = getattr(client, "_attempt_gate_prompt", "") or rendered
+            if client.purpose == "conversation":
+                prompt = client._attempt_gate_prompt or rendered
                 admission = replace(
                     admission,
                     epoch=ContextEpoch(epoch_id=context_epoch_id(prompt), admissions=admission.epoch.admissions),
                 )
                 record_outbound(trace_recorder, prompt, admission=admission)
-    binder(gate)
+    bind(gate)
     return gate is not None
 
 
@@ -111,18 +146,18 @@ def _provider_failure(exc: Exception, turns_used: int, *, propagate: bool) -> Ke
 def _approval_stop(
     calls: list[ToolCall],
     *,
-    project_path: Any,
-    on_shell_request: Callable[[Any], None] | None,
+    project_path: Path | None,
+    on_shell_request: Callable[[ShellApprovalRequest], None] | None,
     turn: int,
-    run_id: object = "",
-    intent_sink: Any = None,
-    policy: Any = None,
-    permission_profile: object = "coding_writer",
-    provider_id: object = "",
-    window_ref: Any = None,
+    run_id: str = "",
+    intent_sink: KernelEffectSink | None = None,
+    policy: TaskPolicy | None = None,
+    permission_profile: str = "coding_writer",
+    provider_id: str = "",
+    window_ref: ProtocolWindowRef | None = None,
     shell: ShellSpec | None = None,
-    durable: Any = None,
-    managed_outputs: Any = None,
+    durable: DurableStore | None = None,
+    managed_outputs: ManagedOutputStore | None = None,
     task_id: str = "",
 ) -> KernelResult | None:
     if on_shell_request is None or project_path is None:
@@ -139,6 +174,8 @@ def _approval_stop(
     if not allows_shell:
         # No TaskPolicy grant: read-only and unauthorized Research never
         # pause here. Execution still denies via the project guard.
+        return None
+    if policy is None:
         return None
     effective_profile = effective_project_profile(permission_profile)
     selected_shell = shell if shell is not None else resolve_shell()
@@ -191,7 +228,7 @@ def _approval_stop(
     return None
 
 
-def _outer_evidence_for_context(completion_context: CompletionContext | None) -> Any:
+def _outer_evidence_for_context(completion_context: CompletionContext | None) -> ExecutionEvidence | None:
     try:
         return completion_context.execution_evidence if completion_context is not None else None
     except Exception:
@@ -205,16 +242,32 @@ def _completion_context_with_ignores(
 
 
 def _call_execute_turn(
-    session: Any, calls: Any, runnable: Any, run_id: Any, effect_scope: Any, turn: Any,
-    project_path: Any, tool_fns: Any, research_tools: Any, change_tracker: Any,
-    managed_outputs: Any, session_id: Any, permission_profile: Any,
-    delivered_map: Any, intent_sink: Any, controller: Any, outer_evidence: Any,
-    workspace_ignored_paths: Any, workspace_revision_store: Any,
-    turns_used: int, propagate_provider_failure: bool, stop_flag: Any = None,
-    durable: Any = None,
-    snapshot: Any = None,
-    on_event: Any = None,
-) -> Any:
+    session: TaskSession,
+    calls: list[ToolCall],
+    runnable: Mapping[str, ToolExecutor],
+    run_id: str,
+    effect_scope: str,
+    turn: int,
+    project_path: Path | None,
+    tool_fns: AgentToolFns | None,
+    research_tools: ResearchTools | None,
+    change_tracker: ChangeTracker | None,
+    managed_outputs: ManagedOutputStore | None,
+    session_id: str,
+    permission_profile: str,
+    delivered_map: Mapping[str, ToolResult],
+    intent_sink: KernelEffectSink | None,
+    controller: Collection[str] | None,
+    outer_evidence: ExecutionEvidence | None,
+    workspace_ignored_paths: tuple[str, ...],
+    workspace_revision_store: WorkspaceRevisionStore | None,
+    turns_used: int,
+    propagate_provider_failure: bool,
+    stop_flag: StopSignal | None = None,
+    durable: DurableStore | None = None,
+    snapshot: TurnSnapshot | None = None,
+    on_event: Callable[[RunEvent], None] | None = None,
+) -> list[ToolResult] | KernelResult:
     """Run one execution turn; faults fail closed as provider_failure."""
     try:
         effective_runnable = dict(runnable or {})
@@ -271,10 +324,10 @@ def _advance_after_results(
     session: TaskSession,
     pending_native_messages: list[ProviderToolResult] | None,
     *,
-    completion_context: Any = None,
+    completion_context: CompletionContext | None = None,
     boundary_prompt: str = "",
     text_result_spans: list[dict[str, Any]] | None = None,
-    result_context: Any = None,
+    result_context: Callable[[ToolResult], str] | None = None,
 ) -> tuple[list[ProviderToolResult] | None, str] | KernelResult:
     """Deliver native receipts or build the next text prompt."""
     if native:
