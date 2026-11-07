@@ -37,6 +37,15 @@ QUESTIONS = {
 }
 
 
+def apply_experiment_output_budget(config):
+    from codey.providers import local_config
+
+    context = config.context or local_config.LocalContextBudget(
+        32768, OUTPUT_TOKENS, 12000, source="2a-live-contract")
+    return replace(config, context=replace(context, context_reserve_tokens=OUTPUT_TOKENS,
+                                           source="2a-live-contract"))
+
+
 class BrowserAfterConnector(production.ConnectorAwareSearchProvider):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -154,9 +163,7 @@ def run(root: Path, case: str, arm: str, seed: int, base_url: str, model: str,
         save_config = local_config.save_local_config
 
         def save_with_output_budget(config):
-            context = config.context or local_config.LocalContextBudget(
-                32768, OUTPUT_TOKENS, 12000, source="2a-live-contract")
-            return save_config(replace(config, context=context))
+            return save_config(apply_experiment_output_budget(config))
 
         stack.enter_context(patch.object(local_config, "save_local_config", save_with_output_budget))
         stack.enter_context(patch.object(api_provider, "ApiProvider", ZeroReasoningProvider))

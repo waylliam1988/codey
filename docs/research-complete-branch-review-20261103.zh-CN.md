@@ -931,3 +931,9 @@ formal-v1 因生成任务复用了小写 URL slug，导致来源身份映射错�
 
 真实运行先发现 实验 wrapper 的 artifact 失败根因是 Windows 长路径：嵌套 `_live/.../browser_after_connector/state/...` 后失败路径约 286 字符，写端与读端使用的路径命名空间不一致。已统一 managed artifact 读写和锁路径的长路径命名空间，并增加长路径回归测试。修复后的 probe 可真实完成，但后续开发矩阵仍遭遇本地 Gemma 的 `OutputLengthError`，尚无可评分的成对最终答案。按合同判定 acquisition 为 `inconclusive`，不进入正式双 seed、不合入候选指导；成本只记录，不作为质量否决条件。
 
+
+### 2026-11-07：acquisition harness 修复与候选生成退化
+
+新的短路径开发合同修复了两项测试接线问题：避免 Windows 长路径，并强制 live harness 的实验输出预算覆盖默认配置。artifact 边界失败随之消失；严格研究 continuation 仍由 kernel 固定 `output_token_limit=4096`。
+
+seed 2101、1601 的 baseline 均可真实提交，`multi_angle_gap` 均在本地 Gemma 中进入连续 thought、未产生 tool call并以 `OutputLengthError` 结束。该候选提示与当前本地模型/工具循环格式不兼容，未形成成对质量证据；按合同判定 `inconclusive`，不启动正式双 seed、不合入生产。

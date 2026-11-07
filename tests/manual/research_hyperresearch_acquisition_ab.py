@@ -31,14 +31,10 @@ DEV_CASES = (
 )
 
 ACQUISITION_GUIDANCE = (
-    "Research acquisition guidance: before answering, cover the distinct parts of the task with separate, "
-    "task-relevant searches when useful: basic facts, the original or official source, comparison conditions, "
-    "and limitations or counterexamples. Prefer the primary source for decisive claims. Open the source and read "
-    "the section that supports the claim; a title, snippet, abstract, or search result is only a lead. Then check "
-    "which requested fact, comparison side, condition, exception, or limitation remains unsupported. If a missing "
-    "piece could change the answer, make one targeted search or read for that gap before submitting. Keep exact "
-    "source identity, version, scope, and citation binding. Do not claim coverage merely because more results were "
-    "found."
+    "Acquisition check: use separate searches when needed for facts, the primary or official source, comparison "
+    "conditions, and limitations or counterexamples. Open and read the relevant source section, then make one "
+    "targeted search or read for any missing point that could change the answer. Preserve source identity, version, "
+    "scope, and exact citations."
 )
 
 

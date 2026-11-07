@@ -115,3 +115,9 @@ v10 首对真实阅读状态显示 baseline 可提交，但 coverage 候选把�
 
 修复后的单题 probe 已至少一次真实完成；后续 v6/v7 又出现本地 Gemma 在 tool-call 前持续思考并触发 `OutputLengthError`，或在 artifact 可见性边界失败，尚未形成可评分的成对最终答案。因此 acquisition 开发矩阵当前判定 `inconclusive`，不能进入正式新题双 seed，也不能合入多角度/缺口指导。下一步需先在相同真实 writer 条件下稳定解决生成/提交边界，再重新冻结新的开发合同；不能把失败批次续写为正式证据。
 
+
+### 2026-11-07：acquisition harness 修复与真实 writer 开发结果
+
+短路径合同 `.e2e-artifacts/rha-v6..v9/` 已重新运行。修复了 live harness 未覆盖默认 4096 continuation budget 的测试 bug：实验配置现在强制写入 16384 reserve，并增加定向测试。短路径后 artifact 失败消失；但 Research kernel 对严格研究 continuation 仍明确传入 `output_token_limit=4096`。
+
+在 seed 2101 和复核 seed 1601 上，baseline 至少各有一次真实提交成功；`multi_angle_gap` 候选在两枚 seed 都出现 Gemma 连续 `<|channel>thought`、没有 tool call、最终 `OutputLengthError`。因此当前提示候选会触发本地模型生成退化，尚无可评分的成对答案，实验保持 `inconclusive`。这不是 acquisition 质量收益或损害证据，也不改变生产 2A。

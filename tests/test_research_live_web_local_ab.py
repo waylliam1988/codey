@@ -72,6 +72,16 @@ def test_run_applies_backend_budget_after_local_selection_and_records_it(tmp_pat
     assert row["reasoning_effort"] == "none"
 
 
+def test_experiment_budget_overrides_default_context_reserve():
+    from codey.providers.local_config import LocalContextBudget, LocalProviderConfig
+
+    config = LocalProviderConfig(context=LocalContextBudget(32768, 4096, 12000))
+    configured = experiment.apply_experiment_output_budget(config)
+    assert configured.context is not None
+    assert configured.context.context_reserve_tokens == experiment.OUTPUT_TOKENS
+    assert configured.context.source == "2a-live-contract"
+
+
 @pytest.mark.parametrize("compiled", [True, False])
 def test_actual_schema_must_compile_before_inference_and_is_checked_once(tmp_path, compiled):
     import json
