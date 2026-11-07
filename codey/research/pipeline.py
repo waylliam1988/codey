@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
+from codey.research.audit_result import MAX_AUDIT_DIAGNOSTICS, AuditDiagnostic, AuditOutcome, AuditPhase, AuditStatus
 from codey.research.brief_projection import project_research_brief
 from codey.research.context import ResearchContext
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
@@ -17,6 +19,8 @@ from codey.research.review_finding import findings_from_proof_review, planner_ga
 from codey.research.run_result import ResearchRunResult
 from codey.research.source_trust import project_source_set
 from codey.research.tools import ResearchTools
+
+logger = logging.getLogger(__name__)
 
 
 class ResearchContinuationError(RuntimeError):
@@ -55,9 +59,11 @@ class ResearchPipelineResult:
     final_evidence_count: int = 0
     attempted_fresh_source_count: int = 0
     attempted_new_evidence_count: int = 0
+    audit_diagnostics: tuple[AuditDiagnostic, ...] = ()
 
     def to_payload(self) -> dict[str, object]:
         return {
+            "audit_diagnostics": [item.to_payload() for item in self.audit_diagnostics[:MAX_AUDIT_DIAGNOSTICS]],
             "followup_applied": self.followup_applied,
             "followup_rounds": max(0, min(3, (self.followup_rounds or 0))),
             "stop_reason": (self.stop_reason or ""),
@@ -91,6 +97,7 @@ class ResearchPipeline:
         self.policy = policy
 
     def run(self) -> ResearchPipelineResult:
+        diagnostics: list[AuditDiagnostic] = []
         search = self.search_factory()
         try:
             run = self.run_iteration(
@@ -101,12 +108,13 @@ class ResearchPipeline:
                 topic_continuity_context=self.context.topic_continuity_context,
                 topic_continuity_payload=self.context.topic_continuity_payload,
             )
-            review = self._review(run.result, require_ledger_record=False)
-            plan = self._plan(review)
+            audit = self._review(run.result, require_ledger_record=False, phase="initial", diagnostics=diagnostics)
+            plan = self._plan(audit.value)
             self.context.trace.record_plan(plan)
             return self._finalize_pipeline_result(
                 run.result, run.tools,
-                accepted_audit=(review, plan) if run.result.accepted_report is not None else None,
+                diagnostics=diagnostics,
+                accepted_audit=(audit, plan) if run.result.accepted_report is not None else None,
             )
         finally:
             close = getattr(search, "close", None)
@@ -117,7 +125,8 @@ class ResearchPipeline:
     def _finalize_pipeline_result(
         self, result: ResearchRunResult, tools: ResearchTools | None,
         *,
-        accepted_audit: tuple[ResearchProofReview | None, ResearchPlan] | None = None,
+        diagnostics: list[AuditDiagnostic],
+        accepted_audit: tuple[AuditOutcome[ResearchProofReview], ResearchPlan] | None = None,
     ) -> ResearchPipelineResult:
         ledger_result = self._append_final_record(result)
         self.context.trace.record_evidence_ledger_write(ledger_result)
@@ -126,12 +135,16 @@ class ResearchPipeline:
         self.context.trace.record_result(result)
         if accepted_audit is not None and result.accepted_report is not None:
             # Accepted-report auditing does not read the ledger. Reuse even a
-            # failed (None) review, while retaining every diagnostic trace event.
-            review, plan = accepted_audit
+            # failed review outcome, including the original execution diagnostic.
+            audit, plan = accepted_audit
         else:
             # Legacy records can acquire ledger evidence during finalization.
-            review = self._review(result, require_ledger_record=self.evidence_ledgers is not None and result.accepted_report is None)
-            plan = self._plan(review)
+            audit = self._review(
+                result, require_ledger_record=self.evidence_ledgers is not None and result.accepted_report is None,
+                phase="final", diagnostics=diagnostics,
+            )
+            plan = self._plan(audit.value)
+        review = audit.value
         self.context.trace.record_proof_review(review)
         self._record_final_findings(result, review)
         self.context.trace.record_plan(plan)
@@ -140,6 +153,7 @@ class ResearchPipeline:
         # these historical outer-followup counters are zero for new research.
         output = ResearchPipelineResult(
             final_result=result,
+            audit_diagnostics=tuple(diagnostics),
             stop_reason=result.stop_reason,
             planner_stop_reason=("strict_writer_owns_followup" if getattr(self.policy, "strict_research", False)
                                  else "external_followup_retired"),
@@ -153,13 +167,21 @@ class ResearchPipeline:
         result: ResearchRunResult,
         *,
         require_ledger_record: bool,
-    ) -> ResearchProofReview | None:
+        phase: AuditPhase,
+        diagnostics: list[AuditDiagnostic],
+    ) -> AuditOutcome[ResearchProofReview]:
         record = getattr(result, "research_record", None)
         if record is None:
-            return None
-        ledger_payload = self._ledger_payload() if require_ledger_record else None
+            diagnostic = AuditDiagnostic("proof_review", "skipped", phase, "missing_research_record")
+            diagnostics.append(diagnostic)
+            return AuditOutcome(diagnostic)
+        ledger_payload = None
+        if require_ledger_record:
+            ledger = self._load_ledger(phase=phase)
+            diagnostics.append(ledger.diagnostic)
+            ledger_payload = ledger.value
         try:
-            return review_research_proof(
+            review: object = review_research_proof(
                 record,
                 question=(
                     self.context.effective_proof_question
@@ -169,8 +191,19 @@ class ResearchPipeline:
                 evidence_ledger=ledger_payload,
                 require_ledger_record=require_ledger_record,
             )
-        except Exception:
-            return None
+        except Exception as exc:
+            logger.exception("Research proof review failed (phase=%s)", phase)
+            diagnostic = AuditDiagnostic("proof_review", "error", phase, "proof_review_failed", type(exc).__name__)
+            diagnostics.append(diagnostic)
+            return AuditOutcome(diagnostic)
+        if not isinstance(review, ResearchProofReview):
+            logger.error("Research proof review returned an invalid result (phase=%s)", phase)
+            diagnostic = AuditDiagnostic("proof_review", "error", phase, "invalid_proof_review_result")
+            diagnostics.append(diagnostic)
+            return AuditOutcome(diagnostic)
+        diagnostic = AuditDiagnostic("proof_review", "ok", phase)
+        diagnostics.append(diagnostic)
+        return AuditOutcome(diagnostic, review)
 
     def _plan(self, review: ResearchProofReview | None) -> ResearchPlan:
         return build_research_plan(
@@ -236,25 +269,33 @@ class ResearchPipeline:
                 project=self.context.project,
             )
         except Exception:
+            logger.exception("Research evidence ledger write failed")
             return EvidenceLedgerWriteResult(
                 skipped=True,
                 reason_code="write_failed",
                 record_id=getattr(record, "record_id", ""),
             )
 
-    def _ledger_payload(self) -> Mapping[str, object] | None:
+    def _load_ledger(self, *, phase: AuditPhase) -> AuditOutcome[Mapping[str, object]]:
         if self.evidence_ledgers is None:
-            return None
+            return AuditOutcome(AuditDiagnostic("ledger_read", "skipped", phase, "ledger_not_configured"))
         try:
             snapshot = self.evidence_ledgers.load(
                 session_id=self.context.session_id,
                 project=self.context.project,
             )
-            if getattr(snapshot, "available", False):
-                return snapshot.payload
-        except Exception:
-            return None
-        return None
+        except Exception as exc:
+            logger.exception("Research evidence ledger read failed (phase=%s)", phase)
+            return AuditOutcome(AuditDiagnostic(
+                "ledger_read", "error", phase, "ledger_read_failed", type(exc).__name__,
+            ))
+        if snapshot.available:
+            return AuditOutcome(AuditDiagnostic("ledger_read", "ok", phase), snapshot.payload)
+        reason = snapshot.reason_code or "ledger_unavailable"
+        status: AuditStatus = "skipped" if reason == "missing_ledger" else "error"
+        if status == "error":
+            logger.error("Research evidence ledger unavailable (phase=%s, reason=%s)", phase, reason)
+        return AuditOutcome(AuditDiagnostic("ledger_read", status, phase, reason))
 
     def _record_research_changes(self, tools: ResearchTools | None) -> None:
         if self.research_changes_sink is None or not self.context.run_id:

@@ -31,6 +31,7 @@ from codey.research.topic_continuity import (
     MAX_TOPIC_CLAIM_REFS,
     project_topic_continuity,
 )
+from codey.runs.trace_research import project_audit_diagnostics
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 
@@ -404,6 +405,7 @@ def research_payload(
         metadata = to_payload() if callable(to_payload) else dict[str, Any]()
         if isinstance(metadata, dict):
             payload.update({
+                "audit_diagnostics": project_audit_diagnostics(metadata.get("audit_diagnostics")),
                 "followup_applied": bool(metadata.get("followup_applied")),
                 "followup_rounds": max(0, min(3, int(metadata.get("followup_rounds") or 0))),
                 "pipeline_stop_reason": str(metadata.get("stop_reason") or ""),
