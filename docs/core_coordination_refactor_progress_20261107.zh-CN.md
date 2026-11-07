@@ -31,7 +31,7 @@
 
 - [x] 抽出任务运行协调器。
 - [x] 抽出审批协调器。
-- [ ] 抽出 durable event bridge。
+- [x] 抽出 durable event bridge。
 - [x] 让 `task_submit.py` 的 admission/spawn/slot 路径停止访问内部锁和私有字段。
 - [ ] 保留兼容代理，迁移完成后再删除。
 
@@ -47,6 +47,11 @@
 恢复从 `AppContext` 移到 `ShellApprovalCoordinator`；`AppContext` 保留同名兼容代理。
 审批相关定向回归（含任务提交和 shell approval workspace 保持测试）：43 passed；
 相关 Ruff 与 mypy 通过。
+
+durable event bridge 批次把 commit record 的延迟发布队列和 flush 逻辑移到
+`DurableEventBridge`；`AppContext` 仍保留 `_publish_durable_commit` 和
+`_flush_deferred_durable_events` 兼容代理，以保持 `DurableAppServices` 装配接口稳定。
+桥接单测与 EventBus/server 回归共 212 passed；相关 Ruff 与 mypy 通过。
 
 ### 第三阶段：DurableSession 查询门面
 

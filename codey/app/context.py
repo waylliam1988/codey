@@ -24,6 +24,7 @@ from codey.app.active_provider_registry import ActiveProviderRegistry
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.conversation_registry import ConversationRegistry
 from codey.app.conversation_runtime import ConversationRuntime
+from codey.app.durable_event_bridge import DurableEventBridge
 from codey.app.durable_services import DurableAppServices
 from codey.app.event_bus import EventBus, EventSubscriber
 from codey.app.event_payloads import SCHEMA_VERSION
@@ -104,6 +105,7 @@ class AppContext(GhostStoreAccessors):
         self.event_bus = EventBus(
             replay_limit=SSE_REPLAY_LIMIT if replay_limit is None else replay_limit
         )
+        self.durable_event_bridge = DurableEventBridge(self.lock, self.emit)
         self.run_registry = RunRegistry()
         self._active_providers = ActiveProviderRegistry()
         self._run_modes: dict[str, str] = {}
@@ -203,7 +205,6 @@ class AppContext(GhostStoreAccessors):
         self._project_writer_leases: dict[str, object] = {}
         self._close_requested = False
         self._resources_closed = False
-        self._deferred_durable_events: list[dict[str, Any]] = []
         self.durable_scheduler = self._durable_services.scheduler
         if start_scheduler:
             self.durable_scheduler.start()
@@ -225,25 +226,10 @@ class AppContext(GhostStoreAccessors):
         self.task_runtime.unregister_active_provider(run_id, provider)
 
     def _publish_durable_commit(self, result: CommitResult, mutation: DurableMutation) -> None:
-        if result.record is not None:
-            payload = result.record.to_payload()
-            # Stop/expiry may commit approval state while holding the
-            # coordination lock. Queue the projection until that lock is
-            # released instead of re-entering ``emit`` and deadlocking.
-            if self.lock.locked():
-                self._deferred_durable_events.append(payload)
-            else:
-                self.emit(payload)
+        self.durable_event_bridge.publish_commit(result, mutation)
 
     def _flush_deferred_durable_events(self) -> None:
-        while True:
-            with self.lock:
-                if not self._deferred_durable_events:
-                    return
-                events = tuple(self._deferred_durable_events)
-                self._deferred_durable_events.clear()
-            for payload in events:
-                self.emit(payload)
+        self.durable_event_bridge.flush()
 
     def _load_durable_conversation_snapshot(
         self, session_id: str
