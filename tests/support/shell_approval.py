@@ -1,14 +1,18 @@
 """Durable approval fixture using the same artifact contract as the hook."""
 
 import hashlib
+from typing import TYPE_CHECKING
 
 from codey.agents.shell_approval import shell_command_payload
 from codey.policies.command_line import resolve_shell
 from codey.policies.shell_analysis import analyze_shell
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 
+if TYPE_CHECKING:
+    from codey.app.context import AppContext
 
-def admit_shell_task(ctx, *, session_id: str, run_id: str, task: str = "shell approval",
+
+def admit_shell_task(ctx: "AppContext", *, session_id: str, run_id: str, task: str = "shell approval",
                      provider_id: str = "local", project: str | None = None) -> None:
     """Create the canonical durable task required by an approval fixture."""
     try:
@@ -36,7 +40,7 @@ def admit_shell_task(ctx, *, session_id: str, run_id: str, task: str = "shell ap
     ctx.durable.start_task(run_id, state={})
 
 
-def add_pending_approval(ctx, approval_id: str, pending: dict[str, object]) -> None:
+def add_pending_approval(ctx: "AppContext", approval_id: str, pending: dict[str, object]) -> None:
     """Seed the UI projection from a fully identified durable approval."""
     row = dict(pending)
     shell = resolve_shell()
@@ -58,8 +62,9 @@ def add_pending_approval(ctx, approval_id: str, pending: dict[str, object]) -> N
     fields = shell_command_payload(str(row.get("command") or ""))
     row.update({key: value for key, value in fields.items() if key != "command"})
     row["command_preview"] = fields["command"]
-    if getattr(ctx, "managed_outputs", None) is not None:
-        artifact = ctx.managed_outputs.write_json_artifact(
+    outputs = ctx.managed_outputs
+    if outputs is not None:
+        artifact = outputs.write_json_artifact(
         session_id=session_id, run_id=run_id, payload=row,
         )
         row.update(command_ref=artifact.handle, command_digest=artifact.sha256)
@@ -69,12 +74,16 @@ def add_pending_approval(ctx, approval_id: str, pending: dict[str, object]) -> N
     ctx.add_pending_shell_approval(approval_id, row)
 
 
-def seed_requested_approval(ctx, approval_id="approval", *, continue_after=True, command="echo approval", source_run_id="source"):
+def seed_requested_approval(
+    ctx: "AppContext", approval_id: str = "approval", *, continue_after: bool = True,
+    command: str = "echo approval", source_run_id: str = "source",
+) -> ShellApprovalFact:
     # Approval lifecycle facts belong to the admitted durable task.  The
     # JSONL store is only an audit projection and must not be enough to make a
     # shell request executable in tests or production.
     admit_shell_task(ctx, session_id="session", run_id=source_run_id, task="shell approval source")
     shell = resolve_shell()
+    assert ctx.managed_outputs is not None
     artifact = ctx.managed_outputs.write_json_artifact(
         session_id="session",
         run_id=source_run_id,

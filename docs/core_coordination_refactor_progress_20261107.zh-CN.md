@@ -104,7 +104,7 @@ SQLite 并发写入与重启审批补充回归 2 passed，未运行全量 pytest
 
 - [x] 抽出 effect/artifact 写入。
 - [x] 抽出 approval 操作。
-- [ ] 抽出 task lifecycle 操作。
+- [x] 抽出 task lifecycle 操作。
 - [ ] 最后处理 submission 和 generation boundary。
 
 效果与审批批次新增 `EffectOperations`、`ApprovalOperations`。两者通过
@@ -114,6 +114,14 @@ SQLite 并发写入与重启审批补充回归 2 passed，未运行全量 pytest
 新增直接门面/兼容入口的 Memory/SQLite 原子性覆盖，以及关闭/失败后写入拒绝测试。
 扩大效果、artifact、审批与 fencing 回归 74 passed、2 skipped；新增和审批回归
 27 passed。相关 Ruff、mypy、Pyrefly 通过。
+
+任务生命周期批次把状态元数据、不可变 policy/reviewer、工作流迁移、调度 claim/recovery、
+取消 barrier、owned subtree drain 和 completion/finalization 收敛到
+`TaskLifecycleOperations`。其内部相互调用保持原状态机，读取和提交全过程继续持有
+kernel mutation line；公共 session 仅代理。任务所有权、生命周期、fencing、工作流、
+session、审批与恢复回归 83 passed。扩大 mypy 暴露了原审批测试的 optional store 与
+未标注 fixture 问题；补充具体 AppContext/返回值类型和测试前置断言后检查通过，
+没有增加 Any 或改变生产合同。
 
 ### 第五阶段：前端状态与运行投影
 

@@ -37,6 +37,7 @@ def test_shell_approval_admission_is_durable_before_audit_projection(tmp_path: P
         state.durable.advance_task(
             task_id="task-1", phase="running", state={}
         )
+        assert state.managed_outputs is not None
         artifact = state.managed_outputs.write_json_artifact(
             session_id="conversation-1",
             run_id="task-1",
@@ -85,6 +86,7 @@ def test_shell_approval_claim_uses_durable_state_when_audit_projection_is_missin
         state.durable.advance_task(
             task_id="task-1", phase="running", state={}
         )
+        assert state.managed_outputs is not None
         artifact = state.managed_outputs.write_json_artifact(
             session_id="conversation-1",
             run_id="task-1",
@@ -138,6 +140,7 @@ def test_shell_approval_status_reads_durable_record_without_audit_projection(
             text="run a shell command",
             provider_snapshot={"provider_id": "local"},
         )
+        assert state.managed_outputs is not None
         artifact = state.managed_outputs.write_json_artifact(
             session_id="conversation-1",
             run_id="task-1",
@@ -240,6 +243,7 @@ def test_settled_shell_approval_resolves_from_durable_state_without_audit_projec
             text="run a shell command",
             provider_snapshot={"provider_id": "local"},
         )
+        assert state.managed_outputs is not None
         command = state.managed_outputs.write_json_artifact(
             session_id="conversation-1",
             run_id="task-1",
@@ -319,6 +323,7 @@ def test_restart_schedules_durable_approved_shell_without_audit_projection(
             text="run a shell command",
             provider_snapshot={"provider_id": "local"},
         )
+        assert state.managed_outputs is not None
         command = state.managed_outputs.write_json_artifact(
             session_id="conversation-1",
             run_id="task-1",
