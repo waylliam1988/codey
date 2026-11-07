@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
-from typing import Any
 
 from codey.operations.kernel_errors import EffectSettlementFailed
 from codey.operations.kernel_protocol import _CONTROLLER_ALIASES
@@ -19,8 +18,10 @@ from codey.research.ledger_receipts import (
     source_observation,
     source_search_observation,
 )
+from codey.runtime.core.execution_record import ExecutionRecord, HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import canonical_tool_name
+from codey.types.json_value import ToolArgs, canonical_json_object
 
 __all__ = [
     "record_facts_for_result",
@@ -61,7 +62,7 @@ def project_result_observation(
 
 
 def _record_run_verification(
-    session: TaskSession, args: dict[str, Any], exit_code: int | None, sess_rev: int, sess_fp: str,
+    session: TaskSession, args: ToolArgs, exit_code: int | None, sess_rev: int, sess_fp: str,
     *, ok: bool,
 ) -> None:
     latest = max([0, *list(session.edited_files.values())]) if session.edited_files else 0
@@ -80,12 +81,8 @@ def _record_run_verification(
     )
 
 
-def _canonical_mapping(result: ToolResult) -> dict[str, Any]:
-    try:
-        canonical = getattr(result, "canonical", {}) or {}
-        return dict(canonical) if isinstance(canonical, dict) else {}
-    except Exception:
-        return {}
+def _canonical_mapping(result: ToolResult) -> ToolArgs:
+    return canonical_json_object(result.canonical)
 
 
 def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
@@ -96,7 +93,7 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
     # Two-phase: validate raw types/content and all conflicts into a local
     # pending set first; only commit once the whole batch passes. Never wash
     # illegal types via str() and never leave partial state behind.
-    pending: dict[str, dict[str, object]] = {}
+    pending: dict[str, HitTarget] = {}
     for hid, target in mapping.items():
         if type(hid) is not str or not hid:
             raise ValueError("hit id must be a non-empty string")
@@ -115,7 +112,7 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
         pages = raw_pages
         if not url:
             raise ValueError("hit target is malformed")
-        clean: dict[str, object] = {"url": url, "offset": raw_offset, "pages": pages}
+        clean = HitTarget(url=url, offset=raw_offset, pages=pages)
         if hid in pending and pending[hid] != clean:
             raise ValueError(f"conflicting hit target for {hid}")
         pending[hid] = clean
@@ -161,12 +158,12 @@ def _record_knowledge_fact(session: TaskSession, result: ToolResult) -> None:
             session.record_evidence(url, excerpt[:600])
 
 
-def _record_edit_fact(session: TaskSession, args: dict[str, Any], result: ToolResult) -> None:
+def _record_edit_fact(session: TaskSession, args: ToolArgs, result: ToolResult) -> None:
     if not isinstance(result.audit, dict) or result.audit.get("changed", True):
         session.record_edit(str(args.get("path", "") or "file"))
 
 
-def _record_read_fact(session: TaskSession, args: dict[str, Any]) -> None:
+def _record_read_fact(session: TaskSession, args: ToolArgs) -> None:
     try:
         from pathlib import Path
 
@@ -177,7 +174,7 @@ def _record_read_fact(session: TaskSession, args: dict[str, Any]) -> None:
         pass
 
 
-def _record_run_fact(session: TaskSession, args: dict[str, Any], result: ToolResult, *,
+def _record_run_fact(session: TaskSession, args: ToolArgs, result: ToolResult, *,
                      ok: bool, exit_code: int | None) -> None:
     text = (result.model_text or "")
     if denied_before_execution(result):
@@ -290,7 +287,7 @@ def project_execution_record(
     full committed receipt; this dictionary is not a persistent authority.
     """
     try:
-        record: dict[str, Any] = {
+        record: ExecutionRecord = {
             "name": canonical_tool_name(result.call.name),
             "ok": ok if type(ok) is bool else False,
             "call_id": str(result.call.call_id or getattr(call, "call_id", "") or ""),
@@ -305,8 +302,11 @@ def project_execution_record(
                 raise ValueError("invalid child effect references")
             record["child_effect_ids"] = list(children)
         if result.canonical.get("workspace_unconfirmed") is True:
+            identity_reason = result.canonical["identity_reason"]
+            if not isinstance(identity_reason, str):
+                raise ValueError("unconfirmed edit requires an identity reason")
             record["applied_edit"] = {"mutation_applied": True, "identity_status": "unconfirmed",
-                                      "identity_reason": result.canonical["identity_reason"]}
+                                      "identity_reason": identity_reason}
         strict_exit = strict_exit_code_or_none(exit_code)
         if strict_exit is None and isinstance(result.audit, dict):
             strict_exit = strict_exit_code_or_none(result.audit.get("exit_code"))

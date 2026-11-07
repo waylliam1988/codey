@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import TypeVar
 
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.runtime.observe.events import RunEvent
+from codey.toolchain.runtime import ToolOutcome
+from codey.types.json_value import ToolArgs
 from codey.workspace.revision import (
     INITIAL_WORKSPACE_REVISION,
     valid_workspace_fingerprint,
     valid_workspace_revision,
 )
+
+Information = TypeVar("Information")
 
 MAX_CHANGED_FILES = 32
 MAX_READS = 48
@@ -160,6 +165,24 @@ class ExecutionEvidence:
                         workspace_fingerprint=fingerprint,
                     ),
                 )
+
+    def detached(self) -> ExecutionEvidence:
+        """Copy the mutable aggregate; all collection elements are frozen values."""
+        result = ExecutionEvidence(workspace_revision=self.workspace_revision,
+                                   workspace_fingerprint=self.workspace_fingerprint)
+        result.edit_epoch = self.edit_epoch
+        result.changed_files = list(self.changed_files)
+        result.reads = list(self.reads)
+        result.searches = list(self.searches)
+        result.checks_after_edit = list(self.checks_after_edit)
+        result.failed_checks_after_edit = list(self.failed_checks_after_edit)
+        result.environment_failures_after_edit = list(self.environment_failures_after_edit)
+        result.denied_checks_after_edit = list(self.denied_checks_after_edit)
+        result.truncated_results = list(self.truncated_results)
+        result.duplicate_info_tools = self.duplicate_info_tools
+        result.observed_tool_events = self.observed_tool_events
+        result._seen_info = set(self._seen_info)
+        return result
 
     def set_workspace_state(self, revision: object, fingerprint: object) -> None:
         number = valid_workspace_revision(revision)
@@ -342,7 +365,7 @@ class ExecutionEvidence:
         self.checks_after_edit.clear()
         self._append_check(self.failed_checks_after_edit, item, MAX_FAILED_CHECKS)
 
-    def _record_run(self, args: dict[str, Any], outcome: object) -> None:
+    def _record_run(self, args: ToolArgs, outcome: ToolOutcome) -> None:
         command = str(args.get("command") or "").strip()
         cwd = str(args.get("path") or ".").strip() or "."
         if not command:
@@ -387,7 +410,7 @@ class ExecutionEvidence:
         )
         self.observe_check(item, succeeded=ok)
 
-    def _record_information(self, key: Any, values: list[Any], item: Any, limit: int) -> None:
+    def _record_information(self, key: tuple[object, ...], values: list[Information], item: Information, limit: int) -> None:
         if key in self._seen_info:
             self.duplicate_info_tools += 1
         else:
@@ -433,7 +456,7 @@ class ExecutionEvidence:
         return value if isinstance(value, int) and not isinstance(value, bool) else default
 
     @staticmethod
-    def _unique(values: Any) -> list[str]:
+    def _unique(values: Iterable[str]) -> list[str]:
         result: list[str] = []
         for value in values:
             if value and value not in result:

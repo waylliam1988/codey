@@ -67,8 +67,9 @@ def _event_call(session: TaskSession, call: ToolCall) -> ToolCall:
     if key is None:
         return call
     reference = str(call.args.get(key) or "").strip().lower()
+    target = session.hit_targets.get(reference)
     url = (
-        (session.hit_targets.get(reference, {}).get("url") if name == "open_hit" else None)
+        (target["url"] if name == "open_hit" and target is not None else None)
         or session.search_results.get(reference)
         or session.source_ids.get(reference)
     )
@@ -112,14 +113,14 @@ def _emit_tool_results(
 
     for index, result in enumerate(results):
         identity = turn_effect_id(str(run_id or "adhoc"), turn, index)
-        record = session.executed.get(identity, {})
+        record = session.executed.get(identity)
         raw_ok = record.get("ok", False) if isinstance(record, dict) else False
         ok = raw_ok if type(raw_ok) is bool else False
         # Strict exit projection: only real ints pass. A present-but-invalid
         # audit/receipt exits (bool/str/float) are omitted, never coerced to 0.
         # A present record is authoritative even when its exit is unknown.
         # Only absent exits may use the current result's structured audit.
-        raw_exit = record["exit_code"] if "exit_code" in record else result.audit.get("exit_code")
+        raw_exit = record["exit_code"] if record is not None and "exit_code" in record else result.audit.get("exit_code")
         exit_code = strict_exit_code(raw_exit)
         audit = dict(result.audit)
         if exit_code is None:

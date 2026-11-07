@@ -253,8 +253,8 @@ def test_long_commands_do_not_merge_failed_and_successful_observations(tmp_path)
                                     workspace_fingerprint=session.workspace_fingerprint)
     selected = _latest_observations_by_key(session.verifications, 1)
     assert set(selected) == {(first.strip(), "."), (second.strip(), ".")}
-    assert selected[(first.strip(), ".")]["passed"] is False
-    assert selected[(second.strip(), ".")]["passed"] is True
+    assert selected[(first.strip(), ".")].outcome.succeeded is False
+    assert selected[(second.strip(), ".")].outcome.succeeded is True
 
 
 def test_event_evidence_keeps_original_long_verification_identity(tmp_path):

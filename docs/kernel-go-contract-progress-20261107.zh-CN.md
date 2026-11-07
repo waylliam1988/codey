@@ -21,7 +21,7 @@
 | 4 | 六种 provider 请求联合、回复、版本化 codec | 完成 | 扩大102 passed；补充80 passed；三工具/Ruff/gate通过 |
 | 5 | provider adapter、wrapper、capabilities | 完成 | 首轮122；扩大97及67 passed；三工具/Ruff/gate通过 |
 | 6 | contracts、builder、driver、context 主链 | 完成 | 24个生产文件三工具/Ruff通过；扩大133 passed；见第六批记录 |
-| 7 | completion 输入、verification observation、纯判定 | 待开始 | |
+| 7 | completion 输入、verification observation、纯判定 | 完成 | 扩大390 passed/64 subtests；契约与静态负例32 passed；三工具/Ruff通过 |
 | 8 | research 参数、报告、receipt、staging | 待开始 | |
 | 9 | 强化门禁、Go 差分实现与测试、最终审计 | 待开始 | |
 
@@ -31,7 +31,7 @@
 
 ## 接续工作位置
 
-第六批已完成并验证，主十四模块显式 Any 为93，核心五模块及context/driver/provider_session均为0。下一步第七批：先修复CompletionContext.selected_check丢弃VerificationCandidate的问题，建立具名verification observation与session事实模型，统一completion输入并分离workspace采集与纯判定。第八、九批尚未开始。完整目标仍包括研究契约拥有者与真实Go差分验证。
+第七批已完成并验证，主十四模块显式Any为20，仅research/tools.py仍为20。下一步第八批：工具参数codec、复用ReadPassage与receipt descriptor、报告联合及其字段拥有者、ledger receipts和staging。第九批仍包括精度门禁加强、完整生产树三工具无豁免通过与真实Go差分执行。全树mypy尚有5个起始边界错误（attachments/conversation_ops/cline connection/attachment_routes/codemode kernel），不能声称全树类型检查已通过。
 
 ## 第一批验证记录
 
@@ -100,3 +100,14 @@
 - 大范围领域/provider/研究/重启验证初轮270 passed、2 failed：两处测试分别仍按dict访问CompletionContext、以及假ResearchTools遗漏协议要求的sources_read/search_result_urls；按真实契约修正测试。另扩大83 passed、1 failed为旧架构allowlist未包含新增共享provider契约/codec模块，已更新有限allowlist，继续禁止具体provider实现。
 - 修正后合并重跑入口、领域、协议、native、not-sent、normalization、settlement、恢复、receipt、parity及workspace provenance：133 passed。领域与架构边界单独22 passed；三工具静态负例在前述270通过范围内。
 - 原十四模块显式Any 148→93；不声称第七至九批完成，不以Python样例通过替代Go执行证据。
+
+
+## 第七批变更与验证
+
+- CompletionContext.selected_check修正为VerificationCandidate；旧mapping/属性兼容只在completion_context_codec固定字段表归一化，删除extras/get动态后门。changes与analysis提取成具名不可变输入，历史研究前提捕获为ResearchPrerequisiteFacts，不再持有可变父session。
+- VerificationObservation区分CompleteVerification与IncompleteVerification，保留输入顺序、command/cwd/edit epoch、缺字段与显式false差异。最新坏记录仍遮蔽旧成功；禁止忽略最新坏记录后恢复旧绿灯。
+- workspace采集从项目完成评价拆出；ProjectCompletionFacts捕获不可变路径/观察事实，evaluate_project_completion不扫描workspace且不修改传入execution evidence。扩展CheckProvider接收不可变CompletionCheckInput，不能改写live session。
+- TaskSession真实拥有者接上TaskPolicy、VerificationCandidate/VerificationRecord、ExecutionRecord、HitTarget和JsonObject；kernel_facts与execution_evidence同步消除Any。clone_projection显式复制嵌套可变事实，补测未commit的staged更改不泄漏。
+- 修复blocked_result遇facts=None的确定性回归。旧测试的内部dict context、假evaluation/evidence、假native reply改为真实领域对象；不放宽生产codec以适应过时测试。
+- completion/research/project/verification及recovery/golden/convergence扩大回归390 passed、64 subtests。新增input/observation codec、candidate冲突、不可变扩展、嵌套隔离与三工具静态负例合计32 passed（含原静态负例）。未执行全量pytest。
+- 18个修改/新增生产模块mypy --follow-imports=silent、Pyrefly、ty target3.12通过；Ruff、precision gate与diff check通过。原十四模块Any 93→20，completion三个基线归零；报告/工具/receipt/staging仍属于第八批，未宣称完成。

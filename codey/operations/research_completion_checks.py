@@ -6,8 +6,6 @@ proof and never imports the gate.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
-
 from codey.completion.contract import (
     CHECK_FAIL,
     CHECK_NOT_RUN,
@@ -16,18 +14,17 @@ from codey.completion.contract import (
     completion_check,
 )
 from codey.operations.completion_context import CompletionContext
+from codey.operations.task_session import TaskSession
 from codey.research.finding_report import ResearchReport, compile_finding_report
 
-if TYPE_CHECKING:
-    from codey.operations.task_session import TaskSession
 
-
-def prepare_research_completion(session: TaskSession, text: str, context: Any) -> tuple[str, ResearchReport | None]:
+def prepare_research_completion(session: TaskSession, text: str, context: object) -> tuple[str, ResearchReport | None]:
     """Derive this gate call's report without replacing the original proposal."""
+    context = CompletionContext.from_value(context)
     if not session.policy.strict_research or session.task_kind == "evidence_followup":
         return text, None
-    ledger = _context_get(context, "research_ledger")
-    store = _context_get(context, "knowledge_store")
+    ledger = context.research_ledger
+    store = context.knowledge_store
     if ledger is None or store is None:
         raise ValueError("strict report preparation requires its research ledger and knowledge store")
     from codey.research.answer_contract import whole_research
@@ -36,13 +33,13 @@ def prepare_research_completion(session: TaskSession, text: str, context: Any) -
         from codey.research.answer_report import compile_answer_report
 
         answer = compile_answer_report(session, ledger, store,
-            project=str(_context_get(context, "knowledge_project") or ""),
-            session_id=str(_context_get(context, "knowledge_session_id") or ""))
+            project=str(context.knowledge_project or ""),
+            session_id=str(context.knowledge_session_id or ""))
         return answer.text, answer
     try:
         report = compile_finding_report(session.last_done_args, ledger, store,
-            project=str(_context_get(context, "knowledge_project") or ""),
-            session_id=str(_context_get(context, "knowledge_session_id") or ""), task=session.task_text)
+            project=str(context.knowledge_project or ""),
+            session_id=str(context.knowledge_session_id or ""), task=session.task_text)
     except ValueError as exc:
         from codey.research.issues import ResearchIssue
 
@@ -52,36 +49,30 @@ def prepare_research_completion(session: TaskSession, text: str, context: Any) -
     return report.text, report
 
 
-def _context_get(context: Any, key: str) -> Any:
-    if isinstance(context, CompletionContext):
-        return context.get(key)
-    if isinstance(context, dict):
-        return context.get(key)
-    return getattr(context, key, None)
-
-
-def knowledge_reference_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
-    raw = getattr(session, "last_done_args", {}).get("knowledge_refs")
+def knowledge_reference_checks(session: TaskSession, context: object = None) -> list[CompletionCheck]:
+    context = CompletionContext.from_value(context)
+    raw = session.last_done_args.get("knowledge_refs")
     if not raw:
         return []
     from codey.knowledge.answer_refs import answer_references
 
     try:
-        answer_references(raw, _context_get(context, "knowledge_store"),
-                          project=str(_context_get(context, "knowledge_project") or ""),
-                          session_id=str(_context_get(context, "knowledge_session_id") or ""))
+        answer_references(raw, context.knowledge_store,
+                          project=str(context.knowledge_project or ""),
+                          session_id=str(context.knowledge_session_id or ""))
     except (ValueError, TypeError, KeyError):
         return [CompletionCheck("knowledge_versions", CHECK_FAIL, "knowledge_reference_invalid")]
     # A locator/version check cannot prove an interpretation or applicability.
     return [CompletionCheck("knowledge_versions", CHECK_PASS)]
 
 
-def source_requirement_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
+def source_requirement_checks(session: TaskSession, context: object = None) -> list[CompletionCheck]:
     """普通联网任务的来源要求：只检查任务要求的来源是否实际打开。"""
-    policy = getattr(session, "policy", None)
-    if not bool(getattr(policy, "sources_open_required", False)):
+    context = CompletionContext.from_value(context)
+    policy = session.policy
+    if not policy.sources_open_required:
         return []
-    ledger = _context_get(context, "research_execution_ledger") or _context_get(context, "research_ledger")
+    ledger = context.research_execution_ledger or context.research_ledger
     if ledger is None:
         return [CompletionCheck("research_sources_opened", CHECK_FAIL, "research_ledger_missing")]
     opened = ledger.final_url_set()
@@ -93,14 +84,14 @@ def source_requirement_checks(session: Any, context: Any = None) -> list[Complet
     return [row] if row is not None else []
 
 
-def investigation_attempt_checks(session: Any) -> list[CompletionCheck]:
+def investigation_attempt_checks(session: TaskSession) -> list[CompletionCheck]:
     """An evidence-only phase must try acquisition, not recite its parent.
 
     Failure receipts count: an unavailable source can legitimately leave a
     gap. This is an execution check, never a claim of semantic coverage.
     """
-    if (getattr(session, "task_kind", "") != "evidence_followup"
-            or getattr(session, "research_acquisition_limits", None) is None):
+    if (session.task_kind != "evidence_followup"
+            or session.research_acquisition_limits is None):
         return []
     acquisition = {"web_search", "open_url", "open_result", "open_hit", "reopen_source", "source_search"}
     attempted = any(result.call.name in acquisition
@@ -110,16 +101,17 @@ def investigation_attempt_checks(session: Any) -> list[CompletionCheck]:
                             "" if attempted else "research_investigation_not_attempted")]
 
 
-def citation_requirement_checks(session: Any, text: str, context: Any, *, report: ResearchReport | None = None) -> list[CompletionCheck]:
-    policy = getattr(session, "policy", None)
-    required = "research_citations" in getattr(policy, "required_checks", ())
-    strict = bool(getattr(policy, "strict_research", False))
-    if not (required or strict or getattr(policy, "sources_open_required", False)):
+def citation_requirement_checks(session: TaskSession, text: str, context: object, *, report: ResearchReport | None = None) -> list[CompletionCheck]:
+    context = CompletionContext.from_value(context)
+    policy = session.policy
+    required = "research_citations" in policy.required_checks
+    strict = policy.strict_research
+    if not (required or strict or policy.sources_open_required):
         return []
     if report is not None:
         # Sources/citations were resolved from exact selected versions before rendering.
         return [CompletionCheck("research_citations", CHECK_PASS)]
-    ledger = _context_get(context, "research_ledger")
+    ledger = context.research_ledger
     if ledger is None:
         reason = "research_ledger_missing"
     else:
@@ -145,22 +137,23 @@ def _missing_ledger_rows() -> list[CompletionCheck]:
     return rows
 
 
-def strict_research_checks(session: Any, done_text: str, context: Any = None, *,
+def strict_research_checks(session: TaskSession, done_text: str, context: object = None, *,
                            report: ResearchReport | None = None) -> list[CompletionCheck]:
     """严格 Research 专属：证据归档、报告与研究质量（普通任务不调用）。
 
     Strict Research always requires a valid evidence ledger. A missing
     ledger blocks instead of falling back to weak session/text checks.
     """
-    policy = getattr(session, "policy", None)
-    if not bool(getattr(policy, "strict_research", False)):
+    context = CompletionContext.from_value(context)
+    policy = session.policy
+    if not policy.strict_research:
         return []
-    if context is None:
+    if context.research_ledger is None:
         return _missing_ledger_rows()
     return _ledger_checks(session, done_text, report)
 
 
-def research_completion_feedback(session: Any, text: str, context: Any, checks: list[CompletionCheck]) -> str:
+def research_completion_feedback(session: TaskSession, text: str, context: object, checks: list[CompletionCheck]) -> str:
     """Explain failed report checks without rewriting the proposed answer."""
     failed = {row.check_id for row in checks if row.status != CHECK_PASS}
     if "research_investigation_attempted" in failed:
@@ -176,7 +169,7 @@ def research_completion_feedback(session: Any, text: str, context: Any, checks: 
     return ""
 
 
-def _ledger_checks(session: Any, done_text: str, compiled: ResearchReport | None) -> list[CompletionCheck]:
+def _ledger_checks(session: TaskSession, done_text: str, compiled: ResearchReport | None) -> list[CompletionCheck]:
     from codey.research.answer_report import DELIVERY_CHECKS, AnswerReport
 
     if isinstance(compiled, AnswerReport):

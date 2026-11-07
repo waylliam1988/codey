@@ -565,7 +565,8 @@ def _reconcile_guarded_slot(
         return
     if slot.disposition == "RECOVERED":
         try:
-            raw_ok = (session.executed.get(identity) or {}).get("ok", False)
+            record = session.executed.get(identity)
+            raw_ok = record["ok"] if record is not None else False
             orig_ok = raw_ok if type(raw_ok) is bool else False
         except Exception:
             orig_ok = False

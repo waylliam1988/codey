@@ -165,8 +165,9 @@ def blocked_result(result: RunResult, reason: str) -> RunResult:
     note = blocked_note(reason)
     summary = result.summary.strip()
     from codey.operations.project_completion_checks import verification_gap_diagnostics
+    from codey.operations.task_session import TaskSession
 
-    details = verification_gap_diagnostics(result.facts)
+    details = verification_gap_diagnostics(result.facts) if isinstance(result.facts, TaskSession) else ""
     if details:
         note += "\n" + details
     return replace(

@@ -35,6 +35,7 @@ def test_gate_subject_uses_real_run_id_without_task_fallback():
 
 
 def test_proof_refs_carry_receipt_identities():
+    from codey.operations.completion_context import CompletionContext
     from codey.operations.completion_gate import _proof_evidence_refs
 
     session = _session()
@@ -43,7 +44,7 @@ def test_proof_refs_carry_receipt_identities():
         "pytest", 7, True, exit_code=0,
         workspace_revision=7, workspace_fingerprint="fp-abc",
     )
-    refs = _proof_evidence_refs(session, {"run_id": "r-9"})
+    refs = _proof_evidence_refs(session, CompletionContext(run_id="r-9"))
     text = " ".join(refs)
     assert "run:r-9" in text
     edit_refs = [r for r in refs if r.startswith("edit:")]
@@ -135,8 +136,10 @@ def test_final_project_gate_cannot_drop_required_web_evidence(monkeypatch):
         checks=[completion_check("relevant_verification", "pass")],
     ))
     from codey.completion.decision import CompletionDecision
+    from codey.completion.engine import CompletionEvidence
+    from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
-    evaluation = SimpleNamespace(
+    evaluation = CompletionEvidence(
         decision=CompletionDecision(coding_proof, None, (), "", ""), integrity=None,
     )
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "web.read"}),
@@ -146,7 +149,7 @@ def test_final_project_gate_cannot_drop_required_web_evidence(monkeypatch):
         frame=SimpleNamespace(run_id="r-final", trace=None),
         request=SimpleNamespace(task="查官方文档", session_id="s"),
         task_changed=False, files=(), task_changes={}, selected_check=None,
-        work=SimpleNamespace(evidence=object(), analysis_run_payloads=()), project=".",
+        work=SimpleNamespace(evidence=ExecutionEvidence(), analysis_run_payloads=()), project=".",
         checkpoint_green=False, verification_forbidden=False,
         completion_engine=SimpleNamespace(evaluate=lambda **kw: evaluation),
     )

@@ -2,22 +2,29 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, field, fields, replace
 from threading import RLock
-from typing import Any
 
+from codey.completion.contract import CompletionProof
+from codey.completion.verification_policy import VerificationCandidate
 from codey.policies.command_line import ShellSpec, resolve_shell
+from codey.policies.task_policy import TaskPolicy
+from codey.runtime.core.execution_record import ExecutionRecord, HitTarget
 from codey.runtime.core.models import ToolResult
 from codey.runtime.core.tool_dispatch import ToolDispatch
+from codey.runtime.core.verification_observation import VerificationRecord
+from codey.types.json_value import JsonObject
 from codey.utils.refs import stable_ref
 
 
-def session_checks_passed(session: Any, proof: Any = None) -> bool:
+def session_checks_passed(session: TaskSession, proof: CompletionProof | None = None) -> bool:
     """Project the common proof/facts into a receipt without a new decision."""
-    if getattr(session, "edited_files", None):
+    if session.edited_files:
         return any(row.check_id == "relevant_verification" and row.status == "pass"
-                   for row in getattr(proof, "checks", ()))
-    verifications = getattr(session, "verifications", ()) or ()
+                   for row in (proof.checks if proof is not None else ()))
+    verifications = session.verifications
     if not verifications:
         return False
     latest = verifications[-1]
@@ -46,7 +53,7 @@ def turn_effect_id(run_id: object, turn: object, tool_index: object) -> str:
 
 @dataclass
 class TaskSession:
-    policy: Any
+    policy: TaskPolicy
     task_kind: str = "project"
     project: str = ""
     max_turns: int = 8
@@ -70,11 +77,12 @@ class TaskSession:
     project_changes_required: bool = False
     coding_context_enabled: bool = True
     verification_forbidden: bool = False
-    verification_candidates: tuple[Any, ...] = ()
-    verification_candidate_loader: Any = field(default=None, repr=False, compare=False)
+    verification_candidates: tuple[VerificationCandidate, ...] = ()
+    verification_candidate_loader: Callable[[], tuple[VerificationCandidate, ...]] | None = field(
+        default=None, repr=False, compare=False)
     verification_candidates_epoch: int = -1
     verification_candidates_refresh_failed: bool = False
-    selected_verification: Any = None
+    selected_verification: VerificationCandidate | None = None
     # Current workspace identity observed by real edit/run execution.
     # Verifications carry the identity they observed; only a verification
     # whose fingerprint matches the current workspace can complete.
@@ -85,17 +93,17 @@ class TaskSession:
     search_results: dict[str, str] = field(default_factory=dict)
     opened_sources: set[str] = field(default_factory=set)
     source_ids: dict[str, str] = field(default_factory=dict)
-    hit_targets: dict[str, dict[str, Any]] = field(default_factory=dict)
+    hit_targets: dict[str, HitTarget] = field(default_factory=dict)
     evidence: list[dict[str, str]] = field(default_factory=list)
     edited_files: dict[str, int] = field(default_factory=dict)
     read_files: set[str] = field(default_factory=set)
-    verifications: list[dict[str, Any]] = field(default_factory=list)
+    verifications: list[VerificationRecord] = field(default_factory=list)
     notes_saved: int = 0
     transcript_notes: list[str] = field(default_factory=list)
     last_done_text: str = ""
-    last_done_args: dict[str, Any] = field(default_factory=dict)
+    last_done_args: JsonObject = field(default_factory=dict)
     turn: int = 0
-    executed: dict[str, dict[str, Any]] = field(default_factory=dict)
+    executed: dict[str, ExecutionRecord] = field(default_factory=dict)
     _memory_results: dict[str, ToolResult] = field(default_factory=dict, repr=False, compare=False)
     restored_effect_ids: set[str] = field(default_factory=set, repr=False, compare=False)
     shell: ShellSpec = field(default_factory=resolve_shell)
@@ -104,8 +112,17 @@ class TaskSession:
 
     def clone_projection(self) -> TaskSession:
         """Isolate mutable projection containers, without copying capabilities."""
-        return replace(self, **{name: value.copy() for name, value in vars(self).items()
-                                if type(value) in {dict, list, set}})
+        return replace(
+            self,
+            research_acquisition_slots=dict(self.research_acquisition_slots),
+            searches=list(self.searches), search_results=dict(self.search_results),
+            opened_sources=set(self.opened_sources), source_ids=dict(self.source_ids),
+            hit_targets=deepcopy(self.hit_targets), evidence=deepcopy(self.evidence),
+            edited_files=dict(self.edited_files), read_files=set(self.read_files),
+            verifications=deepcopy(self.verifications), transcript_notes=list(self.transcript_notes),
+            last_done_args=deepcopy(self.last_done_args), executed=deepcopy(self.executed),
+            _memory_results=dict(self._memory_results), restored_effect_ids=set(self.restored_effect_ids),
+        )
 
     def commit_projection(self, staged: TaskSession) -> None:
         for item in fields(self):
@@ -175,8 +192,7 @@ class TaskSession:
         if type(revision) is not int:
             return
         rev = revision
-        row: dict[str, Any] = {"command": (command or ""), "cwd": (cwd or "."),
-                               "revision": rev, "passed": passed}
+        row = VerificationRecord(command=command or "", cwd=cwd or ".", revision=rev, passed=passed)
         if exit_code is not None:
             try:
                 from codey.utils.refs import strict_exit_code as _strict_exit

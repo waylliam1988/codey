@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -19,6 +19,13 @@ from codey.operations.task_loop import (
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.run_result import ResearchRunResult
 from codey.runtime.observe.events import RunEvent
+
+
+def _proposal_knowledge_refs(proposal: Mapping[str, object]) -> list[object]:
+    refs = proposal.get("knowledge_refs", [])
+    if not isinstance(refs, list):
+        raise ValueError("knowledge_refs must be an array")
+    return list(refs)
 
 
 def _stable_synthesis_id(run_id: str) -> str:
@@ -381,11 +388,12 @@ def run_research_iteration(
         # digest rejects changes to that original output on replay.
         from codey.operations.research_publication import publish_synthesis as publish_answer
 
+
         synthesis_id = publish_answer(history,
             tools, task, outcome.summary, session_id=session_id,
             project=project, run_id=run_id, on_event=on_event,
             open_questions=compiled.open_questions if compiled else session.last_done_args.get("open_questions", ()),
-            knowledge_refs=[*session.last_done_args.get("knowledge_refs", ()), *(compiled.knowledge_refs if compiled else ())],
+            knowledge_refs=[*_proposal_knowledge_refs(session.last_done_args), *(compiled.knowledge_refs if compiled else ())],
             finding_ids=compiled.finding_ids if compiled else (),
             accepted_report=compiled,
             policy=policy,

@@ -7,7 +7,7 @@ rows into the final contract.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Sequence
 
 from codey.completion.contract import (
     CHECK_FAIL,
@@ -18,107 +18,83 @@ from codey.completion.contract import (
     completion_check,
 )
 from codey.completion.engine import CompletionEngine
+from codey.completion.inputs import ChangedFile, CompletionChangeSet
 from codey.completion.verification_policy import VerificationCandidate
 from codey.operations.completion_context import CompletionContext
+from codey.operations.completion_inputs import ProjectCompletionFacts
+from codey.operations.task_session import TaskSession
+from codey.runtime.core.verification_observation import (
+    CompleteVerification,
+    IncompleteVerification,
+    VerificationObservation,
+    decode_verification_observation,
+    latest_verification_observations,
+    verification_observations,
+)
 from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvidence
-from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
 
 
-def _context_get(context: Any, key: str) -> Any:
-    if isinstance(context, CompletionContext):
-        return context.get(key)
-    if isinstance(context, dict):
-        return context.get(key)
-    return getattr(context, key, None)
-
-
-def _task_requires_modification(session: Any) -> bool:
+def _task_requires_modification(session: TaskSession | ProjectCompletionFacts) -> bool:
     """An explicit goal requirement applies independently of task profile."""
-    if getattr(session, "project_changes_required", False) is True:
+    if session.project_changes_required:
         return True
-    policy = getattr(session, "policy", None)
-    return "project_changes_required" in tuple(getattr(policy, "required_checks", ()) or ())
+    return "project_changes_required" in session.policy.required_checks
 
 
-def _refresh_completion_workspace(session: Any, context: Any) -> None:
+def collect_completion_workspace(session: TaskSession, context: CompletionContext) -> None:
     """Compare verification with files observed at the completion boundary."""
     from pathlib import Path
 
     from codey.workspace.revision import workspace_fingerprint
 
-    def get(key: str) -> Any:
-        return _context_get(context, key)
     if not session.edited_files:
         return
-    root = getattr(session, "project", "") or get("project")
+    root = session.project or context.project
     if not root or not Path(root).is_dir():
         return
-    fingerprint = workspace_fingerprint(root, ignored_paths=get("workspace_ignored_paths") or ())
+    fingerprint = workspace_fingerprint(root, ignored_paths=context.workspace_ignored_paths or ())
     session.set_workspace_state(session.workspace_revision, fingerprint)
-    evidence = get("execution_evidence")
+    evidence = context.execution_evidence
     if evidence is not None:
         evidence.set_workspace_state(session.workspace_revision, fingerprint)
 
 
-def _effective_verification_forbidden(session: Any) -> bool:
+def _effective_verification_forbidden(session: TaskSession | ProjectCompletionFacts) -> bool:
     """One owner for the verification exemption: the session task requirement."""
-    return getattr(session, "verification_forbidden", False) is True
+    return session.verification_forbidden
 
 
-def _session_scope_files(session: Any) -> tuple[str, ...]:
-    try:
-        edited = dict(getattr(session, "edited_files", {}) or {})
-    except Exception:
-        return ()
-    return tuple(str(k) for k in edited if str(k))
+def _session_scope_files(session: TaskSession | ProjectCompletionFacts) -> tuple[str, ...]:
+    return tuple(path for path in session.edited_files if path)
 
 
-def _session_latest_verification(session: Any) -> dict[str, Any] | None:
-    try:
-        verifs = list(getattr(session, "verifications", ()) or [])
-    except Exception:
-        return None
-    if not verifs:
-        return None
-    latest = None
-    latest_rev = -1
-    for item in verifs:
-        if not isinstance(item, dict):
-            continue
-        rev = item.get("revision", -1)
-        if type(rev) is not int:
-            continue
-        if rev >= latest_rev:
-            latest_rev = rev
-            latest = item
+def _session_latest_verification(session: TaskSession | ProjectCompletionFacts) -> VerificationObservation | None:
+    rows = verification_observations(session.verifications)
+    latest: VerificationObservation | None = None
+    latest_revision = -1
+    for row in rows:
+        if row.edit_revision is not None and row.edit_revision >= latest_revision:
+            latest, latest_revision = row, row.edit_revision
     return latest
 
 
-def _synthesize_changes(scope: tuple[str, ...], provided: Any) -> Any:
-    if isinstance(provided, dict) and isinstance(provided.get("files"), list) and provided.get("files"):
+def _synthesize_changes(
+    scope: tuple[str, ...], provided: CompletionChangeSet | None,
+) -> CompletionChangeSet | None:
+    if provided is not None and provided.files:
         return provided
     if not scope:
         return provided
-    return {
-        "ok": True,
-        "changed_count": len(scope),
-        "files": [{"path": p} for p in scope],
-        "diff": "",
-        "mode": "kernel",
-    }
+    return CompletionChangeSet(tuple(ChangedFile(path) for path in scope),
+                               changed_count=len(scope), mode="kernel")
 
 
-def _selected_equal(first: Any, second: Any) -> bool:
-    try:
-        return (
-            str(getattr(first, "command", "") or "").strip() == str(getattr(second, "command", "") or "").strip()
-            and str(getattr(first, "cwd", ".") or ".").strip() == str(getattr(second, "cwd", ".") or ".").strip()
-        )
-    except Exception:
-        return False
+def _selected_equal(first: VerificationCandidate, second: VerificationCandidate) -> bool:
+    return (first.command.strip() == second.command.strip()
+            and (first.cwd or ".").strip() == (second.cwd or ".").strip())
 
 
-def _resolve_selected_check(session: Any, context: Any) -> Any:
+def _resolve_selected_check(session: TaskSession | ProjectCompletionFacts, context: CompletionContext) -> VerificationCandidate | None:
     """One owner for the required verification candidate.
 
     The session requirement wins; a context candidate only fills a missing
@@ -127,10 +103,8 @@ def _resolve_selected_check(session: Any, context: Any) -> Any:
     requirement, the latest observation forms the default candidate with
     its real command and cwd preserved.
     """
-    def get(key: str) -> Any:
-        return _context_get(context, key)
-    provided = get("selected_check")
-    selected = getattr(session, "selected_verification", None)
+    provided = context.selected_check
+    selected = session.selected_verification
     if selected is not None and provided is not None and not _selected_equal(selected, provided):
         raise ValueError("selected verification conflict: session and context disagree")
     if selected is not None:
@@ -140,163 +114,90 @@ def _resolve_selected_check(session: Any, context: Any) -> Any:
     latest = _session_latest_verification(session)
     if latest is None:
         return None
-    command = str(latest.get("command", "") or "").strip()
+    command = latest.command
     if not command:
         return None
-    cwd = str(latest.get("cwd", ".") or ".").strip() or "."
+    cwd = latest.cwd
     return VerificationCandidate(command=command, cwd=cwd, source="kernel_session")
 
 
-def _evidence_with_session_facts(evidence: Any, session: Any) -> tuple[Any, tuple[str, ...]]:
-    """Project ordered session verifications into execution evidence.
+def _evidence_with_session_facts(
+    evidence: ExecutionEvidence | None, session: TaskSession | ProjectCompletionFacts,
+) -> tuple[ExecutionEvidence | None, tuple[str, ...]]:
+    """Project every ordered valid observation, excluding incomplete latest keys.
 
-    Every verification that targets the latest edit is replayed in recorded
-    order through the single ``ExecutionEvidence.observe_check`` owner,
-    preserving its original command, cwd, exit code, and workspace identity.
-    Success and failure share that path so the latest observation for one
-    (command, cwd) replaces the earlier one: success-then-failure blocks and
-    failure-then-success passes, with or without an evidence context.
-
-    The latest observation per (command, cwd) is determined first; when that
-    latest row lacks workspace identity (or command/exit), its whole key is
-    excluded so an old success can never revive, and a projection gap is
-    returned (``verification_identity_missing`` /
-    ``verification_identity_invalid`` / ``verification_result_missing``).
-    Earlier incomplete rows for a key whose latest is complete stay skipped
-    without blocking. Freshness against the current workspace is decided by
-    the engine over the projected rows.
+    An incomplete observation is retained by the decoder. It blocks the entire
+    key, so a previous success cannot revive after a newer unknown result.
+    Operation-confirmed recovered scope can use the observations' edit epoch
+    when the in-memory edited-file index has not yet been reconstructed.
     """
     if evidence is None:
+        return None, ()
+    observations = verification_observations(session.verifications)
+    if not observations:
         return evidence, ()
-    try:
-        edited = dict(getattr(session, "edited_files", {}) or {})
-    except Exception:
+    exact_edits = [value for value in session.edited_files.values() if type(value) is int]
+    revisions = exact_edits or [row.edit_revision for row in observations if row.edit_revision is not None]
+    if not revisions:
         return evidence, ()
-    try:
-        verifications = list(getattr(session, "verifications", ()) or [])
-    except Exception:
-        return evidence, ()
-    if not verifications:
-        return evidence, ()
-    exact_edits = [v for v in edited.values() if type(v) is int]
-    if exact_edits:
-        latest_edit = max(exact_edits)
-    else:
-        # Operation-confirmed scope may exist while memory edited_files is
-        # incomplete (e.g. resumed recovery). Fall back to the verifications'
-        # own latest revision so a legal recovery still projects; scope and
-        # task_changed already confirmed edits before reaching here.
-        revs = [r.get("revision", -1) for r in verifications if isinstance(r, dict)]
-        revs = [r for r in revs if type(r) is int]
-        if not revs:
-            return evidence, ()
-        latest_edit = max(revs)
-    from codey.utils.refs import strict_verification_success
-
-    observe = getattr(evidence, "observe_check", None)
-    if not callable(observe):
-        return evidence, ()
-    latest_by_key = _latest_observations_by_key(verifications, latest_edit)
-    gap_keys, gaps = _projection_gaps_for_latest(latest_by_key)
-    for row in verifications:
-        if not isinstance(row, dict):
+    latest_edit = max(revisions)
+    latest = latest_verification_observations(observations, latest_edit)
+    gap_keys, gaps = _projection_gaps_for_latest(latest)
+    for row in observations:
+        if row.edit_revision != latest_edit or row.key in gap_keys:
             continue
-        if type(row.get("revision", -1)) is not int or row.get("revision", -1) != latest_edit:
+        outcome = row.outcome
+        if not isinstance(outcome, CompleteVerification):
             continue
-        command = str(row.get("command", "") or "").strip()
-        cwd = str(row.get("cwd", ".") or ".").strip() or "."
-        if (command, cwd) in gap_keys:
-            continue
-        if not _is_projectable_row(row, command):
-            continue
-        exit_code = row.get("exit_code")
-        ver_rev = row.get("workspace_revision")
-        ver_fp = str(row.get("workspace_fingerprint", "") or "")
-        succeeded = strict_verification_success(
-            row.get("passed"), exit_code, passed_present="passed" in row,
-        )
-        item = CheckEvidence(
-            command, cwd, exit_code=exit_code,
-            workspace_revision=valid_workspace_revision(ver_rev), workspace_fingerprint=ver_fp,
-        )
-        observe(item, succeeded=succeeded)
+        evidence.observe_check(CheckEvidence(
+            row.command, row.cwd, exit_code=outcome.exit_code,
+            workspace_revision=outcome.workspace_revision,
+            workspace_fingerprint=outcome.workspace_fingerprint,
+        ), succeeded=outcome.succeeded)
     return evidence, tuple(gaps)
 
 
 def _latest_observations_by_key(
-    verifications: list[Any], latest_edit: int,
-) -> dict[tuple[str, str], dict[str, Any]]:
-    """Latest row per (command, cwd) among rows targeting the latest edit."""
-    latest_by_key: dict[tuple[str, str], dict[str, Any]] = {}
-    for row in verifications:
-        if not isinstance(row, dict):
-            continue
-        if type(row.get("revision", -1)) is not int or row.get("revision", -1) != latest_edit:
-            continue
-        command = str(row.get("command", "") or "").strip()
-        cwd = str(row.get("cwd", ".") or ".").strip() or "."
-        latest_by_key[(command, cwd)] = row
-    return latest_by_key
+    verifications: Sequence[object], latest_edit: int,
+) -> dict[tuple[str, str], VerificationObservation]:
+    """Legacy record boundary; the projection itself only accepts domain rows."""
+    return latest_verification_observations(verification_observations(verifications), latest_edit)
 
 
-def _gap_for_latest_row(row: dict[str, Any], command: str) -> str:
-    """Gap code for one latest observation, or empty when complete."""
-    exit_code = row.get("exit_code")
-    if not command or type(exit_code) is not int:
+def _gap_for_latest_row(row: object, command: str) -> str:
+    """Compatibility codec used by language-neutral legacy wire fixtures."""
+    decoded = decode_verification_observation(row)
+    if not command or decoded is None:
         return "verification_result_missing"
-    has_rev = "workspace_revision" in row and row.get("workspace_revision") is not None
-    raw_fp = row.get("workspace_fingerprint")
-    has_fp = "workspace_fingerprint" in row and raw_fp is not None and str(raw_fp or "") != ""
-    if not has_rev or not has_fp:
-        return "verification_identity_missing"
-    ver_rev = row.get("workspace_revision")
-    ver_fp = str(row.get("workspace_fingerprint", "") or "")
-    if type(ver_rev) is not int or not valid_workspace_revision(ver_rev):
-        return "verification_identity_invalid"
-    if not valid_workspace_fingerprint(ver_fp):
-        return "verification_identity_invalid"
-    return ""
+    return decoded.outcome.gap if isinstance(decoded.outcome, IncompleteVerification) else ""
 
 
-def verification_gap_diagnostics(session: Any) -> str:
-    """Bounded explanation using the same latest rows as the completion gate."""
-    latest_edit = max([0, *(getattr(session, "edited_files", {}) or {}).values()])
-    rows = _latest_observations_by_key(getattr(session, "verifications", []) or [], latest_edit)
-    details = []
-    for (command, cwd), row in rows.items():
-        reason = _gap_for_latest_row(row, command)
-        if reason:
-            details.append(f"{reason}: command={command[:160]!r}, cwd={cwd[:80]!r}")
+def verification_gap_diagnostics(session: TaskSession | ProjectCompletionFacts) -> str:
+    """Bounded explanation from the same decoded observations as the gate."""
+    latest_edit = max([0, *session.edited_files.values()])
+    latest = _latest_observations_by_key(session.verifications, latest_edit)
+    details = [f"{row.outcome.gap}: command={row.command[:160]!r}, cwd={row.cwd[:80]!r}"
+               for row in latest.values() if isinstance(row.outcome, IncompleteVerification)]
     return "\n".join(details[:4])
 
 
 def _projection_gaps_for_latest(
-    latest_by_key: dict[tuple[str, str], dict[str, Any]],
+    latest_by_key: dict[tuple[str, str], VerificationObservation],
 ) -> tuple[set[tuple[str, str]], list[str]]:
-    """Keys whose latest observation is incomplete plus deduped gap codes."""
     gap_keys: set[tuple[str, str]] = set()
     gaps: list[str] = []
     for key, row in latest_by_key.items():
-        command, _cwd = key
-        code = _gap_for_latest_row(row, command)
-        if not code:
+        if not isinstance(row.outcome, IncompleteVerification):
             continue
         gap_keys.add(key)
-        if code not in gaps:
-            gaps.append(code)
+        if row.outcome.gap not in gaps:
+            gaps.append(row.outcome.gap)
     return gap_keys, gaps
 
 
-def _is_projectable_row(row: dict[str, Any], command: str) -> bool:
-    """One individually valid row for a key whose latest is complete."""
-    return _gap_for_latest_row(row, command) == ""
-
-
-def _normalized_scope_and_change(session: Any, context: Any) -> tuple[tuple[str, ...], bool]:
-    def get(key: str) -> Any:
-        return _context_get(context, key)
-    scope = tuple(dict.fromkeys((*tuple(get("scope_files") or ()), *_session_scope_files(session))))
-    provided_changed = get("task_changed")
+def _normalized_scope_and_change(session: TaskSession | ProjectCompletionFacts, context: CompletionContext) -> tuple[tuple[str, ...], bool]:
+    scope = tuple(dict.fromkeys((*tuple(context.scope_files or ()), *_session_scope_files(session))))
+    provided_changed = context.task_changed
     if provided_changed is None:
         task_changed = bool(scope)
     else:
@@ -307,7 +208,7 @@ def _normalized_scope_and_change(session: Any, context: Any) -> tuple[tuple[str,
     return scope, task_changed
 
 
-def _engine_checks(session: Any, context: Any) -> list[CompletionCheck]:
+def _engine_checks(session: TaskSession | ProjectCompletionFacts, context: CompletionContext) -> list[CompletionCheck]:
     try:
         scope, task_changed = _normalized_scope_and_change(session, context)
         rows: list[CompletionCheck] = []
@@ -327,13 +228,11 @@ def _engine_checks(session: Any, context: Any) -> list[CompletionCheck]:
 
 
 def _verification_checks(
-    session: Any, context: Any, scope: tuple[str, ...], task_changed: bool,
+    session: TaskSession | ProjectCompletionFacts, context: CompletionContext, scope: tuple[str, ...], task_changed: bool,
 ) -> list[CompletionCheck]:
-    def get(key: str) -> Any:
-        return _context_get(context, key)
     # A failed candidate refresh leaves the requirement untrustworthy:
     # block explicitly instead of falling back to the latest run.
-    if getattr(session, "verification_candidates_refresh_failed", False) is True:
+    if session.verification_candidates_refresh_failed is True:
         row = completion_check(
             "relevant_verification", CHECK_FAIL, "verification_candidates_refresh_failed",
         )
@@ -341,13 +240,15 @@ def _verification_checks(
     if not scope and not task_changed:
         row = completion_check("relevant_verification", CHECK_NOT_APPLICABLE)
         return [row] if row is not None else []
-    evidence = get("execution_evidence")
+    evidence = context.execution_evidence
     if evidence is None:
         evidence = ExecutionEvidence(
-            workspace_revision=getattr(session, "workspace_revision", 0) or 0,
-            workspace_fingerprint=str(getattr(session, "workspace_fingerprint", "") or ""),
+            workspace_revision=session.workspace_revision,
+            workspace_fingerprint=session.workspace_fingerprint,
         )
-    changes = _synthesize_changes(scope, get("changes"))
+    else:
+        evidence = evidence.detached()
+    changes = _synthesize_changes(scope, context.changes)
     selected = _resolve_selected_check(session, context)
     # Single engine call over the complete projection: session facts fill
     # the gaps the unified production context does not carry, so the same
@@ -355,47 +256,55 @@ def _verification_checks(
     # An incomplete latest observation is an explicit projection gap:
     # block without consulting older success for the same check.
     effective_evidence, projection_gaps = _evidence_with_session_facts(evidence, session)
+    if effective_evidence is None:
+        raise ValueError("verification evaluation has no execution evidence")
     if projection_gaps:
         reason = (projection_gaps[0] or "verification_identity_missing")
         row = completion_check("relevant_verification", CHECK_NOT_RUN, reason)
         return [row] if row is not None else []
     engine = CompletionEngine()
     result = engine.evaluate(
-        run_id=str(get("run_id") or ""),
-        task=str(get("task") or ""),
-        changes=changes,
+        run_id=str(context.run_id or ""),
+        task=str(context.task or ""),
+        changes=changes.to_payload() if changes is not None else None,
         stop_reason="done",
         task_changed=task_changed,
         scope_files=scope,
         selected_check=selected,
         evidence=effective_evidence,
-        analysis_run_payloads=get("analysis_run_payloads") or (),
-        project=get("project"),
-        checkpoint_green=bool(get("checkpoint_green")),
+        analysis_run_payloads=tuple(row.to_payload() for row in context.analysis_run_payloads),
+        project=context.project,
+        checkpoint_green=bool(context.checkpoint_green),
         verification_forbidden=_effective_verification_forbidden(session),
     )
     proof = result.decision.proof
-    rows = [row for row in (getattr(proof, "checks", ()) or ()) if isinstance(row, CompletionCheck)]
-    if result.integrity is not None and bool(getattr(result.integrity, "diagnostic_refs", ())):
+    rows: list[CompletionCheck] = list(proof.checks) if proof is not None else []
+    if result.integrity.diagnostic_refs:
         fallback = completion_check("edit_integrity", CHECK_PASS)
     else:
         fallback = completion_check("relevant_verification", CHECK_NOT_RUN, "engine_empty")
     return rows or ([fallback] if fallback is not None else [])
 
 
-def project_completion_checks(session: Any, context: Any = None) -> list[CompletionCheck]:
+def project_completion_checks(session: TaskSession, context: object = None) -> list[CompletionCheck]:
     """Single verification decision for every caller.
 
     Evidence presence only completes inputs; the rule is identical with or
     without an evidence context. There is no second session-only verdict.
     """
-    _refresh_completion_workspace(session, context)
-    rows = _engine_checks(session, context)
+    context = CompletionContext.from_value(context)
+    collect_completion_workspace(session, context)
+    rows = evaluate_project_completion(ProjectCompletionFacts.capture(session), context)
     from codey.operations.explicit_execution_requirements import requested_output_read_check
 
-    requested_read = requested_output_read_check(session, str(_context_get(context, 'task') or session.task_text))
+    requested_read = requested_output_read_check(session, str(context.task or session.task_text))
     if requested_read is not None:
         rows.append(requested_read)
     return rows
+
+
+def evaluate_project_completion(session: ProjectCompletionFacts, context: CompletionContext) -> list[CompletionCheck]:
+    """Evaluate collected facts without scanning files or mutating evidence."""
+    return _engine_checks(session, context)
 
 __all__ = ["project_completion_checks"]

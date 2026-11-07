@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import Any
 
 from codey.completion.contract import (
     CHECK_FAIL,
@@ -28,7 +27,8 @@ from codey.completion.contract import (
     register_completion_domain,
 )
 from codey.operations.completion_context import CompletionContext
-from codey.operations.project_completion_checks import project_completion_checks
+from codey.operations.completion_inputs import CompletionCheckInput, ProjectCompletionFacts
+from codey.operations.project_completion_checks import collect_completion_workspace, evaluate_project_completion
 from codey.operations.research_completion_checks import (
     citation_requirement_checks,
     prepare_research_completion,
@@ -36,20 +36,13 @@ from codey.operations.research_completion_checks import (
     source_requirement_checks,
     strict_research_checks,
 )
+from codey.operations.task_session import TaskSession
 from codey.policies.requirement import RequirementEvaluation
 from codey.research.finding_report import ResearchReport
 from codey.research.issues import ResearchIssuePayload
 from codey.utils.refs import stable_ref
 
-
-def _context_get(context: Any, key: str) -> Any:
-    if isinstance(context, CompletionContext):
-        return context.get(key)
-    if isinstance(context, dict):
-        return context.get(key)
-    return getattr(context, key, None)
-
-CheckProvider = Callable[[Any], list[CompletionCheck]]
+CheckProvider = Callable[[CompletionCheckInput], list[CompletionCheck]]
 
 _PROVIDERS: dict[str, tuple[CheckProvider, frozenset[str] | None]] = {}
 
@@ -92,11 +85,11 @@ def make_check(check_id: object, status: object, reason: object = "") -> Complet
     return completion_check(check_id, status, reason)
 
 
-def _session_profile(session: Any) -> str:
-    return str(getattr(session, "task_kind", "") or "").strip().lower() or "project"
+def _session_profile(session: TaskSession) -> str:
+    return session.task_kind.strip().lower() or "project"
 
 
-def _proof_evidence_refs(session: Any, context: Any, report: ResearchReport | None = None) -> tuple[str, ...]:
+def _proof_evidence_refs(session: TaskSession, context: CompletionContext, report: ResearchReport | None = None) -> tuple[str, ...]:
     """最终收据绑定的实际任务引用：run 身份 + 结果收据引用（refs only）。
 
     edit 引用携带工作区 revision，verification 引用携带 workspace 身份，
@@ -104,15 +97,13 @@ def _proof_evidence_refs(session: Any, context: Any, report: ResearchReport | No
     """
     refs: list[str] = []
     try:
-        def get(key: str) -> Any:
-            return _context_get(context, key) if context is not None else None
-        run_id = str(get("run_id") or "")[:80] if context is not None else ""
+        run_id = str(context.run_id or "")[:80] if context is not None else ""
         if run_id:
             refs.append(f"run:{run_id}")
     except Exception:
         pass
     try:
-        edited = dict(getattr(session, "edited_files", {}) or {})
+        edited = dict(session.edited_files)
         for path, rev in sorted(
             ((str(k)[:120], v) for k, v in edited.items()),
             key=lambda row: row[0],
@@ -125,7 +116,7 @@ def _proof_evidence_refs(session: Any, context: Any, report: ResearchReport | No
     except Exception:
         pass
     try:
-        ledger = _context_get(context, "research_ledger")
+        ledger = context.research_ledger
         sources = ledger.opened_sources if ledger is not None else ()
         for source in sorted(sources, key=lambda item: item.final_url)[:8]:
             refs.append(stable_ref("source", source.final_url, source.text_hash, source.retrieved_at))
@@ -134,7 +125,7 @@ def _proof_evidence_refs(session: Any, context: Any, report: ResearchReport | No
     if report is not None:
         refs.extend(f"knowledge-source:{row['id']}@{row['revision']}" for row in report.source_versions[:8])
     try:
-        verifs = list(getattr(session, "verifications", ()) or [])[-4:]
+        verifs = list(session.verifications)[-4:]
         for item in verifs:
             if isinstance(item, dict):
                 command = str(item.get("command", "") or "")[:80]
@@ -149,13 +140,13 @@ def _proof_evidence_refs(session: Any, context: Any, report: ResearchReport | No
                 refs.append(f"verify:{command}{identity}:{exit_code}")
     except Exception:
         pass
-    parent = _context_get(context, "research_prerequisites")
+    parent = context.research_prerequisites
     original = tuple(parent.executed) if parent is not None and _session_profile(session) == "research" else ()
     current = tuple(session.executed) if _session_profile(session) == "research" else ()
     return tuple(dict.fromkeys((*original, *current, *refs)))[:12]
 
 
-def _domain_for_session(session: Any) -> str:
+def _domain_for_session(session: TaskSession) -> str:
     kind = _session_profile(session)
     if kind == "research":
         return "research"
@@ -179,9 +170,11 @@ class GateVerdict:
     research_issue: ResearchIssuePayload | None = None
 
 
-def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
+def evaluate(session: TaskSession, done_text: object, *, context: object = None) -> GateVerdict:
     try:
-        return _evaluate_inner(session, done_text, context=context)
+        normalized = CompletionContext.from_value(context)
+        collect_completion_workspace(session, normalized)
+        return _evaluate_inner(session, done_text, context=normalized)
     except Exception as exc:
         return GateVerdict(
             complete=False,
@@ -193,7 +186,7 @@ def evaluate(session: Any, done_text: object, *, context: Any = None) -> GateVer
 
 
 def _required_checks_verdict(
-    session: Any, deduped: list[CompletionCheck], tool_evaluations: dict[str, RequirementEvaluation],
+    session: TaskSession, deduped: list[CompletionCheck], tool_evaluations: dict[str, RequirementEvaluation],
 ) -> GateVerdict | None:
     """Enforce the task's own required_checks: missing/unrun/conflict blocks.
 
@@ -203,8 +196,7 @@ def _required_checks_verdict(
     Reading the policy's required checks never means "no requirements".
     """
     try:
-        policy = getattr(session, "policy", None)
-        required = tuple(getattr(policy, "required_checks", ()) or ())
+        required = session.policy.required_checks
     except Exception as exc:
         return GateVerdict(
             complete=False,
@@ -294,12 +286,13 @@ def _required_checks_verdict(
     return None
 
 
-def _collect_provider_checks(session: Any, profile: str, checks: list[CompletionCheck]) -> None:
+def _collect_provider_checks(session: TaskSession, profile: str, checks: list[CompletionCheck]) -> None:
+    inputs = CompletionCheckInput.capture(session)
     for key, (provider, profiles) in list(_PROVIDERS.items()):
         if profiles is not None and profile not in profiles:
             continue
         try:
-            produced: object = provider(session)
+            produced: object = provider(inputs)
         except Exception as exc:
             row = completion_check(f"{key}_error", CHECK_FAIL, f"check_provider_error:{type(exc).__name__}")
             if row is not None:
@@ -331,11 +324,9 @@ def _dedupe_checks(checks: list[CompletionCheck]) -> list[CompletionCheck]:
     return deduped
 
 
-def _contract_subject(session: Any, profile: str, context: Any) -> str:
+def _contract_subject(session: TaskSession, profile: str, context: CompletionContext) -> str:
     try:
-        def get(key: str) -> Any:
-            return _context_get(context, key)
-        run_id = str(get("run_id") or "")[:80]
+        run_id = str(context.run_id or "")[:80]
     except Exception:
         run_id = ""
     if run_id:
@@ -345,7 +336,7 @@ def _contract_subject(session: Any, profile: str, context: Any) -> str:
 
 
 def _required_tool_checks(
-    session: Any, final_text: str, context: Any = None,
+    session: TaskSession, final_text: str, context: CompletionContext,
 ) -> tuple[list[CompletionCheck], dict[str, RequirementEvaluation]]:
     """Explicit entry requirements consume the committed execution projection.
 
@@ -359,10 +350,10 @@ def _required_tool_checks(
 
     rows: list[CompletionCheck] = []
     evaluations: dict[str, RequirementEvaluation] = {}
-    parent = _context_get(context, "research_prerequisites") if _session_profile(session) == "research" else None
+    parent = context.research_prerequisites if _session_profile(session) == "research" else None
     records = {**(parent.executed if parent is not None else {}), **session.executed}
-    results = {**(parent._memory_results if parent is not None else {}), **session._memory_results}
-    for check_id in getattr(session.policy, "required_checks", ()):
+    results = {**(parent.results if parent is not None else {}), **session._memory_results}
+    for check_id in session.policy.required_checks:
         if is_output_check(check_id):
             passed, reason, feedback = evaluate_output(check_id, final_text)
             outcome = RequirementEvaluation(reason, feedback)
@@ -383,7 +374,7 @@ def _required_tool_checks(
     return rows, evaluations
 
 
-def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> GateVerdict:
+def _evaluate_inner(session: TaskSession, done_text: object, *, context: CompletionContext) -> GateVerdict:
     text = str(done_text or "").strip()
     try:
         text, report = prepare_research_completion(session, text, context)
@@ -397,7 +388,12 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
                            research_issue=exc.to_payload() if isinstance(exc, ResearchIssue) else None)
     citation_checks = citation_requirement_checks(session, text, context, report=report)
     checks: list[CompletionCheck] = []
-    checks.extend(project_completion_checks(session, context))
+    checks.extend(evaluate_project_completion(ProjectCompletionFacts.capture(session), context))
+    from codey.operations.explicit_execution_requirements import requested_output_read_check
+
+    requested_read = requested_output_read_check(session, context.task or session.task_text)
+    if requested_read is not None:
+        checks.append(requested_read)
     checks.extend(source_requirement_checks(session, context))
     from codey.operations.research_completion_checks import investigation_attempt_checks, knowledge_reference_checks
 
@@ -419,19 +415,20 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     domain = _domain_for_session(session)
     subject = _contract_subject(session, profile, context)
     evidence_refs = _proof_evidence_refs(session, context, report)
-    def get(key: str) -> Any:
-        return _context_get(context, key)
-    coding_evaluation = get("project_evaluation")
+    coding_evaluation = context.project_evaluation
     coding_proof = coding_evaluation.decision.proof if coding_evaluation is not None else None
-    refs = {
-        key: getattr(coding_proof, key, ())
-        for key in ("limitation_refs", "finding_refs", "analysis_run_refs",
-                    "artifact_refs", "external_refs", "diagnostic_refs")
-    }
     if coding_proof is not None:
         evidence_refs = (*coding_proof.evidence_refs, *evidence_refs)
     try:
-        contract = build_completion_contract(domain=domain, subject_ref=subject, checks=deduped, evidence_refs=evidence_refs, **refs)
+        contract = build_completion_contract(
+            domain=domain, subject_ref=subject, checks=deduped, evidence_refs=evidence_refs,
+            limitation_refs=coding_proof.limitation_refs if coding_proof is not None else (),
+            finding_refs=coding_proof.finding_refs if coding_proof is not None else (),
+            analysis_run_refs=coding_proof.analysis_run_refs if coding_proof is not None else (),
+            artifact_refs=coding_proof.artifact_refs if coding_proof is not None else (),
+            external_refs=coding_proof.external_refs if coding_proof is not None else (),
+            diagnostic_refs=coding_proof.diagnostic_refs if coding_proof is not None else (),
+        )
     except Exception as exc:
         return GateVerdict(
             complete=False,
@@ -473,7 +470,7 @@ def _evaluate_inner(session: Any, done_text: object, *, context: Any = None) -> 
     )
     followup = f"Not done yet ({reason or 'checks incomplete'}). " + instruction
     if "relevant_verification" in failed_ids:
-        selected = getattr(session, "selected_verification", None) or _context_get(context, "selected_check")
+        selected = session.selected_verification or context.selected_check
         if selected is not None:
             command = str(selected.command).replace("\r", " ").replace("\n", " ")[:240]
             cwd = str(selected.cwd or ".").replace("\r", " ").replace("\n", " ")[:120]

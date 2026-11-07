@@ -173,8 +173,8 @@ class CustomToolTests(unittest.TestCase):
             self.assertEqual(len(plan.calls), 1)
             self.assertEqual(plan.calls[0].name, tool_name)
             # Native parse must also accept.
-            from types import SimpleNamespace
-            native_reply = SimpleNamespace(tool_calls=[SimpleNamespace(name=tool_name, arguments={"q": "hi"}, id="n1")], text="")
+            from codey.providers.base import AssistantTurn, ProviderToolCall
+            native_reply = AssistantTurn(tool_calls=(ProviderToolCall("n1", tool_name, {"q": "hi"}),))
             plan2 = normalize_turn(native_reply, policy=policy, controller_allowed=None)
             self.assertEqual(plan2.protocol_error, "")
             # Execute via injected executor must succeed.

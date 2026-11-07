@@ -71,6 +71,25 @@ KernelExecutionDeps(research_tools=object())
 prepare_provider_request(object(), "send", ("prompt",), {}, counters=None)
 '''
 
+BAD_COMPLETION_INPUT = '''
+from codey.operations.completion_context import CompletionContext
+from codey.operations.completion_inputs import CompletionCheckInput
+from codey.operations.completion_gate import register_completion_check_provider
+from codey.operations.task_session import TaskSession
+
+CompletionContext(selected_check="pytest")
+CompletionContext(changes={"files": []})
+
+def mutable_session_check(session: TaskSession) -> list:
+    session.edited_files.clear()
+    return []
+
+register_completion_check_provider("mutable", mutable_session_check)
+
+def mutate(inputs: CompletionCheckInput) -> None:
+    inputs.edited_files["injected.py"] = 9
+'''
+
 
 @pytest.mark.parametrize(
     ("tool", "arguments"),
@@ -108,8 +127,8 @@ def test_type_checker_rejects_invalid_kernel_contract(tool: str, arguments: tupl
         ("ty", ("check",)),
     ],
 )
-@pytest.mark.parametrize("source_text", [BAD_PROVIDER_CALL, BAD_JSON_ARGUMENTS, BAD_TEXT_SPAN, BAD_PROVIDER_REQUEST, BAD_PROVIDER_WRAPPER],
-                         ids=["provider-call", "json-args", "text-span", "provider-request", "provider-wrapper"])
+@pytest.mark.parametrize("source_text", [BAD_PROVIDER_CALL, BAD_JSON_ARGUMENTS, BAD_TEXT_SPAN, BAD_PROVIDER_REQUEST, BAD_PROVIDER_WRAPPER, BAD_COMPLETION_INPUT],
+                         ids=["provider-call", "json-args", "text-span", "provider-request", "provider-wrapper", "completion-input"])
 def test_type_checker_rejects_untyped_provider_call_shape(
     tool: str, arguments: tuple[str, ...], source_text: str,
 ) -> None:
