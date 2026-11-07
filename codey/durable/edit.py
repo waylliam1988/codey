@@ -2,22 +2,20 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
 
+from codey.durable import conversation_ops
 from codey.durable.errors import CommitConflict
 from codey.durable.model import DurableMutation, EntryDraft, TaskCheckpoint
-
-if TYPE_CHECKING:
-    from codey.durable.session import DurableSession
+from codey.durable.session_kernel import SessionKernel
 
 
-def prepare_edit(session: DurableSession, conversation_id: str, revision: int, edit: Mapping[str, object],
+def prepare_edit(session: SessionKernel, conversation_id: str, revision: int, edit: Mapping[str, object],
                  *, placed: bool, has_tool_results: bool) -> tuple[str | None, str | None, tuple[str, ...]]:
     if revision != edit.get("expected_revision") or not session.store.has_conversation(conversation_id):
         raise CommitConflict("Conversation changed. Cancel the edit and try again.")
     if has_tool_results or not placed:
         raise ValueError("an edit must place one new user input")
-    parent, replaced = edit_parent(str(edit.get("entry_id") or ""), session.context(conversation_id),
+    parent, replaced = edit_parent(str(edit.get("entry_id") or ""), conversation_ops.context(session, conversation_id),
         busy=any(task.conversation_id == conversation_id for task in session.store.pending_tasks()))
     local_ids = {entry.entry_id for entry in session.store.entries(conversation_id)}
     return parent if parent in local_ids else None, parent, replaced

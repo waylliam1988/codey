@@ -13,6 +13,13 @@ from codey.durable.store import DurableStore
 from codey.durable.timeline import TaskSnapshot, TaskTransition, snapshot_at
 
 
+def read_task_snapshot(store: DurableStore, task_id: str, commit_seq: int) -> TaskSnapshot:
+    """Read a historical checkpoint; the caller holds the kernel line."""
+    if type(commit_seq) is not int or commit_seq < 0:
+        raise ValueError("historical commit sequence must be a non-negative integer")
+    return snapshot_at(store.task_history(task_id, through=commit_seq))
+
+
 class TaskQueryFacade:
     """Own task and effect reads while sharing the session mutation line."""
 
@@ -37,9 +44,7 @@ class TaskQueryFacade:
 
     def task_at(self, task_id: str, commit_seq: int) -> TaskSnapshot:
         def read() -> TaskSnapshot:
-            if type(commit_seq) is not int or commit_seq < 0:
-                raise ValueError("historical commit sequence must be a non-negative integer")
-            return snapshot_at(self._store.task_history(task_id, through=commit_seq))
+            return read_task_snapshot(self._store, task_id, commit_seq)
 
         return self._query_line(read)
 

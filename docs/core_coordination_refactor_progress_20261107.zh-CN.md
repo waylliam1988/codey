@@ -105,7 +105,7 @@ SQLite 并发写入与重启审批补充回归 2 passed，未运行全量 pytest
 - [x] 抽出 effect/artifact 写入。
 - [x] 抽出 approval 操作。
 - [x] 抽出 task lifecycle 操作。
-- [ ] 最后处理 submission 和 generation boundary。
+- [x] 最后处理 submission 和 generation boundary。
 
 效果与审批批次新增 `EffectOperations`、`ApprovalOperations`。两者通过
 `SessionOperations` 加入同一个 kernel control line；不依赖公共 session，也不各自
@@ -122,6 +122,13 @@ kernel mutation line；公共 session 仅代理。任务所有权、生命周期
 session、审批与恢复回归 83 passed。扩大 mypy 暴露了原审批测试的 optional store 与
 未标注 fixture 问题；补充具体 AppContext/返回值类型和测试前置断言后检查通过，
 没有增加 Any 或改变生产合同。
+
+提交/会话批次新增 `SubmissionOperations` 和 `ConversationOperations`。generation boundary
+的 selection/placement/merge/commit 保持同一个所有者，未切成多次事务；准入、历史编辑和
+fork helper 改依赖 `SessionKernel`，不再反向导入公共 session。公共 session 只保留具名代理。
+五个写入门面均覆盖关闭/存储失败后拒绝写入。durable 子系统扩大回归 757 passed、5 skipped，
+唯一失败为 runtime 发布清单遗漏新模块：重建 `codey/runtime.json` 后该启动用例 1 passed。
+生产树加新增内核/审批测试 mypy：642 files 通过；durable Pyrefly 0 errors；Ruff 通过。
 
 ### 第五阶段：前端状态与运行投影
 

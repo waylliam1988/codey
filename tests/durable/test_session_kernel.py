@@ -18,6 +18,10 @@ def _domain_operation(session: DurableSession, domain: str) -> object:
         return session.effect_operations.record_effect_intents("task", ())
     if domain == "task":
         return session.task_operations.request_cancel("task")
+    if domain == "submission":
+        return session.submission_operations.place_boundary_inputs("chat", at="final")
+    if domain == "conversation":
+        return session.conversation_operations.create_conversation("next")
     return session.approval_operations.settle_approval("missing", settlement={}, resume=False)
 
 
@@ -69,7 +73,7 @@ def test_failed_commit_seals_all_domain_query_facades(
     session.close()
 
 
-@pytest.mark.parametrize("domain", ["effect", "approval", "task"])
+@pytest.mark.parametrize("domain", ["effect", "approval", "task", "submission", "conversation"])
 def test_domain_writers_share_closed_kernel(domain: str) -> None:
     session = _seeded_session()
     session.close()
@@ -77,7 +81,7 @@ def test_domain_writers_share_closed_kernel(domain: str) -> None:
         _domain_operation(session, domain)
 
 
-@pytest.mark.parametrize("domain", ["effect", "approval", "task"])
+@pytest.mark.parametrize("domain", ["effect", "approval", "task", "submission", "conversation"])
 def test_domain_writers_share_failure_cause(domain: str, monkeypatch: pytest.MonkeyPatch) -> None:
     session = _seeded_session()
     failure = OSError("disk unavailable")

@@ -6,7 +6,6 @@ import hashlib
 import json
 import uuid
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING
 
 from codey.durable import conversation_ops
 from codey.durable.errors import CommitConflict
@@ -21,10 +20,9 @@ from codey.durable.model import (
     TaskCheckpoint,
     thaw_json,
 )
+from codey.durable.session_kernel import SessionKernel
+from codey.durable.task_queries import read_task_snapshot
 from codey.durable.workflow import workflow_digest
-
-if TYPE_CHECKING:
-    from codey.durable.session import DurableSession
 
 
 def message_metadata(state: Mapping[str, object] | None) -> dict[str, object]:
@@ -51,7 +49,7 @@ def message_metadata(state: Mapping[str, object] | None) -> dict[str, object]:
 
 
 def admit_input(
-    session: DurableSession, *, conversation_id: str, request_id: str, task_id: str,
+    session: SessionKernel, *, conversation_id: str, request_id: str, task_id: str,
     text: str, provider_snapshot: Mapping[str, object], task_state: Mapping[str, object] | None = None,
     initial_phase: str = "accepted", tool_results: tuple[Mapping[str, object], ...] = (),
     owner_task_id: str | None = None,
@@ -208,7 +206,7 @@ def admit_input(
 
 
 def admit_write(
-    session: DurableSession, *, conversation_id: str, request_id: str,
+    session: SessionKernel, *, conversation_id: str, request_id: str,
     kind: str, data: Mapping[str, object], display_only: bool = True,
     model: Mapping[str, object] | None = None,
     edits: Sequence[Mapping[str, object]] | None = None,
@@ -263,7 +261,7 @@ def admit_write(
             stale = True
         else:
             stale = head_target not in {
-                entry.entry_id for entry in session.context(conversation_id)
+                entry.entry_id for entry in conversation_ops.context(session, conversation_id)
             }
     if stale and expected_revision is not None:
         raise CommitConflict("a revision-fenced write cannot be queued for a stale head")
@@ -378,10 +376,10 @@ def normalize_passive_fields(
 
 
 def fork_task(
-    session: DurableSession, source_task_id: str, commit_seq: int, *,
+    session: SessionKernel, source_task_id: str, commit_seq: int, *,
     conversation_id: str, task_id: str, request_id: str, instruction: str,
 ) -> CommitResult:
-    snapshot = session.task_at(source_task_id, commit_seq)
+    snapshot = read_task_snapshot(session.store, source_task_id, commit_seq)
     if snapshot.head_entry_id is None:
         raise CommitConflict("historical task has no conversation entry")
     if any(effect.settlement is None for effect in snapshot.effects):
