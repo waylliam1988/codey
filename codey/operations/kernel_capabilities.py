@@ -9,11 +9,19 @@ ad-hoc ``getattr`` probes at each decision point.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Literal, Protocol, cast, runtime_checkable
 
 from codey.operations import kernel_transport
 
 TextToolFormat = Literal["plain", "json_schema"]
+ProviderWindowRef = object
+
+
+@runtime_checkable
+class ProviderCapabilitySource(Protocol):
+    text_tool_format: str
+    request_scoped_tool_context: bool
+    window_ref: object | None
 
 
 @dataclass(frozen=True)
@@ -23,24 +31,25 @@ class KernelCapabilityView:
     native_tools: bool
     text_tool_format: TextToolFormat = "plain"
     request_scoped_tool_context: bool = False
-    window_ref: Any = None
+    window_ref: ProviderWindowRef | None = None
 
     @classmethod
     def from_provider(
         cls,
-        provider: Any,
+        provider: object,
         *,
         provider_id: object = "",
-        fallback_window_ref: Any = None,
+        fallback_window_ref: object | None = None,
     ) -> KernelCapabilityView:
         raw_format = getattr(provider, "text_tool_format", "plain")
         text_tool_format = cast(TextToolFormat, raw_format) if raw_format in {"plain", "json_schema"} else "plain"
+        window_ref = getattr(provider, "window_ref", None) or fallback_window_ref
         return cls(
             native_tools=kernel_transport.provider_uses_native(provider, provider_id=provider_id),
             text_tool_format=text_tool_format,
             request_scoped_tool_context=getattr(provider, "request_scoped_tool_context", False) is True,
-            window_ref=getattr(provider, "window_ref", None) or fallback_window_ref,
+            window_ref=window_ref,
         )
 
 
-__all__ = ["KernelCapabilityView", "TextToolFormat"]
+__all__ = ["KernelCapabilityView", "ProviderCapabilitySource", "ProviderWindowRef", "TextToolFormat"]
