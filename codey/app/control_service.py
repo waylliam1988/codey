@@ -349,9 +349,23 @@ class ControlService:
 
     def health(self) -> dict[str, Any]:
         busy = bool(self.ctx.run_registry.active_runs())
-        return {"protocol_version": PROTOCOL_VERSION, "capabilities": list(COMMANDS),
-                "instance_id": self.instance_id, "release_id": self.release_id,
-                "database_id": self.ctx.durable.database_id, "started_at": self.started_at,
-                "status": "verifying" if self.verifying else "draining" if self.draining else "ready", "endpoint_responsive": True,
-                "last_progress_at": self.last_progress_at, "suspected_stall": busy and time.time() - self.last_progress_at > 120,
-                "active_runs": [{"run_id": item.run_id, "conversation_id": item.session_id} for item in self.ctx.run_registry.active_runs()]}
+        payload: dict[str, object] = {
+            "protocol_version": PROTOCOL_VERSION,
+            "capabilities": list(COMMANDS),
+            "instance_id": self.instance_id,
+            "release_id": self.release_id,
+            "database_id": self.ctx.durable.database_id,
+            "started_at": self.started_at,
+            "status": "verifying" if self.verifying else "draining" if self.draining else "ready",
+            "endpoint_responsive": True,
+            "last_progress_at": self.last_progress_at,
+            "suspected_stall": busy and time.time() - self.last_progress_at > 120,
+            "active_runs": [
+                {"run_id": item.run_id, "conversation_id": item.session_id}
+                for item in self.ctx.run_registry.active_runs()
+            ],
+        }
+        scheduler = getattr(self.ctx, "durable_scheduler", None)
+        if scheduler is not None:
+            payload["scheduler"] = scheduler.health()
+        return payload

@@ -8,18 +8,20 @@ eligible for retry; the logical phase is never replaced by a synthetic task.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
-from contextlib import suppress
 from dataclasses import dataclass
 
 from codey.durable.errors import CommitConflict
 from codey.durable.model import CommitResult, TaskCheckpoint, TaskStatus, kernel_cleanup_required
 from codey.durable.session import DurableSession
 from codey.durable.workflow import WorkflowDefinition
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -87,6 +89,7 @@ class DurableTaskScheduler:
         self._blocked: dict[str, str] = {}
         self._task_failures: dict[str, SchedulerFailure] = {}
         self._loop_failure: SchedulerFailure | None = None
+        self._loop_failure_count = 0
         self._loop_failure_limit = 3
         self._invocations: dict[str, TaskInvocation] = {}
         self._abort_invocations: dict[str, AbortInvocation] = {}
@@ -117,6 +120,40 @@ class DurableTaskScheduler:
     def loop_failure(self) -> SchedulerFailure | None:
         with self._lock:
             return self._loop_failure
+
+    @property
+    def enabled(self) -> bool:
+        """Whether the scheduler is currently allowed to start a worker."""
+        with self._lock:
+            return self._enabled
+
+    def health(self) -> dict[str, object]:
+        """Return bounded scheduler state for service health and operators."""
+        with self._lock:
+            loop_failure = self._loop_failure
+            return {
+                "enabled": self._enabled,
+                "loop_failure": (
+                    {
+                        "phase": loop_failure.phase,
+                        "error_type": loop_failure.error_type,
+                        "message": loop_failure.message,
+                        "retry_count": loop_failure.retry_count,
+                    }
+                    if loop_failure is not None
+                    else None
+                ),
+                "task_failures": {
+                    task_id: {
+                        "phase": failure.phase,
+                        "error_type": failure.error_type,
+                        "message": failure.message,
+                        "retry_count": failure.retry_count,
+                    }
+                    for task_id, failure in self._task_failures.items()
+                },
+                "blocked_tasks": dict(self._blocked),
+            }
 
     def set_workflows(self, workflows: Mapping[str, WorkflowDefinition]) -> None:
         """Replace the registry snapshot and reconsider previously blocked work."""
@@ -205,15 +242,25 @@ class DurableTaskScheduler:
                     self._abort_invocations.pop(invocation.task_id, None)
 
     def start(self) -> None:
+        resumed = False
         with self._lock:
             if self._owns_scheduler:
-                return
-        self._session.store.acquire_scheduler_owner(self._owner_id, os.getpid())
-        with self._lock:
-            self._owns_scheduler = True
-            self._enabled = True
+                if self._enabled:
+                    return
+                # A bounded failure stops the worker but deliberately keeps
+                # durable ownership.  Starting again is the explicit operator
+                # recovery operation for that state.
+                self._enabled = True
+                self._loop_failure_count = 0
+                self._reconcile_requested = True
+                resumed = True
+        if not resumed:
+            self._session.store.acquire_scheduler_owner(self._owner_id, os.getpid())
+            with self._lock:
+                self._owns_scheduler = True
+                self._enabled = True
         try:
-            if not self._recovered:
+            if not resumed and not self._recovered:
                 self._session.recover_scheduler_state()
                 self._recovered = True
             self._session.reconcile_finalization()
@@ -221,10 +268,16 @@ class DurableTaskScheduler:
             self._ensure_thread()
         except BaseException:
             with self._lock:
-                self._owns_scheduler = False
+                if not resumed:
+                    self._owns_scheduler = False
                 self._enabled = False
-            self._session.store.release_scheduler_owner(self._owner_id)
+            if not resumed:
+                self._session.store.release_scheduler_owner(self._owner_id)
             raise
+
+    def resume(self) -> None:
+        """Resume a scheduler stopped by its bounded failure circuit breaker."""
+        self.start()
 
     def notify(
         self,
@@ -330,18 +383,31 @@ class DurableTaskScheduler:
                     self._reconcile()
                 except Exception as exc:
                     with self._lock:
-                        previous = self._loop_failure.retry_count if self._loop_failure is not None else 0
-                        failure = SchedulerFailure("reconcile", type(exc).__name__, str(exc), previous + 1)
+                        self._loop_failure_count += 1
+                        failure = SchedulerFailure(
+                            "reconcile", type(exc).__name__, str(exc), self._loop_failure_count
+                        )
                         self._loop_failure = failure
                         if failure.retry_count >= self._loop_failure_limit:
                             self._enabled = False
-                        else:
-                            self._reconcile_requested = True
+                        self._reconcile_requested = True
+                    _LOGGER.error(
+                        "durable scheduler reconcile failed",
+                        extra={
+                            "phase": failure.phase,
+                            "error_type": failure.error_type,
+                            "retry_count": failure.retry_count,
+                        },
+                        exc_info=exc,
+                    )
                     if failure.retry_count >= self._loop_failure_limit:
                         return
-                    self._wake.set()
                     continue
                 with self._lock:
+                    # The retry budget is consecutive.  A successful pass
+                    # gives a later transient failure a fresh budget while the
+                    # last failure remains available for operator inspection.
+                    self._loop_failure_count = 0
                     if not self._pending and not self._reconcile_requested:
                         # Retire under the same lock used to start a worker.
                         # A later notification must see the vacant slot even
@@ -391,86 +457,107 @@ class DurableTaskScheduler:
                 # claim failure may predate an already committed continuation.
                 self._pending.discard(task_id)
             try:
-                task = self._session.task(task_id)
-                if task.state.get("input_state") == "queued":
-                    # The inbox boundary owns placement. A queued input is a
-                    # durable submission, not a runnable task.
-                    continue
-                block_reason = self._workflow_block_reason(task)
-                if block_reason is not None:
-                    # A missing, newer, or migration-incompatible workflow is
-                    # durably inspectable but must never be handed to a
-                    # worker that cannot interpret its checkpoint.
-                    with self._lock:
-                        self._blocked[task_id] = block_reason
-                    continue
-                with self._lock:
-                    self._blocked.pop(task_id, None)
-                if task.state.get("cancel_requested") and not kernel_cleanup_required(task):
-                    self._session.cancel_task(
-                        task_id,
-                        reason=str(task.state.get("cancel_reason") or "cancelled"),
-                    )
-                    continue
-                if task.status != TaskStatus.PENDING:
-                    continue
-                try:
-                    self._session.claim_task(task_id)
-                except (CommitConflict, KeyError, ValueError):
-                    continue
-                claimed = self._session.task(task_id)
-                invocation = TaskInvocation(
-                    task_id=task_id,
-                    attempt_token=claimed.attempt_token,
-                    mode="run",
-                    signal=threading.Event(),
-                    done=threading.Event(),
-                )
-                with self._lock:
-                    self._invocations[task_id] = invocation
-                try:
-                    with self._session.execution(task_id, claimed.attempt_token):
-                        accepted = bool(self._dispatch(claimed))
-                finally:
-                    invocation.done.set()
-                    with self._lock:
-                        if self._invocations.get(task_id) is invocation:
-                            self._invocations.pop(task_id, None)
-                if accepted:
-                    with self._lock:
-                        self._task_failures.pop(task_id, None)
-                    current = self._session.task(task_id)
-                    if current.state.get("cancel_requested") and not kernel_cleanup_required(current):
-                        self._session.cancel_task(
-                            task_id,
-                            reason=str(current.state.get("cancel_reason") or "cancelled"),
-                        )
-                        continue
-                    with self._lock:
-                        # The snapshot predates this lock. A committed resume
-                        # may already have notified us; never overwrite it with
-                        # the old RUNNING/WAITING observation.
-                        if current.status == TaskStatus.PENDING or task_id in self._pending:
-                            self._scheduled.discard(task_id)
-                            self._pending.add(task_id)
-                        else:
-                            self._pending.discard(task_id)
-                            self._scheduled.add(task_id)
-                else:
-                    self._session.unclaim_task(task_id)
-                    self._defer_retry(task_id)
-            except (KeyError, ValueError):
-                # A terminal or deleted task is no longer schedulable. The
-                # durable record remains available for audit and inspection.
-                continue
+                self._reconcile_task(task_id)
             except Exception as exc:
-                if not self._record_task_failure(task_id, exc):
-                    with suppress(KeyError, ValueError, CommitConflict):
-                        self._session.unclaim_task(task_id)
-                    self._defer_retry(task_id)
+                self._record_task_failure(task_id, exc)
             finally:
                 with self._lock:
                     self._inflight.discard(task_id)
+
+    def _reconcile_task(self, task_id: str) -> None:
+        try:
+            task = self._session.task(task_id)
+        except KeyError:
+            return
+        if task.state.get("input_state") == "queued":
+            # The inbox boundary owns placement. A queued input is a durable
+            # submission, not a runnable task.
+            return
+        block_reason = self._workflow_block_reason(task)
+        if block_reason is not None:
+            # A missing, newer, or migration-incompatible workflow is durably
+            # inspectable but must never be handed to an incompatible worker.
+            with self._lock:
+                self._blocked[task_id] = block_reason
+            return
+        with self._lock:
+            self._blocked.pop(task_id, None)
+        if task.state.get("cancel_requested") and not kernel_cleanup_required(task):
+            self._session.cancel_task(
+                task_id,
+                reason=str(task.state.get("cancel_reason") or "cancelled"),
+            )
+            return
+        if task.status != TaskStatus.PENDING:
+            return
+        try:
+            self._session.claim_task(task_id)
+        except (CommitConflict, KeyError, ValueError):
+            return
+        claimed = self._session.task(task_id)
+        invocation = TaskInvocation(
+            task_id=task_id,
+            attempt_token=claimed.attempt_token,
+            mode="run",
+            signal=threading.Event(),
+            done=threading.Event(),
+        )
+        with self._lock:
+            self._invocations[task_id] = invocation
+        accepted = False
+        dispatch_error: Exception | None = None
+        try:
+            try:
+                with self._session.execution(task_id, claimed.attempt_token):
+                    accepted = bool(self._dispatch(claimed))
+            except Exception as exc:
+                # Dispatch exceptions, including malformed-input ValueError,
+                # are task failures rather than deleted-task races.
+                dispatch_error = exc
+        finally:
+            invocation.done.set()
+            with self._lock:
+                if self._invocations.get(task_id) is invocation:
+                    self._invocations.pop(task_id, None)
+        if dispatch_error is not None:
+            self._finish_dispatch_error(task_id, claimed.attempt_token, dispatch_error)
+            return
+        if accepted:
+            try:
+                self._finish_accepted_dispatch(task_id)
+            except Exception as exc:
+                self._finish_dispatch_error(task_id, claimed.attempt_token, exc)
+            return
+        self._unclaim_if_owned(task_id, claimed.attempt_token)
+        self._defer_retry(task_id)
+
+    def _finish_dispatch_error(self, task_id: str, attempt_token: str, error: Exception) -> None:
+        if not self._record_task_failure(task_id, error):
+            self._unclaim_if_owned(task_id, attempt_token)
+            self._defer_retry(task_id)
+
+    def _finish_accepted_dispatch(self, task_id: str) -> None:
+        with self._lock:
+            self._task_failures.pop(task_id, None)
+        try:
+            current = self._session.task(task_id)
+        except KeyError:
+            return
+        if current.state.get("cancel_requested") and not kernel_cleanup_required(current):
+            self._session.cancel_task(
+                task_id,
+                reason=str(current.state.get("cancel_reason") or "cancelled"),
+            )
+            return
+        with self._lock:
+            # A committed resume may already have notified us; preserve that
+            # newer pending observation over the old dispatch snapshot.
+            if current.status == TaskStatus.PENDING or task_id in self._pending:
+                self._scheduled.discard(task_id)
+                self._pending.add(task_id)
+            else:
+                self._pending.discard(task_id)
+                self._scheduled.add(task_id)
 
     def _record_task_failure(self, task_id: str, error: Exception) -> bool:
         """Record a dispatch cause and fail the task after bounded retries."""
@@ -479,19 +566,80 @@ class DurableTaskScheduler:
             retry_count = previous.retry_count + 1 if previous is not None else 1
             failure = SchedulerFailure("dispatch", type(error).__name__, str(error), retry_count, task_id)
             self._task_failures[task_id] = failure
+        _LOGGER.error(
+            "durable scheduler dispatch failed",
+            extra={
+                "phase": failure.phase,
+                "task_id": task_id,
+                "error_type": failure.error_type,
+                "retry_count": failure.retry_count,
+            },
+            exc_info=error,
+        )
         if retry_count < self._loop_failure_limit:
             return False
-        with suppress(KeyError, ValueError, CommitConflict):
+        reason = (
+            f"scheduler dispatch failed after {retry_count} attempts: "
+            f"{type(error).__name__}: {error}"
+        )
+        confirmed_failure = False
+        try:
             current = self._session.task(task_id)
             self._session.fail_task(
                 task_id,
-                f"scheduler dispatch failed after {retry_count} attempts: {type(error).__name__}: {error}",
-                state=dict(current.state),
+                reason,
+                state={**dict(current.state), "scheduler_failure": reason},
                 expected_attempt_token=current.attempt_token,
             )
+            confirmed_failure = True
+        except (CommitConflict, KeyError, ValueError) as exc:
+            # A conflict can mean another actor already settled the task, or
+            # that the failure commit did not apply.  Re-read durable truth
+            # before deciding whether to stop retrying this task.
+            _LOGGER.warning(
+                "durable scheduler failure commit did not apply",
+                extra={"task_id": task_id, "error_type": type(exc).__name__},
+                exc_info=exc,
+            )
+            try:
+                current = self._session.task(task_id)
+            except KeyError:
+                return True
+            if current.status not in {
+                TaskStatus.COMPLETED,
+                TaskStatus.FAILED,
+                TaskStatus.CANCELLED,
+            }:
+                return False
+            if current.status is not TaskStatus.FAILED:
+                return True
+            if current.state.get("scheduler_failure") != reason:
+                return True
+            confirmed_failure = True
+        except Exception as exc:
+            _LOGGER.exception(
+                "durable scheduler failure commit raised an unexpected error",
+                extra={"task_id": task_id, "error_type": type(exc).__name__},
+            )
+            return False
+        if not confirmed_failure:
+            return True
         with self._lock:
             self._blocked[task_id] = "dispatch_failed"
         return True
+
+    def _unclaim_if_owned(self, task_id: str, attempt_token: str) -> None:
+        """Release only the claim captured by this dispatch invocation."""
+        try:
+            current = self._session.task(task_id)
+        except KeyError:
+            return
+        if current.status is not TaskStatus.RUNNING or current.attempt_token != attempt_token:
+            return
+        try:
+            self._session.unclaim_task(task_id)
+        except (CommitConflict, KeyError, ValueError):
+            return
 
     def _place_ready_inputs(self) -> None:
         """Place queued conversation inputs once their active run has settled."""

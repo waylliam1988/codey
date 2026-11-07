@@ -84,6 +84,103 @@ def test_scheduler_bounds_reconcile_failures_and_exposes_cause(tmp_path: Path, m
         session.close()
 
 
+def test_scheduler_start_resumes_after_reconcile_circuit_breaker(tmp_path: Path, monkeypatch) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    dispatched: list[str] = []
+    scheduler = DurableTaskScheduler(
+        session,
+        lambda task: dispatched.append(task.task_id) or True,
+        retry_interval=0.01,
+    )
+    original_reconcile = scheduler._reconcile
+    calls = 0
+
+    def intermittently_broken_reconcile() -> None:
+        nonlocal calls
+        calls += 1
+        if calls <= 3:
+            raise OSError("injected reconcile failure")
+        original_reconcile()
+
+    monkeypatch.setattr(scheduler, "_reconcile", intermittently_broken_reconcile)
+    try:
+        scheduler.start()
+        assert _wait_for(lambda: scheduler.loop_failure is not None and not scheduler.enabled)
+        assert scheduler._owns_scheduler
+        scheduler.start()
+        assert _wait_for(lambda: dispatched == ["task-1"])
+        assert scheduler.enabled
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_records_dispatch_value_error_and_releases_claim(tmp_path: Path) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    scheduler = DurableTaskScheduler(
+        session,
+        lambda _task: (_ for _ in ()).throw(ValueError("missing dispatch identity")),
+    )
+    try:
+        for _ in range(3):
+            scheduler._reconcile()
+        task = session.task("task-1")
+        assert task.status is TaskStatus.FAILED
+        assert not task.attempt_token
+        assert scheduler.blocked_tasks["task-1"] == "dispatch_failed"
+        assert task.state["scheduler_failure"].startswith("scheduler dispatch failed")
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_retries_when_failure_commit_conflicts(tmp_path: Path, monkeypatch) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    scheduler = DurableTaskScheduler(
+        session,
+        lambda _task: (_ for _ in ()).throw(OSError("worker unavailable")),
+    )
+
+    def conflicting_failure(*args, **kwargs):
+        raise CommitConflict("injected failure commit conflict")
+
+    monkeypatch.setattr(session, "fail_task", conflicting_failure)
+    try:
+        for _ in range(3):
+            scheduler._reconcile()
+        task = session.task("task-1")
+        assert task.status is TaskStatus.PENDING
+        assert not task.attempt_token
+        assert scheduler.blocked_tasks == {}
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_waits_between_reconcile_retries(tmp_path: Path, monkeypatch) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    scheduler = DurableTaskScheduler(session, lambda _task: True, retry_interval=0.05)
+    timestamps: list[float] = []
+
+    def broken_reconcile() -> None:
+        timestamps.append(time.monotonic())
+        raise OSError("injected reconcile failure")
+
+    monkeypatch.setattr(scheduler, "_reconcile", broken_reconcile)
+    try:
+        scheduler.start()
+        assert _wait_for(lambda: len(timestamps) == 3, timeout=2)
+        assert timestamps[1] - timestamps[0] >= 0.04
+        assert timestamps[2] - timestamps[1] >= 0.04
+    finally:
+        scheduler.close()
+        session.close()
+
+
 def test_scheduler_fails_task_after_repeated_dispatch_errors(tmp_path: Path) -> None:
     session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
     _admit(session, "task-1")
