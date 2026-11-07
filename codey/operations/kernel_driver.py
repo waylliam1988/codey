@@ -75,12 +75,13 @@ def _results(value: object) -> list[ProviderToolResult]:
     return results
 
 
-def decode_provider_invocation(payload: dict[str, Any]) -> tuple[str, list[Any], dict[str, Any]]:
+def decode_provider_invocation(payload: dict[str, Any]) -> tuple[str, list[object], dict[str, object]]:
     """Rebuild transport types from the original request, never today's registry."""
     method, raw_args, raw_kwargs = payload.get("method"), payload.get("args"), payload.get("kwargs")
     if method not in _METHODS or not isinstance(raw_args, list) or not isinstance(raw_kwargs, dict):
         raise RuntimeEffectError("frozen provider invocation is invalid")
-    args, kwargs = list(raw_args), dict(raw_kwargs)
+    args: list[object] = list(raw_args)
+    kwargs: dict[str, object] = dict(raw_kwargs)
     if method not in {"send", "send_turn"}:
         if args:
             args[0] = _results(args[0])
@@ -160,7 +161,7 @@ def restore_provider_window(sink: Any, provider: Any, state: Any) -> dict[str, A
     return payload
 
 
-def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> Any:
+def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> object:
     """Close the explicit prior boundary, admit once, execute, then save once."""
     while True:
         action = peek_next_action(sink.durable, session_id=sink.session_id, run_id=sink.run_id)
@@ -194,7 +195,7 @@ def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> Any:
 
 
 def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
-                      method: str, args: list[Any], kwargs: dict[str, Any]) -> Any:
+                      method: str, args: list[object], kwargs: dict[str, object]) -> object:
     try:
         gate_prompt = getattr(provider, "set_attempt_gate_prompt", None)
         if callable(gate_prompt):
