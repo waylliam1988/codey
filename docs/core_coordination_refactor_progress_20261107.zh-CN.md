@@ -146,8 +146,8 @@ fork helper 改依赖 `SessionKernel`，不再反向导入公共 session。公�
 - [x] run projection 归属。
 - [x] stream buffer 归属。
 - [x] 抽出会话/项目状态 store。
-- [ ] 抽出 SSE、snapshot 和运行事件协调器。
-- [ ] 让 `app_runtime.ts` 主要负责装配和 UI 绑定。
+- [x] 抽出 SSE、snapshot 和运行事件协调器。
+- [x] 让 `app_runtime.ts` 主要负责装配和 UI 绑定。
 
 会话状态批次新增 `SessionStateStore` 与 `SessionStateViews`。会话/项目操作、消息合并、
 request status 前插入、stream 终结身份和消息索引归 store；节点增量替换及挂载 stream
@@ -155,6 +155,22 @@ request status 前插入、stream 终结身份和消息索引归 store；节点�
 既有 UI snapshot/cache 仍负责持久化同步，不增加 durable 权威副本。TypeScript 通过；
 store/view/request recovery/run lifecycle/projection 定向回归 31 passed。导航 pending jump
 修改尚在独立验证，未计入这个批次的完成证据。
+
+事件批次新增 `RunEventCoordinator`，拥有生命周期接受、stream buffer、任务快照、
+queued input/question 和消息事件投影的处理顺序；仍复用既有 `RunProjection`，
+`sse.ts` 继续拥有连接、commit cursor 与快照期间的事件缓冲。协调器只接收具名 API
+切片和 UI 回调，不导入全局 runtime 或操作 DOM。terminalRuns 的写入同归状态 store。
+移除原来将所有事件字段断言为必填的接口，stream 处理显式接受并校验可选字段。
+新测覆盖旧 revision、旧 attempt、snapshot waiting owner、stream/terminal 顺序、
+临时 HTTP admission 撤销、fork 排除、审批/问题/队列路由和 commit 刷新合并。
+TypeScript 通过；前端扩大回归 61 files、363 tests 全部通过。
+
+已构建并通过 `tools.publish_frontend` 发布实际包。导航的基线问题定位为切换时捕获 smooth
+scroll 中间位置，ConversationUI 现在保存待完成 jump 的目标和语义锚点；新增强制跳转未完成
+就切换会话的确定性回归。首轮 103 项浏览器回归中 102 passed，唯一失败发生在旧测试把
+aria-current 当作平滑滚动已精确到位的同步屏障；该属性按当前可见问题区间更新，本来不保证
+像素到位。改为等待原有 <2px 几何条件，未放宽阈值；导航全组 18 passed。审批、重连、fork、
+输入队列和工作流的其他 85 项已通过；最终复验在收尾记录。
 
 ## 基线验证
 

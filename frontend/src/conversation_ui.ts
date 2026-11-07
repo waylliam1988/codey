@@ -11,13 +11,14 @@ import type { ServerEvent } from './domain/protocol';
 export interface ConversationUiApi {
   init(deps: ConversationUiDeps): void;
   renderChat(): void;
-  refreshHistory(sessionId: string): Promise<void>;
+  refreshHistory(sessionId: string, force?: boolean, background?: boolean): Promise<void>;
   historyRevision(sessionId: string): number | undefined;
   acceptsRun(sessionId: string, runId: string): boolean;
   searchHistory(): void;
   observeCommit(event: ServerEvent): Promise<void>;
   scrollChat(capture?: boolean): void;
   captureView(): void;
+  scrollToMessage(anchor: HTMLElement, smooth: boolean): void;
   isFollowing(): boolean;
   updateLatest(): void;
   updateNotice(): void;
@@ -103,6 +104,7 @@ export interface ConversationUiDeps {
   const historyRendered = new Set<string>();
   const forcedHistoryRefresh = new Set<string>();
   const views = new Map<string, ViewState>();
+  let pendingJump: { sessionId: string; scroll: number; anchor: { index: number; offset: number } } | null = null;
   const historyStarts = new Map<string, number>();
   const loadingHistory = new Map<string, symbol>();
   const deferredHistory = new Set<string>();
@@ -260,6 +262,7 @@ export interface ConversationUiDeps {
     scrollOffset = area.scrollTop;
   }
   function readingAnchor() {
+    if (pendingJump?.sessionId === shownId) return pendingJump.anchor;
     const top = $('chat-area').getBoundingClientRect().top;
     const index = Array.from($('chat').children).findIndex((node) => node.getBoundingClientRect().bottom > top);
     return index < 0 ? null : { index, offset: $('chat').children[index].getBoundingClientRect().top - top };
@@ -276,6 +279,7 @@ export interface ConversationUiDeps {
     else if (view) setScroll(view.scroll);
   }
   function stopFollowing() {
+    pendingJump = null;
     following = false;
     scrollIntent = 'history';
     userScrollPending = true;
@@ -283,6 +287,14 @@ export interface ConversationUiDeps {
     if (shownId) deferredHistory.add(shownId);
     captureView();
     updateLatest();
+  }
+  function scrollToMessage(anchor: HTMLElement, smooth: boolean): void {
+    const area = $('chat-area');
+    const index = Array.from($('chat').children).indexOf(anchor);
+    const top = area.scrollTop + anchor.getBoundingClientRect().top - area.getBoundingClientRect().top - 24;
+    pendingJump = { sessionId: shownId, scroll: top, anchor: { index, offset: 24 } };
+    area.scrollTo({ top, behavior: smooth ? 'smooth' : 'instant' });
+    captureView();
   }
   function revealApproval(id: string): void {
     const card = $('chat').querySelector<HTMLElement>(`[data-approval-id="${CSS.escape(id)}"]`);
@@ -389,7 +401,7 @@ export interface ConversationUiDeps {
       messages: session.messages.slice(),
       nodes: Array.from($('chat').childNodes),
       disclosures: runtime.Process.capture($('chat')),
-      scroll: $('chat-area').scrollTop,
+      scroll: pendingJump?.sessionId === shownId ? pendingJump.scroll : $('chat-area').scrollTop,
       following,
       anchor: readingAnchor(),
       height: $('chat-area').scrollHeight,
@@ -592,6 +604,7 @@ export interface ConversationUiDeps {
     if (changing) {
       closeSelectionMenu();
       captureView();
+      pendingJump = null;
     }
     const saved = views.get(s.id);
     const scroll = changing && saved ? saved.scroll : $('chat-area').scrollTop;
@@ -1322,6 +1335,10 @@ export interface ConversationUiDeps {
       updateLatest();
       if (!following && scrollIntent === 'history' && area.scrollTop < 100) void loadEarlier();
     });
+    area.addEventListener('scrollend', () => {
+      pendingJump = null;
+      captureView();
+    });
     new ResizeObserver(() => {
       if (shownId) scrollChat();
     }).observe($('chat'));
@@ -1423,6 +1440,7 @@ export interface ConversationUiDeps {
     observeCommit,
     scrollChat,
     captureView,
+    scrollToMessage,
     isFollowing,
     updateLatest,
     updateNotice,

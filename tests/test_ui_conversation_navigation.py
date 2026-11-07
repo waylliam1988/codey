@@ -219,9 +219,11 @@ def test_pointer_jump_keeps_draft_caret_and_native_selection_and_updates_reading
     task.evaluate('e => e.setSelectionRange(3, 8)')
     page.locator('.conversation-tick').nth(4).click()
     expect(page.locator('.conversation-tick').nth(4)).to_have_attribute('aria-current', 'location')
-    assert page.locator('#chat > .msg.user').nth(4).evaluate(
-        'e => Math.abs(e.getBoundingClientRect().top-document.getElementById("chat-area").getBoundingClientRect().top-24)<2'
-    )
+    page.wait_for_function("""() => {
+        const anchor = document.querySelectorAll('#chat > .msg.user')[4];
+        return Math.abs(anchor.getBoundingClientRect().top-
+            document.getElementById('chat-area').getBoundingClientRect().top-24)<2;
+    }""")
     expect(task).to_be_focused()
     expect(task).to_have_value('An unsent draft 中文')
     assert task.evaluate('e => [e.selectionStart,e.selectionEnd]') == [3, 8]
@@ -239,6 +241,30 @@ def test_pointer_jump_keeps_draft_caret_and_native_selection_and_updates_reading
     page.evaluate("switchSession('b');switchSession('a')")
     expect(task).to_have_value('An unsent draft 中文')
     expect(page.locator('.conversation-tick').nth(6)).to_have_attribute('aria-current', 'location')
+
+
+def test_switch_during_an_unfinished_jump_restores_the_requested_question(page):
+    append_turns(page)
+    read_turn(page, 13)
+    result = page.evaluate("""() => {
+        const area = document.getElementById('chat-area');
+        const before = area.scrollTop;
+        const scrollTo = area.scrollTo;
+        let requested;
+        area.scrollTo = options => { requested = options.top; };
+        document.querySelectorAll('.conversation-tick')[6].click();
+        const intermediate = area.scrollTop;
+        area.scrollTo = scrollTo;
+        switchSession('b');
+        switchSession('a');
+        return {before, intermediate, requested};
+    }""")
+    assert result['intermediate'] == result['before']
+    assert result['requested'] != result['intermediate']
+    expect(page.locator('.conversation-tick').nth(6)).to_have_attribute('aria-current', 'location')
+    assert page.locator('#chat > .msg.user').nth(6).evaluate(
+        'e => Math.abs(e.getBoundingClientRect().top-document.getElementById("chat-area").getBoundingClientRect().top-24)<2'
+    )
 
 
 def test_keyboard_preview_jump_escape_and_reduced_motion(page):

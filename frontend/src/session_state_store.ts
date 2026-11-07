@@ -67,6 +67,19 @@ export class SessionStateStore {
     return this.activeProject()?.path || '';
   }
 
+  projectPathFor(sessionId: string): string {
+    return this.sessionProject(this.sessions.find((session) => session.id === sessionId))?.path || '';
+  }
+
+  projectTerminalRun(sessionId: string, runId: string, terminal: boolean, snapshot: boolean): void {
+    const session = this.sessions.find((item) => item.id === sessionId);
+    if (!session) return;
+    if (terminal)
+      session.terminalRuns = [...(session.terminalRuns || []).filter((id) => id !== runId), runId].slice(-32);
+    else if (snapshot) session.terminalRuns = (session.terminalRuns || []).filter((id) => id !== runId);
+    this.deps.ui.hydrateSessionIndexes(session);
+  }
+
   currentProviderId(): string {
     const session = this.activeSession();
     return session ? (session.provider ?? '') : this.deps.defaultProvider();

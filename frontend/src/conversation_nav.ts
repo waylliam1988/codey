@@ -195,13 +195,7 @@ export interface ConversationNavDeps {
     }
     const anchor = entries.find((item) => item.id === entry.id)?.anchor;
     if (!anchor?.isConnected) return;
-    const rect = area.getBoundingClientRect();
-    const top = area.scrollTop + anchor.getBoundingClientRect().top - rect.top - 24;
-    area.scrollTo({
-      top,
-      behavior: scrub || matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-    });
-    runtime.ConversationUI.captureView();
+    runtime.ConversationUI.scrollToMessage(anchor, !scrub && !matchMedia('(prefers-reduced-motion: reduce)').matches);
     schedule();
   }
   function makeEntry(id: string, text: string): Entry {

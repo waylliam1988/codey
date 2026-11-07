@@ -1,3 +1,4 @@
+import { RunEventCoordinator } from './run_event_coordinator';
 import { SessionStateStore } from './session_state_store';
 import { SessionStateViews } from './session_state_views';
 import { ChatFork } from './chat_fork';
@@ -14,14 +15,10 @@ import { showCommandPermissions } from './command_permissions';
 import { reportDesktopFailure, reportDesktopReady } from './desktop_ready';
 import { hydrateDocumentContent } from './document_content';
 import type { QueuedInput } from './input_outbox';
-import { streamMessage } from './reply_stream';
-import { eventSequence, type LifecycleInput, lastRunState, lifecycleState } from './run_lifecycle';
-import { RunProjection } from './run_projection';
-import { RunStreamBuffer } from './run_stream_buffer';
+import type { LifecycleInput } from './run_lifecycle';
 import { runtime } from './runtime';
 import { createApprovalController } from './shell_approvals';
 import { createSidebar } from './sidebar';
-import { terminalAnswerMessage } from './terminal_answer';
 import { type UserQuestion, UserQuestions } from './user_questions';
 import './operator_auth';
 import './render';
@@ -46,23 +43,8 @@ import './conversation_nav';
 import './conversation_ui';
 import './domain/protocol';
 import './api/transport';
-import {
-  decodeChangeFilePreview,
-  decodeChangesData,
-  decodeResearchPayload,
-  decodeRunState,
-  decodeServerEvent,
-  type ServerEvent,
-} from './domain/protocol';
-import type {
-  ChangesData,
-  Message,
-  Project,
-  ResearchPayload,
-  RestoreChangesResult,
-  RunState,
-  Session,
-} from './types/domain';
+import { decodeChangeFilePreview, decodeChangesData, type ServerEvent } from './domain/protocol';
+import type { Message, Project, ResearchPayload, RestoreChangesResult, RunState, Session } from './types/domain';
 
 interface PickFolderResult {
   ok?: boolean;
@@ -83,88 +65,6 @@ interface StatusRowOptions {
   action?: StatusAction;
   copyText?: string;
 }
-interface ProviderFailure {
-  action?: string;
-  kind?: string;
-  provider?: string;
-  stage?: string;
-  message?: string;
-}
-interface ServerEventData {
-  preview?: import('./render').ToolPreview;
-  elapsed_ms?: number;
-  stream_id: string;
-  sequence: number;
-  state: string;
-  type: string;
-  event_id: number | string;
-  cursor: number | string;
-  run_id: string;
-  execution_id: string;
-  session_id: string;
-  status: string;
-  providers: unknown;
-  turn: number;
-  note: string;
-  reasoning: string;
-  text: string;
-  tool_id: string;
-  call_id: string;
-  parent_call_id: string;
-  output_bytes: number;
-  output_stored_bytes: number;
-  kind: string;
-  tool_name: string;
-  path: string;
-  activity: string;
-  ok: boolean;
-  changed: boolean;
-  command: string;
-  result: string;
-  detail: string;
-  detail_truncated: boolean;
-  output: string;
-  truncated: boolean;
-  error_ref: string;
-  error_type: string;
-  stage: string;
-  id: string;
-  summary: string;
-  stop_reason: string;
-  final_delivery: string;
-  research: ResearchPayload;
-  receipt: unknown;
-  provider_failure: ProviderFailure;
-  failure: import('./failure_presentation').FailureInfo;
-  provider: string;
-  turns: number;
-  max_turns: number;
-  mode: string;
-  changes: ChangesData;
-  command_sha256: string;
-  command_chars: number;
-  command_truncated: boolean;
-  cwd: string;
-  project: string;
-  risk_label: string;
-  risk_title: string;
-  risk_detail: string;
-  session_rule_available?: boolean;
-  project_rule_available?: boolean;
-  approved: boolean;
-  exit_code: number;
-  last_shell_result: ServerEventData;
-  last_terminal_event: ServerEventData;
-  pending_event: ServerEventData;
-  busy: boolean;
-  run_status: string;
-  research_restore_runs: unknown;
-  continuation_requested: boolean;
-  continued: boolean;
-  stopped: boolean;
-  retry_after: number;
-}
-type Loose = ServerEventData;
 
 // The existing application entry is migrated into the TypeScript bundle.
 // It remains behavior-compatible while later steps replace window globals with imports.
@@ -436,17 +336,7 @@ function liveDefaultProvider() {
   return runtime.UiState.DEFAULT_PROVIDER;
 }
 
-const {
-  uid,
-  defaultSession,
-  pathName,
-  pathKey,
-  apply: applyUiState,
-  current: currentUiState,
-  cache: cacheUiState,
-  cached: cachedUiState,
-  flush: flushUiState,
-} = runtime.UiState;
+const { apply: applyUiState, cache: cacheUiState, cached: cachedUiState } = runtime.UiState;
 const persistActive = runtime.UiState.persist;
 const persistActiveNow = runtime.UiState.persistNow;
 const bindUiStatePagehide = runtime.UiState.bindPagehide;
@@ -685,7 +575,6 @@ const FOLDABLE_TOOL_KINDS = runtime.Render.FOLDABLE_TOOL_KINDS;
 const standaloneToolEl = runtime.Render.standaloneToolEl;
 const appendOrFoldTool = runtime.Render.appendOrFoldTool;
 const hydrateSessionIndexes = runtime.UiState.hydrateSessionIndexes;
-const ensureSessionIndexes = runtime.UiState.ensureSessionIndexes;
 
 function appendMessageNode(chat: HTMLElement, m: Message) {
   runtime.Messages.append(chat, m);
@@ -876,18 +765,40 @@ document.addEventListener('click', (e) => {
 });
 
 // ============================ SSE event ingestion ============================
-const runProjection = new RunProjection({
-  requestIdForRun: (sessionId, runId) => runtime.Requests.forRun(sessionId, runId)?.request.id,
+const runEvents = new RunEventCoordinator({
+  state: sessionState,
+  ui: runtime.UiState,
+  history: runtime.ConversationUI,
+  requests: runtime.Requests,
+  composer: runtime.Composer,
+  approvals: () => approvalController,
+  questions: userQuestions,
+  transport: runtime.Sse,
+  providers: PROVIDERS,
+  revealApproval: (sessionId, id) => {
+    if (sessionId !== sessionState.activeId) return;
+    requestAnimationFrame(() => {
+      if (sessionId === sessionState.activeId && runtime.ConversationUI.isFollowing())
+        runtime.ConversationUI.revealApproval(id);
+    });
+  },
+  setStatus,
+  updateSend,
+  updateComposerContext,
+  syncResearchUseProjectButton,
+  refreshProviderStatus,
+  applyProviderStatus,
+  recordResearchRun,
+  markResearchRestoreAvailability,
+  receiptSummary,
+  receiptChangedCount,
+  maybeAddChangesSummary,
 });
+const runProjection = runEvents.projection;
 
 function isSessionRunning(sessionId: string): boolean {
   return runProjection.isSessionRunning(sessionId);
 }
-let turnCounter = 0;
-const replyStreamBuffer = new RunStreamBuffer<ServerEventData>({
-  acceptsRun: (sessionId, runId) => runtime.ConversationUI.acceptsRun(sessionId, runId),
-  handle: handleReplyStream,
-});
 
 function setStatus(text: string, kind: string) {
   const el = $('status');
@@ -910,443 +821,17 @@ function setStatus(text: string, kind: string) {
   }
 }
 
-const sseEventKey = (data: ServerEvent, fallback = '') => runtime.Sse.eventKey(data, fallback);
 function applyLifecycle(
   data: ServerEvent,
   source: LifecycleInput['source'],
   active?: boolean,
   historySessionId?: string,
 ): boolean {
-  if (data.run_id && historySessionId && runtime.ConversationUI.acceptsRun(historySessionId, data.run_id) === false)
-    return false;
-  const runId = data.run_id || '',
-    sessionId = data.session_id || '';
-  const owner = sessionState.sessions.find(
-    (item) => item.id === sessionId && runtime.ConversationUI.acceptsRun(item.id, runId),
-  );
-  const display = historySessionId ? sessionState.sessions.find((item) => item.id === historySessionId) : owner;
-  const displays = sessionState.sessions.filter(
-    (item) =>
-      (item === owner || item === display || item.messages.some((message) => message.runId === runId)) &&
-      runtime.ConversationUI.acceptsRun(item.id, runId),
-  );
-  const session = owner || display || displays[0];
-  if (!session || !runId) return false;
-  if (session.terminalRuns?.includes(runId)) runProjection.restoreTerminal(sessionId, runId);
-  const request = runtime.Requests.forRun(sessionId, runId);
-  if (source !== 'snapshot' && request && request.request.attempts.at(-1) !== request.attempt) return false;
-  const state = lifecycleState(
-    data.task_status,
-    data.stop_reason,
-    data.type === 'task_start' ? 'running' : data.stop_reason || 'done',
-  );
-  const view = runProjection.transition({
-    runId,
-    sessionId,
-    state,
-    active: active ?? (state === 'running' ? true : undefined),
-    revision: data.task_revision,
-    sequence: eventSequence(data.event_id),
-    source,
-  });
-  if (!view) return false;
-  // Every lifecycle write follows the one transition decision above. These are
-  // derived UI indexes; the durable task and its revision remain authoritative.
-  for (const target of displays) {
-    if (view.terminal)
-      target.terminalRuns = [...(target.terminalRuns || []).filter((id) => id !== runId), runId].slice(-32);
-    else if (source === 'snapshot') target.terminalRuns = (target.terminalRuns || []).filter((id) => id !== runId);
-    hydrateSessionIndexes(target);
-    if (view.state !== 'idle')
-      recordRunState(target.id, runId, target === owner || !view.active ? view.state : 'unknown', data);
-  }
-  if (view.active) runtime.Composer.observeRun?.(sessionId, runId);
-  runtime.Requests.projectLifecycle(data as ServerEventData, view.state);
-  if (data.type === 'task_done') data.stop_reason = view.state;
-  persistActive();
-  if (runProjection.size) runtime.Sse.displayRunStatus('running');
-  else setStatus('', 'ok');
-  updateSend();
-  updateComposerContext();
-  syncResearchUseProjectButton();
-  return true;
+  return runEvents.applyLifecycle(data, source, active, historySessionId);
 }
 
-function handleReplyStream(data: ServerEventData) {
-  const sid = data.session_id || '';
-  const runId = (data.run_id || '').toString();
-  const runIsActive = (id: string) => runProjection.isActive(id) || id === runProjection.primaryRun?.runId;
-  if (!runId || !runIsActive(runId)) return;
-  if (!runtime.Requests.acceptsEvent(data)) return;
-  const session = sessionState.sessions.find((session) => session.id === sid);
-  const message = session && streamMessage(session, data);
-  if (
-    message &&
-    !replaceSessionMessage(sid, (item) => item.streamId === message.streamId && item.runId === runId, message)
-  )
-    addToSession(sid, message);
-}
-
-let inputRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' = 'event') {
-  const data = decodeServerEvent(raw) as ServerEventData;
-  if (data.run_id && runtime.ConversationUI.acceptsRun?.(data.session_id || '', data.run_id) === false) return;
-  if (data.type === 'conversation_inventory_changed') {
-    void runtime.UiState.refreshInventory?.();
-    return;
-  }
-  if (data.type === 'durable_commit') {
-    void runtime.ConversationUI.observeCommit(decodeServerEvent(raw));
-    if (inputRefreshTimer === undefined)
-      inputRefreshTimer = setTimeout(() => {
-        inputRefreshTimer = undefined;
-        void runtime.Composer.refreshQueuedInputs();
-      }, 200);
-    return;
-  }
-  if (data.type === 'reply_stream') {
-    replyStreamBuffer.enqueue(data);
-    return;
-  }
-  replyStreamBuffer.flush();
-  if ((data.type === 'task_start' || data.type === 'task_done') && !applyLifecycle(data, lifecycleSource)) return;
-  if (data.type === 'user_question' || data.type === 'user_question_state') {
-    userQuestions.apply((raw as { question: unknown }).question);
-    return;
-  }
-  if (data.type === 'conversation_input') {
-    runtime.Composer.applyQueuedInput((raw as { input: unknown }).input);
-    return;
-  }
-  if (data.type === 'task_start') {
-    const input = runtime.Composer.queuedInputForRun(data.run_id);
-    if (input) observeQueuedInput({ ...input, state: 'dispatching' });
-  }
-  if (data.type === 'shell_approval_status') {
-    approvalController.apply(raw);
-    void reconcileRunState();
-    return;
-  }
-  const runId = (data.run_id || '').toString();
-  const sid = data.session_id || '';
-  if (data.type !== 'task_start' && data.type !== 'task_done' && !runtime.Requests.acceptsEvent(data)) return;
-  const mayOutliveRun = [
-    'task_start',
-    'task_done',
-    'shell_request',
-    'shell_result',
-    'teach_request',
-    'reply',
-    'ghost_post_turn_warning',
-    'resync_required',
-  ];
-  const runIsActive = (id: string) => runProjection.isActive(id) || id === runProjection.primaryRun?.runId;
-  if (runId && !mayOutliveRun.includes(data.type) && !runIsActive(runId)) return;
-  // Server dropped queued events for this client: re-pull authoritative state.
-  if (data.type === 'resync_required') {
-    reconcileRunState();
-    refreshProviderStatus(true);
-    return;
-  }
-  if (data.type === 'status') {
-    runtime.Sse.displayRunStatus(data.status);
-    return;
-  }
-  if (data.type === 'providers') {
-    applyProviderStatus(data.providers);
-    return;
-  }
-  if (data.type === 'turn') {
-    addToSession(sid, {
-      type: 'turn',
-      n: data.turn || 0,
-      note: (data.note || '').toString(),
-      reasoning: typeof data.reasoning === 'string' ? data.reasoning : '',
-      runId,
-      eventKey: sseEventKey(data, runId ? `turn:${runId}:${data.turn || 0}` : ''),
-    });
-    return;
-  }
-  if (data.type === 'reasoning') {
-    if (typeof data.text === 'string' && data.text.trim())
-      addToSession(sid, {
-        type: 'thinking',
-        text: data.text,
-        turn: data.turn || 0,
-        runId,
-        eventKey: sseEventKey(data, `reasoning:${runId}:${data.turn || 0}`),
-      });
-    return;
-  }
-  if (data.type === 'tool_started') {
-    const rawToolId = (data.call_id || data.tool_id || '').toString();
-    const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';
-    const s = sessionState.sessions.find((x) => x.id === sid);
-    if (s && toolKey) {
-      ensureSessionIndexes(s);
-      if (s._toolKeys!.has(toolKey)) return;
-    }
-    addToSession(sid, {
-      type: 'tool_pending',
-      callId: data.call_id || '',
-      parentCallId: data.parent_call_id || '',
-      toolKey,
-      eventKey: toolKey ? `tool:${toolKey}:start` : '',
-      kind: data.kind || '',
-      toolName: data.tool_name || '',
-      turn: data.turn || 0,
-      path: data.path || '',
-      activity: (data.activity || '').toString().slice(0, 200),
-      pending: true,
-      runId,
-    });
-    return;
-  }
-  if (data.type === 'tool') {
-    const rawToolId = (data.call_id || data.tool_id || '').toString();
-    const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';
-    const toolStatus = (data.status || (data.ok === false ? 'error' : 'ok')).toString();
-    const message = {
-      type: 'tool',
-      callId: data.call_id || '',
-      parentCallId: data.parent_call_id || '',
-      toolKey,
-      eventKey: toolKey ? `tool:${toolKey}:final` : '',
-      kind: data.kind || '',
-      toolName: data.tool_name || '',
-      turn: data.turn || 0,
-      changed: data.changed === true,
-      command: data.command || '',
-      path: data.path || '',
-      result: (data.detail ?? data.result ?? '').toString(),
-      preview: data.preview,
-      outputTruncated: data.detail_truncated || data.truncated,
-      outputBytes: data.output_bytes,
-      outputStoredBytes: data.output_stored_bytes,
-      failure: data.failure,
-      status: toolStatus,
-      error: toolStatus === 'error',
-      runId,
-    };
-    if (
-      toolKey &&
-      replaceSessionMessage(sid, (item) => item.type === 'tool_pending' && item.toolKey === toolKey, message)
-    )
-      return;
-    addToSession(sid, message);
-    return;
-  }
-  if (data.type === 'info') {
-    if (data.text) addToSession(sid, { type: 'info', text: data.text, runId, eventKey: sseEventKey(data) });
-    return;
-  }
-  if (data.type === 'ghost_post_turn_warning') {
-    if (runtime.Requests.warning(sid, runId)) return;
-    const detail = [data.stage, data.error_type, data.error_ref].filter(Boolean).join(' · ');
-    addToSession(sid, {
-      type: 'local_update_warning',
-      text: 'Local memory update unavailable' + (detail ? ` · ${detail}` : ''),
-      sessionId: sid,
-      runId,
-      eventKey: sseEventKey(data, runId ? `local-health:${runId}:${data.error_ref || ''}` : ''),
-    });
-    return;
-  }
-  if (data.type === 'teach_request') {
-    removeTeachMessage(sid, data.id);
-    addToSession(sid, {
-      type: 'teach',
-      id: data.id,
-      text: data.text,
-      sessionId: sid,
-      runId,
-      eventKey: `teach:${data.id}`,
-    });
-    return;
-  }
-  if (data.type === 'task_start') {
-    turnCounter = 0;
-    return;
-  }
-  if (data.type === 'task_done') {
-    const research = data.research;
-    const summary = (data.summary || '').toString();
-    const reason = (data.stop_reason || 'done').toString();
-    if (reason === 'running' || reason === 'waiting' || reason === 'idle') return;
-    const requestFailed = runtime.Requests.forRun(sid, runId)?.attempt.state === 'failed';
-    const terminalKey = runId ? `terminal:${runId}` : '';
-    const answerKey = terminalKey ? `${terminalKey}:answer` : '';
-    const receiptKey = terminalKey ? `${terminalKey}:receipt` : '';
-    const project = sessionProjectPath(sid);
-    let shownReceipt = false;
-    const researchRun = research ? recordResearchRun(sid, runId, research, data.receipt) : null;
-    if (reason === 'error' && data.provider_failure && data.provider_failure.action === 'connect') {
-      if (data.provider && PROVIDERS.includes(data.provider)) {
-        applyProviderStatus([{ id: data.provider, available: false }]);
-      }
-      if (!requestFailed) {
-        // Preserve the established send-error hook for status bookkeeping.
-        // addSendError(sid, terminalKey, runId)
-        addToSession(sid, {
-          type: 'err',
-          text: summary || 'Could not connect to the provider',
-          sessionId: sid,
-          runId,
-          eventKey: terminalKey,
-          failure: data.failure,
-        });
-      }
-      flushUiState();
-      return;
-    }
-    if (requestFailed) {
-      // The request's status position already contains this attempt's failure.
-    } else if (summary.startsWith('ERROR:')) {
-      addToSession(sid, {
-        type: 'err',
-        text: summary.replace(/^ERROR:\s*/i, ''),
-        sessionId: sid,
-        runId,
-        eventKey: terminalKey,
-        failure: data.failure,
-      });
-    } else if (reason === 'max_turns') {
-      const turns = data.turns || data.max_turns || 0;
-      const label = turns ? `Reached turn limit (${turns})` : 'Reached turn limit';
-      addToSession(sid, { type: 'limit', text: label, sessionId: sid, runId, eventKey: terminalKey });
-    } else if (reason === 'no_progress') {
-      addToSession(sid, {
-        type: 'pause',
-        text: 'Paused after several turns without new file writes',
-        sessionId: sid,
-        runId,
-        eventKey: terminalKey,
-      });
-    } else if (reason === 'approval' || reason === 'question') {
-      // shell approval card is emitted separately
-    } else if (reason === 'stopped') {
-      const turns = data.turns || 0;
-      const label = turns ? `Stopped after ${turns} turn${turns === 1 ? '' : 's'}` : 'Stopped';
-      addToSession(sid, { type: 'pause', text: label, sessionId: sid, runId, eventKey: terminalKey });
-    } else if (reason === 'error' || reason === 'provider_failure') {
-      const text = summary || 'Task failed';
-      addToSession(sid, { type: 'err', text, sessionId: sid, runId, eventKey: terminalKey, failure: data.failure });
-    } else if (reason === 'done') {
-      const terminalAnswer = terminalAnswerMessage(data, runId, runProjection.turnIdForRun(sid, runId));
-      if (data.mode === 'research') {
-        if (summary) addToSession(sid, terminalAnswer || { type: 'asst', text: summary, runId, eventKey: answerKey });
-        if (receiptSummary(data.receipt)) {
-          addToSession(sid, {
-            type: 'research_done',
-            text: receiptSummary(data.receipt),
-            runId,
-            sessionId: sid,
-            eventKey: receiptKey,
-          });
-          shownReceipt = true;
-        }
-      } else if (data.mode === 'chat') {
-        if (summary) addToSession(sid, terminalAnswer || { type: 'asst', text: summary, runId, eventKey: answerKey });
-      } else if (project && summary) {
-        addToSession(sid, terminalAnswer || { type: 'asst', text: summary, runId, eventKey: answerKey });
-      }
-      const changes = data.changes || {};
-      const changed = !!data.changed;
-      const changedCount = receiptChangedCount(data.receipt, changes);
-      if (changed && changedCount > 0 && receiptSummary(data.receipt)) {
-        addToSession(sid, {
-          type: 'done',
-          text: receiptSummary(data.receipt),
-          project: changes.project || project,
-          changed: true,
-          runId,
-          sessionId: sid,
-          eventKey: receiptKey,
-        });
-        shownReceipt = true;
-      } else if (!project && summary && data.mode !== 'research' && data.mode !== 'chat') {
-        addToSession(sid, { type: 'done', text: summary, sessionId: sid, runId, eventKey: terminalKey });
-      }
-    } else if (summary) {
-      addToSession(sid, { type: 'done', text: summary, sessionId: sid, runId, eventKey: terminalKey });
-    }
-    if (reason === 'done' && sid && runId) void runtime.ConversationUI.syncAnswerIdentity(sid, runId);
-    if (reason !== 'error' && reason !== 'approval' && data.changed && !shownReceipt)
-      maybeAddChangesSummary(sid, terminalKey, runId);
-    flushUiState();
-    return;
-  }
-  if (data.type === 'shell_request') {
-    if (approvalController.decided(data.id || '')) return;
-    const isNew = !sessionState.sessions
-      .find((session) => session.id === sid)
-      ?.messages.some((message) => message.id === data.id && message.type === 'shell_request');
-    addToSession(sid, {
-      type: 'shell_request',
-      id: data.id,
-      command: data.command,
-      commandSha256: data.command_sha256,
-      commandChars: data.command_chars,
-      commandTruncated: !!data.command_truncated,
-      cwd: data.cwd,
-      project: data.project,
-      riskLabel: data.risk_label,
-      riskTitle: data.risk_title,
-      riskDetail: data.risk_detail,
-      sessionRuleAvailable: data.session_rule_available,
-      projectRuleAvailable: data.project_rule_available,
-      sessionId: sid,
-      runId,
-      eventKey: `shell:${data.id}`,
-    });
-    if (sid === sessionState.activeId && isNew)
-      requestAnimationFrame(() => {
-        if (sid === sessionState.activeId && runtime.ConversationUI.isFollowing())
-          runtime.ConversationUI.revealApproval(data.id || '');
-      });
-    return;
-  }
-  if (data.type === 'shell_result') {
-    addToSession(sid, {
-      type: 'shell_result',
-      id: data.id,
-      callId: data.call_id || '',
-      approved: !!data.approved,
-      shellStatus: data.status || '',
-      command: data.command,
-      commandSha256: data.command_sha256,
-      commandChars: data.command_chars,
-      commandTruncated: !!data.command_truncated,
-      cwd: data.cwd,
-      project: data.project,
-      output: data.output,
-      outputTruncated: !!data.truncated,
-      exitCode: data.exit_code,
-      executionId: data.execution_id,
-      failure: data.failure,
-      sessionId: sid,
-      runId,
-      eventKey: `shell-result:${data.id}`,
-    });
-    return;
-  }
-  if (data.type === 'reply') {
-    const answerKey = runId ? `terminal:${runId}:answer` : '';
-    if (data.text) {
-      const final = terminalAnswerMessage(
-        { summary: data.text, stop_reason: 'done', final_delivery: 'success' },
-        runId,
-        runProjection.turnIdForRun(sid, runId),
-      );
-      addToSession(sid, final || { type: 'asst', text: data.text, runId, eventKey: answerKey });
-    }
-    return;
-  }
-  if (data.type === 'review') {
-    if (data.text)
-      addToSession(sid, { type: 'review', text: data.text, sessionId: sid, runId, eventKey: sseEventKey(data) });
-    return;
-  }
+  return runEvents.handleServerEvent(raw, lifecycleSource);
 }
 
 let researchDrawerTab = 'evidence';
@@ -1401,60 +886,23 @@ function markResearchRestoreAvailability(runIds: unknown) {
 }
 
 function projectTaskStates(tasks: HistoryTask[], owners: Map<string, string>, historySessionId?: string): void {
-  for (const row of tasks) {
-    const state = lifecycleState(row.task_status, row.stop_reason, 'idle');
-    applyLifecycle(
-      { ...row, type: state === 'running' ? 'task_start' : 'task_done' },
-      'snapshot',
-      state === 'running' || (owners.has(row.run_id) && ['approval', 'question', 'waiting'].includes(state)),
-      historySessionId,
-    );
-  }
+  return runEvents.projectTaskStates(tasks, owners, historySessionId);
 }
 
 function applyRunState(data: RunState) {
-  const owners = new Map((data.active_runs || []).map((run) => [run.run_id, run.session_id]));
-  if (data.busy && data.run_id && data.session_id) owners.set(data.run_id, data.session_id);
-  projectTaskStates(data.task_states || [], owners);
-  (data.shell_approvals || []).forEach(approvalController.apply);
-  if (data.last_shell_result) handleServerEvent(data.last_shell_result);
-  if (data.last_terminal_event) handleServerEvent(data.last_terminal_event, 'snapshot');
-  if (data.pending_event) handleServerEvent(data.pending_event);
-  // Only withdraw the provisional HTTP admission after its follow-up snapshot.
-  // Confirmed task events/revisions keep their lifecycle authority.
-  const acknowledged = data.response_ack_run_id;
-  if (
-    acknowledged &&
-    data.task_states &&
-    !owners.has(acknowledged) &&
-    !data.task_states.some((task) => task.run_id === acknowledged) &&
-    runProjection.forgetAdmission(acknowledged)
-  ) {
-    // The projection withdraws the provisional admission and updates its index.
-  }
-  markResearchRestoreAvailability(data.research_restore_runs || []);
-  runtime.Requests.reconcile({
-    session_id: data.session_id ?? '',
-    run_id: data.run_id ?? '',
-    busy: runProjection.size > 0,
-    active_runs: runProjection.entries().map(([run_id, session_id]) => ({ run_id, session_id })),
-    response_ack_run_id: data.response_ack_run_id,
-  });
-  updateSend();
-  updateComposerContext();
-  syncResearchUseProjectButton();
+  return runEvents.applyRunState(data);
 }
 
 function reconcileRunState() {
-  return runtime.Sse.reconcileRunState();
+  return runEvents.reconcileRunState();
 }
 
 async function acceptRunResponse(response: Response, sessionId: string) {
-  return runtime.Sse.acceptRunResponse(response, sessionId);
+  return runEvents.acceptRunResponse(response, sessionId);
 }
 
 function connectEvents() {
-  return runtime.Sse.connect();
+  return runEvents.connectEvents();
 }
 
 function addToSession(sid: string, m: Message): boolean {
@@ -1462,75 +910,14 @@ function addToSession(sid: string, m: Message): boolean {
 }
 
 function observeQueuedInput(input: QueuedInput): void {
-  const sid = input.request.session_id,
-    runId = input.request.run_id;
-  const session = sessionState.sessions.find((session) => session.id === sid);
-  if (!session) return;
-  if (input.state === 'consumed') {
-    void runtime.ConversationUI.refreshHistory(sid, true, true);
-    return;
-  }
-  const represented = session.messages.some(
-    (message) =>
-      message.type === 'user' &&
-      (message.queuedInputId === input.id ||
-        message.id === input.id ||
-        message.runId === runId ||
-        message.attempts?.some((attempt) => attempt.runId === runId)),
-  );
-  if (['dispatching', 'submitted', 'completed', 'unconfirmed'].includes(input.state) && !represented) {
-    addToSession(sid, {
-      type: 'user',
-      id: input.id,
-      queuedInputId: input.id,
-      text: input.request.task,
-      ...(input.request.attachments?.length ? { attachments: input.request.attachments } : {}),
-      attempts: [
-        { runId, state: input.state === 'completed' ? 'done' : input.state === 'submitted' ? 'running' : 'sending' },
-      ],
-    });
-    addToSession(sid, { type: 'request_status', sessionId: sid, requestId: input.id });
-  }
-  if (['failed', 'unconfirmed'].includes(input.state))
-    runtime.Requests.fail(sid, runId, input.error || 'Delivery could not be confirmed', {
-      sendFailure: 'queued_input',
-    });
-  if (input.state === 'completed' && input.terminal) handleServerEvent(input.terminal);
+  return runEvents.observeQueuedInput(input);
 }
 function observeUserQuestion(question: UserQuestion): void {
-  const session = sessionState.sessions.find((session) => session.id === question.session_id);
-  if (!session) return;
-  if (!session.messages.some((message) => message.type === 'user_question' && message.id === question.id))
-    addToSession(session.id, {
-      type: 'user_question',
-      id: question.id,
-      runId: question.run_id,
-      eventKey: 'question:' + question.id,
-    });
-  if (question.state !== 'pending')
-    addToSession(session.id, {
-      type: 'run_state',
-      runId: question.run_id,
-      state: question.state === 'cancelled' ? 'stopped' : question.state === 'answered' ? 'done' : 'blocked',
-      eventKey: `question-state:${question.id}:${question.revision}`,
-    });
+  return runEvents.observeUserQuestion(question);
 }
 
 function replaceSessionMessage(sid: string, predicate: (message: Message) => boolean, message: Message) {
   return sessionState.replaceMessage(sid, predicate, message);
-}
-
-function recordRunState(sid: string, runId: string, state: string, data: ServerEvent & { elapsed_ms?: unknown }) {
-  const session = sessionState.sessions.find((item) => item.id === sid);
-  if (!session || lastRunState(session, runId) === state) return;
-  const revision = session.messages.filter((item) => item.type === 'run_state' && item.runId === runId).length;
-  addToSession(sid, {
-    type: 'run_state',
-    state,
-    runId,
-    elapsedMs: typeof data.elapsed_ms === 'number' ? data.elapsed_ms : undefined,
-    eventKey: sseEventKey(data, `run-state:${runId}:${revision}:${state}`),
-  });
 }
 
 function dropSessionMessages(sessionId: string, pred: (message: Message) => boolean) {

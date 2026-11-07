@@ -8,12 +8,14 @@ export interface ReplySnapshot {
   text: string;
 }
 
-export function streamMessage(session: Session, event: ReplySnapshot): Message | null {
+export function streamMessage(session: Session, event: Partial<ReplySnapshot>): Message | null {
   if (
     !event.stream_id ||
     !event.run_id ||
+    typeof event.sequence !== 'number' ||
     !Number.isSafeInteger(event.sequence) ||
     event.sequence < 1 ||
+    typeof event.state !== 'string' ||
     !['partial', 'complete', 'interrupted'].includes(event.state) ||
     typeof event.text !== 'string'
   )
