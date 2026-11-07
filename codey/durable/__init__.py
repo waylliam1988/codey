@@ -1,6 +1,13 @@
 """Durable conversation primitives with atomic append and submission admission."""
 
 from codey.durable.context import ContextSnapshot, build_context
+from codey.durable.contracts import (
+    ApprovalPort,
+    DurableCommitObserver,
+    DurableExecutionPort,
+    EffectPort,
+    TaskAdmissionPort,
+)
 from codey.durable.errors import (
     CommitConflict,
     IdempotencyConflict,
@@ -37,6 +44,7 @@ __all__ = [
     "CommitConflict",
     "SchedulerOwnershipError",
     "ApprovalRecord",
+    "ApprovalPort",
     "ApprovalStatus",
     "AbortInvocation",
     "ArtifactRecord",
@@ -47,9 +55,12 @@ __all__ = [
     "CommitResult",
     "DurableMutation",
     "DurableSession",
+    "DurableCommitObserver",
+    "DurableExecutionPort",
     "DurableTaskScheduler",
     "DurableStore",
     "EffectRecord",
+    "EffectPort",
     "EntryDraft",
     "IdempotencyConflict",
     "SessionSealedError",
@@ -62,6 +73,7 @@ __all__ = [
     "SubmissionStatus",
     "SubmissionUpdate",
     "TaskCheckpoint",
+    "TaskAdmissionPort",
     "TASK_CHECKPOINT_SCHEMA_VERSION",
     "TaskStatus",
     "build_context",

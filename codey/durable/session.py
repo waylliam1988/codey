@@ -15,6 +15,7 @@ from typing import TypeVar, cast
 from codey.durable import admission, conversation_ops
 from codey.durable.approval_transition import materialize_approval
 from codey.durable.context import ContextSnapshot
+from codey.durable.contracts import ApprovalPort, DurableExecutionPort, EffectPort, TaskAdmissionPort
 from codey.durable.effects import interrupted_effect
 from codey.durable.errors import (
     CommitConflict,
@@ -93,7 +94,7 @@ def _mutation_line(method: Callable[..., _T]) -> Callable[..., _T]:
     return cast(Callable[..., _T], run)
 
 
-class DurableSession:
+class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecutionPort):
     """Owns durable conversation admission and reads for one application state directory."""
 
     @property
