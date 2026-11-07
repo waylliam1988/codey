@@ -924,3 +924,9 @@ formal-v1 因生成任务复用了小写 URL slug，导致来源身份映射错�
 ### 2026-11-07：2A 研究质量优先采用
 
 在本地模型策略下，调用次数、tokens 和耗时只作诊断，不再作为单独否决条件。2A 正式证据显示取消连接器早停后严格成功从 11/24 增至 20/24，严重错误仍为 4/24，20/24 配对确实触发浏览器补搜。生产已采用最小改动：连接器命中后继续浏览器搜索，并保留原有合并、去重、结果上限、取消传播和浏览器失败回退。该采用只针对来源发现，不外推到 Research 其他环节。
+
+### 2026-11-07：HyperResearch acquisition 新探索暂不判收益
+
+新建隔离 acquisition A/B：共同使用生产 2A 来源发现，候选仅增加多角度查询、原始材料/全文追踪、关键章节阅读和缺口驱动补搜指导。开发合同、真实联网 writer 工件和失败记录保存在 `.e2e-artifacts/research-hyperresearch-acquisition-dev-v1..v7/`；候选没有修改生产 Research。
+
+真实运行先发现 managed JSON artifact 的跨进程可见性竞态。生产修复采用 run 锁协调成对读写，并在写端释放锁前验证正文和 metadata 可见；定向测试、Ruff、`mypy codey/storage/managed_outputs.py` 均通过。修复后的 probe 可真实完成，但后续开发矩阵仍遭遇本地 Gemma 的 `OutputLengthError` / artifact 边界失败，尚无可评分的成对最终答案。按合同判定 acquisition 为 `inconclusive`，不进入正式双 seed、不合入候选指导；成本只记录，不作为质量否决条件。

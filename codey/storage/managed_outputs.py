@@ -251,18 +251,25 @@ class ManagedOutputStore:
             path = self._handle_path(session_id, run_id, handle, ".json")
             metadata_path = self._handle_path(session_id, run_id, handle, ".meta.json")
             write_bytes_atomic(path, raw)
+            metadata = {
+                "schema_version": schema_version,
+                "session_id": session_id,
+                "run_id": run_id,
+                "handle": handle,
+                "sha256": digest,
+                "bytes": len(raw),
+            }
             write_json_atomic(
                 metadata_path,
-                {
-                    "schema_version": schema_version,
-                    "session_id": session_id,
-                    "run_id": run_id,
-                    "handle": handle,
-                    "sha256": digest,
-                    "bytes": len(raw),
-                },
+                metadata,
                 max_bytes=MAX_METADATA_BYTES,
             )
+            # Verify both names while the run lock is still held.  This makes
+            # the paired-file commit observable before any reader can proceed,
+            # including Windows cross-process directory-cache behavior.
+            expected_metadata = json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            if path.read_bytes() != raw or metadata_path.read_bytes() != expected_metadata.encode("utf-8"):
+                raise OSError("managed JSON artifact commit was not observable")
         return ManagedJsonArtifactRef(session_id, run_id, handle, digest, schema_version)
 
     def read_json_artifact(
@@ -292,18 +299,23 @@ class ManagedOutputStore:
         safe_handle = _safe_artifact_handle(handle)
         path = self._handle_path(ref_session, ref_run, safe_handle, ".json")
         metadata_path = self._handle_path(ref_session, ref_run, safe_handle, ".meta.json")
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        if not isinstance(metadata, dict):
-            raise ValueError("json artifact metadata is invalid")
-        if metadata.get("session_id") != ref_session or metadata.get("run_id") != ref_run:
-            raise ValueError("json artifact scope mismatch")
-        if metadata.get("handle") != safe_handle or metadata.get("schema_version") != expected_schema:
-            raise ValueError("json artifact metadata mismatch")
-        raw = path.read_bytes()
-        digest = hashlib.sha256(raw).hexdigest()
-        if digest != metadata.get("sha256") or (expected_digest and digest != expected_digest):
-            raise ValueError("json artifact digest mismatch")
-        return json.loads(raw.decode("utf-8"))
+        # Pair the body and metadata reads with the writer's run-directory
+        # lock.  Atomic replacement protects each file individually, but
+        # without this shared lock a reader can observe the body between the
+        # two replacements and reject a valid in-flight artifact.
+        with with_file_lock(self._run_dir(ref_session, ref_run)):
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            if not isinstance(metadata, dict):
+                raise ValueError("json artifact metadata is invalid")
+            if metadata.get("session_id") != ref_session or metadata.get("run_id") != ref_run:
+                raise ValueError("json artifact scope mismatch")
+            if metadata.get("handle") != safe_handle or metadata.get("schema_version") != expected_schema:
+                raise ValueError("json artifact metadata mismatch")
+            raw = path.read_bytes()
+            digest = hashlib.sha256(raw).hexdigest()
+            if digest != metadata.get("sha256") or (expected_digest and digest != expected_digest):
+                raise ValueError("json artifact digest mismatch")
+            return json.loads(raw.decode("utf-8"))
 
     def json_artifact_record(
         self, ref: ManagedJsonArtifactRef, *, owner_task_id: str, owner_effect_id: str | None,
