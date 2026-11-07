@@ -15,13 +15,8 @@ import { hydrateDocumentContent } from './document_content';
 import { FrameCoalescer } from './frame_coalescer';
 import type { QueuedInput } from './input_outbox';
 import { finalStreamMessage, streamMessage } from './reply_stream';
-import {
-  eventSequence,
-  type LifecycleInput,
-  lastRunState,
-  lifecycleState,
-  RunLifecycleProjection,
-} from './run_lifecycle';
+import { eventSequence, type LifecycleInput, lastRunState, lifecycleState } from './run_lifecycle';
+import { RunProjection } from './run_projection';
 import { runtime } from './runtime';
 import { createApprovalController } from './shell_approvals';
 import { createSidebar } from './sidebar';
@@ -497,7 +492,7 @@ function updateComposerContext() {
   const s = activeSession();
   const p = activeProject();
   const proj = p ? p.name : 'Choose folder';
-  const disabled = runningSessionId === activeId || runtime.Composer.isSending(activeId);
+  const disabled = runProjection.primaryRun?.sessionId === activeId || runtime.Composer.isSending(activeId);
   const folderDisabled = disabled || !!p || projectPickerBusy;
   const researchActive = !!(s && s.research);
   const pieces = [
@@ -515,7 +510,7 @@ function syncResearchUI() {
   const s = activeSession();
   const active = !!(s && s.research);
   btn.classList.toggle('active', active);
-  btn.disabled = runningSessionId === activeId || runtime.Composer.isSending(activeId);
+  btn.disabled = runProjection.primaryRun?.sessionId === activeId || runtime.Composer.isSending(activeId);
   btn.setAttribute('aria-pressed', String(active));
 }
 function currentIntentForSession(sessionId: string): string {
@@ -862,7 +857,7 @@ async function pickProject() {
 }
 
 async function attachCurrentChatToPickedProject() {
-  if (runningSessionId) return;
+  if (runProjection.size) return;
   const sid = activeId;
   const s = sessions.find((x) => x.id === sid);
   if (!s || sessionProject(s)) return;
@@ -984,28 +979,17 @@ document.addEventListener('click', (e) => {
 });
 
 // ============================ SSE event ingestion ============================
-let runningSessionId: string | null = null;
-let runningRunId: string | null = null;
-const activeRuns = new Map<string, string>();
+const runProjection = new RunProjection({
+  requestIdForRun: (sessionId, runId) => runtime.Requests.forRun(sessionId, runId)?.request.id,
+});
 function isSessionRunning(sessionId: string): boolean {
-  return [...activeRuns.values()].includes(sessionId);
+  return runProjection.isSessionRunning(sessionId);
 }
 let turnCounter = 0;
-const turnIds = new Map<string, string>();
 const replyStreamFrames = new FrameCoalescer<ServerEventData>((key, data) => {
   if (!runtime.ConversationUI.acceptsRun(data.session_id || '', data.run_id || '')) return;
   handleReplyStream(data);
 });
-
-function turnIdForRun(sessionId: string, runId: string): string {
-  const existing = turnIds.get(runId);
-  if (existing) return existing;
-  const request = runtime.Requests.forRun(sessionId, runId)?.request;
-  if (!request?.id) return '';
-  const id = `turn:${request.id}`;
-  turnIds.set(runId, id);
-  return id;
-}
 
 function setStatus(text: string, kind: string) {
   const el = $('status');
@@ -1029,8 +1013,6 @@ function setStatus(text: string, kind: string) {
 }
 
 const sseEventKey = (data: ServerEvent, fallback = '') => runtime.Sse.eventKey(data, fallback);
-const runLifecycle = new RunLifecycleProjection();
-
 function applyLifecycle(
   data: ServerEvent,
   source: LifecycleInput['source'],
@@ -1050,7 +1032,7 @@ function applyLifecycle(
   );
   const session = owner || display || displays[0];
   if (!session || !runId) return false;
-  if (session.terminalRuns?.includes(runId)) runLifecycle.restoreTerminal(sessionId, runId);
+  if (session.terminalRuns?.includes(runId)) runProjection.restoreTerminal(sessionId, runId);
   const request = runtime.Requests.forRun(sessionId, runId);
   if (source !== 'snapshot' && request && request.request.attempts.at(-1) !== request.attempt) return false;
   const state = lifecycleState(
@@ -1058,7 +1040,7 @@ function applyLifecycle(
     data.stop_reason,
     data.type === 'task_start' ? 'running' : data.stop_reason || 'done',
   );
-  const view = runLifecycle.transition({
+  const view = runProjection.transition({
     runId,
     sessionId,
     state,
@@ -1078,17 +1060,11 @@ function applyLifecycle(
     if (view.state !== 'idle')
       recordRunState(target.id, runId, target === owner || !view.active ? view.state : 'unknown', data);
   }
-  if (view.active) activeRuns.set(runId, sessionId);
-  else activeRuns.delete(runId);
-  const primary = [...activeRuns.entries()].at(-1);
-  runningRunId = primary?.[0] ?? null;
-  runningSessionId = primary?.[1] ?? null;
-  if (view.active) turnIdForRun(sessionId, runId);
   if (view.active) runtime.Composer.observeRun?.(sessionId, runId);
   runtime.Requests.projectLifecycle(data as ServerEventData, view.state);
   if (data.type === 'task_done') data.stop_reason = view.state;
   persistActive();
-  if (activeRuns.size) runtime.Sse.displayRunStatus('running');
+  if (runProjection.size) runtime.Sse.displayRunStatus('running');
   else setStatus('', 'ok');
   updateSend();
   updateComposerContext();
@@ -1099,7 +1075,7 @@ function applyLifecycle(
 function handleReplyStream(data: ServerEventData) {
   const sid = data.session_id || '';
   const runId = (data.run_id || '').toString();
-  const runIsActive = (id: string) => activeRuns.has(id) || id === runningRunId;
+  const runIsActive = (id: string) => runProjection.isActive(id) || id === runProjection.primaryRun?.runId;
   if (!runId || !runIsActive(runId)) return;
   if (!runtime.Requests.acceptsEvent(data)) return;
   const session = sessions.find((session) => session.id === sid);
@@ -1165,7 +1141,7 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
     'ghost_post_turn_warning',
     'resync_required',
   ];
-  const runIsActive = (id: string) => activeRuns.has(id) || id === runningRunId;
+  const runIsActive = (id: string) => runProjection.isActive(id) || id === runProjection.primaryRun?.runId;
   if (runId && !mayOutliveRun.includes(data.type) && !runIsActive(runId)) return;
   // Server dropped queued events for this client: re-pull authoritative state.
   if (data.type === 'resync_required') {
@@ -1357,7 +1333,7 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
       const text = summary || 'Task failed';
       addToSession(sid, { type: 'err', text, sessionId: sid, runId, eventKey: terminalKey, failure: data.failure });
     } else if (reason === 'done') {
-      const terminalAnswer = terminalAnswerMessage(data, runId, turnIds.get(runId) || '');
+      const terminalAnswer = terminalAnswerMessage(data, runId, runProjection.turnIdForRun(sid, runId));
       if (data.mode === 'research') {
         if (summary) addToSession(sid, terminalAnswer || { type: 'asst', text: summary, runId, eventKey: answerKey });
         if (receiptSummary(data.receipt)) {
@@ -1461,7 +1437,7 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
       const final = terminalAnswerMessage(
         { summary: data.text, stop_reason: 'done', final_delivery: 'success' },
         runId,
-        turnIds.get(runId) || '',
+        runProjection.turnIdForRun(sid, runId),
       );
       addToSession(sid, final || { type: 'asst', text: data.text, runId, eventKey: answerKey });
     }
@@ -1525,11 +1501,7 @@ function markResearchRestoreAvailability(runIds: unknown) {
   }
 }
 
-function projectTaskStates(
-  tasks: HistoryTask[],
-  owners: Map<string, string> = activeRuns,
-  historySessionId?: string,
-): void {
+function projectTaskStates(tasks: HistoryTask[], owners: Map<string, string>, historySessionId?: string): void {
   for (const row of tasks) {
     const state = lifecycleState(row.task_status, row.stop_reason, 'idle');
     applyLifecycle(
@@ -1557,19 +1529,15 @@ function applyRunState(data: RunState) {
     data.task_states &&
     !owners.has(acknowledged) &&
     !data.task_states.some((task) => task.run_id === acknowledged) &&
-    runLifecycle.forgetAdmission(acknowledged)
+    runProjection.forgetAdmission(acknowledged)
   ) {
-    activeRuns.delete(acknowledged);
-    const primary = [...activeRuns.entries()].at(-1);
-    runningRunId = primary?.[0] ?? null;
-    runningSessionId = primary?.[1] ?? null;
   }
   markResearchRestoreAvailability(data.research_restore_runs || []);
   runtime.Requests.reconcile({
     session_id: data.session_id ?? '',
     run_id: data.run_id ?? '',
-    busy: activeRuns.size > 0,
-    active_runs: [...activeRuns].map(([run_id, session_id]) => ({ run_id, session_id })),
+    busy: runProjection.size > 0,
+    active_runs: runProjection.entries().map(([run_id, session_id]) => ({ run_id, session_id })),
     response_ack_run_id: data.response_ack_run_id,
   });
   updateSend();
@@ -1956,7 +1924,7 @@ function syncResearchUseProjectButton() {
   const btn = $('research-use-project');
   if (!btn) return;
   const s = activeSession();
-  const busy = runningSessionId === activeId;
+  const busy = runProjection.primaryRun?.sessionId === activeId;
   const unusable = busy || !s || !!sessionProject(s);
   btn.disabled = unusable;
   btn.title = busy ? 'Busy' : !s ? 'No chat' : sessionProject(s) ? 'Already in a project' : '';
@@ -2085,7 +2053,7 @@ async function boot() {
     $,
     getSessions: () => sessions,
     getActiveId: () => activeId,
-    getRunningSessionId: () => runningSessionId,
+    getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
     persistActiveNow,
     persistActive,
     pushMsgToSession,
@@ -2099,10 +2067,9 @@ async function boot() {
     $,
     PROVIDERS,
     getActiveId: () => activeId,
-    getRunningSessionId: () => runningSessionId,
-    getRunningRunId: () => runningRunId,
-    getRunningRunIdForSession: (sessionId: string) =>
-      [...activeRuns.entries()].find(([, owner]) => owner === sessionId)?.[0] || null,
+    getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
+    getRunningRunId: () => runProjection.primaryRun?.runId ?? null,
+    getRunningRunIdForSession: (sessionId: string) => runProjection.runIdForSession(sessionId),
     isSessionRunning,
     activeSession,
     findSession: (sessionId: string | null | undefined) =>
@@ -2136,17 +2103,18 @@ async function boot() {
     continueTask,
     resumeTeaching,
     getActiveId: () => activeId,
-    getRunningSessionId: () => runningSessionId,
+    getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
     getSessions: () => sessions,
   });
   runtime.ConversationUI.init({
-    projectTasks: (tasks: HistoryTask[], sessionId: string) => projectTaskStates(tasks, activeRuns, sessionId),
+    projectTasks: (tasks: HistoryTask[], sessionId: string) =>
+      projectTaskStates(tasks, new Map(runProjection.entries()), sessionId),
     activeSession,
     activeProject,
     getSessions: () => sessions,
     getProjects: () => projects,
     getActiveId: () => activeId,
-    getRunningSessionId: () => runningSessionId,
+    getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
     sessionProject,
     currentProjectPath,
     currentProviderId,
@@ -2217,17 +2185,11 @@ if (testBridgeWindow.__TEST_BRIDGE__)
     activeId: { configurable: true, get: () => activeId },
     runningSessionId: {
       configurable: true,
-      get: () => runningSessionId,
-      set: (value) => {
-        runningSessionId = value;
-      },
+      get: () => runProjection.primaryRun?.sessionId ?? null,
     },
     runningRunId: {
       configurable: true,
-      get: () => runningRunId,
-      set: (value) => {
-        runningRunId = value;
-      },
+      get: () => runProjection.primaryRun?.runId ?? null,
     },
   });
 boot().catch((error) => {
