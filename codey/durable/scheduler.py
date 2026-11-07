@@ -582,7 +582,6 @@ class DurableTaskScheduler:
             f"scheduler dispatch failed after {retry_count} attempts: "
             f"{type(error).__name__}: {error}"
         )
-        confirmed_failure = False
         try:
             current = self._session.task(task_id)
             self._session.fail_task(
@@ -591,7 +590,6 @@ class DurableTaskScheduler:
                 state={**dict(current.state), "scheduler_failure": reason},
                 expected_attempt_token=current.attempt_token,
             )
-            confirmed_failure = True
         except (CommitConflict, KeyError, ValueError) as exc:
             # A conflict can mean another actor already settled the task, or
             # that the failure commit did not apply.  Re-read durable truth
@@ -615,15 +613,12 @@ class DurableTaskScheduler:
                 return True
             if current.state.get("scheduler_failure") != reason:
                 return True
-            confirmed_failure = True
         except Exception as exc:
             _LOGGER.exception(
                 "durable scheduler failure commit raised an unexpected error",
                 extra={"task_id": task_id, "error_type": type(exc).__name__},
             )
             return False
-        if not confirmed_failure:
-            return True
         with self._lock:
             self._blocked[task_id] = "dispatch_failed"
         return True
