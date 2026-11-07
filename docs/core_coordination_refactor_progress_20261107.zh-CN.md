@@ -204,6 +204,15 @@ lifecycle/control 回归为 20 passed；审批恢复/生命周期为 72 passed�
 相关断言或运行时行为失败，故归类为已有发布环境/构建超时，不修改生产协调逻辑，也不把它们
 记为本批次通过。
 
+收尾类型边界复核发现 `shell_service.py` 的 `execute_shell_ticket()` 在本次 capability
+迁移中仍保留了新增的 `dict[str, Any]` 返回标注。该边界现在使用明确的 `ShellResult`
+`TypedDict`；pending/result 输入使用 `Mapping[str, object]`，验证候选返回具体的
+`tuple[VerificationCandidate, ...]`，并移除了该模块全部 `Any`。执行顺序、spawn gate、
+shutdown drain、unknown outcome 和 shell result payload 均未改变。该修复的定向回归为
+shell contract/interpreter/command permission 68 passed、5 skipped，审批 epoch/lifecycle/
+native identity 43 passed，chat approval/coordinator 9 passed；该文件 Ruff、mypy、Pyrefly
+均通过。相对未修改基线的生产差异不再新增 `Any`。
+
 ## 基线验证
 
 2026-11-07：

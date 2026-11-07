@@ -12,17 +12,18 @@ from __future__ import annotations
 import subprocess
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Protocol, TypedDict, cast
 
 from codey.agents.shell_approval import render_deferred_tool_calls
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.lifecycle import AppLifecycle
 from codey.app.run_registry import RunRegistry, RunSnapshot
 from codey.app.task_runtime import TaskRuntimeCoordinator
+from codey.completion.verification_policy import VerificationCandidate
 from codey.operations.task_context import safe_verification_candidates
 from codey.operations.task_state import TaskState
 from codey.policies.command_line import ShellSpec, resolve_shell
@@ -31,8 +32,24 @@ from codey.policies.shell_analysis import ShellAnalysis, analyze_shell, bound_an
 from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.runtime.core import cancellation
+from codey.types.json_value import JsonObject
 from codey.utils.text_budget import clip_middle
 from codey.workspace.setup_context import safe_setup_context
+
+if TYPE_CHECKING:
+    from codey.agents.request import RecoveredToolOutcome
+
+
+class ShellResult(TypedDict, total=False):
+    ok: bool
+    status: str
+    error: str | None
+    exit_code: int | None
+    output: str
+    stopped: bool
+    truncated: bool
+    capture_truncated: bool
+    execution_id: str
 
 
 class ShellExecutionContext(Protocol):
@@ -54,7 +71,7 @@ class ShellApprovalContinuationPlan:
     shell_results: tuple[dict[str, object], ...] = ()
 
 
-def shell_result_content(*, command: str, result: dict[str, Any], approved: bool) -> str:
+def shell_result_content(*, command: str, result: Mapping[str, object], approved: bool) -> str:
     """Structure the shell outcome text answered to the original call."""
     from codey.agents.shell_approval import shell_command_text
 
@@ -75,7 +92,9 @@ def shell_result_content(*, command: str, result: dict[str, Any], approved: bool
     return head
 
 
-def shell_result_row(pending: dict[str, Any], result: dict[str, Any], *, approved: bool) -> Any:
+def shell_result_row(
+    pending: Mapping[str, object], result: Mapping[str, object], *, approved: bool
+) -> RecoveredToolOutcome | None:
     """Build the turn-0 redelivery row answering the original shell call.
 
     原 call id 无有效值时返回 None（调用方仅走文本 continuation）。
@@ -87,7 +106,8 @@ def shell_result_row(pending: dict[str, Any], result: dict[str, Any], *, approve
     from codey.runtime.core.protocol_window import ProtocolWindowRef
     from codey.toolchain.runtime import ToolOutcome
 
-    call_id = pending.get("call_id", "")
+    raw_call_id = pending.get("call_id", "")
+    call_id = raw_call_id if isinstance(raw_call_id, str) else ""
     if not valid_shell_call_id(call_id):
         return None
     command = str(pending.get("command") or "")
@@ -107,10 +127,15 @@ def shell_result_row(pending: dict[str, Any], result: dict[str, Any], *, approve
     ok = approved and result.get("ok") is True and result.get("status") != "denied"
     if not approved:
         ok = False
+    raw_tool_args = pending.get("tool_args")
+    tool_args: JsonObject = (
+        dict(cast(JsonObject, raw_tool_args))
+        if isinstance(raw_tool_args, dict)
+        else cast(JsonObject, {"command": command, "path": cwd})
+    )
     call = ToolCall(
         name=str(pending.get("tool_name") or "shell"),
-        args=(dict(pending["tool_args"]) if isinstance(pending.get("tool_args"), dict)
-              else {"command": command, "path": cwd}),
+        args=tool_args,
         call_id=call_id,
     )
     outcome = ToolOutcome(
@@ -131,7 +156,7 @@ def shell_result_row(pending: dict[str, Any], result: dict[str, Any], *, approve
     )
 
 
-def shell_result_payload(row: Any) -> dict[str, object] | None:
+def shell_result_payload(row: RecoveredToolOutcome | None) -> dict[str, object] | None:
     """Serialize one shell result row for cross-boundary submission."""
     if row is None:
         return None
@@ -190,7 +215,7 @@ def _approval_generation_current(ctx: ShellExecutionContext, expected: int) -> b
     return (expected or 0) == (current or 0)
 
 
-def _stopped_shell_result() -> dict[str, Any]:
+def _stopped_shell_result() -> ShellResult:
     """Refused-before/during-execution result: never approved, never continued."""
     return {
         "ok": False,
@@ -294,7 +319,7 @@ def claim_shell_ticket(
     *,
     timeout: int,
     output_limit: int,
-) -> tuple[dict[str, Any] | None, ShellExecutionTicket | None]:
+) -> tuple[dict[str, object] | None, ShellExecutionTicket | None]:
     """Claim an approval against Stop under the spawn gate.
 
     Without the gate here, a Stop landing between pop and the generation
@@ -307,7 +332,7 @@ def claim_shell_ticket(
         return ctx.claim_shell_ticket(approval_id, timeout=timeout, output_limit=output_limit)
 
 
-def execute_shell_ticket(ctx: ShellExecutionContext, ticket: ShellExecutionTicket) -> dict[str, Any]:
+def execute_shell_ticket(ctx: ShellExecutionContext, ticket: ShellExecutionTicket) -> ShellResult:
     """Track execution through output settlement so shutdown can drain it."""
     raw_command: object = ticket.command
     if not isinstance(raw_command, str):
@@ -339,7 +364,7 @@ def _execute_shell_ticket(
     ctx: ShellExecutionContext,
     ticket: ShellExecutionTicket,
     command: str,
-) -> dict[str, Any]:
+) -> ShellResult:
     """Execute ticket internals; caller owns the execution lifetime."""
     proc = None
     completed = None
@@ -355,7 +380,7 @@ def _execute_shell_ticket(
         if output_store is not None and ticket.execution_id:
             from codey.storage.execution_output_store import ExecutionOutputObserver
 
-            def publish_output_snapshot(snapshot: dict[str, Any]) -> None:
+            def publish_output_snapshot(snapshot: dict[str, object]) -> None:
                 ctx.emit({
                     "type": "execution_output_available",
                     "execution_id": ticket.execution_id,
@@ -459,7 +484,7 @@ def _execute_shell_ticket(
     output = "\n\n".join(output_parts) or "(no output)"
     output, display_truncated = clip_middle(output, ticket.output_limit)
     truncated = (display_truncated or capture_truncated)
-    result: dict[str, Any] = {
+    result: ShellResult = {
         "ok": True,
         "status": "exit",
         "error": None,
@@ -486,7 +511,7 @@ def execute_approved_shell(
     timeout: int | None = None,
     output_limit: int | None = None,
     expected_approval_generation: int | None = None,
-) -> dict[str, Any]:
+) -> ShellResult:
     """Direct-execution entry (tests, headless). Approval-card flow must use
     ``shell_service.claim_shell_ticket`` + ``execute_shell_ticket`` instead."""
     if not isinstance(command, str):
@@ -553,7 +578,7 @@ def execute_approved_shell(
 def build_shell_approval_continuation(
     *,
     command: str,
-    result: dict[str, Any],
+    result: Mapping[str, object],
     post_approval_instructions: str = "",
     setup_context: str = "",
     followup_hints: str = "",
@@ -602,8 +627,8 @@ def build_shell_approval_continuation(
 
 def build_shell_approval_continuation_plan(
     *,
-    pending: dict[str, Any],
-    result: dict[str, Any],
+    pending: Mapping[str, object],
+    result: Mapping[str, object],
     active_run: RunSnapshot | None = None,
     shell_results: tuple[dict[str, object], ...] = (),
 ) -> ShellApprovalContinuationPlan:
@@ -622,7 +647,7 @@ def build_shell_approval_continuation_plan(
         followup_hints=followup_hints,
         deferred_tool_calls=tuple(
             item
-            for item in pending.get("deferred_tool_calls", ())
+            for item in cast(tuple[object, ...], pending.get("deferred_tool_calls", ()))
             if isinstance(item, dict)
         ),
     )
@@ -641,7 +666,7 @@ def build_shell_approval_continuation_plan(
     )
 
 
-def shell_continuation_setup_context(pending: dict[str, Any]) -> str:
+def shell_continuation_setup_context(pending: Mapping[str, object]) -> str:
     if pending.get("risk_label") not in {
         "dependency_install",
         "system_install",
@@ -655,7 +680,9 @@ def shell_continuation_setup_context(pending: dict[str, Any]) -> str:
     return safe_setup_context(project)
 
 
-def shell_followup_verification_candidates(project: str | Path, risk_label: object) -> Any:
+def shell_followup_verification_candidates(
+    project: str | Path, risk_label: object
+) -> tuple[VerificationCandidate, ...]:
     if risk_label not in {"dependency_install", "dev_server", "publish"}:
         return ()
     return safe_verification_candidates(project)
@@ -663,13 +690,15 @@ def shell_followup_verification_candidates(project: str | Path, risk_label: obje
 
 def shell_followup_hints(
     *,
-    pending: dict[str, Any],
-    result: dict[str, Any],
+    pending: Mapping[str, object],
+    result: Mapping[str, object],
 ) -> str:
     project = str(pending.get("project") or "").strip()
+    raw_exit_code = result.get("exit_code")
+    exit_code = raw_exit_code if type(raw_exit_code) is int else None
     return render_shell_followup(ShellFollowupInput(
         risk_label=str(pending.get("risk_label") or "generic"),
-        exit_code=result.get("exit_code"),
+        exit_code=exit_code,
         output=str(result.get("output") or result.get("error") or ""),
         truncated=bool(result.get("truncated")),
         verification_candidates=shell_followup_verification_candidates(
