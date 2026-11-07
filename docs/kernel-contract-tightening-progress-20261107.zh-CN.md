@@ -42,8 +42,9 @@
 
 ## 状态
 
-- 第 1 批：已完成基础契约定义；后续还需把这些类型贯穿 kernel 内部调用链。
-- 第 2 至第 8 批：未开始。
-- 最近验证：`tests/test_kernel_dependency_boundary.py`、`tests/test_production_kernel_calls_use_typed_request.py`、`tests/test_kernel_dependency_direction.py`，10 passed；相关 Ruff 通过。
+- 第 1 批：已完成基础契约定义，并把 `KernelContext` 的 view、state、decision、plan 和执行动作签名收紧。
+- 第 2 批：未开始。
+- 第 3 至第 8 批：未开始。
+- 最近验证：第一批边界测试 10 passed；本批 kernel 状态流测试 23 passed；相关 Ruff 通过。
 - 已知外部问题：本地 mypy 导入用户已有的附件改动时，在 `codey/task/attachments.py:45` 和 `codey/durable/conversation_ops.py:492` 报错；未修改这些文件，待后续与用户改动一起单独处理。
 

@@ -23,10 +23,12 @@ from codey.runtime.core.operation_payload import (
     LEAF_CONTROL_READY,
     LEAF_TOOL_DELIVERY_PENDING,
     RuntimeExecutionCounters,
+    RuntimeOperationState,
 )
 from codey.runtime.core.operation_reducer import (
     ACTION_COMMIT_GENERATION_BOUNDARY,
     ACTION_SUBMIT_PROVIDER_REQUEST,
+    RuntimeAction,
 )
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.effects.effect_records import (
@@ -40,7 +42,7 @@ from codey.runtime.effects.effect_records import (
     RuntimeEffectStore,
     compute_args_digest,
 )
-from codey.runtime.log.session_view import load_session_view, not_sent_continuation_effect
+from codey.runtime.log.session_view import SessionView, load_session_view, not_sent_continuation_effect
 from codey.runtime.write.drive import peek_next_action
 
 
@@ -279,7 +281,7 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
         return _provider_failure(exc, session.turn, propagate=request.observation.propagate_provider_failure)
 
 
-def _execute_kernel_action(context: KernelContext, view: Any, action: Any) -> KernelResult | None:
+def _execute_kernel_action(context: KernelContext, view: SessionView, action: RuntimeAction) -> KernelResult | None:
     from codey.operations import kernel_control
     from codey.runtime.core import operation_reducer as rules
 
@@ -338,7 +340,7 @@ def _execute_kernel_action(context: KernelContext, view: Any, action: Any) -> Ke
     return None
 
 
-def _execute_wait_action(context: KernelContext, state: Any, action: Any) -> None:
+def _execute_wait_action(context: KernelContext, state: RuntimeOperationState, action: RuntimeAction) -> None:
     from codey.runtime.core.operation_reducer import ACTION_RECONCILE_APPROVAL
 
     if action.kind != ACTION_RECONCILE_APPROVAL:

@@ -33,9 +33,16 @@ from codey.operations.task_session import TaskSession
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.runtime.core import operation_payload
-from codey.runtime.core.operation_payload import RuntimeExecutionCounters
+from codey.runtime.core.models import ToolPlan
+from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
+from codey.runtime.core.operation_reducer import RuntimeDecisionInputs
 from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
-from codey.runtime.log.session_view import driver_for_state, load_session_view, not_sent_continuation_effect
+from codey.runtime.log.session_view import (
+    SessionView,
+    driver_for_state,
+    load_session_view,
+    not_sent_continuation_effect,
+)
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import admit_ghost_context
 
@@ -87,7 +94,7 @@ class KernelContext:
     def request_scoped_observations(self) -> bool:
         return self.request_scoped_context or self.capabilities.request_scoped_tool_context
 
-    def load_view(self) -> Any:
+    def load_view(self) -> SessionView:
         task, effects = self.durable.task_facts(self.sink.run_id)
         return load_session_view(checkpoint_entries(task, effects, session_id=self.sink.session_id),
                                  session_id=self.sink.session_id, run_id=self.sink.run_id)
@@ -97,9 +104,8 @@ class KernelContext:
         flag = self.transport.stop_flag
         return bool(task.state.get("cancel_requested")) or (flag is not None and bool(flag.is_set()))
 
-    def decision_inputs(self, view: Any) -> Any:
+    def decision_inputs(self, view: SessionView) -> RuntimeDecisionInputs:
         from codey.operations.shell_approval_receipt import read_approval_command
-        from codey.runtime.core.operation_reducer import RuntimeDecisionInputs
         from codey.runtime.effects.effect_records import compute_args_digest
 
         task = self.durable.task(self.sink.run_id)
@@ -164,7 +170,7 @@ class KernelContext:
                 session_id=self.sink.session_id, run_id=self.sink.run_id, effect_id=effect.intent.effect_id))
         self.sink.mutations.settle_tool_effect(self.sink.session_id, self.sink.run_id, receipt)
 
-    def advance(self, state: Any, leaf: str, *, data: KernelDecision | None = None,
+    def advance(self, state: RuntimeOperationState, leaf: str, *, data: KernelDecision | None = None,
                 logical_turn: int | None = None, counters: RuntimeExecutionCounters | None = None) -> None:
         artifact = None
         if data is not None and (not state.work_ref or self.decision(state) != data):
@@ -176,7 +182,7 @@ class KernelContext:
         self.sink.mutations.advance_execution(self.sink.session_id, self.sink.run_id, expected=state,
             leaf=leaf, artifact=artifact, logical_turn=logical_turn, counters=counters)
 
-    def decision(self, state: Any) -> KernelDecision:
+    def decision(self, state: RuntimeOperationState) -> KernelDecision:
         artifact = self.durable.artifact(state.work_ref)
         if (artifact.owner_task_id != self.sink.run_id or artifact.owner_effect_id is not None
                 or artifact.metadata.get("kind") != "kernel_decision"):
@@ -197,7 +203,7 @@ class KernelContext:
         except (ValueError, TypeError, KeyError) as exc:
             raise RecoveryFailed(f"invalid committed control decision: {exc}") from exc
 
-    def response(self, state: Any) -> ReceivedProviderTurn:
+    def response(self, state: RuntimeOperationState) -> ReceivedProviderTurn:
         response_ref = self.response_reference(state)
         if response_ref not in self.responses:
             self.responses[response_ref] = self.sink.load_response(self.session, response_ref, window_ref=self.window)
@@ -481,7 +487,7 @@ class KernelContext:
         decision = RetryDecision(purpose="retry", prompt=prompt, error=error)
         self.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision, counters=counters or state.counters)
 
-    def plan(self, state: Any) -> Any:
+    def plan(self, state: RuntimeOperationState) -> ToolPlan:
         received = self.response(state)
         reply = decode_text_turn(received.reply) if isinstance(received.reply, str) else received.reply
         plan = kernel_protocol.normalize_turn(reply, snapshot=received.snapshot)
@@ -489,7 +495,7 @@ class KernelContext:
             raise RecoveryFailed("accepted plan no longer parses under its captured contract")
         return plan
 
-    def execute_tools(self, state: Any) -> KernelResult | None:
+    def execute_tools(self, state: RuntimeOperationState) -> KernelResult | None:
         self.restore_facts()
         received, plan = self.response(state), self.plan(state)
         calls, turn = list(plan.calls), received.logical_turn
