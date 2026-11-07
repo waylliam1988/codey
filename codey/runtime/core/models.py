@@ -4,8 +4,8 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
 
+from codey.types.json_value import JsonObject, JsonValue, canonical_json_object
 from codey.utils.refs import strict_nonnegative_int
 
 TRUNCATED_RESULT_NOTICE = (
@@ -225,38 +225,22 @@ def json_safe_projection(
     return result
 
 
-def canonical_json_mapping(value: object) -> dict[str, Any]:
+def canonical_json_mapping(value: object) -> JsonObject:
     """Detach authoritative JSON data without clipping or inventing replacements.
 
     Result receipts own complete-payload storage bounds. Display projections
     may be lossy; execution facts must either survive exactly or be rejected.
     """
-    if not isinstance(value, Mapping):
-        raise TypeError("canonical payload must be a mapping")
-    result: dict[str, Any] = {}
-    for key, item in value.items():
-        if type(key) is not str:
-            raise TypeError("canonical payload keys must be strings")
-        result[key] = _canonical_json_value(item)
-    return result
-
-
-def _canonical_json_value(value: object) -> Any:
-    if value is None or type(value) in {str, bool, int}:
-        return value
-    if type(value) is float and math.isfinite(value):
-        return value
-    if isinstance(value, Mapping):
-        return canonical_json_mapping(value)
-    if isinstance(value, (list, tuple)):
-        return [_canonical_json_value(item) for item in value]
-    raise TypeError(f"canonical payload contains non-JSON {type(value).__name__}")
+    try:
+        return canonical_json_object(value)
+    except ValueError as exc:
+        raise TypeError(str(exc)) from exc
 
 
 @dataclass(frozen=True)
 class ToolCall:
     name: str
-    args: dict[str, Any]
+    args: JsonObject
     call_id: str = ""
 
 
@@ -275,7 +259,7 @@ class ToolPlan:
     protocol_tool_name: str = ""
     alias_rewrite_count: int = 0
     arg_repair_counts: Mapping[str, int] = field(default_factory=dict)
-    control_args: Mapping[str, Any] = field(default_factory=dict)
+    control_args: Mapping[str, JsonValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

@@ -389,7 +389,10 @@ def render_tool_activity(call: ToolCall) -> str:
 
 
 def call_arg(call: ToolCall, name: str, default: str = "") -> str:
-    value = call.args.get(name, default)
+    return _display_call_arg(call.args.get(name, default), default)
+
+
+def _display_call_arg(value: object, default: str) -> str:
     if isinstance(value, str):
         return value
     if isinstance(value, bool) or value is None:

@@ -32,6 +32,14 @@ calls: Sequence[str] = ["not-a-provider-call"]
 _native_tool_objects(calls)
 '''
 
+BAD_JSON_ARGUMENTS = '''
+from codey.runtime.core.models import ToolCall
+from codey.providers.base import ProviderToolCall
+
+ToolCall(name="read", args={"path": object()})
+ProviderToolCall(id="call", name="read", arguments={"path": object()})
+'''
+
 
 @pytest.mark.parametrize(
     ("tool", "arguments"),
@@ -69,9 +77,12 @@ def test_type_checker_rejects_invalid_kernel_contract(tool: str, arguments: tupl
         ("ty", ("check",)),
     ],
 )
-def test_type_checker_rejects_untyped_provider_call_shape(tool: str, arguments: tuple[str, ...]) -> None:
+@pytest.mark.parametrize("source_text", [BAD_PROVIDER_CALL, BAD_JSON_ARGUMENTS], ids=["provider-call", "json-args"])
+def test_type_checker_rejects_untyped_provider_call_shape(
+    tool: str, arguments: tuple[str, ...], source_text: str,
+) -> None:
     source = ROOT / "tests" / f"_bad_kernel_provider_call_{tool}.py"
-    source.write_text(BAD_PROVIDER_CALL, encoding="utf-8")
+    source.write_text(source_text, encoding="utf-8")
     try:
         result = subprocess.run(
             [sys.executable, "-m", tool, *arguments, str(source)],
@@ -86,4 +97,6 @@ def test_type_checker_rejects_untyped_provider_call_shape(tool: str, arguments: 
         source.unlink(missing_ok=True)
     assert result.returncode != 0, output
     assert f"_bad_kernel_provider_call_{tool}" in output, output
-    assert any(marker in output for marker in ("Incompatible", "not assignable", "argument", "Sequence")), output
+    assert any(marker in output for marker in (
+        "Incompatible", "incompatible type", "not assignable", "argument", "Sequence",
+    )), output

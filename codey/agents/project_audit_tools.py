@@ -20,6 +20,12 @@ from codey.toolchain.runtime import (
     read_file,
     safe_join,
 )
+from codey.types.json_value import (
+    require_json_boolean,
+    require_json_integer,
+    require_json_string,
+    require_json_strings,
+)
 from codey.utils.references import find_reference_hints
 from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
 
@@ -369,9 +375,18 @@ def _execute_read_only_call(project: Path, call: ToolCall) -> ToolOutcome:
         }
         return _audit_read_file(project, path, **read_options)
     if call.name == "search":
-        return _audit_search_files(project, path, str(call.args.get("query") or ""),
-            **{name: call.args[name] for name in ("offset", "limit", "literal", "case_sensitive", "include", "exclude", "before_context", "after_context")
-               if name in call.args})
+        try:
+            return _audit_search_files(project, path, str(call.args.get("query") or ""),
+                offset=require_json_integer(call.args.get("offset", 1), "offset"),
+                limit=require_json_integer(call.args.get("limit", SEARCH_MAX_RESULTS), "limit"),
+                literal=require_json_boolean(call.args.get("literal", True), "literal"),
+                case_sensitive=require_json_boolean(call.args.get("case_sensitive", False), "case_sensitive"),
+                include=require_json_string(call.args.get("include", ""), "include"),
+                exclude=require_json_strings(call.args.get("exclude", []), "exclude"),
+                before_context=require_json_integer(call.args.get("before_context", 0), "before_context"),
+                after_context=require_json_integer(call.args.get("after_context", 0), "after_context"))
+        except ValueError as exc:
+            return ToolOutcome.error(str(exc))
     if call.name == "references":
         return _audit_find_references(project, path, str(call.args.get("symbol") or ""))
     return ToolOutcome.error(

@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Protocol, cast
 
+from codey.types.json_value import JsonObject
+
 
 @dataclass(frozen=True)
 class ResultMetadata:
@@ -49,7 +51,7 @@ def result_ref_from_metadata(text: str) -> str | None:
 class ProviderToolCall:
     id: str
     name: str
-    arguments: dict[str, Any]
+    arguments: JsonObject
 
 
 @dataclass(frozen=True)

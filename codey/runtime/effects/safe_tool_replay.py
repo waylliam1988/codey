@@ -26,6 +26,7 @@ from codey.runtime.effects.replay_policy import (
     is_replayable_safe_tool,
 )
 from codey.toolchain.tool_args_repair import normalize_tool_args
+from codey.types.json_value import JsonObject, decode_json_object
 
 
 @dataclass(frozen=True)
@@ -39,7 +40,7 @@ class SafeToolReplayCandidate:
 def validate_replay_args(
     tool_name: str,
     args: object,
-) -> dict[str, object]:
+) -> JsonObject:
     """Strictly validate and return canonical replay args.
 
     Requires zero alias rewrites and zero arg repairs. Fails closed if args are
@@ -56,7 +57,7 @@ def validate_replay_args(
     except ValueError as exc:
         raise RuntimeEffectError(f"invalid replay args: {exc}") from exc
     if canonical_name == "codemode" or canonical_name in IDEMPOTENT_RUNTIME_TOOL_NAMES:
-        return shaped_args
+        return decode_json_object(shaped_args)
 
     try:
         repair_result = normalize_tool_args(canonical_name, shaped_args)
@@ -68,10 +69,10 @@ def validate_replay_args(
             "replay args must be strictly canonical without alias rewrites or repairs"
         )
 
-    return dict(repair_result.args)
+    return decode_json_object(repair_result.args)
 
 
-def replay_args_for_tool_call(call: ToolCall) -> dict[str, object] | None:
+def replay_args_for_tool_call(call: ToolCall) -> JsonObject | None:
     """Extract canonical replay args for a tool call if it is replayable safe.
 
     Returns None for unsafe or invalid tool calls.

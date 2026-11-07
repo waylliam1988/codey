@@ -16,6 +16,7 @@ from typing import cast
 
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.providers.local_literal import parse_mapping, parse_mapping_diagnostic
+from codey.types.json_value import decode_json_object
 
 _FRAME_PREFIXES = ("<|tool_call>call:tool:", "<|tool_call>call:")
 _FRAME_SUFFIX = "<tool_call|>"
@@ -66,7 +67,11 @@ def parse_local_tool_markup(text: str) -> ProviderToolCall | None:
     if any(type(key) is not str for key in arguments):
         return None
     call_id = "local-" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-    return ProviderToolCall(id=call_id, name=name, arguments=dict(arguments))
+    try:
+        decoded = decode_json_object(arguments)
+    except ValueError:
+        return None
+    return ProviderToolCall(id=call_id, name=name, arguments=decoded)
 
 
 def parse_gemma_tool_reasoning(text: str) -> AssistantTurn | None:

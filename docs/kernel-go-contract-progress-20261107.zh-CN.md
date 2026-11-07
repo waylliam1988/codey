@@ -16,7 +16,7 @@
 | 批次 | 范围 | 状态 | 验证 / 提交 |
 |---|---|---|---|
 | 1 | 行为样例、wire/摘要/坐标/恢复契约 | 完成 | 113 passed、30 subtests；Ruff 通过；类型基线见下 |
-| 2 | 共享 JSON、ToolCall/provider arguments、底层 codec | 待开始 | |
+| 2 | 共享 JSON、ToolCall/provider arguments、底层 codec | 完成 | 105 passed/4 subtests；静态负例及 codec 21 passed；三工具定向检查/Ruff 通过 |
 | 3 | TextResultSpan、execution、recovery | 待开始 | |
 | 4 | 六种 provider 请求联合、回复、版本化 codec | 待开始 | |
 | 5 | provider adapter、wrapper、capabilities | 待开始 | |
@@ -31,7 +31,7 @@
 
 ## 接续工作位置
 
-第一批已建立语言无关 JSON golden fixtures 与 Python consumer，锁定六种请求、Unicode 坐标、摘要和验证记录缺陷。原有 durable 真实进程死亡/丢失确认测试通过。下一批先审计已有 canonical JSON 与 provider serializer 的区别，再建立严格低依赖 JSON decoder。
+第二批已完成。下一批修改 TextResultSpan/FormattedToolResults 贯穿 prompt/actions/context/provider codec，并收紧 execution/recovery 的 workspace/evidence/settle；不得破坏新旧冻结请求或移动 Any 债务。
 
 ## 第一批验证记录
 
@@ -48,3 +48,12 @@
 - frozen dataclass 内部 dict/list 仍可变；跨语言边界与 staging 必须明确所有权。
 - digest(text) 是 JSON 编码字符串的 SHA-256；不是原文本 SHA-256。
 - span/passage 使用 Python Unicode 码点坐标；Go 必须显式转换，不能按 bytes 切片。
+
+## 第二批变更与验证
+
+- 新增低依赖 codey/types/json_value.py：JsonValue/JsonObject/ToolArgs、严格外部 decoder、单独的 Python transport encoder、tuple-compatible canonical codec。返回分离容器；拒绝循环、非有限浮点、非字符串键、非法 Unicode，并限制深度/节点/字符串字节量。
+- runtime/core/models.py 与 providers/base.py 的 ToolCall/ProviderToolCall/control args 接上 JSON 类型；原 canonical 与 response serializer 委托共享实现，保留 tuple/dataclass/Enum/set 在各自边界的既有区别。
+- CodeMode host、本地 provider markup、safe replay 的开放对象经过 decoder；audit search 移除开放 kwargs 转发，逐字段验证。toolchain 的显示辅助函数维持对非法运行时对象的防御，同时避免精确类型后的不可达诊断。
+- 扩大回归 105 passed、4 subtests（JSON/golden/projection/CodeMode/local codec/safe replay/audit/boolean schema）；较早的 durable/projection 组合 80 passed、4 subtests。静态负例与 JSON codec 合计 21 passed，三检查器均拒绝向 ToolCall/ProviderToolCall 注入 object。
+- 修改的十个生产文件：mypy --follow-imports=silent（保留导入类型解析，不 skip）、Pyrefly、ty，target 3.12 均通过。Ruff、precision gate、git diff --check 通过。全树起始类型问题仍待后续所属批次处理。
+- 行为补强：provider serializer 现在在入口拒绝 NaN/Infinity、循环和非法 Unicode，而非将其拖入持久化；有明确边界回归。
