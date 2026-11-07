@@ -146,7 +146,7 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     assert result.event["stop_reason"] == "done"
     sink_type.assert_called_once()
     request = kernel.call_args.kwargs["request"]
-    assert request.observation.intent_sink is sink_type.return_value
+    assert request.execution.intent_sink is sink_type.return_value
     assert request.observation.on_event is hooks.on_event
     assert request.observation.on_shell_request is hooks.on_shell_request
     assert sink_type.call_args.kwargs["managed_outputs"] is managed
@@ -209,7 +209,7 @@ def test_unified_kernel_passes_authoritative_research_ledger_to_gate(tmp_path, p
                 execution=KernelExecutionDeps(research_tools=tools),
                 observation=KernelObservationDeps(completion_context={"research_ledger": tools.ledger})))
         assert evaluate.call_count == 1
-        assert evaluate.call_args.kwargs["context"]["research_ledger"] is tools.ledger
+        assert evaluate.call_args.kwargs["context"].research_ledger is tools.ledger
         assert result.stop_reason == "done", result.summary
         assert "Only one writer" in result.summary and "[e1]" in result.summary
     finally:
@@ -353,6 +353,8 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
 
     class Tools:
         ledger = ResearchLedger()
+        sources_read: set[str] = set()
+        search_result_urls: set[str] = set()
 
         def source_search(self, target, _query, _limit):
             assert target == url

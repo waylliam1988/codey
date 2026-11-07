@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from codey.durable.model import ArtifactRecord
     from codey.durable.session import DurableSession
+    from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
+    from codey.operations.task_session import TaskSession
+    from codey.runtime.core.protocol_window import ProtocolWindowRef
+    from codey.runtime.write.mutation_line import RuntimeMutationLine
+    from codey.storage.managed_outputs import ManagedOutputStore
+    from codey.toolchain.tool_spec import ToolSpec
+    from codey.workspace.context_admission import GhostContextSource
 
+from codey.operations.provider_request_context import ProviderRequestContext
 from codey.providers.base import AssistantTurn
-from codey.runtime.core.models import ToolCall
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters
 from codey.runtime.core.progress import ProgressSnapshot
 from codey.runtime.effects.effect_records import (
@@ -42,38 +50,31 @@ def _runtime_name(name: str) -> str:
             "find_references": "references"}.get(name, name)
 
 
-def admitted_durable(state: Any, task_id: str) -> DurableSession | None:
-    """Return durable state only for an actually admitted task.
+class DurableStateView(Protocol):
+    @property
+    def durable(self) -> DurableSession | None: ...
 
-    Some kernel entry points are exercised as projection-only operations (for
-    example a recovery delivery test) and intentionally have no durable task.
-    They may still share an ``AppContext`` with a durable session, so checking
-    task admission keeps those paths from manufacturing an effect against a
-    nonexistent task while preserving the durable boundary for real runs.
-    """
-    if state is None:
-        return None
-    durable = getattr(state, "durable", None)
-    if durable is None:
-        return None
-    lookup = durable.task
-    if durable is None or not callable(lookup) or not task_id:
+
+def admitted_durable(state: DurableStateView | None, task_id: str) -> DurableSession | None:
+    """Read only admitted authority; an unadmitted state grants no effects."""
+    durable = state.durable if state is not None else None
+    if durable is None or not task_id:
         return None
     try:
-        lookup(task_id)
+        durable.task(task_id)
     except KeyError:
         return None
-    return cast("DurableSession", durable)
+    return durable
 
 
 class KernelEffectSink:
     """Commit one turn's tool intents before any tool can run."""
 
-    def __init__(self, mutations: Any, *, session_id: str, run_id: str,
+    def __init__(self, mutations: RuntimeMutationLine, *, session_id: str, run_id: str,
                  provider_id: str, phase: str = "writer",
                  recovered_batch_id: str = "",
-                 managed_outputs: Any = None,
-                 durable: Any = None,
+                 managed_outputs: ManagedOutputStore | None = None,
+                 durable: DurableSession | None = None,
                  parent_effect_id: str = "") -> None:
         self.mutations = mutations
         self.session_id = session_id
@@ -81,15 +82,23 @@ class KernelEffectSink:
         self.provider_id = provider_id
         self.phase = phase
         self.delivery_batch_id = recovered_batch_id
-        self.managed_outputs = managed_outputs
+        if durable is None:
+            raise ValueError("kernel effects require durable storage")
+        self._managed_outputs = managed_outputs
         self.durable = durable
         self.parent_effect_id = parent_effect_id
         self.admission_guard: Callable[[], AbstractContextManager[None]] | None = None
-        self._request_context: dict[str, object] = {}
+        self.request_context: ProviderRequestContext | None = None
         store = RuntimeEffectStore(durable=durable)
         previous = store.load_effects(session_id, run_id)
         self._replay_classes = {row.intent.effect_id: row.intent.replay_class for row in previous}
         self._old_pending = {row.intent.effect_id for row in previous if row.is_pending}
+
+    @property
+    def managed_outputs(self) -> ManagedOutputStore:
+        if self._managed_outputs is None:
+            raise RuntimeEffectError("this operation requires managed output storage")
+        return self._managed_outputs
 
     def for_child(self, call: ToolCall, *, turn: int) -> KernelEffectSink:
         """Bind nested effects to the existing parent; only it owns delivery."""
@@ -102,7 +111,7 @@ class KernelEffectSink:
         if len(matches) != 1:
             raise ValueError("CodeMode requires one original parent effect")
         return KernelEffectSink(self.mutations, session_id=self.session_id, run_id=self.run_id,
-            provider_id=self.provider_id, phase=self.phase, managed_outputs=self.managed_outputs,
+            provider_id=self.provider_id, phase=self.phase, managed_outputs=self._managed_outputs,
             durable=self.durable, parent_effect_id=matches[0].effect_id)
 
     def begin_turn(
@@ -110,7 +119,7 @@ class KernelEffectSink:
         items: list[tuple[str, ToolCall, int]],
         *,
         turn: int,
-        specs: Any = None,
+        specs: Mapping[str, ToolSpec] | None = None,
         scope: str = "",
     ) -> None:
         intents: list[RuntimeEffectIntent] = []
@@ -135,7 +144,7 @@ class KernelEffectSink:
                 args_digest=compute_args_digest(call.args), replay_class=replay_class,
                 delivery_batch_id="" if self.parent_effect_id else batch_id,
                 parent_effect_id=self.parent_effect_id,
-                replay_args=replay_args,
+                replay_args=dict[str, object](replay_args) if replay_args is not None else None,
             ))
             batch_items.append(DeliveryBatchItem(
                 tool_index=index, tool_name=name, ref=identity,
@@ -161,15 +170,12 @@ class KernelEffectSink:
     def has_unsettled(self, identity: str) -> bool:
         return identity in self._old_pending
 
-    def bind_request(self, snapshot: Any, *, logical_turn: int, window_ref: Any = None,
-                     context_text: str = "", ghost_sources: tuple[Any, ...] = ()) -> None:
-        from codey.operations.provider_receipts import snapshot_description
-        from codey.providers.response_record import json_value
-
-        self._request_context = {"logical_turn": logical_turn, "snapshot": snapshot_description(snapshot),
-                                 "window": window_ref.to_payload() if window_ref is not None else None,
-                                 "effect_scope": "", "close_reply": False,
-                                 "context": {"text": context_text, "ghost_sources": json_value(ghost_sources)}}
+    def bind_request(self, snapshot: TurnSnapshot, *, logical_turn: int, window_ref: ProtocolWindowRef | None = None,
+                     context_text: str = "", ghost_sources: tuple[GhostContextSource, ...] = (),
+                     effect_scope: str = "", close_reply: bool = False, delivery_purpose: str = "",
+                     work_ref: str = "", source_response_ref: str = "") -> None:
+        self.request_context = ProviderRequestContext(logical_turn, snapshot, window_ref,
+            context_text, ghost_sources, effect_scope, close_reply, delivery_purpose, work_ref, source_response_ref)
 
     def counters(self) -> RuntimeExecutionCounters:
         from codey.durable.checkpoint import operation_from_checkpoint
@@ -183,7 +189,7 @@ class KernelEffectSink:
         self.mutations.record_progress(self.session_id, self.run_id, batch_id=self.delivery_batch_id,
                                        expected=expected, observed=observed)
 
-    def record_response(self, effect_id: str, reply: Any) -> None:
+    def record_response(self, effect_id: str, reply: AssistantTurn | str) -> None:
         from codey.operations.provider_receipts import RESPONSE_KIND, write_provider_artifact
         from codey.providers.response_record import encode_reply
 
@@ -195,20 +201,20 @@ class KernelEffectSink:
             messages=(("tool_call", {"response_ref": artifact.handle}),)
                 if isinstance(reply, AssistantTurn) and reply.tool_calls else ())
 
-    def load_response(self, session: Any, response_ref: str, *, window_ref: Any = None) -> Any:
+    def load_response(self, session: TaskSession, response_ref: str, *, window_ref: ProtocolWindowRef | None = None) -> ReceivedProviderTurn:
         from codey.operations.kernel_protocol import ReceivedProviderTurn
         from codey.operations.provider_receipts import (
             REQUEST_KIND,
             RESPONSE_KIND,
             read_provider_artifact,
             request_artifact_for_effect,
-            restore_snapshot,
         )
         from codey.providers.response_record import decode_reply
-        from codey.runtime.core.protocol_window import ProtocolWindowRef
 
         artifact = self.durable.artifact(response_ref)
         effect_id = artifact.owner_effect_id
+        if effect_id is None:
+            raise RuntimeEffectError("response has no original provider intent")
         effect = next((row for row in RuntimeEffectStore(durable=self.durable).load_effects(self.session_id, self.run_id)
                        if row.intent.effect_id == effect_id), None)
         if effect is None or effect.intent.effect_category != EFFECT_CATEGORY_PROVIDER_SEND:
@@ -217,18 +223,21 @@ class KernelEffectSink:
             kind=REQUEST_KIND, session_id=self.session_id, run_id=self.run_id, effect_id=effect_id)
         response = read_provider_artifact(self.managed_outputs, artifact, kind=RESPONSE_KIND,
             session_id=self.session_id, run_id=self.run_id, effect_id=effect_id)
-        if not isinstance(request, dict) or type(request.get("logical_turn")) is not int or request["logical_turn"] < 1:
-            raise RuntimeEffectError("response has no original logical turn")
         if not isinstance(request.get("effect_scope"), str):
             raise RuntimeEffectError("response has no frozen effect scope")
-        snapshot = restore_snapshot(request.get("snapshot"))
-        window = ProtocolWindowRef.from_payload(request["window"]) if request.get("window") is not None else None
-        if snapshot.policy != session.policy or window != window_ref:
+        try:
+            context = ProviderRequestContext.from_payload(request)
+        except ValueError as exc:
+            raise RuntimeEffectError(str(exc)) from exc
+        if context.snapshot.policy != session.policy or context.window_ref != window_ref:
             raise RuntimeEffectError("response authorization or protocol window changed")
-        args = request.get("args")
-        prompt = args[0] if isinstance(args, list) and args and isinstance(args[0], str) else ""
-        return ReceivedProviderTurn(decode_reply(response), snapshot, prompt, owner_session=session,
-                                    logical_turn=request["logical_turn"], window_ref=window, effect_scope=request["effect_scope"])
+        from codey.providers.request_codec import decode_provider_request
+        from codey.providers.requests import SendTextRequest, SendTurnRequest
+
+        invocation = decode_provider_request(request)
+        prompt = invocation.prompt if isinstance(invocation, (SendTextRequest, SendTurnRequest)) else ""
+        return ReceivedProviderTurn(decode_reply(response), context.snapshot, prompt, owner_session=session,
+            logical_turn=context.logical_turn, window_ref=context.window_ref, effect_scope=context.effect_scope)
 
     def pending_provider_settlement(self) -> tuple[RuntimeEffectSettlement, tuple[tuple[str, dict[str, object]], ...]] | None:
         """Derive the open boundary from durable response facts, including after restart."""
@@ -254,21 +263,23 @@ class KernelEffectSink:
             session_id=self.session_id, run_id=self.run_id, status=SETTLEMENT_STATUS_OK,
             sent_state=SENT_STATE_SETTLED), ()
 
-    def settle(self, identity: str, ok: bool, *, result: Any = None, exit_code: int | None = None) -> None:
+    def settle(self, identity: str, ok: bool, *, result: ToolResult | None = None, exit_code: int | None = None) -> None:
         from codey.operations.kernel_receipts import result_receipt_fields, tool_history_messages
 
         if result is None:
             raise ValueError("tool settlement requires the original result receipt")
-        audit = getattr(result, "audit", {})
+        audit = result.audit
         fields = result_receipt_fields(
-            result, store=self.managed_outputs, session_id=self.session_id,
+            result, store=self._managed_outputs, session_id=self.session_id,
             run_id=self.run_id, effect_id=identity,
         )
         resolved_exit: int | None = None
         if isinstance(exit_code, int) and type(exit_code) is int:
             resolved_exit = exit_code
         elif isinstance(audit, dict) and type(audit.get("exit_code")) is int:
-            resolved_exit = audit.get("exit_code")
+            audit_exit = audit.get("exit_code")
+            if isinstance(audit_exit, int):
+                resolved_exit = audit_exit
         settlement = RuntimeEffectSettlement(
             effect_id=identity, effect_category=EFFECT_CATEGORY_TOOL_CALL,
             session_id=self.session_id, run_id=self.run_id,
@@ -282,8 +293,8 @@ class KernelEffectSink:
         )
         artifacts: tuple[ArtifactRecord, ...] = ()
         managed = audit.get("managed_output") if isinstance(audit, dict) else None
-        if isinstance(managed, dict) and self.managed_outputs is not None and self.durable is not None:
-            artifacts = (self.managed_outputs.durable_record(
+        if isinstance(managed, dict) and self._managed_outputs is not None:
+            artifacts = (self._managed_outputs.durable_record(
                 str(managed.get("handle") or ""), session_id=self.session_id, run_id=self.run_id,
                 owner_task_id=self.run_id, owner_effect_id=identity,
             ),)

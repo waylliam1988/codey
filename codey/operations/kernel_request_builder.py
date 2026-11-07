@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
@@ -17,6 +17,8 @@ from codey.operations.kernel_contracts import (
     KernelRunRequest,
     KernelTransportDeps,
 )
+from codey.operations.provider_session import adapt_provider
+from codey.providers.attempt_gate import AttemptGateCallback
 from codey.workspace.context_admission import GhostContextSource
 
 if TYPE_CHECKING:
@@ -29,7 +31,7 @@ _DEFAULT_OBSERVATION = KernelObservationDeps()
 
 @dataclass(frozen=True)
 class KernelRunRequestBuilder:
-    provider: Any
+    provider: object
     run_id: str
     effect_scope: str
     provider_id: str
@@ -39,7 +41,7 @@ class KernelRunRequestBuilder:
     context_scope: str = "request"
     ghost_sources: tuple[GhostContextSource, ...] = ()
     admit_hints: bool = True
-    attempt_gate: Callable[[Any, dict[str, Any]], None] | None = None
+    attempt_gate: AttemptGateCallback | None = None
     attempt_admit_hints: Callable[[], bool] | None = None
     stop_flag: StopSignal | None = None
     stagnant_turns: int | None = None
@@ -54,7 +56,7 @@ class KernelRunRequestBuilder:
         return KernelRunRequest(
             task_guidance=self.task_guidance,
             transport=KernelTransportDeps(
-                provider=self.provider,
+                provider=adapt_provider(self.provider),
                 run_id=self.run_id,
                 effect_scope=self.effect_scope,
                 provider_id=self.provider_id,

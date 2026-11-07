@@ -45,7 +45,7 @@ def run_task_kernel(session, *, request, session_id="test-session"):
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
 
-    sink = request.observation.intent_sink
+    sink = request.execution.intent_sink
     if isinstance(sink, KernelEffectSink):
         if request.observation.on_boundary is None:
             request = replace(request, observation=replace(request.observation,

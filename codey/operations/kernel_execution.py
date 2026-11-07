@@ -135,7 +135,7 @@ def _build_delegate(
     run_id: str = "",
     permission_profile: str = "coding_writer",
     frozen_specs: Mapping[str, ToolSpec] | None = None,
-    custom_executors: Mapping[str, ToolExecutor] | None = None,
+    custom_executors: Mapping[str, ToolExecutor | None] | None = None,
     research_scope: AnswerScope | None = None,
 ) -> ToolDelegate | None:
     """Build the production delegate; fail closed when a project needs one."""

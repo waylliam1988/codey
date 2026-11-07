@@ -62,6 +62,13 @@ def old_observer(method: str, args: tuple[object, ...], kwargs: dict[str, object
 ObservedProvider(object(), old_observer)
 ProviderAdapter(object()).send(object())
 ProviderAdapter(object()).missing_extension()
+
+from codey.operations.kernel_contracts import KernelTransportDeps, KernelExecutionDeps
+from codey.operations.provider_request import prepare_provider_request
+
+KernelTransportDeps(provider=object())
+KernelExecutionDeps(research_tools=object())
+prepare_provider_request(object(), "send", ("prompt",), {}, counters=None)
 '''
 
 

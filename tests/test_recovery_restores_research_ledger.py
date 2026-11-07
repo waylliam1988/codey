@@ -60,7 +60,7 @@ def test_restart_preserves_exact_research_ledger_without_refetch_or_write(tmp_pa
                 from codey.operations.kernel_protocol import build_turn_snapshot
 
                 sink.bind_request(build_turn_snapshot(live), logical_turn=turn)
-                sink._request_context["effect_scope"] = "task"
+                sink.request_context = replace(sink.request_context, effect_scope="task")
                 ProviderActions(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
         ledger = tools.ledger
         assert not ledger.references and ledger.read_passages

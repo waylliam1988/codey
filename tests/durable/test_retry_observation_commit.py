@@ -89,7 +89,7 @@ def saved_retry(path):
         state = operation_from_checkpoint(durable.task("r"), "s")
         artifact = durable.artifact(state.work_ref)
         envelope = sink.managed_outputs.read_json_artifact(dict(artifact.metadata["ref"]))
-        request = load_prepared_request(sink, state.request_ref)[0] if state.request_ref else None
+        request = load_prepared_request(sink, state.request_ref) if state.request_ref else None
         return state, envelope, request
     finally:
         durable.close()
@@ -105,7 +105,7 @@ def test_retry_observation_survives_before_and_after_request_freeze(tmp_path, mo
     assert state.counters.invalid_turns == (0 if mode == "length" else 1)
     assert state.counters.length_continuation_used == (mode == "length")
     if request is not None:
-        assert request["admission"]["expected_counters"] == request["admission"]["counters"] == state.counters.to_payload()
+        assert request.expected_counters == request.counters == state.counters
     result, calls, counters = run_probe(tmp_path, mode=mode, reopen=True)
     assert result.stop_reason == ("provider_failure" if mode == "length" else "protocol")
     assert result.turns == 2
@@ -158,8 +158,8 @@ def test_v1_retry_keeps_pending_or_already_committed_observation(tmp_path, monke
     with pytest.raises(SimulatedExit):
         run_probe(tmp_path, mode=mode, reopen=True, crash_leaf="provider_request_ready")
     frozen, _, request = saved_retry(tmp_path)
-    assert request["admission"]["expected_counters"] == before.counters.to_payload() == frozen.counters.to_payload()
-    assert request["admission"]["counters"] == pending
+    assert request.expected_counters.to_payload() == before.counters.to_payload() == frozen.counters.to_payload()
+    assert request.counters.to_payload() == pending
     result, calls, counters = run_probe(tmp_path, mode=mode, reopen=True)
     assert result.turns == 2
     assert result.stop_reason == ("provider_failure" if mode == "length" else "protocol")

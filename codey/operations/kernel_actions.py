@@ -9,7 +9,7 @@ import json
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol, cast
+from typing import TYPE_CHECKING
 
 from codey.operations import kernel_prompt as _prompt
 from codey.operations import kernel_transport as _transport
@@ -25,13 +25,15 @@ from codey.operations.kernel_trace import record_outbound
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.policies.command_line import ShellSpec
+from codey.providers.attempt_gate import AttemptGateClient
 from codey.providers.base import ProviderToolResult
-from codey.providers.compat_transport import optional_callable
+from codey.providers.compat_transport import bind_attempt_gate
 from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.observe.events import RunEvent
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
+from codey.types.json_value import JsonObject
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import admit_ghost_context
 from codey.workspace.context_epoch import ContextEpoch, context_epoch_id
@@ -50,17 +52,6 @@ if TYPE_CHECKING:
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.workspace.revision import WorkspaceRevisionStore
 
-
-class AttemptGateClient(Protocol):
-    purpose: Literal["conversation", "compaction"]
-    _attempt_gate_prompt: str
-
-
-class AttemptGateProvider(Protocol):
-    def bind_attempt_gate(
-        self,
-        gate: Callable[[AttemptGateClient, dict[str, object]], None] | None,
-    ) -> None: ...
 
 def _payload_strings(value: object) -> list[str]:
     if isinstance(value, str):
@@ -81,15 +72,9 @@ def _payload_strings(value: object) -> list[str]:
 def _bind_attempt_gate(
     provider: object, transport: KernelTransportDeps, trace_recorder: object,
 ) -> bool:
-    binder = optional_callable(provider, "bind_attempt_gate")
-    if binder is None:
-        return False
-    gate = cast(
-        Callable[[AttemptGateClient, dict[str, object]], None] | None,
-        transport.attempt_gate,
-    )
+    gate = transport.attempt_gate
     if gate is None and transport.ghost_sources:
-        def gate(client: AttemptGateClient, payload: dict[str, object]) -> None:
+        def gate(client: AttemptGateClient, payload: JsonObject) -> None:
             rendered = "\n".join(_payload_strings(payload))
             enabled = (transport.attempt_admit_hints() if transport.attempt_admit_hints is not None
                        else transport.admit_hints)
@@ -117,8 +102,7 @@ def _bind_attempt_gate(
                     epoch=ContextEpoch(epoch_id=context_epoch_id(prompt), admissions=admission.epoch.admissions),
                 )
                 record_outbound(trace_recorder, prompt, admission=admission)
-    binder(gate)
-    return gate is not None
+    return bind_attempt_gate(provider, gate)
 
 
 def _provider_failure(exc: Exception, turns_used: int, *, propagate: bool) -> KernelResult:

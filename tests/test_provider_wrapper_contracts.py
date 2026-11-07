@@ -80,7 +80,10 @@ def test_window_capability_and_attempt_gate_survive_wrapping():
         pass
     deps = KernelTransportDeps(provider=wrapped, attempt_gate=gate)
     assert _bind_attempt_gate(wrapped, deps, None)
-    assert bound == [gate]
+    assert len(bound) == 1
+    bound[0](SimpleNamespace(purpose="conversation", _attempt_gate_prompt="prompt"), {})
+    with pytest.raises(ValueError):
+        bound[0](SimpleNamespace(purpose="unknown"), {})
     assert not _bind_attempt_gate(ProviderAdapter(object()), deps, None)
 
 

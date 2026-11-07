@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import cast
 
+from codey.providers.attempt_gate import AttemptGateCallback, AttemptGateView
 from codey.providers.request_codec import provider_options_payload
 from codey.providers.requests import (
     AcknowledgeToolResultsBoundRequest,
@@ -17,6 +18,7 @@ from codey.providers.requests import (
 )
 from codey.providers.transport import ProviderTransport
 from codey.runtime.core.protocol_window import ProtocolWindowRef
+from codey.types.json_value import decode_json_object, require_json_string
 
 
 def unwrap_provider(provider: object) -> object:
@@ -52,6 +54,26 @@ def provider_window_ref(provider: object) -> ProtocolWindowRef | None:
     if value is not None and not isinstance(value, ProtocolWindowRef):
         raise ValueError("provider window reference is invalid")
     return value
+
+
+def bind_attempt_gate(provider: object, gate: AttemptGateCallback | None) -> bool:
+    binder = optional_callable(provider, "bind_attempt_gate")
+    if binder is None:
+        return False
+    if gate is None:
+        binder(None)
+        return False
+
+    def validated_gate(client: object, payload: object) -> None:
+        purpose = getattr(client, "purpose", None)
+        if purpose not in ("conversation", "compaction"):
+            raise ValueError("invalid provider attempt purpose")
+        view = AttemptGateView("conversation" if purpose == "conversation" else "compaction",
+            require_json_string(getattr(client, "_attempt_gate_prompt", ""), "attempt prompt"))
+        gate(view, decode_json_object(payload))
+
+    binder(validated_gate)
+    return True
 
 
 def declared_callable(provider: object, name: str, *, forwarding_owner: type | None = None) -> Callable[..., object] | None:

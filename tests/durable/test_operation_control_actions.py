@@ -344,7 +344,7 @@ def test_accepted_research_report_replays_without_compiler_or_knowledge_reads(tm
     provider = Provider()
     policy = TaskPolicy(frozenset({"control", "web.read", "knowledge.read", "knowledge.write"}), strict_research=True)
     request = replace(request_for(durable, sink, provider), transport=replace(request_for(durable, sink, provider).transport, user_task="Explain writer concurrency."),
-                      execution=KernelExecutionDeps(research_tools=tools))
+                      execution=KernelExecutionDeps(research_tools=tools, intent_sink=sink))
     try:
         first = run_task_kernel(TaskSession(policy, task_kind="research", task_text="Explain writer concurrency.",
                                            research_questions=tools.ledger.questions), request=request)

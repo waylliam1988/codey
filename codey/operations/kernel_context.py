@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from codey.durable.checkpoint import checkpoint_entries
 from codey.durable.model import thaw_json
@@ -29,16 +29,26 @@ from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_protocol import ReceivedProviderTurn, TurnSnapshot
 from codey.operations.kernel_trace import record_outbound, record_turn
 from codey.operations.project_prompt_context import prepare_coding_context
+from codey.operations.provider_request_context import ProviderRequestContext
 from codey.operations.task_guidance import task_result_context, task_working_context
 from codey.operations.task_session import TaskSession
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolResult, TurnFinish, tools_from_specs
+from codey.providers.requests import (
+    AcknowledgeToolResultsBoundRequest,
+    AcknowledgeToolResultsRequest,
+    ProviderRequest,
+    ProviderRequestOptions,
+    SendTextRequest,
+    SendToolResultsBoundRequest,
+    SendToolResultsRequest,
+    SendTurnRequest,
+)
 from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core import operation_payload
-from codey.runtime.core.models import ToolPlan
+from codey.runtime.core.models import ToolPlan, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
-from codey.runtime.core.operation_reducer import RuntimeDecisionInputs
-from codey.runtime.core.protocol_window import ProtocolWindowRef
+from codey.runtime.core.operation_reducer import RuntimeAction, RuntimeDecisionInputs
 from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
 from codey.runtime.log.session_view import (
     SessionView,
@@ -46,6 +56,7 @@ from codey.runtime.log.session_view import (
     load_session_view,
     not_sent_continuation_effect,
 )
+from codey.types.json_value import decode_json_object, require_json_string
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import admit_ghost_context
 
@@ -61,11 +72,12 @@ class KernelContext:
         # Compatibility callers replace the observation sink during restart;
         # production builders place it in execution. Prefer an explicitly
         # supplied observation replacement when both are present.
-        admitted_sink: KernelEffectSink | None = self.observation.intent_sink or self.execution.intent_sink
-        if admitted_sink is None or admitted_sink.durable is None or admitted_sink.managed_outputs is None:
+        admitted_sink: KernelEffectSink | None = self.execution.intent_sink
+        if admitted_sink is None:
             raise ValueError("kernel execution requires an admitted durable operation and managed output storage")
+        _ = admitted_sink.managed_outputs
         self.sink: KernelEffectSink = admitted_sink
-        self.durable: DurableSession = cast("DurableSession", admitted_sink.durable)
+        self.durable: DurableSession = admitted_sink.durable
         admitted = self.load_view().state
         if admitted is None:
             raise ValueError("kernel execution requires an operation checkpoint")
@@ -76,28 +88,25 @@ class KernelContext:
         self.capabilities = KernelCapabilityView.from_provider(
             self.provider, provider_id=self.transport.provider_id, fallback_window_ref=self.transport.window_ref)
         self.native = self.capabilities.native_tools
-        self.window = cast(ProtocolWindowRef | None, self.capabilities.window_ref)
+        self.window = self.capabilities.window_ref
         self.completion_context = wiring._completion_context_with_ignores(
             self.observation.completion_context, self.execution.workspace_ignored_paths)
         if self.execution.research_tools is not None:
             tools = self.execution.research_tools
             self.completion_context = replace(
                 self.completion_context,
-                research_ledger=getattr(tools, "ledger", None),
-                knowledge_store=getattr(tools, "store", None),
-                knowledge_project=str(getattr(tools, "project", "") or ""),
-                knowledge_session_id=str(getattr(tools, "session_id", "") or ""),
+                research_ledger=tools.ledger,
+                knowledge_store=tools.store,
+                knowledge_project=tools.project,
+                knowledge_session_id=tools.session_id,
             )
         self.responses: dict[str, ReceivedProviderTurn] = {}
         self.projected_provider_effects: set[str] = set()
         self.snapshots: dict[int, TurnSnapshot] = {}
         self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
 
-    def restore_context(self, payload: dict[str, Any]) -> None:
-        from codey.operations.provider_receipts import restore_ghost_context
-
-        text, sources = restore_ghost_context(payload.get("context"))
-        self.transport = replace(self.transport, context_text=text, ghost_sources=sources)
+    def restore_context(self, payload: ProviderRequestContext) -> None:
+        self.transport = replace(self.transport, context_text=payload.context_text, ghost_sources=payload.ghost_sources)
         self.attempt_gate_bound = wiring._bind_attempt_gate(self.provider, self.transport, self.observation.trace_recorder)
 
     @property
@@ -154,7 +163,7 @@ class KernelContext:
             approval_ready=approval is not None and str(approval.status) in {"execution_settled", "denied", "expired", "cancelled"},
             approval_outcome_unknown=approval is not None and str(approval.status) == "execution_claimed")
 
-    def reconcile_approval(self, state: Any, identity: str, *, cancelled: bool) -> None:
+    def reconcile_approval(self, state: RuntimeOperationState, identity: str, *, cancelled: bool) -> None:
         from codey.operations.kernel_receipts import result_receipt_fields
         from codey.operations.shell_approval_receipt import read_approval_command, resolve_shell_approval
         from codey.runtime.core.models import ToolCall, ToolResult
@@ -234,7 +243,7 @@ class KernelContext:
         self.effect_scope = received.effect_scope
         return received
 
-    def response_reference(self, state: Any) -> str:
+    def response_reference(self, state: RuntimeOperationState) -> str:
         if state.response_ref:
             return str(state.response_ref)
         from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact, request_artifact_for_effect
@@ -270,7 +279,7 @@ class KernelContext:
                 session_id=self.sink.session_id, run_id=self.sink.run_id, project_path=self.execution.project_path,
                 workspace_store=self.execution.workspace_revision_store, ignored_paths=self.execution.workspace_ignored_paths)
             staged = self.session.clone_projection()
-            ledger = getattr(self.execution.research_tools, "ledger", None)
+            ledger = self.execution.research_tools.ledger if self.execution.research_tools is not None else None
             staged_ledger = ledger.clone() if ledger is not None else None
             code = effect.settlement.exit_code
             project_result_observation(staged, result.call, result, ok=result.ok, exit_code=code, research_ledger=staged_ledger)
@@ -283,6 +292,7 @@ class KernelContext:
                 if category:
                     staged.research_acquisition_slots[(effect.intent.turn, effect.intent.tool_index)] = category
             if ledger is not None:
+                assert staged_ledger is not None
                 ledger.commit_projection(staged_ledger)
                 from codey.operations.research_continuation import restore_note_proposals
                 restore_note_proposals(self.execution.research_tools, result.canonical)
@@ -332,12 +342,12 @@ class KernelContext:
             self.session.last_done_args = dict(plan.control_args)
         self.projected_provider_effects.add(identity)
 
-    def results(self, view: Any, batch_id: str) -> list[Any]:
+    def results(self, view: SessionView, batch_id: str) -> list[ToolResult]:
         self.restore_facts()
         batch = next(batch for batch in view.batches if batch.intent.batch_id == batch_id)
         return [self.session._memory_results[identity] for identity in batch.intent.tool_refs]
 
-    def freeze(self, state: Any, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
+    def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None,
                text_result_spans: tuple[TextResultSpan, ...] = (),
@@ -349,24 +359,13 @@ class KernelContext:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
         self.snapshots[turn] = snapshot
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window,
-                               context_text=self.transport.context_text, ghost_sources=self.transport.ghost_sources)
-        self.sink._request_context["effect_scope"] = self.effect_scope
-        self.sink._request_context["close_reply"] = acknowledge
-        self.sink._request_context["delivery_purpose"] = self.decision(state).get("purpose", "") if state.work_ref else ""
-        self.sink._request_context["work_ref"] = state.work_ref
-        self.sink._request_context["source_response_ref"] = (
-            self.response_reference(state) if state.response_ref or state.work_ref
-            or state.leaf == operation_payload.LEAF_TOOL_DELIVERY_PENDING else "")
-        tools = tools_from_specs(snapshot.model_specs)
-        if self.native and messages:
-            method = "acknowledge_tool_results" if acknowledge else "send_tool_results"
-            args: tuple[Any, ...] = (messages, tools)
-            if self.window is not None:
-                method += "_bound"
-                args = (messages, self.window, tools)
-        else:
-            method, args = ("send_turn", (prompt, tools)) if self.native else ("send", (prompt,))
-        options: dict[str, Any] = {}
+            context_text=self.transport.context_text, ghost_sources=self.transport.ghost_sources,
+            effect_scope=self.effect_scope, close_reply=acknowledge,
+            delivery_purpose=self.decision(state)["purpose"] if state.work_ref else "", work_ref=state.work_ref,
+            source_response_ref=self.response_reference(state) if state.response_ref or state.work_ref
+                or state.leaf == operation_payload.LEAF_TOOL_DELIVERY_PENDING else "")
+        tools = tuple(tools_from_specs(snapshot.model_specs))
+        options = ProviderRequestOptions()
         coding = ""
         # Full-turn prompts already contain their prepared context. Native
         # continuations still need a fresh projection after tool execution.
@@ -378,35 +377,47 @@ class KernelContext:
                     part for part in (messages[-1].user_content, coding) if part))
         if self.request_scoped_observations and not (self.native and acknowledge):
             observations = task_working_context(
-                self.session, getattr(self.execution.research_tools, "ledger", None),
-                getattr(self.execution.research_tools, "store", None),
-                str(getattr(self.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope,
+                self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
+                self.execution.research_tools.store if self.execution.research_tools is not None else None,
+                self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, provider=self.provider)
             # Canonical replay excludes Ghost hints. Each continuation must
             # carry its frozen context without relying on a warm wire history.
             context = self.transport.context_text
-            options["tool_call_observations"] = "\n\n".join(part for part in (
+            options = replace(options, supplied=options.supplied | {"tool_call_observations"}, tool_call_observations="\n\n".join(part for part in (
                 context if context and context not in prompt else "", observations,
-                coding if coding and coding not in prompt else "") if part)
+                coding if coding and coding not in prompt else "") if part))
             if self.session.task_kind == "research" and self.session.policy.strict_research:
-                options["output_token_limit"] = 4096
+                options = replace(options, output_token_limit=4096)
                 from codey.research.answer_contract import AnswerScope
 
                 if self.native and isinstance(snapshot.research_scope, AnswerScope):
-                    options["require_tool_call"] = True
+                    options = replace(options, require_tool_call=True)
                 if snapshot.research_scope is not None:
-                    options["tool_call_history_groups"] = 1
+                    options = replace(options, tool_call_history_groups=1)
         if scoped_contract:
-            options["tool_call_contract"] = kernel_prompt._text_request_prompt("", snapshot)
+            options = replace(options, supplied=options.supplied | {"tool_call_contract"},
+                tool_call_contract=kernel_prompt._text_request_prompt("", snapshot))
             if text_result_spans:
-                options["tool_call_results"] = [span.to_payload() for span in text_result_spans]
+                options = replace(options, tool_call_results=text_result_spans)
         if scoped_contract and self.capabilities.text_tool_format == "json_schema":
             from codey.providers.text_tool_schema import text_tool_schema
 
-            options.update(tool_call_json=True, tool_call_schema=text_tool_schema(tools))
-        prepare_provider_request(self.sink, method, args, options, counters=(state.counters, counters or state.counters))
+            options = replace(options, tool_call_json=True, tool_call_schema=decode_json_object(text_tool_schema(list(tools))))
+        request: ProviderRequest
+        if self.native and messages:
+            results = tuple(messages)
+            if self.window is not None:
+                request = (AcknowledgeToolResultsBoundRequest(results, self.window, tools, options) if acknowledge
+                           else SendToolResultsBoundRequest(results, self.window, tools, options))
+            else:
+                request = (AcknowledgeToolResultsRequest(results, tools, options) if acknowledge
+                           else SendToolResultsRequest(results, tools, options))
+        else:
+            request = SendTurnRequest(prompt, tools, options) if self.native else SendTextRequest(prompt, options)
+        prepare_provider_request(self.sink, request, counters=(state.counters, counters or state.counters))
 
-    def prepare_turn(self, state: Any) -> None:
+    def prepare_turn(self, state: RuntimeOperationState) -> None:
         self.restore_facts()
         turn = state.logical_turn + 1
         if turn > self.session.max_turns:
@@ -430,16 +441,16 @@ class KernelContext:
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
         if not self.request_scoped_observations:
             prompt = "\n\n".join(part for part in (prompt, task_working_context(
-                self.session, getattr(self.execution.research_tools, "ledger", None),
-                getattr(self.execution.research_tools, "store", None),
-                str(getattr(self.execution.research_tools, "session_id", "")),
+                self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
+                self.execution.research_tools.store if self.execution.research_tools is not None else None,
+                self.execution.research_tools.session_id if self.execution.research_tools is not None else "",
                 research_scope=prepared.snapshot.research_scope, tool_names=prepared.snapshot.tool_names,
                 provider=self.provider)) if part)
         self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
                     counters=replace(state.counters, progress=progress.snapshot()),
                     coding_context_prepared=True)
 
-    def interpret(self, state: Any) -> None:
+    def interpret(self, state: RuntimeOperationState) -> None:
         received = self.response(state)
         reply, snapshot, turn = received.reply, received.snapshot, received.logical_turn
         from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact, request_artifact_for_effect
@@ -479,7 +490,7 @@ class KernelContext:
             invalid = state.counters.invalid_turns + 1
             threshold = self.transport.stagnant_turns
             prompt = kernel_prompt._repair_prompt(plan, snapshot=snapshot, native=self.native, reply=reply)
-            previous_ref = original.get("work_ref")
+            previous_ref = require_json_string(original.get("work_ref", ""), "work_ref")
             previous = (self.decision(replace(state, work_ref=previous_ref))
                         if previous_ref and state.counters.invalid_turns else None)
             repeated = previous is not None and previous.get("purpose") == "retry" and previous.get("prompt") == prompt
@@ -492,7 +503,7 @@ class KernelContext:
                 return
             self.retry(state, prompt, error=plan.protocol_error, counters=replace(state.counters, invalid_turns=invalid))
             return
-        kind = getattr(plan.control, "kind", "")
+        kind = plan.control.kind if plan.control is not None else ""
         if kind == "ask_user":
             from codey.task.questions import question_args
             question = question_args(dict(plan.control_args))
@@ -505,7 +516,7 @@ class KernelContext:
         self.advance(state, operation_payload.LEAF_COMPLETION_PENDING if kind == "done" else operation_payload.LEAF_PLAN_READY,
                      counters=replace(state.counters, invalid_turns=0))
 
-    def retry(self, state: Any, prompt: str, *, error: str = "", counters: RuntimeExecutionCounters | None = None) -> None:
+    def retry(self, state: RuntimeOperationState, prompt: str, *, error: str = "", counters: RuntimeExecutionCounters | None = None) -> None:
         decision = RetryDecision(purpose="retry", prompt=prompt, error=error)
         self.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision, counters=counters or state.counters)
 
@@ -558,17 +569,22 @@ class KernelContext:
             raise RecoveryFailed(result.summary)
         return None
 
-    def observe_progress(self, view: Any, action: Any) -> None:
+    def observe_progress(self, view: SessionView, action: RuntimeAction) -> None:
         results = self.results(view, action.delivery_batch_id)
-        self.session.turn = view.state.turn
-        progress = KernelProgress(self.transport.stagnant_turns, snapshot=view.state.counters.progress)
+        state = view.state
+        if state is None:
+            raise RecoveryFailed("progress observation requires operation state")
+        self.session.turn = state.turn
+        progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
         previous = progress.snapshot()
         progress.observe(results, self.session, batch_id=action.delivery_batch_id)
         self.sink.delivery_batch_id = action.delivery_batch_id
         self.sink.record_progress(previous, progress.snapshot())
 
-    def deliver_results(self, view: Any, action: Any) -> None:
+    def deliver_results(self, view: SessionView, action: RuntimeAction) -> None:
         state = view.state
+        if state is None:
+            raise RecoveryFailed("result delivery requires operation state")
         results = self.results(view, action.delivery_batch_id)
         self.sink.delivery_batch_id = action.delivery_batch_id
         turn = state.turn
@@ -592,7 +608,6 @@ class KernelContext:
                        else KernelResult(False, summary, turn, reason))
             return
         snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
-        from codey.runtime.core.models import ToolResult
 
         def result_context(result: ToolResult) -> str:
             value: str = task_result_context(self.session, result, snapshot.research_scope)
@@ -603,9 +618,9 @@ class KernelContext:
             result_context=result_context)
         messages, prompt, spans = advance.messages, advance.prompt, advance.spans
         observations = "" if self.request_scoped_observations else task_working_context(
-            self.session, getattr(self.execution.research_tools, "ledger", None),
-                getattr(self.execution.research_tools, "store", None),
-                str(getattr(self.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope,
+            self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
+                self.execution.research_tools.store if self.execution.research_tools is not None else None,
+                self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, provider=self.provider)
         reminder = progress.repeat_feedback()
         if self.native and messages:
@@ -636,12 +651,12 @@ class KernelContext:
                 texts.append(str(content.get("text", "")))
         return "\n\n".join(texts)
 
-    def boundary(self, action: Any) -> None:
+    def boundary(self, action: RuntimeAction) -> None:
         from codey.operations.generation_boundary import GenerationBoundaryRequest
         if self.observation.on_boundary is None:
             raise RecoveryFailed("an admitted provider generation requires a durable boundary callback")
         self.observation.on_boundary(GenerationBoundaryRequest(action.reason))
 
-    def close(self, state: Any, result: KernelResult, *, counters: RuntimeExecutionCounters | None = None) -> None:
+    def close(self, state: RuntimeOperationState, result: KernelResult, *, counters: RuntimeExecutionCounters | None = None) -> None:
         self.advance(state, operation_payload.LEAF_CLOSING, data=ClosingDecision(purpose="closing", result=result.to_payload()),
                      counters=counters)

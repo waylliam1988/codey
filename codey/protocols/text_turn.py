@@ -11,9 +11,9 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
 
 from codey.protocols.json_scanner import balanced_json_spans
+from codey.types.json_value import JsonValue, ToolArgs, decode_json_object
 
 MAX_TEXT_REQUESTS = 8
 
@@ -21,7 +21,7 @@ MAX_TEXT_REQUESTS = 8
 @dataclass(frozen=True)
 class TextRequest:
     tool: str
-    args: dict[str, Any]
+    args: ToolArgs
 
 
 @dataclass(frozen=True)
@@ -44,10 +44,10 @@ class TextError:
 DecodedTextTurn = TextRequests | TextAnswer | TextError
 
 
-def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+def _tool_and_args(obj: Mapping[str, JsonValue]) -> tuple[str, ToolArgs]:
     tool = str(obj.get("tool", "") or "").strip().lower()
     raw_args = obj.get("args", None)
-    args: dict[str, Any]
+    args: ToolArgs
     if isinstance(raw_args, dict):
         args = dict(raw_args)
     elif raw_args is None:
@@ -99,7 +99,7 @@ def _json_error(source: str, exc: json.JSONDecodeError) -> TextError:
     return TextError(detail, kind="invalid_json", tool=name.group(1) if name else "")
 
 
-def _json_objects(text: str) -> list[dict[str, Any]] | TextError | None:
+def _json_objects(text: str) -> list[ToolArgs] | TextError | None:
     source = (text or "").strip()
     if source.startswith("```"):
         return None
@@ -112,7 +112,7 @@ def _json_objects(text: str) -> list[dict[str, Any]] | TextError | None:
         return None
     if any(source[end:start].strip() for (_, end), (start, _) in zip(spans, spans[1:], strict=False)):
         return None
-    objects: list[dict[str, Any]] = []
+    objects: list[ToolArgs] = []
     for start, end in spans:
         try:
             value = json.loads(source[start:end])
@@ -121,7 +121,10 @@ def _json_objects(text: str) -> list[dict[str, Any]] | TextError | None:
         except (ValueError, RecursionError):
             return TextError("invalid JSON: value exceeds decoder limits", kind="invalid_json")
         if isinstance(value, dict):
-            objects.append(value)
+            try:
+                objects.append(decode_json_object(value))
+            except ValueError:
+                return TextError("invalid JSON: value exceeds decoder limits", kind="invalid_json")
     return objects
 
 

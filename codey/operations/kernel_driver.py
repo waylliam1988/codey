@@ -9,21 +9,29 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.durable.checkpoint import checkpoint_entries
+from codey.durable.model import thaw_json
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelDecision, KernelResult, KernelRunRequest, result_from_payload
 from codey.operations.kernel_errors import RecoveryFailed
+from codey.operations.prepared_provider_request import PreparedProviderRequest
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
+from codey.operations.provider_request_context import ProviderRequestContext
+from codey.providers.transport import ProviderTransport
+from codey.types.json_value import decode_json_object
+
+if TYPE_CHECKING:
+    from codey.operations.task_effects import KernelEffectSink
+    from codey.operations.task_session import TaskSession
 from codey.providers.base import AssistantTurn
-from codey.providers.compat_transport import execute_compat_request, optional_callable, provider_window_ref
+from codey.providers.compat_transport import optional_callable, provider_window_ref
 from codey.providers.request_codec import decode_provider_request
 from codey.providers.requests import ProviderRequest, SendTextRequest, SendTurnRequest
 from codey.runtime.core.operation_payload import (
     LEAF_CONTROL_READY,
     LEAF_TOOL_DELIVERY_PENDING,
-    RuntimeExecutionCounters,
     RuntimeOperationState,
 )
 from codey.runtime.core.operation_reducer import (
@@ -31,7 +39,6 @@ from codey.runtime.core.operation_reducer import (
     ACTION_SUBMIT_PROVIDER_REQUEST,
     RuntimeAction,
 )
-from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     SENT_STATE_MAYBE_SENT,
@@ -55,33 +62,37 @@ def decode_provider_invocation(payload: object) -> ProviderRequest:
         raise RuntimeEffectError(str(exc)) from exc
 
 
-def load_prepared_request(sink: Any, request_ref: str) -> tuple[dict[str, Any], RuntimeEffectIntent]:
+def load_prepared_request(sink: KernelEffectSink, request_ref: str) -> PreparedProviderRequest:
     artifact = sink.durable.artifact(request_ref)
-    envelope = sink.managed_outputs.read_json_artifact(dict(artifact.metadata["ref"]))
+    envelope = sink.managed_outputs.read_json_artifact(dict[str, object](decode_json_object(thaw_json(artifact.metadata["ref"]))))
     if not isinstance(envelope, dict) or not isinstance(envelope.get("effect_id"), str):
         raise RuntimeEffectError("prepared request has no stable effect identity")
     payload = read_provider_artifact(sink.managed_outputs, artifact, kind=REQUEST_KIND,
         session_id=sink.session_id, run_id=sink.run_id, effect_id=envelope["effect_id"])
     if not isinstance(payload, dict) or not isinstance(payload.get("admission"), dict):
         raise RuntimeEffectError("prepared request has no admission data")
-    admission = payload["admission"]
+    admission = decode_json_object(payload["admission"])
     if set(admission) != {"intent", "expected_counters", "counters"}:
         raise RuntimeEffectError("prepared request admission data is invalid")
-    intent = RuntimeEffectIntent.from_payload(admission["intent"])
+    intent = RuntimeEffectIntent.from_payload(decode_json_object(admission["intent"]))
     if intent.effect_id != envelope["effect_id"] or intent.request_ref:
         raise RuntimeEffectError("prepared request identity conflicts with its envelope")
     transport = {key: value for key, value in payload.items() if key != "admission"}
     if intent.args_digest != compute_args_digest(json.dumps(transport, ensure_ascii=False, sort_keys=True)):
         raise RuntimeEffectError("prepared request differs from its frozen intent")
-    return payload, replace(intent, request_ref=request_ref)
+    try:
+        return PreparedProviderRequest.from_payload(payload, intent=replace(intent, request_ref=request_ref))
+    except (ValueError, TypeError) as exc:
+        raise RuntimeEffectError(str(exc)) from exc
 
 
-def restore_provider_window(sink: Any, provider: Any, state: Any) -> dict[str, Any] | None:
+def restore_provider_window(sink: KernelEffectSink, provider: ProviderTransport, state: RuntimeOperationState) -> ProviderRequestContext | None:
     """Rebuild the window projection from this operation's frozen request."""
     from codey.operations.provider_receipts import request_artifact_for_effect
 
     if state.request_ref:
-        payload, _ = load_prepared_request(sink, state.request_ref)
+        prepared = load_prepared_request(sink, state.request_ref)
+        return _restore_window_context(provider, prepared.context)
     elif state.response_ref:
         response = sink.durable.artifact(state.response_ref)
         effect = next(row for row in RuntimeEffectStore(durable=sink.durable).load_effects(sink.session_id, sink.run_id)
@@ -97,25 +108,33 @@ def restore_provider_window(sink: Any, provider: Any, state: Any) -> dict[str, A
             kind=REQUEST_KIND, session_id=sink.session_id, run_id=sink.run_id, effect_id=effect.intent.effect_id)
     else:
         return None
-    if not isinstance(payload, dict):
-        raise RecoveryFailed("frozen request has no protocol window data")
-    window = payload.get("window")
-    if window is None:
-        return payload
-    ref = ProtocolWindowRef.from_payload(window)
+    try:
+        context = ProviderRequestContext.from_payload(payload) if "snapshot" in payload else None
+    except ValueError as exc:
+        raise RecoveryFailed(str(exc)) from exc
+    return _restore_window_context(provider, context)
+
+
+def _restore_window_context(provider: ProviderTransport, context: ProviderRequestContext | None) -> ProviderRequestContext | None:
+    if context is None or context.window_ref is None:
+        return context
+    ref = context.window_ref
     if provider_window_ref(provider) == ref:
-        return payload
+        return context
     restore = optional_callable(provider, "restore_protocol_window")
-    if not callable(restore):
+    if restore is None:
         raise RecoveryFailed("provider cannot restore the original protocol window")
     restore(ref)
     if provider_window_ref(provider) != ref:
         raise RecoveryFailed("provider did not restore the original protocol window")
-    return payload
+    return context
 
 
-def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> AssistantTurn | str:
+def drive_provider_request(sink: KernelEffectSink, provider: object, request_ref: str) -> AssistantTurn | str:
     """Close the explicit prior boundary, admit once, execute, then save once."""
+    from codey.operations.provider_session import adapt_provider
+
+    transport = adapt_provider(provider)
     while True:
         action = peek_next_action(sink.durable, session_id=sink.session_id, run_id=sink.run_id)
         if action.request_ref != request_ref:
@@ -133,21 +152,20 @@ def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> Assist
             continue
         if action.kind != ACTION_SUBMIT_PROVIDER_REQUEST:
             raise RecoveryFailed(f"prepared request requires {action.kind}: {action.reason}")
-        payload, intent = load_prepared_request(sink, request_ref)
-        admission = payload["admission"]
-        invocation = decode_provider_invocation(payload)
+        prepared = load_prepared_request(sink, request_ref)
+        intent, invocation = prepared.intent, prepared.request
         admitted = sink.mutations.admit_provider_request(sink.session_id, sink.run_id,
             intent,
-            expected_counters=RuntimeExecutionCounters.from_payload(admission["expected_counters"]),
-            counters=RuntimeExecutionCounters.from_payload(admission["counters"]))
+            expected_counters=prepared.expected_counters,
+            counters=prepared.counters)
         if not admitted.newly_admitted:
             # A lost admission acknowledgement conveys no execution right.
             # Loading that original pending effect must never resend it.
             raise RecoveryFailed("provider intent was already admitted; its external outcome requires reconciliation")
-        return _execute_provider(sink, provider, admitted.intent, invocation)
+        return _execute_provider(sink, transport, admitted.intent, invocation)
 
 
-def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
+def _execute_provider(sink: KernelEffectSink, provider: ProviderTransport, intent: RuntimeEffectIntent,
                       invocation: ProviderRequest) -> AssistantTurn | str:
     try:
         gate_prompt = optional_callable(provider, "set_attempt_gate_prompt")
@@ -158,7 +176,7 @@ def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
         if callable(result_refs):
             result_refs(tuple(effect.effect_id for effect in sink.durable.effects(sink.run_id)
                               if effect.category == "tool_call" and effect.settlement is not None))
-        reply = execute_compat_request(provider, invocation)
+        reply = provider.execute_request(invocation)
         from codey.operations.provider_session import normalize_provider_reply
         reply = normalize_provider_reply(provider, reply)
     except Exception as exc:
@@ -177,7 +195,7 @@ def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
     return reply
 
 
-def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
+def drive_kernel(session: TaskSession, request: KernelRunRequest) -> KernelResult:
     """Run normal work and restart work through one operation decision loop."""
     from codey.operations.kernel_actions import _provider_failure
     from codey.operations.kernel_context import KernelContext

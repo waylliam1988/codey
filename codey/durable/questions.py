@@ -66,7 +66,7 @@ class DurableUserQuestionStore:
         identity: str,
         session_id: str,
         run_id: str,
-        question: dict[str, Any],
+        question: object,
         continuation: dict[str, Any],
     ) -> dict[str, Any]:
         content = question_args(question)

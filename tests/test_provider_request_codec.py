@@ -102,17 +102,14 @@ def test_native_reply_codec_rejects_invalid_nested_or_structural_fields(field, v
 
 
 def test_malformed_frozen_request_never_acquires_send_rights(tmp_path):
-    from codey.operations.kernel_driver import drive_provider_request
     from codey.operations.provider_request import prepare_provider_request
-    from codey.runtime.effects.effect_records import RuntimeEffectError
     from tests.durable.test_provider_response_receipts import runtime
 
     durable, _, _, sink = runtime(tmp_path)
     provider = Mock(send=Mock(return_value="must not send"))
     try:
-        reference = prepare_provider_request(sink, "send", (123,), {}, counters=None)
-        with pytest.raises(RuntimeEffectError, match="prompt"):
-            drive_provider_request(sink, provider, reference)
+        with pytest.raises(ValueError, match="prompt"):
+            prepare_provider_request(sink, SendTextRequest(123), counters=None)
         provider.send.assert_not_called()
         assert not durable.effects("r")
     finally:

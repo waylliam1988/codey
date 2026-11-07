@@ -2,13 +2,22 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, NotRequired, Protocol, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, NotRequired, Protocol, TypedDict
 
 from codey.operations.generation_boundary import GenerationBoundaryRequest, GenerationBoundaryResult
+from codey.providers.attempt_gate import AttemptGateCallback
+from codey.providers.transport import ProviderTransport
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.questions import QuestionPayload
+from codey.types.json_value import (
+    JsonObject,
+    decode_json_object,
+    require_json_boolean,
+    require_json_integer,
+    require_json_string,
+)
 from codey.workspace.context_admission import GhostContextSource
 
 if TYPE_CHECKING:
@@ -18,6 +27,8 @@ if TYPE_CHECKING:
     from codey.completion.contract import CompletionProof
     from codey.operations.completion_context import CompletionContextInput
     from codey.operations.task_effects import KernelEffectSink
+    from codey.research.finding_report import ResearchReport
+    from codey.research.tools import ResearchTools
     from codey.runs.trace import RunTraceRecorder
     from codey.runtime.core.protocol_window import ProtocolWindowRef
     from codey.runtime.observe.events import RunEvent
@@ -38,9 +49,9 @@ class KernelResultPayload(TypedDict):
     summary: str
     turns: int
     stop_reason: str
-    proof: dict[str, object] | None
+    proof: JsonObject | None
     delivery: DeliveryStatus
-    research_report: dict[str, object] | None
+    research_report: JsonObject | None
 
 
 @dataclass(frozen=True)
@@ -51,12 +62,14 @@ class KernelResult:
     stop_reason: str
     proof: CompletionProof | None = None
     delivery: DeliveryStatus = "not_required"
-    research_report: dict[str, Any] | None = None
+    research_report: ResearchReport | None = None
 
     def to_payload(self) -> KernelResultPayload:
-        from codey.providers.response_record import json_value
+        return {"schema_version": 2, "completed": self.completed, "summary": self.summary,
+                "turns": self.turns, "stop_reason": self.stop_reason, "delivery": self.delivery,
+                "proof": decode_json_object(self.proof.to_payload()) if self.proof is not None else None,
+                "research_report": decode_json_object(self.research_report.to_payload()) if self.research_report is not None else None}
 
-        return cast(KernelResultPayload, {"schema_version": 2, **cast(dict[str, Any], json_value(self))})
 
 def result_from_payload(payload: object) -> KernelResult:
     from codey.completion.contract import _proof_from_payload
@@ -71,24 +84,29 @@ def result_from_payload(payload: object) -> KernelResult:
         if type(payload["schema_version"]) is not int or payload["schema_version"] != 2:
             raise ValueError("unknown persisted kernel result version")
         payload = {key: value for key, value in payload.items() if key != "schema_version"}
-    if (set(payload) != current
-            or type(payload["completed"]) is not bool or not isinstance(payload["summary"], str)
-            or type(payload["turns"]) is not int or payload["turns"] < 0
-            or not isinstance(payload["stop_reason"], str)
-            or payload["delivery"] not in {"not_required", "success", "failed", "unknown"}):
+    payload = decode_json_object(payload)
+    if set(payload) != current:
         raise ValueError("invalid persisted kernel result")
-    proof = _proof_from_payload(payload["proof"]) if isinstance(payload["proof"], dict) else None
-    if payload["proof"] is not None and proof is None:
+    completed = require_json_boolean(payload["completed"], "completed")
+    summary = require_json_string(payload["summary"], "summary")
+    turns = require_json_integer(payload["turns"], "turns")
+    stop_reason = require_json_string(payload["stop_reason"], "stop_reason")
+    deliveries: dict[str, DeliveryStatus] = {"not_required": "not_required", "success": "success",
+                                           "failed": "failed", "unknown": "unknown"}
+    delivery = deliveries.get(require_json_string(payload["delivery"], "delivery"))
+    if turns < 0 or delivery is None:
+        raise ValueError("invalid persisted kernel result")
+    raw_proof = payload["proof"]
+    proof = _proof_from_payload(dict[str, object](decode_json_object(raw_proof))) if raw_proof is not None else None
+    if raw_proof is not None and proof is None:
         raise ValueError("invalid persisted completion proof")
-    report = payload["research_report"]
-    if report is not None:
-        from codey.research.finding_report import FindingReport
+    from codey.research.finding_report import FindingReport
 
-        compiled = FindingReport.from_payload(report)
-        if not payload["completed"] or compiled.text != payload["summary"]:
-            raise ValueError("accepted research report differs from kernel delivery")
-    return KernelResult(payload["completed"], payload["summary"], payload["turns"], payload["stop_reason"],
-                        proof=proof, delivery=payload["delivery"], research_report=report)
+    report = payload["research_report"]
+    compiled = FindingReport.from_payload(report) if report is not None else None
+    if compiled is not None and (not completed or compiled.text != summary):
+        raise ValueError("accepted research report differs from kernel delivery")
+    return KernelResult(completed, summary, turns, stop_reason, proof=proof, delivery=delivery, research_report=compiled)
 
 
 class RetryDecision(TypedDict):
@@ -127,7 +145,7 @@ KernelDecision = RetryDecision | DoneDecision | QuestionDecision | ClosingDecisi
 class KernelTransportDeps:
     """Provider and turn transport state owned by the kernel boundary."""
 
-    provider: Any
+    provider: ProviderTransport
     run_id: str = ""
     effect_scope: str = ""
     provider_id: str = ""
@@ -138,11 +156,17 @@ class KernelTransportDeps:
     context_scope: str = "request"
     ghost_sources: tuple[GhostContextSource, ...] = ()
     admit_hints: bool = True
-    attempt_gate: Callable[[Any, dict[str, Any]], None] | None = None
+    attempt_gate: AttemptGateCallback | None = None
     attempt_admit_hints: Callable[[], bool] | None = None
     stop_flag: StopSignal | None = None
     stagnant_turns: int | None = None
     window_ref: ProtocolWindowRef | None = None
+
+    def __post_init__(self) -> None:
+        from codey.operations.provider_session import adapt_provider
+
+        object.__setattr__(self, "provider", adapt_provider(self.provider))
+
 
 @dataclass(frozen=True)
 class KernelExecutionDeps:
@@ -155,7 +179,7 @@ class KernelExecutionDeps:
     intent_sink: KernelEffectSink | None = None
     project_path: Path | None = None
     tool_fns: AgentToolFns | None = None
-    research_tools: Any = None
+    research_tools: ResearchTools | None = None
     change_tracker: ChangeTracker | None = None
     permission_profile: str = "coding_writer"
     workspace_ignored_paths: tuple[str, ...] = ()
@@ -166,7 +190,7 @@ class KernelExecutionDeps:
 class KernelObservationDeps:
     """Completion, recovery, and event sinks for one kernel run."""
 
-    intent_sink: Any = None
+    intent_sink: KernelEffectSink | None = None
     completion_context: CompletionContextInput | None = None
     on_event: Callable[[RunEvent], None] | None = None
     on_shell_request: Callable[[ShellApprovalRequest], None] | None = None
@@ -188,4 +212,9 @@ class KernelRunRequest:
     observation: KernelObservationDeps = KernelObservationDeps()
     task_guidance: str = ""
 
-
+    def __post_init__(self) -> None:
+        # Legacy construction is normalized once. Execution owns the sink;
+        # the observation record held by a run never retains a second owner.
+        if self.observation.intent_sink is not None:
+            object.__setattr__(self, "execution", replace(self.execution, intent_sink=self.observation.intent_sink))
+            object.__setattr__(self, "observation", replace(self.observation, intent_sink=None))

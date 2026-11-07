@@ -14,7 +14,6 @@ from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.errors import CommitConflict
 from codey.operations.kernel_driver import drive_provider_request, load_prepared_request
 from codey.operations.kernel_errors import RecoveryFailed
-from codey.operations.provider_request import prepare_provider_request
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
@@ -33,6 +32,7 @@ from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from tests.durable.test_provider_response_receipts import runtime
 from tests.support.provider_actions import ProviderActions
+from tests.support.provider_actions import prepare_legacy_request as prepare_provider_request
 
 
 @pytest.mark.parametrize("boundary", ["initial_frozen", "followup_frozen", "previous_settled", "intent_admitted", "response_saved"])
@@ -95,8 +95,9 @@ raise AssertionError('fault point did not exit')
         if boundary != "response_saved":
             assert action.kind == (ACTION_COMMIT_GENERATION_BOUNDARY if boundary == "followup_frozen"
                                    else ACTION_SUBMIT_PROVIDER_REQUEST)
-            payload, intent = load_prepared_request(sink, action.request_ref)
-            assert payload["args"] == ["frozen original request"]
+            prepared = load_prepared_request(sink, action.request_ref)
+            intent = prepared.intent
+            assert prepared.request.prompt == "frozen original request"
             assert durable.artifact(action.request_ref).owner_effect_id is None
             assert not any(effect.effect_id == intent.effect_id for effect in durable.effects("r"))
         else:

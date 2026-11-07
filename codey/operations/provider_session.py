@@ -224,3 +224,7 @@ class ObservedProvider(ProviderAdapter):
     def execute_request(self, request: ProviderRequest) -> object:
         self.before_send(request)
         return super().execute_request(request)
+
+
+def adapt_provider(provider: object) -> ProviderTransport:
+    return provider if isinstance(provider, ProviderTransport) else ProviderAdapter(provider)

@@ -374,9 +374,7 @@ def run_research_iteration(
     synthesis_id = ""
     compiled = None
     if outcome.completed:
-        from codey.research.finding_report import FindingReport
-
-        compiled = FindingReport.from_payload(outcome.research_report) if policy.strict_research else None
+        compiled = outcome.research_report if policy.strict_research else None
         if compiled is not None and compiled.text != outcome.summary:
             raise ValueError("settled report does not match accepted delivery")
         # Deterministic projection of the settled driver output; the stored

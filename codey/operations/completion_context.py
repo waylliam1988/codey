@@ -8,12 +8,13 @@ record and no longer needs to guess whether a value is a dict or an object.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codey.knowledge.store import KnowledgeStore
     from codey.research.ledger import ResearchLedger
+    from codey.research.staging import StagedKnowledgeStore
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
 
 
@@ -27,7 +28,7 @@ class CompletionContext:
     analysis_run_payloads: tuple[object, ...] = ()
     research_ledger: ResearchLedger | None = None
     research_execution_ledger: ResearchLedger | None = None
-    knowledge_store: KnowledgeStore | None = None
+    knowledge_store: KnowledgeStore | StagedKnowledgeStore | None = None
     knowledge_project: str = ""
     knowledge_session_id: str = ""
     research_prerequisites: object | None = None
@@ -45,7 +46,7 @@ class CompletionContext:
             return cls(workspace_ignored_paths=ignored_paths)
         if isinstance(value, cls):
             if ignored_paths and value.workspace_ignored_paths != ignored_paths:
-                return cls(**{**value.__dict__, "workspace_ignored_paths": ignored_paths})
+                return replace(value, workspace_ignored_paths=ignored_paths)
             return value
         if not isinstance(value, Mapping):
             value = {

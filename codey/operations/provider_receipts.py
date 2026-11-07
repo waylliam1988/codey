@@ -9,13 +9,27 @@ import hashlib
 from dataclasses import fields
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING
 
 from codey.durable.model import ArtifactRecord, thaw_json
+from codey.durable.session import DurableSession
 from codey.providers.response_record import json_value
-from codey.runtime.effects.effect_records import RuntimeEffectError
+from codey.runtime.effects.effect_records import RuntimeEffectError, RuntimeEffectProjection
 from codey.storage.managed_outputs import ManagedOutputStore
+from codey.types.json_value import (
+    JsonObject,
+    decode_json_object,
+    require_json_boolean,
+    require_json_integer,
+    require_json_string,
+    require_json_strings,
+)
 from codey.workspace.context_admission import GhostContextSource
+
+if TYPE_CHECKING:
+    from codey.operations.kernel_contracts import ToolExecutor
+    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.toolchain.tool_spec import ToolSpec
 
 REQUEST_KIND = "provider_request"
 RESPONSE_KIND = "provider_response"
@@ -50,13 +64,13 @@ def write_provider_artifact(store: ManagedOutputStore, *, session_id: str, run_i
 
 
 def read_provider_artifact(store: ManagedOutputStore, record: ArtifactRecord, *, kind: str,
-                           session_id: str, run_id: str, effect_id: str) -> Any:
+                           session_id: str, run_id: str, effect_id: str) -> JsonObject:
     if record.owner_task_id != run_id or record.metadata.get("kind") != kind:
         raise RuntimeEffectError("provider artifact ownership mismatch")
     raw_ref = thaw_json(record.metadata.get("ref"))
     if not isinstance(raw_ref, dict) or raw_ref.get("session_id") != session_id or raw_ref.get("run_id") != run_id:
         raise RuntimeEffectError("provider artifact scope mismatch")
-    ref = cast(dict[str, object], raw_ref)
+    ref: dict[str, object] = dict(raw_ref)
     if ref.get("handle") != record.handle or ref.get("sha256") != record.sha256:
         raise RuntimeEffectError("provider artifact digest reference mismatch")
     payload = store.read_json_artifact(ref)
@@ -68,25 +82,27 @@ def read_provider_artifact(store: ManagedOutputStore, record: ArtifactRecord, *,
     expected_owner = None if kind == REQUEST_KIND and payload["schema_version"] == 2 else effect_id
     if record.owner_effect_id != expected_owner:
         raise RuntimeEffectError("provider artifact ownership mismatch")
-    return payload["payload"]
+    return decode_json_object(payload["payload"])
 
 
-def request_artifact_for_effect(durable: Any, effect: Any) -> ArtifactRecord:
+def request_artifact_for_effect(durable: DurableSession, effect: RuntimeEffectProjection) -> ArtifactRecord:
     """Resolve the explicit reference, or decode the version-1 ownership format."""
     if effect.intent.request_ref:
-        return cast(ArtifactRecord, durable.artifact(effect.intent.request_ref))
+        return durable.artifact(effect.intent.request_ref)
     if effect.intent.schema_version != 1:
         raise RuntimeEffectError("provider intent has no frozen request reference")
     requests = [artifact for artifact in durable.artifacts_for_effect(effect.intent.effect_id)
                 if artifact.metadata.get("kind") == REQUEST_KIND]
     if len(requests) != 1:
         raise RuntimeEffectError("legacy provider intent has no unique frozen request")
-    return cast(ArtifactRecord, requests[0])
+    return requests[0]
 
 
-def snapshot_description(snapshot: Any) -> dict[str, object]:
+def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
     """Persist the captured contract, never Python callables or a live registry."""
-    return {"schema_version": 3, "implementation_id": runtime_implementation_id(), "allowed": json_value(snapshot.allowed),
+    if snapshot.policy is None:
+        raise ValueError("captured turn has no authorization policy")
+    return decode_json_object(json_value({"schema_version": 3, "implementation_id": runtime_implementation_id(), "allowed": json_value(snapshot.allowed),
             "contract_text": snapshot.contract_text, "tool_names": list(snapshot.tool_names),
             "nested_tool_names": list(snapshot.nested_tool_names),
             "research_scope": snapshot.research_scope.to_payload() if snapshot.research_scope is not None else None,
@@ -94,7 +110,7 @@ def snapshot_description(snapshot: Any) -> dict[str, object]:
             "executors": [{"name": name, "binding": None if fn is None else {
                 "module": getattr(fn, "__module__", ""), "name": getattr(fn, "__qualname__", ""),
                 "version": getattr(fn, "__codey_tool_version__", None),
-            }} for name, fn in snapshot.custom_executors]}
+            }} for name, fn in snapshot.custom_executors]}))
 
 
 @lru_cache(maxsize=1)
@@ -113,39 +129,57 @@ def runtime_implementation_id() -> str:
     return digest.hexdigest()
 
 
-def restore_snapshot(payload: object) -> Any:
+def _restore_spec(value: object) -> ToolSpec:
+    from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
+
+    row = decode_json_object(value)
+    if set(row) != {field.name for field in fields(ToolSpec)}:
+        raise ValueError("invalid captured tool specification")
+    parameters = row["parameters"]
+    if not isinstance(parameters, list):
+        raise ValueError("invalid captured tool parameters")
+    pairs: list[tuple[str, object]] = []
+    for pair in parameters:
+        if not isinstance(pair, list) or len(pair) != 2:
+            raise ValueError("invalid captured tool parameter pair")
+        pairs.append((require_json_string(pair[0], "parameter name"), pair[1]))
+    return freeze_spec_parameters(ToolSpec(
+        name=require_json_string(row["name"], "tool name"),
+        aliases=tuple(require_json_strings(row["aliases"], "aliases")),
+        grant=require_json_string(row["grant"], "grant"), parameters=tuple(pairs),
+        required=tuple(require_json_strings(row["required"], "required")),
+        json_examples=tuple(require_json_strings(row["json_examples"], "json_examples")),
+        description=require_json_string(row["description"], "description"),
+        executor=require_json_string(row["executor"], "executor"),
+        replay_class=require_json_string(row["replay_class"], "replay_class"),
+        parallel_safe=require_json_boolean(row["parallel_safe"], "parallel_safe"),
+        output_schema=decode_json_object(row["output_schema"]),
+        declarations=require_json_string(row["declarations"], "declarations")))
+
+
+def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.policies.task_policy import TaskPolicy
-    from codey.toolchain.tool_spec import ToolSpec, custom_executor_for, freeze_spec_parameters
+    from codey.toolchain.tool_spec import custom_executor_for
 
+    payload = decode_json_object(payload)
     expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors"}
-    if not isinstance(payload, dict) or type(payload.get("schema_version")) is not int or payload["schema_version"] not in (1, 2, 3):
+    version = require_json_integer(payload.get("schema_version"), "snapshot version")
+    if version not in (1, 2, 3):
         raise ValueError("invalid captured turn snapshot version/shape")
-    extra = {"nested_tool_names", "research_scope"} if payload["schema_version"] == 3 else {"nested_tool_names"} if payload["schema_version"] == 2 else set()
+    extra = {"nested_tool_names", "research_scope"} if version == 3 else {"nested_tool_names"} if version == 2 else set()
     if set(payload) != expected | extra:
         raise ValueError("invalid captured turn snapshot version/shape")
-    names = payload["tool_names"]
-    nested = payload.get("nested_tool_names", [])
-    allowed = payload["allowed"]
-    if (not isinstance(names, list) or any(not isinstance(name, str) or not name for name in names)
-            or len(set(names)) != len(names) or not isinstance(payload["contract_text"], str)
-            or (allowed is not None and (not isinstance(allowed, list) or any(not isinstance(n, str) for n in allowed)))
-            or not isinstance(payload["specs"], list) or not isinstance(payload["executors"], list)
-            or not isinstance(nested, list) or any(not isinstance(n, str) or not n for n in nested)
-            or len(set(nested)) != len(nested)):
+    names = require_json_strings(payload["tool_names"], "tool_names")
+    nested = require_json_strings(payload.get("nested_tool_names", []), "nested_tool_names")
+    allowed = None if payload["allowed"] is None else require_json_strings(payload["allowed"], "allowed")
+    contract = require_json_string(payload["contract_text"], "contract_text")
+    if any(not name for name in (*names, *nested)) or len(set(names)) != len(names) or len(set(nested)) != len(nested):
         raise ValueError("invalid captured turn contract")
-    specs = []
-    spec_fields = {field.name for field in fields(ToolSpec)}
-    for raw in payload["specs"]:
-        if not isinstance(raw, dict) or set(raw) != spec_fields:
-            raise ValueError("invalid captured tool specification")
-        row = dict(raw)
-        for key in ("aliases", "required", "json_examples"):
-            if not isinstance(row[key], list) or any(not isinstance(value, str) for value in row[key]):
-                raise ValueError("invalid captured tool sequence")
-            row[key] = tuple(row[key])
-        row["parameters"] = tuple(tuple(pair) for pair in row["parameters"])
-        specs.append(freeze_spec_parameters(ToolSpec(**row)))
+    raw_specs, raw_executors = payload["specs"], payload["executors"]
+    if not isinstance(raw_specs, list) or not isinstance(raw_executors, list):
+        raise ValueError("invalid captured turn definitions")
+    specs = [_restore_spec(raw) for raw in raw_specs]
     inventory = list(dict.fromkeys([*names, *nested]))
     if [spec.name for spec in specs] != inventory:
         raise ValueError("captured definitions do not match tool names")
@@ -157,11 +191,13 @@ def restore_snapshot(payload: object) -> Any:
         if "codemode" not in names or not set(nested) <= {entry.name for entry in catalog.entries}:
             raise ValueError("captured nested capabilities exceed the frozen CodeMode inventory")
     compatible = payload["implementation_id"] == runtime_implementation_id()
-    bindings = []
-    for row in payload["executors"]:
-        if not isinstance(row, dict) or set(row) != {"name", "binding"} or row["name"] not in inventory:
+    bindings: list[tuple[str, ToolExecutor | None]] = []
+    for raw in raw_executors:
+        row = decode_json_object(raw)
+        name = require_json_string(row.get("name"), "executor name")
+        if set(row) != {"name", "binding"} or name not in inventory:
             raise ValueError("invalid captured executor descriptor")
-        name, binding = row["name"], row["binding"]
+        binding = row["binding"]
         current = custom_executor_for(name)
         if binding is None:
             compatible = compatible and current is None
@@ -181,6 +217,6 @@ def restore_snapshot(payload: object) -> Any:
     if isinstance(raw_scope, dict) and "plan_digest" in raw_scope:
         raise ValueError("legacy local Research request is no longer supported; start a new Research task")
     scope = AnswerScope.from_payload(raw_scope) if raw_scope is not None else None
-    return TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=payload["contract_text"],
+    return TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=contract,
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested), research_scope=scope)

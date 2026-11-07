@@ -25,6 +25,7 @@ Locks:
 from __future__ import annotations
 
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -174,7 +175,7 @@ def _settle_edit_then_runs(project, state, logdir, session_id, run_id, run_audit
         from tests.support.provider_actions import ProviderActions
 
         sink.bind_request(snapshot, logical_turn=1)
-        sink._request_context["effect_scope"] = "task"
+        sink.request_context = replace(sink.request_context, effect_scope="task")
         reply = json.dumps({"tool": "read_file", "args": {"path": "a.py"}})
         ProviderActions(SimpleNamespace(send=lambda _: reply), sink).send("fix a.py")
         boundary = durable_generation_boundary_callback(durable=sink.durable,

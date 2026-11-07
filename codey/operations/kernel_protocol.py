@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
@@ -19,6 +19,7 @@ from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
 from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
+from codey.types.json_value import JsonValue, ToolArgs, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
 
@@ -82,7 +83,7 @@ class TurnSnapshot:
     tool_names: tuple[str, ...] = ()
     policy: TaskPolicy | None = None
     frozen_specs: tuple[ToolSpec, ...] = ()
-    custom_executors: tuple[tuple[str, ToolExecutor], ...] = ()
+    custom_executors: tuple[tuple[str, ToolExecutor | None], ...] = ()
     implementation_compatible: bool = True
     nested_tool_names: tuple[str, ...] = ()
     research_scope: AnswerScope | None = None
@@ -204,13 +205,13 @@ def _frozen_specs_for_names(names: tuple[str, ...]) -> tuple[ToolSpec, ...]:
     return tuple(frozen)
 
 
-def _frozen_custom_executors(names: tuple[str, ...]) -> tuple[tuple[str, ToolExecutor], ...]:
+def _frozen_custom_executors(names: tuple[str, ...]) -> tuple[tuple[str, ToolExecutor | None], ...]:
     """Freeze third-task executor bindings for this turn (same source)."""
     try:
         from codey.toolchain.tool_spec import custom_executor_for as _fn_for
     except Exception as exc:
         raise RuntimeError(f"tool snapshot executors unavailable: {exc}") from exc
-    bindings: list[tuple[str, ToolExecutor]] = []
+    bindings: list[tuple[str, ToolExecutor | None]] = []
     for name in names:
         try:
             fn = _fn_for(name)
@@ -218,7 +219,7 @@ def _frozen_custom_executors(names: tuple[str, ...]) -> tuple[tuple[str, ToolExe
             raise RuntimeError(f"tool snapshot executor freeze failed for {name}: {exc}") from exc
         if fn is not None and not callable(fn):
             raise RuntimeError(f"tool snapshot executor is not callable for {name}")
-        bindings.append((name, cast(ToolExecutor, fn)))
+        bindings.append((name, fn))
     return tuple(bindings)
 
 
@@ -231,7 +232,7 @@ def frozen_spec_map(snapshot: TurnSnapshot | None) -> dict[str, ToolSpec] | None
     return mapping
 
 
-def frozen_custom_executor_map(snapshot: TurnSnapshot | None) -> dict[str, ToolExecutor] | None:
+def frozen_custom_executor_map(snapshot: TurnSnapshot | None) -> dict[str, ToolExecutor | None] | None:
     if snapshot is None:
         return None
     mapping = dict(snapshot.custom_executors)
@@ -317,7 +318,7 @@ def _grant_for_tool(tool: str) -> str:
     if spec is None or not spec.grant:
         # Unknown tools are denied, never passed as control.
         return ""
-    return cast(str, spec.grant)
+    return spec.grant
 
 
 def _canonical_name(tool: str) -> str:
@@ -385,19 +386,20 @@ def _invalid_plan(message: str, *, tool: str = "", kind: str = "invalid_args") -
                     protocol_tool_name=(tool or ""))
 
 
-def _tool_and_args(obj: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+def _tool_and_args(obj: Mapping[str, JsonValue]) -> tuple[str, ToolArgs]:
     tool = str(obj.get("tool", "") or "").strip().lower()
     raw_args = obj.get("args", None)
+    args: ToolArgs
     if isinstance(raw_args, dict):
         args = dict(raw_args)
     elif raw_args is None:
         args = {k: v for k, v in obj.items() if k != "tool"}
     else:
-        args = dict[str, object]()
+        args = {}
     return tool, args
 
 
-def _validate_coding_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
+def _validate_coding_args(tool: str, args: ToolArgs) -> tuple[ToolArgs, str]:
     if (tool or "").strip().lower() == "edit" and isinstance(args, dict):
         # Top-level old/new fields are not part of the canonical edit shape.
         if "old_string" in args or "new_string" in args:
@@ -432,10 +434,10 @@ def _validate_coding_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, An
         return {}, str(exc)
     except Exception as exc:
         return {}, f"{tool} args invalid: {exc}"
-    return dict(repair.args), ""
+    return decode_json_object(repair.args), ""
 
 
-def _validate_research_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, Any], str]:
+def _validate_research_args(tool: str, args: ToolArgs) -> tuple[ToolArgs, str]:
     if tool in _CONTROLLER_ALIASES:
         id_key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}[tool]
         value = str(args.get(id_key, "") or "").strip()
@@ -465,7 +467,7 @@ def _validate_research_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, 
     # The contract validator fills optional defaults for older callers. The
     # shared kernel retains only arguments the model actually supplied, so
     # restricted subflows can still reject explicitly forbidden fields.
-    return {key: value for key, value in result.args.items() if key in args}, ""
+    return decode_json_object({key: value for key, value in result.args.items() if key in args}), ""
 
 
 def _lookup_spec(name: str, frozen_specs: Mapping[str, ToolSpec] | None) -> tuple[ToolSpec | None, str]:
@@ -483,11 +485,11 @@ def _lookup_spec(name: str, frozen_specs: Mapping[str, ToolSpec] | None) -> tupl
 
 def _spec_error_for(
     name: str,
-    args: dict[str, Any],
+    args: ToolArgs,
     spec: ToolSpec,
     frozen_specs: Mapping[str, ToolSpec] | None,
 ) -> str:
-    payload = args if isinstance(args, dict) else dict[str, object]()
+    payload = args
     try:
         if frozen_specs is not None:
             from codey.toolchain.tool_spec import validate_args_with_spec as _frozen_validate
@@ -502,8 +504,8 @@ def _spec_error_for(
 
 
 def _validate_tool_args(
-    tool: str, args: dict[str, Any], *, frozen_specs: Mapping[str, ToolSpec] | None = None,
-) -> tuple[dict[str, Any], str]:
+    tool: str, args: ToolArgs, *, frozen_specs: Mapping[str, ToolSpec] | None = None,
+) -> tuple[ToolArgs, str]:
     name = _canonical_name(tool) or (tool or "").strip().lower()
     # ToolSpec is the single authoritative definition: required-arg presence
     # is decided here so JSON/native schemas and validation cannot drift.
@@ -518,7 +520,7 @@ def _validate_tool_args(
     if name == "ask_user":
         from codey.task.questions import question_args
         try:
-            return dict(question_args(args)), ""
+            return decode_json_object(question_args(args)), ""
         except ValueError as exc:
             return {}, str(exc)
     if name == "done":
@@ -553,7 +555,7 @@ def _validate_tool_args(
     return {}, "unsupported tool executor"
 
 
-def _expand_text_batch(tool: str, args: dict[str, Any]) -> tuple[list[tuple[str, dict[str, Any], str]], str]:
+def _expand_text_batch(tool: str, args: ToolArgs) -> tuple[list[tuple[str, ToolArgs, str]], str]:
     """Lower bounded read-only wrappers; validate the whole batch before effects."""
     from codey.toolchain.definition import MAX_PARALLEL_CALLS, TOOL_DEFINITION_BY_NAME
 
@@ -583,7 +585,7 @@ def _expand_text_batch(tool: str, args: dict[str, Any]) -> tuple[list[tuple[str,
     return expanded, ""
 
 
-def _lower_text_batches(items: list[tuple[str, dict[str, Any], str]]) -> tuple[list[tuple[str, dict[str, Any], str]], str]:
+def _lower_text_batches(items: list[tuple[str, ToolArgs, str]]) -> tuple[list[tuple[str, ToolArgs, str]], str]:
     expanded = []
     for raw_tool, args, call_id in items:
         name = _canonical_name(raw_tool)
@@ -607,7 +609,7 @@ def _lower_text_batches(items: list[tuple[str, dict[str, Any], str]]) -> tuple[l
 
 
 def _plan_from_tool_objects(
-    items: list[tuple[str, dict[str, Any], str]],
+    items: list[tuple[str, ToolArgs, str]],
     *,
     policy: TaskPolicy | None,
     controller_allowed: set[str] | None,
@@ -666,7 +668,7 @@ def _plan_from_tool_objects(
 
 def _native_tool_objects(
     calls: Sequence[ProviderToolCall],
-) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+) -> list[tuple[str, ToolArgs, str]] | ToolPlan:
     """Unwrap native calls without losing or inventing provider call ids."""
     if len(calls) > MAX_NATIVE_CALLS_PER_TURN:
         return _invalid_plan(
@@ -690,9 +692,10 @@ def _native_tool_objects(
     items = []
     for item in calls:
         name = str(item.name or "").strip().lower()
-        args = item.arguments
         call_id = str(item.id or "")
-        if not isinstance(args, dict):
+        try:
+            args = decode_json_object(item.arguments)
+        except ValueError:
             return _invalid_plan(f"{name} args must be an object", tool=name)
         items.append((name, dict(args), call_id))
     return items
@@ -700,7 +703,7 @@ def _native_tool_objects(
 
 def _decoded_text_objects(
     decoded: TextRequests | TextAnswer | TextError,
-) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+) -> list[tuple[str, ToolArgs, str]] | ToolPlan:
     if isinstance(decoded, TextError):
         return _invalid_plan(decoded.message, tool=decoded.tool, kind=decoded.kind)
     if isinstance(decoded, TextAnswer):
@@ -708,7 +711,7 @@ def _decoded_text_objects(
     return [(item.tool, dict(item.args), "") for item in decoded.items]
 
 
-def _response_objects(reply: DecodedTextTurn | AssistantTurn) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+def _response_objects(reply: object) -> list[tuple[str, ToolArgs, str]] | ToolPlan:
     if isinstance(reply, (TextRequests, TextAnswer, TextError)):
         return _decoded_text_objects(reply)
     if isinstance(reply, AssistantTurn):

@@ -20,7 +20,7 @@
 | 3 | TextResultSpan、execution、recovery | 完成 | 首轮85 passed；扩大134 passed；三工具/Ruff/gate 通过 |
 | 4 | 六种 provider 请求联合、回复、版本化 codec | 完成 | 扩大102 passed；补充80 passed；三工具/Ruff/gate通过 |
 | 5 | provider adapter、wrapper、capabilities | 完成 | 首轮122；扩大97及67 passed；三工具/Ruff/gate通过 |
-| 6 | contracts、builder、driver、context 主链 | 待开始 | |
+| 6 | contracts、builder、driver、context 主链 | 完成 | 24个生产文件三工具/Ruff通过；扩大133 passed；见第六批记录 |
 | 7 | completion 输入、verification observation、纯判定 | 待开始 | |
 | 8 | research 参数、报告、receipt、staging | 待开始 | |
 | 9 | 强化门禁、Go 差分实现与测试、最终审计 | 待开始 | |
@@ -31,7 +31,7 @@
 
 ## 接续工作位置
 
-第五批已完成。第六批贯穿 driver/context/contracts/builder 与 provider_request，消除通用调用描述、重复 sink 和核心 Any；随后 completion/research 领域输入与最终 Go 差分验证仍待实施。
+第六批已完成并验证，主十四模块显式 Any 为93，核心五模块及context/driver/provider_session均为0。下一步第七批：先修复CompletionContext.selected_check丢弃VerificationCandidate的问题，建立具名verification observation与session事实模型，统一completion输入并分离workspace采集与纯判定。第八、九批尚未开始。完整目标仍包括研究契约拥有者与真实Go差分验证。
 
 ## 第一批验证记录
 
@@ -88,3 +88,15 @@
 - Deadline 覆盖全部六协议，包含位置 timeout 不得与关键字重复；浮点 rounding 仍不扩大总预算。wrapper 自身 episode timeout 优先于底层 provider timeout。
 - 原十四模块显式 Any 180→148（provider_session 32→0）；没有新增开放动态模块接纳这些 Any。另修 research_iteration 的 project_path str→Path 起始类型问题。
 - 首轮协议/deadline/lifecycle/local codec/parity 回归122 passed；扩大 wrapper/admission/not-sent/static 回归97 passed；研究 topic/scoped projection/native receipt/capability/local codec 回归67 passed。十个修改生产模块三工具 target3.12通过，Ruff/gate通过。静态负例新增 observer 签名、非法 prompt 和不存在扩展方法的检查。
+
+
+## 第六批变更与验证
+
+- contracts、builder、context、driver接入有限ProviderRequest；新增ProviderRequestContext与PreparedProviderRequest，恢复路径接收具名请求、冻结snapshot/authority、intent和计数器，不再携带通用args/kwargs包。
+- KernelResult持有ResearchReport联合，payload逐字段编码并在恢复时验证交付文本一致性；attempt gate在兼容边界转换为只读AttemptGateView和已验证JsonObject。
+- sink只在execution拥有；旧observation入口构造时归一化并清除旧位置。保留既有重启替换sink语义。sink的durable为必需资源，managed output在实际需要时校验，保留合法的无managed store内联工具结算。
+- snapshot的ToolSpec逐字段解码，拒绝错误primitive/集合/参数结构；冻结context缺effect_scope拒绝、显式空scope仍允许；补测嵌套NaN/Infinity、非法delivery和文本协议非有限值拒绝。
+- 修改的24个生产文件mypy --python-version 3.12 --follow-imports=silent、Pyrefly和ty target3.12均通过；所有修改Python文件Ruff、precision gate、diff check通过。全树初始类型问题及completion/research领域债务仍待后续批次解决。
+- 大范围领域/provider/研究/重启验证初轮270 passed、2 failed：两处测试分别仍按dict访问CompletionContext、以及假ResearchTools遗漏协议要求的sources_read/search_result_urls；按真实契约修正测试。另扩大83 passed、1 failed为旧架构allowlist未包含新增共享provider契约/codec模块，已更新有限allowlist，继续禁止具体provider实现。
+- 修正后合并重跑入口、领域、协议、native、not-sent、normalization、settlement、恢复、receipt、parity及workspace provenance：133 passed。领域与架构边界单独22 passed；三工具静态负例在前述270通过范围内。
+- 原十四模块显式Any 148→93；不声称第七至九批完成，不以Python样例通过替代Go执行证据。

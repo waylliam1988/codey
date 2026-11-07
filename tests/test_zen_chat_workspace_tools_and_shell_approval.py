@@ -29,7 +29,7 @@ def test_strict_research_forwards_tool_requirement_through_zen_native_continuati
             transport=KernelTransportDeps(provider=provider, user_task=session.task_text),
             execution=KernelExecutionDeps(research_tools=tools)))
         assert result.completed and result.stop_reason == "done", result.summary
-        assert result.proof.satisfied and result.research_report["schema"] == "research_answer_v1"
+        assert result.proof.satisfied and result.research_report.to_payload()["schema"] == "research_answer_v1"
         assert "[e1]" in result.summary and tools.ledger.read_passages
         assert len(requests) == 2
         if protocol == "openai-responses":

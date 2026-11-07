@@ -9,7 +9,6 @@ from codey.durable.checkpoint import checkpoint_entries, operation_from_checkpoi
 from codey.operations import completion_gate
 from codey.operations.kernel_driver import load_prepared_request
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
-from codey.operations.provider_request import prepare_provider_request
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession
@@ -17,7 +16,7 @@ from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolResult
 from codey.providers.error_classification import RequestPrepError
 from codey.runtime.core.models import ToolResult
-from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationTransitionError
+from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.protocol_window import ProtocolWindowRef, ProviderBinding
 from codey.runtime.effects.effect_records import RuntimeEffectError
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
@@ -28,6 +27,7 @@ from codey.runtime.write.provider_effects import build_provider_begin_rows
 from tests.durable.test_operation_control_actions import request_for
 from tests.durable.test_provider_response_receipts import runtime
 from tests.support.kernel_restart import SimulatedExit
+from tests.support.provider_actions import prepare_legacy_request as prepare_provider_request
 
 RESTARTS = ["same_sink", "new_sink", "sqlite_reopen"]
 POLICY = TaskPolicy(frozenset({"control", "project.read"}))
@@ -352,7 +352,8 @@ def test_prepared_admission_requires_proof_for_the_same_original_batch(tmp_path,
         assert not run(durable, sink, Provider(), executors={"read_file": read}).completed
         ref = prepare_provider_request(sink, "send_tool_results", ([ProviderToolResult("original", "ORIGINAL_RESULT")], []),
                                        {}, counters=None)
-        payload, intent = load_prepared_request(sink, ref)
+        prepared = load_prepared_request(sink, ref)
+        intent = prepared.intent
         task, effects = durable.task_facts("r")
         entries = checkpoint_entries(task, effects, session_id="s")
         view = load_session_view(entries, session_id="s", run_id="r")
@@ -365,13 +366,12 @@ def test_prepared_admission_requires_proof_for_the_same_original_batch(tmp_path,
             "wrong_category": replace(failed, intent=replace(failed.intent, effect_category="tool_call", request_ref="")),
         }[invalid]
         invalid_view = replace(view, effects=tuple(altered if effect == failed else effect for effect in view.effects))
-        admission = payload["admission"]
         with pytest.raises((RuntimeEffectError, RuntimeOperationTransitionError),
                            match="prepared request|NOT_SENT|another delivery batch|provider send effect"):
             build_provider_begin_rows(reduce_session(entries), invalid_view, session_id="s", run_id="r", intent=intent,
                 delivery_batch_id=intent.delivery_batch_id, expected_request_ref=ref,
-                expected_counters=RuntimeExecutionCounters.from_payload(admission["expected_counters"]),
-                counters=RuntimeExecutionCounters.from_payload(admission["counters"]))
+                expected_counters=prepared.expected_counters,
+                counters=prepared.counters)
         assert durable.task_facts("r") == (task, effects)
     finally:
         durable.close()

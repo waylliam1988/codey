@@ -281,12 +281,12 @@ def test_shared_driver_reuses_prior_knowledge_and_can_save_a_candidate_link(tmp_
             observation=KernelObservationDeps(completion_context={"research_ledger": tools.ledger})))
         assert result.completed, result.summary
         assert tools.ledger.opened_sources and not tools.ledger.evidence_items
-        binding, = result.research_report["evidence_bindings"]
+        binding, = result.research_report.to_payload()["evidence_bindings"]
         assert binding["evidence_id"] == material.target
         assert binding["evidence_revision"] == material.revision
         if inference:
             assert "f2" not in result.summary
-            assert result.research_report["knowledge_batch"]["updates"][0]["kind"] == "inference"
+            assert result.research_report.to_payload()["knowledge_batch"]["updates"][0]["kind"] == "inference"
             assert hypothesis in result.summary
             assert "Only one writer can write at a time [e1]." in result.summary
     finally:

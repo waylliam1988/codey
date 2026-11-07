@@ -419,6 +419,6 @@ def test_simple_finding_and_generated_report_use_the_real_shared_driver(tmp_path
         assert result.completed, result.summary
         assert "## 引用来源" in result.summary and "[e1] Original study" in result.summary
         assert session.notes_saved == 0 and not tools.ledger.evidence_items
-        assert result.research_report["schema"] == "research_answer_v1"
+        assert result.research_report.to_payload()["schema"] == "research_answer_v1"
     finally:
         store.close()

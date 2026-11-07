@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
+from codey.durable.model import thaw_json
 from codey.operations import kernel_prompt
 from codey.operations.kernel_contracts import (
+    ClosingDecision,
     DoneDecision,
     KernelDecision,
     KernelResult,
+    QuestionDecision,
     RetryDecision,
     result_from_payload,
 )
@@ -17,60 +20,60 @@ from codey.runtime.core import operation_payload
 from codey.runtime.core.operation_payload import (
     RuntimeExecutionCounters,
     RuntimeOperationState,
-    RuntimeOperationTransitionError,
 )
+from codey.runtime.log.session_view import SessionView
+from codey.types.json_value import decode_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
     from codey.operations.kernel_context import KernelContext
     from codey.operations.task_session import TaskSession
 
 
-def validate_decision(payload: Any, *, schema_version: int = 2) -> KernelDecision:
-    """Validate committed control facts before selecting any external action."""
+def validate_decision(payload: object, *, schema_version: int = 2) -> KernelDecision:
+    """Decode committed facts to a finite decision without whole-object casts."""
     if type(schema_version) is not int or schema_version not in (1, 2):
         raise ValueError("unsupported control decision schema")
-    if not isinstance(payload, dict):
-        raise ValueError("invalid control decision")
-    purpose = payload.get("purpose")
+    row = decode_json_object(payload)
+    purpose = row.get("purpose")
     if purpose == "retry":
         required = {"purpose", "prompt", "error"} | ({"counters"} if schema_version == 1 else set())
-        if (set(payload) not in (required, required | {"error_source", "error_type"})
-                or not all(isinstance(payload[key], str) for key in ("prompt", "error"))):
+        if set(row) not in (required, required | {"error_source", "error_type"}):
             raise ValueError("invalid retry decision")
+        retry = RetryDecision(purpose="retry", prompt=require_json_string(row["prompt"], "prompt"),
+                              error=require_json_string(row["error"], "error"))
         if schema_version == 1:
-            try:
-                RuntimeExecutionCounters.from_payload(payload["counters"])
-            except RuntimeOperationTransitionError as exc:
-                raise ValueError(str(exc)) from exc
-        if "error_source" in payload and (not isinstance(payload["error_source"], str)
-                or not isinstance(payload["error_type"], str)):
-            raise ValueError("invalid completion diagnostic")
-    elif purpose == "done":
-        if (set(payload) != {"purpose", "result", "workspace_revision", "workspace_fingerprint"}
-                or type(payload["workspace_revision"]) is not int or payload["workspace_revision"] < 0
-                or not isinstance(payload["workspace_fingerprint"], str)):
+            retry["counters"] = RuntimeExecutionCounters.from_payload(row["counters"]).to_payload()
+        if "error_source" in row:
+            retry["error_source"] = require_json_string(row["error_source"], "error_source")
+            retry["error_type"] = require_json_string(row["error_type"], "error_type")
+        return retry
+    if purpose == "done":
+        if set(row) != {"purpose", "result", "workspace_revision", "workspace_fingerprint"}:
             raise ValueError("invalid completion decision")
-        result = result_from_payload(payload["result"])
-        if not result.completed or result.stop_reason != "done":
+        revision = require_json_integer(row["workspace_revision"], "workspace_revision")
+        result = result_from_payload(row["result"])
+        if revision < 0 or not result.completed or result.stop_reason != "done":
             raise ValueError("completion decision has no accepted result")
-    elif purpose == "question":
+        return DoneDecision(purpose="done", result=result.to_payload(), workspace_revision=revision,
+            workspace_fingerprint=require_json_string(row["workspace_fingerprint"], "workspace_fingerprint"))
+    if purpose == "question":
         from codey.task.questions import question_args
 
-        if (set(payload) != {"purpose", "question", "question_id", "result"}
-                or not isinstance(payload["question_id"], str) or not payload["question_id"]
-                or not isinstance(payload["question"], dict)
-                or question_args(payload["question"]) != payload["question"]):
+        if set(row) != {"purpose", "question", "question_id", "result"}:
             raise ValueError("invalid question decision")
-        result = result_from_payload(payload["result"])
+        question = question_args(row["question"])
+        identity = require_json_string(row["question_id"], "question_id")
+        if not identity or question != row["question"]:
+            raise ValueError("invalid question decision")
+        result = result_from_payload(row["result"])
         if result.completed or result.stop_reason != "question":
             raise ValueError("question decision has no waiting result")
-    elif purpose == "closing":
-        if set(payload) != {"purpose", "result"}:
+        return QuestionDecision(purpose="question", question=question, question_id=identity, result=result.to_payload())
+    if purpose == "closing":
+        if set(row) != {"purpose", "result"}:
             raise ValueError("invalid closing decision")
-        result_from_payload(payload["result"])
-    else:
-        raise ValueError("unknown control decision purpose")
-    return cast(KernelDecision, payload)
+        return ClosingDecision(purpose="closing", result=result_from_payload(row["result"]).to_payload())
+    raise ValueError("unknown control decision purpose")
 
 
 def evaluate_completion(context: KernelContext, state: RuntimeOperationState) -> None:
@@ -104,7 +107,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         error_type = type(exc).__name__
     if complete:
         result = KernelResult(True, final_text, context.session.turn, "done", proof=proof,
-                              research_report=compiled.to_payload() if compiled else None)
+                              research_report=compiled)
         context.advance(state, operation_payload.LEAF_CONTROL_READY, data=DoneDecision(
             purpose="done", result=result.to_payload(), workspace_revision=context.session.workspace_revision,
             workspace_fingerprint=context.session.workspace_fingerprint))
@@ -129,7 +132,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
             counters=counters)
 
 
-def _ids(reply: Any) -> list[str]:
+def _ids(reply: AssistantTurn | str) -> list[str]:
     return list(dict.fromkeys(call.id for call in reply.tool_calls if call.id)) if isinstance(reply, AssistantTurn) else []
 
 
@@ -212,7 +215,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         task = context.durable.task(context.sink.run_id)
         DurableUserQuestionStore(context.durable).request(decision["question_id"], context.sink.session_id,
             context.sink.run_id, decision["question"], {"request_ref": state.response_ref,
-                "input_request": dict(task.state.get("input_request", {}))})
+                "input_request": decode_json_object(thaw_json(task.state.get("input_request", {})))})
         # Notification is a projection of the saved question, so its failure
         # leaves the same stable question available after a restart.
         context.observation.on_event(RunEvent("user_question", turn=received.logical_turn,
@@ -238,8 +241,10 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         context.advance(state, operation_payload.LEAF_CLOSING)
 
 
-def close_protocol(context: Any, view: Any) -> None:
+def close_protocol(context: KernelContext, view: SessionView) -> None:
     state = view.state
+    if state is None:
+        raise ValueError("protocol close requires operation state")
     decision = context.decision(state)
     if decision["purpose"] == "retry":
         raise ValueError("protocol close requires a result decision")
@@ -265,7 +270,10 @@ def close_protocol(context: Any, view: Any) -> None:
             result = replace(result, completed=False, stop_reason="protocol", delivery="failed",
                 summary=result.summary + "; protocol close failed after four acknowledgements")
             context.close(state, result)
-            state = context.load_view().state
+            current = context.load_view().state
+            if current is None:
+                raise ValueError("protocol close removed operation state")
+            state = current
         else:
             context.freeze(state, received.snapshot, turn=received.logical_turn, messages=messages,
                 acknowledge=True, counters=replace(state.counters, closing_round=state.counters.closing_round + 1))

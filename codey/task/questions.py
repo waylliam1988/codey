@@ -1,7 +1,9 @@
 """The shared, bounded contract for an explicit user question."""
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import TypedDict
+
+from codey.types.json_value import decode_json_object, require_json_strings
 
 
 class QuestionPayload(TypedDict):
@@ -11,7 +13,8 @@ class QuestionPayload(TypedDict):
     allow_free_text: bool
 
 
-def question_args(value: dict[str, Any]) -> QuestionPayload:
+def question_args(value: object) -> QuestionPayload:
+    value = decode_json_object(value)
     question = value.get("question")
     options = value.get("options")
     if not isinstance(question, str) or not 0 < len(question.strip()) <= 2000:
@@ -28,4 +31,4 @@ def question_args(value: dict[str, Any]) -> QuestionPayload:
     free = value.get("allow_free_text", True)
     if type(free) is not bool:
         raise ValueError("allow_free_text must be a boolean")
-    return {"question": question, "options": list(options), "descriptions": descriptions, "allow_free_text": free}
+    return {"question": question, "options": require_json_strings(options, "options"), "descriptions": require_json_strings(descriptions, "descriptions"), "allow_free_text": free}

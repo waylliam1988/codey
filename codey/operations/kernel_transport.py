@@ -6,9 +6,11 @@ drain. Failures raise explicit errors; the task loop maps them to results.
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable, Sequence
 
+from codey.operations.task_session import TaskSession
 from codey.providers.base import ProviderToolResult
+from codey.runtime.core.models import ToolResult
 
 
 def provider_uses_native(provider: object, *, provider_id: object = "") -> bool:
@@ -25,16 +27,16 @@ def provider_uses_native(provider: object, *, provider_id: object = "") -> bool:
 
 
 def _native_tool_results(
-    results: Any,
-    session: Any,
+    results: Sequence[ToolResult],
+    session: TaskSession,
     *,
     boundary_prompt: str = "",
-    result_context: Any = None,
+    result_context: Callable[[ToolResult], str] | None = None,
 ) -> list[ProviderToolResult]:
     from codey.operations.kernel_prompt import _result_context
 
     rows = list(results or [])
-    ids = [str(getattr(getattr(r, "call", None), "call_id", "") or "") for r in rows]
+    ids = [row.call.call_id for row in rows]
     has_id = [bool(i) for i in ids]
     if rows and any(has_id) and not all(has_id):
         # Mixed batches would silently drop the valid call ids if we fell
@@ -46,7 +48,7 @@ def _native_tool_results(
         )
     messages: list[ProviderToolResult] = []
     for result in rows:
-        call_id = str(getattr(result.call, "call_id", "") or "")
+        call_id = result.call.call_id
         if not call_id:
             raise ValueError("native result has no original call id")
         content = result_context(result) if result_context else _result_context(result, session)

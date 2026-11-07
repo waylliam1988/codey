@@ -96,8 +96,8 @@ def probe(directory, *, base_url, model, seed):
             state = operation_from_checkpoint(durable.task("r"), "s")
             if (state.leaf == "provider_request_ready" and state.logical_turn == 2
                     and not any(row.get("request_ref") == state.request_ref for row in snapshots)):
-                request, _ = load_prepared_request(sink, state.request_ref)
-                admission = request["admission"]
+                request = load_prepared_request(sink, state.request_ref)
+                admission = {"expected_counters": request.expected_counters.to_payload(), "counters": request.counters.to_payload()}
                 assert admission["expected_counters"] == admission["counters"] == state.counters.to_payload()
                 snapshots.append({"leaf": state.leaf, "request_ref": state.request_ref, "admission": admission})
         durable.subscribe_commits(observe_freeze)

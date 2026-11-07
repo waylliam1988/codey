@@ -20,10 +20,12 @@ from codey.toolchain.runtime import ToolOutcome
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
+    from codey.research.tools import ResearchTools
     from codey.runs.trace import RunTraceRecorder
     from codey.runtime.core.window_action import WindowAction
     from codey.runtime.write.mutation_line import RuntimeMutationLine
     from codey.storage.managed_outputs import ManagedOutputStore
+    from codey.workspace.revision import WorkspaceRevisionStore
 
 DEFAULT_MAX_TURNS = 50
 DEFAULT_STAGNANT_TURNS = 4
@@ -95,11 +97,11 @@ class AgentRequest:
     effect_scope: str = ""
     runtime_mutations: RuntimeMutationLine | None = None
     durable: DurableSession | None = None
-    workspace_revision_store: object | None = None
+    workspace_revision_store: WorkspaceRevisionStore | None = None
     workspace_ignored_paths: tuple[str, ...] = ()
     managed_outputs: ManagedOutputStore | None = None
     requested_capabilities: tuple[str, ...] = ()
-    research_tools: object | None = None
+    research_tools: ResearchTools | None = None
     project_changes_required: bool = False
     strict_research: bool = False
     task_policy: object | None = None

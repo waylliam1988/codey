@@ -1,8 +1,8 @@
 """Prepare an unsent kernel turn once; received turns reuse their original input."""
 from dataclasses import dataclass
-from typing import Any
 
 from codey.operations import kernel_prompt, kernel_protocol
+from codey.operations.completion_context import CompletionContextInput
 from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import TaskSession
@@ -16,11 +16,13 @@ class PreparedKernelTurn:
 
 
 def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: str,
-                        task_guidance: str, native: bool, completion_context: Any = None,
+                        task_guidance: str, native: bool, completion_context: CompletionContextInput | None = None,
                         request_scoped_contract: bool = False) -> PreparedKernelTurn:
     snapshot = kernel_protocol.build_turn_snapshot(session, native=native)
     from codey.research.answer_contract import AnswerScope
 
+    if snapshot.policy is None:
+        raise ValueError("prepared turn has no authorization policy")
     whole = isinstance(snapshot.research_scope, AnswerScope)
     guidance = [task_guidance] if task_guidance else []
     if snapshot.policy.strict_research and snapshot.research_scope is None:

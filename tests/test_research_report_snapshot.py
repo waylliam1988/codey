@@ -8,8 +8,7 @@ import pytest
 
 from codey.knowledge.model import KnowledgeMutation
 from codey.operations.kernel_contracts import KernelResult, result_from_payload
-from codey.providers.response_record import json_value
-from codey.research.finding_report import FindingReport, compile_finding_report
+from codey.research.finding_report import compile_finding_report
 from codey.research.issues import ResearchIssue
 from tests.test_research_findings import URL, execute, report_args, setup
 
@@ -80,14 +79,14 @@ def test_receipt_binding_and_accepted_snapshot_never_resolve_latest_versions(tmp
             "source_ref": "s1", "passage_ref": next(iter(tools.ledger.read_passages))})
         label = json.loads(saved.model_text)["finding_ref"]
         compiled = compile_finding_report(report_args(label), tools.ledger, store)
-        payload = json_value(KernelResult(True, compiled.text, 3, "done", research_report=compiled.to_payload()))
+        payload = KernelResult(True, compiled.text, 3, "done", research_report=compiled).to_payload()
         binding = tools.ledger.references[label]
         old = store.repository.read(binding.object_id, binding.revision)
         store.commit_knowledge("changed", [KnowledgeMutation(replace(old.value, content="New wording"), old.revision)])
         assert compile_finding_report(report_args(label), tools.ledger, store).knowledge_refs == compiled.knowledge_refs
         # Decode uses only the saved compilation, including coverage and versions.
         restored = result_from_payload(payload)
-        assert FindingReport.from_payload(restored.research_report) == compiled
+        assert restored.research_report == compiled
         corrupt = copy.deepcopy(payload)
         corrupt["research_report"]["knowledge_refs"][0]["revision"] += 1
         with pytest.raises(ValueError, match="digest mismatch"):

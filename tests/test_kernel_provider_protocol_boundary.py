@@ -36,7 +36,16 @@ def test_kernel_accepts_standard_assistant_turn_tool_calls() -> None:
 
 def test_kernel_operations_do_not_import_concrete_provider_modules() -> None:
     operations = Path(__file__).resolve().parents[1] / "codey" / "operations"
-    allowed_capability_modules = {"codey.providers.text_tool_schema", "codey.providers.context_ledger", "codey.providers.native_tools", "codey.providers.base", "codey.providers.response_record", "codey.providers.error_classification"}
+    # Shared contracts/codecs and the finite compatibility boundary are kernel
+    # dependencies. Concrete transports and model templates remain forbidden.
+    allowed_capability_modules = {
+        "codey.providers.text_tool_schema", "codey.providers.context_ledger",
+        "codey.providers.native_tools", "codey.providers.base",
+        "codey.providers.response_record", "codey.providers.error_classification",
+        "codey.providers.requests", "codey.providers.request_codec",
+        "codey.providers.transport", "codey.providers.text_result_views",
+        "codey.providers.attempt_gate", "codey.providers.compat_transport",
+    }
     concrete_imports: list[str] = []
     for path in operations.glob("kernel*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
