@@ -11,6 +11,7 @@ import pytest
 from codey.operations.kernel_driver import decode_provider_invocation
 from codey.operations.project_completion_checks import _gap_for_latest_row
 from codey.providers.context_ledger import digest
+from codey.providers.request_codec import encode_provider_request
 from codey.providers.response_record import decode_reply, encode_reply, json_value
 from codey.providers.text_result_views import validate_text_results
 from codey.research.passages import passage_ref
@@ -24,8 +25,7 @@ VECTORS = json.loads((Path(__file__).parent / "fixtures" / "kernel_go_contract_v
 def test_frozen_provider_invocation_vector(case):
     invocation = decode_provider_invocation(case)
     assert invocation.method == case["method"]
-    assert json_value(invocation.args) == case["args"]
-    assert json_value(invocation.kwargs) == case["kwargs"]
+    assert encode_provider_request(invocation) == case
 
 
 @pytest.mark.parametrize("case", VECTORS["replies"], ids=lambda case: case["protocol"])

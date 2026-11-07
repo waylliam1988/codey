@@ -1,8 +1,6 @@
 """Lossless provider response encoding shared by receipts and history projections."""
 from __future__ import annotations
 
-from typing import cast
-
 from codey.durable.provider_response import validate_response
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.types.json_value import JsonValue, encode_transport_value
@@ -27,7 +25,7 @@ def encode_reply(reply: object) -> dict[str, object]:
 def decode_reply(payload: object) -> str | AssistantTurn:
     payload = validate_response(payload)
     if payload["protocol"] == "text":
-        return cast(str, payload["text"])
+        return payload["text"]
     calls = payload["tool_calls"]
     parsed = []
     for call in calls:

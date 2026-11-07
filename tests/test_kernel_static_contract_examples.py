@@ -46,6 +46,13 @@ from codey.providers.text_result_views import TextResultSpan
 TextResultSpan(start="0", end=2, digest="hash", result_ref="result", tool="read", ok=True)
 '''
 
+BAD_PROVIDER_REQUEST = '''
+from codey.providers.requests import SendTextRequest, SendToolResultsBoundRequest
+
+SendTextRequest(prompt=["not-text"])
+SendToolResultsBoundRequest(results=(), window_ref=None, tools=())
+'''
+
 
 @pytest.mark.parametrize(
     ("tool", "arguments"),
@@ -83,8 +90,8 @@ def test_type_checker_rejects_invalid_kernel_contract(tool: str, arguments: tupl
         ("ty", ("check",)),
     ],
 )
-@pytest.mark.parametrize("source_text", [BAD_PROVIDER_CALL, BAD_JSON_ARGUMENTS, BAD_TEXT_SPAN],
-                         ids=["provider-call", "json-args", "text-span"])
+@pytest.mark.parametrize("source_text", [BAD_PROVIDER_CALL, BAD_JSON_ARGUMENTS, BAD_TEXT_SPAN, BAD_PROVIDER_REQUEST],
+                         ids=["provider-call", "json-args", "text-span", "provider-request"])
 def test_type_checker_rejects_untyped_provider_call_shape(
     tool: str, arguments: tuple[str, ...], source_text: str,
 ) -> None:

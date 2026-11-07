@@ -7,32 +7,60 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Literal, TypeAlias, TypedDict
 
 from codey.durable.model import ArtifactRecord
+from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 
 
-def validate_response(payload: object) -> dict[str, Any]:
-    if not isinstance(payload, dict) or not isinstance(payload.get("text"), str):
-        raise ValueError("provider response payload is invalid")
+class ProviderCallPayload(TypedDict):
+    id: str
+    name: str
+    arguments: JsonObject
+
+
+class TextReplyPayload(TypedDict):
+    protocol: Literal["text"]
+    text: str
+
+
+class NativeReplyPayload(TypedDict):
+    protocol: Literal["native"]
+    text: str
+    reasoning: str
+    finish: str
+    raw: JsonObject
+    tool_calls: list[ProviderCallPayload]
+
+
+ProviderReplyPayload: TypeAlias = TextReplyPayload | NativeReplyPayload
+
+
+def validate_response(payload: object) -> ProviderReplyPayload:
+    payload = decode_json_object(payload)
+    text = require_json_string(payload.get("text"), "provider response text")
     if payload.get("protocol") == "text" and set(payload) == {"protocol", "text"}:
-        return payload
+        return {"protocol": "text", "text": text}
     if payload.get("protocol") != "native" or set(payload) != {
         "protocol", "text", "reasoning", "finish", "raw", "tool_calls",
     }:
         raise ValueError("provider response protocol is invalid")
     calls = payload["tool_calls"]
-    if (not isinstance(calls, list) or not isinstance(payload["raw"], dict)
-            or not isinstance(payload["reasoning"], str)):
+    if not isinstance(calls, list):
         raise ValueError("provider native response is invalid")
+    parsed: list[ProviderCallPayload] = []
     for call in calls:
-        if (not isinstance(call, dict) or set(call) != {"id", "name", "arguments"}
-                or not isinstance(call["id"], str) or not isinstance(call["name"], str)
-                or not isinstance(call["arguments"], dict)):
+        if not isinstance(call, dict) or set(call) != {"id", "name", "arguments"}:
             raise ValueError("provider response call is invalid")
-    if payload["finish"] not in {"complete", "output_limit", "protocol_error"}:
+        parsed.append({"id": require_json_string(call["id"], "call id"),
+                       "name": require_json_string(call["name"], "call name"),
+                       "arguments": decode_json_object(call["arguments"])})
+    finish = require_json_string(payload["finish"], "finish")
+    if finish not in {"complete", "output_limit", "protocol_error"}:
         raise ValueError("provider response finish is invalid")
-    return payload
+    return {"protocol": "native", "text": text,
+            "reasoning": require_json_string(payload["reasoning"], "reasoning"),
+            "finish": finish, "raw": decode_json_object(payload["raw"]), "tool_calls": parsed}
 
 
 def tool_call_message(payload: object) -> dict[str, object]:

@@ -8,17 +8,18 @@ same executors and durable mutation line.
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping
-from dataclasses import dataclass, replace
-from typing import Any, Literal, cast
+from dataclasses import replace
+from typing import Any
 
 from codey.durable.checkpoint import checkpoint_entries
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelDecision, KernelResult, KernelRunRequest, result_from_payload
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
-from codey.operations.provider_request import _METHODS
-from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult
+from codey.providers.base import AssistantTurn
+from codey.providers.compat_transport import execute_compat_request
+from codey.providers.request_codec import decode_provider_request
+from codey.providers.requests import ProviderRequest, SendTextRequest, SendTurnRequest
 from codey.runtime.core.operation_payload import (
     LEAF_CONTROL_READY,
     LEAF_TOOL_DELIVERY_PENDING,
@@ -45,80 +46,13 @@ from codey.runtime.effects.effect_records import (
 from codey.runtime.log.session_view import SessionView, load_session_view, not_sent_continuation_effect
 from codey.runtime.write.drive import peek_next_action
 
-ProviderMethod = Literal[
-    "send", "send_turn", "send_tool_results", "acknowledge_tool_results",
-    "send_tool_results_bound", "acknowledge_tool_results_bound",
-]
 
-
-@dataclass(frozen=True)
-class ProviderInvocation:
-    """Validated provider operation decoded from a durable request."""
-
-    method: ProviderMethod
-    args: tuple[object, ...]
-    kwargs: dict[str, object]
-
-    def __iter__(self) -> Iterator[object]:
-        # Keep the internal unpacking compatibility while exposing a named
-        # typed value to new callers.
-        yield self.method
-        yield list(self.args)
-        yield self.kwargs
-def _tools(value: object) -> list[ProviderToolDefinition]:
-    from codey.toolchain.tool_spec import _freeze_schema_value
-
-    if not isinstance(value, list):
-        raise RuntimeEffectError("frozen provider declarations are not a list")
-    tools = []
-    for row in value:
-        if (not isinstance(row, dict) or set(row) != {"name", "description", "parameters"}
-                or not isinstance(row["name"], str) or not isinstance(row["description"], str)
-                or not isinstance(row["parameters"], dict)):
-            raise RuntimeEffectError("frozen provider declaration is invalid")
-        tools.append(ProviderToolDefinition(row["name"], row["description"],
-            cast(Mapping[str, object], _freeze_schema_value(row["parameters"]))))
-    return tools
-
-
-def _results(value: object) -> list[ProviderToolResult]:
-    if not isinstance(value, list):
-        raise RuntimeEffectError("frozen provider results are not a list")
-    results = []
-    for row in value:
-        if (not isinstance(row, dict) or set(row) != {"call_id", "content", "user_content"}
-                or not isinstance(row["call_id"], str) or not isinstance(row["content"], str)
-                or (row["user_content"] is not None and not isinstance(row["user_content"], str))):
-            raise RuntimeEffectError("frozen provider result is invalid")
-        results.append(ProviderToolResult(row["call_id"], row["content"], row["user_content"]))
-    return results
-
-
-def decode_provider_invocation(payload: dict[str, Any]) -> ProviderInvocation:
-    """Rebuild transport types from the original request, never today's registry."""
-    method, raw_args, raw_kwargs = payload.get("method"), payload.get("args"), payload.get("kwargs")
-    if not isinstance(method, str) or method not in _METHODS or not isinstance(raw_args, list) or not isinstance(raw_kwargs, dict):
-        raise RuntimeEffectError("frozen provider invocation is invalid")
-    args: list[object] = list(raw_args)
-    kwargs: dict[str, object] = dict(raw_kwargs)
-    if method not in {"send", "send_turn"}:
-        if args:
-            args[0] = _results(args[0])
-        elif "results" in kwargs:
-            kwargs["results"] = _results(kwargs["results"])
-    if method.endswith("_bound"):
-        if len(args) > 1:
-            args[1] = ProtocolWindowRef.from_payload(args[1])
-        elif "window_ref" in kwargs:
-            kwargs["window_ref"] = ProtocolWindowRef.from_payload(kwargs["window_ref"])
-        if len(args) > 2 and args[2] is not None:
-            args[2] = _tools(args[2])
-    elif method != "send" and len(args) > 1 and args[1] is not None:
-        args[1] = _tools(args[1])
-    for key in ("tools", "declared_tools"):
-        if key in kwargs and kwargs[key] is not None:
-            kwargs[key] = _tools(kwargs[key])
-    return ProviderInvocation(cast(ProviderMethod, method), tuple(args), kwargs)
+def decode_provider_invocation(payload: object) -> ProviderRequest:
+    """Decode only the frozen request; registry state cannot redefine it."""
+    try:
+        return decode_provider_request(payload)
+    except ValueError as exc:
+        raise RuntimeEffectError(str(exc)) from exc
 
 
 def load_prepared_request(sink: Any, request_ref: str) -> tuple[dict[str, Any], RuntimeEffectIntent]:
@@ -214,18 +148,17 @@ def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> Assist
 
 
 def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
-                      invocation: ProviderInvocation) -> AssistantTurn | str:
-    method, args, kwargs = invocation.method, invocation.args, invocation.kwargs
+                      invocation: ProviderRequest) -> AssistantTurn | str:
     try:
         gate_prompt = getattr(provider, "set_attempt_gate_prompt", None)
         if callable(gate_prompt):
-            prompt = args[0] if method in {"send", "send_turn"} and args else ""
+            prompt = invocation.prompt if isinstance(invocation, (SendTextRequest, SendTurnRequest)) else ""
             gate_prompt(prompt if isinstance(prompt, str) else "")
         result_refs = getattr(provider, "set_result_refs", None)
         if callable(result_refs):
             result_refs(tuple(effect.effect_id for effect in sink.durable.effects(sink.run_id)
                               if effect.category == "tool_call" and effect.settlement is not None))
-        reply = getattr(provider, method)(*args, **kwargs)
+        reply = execute_compat_request(provider, invocation)
         from codey.operations.provider_session import normalize_provider_reply
         reply = normalize_provider_reply(provider, reply)
     except Exception as exc:

@@ -18,7 +18,7 @@
 | 1 | 行为样例、wire/摘要/坐标/恢复契约 | 完成 | 113 passed、30 subtests；Ruff 通过；类型基线见下 |
 | 2 | 共享 JSON、ToolCall/provider arguments、底层 codec | 完成 | 105 passed/4 subtests；静态负例及 codec 21 passed；三工具定向检查/Ruff 通过 |
 | 3 | TextResultSpan、execution、recovery | 完成 | 首轮85 passed；扩大134 passed；三工具/Ruff/gate 通过 |
-| 4 | 六种 provider 请求联合、回复、版本化 codec | 待开始 | |
+| 4 | 六种 provider 请求联合、回复、版本化 codec | 完成 | 扩大102 passed；补充80 passed；三工具/Ruff/gate通过 |
 | 5 | provider adapter、wrapper、capabilities | 待开始 | |
 | 6 | contracts、builder、driver、context 主链 | 待开始 | |
 | 7 | completion 输入、verification observation、纯判定 | 待开始 | |
@@ -31,7 +31,7 @@
 
 ## 接续工作位置
 
-第三批已完成。下一批建立六种 ProviderRequest 联合、明确 options、legacy invocation codec、回复验证；随后第五批将兼容探测集中 adapter 并替换 wrapper 动态透传，第六批贯穿 driver/context/contracts/builder。当前六种 provider 签名已审计，注意 acknowledgement 使用 declared_tools，send_tool_results_bound 另有 delivery_commit。
+第四批已完成。第五批处理 provider adapter、wrapper、capabilities，移除通用 __getattr__ 和 send 透传，收紧回复运行时校验；第六批贯穿 driver/context/contracts/builder。
 
 ## 第一批验证记录
 
@@ -67,3 +67,13 @@
 - 首轮 prompt/golden/epoch/receipt/workspace/durable/gate 回归85 passed。扩大 Unicode span/三工具负例/workspace 缺失与扫描失败/native receipt/research scoped projection/parity 回归134 passed。
 - 六个修改生产模块的 mypy --follow-imports=silent、Pyrefly、ty（3.12）通过，Ruff/precision gate/diff check 通过。
 - tests/test_text_result_views.py 改为消费新返回结构；这是内部 API 演进，既有文本和 receipt wire 格式保持不变。
+
+
+## 第四批变更与验证
+
+- ProviderRequest 为六种 dataclass 联合；不再把 method + 通用 args/kwargs 存为 driver 领域对象。ProviderRequestOptions 显式保留 omitted/null/false/zero/empty；计数限制非负 int64，timeout 限有限正数。
+- legacy-v1 codec 保留旧 wire，已存 artifact 不重写或重新计算摘要；支持真实 API 的位置/关键字参数，拒绝重复参数、未知 options、未知版本、非法 schema/results/window。
+- driver 在 durable admission 之前解码请求；新增冻结请求非法时不 admit、不发送的回归。六方法实际调用只在有限 compat_transport adapter 分派。完整 wrapper 契约留到第五批。
+- 持久化回复使用 TextReplyPayload/NativeReplyPayload，验证嵌套 arguments/raw、finish，不再返回未经验证的字典。
+- 扩大 codec/golden/static/durable response/snapshot/receipt/native/reply normalization/gate 回归102 passed；补充新增 codec/admission 与 prepared/not-sent 回归80 passed。六个修改生产文件 mypy --follow-imports=silent、Pyrefly、ty（3.12）通过；Ruff和精度门禁通过。
+- 原始十四模块 Any 181→180（driver 12→11）；下调基线。全树起始类型问题仍待最终清理。
