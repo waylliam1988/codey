@@ -1,31 +1,32 @@
-import type { HistoryTask } from './history_repository';
+import { ChatFork } from './chat_fork';
 import { mergeCommandResult } from './command_result';
 import { DocumentPane, type DocumentRef } from './document_pane';
-import { Workspace } from './workspace';
-import { RecordedPanels } from './recorded_panels';
 import { HistoryPanel } from './history_panel';
-import { ChatFork } from './chat_fork';
+import type { HistoryTask } from './history_repository';
+import { RecordedPanels } from './recorded_panels';
+import { Workspace } from './workspace';
 import './chat_fork.css';
 import { CommandPalette } from './command_palette';
 import { iconButton } from './icon_button';
 import './workspace.css';
-import { hydrateDocumentContent } from './document_content';
-import { streamMessage, finalStreamMessage } from './reply_stream';
-import { reportDesktopFailure, reportDesktopReady } from './desktop_ready';
-import { FrameCoalescer } from './frame_coalescer';
-import { terminalAnswerMessage } from './terminal_answer';
-import {
-  RunLifecycleProjection,
-  eventSequence,
-  lifecycleState,
-  lastRunState,
-  type LifecycleInput,
-} from './run_lifecycle';
-import type { QueuedInput } from './input_outbox';
-import { UserQuestions, type UserQuestion } from './user_questions';
-import { createApprovalController } from './shell_approvals';
 import { showCommandPermissions } from './command_permissions';
+import { reportDesktopFailure, reportDesktopReady } from './desktop_ready';
+import { hydrateDocumentContent } from './document_content';
+import { FrameCoalescer } from './frame_coalescer';
+import type { QueuedInput } from './input_outbox';
+import { finalStreamMessage, streamMessage } from './reply_stream';
+import {
+  eventSequence,
+  type LifecycleInput,
+  lastRunState,
+  lifecycleState,
+  RunLifecycleProjection,
+} from './run_lifecycle';
 import { runtime } from './runtime';
+import { createApprovalController } from './shell_approvals';
+import { createSidebar } from './sidebar';
+import { terminalAnswerMessage } from './terminal_answer';
+import { type UserQuestion, UserQuestions } from './user_questions';
 import './operator_auth';
 import './render';
 import './process';
@@ -49,7 +50,6 @@ import './conversation_nav';
 import './conversation_ui';
 import './domain/protocol';
 import './api/transport';
-import type { ChangesData, Message, Project, ResearchPayload, RestoreChangesResult, Session } from './types/domain';
 import {
   decodeChangeFilePreview,
   decodeChangesData,
@@ -58,7 +58,16 @@ import {
   decodeServerEvent,
   type ServerEvent,
 } from './domain/protocol';
-import type { RunState } from './types/domain';
+import type {
+  ChangesData,
+  Message,
+  Project,
+  ResearchPayload,
+  RestoreChangesResult,
+  RunState,
+  Session,
+} from './types/domain';
+
 interface PickFolderResult {
   ok?: boolean;
   path?: string;
@@ -515,190 +524,7 @@ function currentIntentForSession(sessionId: string): string {
   return sessionProjectPath(sessionId) ? 'hybrid' : 'research';
 }
 
-// ============================ sidebar rendering ============================
-const expandedProjectChats = new Set<string>();
-const PROJECT_CHAT_PREVIEW = 5;
-function renderSidebar() {
-  const list = $('session-list');
-  const previousArrows = new Map(
-    Array.from(list.querySelectorAll<HTMLElement>('[data-project-toggle]')).map((button) => [
-      button.dataset.projectToggle,
-      button.getAttribute('aria-expanded') === 'true',
-    ]),
-  );
-  list.innerHTML = '';
-  runtime.ConversationUI.updateSearch();
-
-  runtime.ConversationUI.appendGroupLabel(list, 'PROJECTS', projects.some(runtime.ConversationUI.matchesProject));
-
-  if (!projects.length && !runtime.ConversationUI.isSearching()) {
-    const empty = document.createElement('div');
-    empty.className = 'project-empty';
-    empty.textContent = 'No projects';
-    list.appendChild(empty);
-  }
-
-  for (const p of projects) {
-    if (!runtime.ConversationUI.matchesProject(p)) continue;
-    const node = document.createElement('div');
-    node.className = 'project-node';
-
-    const row = document.createElement('div');
-    row.className = 'project-row';
-    const activeS = activeSession();
-    if (activeS && activeS.projectId === p.id) row.classList.add('has-active');
-    row.title = p.path;
-
-    const toggle = document.createElement('button');
-    toggle.type = 'button';
-    toggle.className = 'project-toggle';
-    toggle.dataset.projectToggle = p.id;
-    const expanded = p.expanded || runtime.ConversationUI.isSearching();
-    toggle.setAttribute('aria-expanded', String(expanded));
-    toggle.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${p.name}`);
-    const chevron = document.createElement('span');
-    chevron.className = 'disclosure-chevron' + (expanded ? '' : ' is-collapsed');
-    chevron.setAttribute('aria-hidden', 'true');
-    toggle.append(chevron);
-    toggle.onclick = (e) => {
-      e.stopPropagation();
-      p.expanded = !p.expanded;
-      persistActive();
-      renderSidebar();
-      list
-        .querySelector<HTMLButtonElement>(`[data-project-toggle="${CSS.escape(p.id)}"]`)
-        ?.focus({ preventScroll: true });
-    };
-    row.appendChild(toggle);
-
-    if (p.id === editingProjectId) {
-      row.appendChild(
-        renameInputEl(p.name || '', (val: string | undefined) => commitProjectRename(p.id, val), cancelProjectRename),
-      );
-    } else {
-      const main = document.createElement('button');
-      main.type = 'button';
-      main.className = 'project-main';
-      main.textContent = p.name;
-      row.appendChild(main);
-
-      row.onclick = () => openProject(p.id);
-    }
-
-    const more = document.createElement('button');
-    more.type = 'button';
-    more.className = 'project-more';
-    more.setAttribute('aria-label', 'More');
-    more.textContent = '⋯';
-    more.onclick = (e) => {
-      e.stopPropagation();
-      openProjectMenu(e.currentTarget as HTMLElement, p.id);
-    };
-    row.appendChild(more);
-    const create = document.createElement('button');
-    create.className = 'project-new';
-    create.type = 'button';
-    create.setAttribute('aria-label', `New chat in ${p.name}`);
-    create.innerHTML = '<span class="new-chat-icon" aria-hidden="true"></span>';
-    create.onclick = (event) => {
-      event.stopPropagation();
-      p.expanded = true;
-      newSession(p.id);
-    };
-    row.appendChild(create);
-
-    node.appendChild(row);
-
-    if (p.expanded || runtime.ConversationUI.isSearching()) {
-      const children = document.createElement('div');
-      children.className = 'project-children';
-      const projectSessions = sessions.filter((s) => s.projectId === p.id && runtime.ConversationUI.matchesSession(s));
-      if (!projectSessions.length) {
-        const empty = document.createElement('div');
-        empty.className = 'project-empty';
-        empty.textContent = 'No chats';
-        children.appendChild(empty);
-      } else {
-        const searching = runtime.ConversationUI.isSearching();
-        const expanded = expandedProjectChats.has(p.id);
-        const preview = projectSessions.slice(0, PROJECT_CHAT_PREVIEW);
-        const active = projectSessions.find((session) => session.id === activeId);
-        if (active && !preview.includes(active)) preview[preview.length - 1] = active;
-        for (const session of searching || expanded ? projectSessions : preview)
-          children.appendChild(sessionNode(session));
-        if (!searching && projectSessions.length > PROJECT_CHAT_PREVIEW) {
-          const reveal = document.createElement('button');
-          reveal.type = 'button';
-          reveal.className = 'project-reveal';
-          reveal.textContent = expanded ? 'Show less' : 'Show more';
-          reveal.setAttribute('aria-expanded', String(expanded));
-          reveal.onclick = () => {
-            if (expanded) expandedProjectChats.delete(p.id);
-            else expandedProjectChats.add(p.id);
-            renderSidebar();
-            list.querySelector<HTMLButtonElement>(`[data-project-reveal="${CSS.escape(p.id)}"]`)?.focus();
-          };
-          reveal.dataset.projectReveal = p.id;
-          children.appendChild(reveal);
-        }
-      }
-      node.appendChild(children);
-    }
-    list.appendChild(node);
-    const previous = previousArrows.get(p.id);
-    if (previous !== undefined && previous !== expanded) {
-      chevron.classList.toggle('is-collapsed', !previous);
-      chevron.getBoundingClientRect();
-      chevron.classList.toggle('is-collapsed', !expanded);
-    }
-  }
-
-  const loose = sessions.filter((s) => !sessionProject(s) && runtime.ConversationUI.matchesSession(s));
-  runtime.ConversationUI.appendGroupLabel(list, 'CHATS', loose.length);
-  if (!loose.length && !runtime.ConversationUI.isSearching()) {
-    const empty = document.createElement('div');
-    empty.className = 'project-empty';
-    empty.style.marginLeft = '10px';
-    empty.textContent = 'No chats';
-    list.appendChild(empty);
-  }
-  for (const s of loose) list.appendChild(sessionNode(s));
-}
-
-function sessionNode(s: Session) {
-  const item = document.createElement('div');
-  item.className = 'session-item' + (s.id === activeId ? ' active' : '');
-  if (s.id === editingSessionId) {
-    item.appendChild(
-      renameInputEl(s.title || '', (val: string | undefined) => commitSessionRename(s.id, val), cancelSessionRename),
-    );
-    return item;
-  }
-  item.onclick = (e) => {
-    if (!eventElement(e)?.closest('button')) switchSession(s.id);
-  };
-  const title = document.createElement('button');
-  title.type = 'button';
-  title.className = 'session-title';
-  title.textContent = s.title || 'Untitled';
-  title.onclick = () => switchSession(s.id);
-  item.appendChild(title);
-  const more = document.createElement('button');
-  more.type = 'button';
-  more.className = 'session-more';
-  more.textContent = '⋯';
-  more.setAttribute('aria-label', 'More');
-  more.onclick = (e) => {
-    e.stopPropagation();
-    openSessionMenu(e.currentTarget as HTMLElement, s.id);
-  };
-  item.appendChild(more);
-  return item;
-}
-
 // ============================ inline rename & confirm ============================
-let editingSessionId = '';
-let editingProjectId = '';
 let armedDangerTimer: ReturnType<typeof setTimeout> | null = null;
 function renameInputEl(value: string, commit: RenameCommit, cancel: () => void) {
   const input = document.createElement('input');
@@ -727,15 +553,7 @@ function renameInputEl(value: string, commit: RenameCommit, cancel: () => void) 
   input.onblur = () => finish(commit, input.value);
   return input;
 }
-function focusRenameInput() {
-  const input = document.querySelector<HTMLInputElement>('.rename-input');
-  if (input) {
-    input.focus();
-    input.select();
-  }
-}
 function commitSessionRename(id: string, value: string | undefined) {
-  editingSessionId = '';
   const s = sessions.find((x) => x.id === id);
   if (!s) {
     renderSidebar();
@@ -750,12 +568,7 @@ function commitSessionRename(id: string, value: string | undefined) {
   renderSidebar();
   if (id === activeId) renderChat();
 }
-function cancelSessionRename() {
-  editingSessionId = '';
-  renderSidebar();
-}
 function commitProjectRename(id: string, value: string | undefined) {
-  editingProjectId = '';
   const p = projectById(id);
   if (!p) {
     renderSidebar();
@@ -770,9 +583,35 @@ function commitProjectRename(id: string, value: string | undefined) {
   const current = activeProject();
   if (current && current.id === id) renderChat();
 }
-function cancelProjectRename() {
-  editingProjectId = '';
-  renderSidebar();
+
+const sidebar = createSidebar({
+  read: () => ({ sessions, projects, activeId }),
+  switchSession,
+  openProject,
+  newSession: (projectId) => newSession(projectId),
+  setProjectExpanded: (id, expanded) => {
+    const project = projectById(id);
+    if (!project) return;
+    project.expanded = expanded;
+    persistActive();
+  },
+  renameSession: (id, title) => commitSessionRename(id, title),
+  renameProject: (id, name) => commitProjectRename(id, name),
+  openSessionMenu,
+  openProjectMenu,
+  sessionProject,
+  renameInputEl,
+  search: {
+    update: () => runtime.ConversationUI.updateSearch(),
+    isSearching: () => runtime.ConversationUI.isSearching(),
+    matchesSession: (session) => runtime.ConversationUI.matchesSession(session),
+    matchesProject: (project) => runtime.ConversationUI.matchesProject(project),
+    appendGroupLabel: (parent, label, hasMatches) => runtime.ConversationUI.appendGroupLabel(parent, label, hasMatches),
+  },
+});
+
+function renderSidebar(): void {
+  sidebar.render();
 }
 function disarmDangerButtons() {
   if (armedDangerTimer !== null) {
@@ -918,16 +757,7 @@ async function deleteSession(id: string): Promise<void> {
   renderChat();
 }
 function renameSession(id: string) {
-  const s = sessions.find((x) => x.id === id);
-  if (!s) return;
-  editingProjectId = '';
-  editingSessionId = id;
-  if (s.projectId) {
-    const p = projectById(s.projectId);
-    if (p) p.expanded = true;
-  }
-  renderSidebar();
-  focusRenameInput();
+  sidebar.beginSessionRename(id);
 }
 async function clearMessages(id: string): Promise<void> {
   if (!(await forgetSessionState(id, true))) return;
@@ -944,12 +774,7 @@ async function clearMessages(id: string): Promise<void> {
   }
 }
 function renameProject(id: string) {
-  const p = projectById(id);
-  if (!p) return;
-  editingSessionId = '';
-  editingProjectId = id;
-  renderSidebar();
-  focusRenameInput();
+  sidebar.beginProjectRename(id);
 }
 async function deleteProject(id: string): Promise<void> {
   const p = projectById(id);
@@ -1056,7 +881,7 @@ function pushMsgToSession(sid: string, m: Message) {
   if (
     s.title === 'New chat' &&
     !s.titleRenamed &&
-    sid !== editingSessionId &&
+    !sidebar.isEditingSession(sid) &&
     !runtime.ConversationUI.isRenamingSession(sid) &&
     m.type === 'user' &&
     m.text
