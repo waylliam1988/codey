@@ -459,7 +459,10 @@ class DurableTaskScheduler:
             try:
                 self._reconcile_task(task_id)
             except Exception as exc:
-                self._record_task_failure(task_id, exc)
+                # Task-local failures must not disappear with this wakeup. The
+                # task was already removed from _pending above, so retain the
+                # durable task and make the next pass retry it.
+                self._finish_task_error(task_id, exc, phase="read")
             finally:
                 with self._lock:
                     self._inflight.discard(task_id)
@@ -468,6 +471,9 @@ class DurableTaskScheduler:
         try:
             task = self._session.task(task_id)
         except KeyError:
+            return
+        except Exception as exc:
+            self._finish_task_error(task_id, exc, phase="read")
             return
         if task.state.get("input_state") == "queued":
             # The inbox boundary owns placement. A queued input is a durable
@@ -494,7 +500,18 @@ class DurableTaskScheduler:
             self._session.claim_task(task_id)
         except (CommitConflict, KeyError, ValueError):
             return
-        claimed = self._session.task(task_id)
+        except Exception as exc:
+            self._finish_task_error(task_id, exc, phase="claim")
+            return
+        try:
+            claimed = self._session.task(task_id)
+        except KeyError:
+            return
+        except Exception as exc:
+            # claim_task has committed the attempt, so the next durable read
+            # identifies and releases only this invocation's running attempt.
+            self._finish_task_error(task_id, exc, phase="claim", claimed=True)
+            return
         invocation = TaskInvocation(
             task_id=task_id,
             attempt_token=claimed.attempt_token,
@@ -531,8 +548,21 @@ class DurableTaskScheduler:
         self._unclaim_if_owned(task_id, claimed.attempt_token)
         self._defer_retry(task_id)
 
+    def _finish_task_error(
+        self,
+        task_id: str,
+        error: Exception,
+        *,
+        phase: str,
+        claimed: bool = False,
+    ) -> None:
+        if claimed:
+            self._unclaim_current_attempt(task_id)
+        if not self._record_task_failure(task_id, error, phase=phase):
+            self._defer_retry(task_id)
+
     def _finish_dispatch_error(self, task_id: str, attempt_token: str, error: Exception) -> None:
-        if not self._record_task_failure(task_id, error):
+        if not self._record_task_failure(task_id, error, phase="dispatch", attempt_token=attempt_token):
             self._unclaim_if_owned(task_id, attempt_token)
             self._defer_retry(task_id)
 
@@ -559,15 +589,22 @@ class DurableTaskScheduler:
                 self._pending.discard(task_id)
                 self._scheduled.add(task_id)
 
-    def _record_task_failure(self, task_id: str, error: Exception) -> bool:
-        """Record a dispatch cause and fail the task after bounded retries."""
+    def _record_task_failure(
+        self,
+        task_id: str,
+        error: Exception,
+        *,
+        phase: str,
+        attempt_token: str | None = None,
+    ) -> bool:
+        """Record a task cause and fail the task after bounded retries."""
         with self._lock:
             previous = self._task_failures.get(task_id)
             retry_count = previous.retry_count + 1 if previous is not None else 1
-            failure = SchedulerFailure("dispatch", type(error).__name__, str(error), retry_count, task_id)
+            failure = SchedulerFailure(phase, type(error).__name__, str(error), retry_count, task_id)
             self._task_failures[task_id] = failure
         _LOGGER.error(
-            "durable scheduler dispatch failed",
+            "durable scheduler task handling failed",
             extra={
                 "phase": failure.phase,
                 "task_id": task_id,
@@ -579,16 +616,20 @@ class DurableTaskScheduler:
         if retry_count < self._loop_failure_limit:
             return False
         reason = (
-            f"scheduler dispatch failed after {retry_count} attempts: "
+            f"scheduler {phase} failed after {retry_count} attempts: "
             f"{type(error).__name__}: {error}"
         )
         try:
             current = self._session.task(task_id)
+            if attempt_token is not None and current.attempt_token != attempt_token:
+                return True
+            if attempt_token is None and current.status is TaskStatus.RUNNING:
+                return True
             self._session.fail_task(
                 task_id,
                 reason,
                 state={**dict(current.state), "scheduler_failure": reason},
-                expected_attempt_token=current.attempt_token,
+                expected_attempt_token=attempt_token if attempt_token is not None else current.attempt_token,
             )
         except (CommitConflict, KeyError, ValueError) as exc:
             # A conflict can mean another actor already settled the task, or
@@ -620,7 +661,7 @@ class DurableTaskScheduler:
             )
             return False
         with self._lock:
-            self._blocked[task_id] = "dispatch_failed"
+            self._blocked[task_id] = f"{phase}_failed"
         return True
 
     def _unclaim_if_owned(self, task_id: str, attempt_token: str) -> None:
@@ -635,6 +676,15 @@ class DurableTaskScheduler:
             self._session.unclaim_task(task_id)
         except (CommitConflict, KeyError, ValueError):
             return
+
+    def _unclaim_current_attempt(self, task_id: str) -> None:
+        """Release the attempt committed immediately before a failed read."""
+        try:
+            current = self._session.task(task_id)
+        except KeyError:
+            return
+        if current.status is TaskStatus.RUNNING and current.attempt_token:
+            self._unclaim_if_owned(task_id, current.attempt_token)
 
     def _place_ready_inputs(self) -> None:
         """Place queued conversation inputs once their active run has settled."""

@@ -50,6 +50,7 @@ R = {**S, "run_id": "string"}
 W = {**S, "request_id": "string", "control_generation": "integer"}
 COMMANDS = {
     "get_health": Command("Read service, execution and release health.", {}),
+    "resume_scheduler": Command("Resume a scheduler stopped by its bounded failure circuit breaker.", {}, (), False, True),
     "list_conversations": Command("List accessible persistent conversations.", {}),
     "create_conversation": Command("Create a visible conversation in an authorized project.", {
         "request_id": "string", "project": "string", "title": "string", "provider": "string",

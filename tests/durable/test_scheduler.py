@@ -116,6 +116,89 @@ def test_scheduler_start_resumes_after_reconcile_circuit_breaker(tmp_path: Path,
         session.close()
 
 
+def test_scheduler_requeues_after_read_failure_and_retries_automatically(tmp_path: Path, monkeypatch) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    dispatched: list[str] = []
+    original_task = session.task
+    failed = True
+
+    def flaky_task(task_id: str):
+        nonlocal failed
+        if failed:
+            failed = False
+            raise OSError("injected task read failure")
+        return original_task(task_id)
+
+    monkeypatch.setattr(session, "task", flaky_task)
+    scheduler = DurableTaskScheduler(
+        session,
+        lambda task: dispatched.append(task.task_id) or True,
+        retry_interval=0.01,
+    )
+    try:
+        scheduler.start()
+        assert _wait_for(lambda: dispatched == ["task-1"])
+        assert scheduler.task_failures == {}
+        assert session.task("task-1").status is TaskStatus.RUNNING
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_requeues_after_claim_failure(tmp_path: Path, monkeypatch) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    scheduler = DurableTaskScheduler(session, lambda _task: True)
+    original_claim = session.claim_task
+    failed = True
+
+    def flaky_claim(task_id: str):
+        nonlocal failed
+        if failed:
+            failed = False
+            raise OSError("injected claim failure")
+        return original_claim(task_id)
+
+    monkeypatch.setattr(session, "claim_task", flaky_claim)
+    try:
+        scheduler._reconcile()
+        assert scheduler.task_failures["task-1"].phase == "claim"
+        assert "task-1" in scheduler._pending
+        scheduler._reconcile()
+        assert session.task("task-1").status is TaskStatus.RUNNING
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_releases_claim_when_post_claim_read_fails(tmp_path: Path, monkeypatch) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    scheduler = DurableTaskScheduler(session, lambda _task: True)
+    original_task = session.task
+    reads = 0
+
+    def flaky_task(task_id: str):
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            raise OSError("injected post-claim read failure")
+        return original_task(task_id)
+
+    monkeypatch.setattr(session, "task", flaky_task)
+    try:
+        scheduler._reconcile()
+        task = original_task("task-1")
+        assert scheduler.task_failures["task-1"].phase == "claim"
+        assert task.status is TaskStatus.PENDING
+        assert not task.attempt_token
+        assert "task-1" in scheduler._pending
+    finally:
+        scheduler.close()
+        session.close()
+
+
 def test_scheduler_records_dispatch_value_error_and_releases_claim(tmp_path: Path) -> None:
     session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
     _admit(session, "task-1")

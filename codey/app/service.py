@@ -113,7 +113,7 @@ class LocalService:
         write_json_atomic(self.home / "service.json", {
             "protocol_version": PROTOCOL_VERSION, "instance_id": self.control.instance_id,
             "pid": os.getpid(), "url": f"http://127.0.0.1:{self.port}", "release_id": self.release_id,
-            "status": "verifying" if self.verify_only else "draining" if self.control.draining else "ready",
+            "status": self.control.health()["status"],
             "started_at": self.control.started_at,
         }, mode=0o600)
 

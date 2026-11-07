@@ -788,3 +788,9 @@ _prepare_boundary_placement/_prepare_boundary_write/_place_write_submission/_set
 | [`eventKey`](../frontend/src/sse.ts#L143) | Ft | 按 Ft 合同；状态与执行判断归对应 owner |
 | [`acceptRunResponse`](../frontend/src/sse.ts#L156) | Ft | 按 Ft 合同；状态与执行判断归对应 owner |
 | [`connect`](../frontend/src/sse.ts#L183) | Ft | 按 Ft 合同；状态与执行判断归对应 owner |
+
+## 调度器故障恢复边界（2026-11-08）
+
+调度器的任务级异常按三个阶段记录：`read` 表示读取或重建任务失败，`claim` 表示认领或认领后的读取失败，`dispatch` 表示实际分发及其完成提交失败。任务从内存 `_pending` 取出后，未达到失败上限的任务必须重新排队；已经认领的路径先按本次 attempt 的 durable token 释放，再重新排队。释放操作仍由 durable 状态和 attempt fencing 判定，不改变事务边界。
+
+调度器连续 reconcile 失败达到上限时，`ControlService.health()` 报告顶层 `degraded`，并在 `scheduler.loop_failure` 保留原因。操作员可通过控制协议和 CLI 的 `resume_scheduler`（CLI 别名 `resume-scheduler`）调用现有 `DurableTaskScheduler.resume()`；恢复后由 durable pending 状态重新驱动任务，不依赖新的外部通知。正常关闭或验证阶段的禁用状态没有 `loop_failure`，不会被报告为 `degraded`。

@@ -15,7 +15,7 @@ ALIASES = {"create": "create_conversation", "list": "list_conversations", "read"
            "send": "send_message", "wait": "wait_run", "result": "get_run_result", "evidence": "read_run_evidence",
            "review": "record_review", "stop": "stop_run", "pause": "pause_control", "grant": "grant_control",
            "health": "get_health", "prepare": "prepare_release", "upgrade": "activate_release", "upgrade-status": "get_upgrade",
-           "answer": "answer_question", "owner": "get_control"}
+           "answer": "answer_question", "owner": "get_control", "resume-scheduler": "resume_scheduler"}
 
 
 def register(subparsers: Any) -> None:
@@ -85,7 +85,7 @@ def run_control(args: argparse.Namespace) -> int:
                 params[key] = getattr(args, key)
         if args.text_file:
             params["text"] = Path(args.text_file).read_text(encoding="utf-8")
-        if not COMMANDS[operation].readonly and "request_id" not in params:
+        if not COMMANDS[operation].readonly and "request_id" in COMMANDS[operation].fields and "request_id" not in params:
             params["request_id"] = uuid.uuid4().hex
         client = ControlClient(Path(args.state_home), operator=args.operator)
         if "control_generation" in COMMANDS[operation].fields and "control_generation" not in params:

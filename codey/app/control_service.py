@@ -46,7 +46,7 @@ class ControlService:
         with self.condition:
             self.condition.notify_all()
 
-    def execute(self, actor: Actor, name: str, params: object) -> dict[str, Any]:
+    def execute(self, actor: Actor, name: str, params: object) -> dict[str, object]:
         args = validate_command(name, params)
         command = COMMANDS[name]
         if command.operator and not actor.operator:
@@ -57,6 +57,12 @@ class ControlService:
             return release_command(self, name, args)
         if name == "get_health":
             return self.health()
+        if name == "resume_scheduler":
+            self.ctx.durable_scheduler.resume()
+            scheduler_health = self.health().get("scheduler")
+            if not isinstance(scheduler_health, dict):
+                raise ControlError("INTERNAL_ERROR", "Scheduler health is unavailable")
+            return scheduler_health
         if name == "create_conversation":
             args["conversation_id"] = "control_" + fingerprint([actor.actor_id, args["request_id"]])[:24]
         if name == "list_conversations":
@@ -349,6 +355,13 @@ class ControlService:
 
     def health(self) -> dict[str, Any]:
         busy = bool(self.ctx.run_registry.active_runs())
+        scheduler = getattr(self.ctx, "durable_scheduler", None)
+        scheduler_health = scheduler.health() if scheduler is not None else None
+        scheduler_degraded = (
+            isinstance(scheduler_health, dict)
+            and scheduler_health.get("enabled") is False
+            and scheduler_health.get("loop_failure") is not None
+        )
         payload: dict[str, object] = {
             "protocol_version": PROTOCOL_VERSION,
             "capabilities": list(COMMANDS),
@@ -356,7 +369,7 @@ class ControlService:
             "release_id": self.release_id,
             "database_id": self.ctx.durable.database_id,
             "started_at": self.started_at,
-            "status": "verifying" if self.verifying else "draining" if self.draining else "ready",
+            "status": "verifying" if self.verifying else "draining" if self.draining else "degraded" if scheduler_degraded else "ready",
             "endpoint_responsive": True,
             "last_progress_at": self.last_progress_at,
             "suspected_stall": busy and time.time() - self.last_progress_at > 120,
@@ -365,7 +378,6 @@ class ControlService:
                 for item in self.ctx.run_registry.active_runs()
             ],
         }
-        scheduler = getattr(self.ctx, "durable_scheduler", None)
         if scheduler is not None:
-            payload["scheduler"] = scheduler.health()
+            payload["scheduler"] = scheduler_health
         return payload
