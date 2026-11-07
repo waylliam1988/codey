@@ -61,6 +61,11 @@ durable event bridge 批次把 commit record 的延迟发布队列和 flush 逻�
 scheduler abort，再发布 shell result 和延迟 durable 事件。任务生命周期、审批、停止、
 任务提交和 scheduler abort 扩大回归共 111 passed；相关 Ruff 和局部 mypy 通过。
 
+生命周期批次复查发现审批过期代理传入 `output=None`，覆盖 registry 默认的过期文案。
+新增 `test_expiry_preserves_the_default_shell_result_output` 先复现 `None` 输出，再将接口
+默认值恢复为明确的字符串。该问题属于本次迁移引入的生产回归，不修改原有预期。
+生命周期与 scheduler abort 回归 15 passed，相关 Ruff、mypy 和 Pyrefly 通过。
+
 查询门面首批把 `conversation_ids`、head/存在性、conversation tree/lineage、
 history/navigation/window、inbox、context 和 snapshot 查询移到
 `ConversationQueryFacade`。`DurableSession` 只保留兼容代理；所有查询统一通过

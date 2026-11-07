@@ -28,7 +28,7 @@ class ShellApprovalExpiry(Protocol):
         run_id: str | None = None,
         exclude_run_id: str | None = None,
         session_id: str | None = None,
-        output: str | None = None,
+        output: str = "Task stopped; command approval expired.",
     ) -> tuple[JsonObject, ...]: ...
 
 

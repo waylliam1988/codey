@@ -76,7 +76,7 @@ class ShellApprovalCoordinator:
         run_id: str | None = None,
         exclude_run_id: str | None = None,
         session_id: str | None = None,
-        output: str | None = None,
+        output: str = "Task stopped; command approval expired.",
     ) -> tuple[JsonObject, ...]:
         """Persist approval expiry while the caller owns the app locks."""
         from codey.app.shell_approval_state import expire_shell_results_locked
