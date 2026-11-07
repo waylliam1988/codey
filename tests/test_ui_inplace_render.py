@@ -11,6 +11,7 @@ from unittest import mock
 from urllib.parse import urlsplit
 
 from codey.app import server as codey_server
+from tests.http_context import attach_public_events
 
 
 def _attach_page_diagnostics(page) -> dict[str, object]:
@@ -218,6 +219,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
         cls.state_patch = mock.patch.object(codey_server.CodeyHTTPServer, "app_context", cls.state)
         cls.state_patch.start()
         cls.httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
+        cls.close_public_events = staticmethod(attach_public_events(cls.httpd))
         cls.server_thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.server_thread.start()
         host, port = cls.httpd.server_address
@@ -227,6 +229,7 @@ class UiInPlaceRenderBrowserTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         try:
             if hasattr(cls, "httpd"):
+                cls.close_public_events()
                 cls.httpd.shutdown()
                 cls.httpd.server_close()
             if hasattr(cls, "server_thread"):

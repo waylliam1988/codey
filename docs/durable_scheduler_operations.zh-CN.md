@@ -20,3 +20,15 @@ Durable 调度器只把 SQLite checkpoint 当作任务事实；线程、唤醒�
 服务 `get_health` 响应包含 `scheduler.enabled`、最近一次 `loop_failure`、有界的
 `task_failures` 和 `blocked_tasks`。调度器还会通过模块日志记录结构化的循环错误、
 分发错误及失败提交冲突；错误摘要只包含阶段、任务 ID、异常类型、消息和重试次数。
+
+队列拒收任务，或分发异常需要释放认领时，调度器保留任务 ID 与本次 attempt token，
+先重试释放动作，再考虑重新分发。释放临时失败不会把仍为 `RUNNING` 的任务当作已经
+有执行者而遗忘。释放冲突后会核对 checkpoint：同一个 attempt 仍在运行则继续重试；
+已经终止或由后来者认领则结束旧清理，不能释放后来者的 token。关闭过程中停止分发
+后续候选任务，也会完成本轮已经产生的认领清理。
+
+释放错误使用同一个 reconcile 连续失败预算；连续三次失败后熔断，
+`scheduler.enabled=false`，对应 `blocked_tasks` 为 `unclaim_failed`。原 token 留在当前
+实例中；修复存储故障后显式 `resume()` 会先处理这个清理，再重新扫描任务。服务的
+健康响应及 `service.json` 发布会反映熔断与恢复状态。进程退出后仍以 SQLite checkpoint
+和现有所有权恢复流程为准，内存清理队列不是新的持久化事实来源。

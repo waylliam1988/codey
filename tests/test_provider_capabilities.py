@@ -12,6 +12,7 @@ from codey.providers.capabilities import (
     capability_for,
     rank_providers,
 )
+from codey.providers.catalog import API_CONNECTIONS
 from codey.providers.diagnostics import ProviderFailure
 from codey.providers.registry import PROVIDER_LABELS
 from codey.providers.supervisor import ProviderSupervisor
@@ -31,7 +32,7 @@ class ProviderCapabilityTests(unittest.TestCase):
                 self.assertIn(capability.coding_fit, (FIT_OK, FIT_AVOID))
                 self.assertIn(capability.research_fit, (FIT_OK, FIT_AVOID))
                 self.assertIn(capability.review_fit, (FIT_OK, FIT_AVOID))
-                if provider_id in {"local", "zen"}:
+                if provider_id in API_CONNECTIONS:
                     self.assertEqual(capability.context_window_tokens, 0)
                     continue
                 self.assertGreater(capability.context_window_tokens, 0)

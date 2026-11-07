@@ -6,7 +6,9 @@ from types import ModuleType
 
 from codey.providers.base import ChatProvider
 from codey.providers.catalog import API_CONNECTIONS
+from codey.providers.compat_transport import optional_callable
 from codey.runtime.core.api_selection import ApiRunSelection
+from codey.types.json_value import decode_json_object
 
 
 def connection_for(connection_id: str) -> ModuleType:
@@ -14,6 +16,20 @@ def connection_for(connection_id: str) -> ModuleType:
     if registration is None:
         raise ValueError("original API connection is unavailable")
     return importlib.import_module(registration[1])
+
+
+def cached_model_supports_images(connection_id: str, model_id: str) -> bool:
+    """Read an optional connector's cached capability through its registration."""
+    if connection_id not in API_CONNECTIONS:
+        return False
+    cached = optional_callable(connection_for(connection_id), "cached_model_payload")
+    if cached is None:
+        return False
+    models = decode_json_object(cached()).get("models", [])
+    if not isinstance(models, list):
+        raise ValueError("cached models must be an array")
+    return any(isinstance(row, dict) and row.get("id") == model_id and row.get("supports_images") is True
+               for row in models)
 
 
 def capture_selection(connection_id: str, selection: object = None) -> ApiRunSelection:

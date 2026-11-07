@@ -131,7 +131,7 @@ def shell_result_row(
     tool_args: JsonObject = (
         dict(cast(JsonObject, raw_tool_args))
         if isinstance(raw_tool_args, dict)
-        else cast(JsonObject, {"command": command, "path": cwd})
+        else {"command": command, "path": cwd}
     )
     call = ToolCall(
         name=str(pending.get("tool_name") or "shell"),

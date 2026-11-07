@@ -13,7 +13,7 @@ def test_recovery_format_error_preserves_receipt_without_new_effects(tmp_path, m
         def unavailable(*_args, **_kwargs):
             raise ValueError("format boom")
         monkeypatch.setattr("codey.operations.kernel_transport._native_tool_results" if native
-                            else "codey.operations.kernel_prompt._format_results", unavailable)
+                            else "codey.operations.kernel_prompt.format_results", unavailable)
         result = run_task_kernel(f.session(), request=f.request)
         assert not result.completed
         assert result.stop_reason in {"recovery_failure", "controller_failure"}

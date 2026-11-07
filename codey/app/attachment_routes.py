@@ -1,13 +1,18 @@
 """Operator-authenticated file import and model input validation."""
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
+
+from codey.runtime.core.api_selection import ApiRunSelection
+
+if TYPE_CHECKING:
+    from codey.app.context import AppContext
 
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.task.attachments import IMAGE_UNSUPPORTED, public_attachment, validate_attachments
 
 
-def _store(ctx: Any, session_id: object) -> InputAttachmentStore:
+def _store(ctx: AppContext, session_id: object) -> InputAttachmentStore:
     sessions = ctx.load_ui_state().get("sessions", [])
     if not isinstance(session_id, str) or not any(s.get("id") == session_id for s in sessions):
         raise ValueError("Chat not found. Save the chat before attaching files.")
@@ -16,7 +21,7 @@ def _store(ctx: Any, session_id: object) -> InputAttachmentStore:
     return InputAttachmentStore(ctx.state_home, session_id)
 
 
-def upload_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def upload_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     try:
         item = _store(ctx, body.get("session_id")).put(body.get("name"), body.get("data"))
         return 201, {"ok": True, "attachment": item}
@@ -24,7 +29,7 @@ def upload_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]
         return 400, {"ok": False, "error": str(exc)}
 
 
-def read_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def read_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     try:
         item = _read(ctx, str(body.get("session_id") or ""), body.get("id"))
         return 200, {"ok": True, "attachment": public_attachment(item), **({"data_url": item["data_url"]} if "data_url" in item else {})}
@@ -32,23 +37,21 @@ def read_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         return 404, {"ok": False, "error": str(exc)}
 
 
-def image_support(ctx: Any, session_id: str, provider: str, model: str) -> bool:
+def image_support(ctx: AppContext, session_id: str, provider: str, model: str) -> bool:
     active = ctx.active_run_for(session_id=session_id)
     if active is not None:
         selected = ctx.run_registry.api_selection_for(active.run_id)
-        return bool(selected is not None and getattr(selected, "supports_images", False))
-    if provider != "cline":
-        return False
-    from codey.providers.cline.connection import cached_model_payload
+        return bool(selected is not None and selected.supports_images)
+    from codey.providers.api_connections import cached_model_supports_images
 
-    return any(entry.get("id") == model and entry.get("supports_images") is True for entry in cached_model_payload().get("models", []))
+    return cached_model_supports_images(provider, model)
 
 
-def capabilities_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+def capabilities_response(ctx: AppContext, body: dict[str, object]) -> tuple[int, dict[str, object]]:
     try:
         session_id = str(body.get("session_id") or "")
         _store(ctx, session_id)
-        selection = body.get("model_selection") or {}
+        selection: object = body.get("model_selection") or {}
         if not isinstance(selection, dict):
             raise ValueError("Invalid model selection.")
         images = image_support(ctx, session_id, str(body.get("provider") or ""), str(selection.get("model") or ""))
@@ -57,22 +60,22 @@ def capabilities_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
         return 400, {"ok": False, "error": str(exc)}
 
 
-def resolve_input_attachments(ctx: Any, session_id: str, refs: object, *, selection: Any = None, steer: bool = False) -> list[dict[str, object]]:
+def resolve_input_attachments(ctx: AppContext, session_id: str, refs: object, *, selection: ApiRunSelection | None = None, steer: bool = False) -> list[dict[str, object]]:
     if not isinstance(refs, list) or len(refs) > 4 or any(not isinstance(ref, dict) for ref in refs):
         raise ValueError("Invalid attachment references.")
     items = validate_attachments([_read(ctx, session_id, ref.get("id")) for ref in refs])
-    supported = bool(selection is not None and getattr(selection, "supports_images", False))
+    supported = bool(selection is not None and selection.supports_images)
     if steer:
         active = ctx.active_run_for(session_id=session_id)
         if active is not None:
             current = ctx.run_registry.api_selection_for(active.run_id)
-            supported = bool(current is not None and getattr(current, "supports_images", False))
+            supported = bool(current is not None and current.supports_images)
     if not supported and any(str(item["media_type"]).startswith("image/") for item in items):
         raise ValueError(IMAGE_UNSUPPORTED)
     return items
 
 
-def _read(ctx: Any, session_id: str, identity: object) -> dict[str, object]:
+def _read(ctx: AppContext, session_id: str, identity: object) -> dict[str, object]:
     store = _store(ctx, session_id)
     try:
         return store.read(identity)
@@ -96,7 +99,7 @@ def _read(ctx: Any, session_id: str, identity: object) -> dict[str, object]:
         raise
 
 
-def queued_attachments(ctx: Any, request: dict[str, Any], selection: Any) -> tuple[Any, dict[str, object]]:
+def queued_attachments(ctx: AppContext, request: dict[str, object], selection: ApiRunSelection | None) -> tuple[ApiRunSelection | None, dict[str, object]]:
     if request.get("input_mode") == "steer":
         active = ctx.active_run_for(session_id=str(request["session_id"]))
         if active is not None:
@@ -107,20 +110,23 @@ def queued_attachments(ctx: Any, request: dict[str, Any], selection: Any) -> tup
     return selection, {"attachments": items}
 
 
-def prepare_run_attachments(ctx: Any, session_id: str, refs: object, kwargs: dict[str, Any]) -> tuple[int, dict[str, Any]] | None:
+def prepare_run_attachments(ctx: AppContext | None, session_id: str, refs: object, kwargs: dict[str, object]) -> tuple[int, dict[str, object]] | None:
     try:
         if refs == []:
             return None
         if ctx is None:
             raise ValueError("Attachment storage is unavailable.")
-        items = resolve_input_attachments(ctx, session_id, refs, selection=kwargs.get("model_selection"))
+        selection = kwargs.get("model_selection")
+        if selection is not None and not isinstance(selection, ApiRunSelection):
+            raise ValueError("Invalid model selection.")
+        items = resolve_input_attachments(ctx, session_id, refs, selection=selection)
         kwargs["message_metadata"] = {"attachments": items}
         return None
     except (ValueError, OSError) as exc:
         return 400, {"error": str(exc), "code": "attachment_invalid"}
 
 
-def prepare_queued_attachments(ctx: Any, request: dict[str, Any], selection: Any) -> tuple[Any, dict[str, object] | None, tuple[int, dict[str, Any]] | None]:
+def prepare_queued_attachments(ctx: AppContext, request: dict[str, object], selection: ApiRunSelection | None) -> tuple[ApiRunSelection | None, dict[str, object] | None, tuple[int, dict[str, object]] | None]:
     if "attachments" not in request or request["attachments"] == []:
         return selection, None, None
     try:

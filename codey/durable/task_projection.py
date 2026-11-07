@@ -1,10 +1,11 @@
 """Versioned read projection of the authoritative task checkpoint."""
 from __future__ import annotations
 
-from typing import Any
+from codey.durable.model import TaskCheckpoint
+from codey.types.json_value import JsonObject
 
 
-def task_lifecycle(checkpoint: Any) -> dict[str, Any]:
+def task_lifecycle(checkpoint: TaskCheckpoint) -> JsonObject:
     return {
         "run_id": checkpoint.task_id,
         "session_id": checkpoint.conversation_id,

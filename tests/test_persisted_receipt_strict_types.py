@@ -144,15 +144,15 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
 
         # Gate view blocks: illegal never reports success, and fail-closed
         # False stays blocked (never becomes success).
-        self.assertFalse(session_checks_passed(SimpleNamespace(verifications=[illegal])))
+        self.assertFalse(session_checks_passed(SimpleNamespace(edited_files={}, verifications=[illegal])))
         self.assertFalse(
             session_checks_passed(
-                SimpleNamespace(verifications=[{"command": "pytest", "revision": 1, "passed": False}])
+                SimpleNamespace(edited_files={}, verifications=[{"command": "pytest", "revision": 1, "passed": False}])
             )
         )
         self.assertTrue(
             session_checks_passed(
-                SimpleNamespace(verifications=[{"command": "pytest", "revision": 1, "passed": True}])
+                SimpleNamespace(edited_files={}, verifications=[{"command": "pytest", "revision": 1, "passed": True}])
             )
         )
 
@@ -180,10 +180,10 @@ class PersistedReceiptStrictTypesTests(unittest.TestCase):
         from codey.operations.task_session import session_checks_passed
 
         self.assertFalse(
-            session_checks_passed(SimpleNamespace(verifications=[{"passed": "false"}]))
+            session_checks_passed(SimpleNamespace(edited_files={}, verifications=[{"passed": "false"}]))
         )
         self.assertTrue(
-            session_checks_passed(SimpleNamespace(verifications=[{"passed": True}]))
+            session_checks_passed(SimpleNamespace(edited_files={}, verifications=[{"passed": True}]))
         )
 
 

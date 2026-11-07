@@ -2,6 +2,38 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Windows Python 3.12 CI failures and scheduler claim cleanup (2026-11-08)
+
+The old CI's complete set of 55 failing cases now passes: **55 passed,
+8 subtests passed**. Scheduler checks passed **49 tests, 4 skipped**; attachment
+and model settings checks passed **84 tests**. The added regression group passed
+26 tests, UI source checks passed 47, and the stable-source Research recovery
+recheck passed 33. The latest type-boundary/scheduler checks passed 16.
+
+The first expanded selection of 102 related files finished with **17 failed,
+1632 passed, 4 skipped, 533 subtests passed**. Its fixture, stale-process and UI
+ownership failures were corrected; Research implementation-identity mismatches
+were checked again with stable source. The second expanded run was stopped at
+the user's request at approximately 75%, with no failure marker in the progress
+log and no final suite result. No further pytest was started after the final
+typing changes. No full pytest, coverage, package build or other Python version
+was run. See the [root-cause classification and scope](docs/reports/ci-42371356637-python312.zh-CN.md).
+
+The scheduler now retains the rejected dispatch's attempt token while retrying
+release, reports repeated cleanup failures through its circuit breaker, and
+retries cleanup on resume without releasing a successor's attempt. Other fixes
+cover frozen tool visibility, Research failure projections, answers received
+before worker parking, optional connector image capabilities and settings auth.
+Attachment routes, model settings and the run registry remove explicit `Any`;
+run selections and recursive JSON events have concrete types.
+The lifecycle snapshot and durable task projection also remove explicit `Any`,
+using `DurableSession`, `TaskLifecyclePayload` and `TaskCheckpoint`.
+
+After the final typing changes, repository-wide Ruff and all three production
+checkers targeting Python 3.12 passed: mypy checked 644 files; Pyrefly reported
+0 errors with 35 existing suppressions and 129 warnings; ty passed.
+`git diff --check` passed.
+
 ## One composer action and default steering (2026-11-06)
 
 **335 frontend tests passed** across 54 files; production typecheck/build,

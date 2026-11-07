@@ -114,7 +114,7 @@ def test_opening_settings_skips_disabled_sources_and_auto_refresh_does_not_force
         route.fulfill(json={'ok': True, 'source': models[0]['sources'][2]})
     ))
     page.locator('#btn-settings').click()
-    expect(page.locator('.model-source')).to_have_count(3)
+    expect(page.locator('.model-source[data-source-id]')).to_have_count(3)
     page.locator('.model-source[data-source-id="local"] > details > summary').click()
     assert calls == []
     page.locator('.model-source[data-source-id="local"]').get_by_role('button', name='Refresh models').click()

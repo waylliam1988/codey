@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 
 from codey.app.active_provider_registry import ActiveProviderRegistry
 from codey.app.run_registry import RunRegistry, RunSnapshot
+from codey.runtime.core.api_selection import ApiRunSelection
 
 
 class TaskRuntimeCoordinator:
@@ -35,13 +36,13 @@ class TaskRuntimeCoordinator:
         self._wake_input = wake_input
 
     @contextmanager
-    def admission_line(self) -> Iterator[None]:
+    def admission_line(self) -> Generator[None]:
         """Hold the application admission locks in their established order."""
         with self._shell_spawn_gate(), self._coordination_lock:
             yield
 
     @contextmanager
-    def spawn_line(self) -> Iterator[None]:
+    def spawn_line(self) -> Generator[None]:
         """Serialize a final stop check with shell process creation."""
         with self._shell_spawn_gate():
             yield
@@ -112,7 +113,7 @@ class TaskRuntimeCoordinator:
     def clear_stop(self, run_id: str | None = None) -> None:
         self._registry.clear_stop(run_id)
 
-    def bind_api_selection(self, run_id: str, selection: object) -> None:
+    def bind_api_selection(self, run_id: str, selection: ApiRunSelection) -> None:
         self._registry.bind_api_selection(run_id, selection)
 
     def is_busy(self) -> bool:

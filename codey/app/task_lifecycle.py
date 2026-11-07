@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import threading
 from collections.abc import Callable
-from typing import Protocol, cast
+from typing import Protocol
 
 from codey.app.run_registry import RunRegistry
 from codey.durable.model import TaskCheckpoint
@@ -85,11 +85,11 @@ class TaskLifecycleCoordinator:
         """
         from codey.app.task_lifecycle_projection import version_task_event
 
-        versioned = cast(JsonObject, version_task_event(self._durable, event))
+        versioned = version_task_event(self._durable, event)
         payload_value = self._run_registry.finish(run_id, versioned)
         if payload_value is None:
             return False
-        payload = cast(JsonObject, payload_value)
+        payload = payload_value
         expired: tuple[JsonObject, ...] = ()
         if str(payload.get("stop_reason") or "") in self._TERMINAL_STOP_REASONS:
             with self._shell_spawn_gate(), self._coordination_lock:

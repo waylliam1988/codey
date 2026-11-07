@@ -63,18 +63,25 @@ def test_unknown_provider_intent_is_never_resent_or_replayed(tmp_path):
 def test_unknown_delivery_retains_result_and_refuses_another_send(tmp_path):
     with paused_batch(tmp_path, native=True) as runtime:
         sent = []
-        class Provider(type(runtime.request.transport.provider)):
-            def send_tool_results(self, results, tools):
+        from codey.operations.provider_session import ProviderAdapter
+        from codey.providers.requests import ProviderRequest, SendToolResultsRequest
+
+        class Provider(ProviderAdapter):
+            def execute_request(self, request: ProviderRequest) -> object:
+                if not isinstance(request, SendToolResultsRequest):
+                    return super().execute_request(request)
+                results = request.results
                 sent.append([row.call_id for row in results])
                 raise GenerationUnknownError("connection lost after submission")
-        request = restart_request(runtime, Provider())
+        provider = Provider(runtime.request.transport.provider)
+        request = restart_request(runtime, provider)
         original = next(effect for effect in runtime.durable.effects("r") if effect.category == "tool_call")
         result = run_task_kernel(runtime.session(), request=request)
         assert not result.completed
         assert sent == [["original-read"]]
         assert len(runtime.executions) == 1
         assert runtime.durable.effect(original.effect_id) == original
-        repeated = run_task_kernel(runtime.session(), request=restart_request(runtime, Provider()))
+        repeated = run_task_kernel(runtime.session(), request=restart_request(runtime, provider))
         assert repeated.stop_reason == "recovery_failure"
         assert sent == [["original-read"]]
         assert not ToolResultDeliveryStore(durable=runtime.durable).load_batches("s", "r")[0].is_delivered

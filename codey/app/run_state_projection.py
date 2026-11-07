@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, cast
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.event_payloads import SCHEMA_VERSION
 from codey.app.run_registry import RunRegistry, RunSnapshot
-from codey.app.task_lifecycle_projection import snapshot_tasks
+from codey.app.task_lifecycle_projection import TaskLifecyclePayload, snapshot_tasks
 from codey.durable.session import DurableSession
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, JsonValue
 
 if TYPE_CHECKING:
     from codey.app.shell_approval_workflow import ShellApprovalWorkflow
@@ -54,19 +54,20 @@ class RunStateProjection:
                         "execution_id": str(event.get("execution_id") or ""),
                     },
                 }
-        self._emit(cast(JsonObject, self._registry.record_shell_result(event)))
+        self._emit(self._registry.record_shell_result(event))
 
     def payload(self) -> JsonObject:
         with self._lock:
             research_runs = self._research_runs()
         payload = self._registry.payload(pending_event=self.pending_ui_event, research_restore_runs=research_runs)
-        payload["shell_approvals"] = self._workflow.list_statuses()
+        # ApprovalStatus contains only strings and integer revisions.
+        payload["shell_approvals"] = cast(list[JsonValue], self._workflow.list_statuses())
         approval_work = self._workflow.busy_status()
         if not payload["busy"] and approval_work is not None:
             payload.update(busy=True, run_id=approval_work["source_run_id"],
                            session_id=approval_work["session_id"], run_status="running")
-        payload["task_states"] = snapshot_tasks(self._durable, payload)
-        return cast(JsonObject, payload)
+        payload["task_states"] = snapshot_tasks(self._durable, cast(TaskLifecyclePayload, payload))
+        return payload
 
     def pending_ui_event(self, active: RunSnapshot | None) -> JsonObject | None:
         with self._lock:

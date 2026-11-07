@@ -156,7 +156,7 @@ def test_composition_finishing_during_pointer_down_does_not_swallow_chat_switch(
 
 def test_refresh_and_running_reply_preserve_editor_identity_caret_and_task(page):
     page.locator("#task").fill("draft during run")
-    page.evaluate("runningSessionId='a'; setStatus('Running','run'); updateSend();")
+    page.evaluate("handleServerEvent({type:'task_start',session_id:'a',run_id:'rename-run',task_revision:1,task_status:'running'});")
     editor = start_rename(page)
     editor.fill("Editing during work")
     editor.evaluate("e => {e.setSelectionRange(3,7); window.originalTitleEditor=e;}")

@@ -73,7 +73,7 @@ def test_non_evidence_overflow_is_not_hidden(monkeypatch):
 
 def test_frozen_fixtures_have_no_scripted_reads_or_gold_in_questions():
     fixtures = cases()
-    assert len([c for c in fixtures if c["split"] == "dev"]) == 2
+    assert len([c for c in fixtures if c["split"] == "dev"]) == 6
     assert len([c for c in fixtures if c["split"] == "holdout"]) == 6
     for case in fixtures:
         assert "controlled_sequence" not in case

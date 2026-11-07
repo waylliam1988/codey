@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+- Retry failed durable claim releases with their original attempt tokens; trip
+  the scheduler circuit after repeated storage errors and resume cleanup before
+  dispatch. Finish rejected-claim cleanup during shutdown. Preserve answered
+  questions across warm continuation, keep Research failure observations aligned
+  with recovery, enforce top-level tool visibility, and separate settings OAuth
+  snapshots from connector transport labels. Restore reproducible CI fixtures
+  and optional-connector attachment queries. Remove explicit dynamic types from
+  attachment routes, model settings and the run registry using application,
+  selection and recursive JSON contracts.
+  See the [Python 3.12 investigation](docs/reports/ci-42371356637-python312.zh-CN.md).
+
 - Add composer file selection, drag/drop and image paste with persistent,
   session-scoped attachments, previews/removal and error-only feedback. Deliver
   real file contents and supported image inputs through durable submissions and

@@ -344,7 +344,7 @@ class ProviderRegistryTests(unittest.TestCase):
     def test_provider_ids_are_ordered_for_ui(self) -> None:
         self.assertEqual(
             registry.provider_ids(),
-            ("deepseek", "mimo", "stepfun", "qwen", "glm", "local", "zen"),
+            ("deepseek", "mimo", "stepfun", "qwen", "glm", "local", "zen", "cline"),
         )
 
     def test_provider_tab_availability_returns_all_registered_providers(self) -> None:

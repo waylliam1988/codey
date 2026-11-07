@@ -115,3 +115,36 @@ def test_question_answer_resumes_without_repeating_the_original_call(tmp_path, p
             assert len(requests) == 3
             assert len([event for event in events if event.get("type") == "tool" and event.get("tool_name") == "read_file"]) == 1
             assert len(ctx.durable.tasks()) == 1
+
+
+@pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
+def test_answer_before_worker_parks_reaches_the_next_request(tmp_path, protocol, monkeypatch):
+    from codey.durable import TaskStatus
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "pyproject.toml").write_text('[project]\nname="question-test"\n', encoding="utf8")
+    with question_peer(protocol) as (url, requests, errors):
+        target = GateTarget(url, "question-fixture", 32768, 8192, 12000, api_protocol=protocol, request_timeout=15)
+        with gate_application(target, tmp_path / "gate") as (httpd, ctx, events):
+            answered = threading.Event()
+
+            def answer_while_running(event: dict[str, object]) -> None:
+                events.append(dict(event))
+                if event.get("type") == "user_question":
+                    question = ctx.user_questions.get(str(event["id"]))
+                    assert question is not None
+                    assert ctx.durable.task(question["run_id"]).status is TaskStatus.RUNNING
+                    ctx.user_questions.answer(question["id"], question["revision"], "只读文档")
+                    answered.set()
+
+            monkeypatch.setattr(ctx, "_on_event_emitted", answer_while_running)
+            client = GateHTTPClient(httpd)
+            source = client.post("/api/run", {"session_id": "question-chat", "project": str(project),
+                "input": {"kind": "start_task", "text": "Ask scope, then inspect pyproject.toml without execution."},
+                "provider": "local", "model_selection": {"model": target.model, "base_url": url}, "max_turns": 5})
+            assert answered.wait(10)
+            terminal = wait_for_run(client, source["run_id"], 15)
+            assert terminal["stop_reason"] == "done", (terminal, errors)
+            assert len(requests) == 3 and not errors
+            assert len(ctx.durable.tasks()) == 1

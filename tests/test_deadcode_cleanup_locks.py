@@ -403,13 +403,17 @@ def test_clean_sha256_single_shared_helper() -> None:
 
 
 def test_atomic_write_has_no_local_wrappers() -> None:
+    import ast
+
     root = Path(__file__).resolve().parents[1]
     store_src = (root / "codey" / "knowledge" / "store.py").read_text(encoding="utf-8")
     managed_src = (root / "codey" / "storage" / "managed_outputs.py").read_text(encoding="utf-8")
     assert "def _atomic_write_text" not in store_src
     assert "def _write_text_atomic" not in managed_src
     assert "from codey.storage.atomic_io import write_text_atomic" in store_src
-    assert "from codey.storage.atomic_io import write_bytes_atomic" in managed_src
+    assert any(isinstance(node, ast.ImportFrom) and node.module == "codey.storage.atomic_io"
+               and any(alias.name == "write_bytes_atomic" for alias in node.names)
+               for node in ast.walk(ast.parse(managed_src)))
     assert "write_text_atomic(path" in store_src
     assert "write_bytes_atomic(path" in managed_src
 

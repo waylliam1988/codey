@@ -37,12 +37,14 @@ def test_readonly_request_does_not_create_project_directory(tmp_path):
 def test_explicit_source_executor_does_not_use_project_only_guard():
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.research.ledger import ResearchLedger
     from codey.runtime.core.models import ToolCall
 
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "web.read"})))
     calls = []
     results = execute_turn(session, [ToolCall("web_search", {"query":"q"})],
-                           research_tools=SimpleNamespace(), snapshot=build_turn_snapshot(session),
+                           research_tools=SimpleNamespace(ledger=ResearchLedger(), sources_read=set(),
+                                                          search_result_urls=set()), snapshot=build_turn_snapshot(session),
                            executors={"web_search":lambda call: calls.append(call) or observed_tool_result(call, "searched")})
     assert len(calls) == 1
     assert results[0].model_text == "searched"

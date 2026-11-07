@@ -245,7 +245,7 @@ def test_explicit_creation_candidate_never_infers_creation_from_unknown_edit_id(
 @pytest.mark.parametrize("token_count", [4000, 5001, None])
 def test_production_full_read_keeps_old_originals_and_restores_real_receipts(tmp_path, token_count):
     from codey.operations.kernel_facts import project_result_observation
-    from codey.providers.token_accounting import ContextBudget
+    from codey.providers.token_accounting import ContextBudget, RequestContextCount
     from codey.research.answer_context import fitting_full_read
     from codey.research.ledger import ResearchLedger
     from tests.test_research_findings import execute
@@ -263,7 +263,7 @@ def test_production_full_read_keeps_old_originals_and_restores_real_receipts(tmp
             seen.append(text)
             if token_count is None:
                 raise TimeoutError("tokenizer unavailable")
-            return SimpleNamespace(value=token_count)
+            return RequestContextCount(token_count, "tokenizer")
 
         provider = SimpleNamespace(context_budget=ContextBudget(10000, 1000, 0, 1000), count_text=count)
         tools.context_provider = provider

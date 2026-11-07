@@ -66,7 +66,7 @@ def test_ordinary_and_auxiliary_requests_are_not_forced_into_tool_envelopes(monk
         provider.close()
 
 
-@pytest.mark.usefixtures("no_external_advisor_models")
+@pytest.mark.usefixtures("no_external_advisor_models", "scripted_local_api_connection")
 def test_headless_task_admits_constrained_request_through_shared_kernel(tmp_path, monkeypatch):
     payloads = []
 
@@ -77,10 +77,10 @@ def test_headless_task_admits_constrained_request_through_shared_kernel(tmp_path
     monkeypatch.setattr(api_generation, "generate", generate)
     provider = ApiProvider("http://fixture/v1", "fixture", native_tools=False, thinking_enabled=False,
                            text_tool_format="json_schema")
-    result = run_headless(HeadlessRequest(project=None, task="What is 1+1?", intent="hybrid", provider_id="qwen",
+    result = run_headless(HeadlessRequest(project=None, task="What is 1+1?", intent="chat", provider_id="local",
         session_id="json-task", state_home=tmp_path / "state", research_store_root=tmp_path / "knowledge"),
         connect_provider=lambda *_args, **_kwargs: provider, emit_jsonl=lambda _event: None)
-    assert result.exit_code == 0 and result.stop_reason == "done"
+    assert result.exit_code == 0 and result.stop_reason == "done", result
     assert payloads and all("response_format" in p for p in payloads)
     schema = payloads[0]["response_format"]["json_schema"]["schema"]
     validator = Draft202012Validator(schema)

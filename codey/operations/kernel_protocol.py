@@ -734,15 +734,13 @@ def _response_objects(reply: object) -> list[tuple[str, ToolArgs, str]] | ToolPl
             if not reply.text.strip():
                 return _invalid_plan("empty assistant answer", kind="empty_answer")
             return ToolPlan(calls=[], control=Control(kind="done", body=reply.text.strip()))
-    if not isinstance(reply, AssistantTurn):
-        return _invalid_plan("unsupported provider reply type", kind="invalid_args")
-    if reply.tool_calls:
-        return _native_tool_objects(reply.tool_calls)
     if isinstance(reply, str):
         return _invalid_plan(
             "raw text must be decoded by the text protocol before entering the kernel",
             kind="raw_text",
         )
+    if isinstance(reply, AssistantTurn) and reply.tool_calls:
+        return _native_tool_objects(reply.tool_calls)
     return _invalid_plan("unsupported provider reply type", kind="invalid_args")
 
 
@@ -762,7 +760,7 @@ def normalize_turn(
             policy = snapshot.policy
             allowed_raw = snapshot.allowed
             allowed = None if allowed_raw is None else {str(n or "").strip().lower() for n in allowed_raw}
-            snapshot_names = snapshot.inventory_names
+            snapshot_names = snapshot.tool_names
             frozen = frozen_spec_map(snapshot)
         except Exception as exc:
             return _invalid_plan(f"invalid tool snapshot: {exc}")

@@ -581,7 +581,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 ))
                 request.on_event(RunEvent.tool_finished(
                     2,
-                    ToolCall("run", {"path": ".", "command": "python -m unittest"}),
+                    ToolCall("run", {"path": ".", "command": "python -m pytest"}),
                     ToolOutcome("ok", True, exit_code=0),
                 ))
                 return RunResult("finished", "done", 2, True, True, True)
@@ -604,7 +604,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
 
             checkpoint = state.work_checkpoints.load("session-1")
             self.assertIsNotNone(checkpoint)
-            self.assertEqual(checkpoint.status, "ready_for_review")
+            self.assertEqual(checkpoint.status, "ready_for_review", state.run_registry.last_terminal_event())
             facts.record_successful_change.assert_called_once()
 
     def test_review_verification_map_uses_only_checks_after_latest_edit(self) -> None:

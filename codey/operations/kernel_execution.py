@@ -378,10 +378,10 @@ def execute_turn(
                     result=result,
                     exit_code=exit_code if isinstance(exit_code, int) else None,
                 )
-            # A failed acquisition may have mutated a provider-owned ledger
-            # before returning its error. Only successful observations are
-            # admitted into the formal ledger and its derived caches.
-            if ok and ledger is not None and staged_ledger is not None:
+            # The staged projection admits successful acquisition data and
+            # failed investigation records from the settled receipt alike.
+            # Provider-owned mutations never enter this formal projection.
+            if ledger is not None and staged_ledger is not None:
                 assert research_tools is not None
                 ledger.commit_projection(staged_ledger)
                 research_tools.sources_read.update(

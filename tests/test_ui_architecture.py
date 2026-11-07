@@ -19,7 +19,7 @@ def _source() -> str:
 def test_required_runtime_modules_are_imported() -> None:
     main = (FRONTEND / "src/main.ts").read_text(encoding="utf-8")
     runtime = (FRONTEND / "src/app_runtime.ts").read_text(encoding="utf-8")
-    assert main.strip() == "import './app_runtime';"
+    assert main.strip() == "import './appearance';\nimport './app_runtime';"
     for name in ("operator_auth", "provider_ui", "ui_state", "sse", "composer", "conversation_ui"):
         assert f"./{name}" in runtime
 

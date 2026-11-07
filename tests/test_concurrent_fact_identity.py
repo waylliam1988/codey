@@ -30,6 +30,8 @@ def test_reverse_completion_survives_receipt_restart(tmp_path, pdf):
     class Tools:
         def __init__(self):
             self.ledger = ledger
+            self.sources_read: set[str] = set()
+            self.search_result_urls: set[str] = set()
 
         def open_url(self, url, **kwargs):
             page = int(kwargs.get("pages") or 1)
@@ -75,7 +77,7 @@ def test_reverse_completion_survives_receipt_restart(tmp_path, pdf):
         result = execute_turn(session, [call], executors={"codemode": parent}, run_id="r", turn=1,
             effect_scope="parallel", managed_outputs=managed, session_id="s", intent_sink=sink,
             snapshot=snapshot, project_path=project, durable=deps.state.durable)[0]
-        assert result.ok, result
+        assert result.ok, result.model_text
     finally:
         release_first.set()
         releaser.join(20)

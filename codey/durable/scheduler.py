@@ -86,6 +86,7 @@ class DurableTaskScheduler:
         self._pending: set[str] = set()
         self._inflight: set[str] = set()
         self._scheduled: set[str] = set()
+        self._claim_releases: dict[str, str] = {}
         self._blocked: dict[str, str] = {}
         self._task_failures: dict[str, SchedulerFailure] = {}
         self._loop_failure: SchedulerFailure | None = None
@@ -463,6 +464,7 @@ class DurableTaskScheduler:
     def _reconcile(self) -> None:
         with self._lock:
             self._reconcile_requested = False
+        self._release_pending_claims()
         if self._workflows:
             self._session.reconcile_workflows(self._workflows)
         self._place_ready_inputs()
@@ -473,7 +475,7 @@ class DurableTaskScheduler:
             candidates = tuple(sorted(self._pending - self._inflight - self._scheduled))
         for task_id in candidates:
             if self._closed.is_set():
-                return
+                break
             with self._lock:
                 self._inflight.add(task_id)
                 # Consume this wakeup before dispatch. A later pending entry
@@ -491,6 +493,7 @@ class DurableTaskScheduler:
             finally:
                 with self._lock:
                     self._inflight.discard(task_id)
+        self._release_pending_claims()
 
     def _reconcile_task(self, task_id: str) -> None:
         try:
@@ -561,8 +564,7 @@ class DurableTaskScheduler:
             except Exception as exc:
                 self._finish_accepted_dispatch_error(task_id, claimed.attempt_token, exc)
             return
-        self._unclaim_if_owned(task_id, claimed.attempt_token)
-        self._defer_retry(task_id)
+        self._defer_claim_release(task_id, claimed.attempt_token)
 
     def _finish_task_error(
         self,
@@ -576,8 +578,7 @@ class DurableTaskScheduler:
 
     def _finish_dispatch_error(self, task_id: str, attempt_token: str, error: Exception) -> None:
         if not self._record_task_failure(task_id, error, phase="dispatch", attempt_token=attempt_token):
-            self._unclaim_if_owned(task_id, attempt_token)
-            self._defer_retry(task_id)
+            self._defer_claim_release(task_id, attempt_token)
 
     def _finish_accepted_dispatch_error(self, task_id: str, attempt_token: str, error: Exception) -> None:
         self._record_task_failure(
@@ -699,8 +700,39 @@ class DurableTaskScheduler:
         """Release only the claim captured by this dispatch invocation."""
         try:
             self._session.unclaim_task(task_id, expected_attempt_token=attempt_token)
-        except (CommitConflict, KeyError, ValueError):
+        except CommitConflict:
+            try:
+                current = self._session.task(task_id)
+            except KeyError:
+                return
+            if current.status is TaskStatus.RUNNING and current.attempt_token == attempt_token:
+                raise
+        except (KeyError, ValueError):
             return
+
+    def _defer_claim_release(self, task_id: str, attempt_token: str) -> None:
+        with self._lock:
+            self._claim_releases[task_id] = attempt_token
+        self._defer_retry(task_id)
+
+    def _release_pending_claims(self) -> None:
+        """Retry cleanup before interpreting a still-running claim as worker-owned.
+
+        Release errors reach the reconcile circuit breaker. Keep the token even
+        when it trips so an explicit resume retries cleanup, never dispatch.
+        """
+        with self._lock:
+            releases = tuple(self._claim_releases.items())
+        for task_id, attempt_token in releases:
+            try:
+                self._unclaim_if_owned(task_id, attempt_token)
+            except Exception:
+                with self._lock:
+                    self._blocked[task_id] = "unclaim_failed"
+                raise
+            with self._lock:
+                self._claim_releases.pop(task_id)
+                self._blocked.pop(task_id, None)
 
     def _place_ready_inputs(self) -> None:
         """Place queued conversation inputs once their active run has settled."""

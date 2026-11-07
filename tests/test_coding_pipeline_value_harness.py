@@ -66,8 +66,12 @@ def test_wire_accounting_preserves_native_and_missing_reported_tokens():
 
     concrete = Provider()
     observed = EvidenceProvider(concrete)
-    assert observed.native_tools and observed.request_scoped_tool_context
-    assert observed.api_protocol == concrete.api_protocol
+    from codey.providers.compat_transport import provider_attribute, unwrap_provider
+
+    assert unwrap_provider(observed) is concrete
+    assert provider_attribute(observed, "native_tools") is True
+    assert provider_attribute(observed, "request_scoped_tool_context") is True
+    assert provider_attribute(observed, "api_protocol") == concrete.api_protocol
     mark = observed.mark()
     concrete._observe_http_attempt(phase="request", data=json.dumps({"messages": [
         {"role": "user", "content": "Coding current local context:"}]}).encode())

@@ -212,8 +212,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("color: var(--muted)", block)
         self.assertIn("color: var(--text-dim)", block)
         self.assertIn(".run-details-row.warning .run-details-value { color: var(--text-dim); }", block)
-        self.assertIn("font-size: 10.5px", block)
-        self.assertIn("font-size: 12px", block)
+        self.assertIn("font-size: calc(10.5px * var(--font-scale))", block)
+        self.assertIn("font-size: calc(12px * var(--font-scale))", block)
         self.assertIn("letter-spacing: 1px", block)
         self.assertIn("text-transform: uppercase", block)
         for forbidden in ("box-shadow", "background:", "border-radius", "#", "rgba(", "var(--err-text)"):
@@ -231,7 +231,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         start = APP_CSS.index(".local-context-group-title")
         end = APP_CSS.index(".local-context-row", start)
         block = APP_CSS[start:end]
-        self.assertIn("font-size: 10.5px", block)
+        self.assertIn("font-size: calc(10.5px * var(--font-scale))", block)
         self.assertIn("text-transform: uppercase", block)
         self.assertIn("letter-spacing: 1px", block)
         self.assertIn("color: var(--muted)", block)
@@ -295,7 +295,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("Local context", block)
         self.assertNotIn("Post-turn warning (", block)
         self.assertIn("local-health:", block)
-        self.assertIn("eventKey: sseEventKey(data", block)
+        self.assertIn("eventKey: this.deps.transport.eventKey(data", block)
 
     def test_shell_approval_preserves_command_identity_without_reason_section(self) -> None:
         self.assertIn("title.textContent = 'Run this command?'", UI_SOURCE)
@@ -331,13 +331,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("color: var(--muted)", STYLE_SOURCE)
 
     def test_deleting_last_session_preserves_selected_provider(self) -> None:
-        self.assertIn("const fallbackProvider = currentProviderId()", HTML)
-        self.assertIn("defaultSession(null, fallbackProvider)", HTML)
+        source = _source("session_state_store")
+        self.assertIn("const provider = this.currentProviderId()", source)
+        self.assertIn("defaultSession(null, provider)", source)
 
     def test_topbar_shows_running_spinner(self) -> None:
         self.assertIn(".spinner", STYLE_SOURCE)
         self.assertIn('id="status"', HTML)
-        self.assertIn("runtime.Sse.displayRunStatus('running')", HTML)
+        self.assertIn("this.deps.transport.displayRunStatus('running')", _source("run_event_coordinator"))
         self.assertIn("drawer-loading", STYLE_SOURCE)
         self.assertIn("class=\"spinner\"", CHANGES_DRAWER_JS)
         self.assertIn("spinner.className = 'spinner';", RESEARCH_DRAWER_JS)
@@ -411,10 +412,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_review_status_is_quiet_and_has_no_switch(self) -> None:
         self.assertIn("data.type === 'review'", HTML)
-        self.assertIn(
-            "{ type: 'review', text: data.text, sessionId: sid, runId, eventKey: sseEventKey(data) }",
-            UI_SOURCE,
-        )
+        source = _source("run_event_coordinator")
+        block = source[source.index("if (data.type === 'review')"):]
+        for field in ("type: 'review'", "text: data.text", "sessionId: sid", "runId,", "eventKey: this.deps.transport.eventKey(data)"):
+            self.assertIn(field, block)
         self.assertIn("statusRow('Review'", UI_SOURCE)
         review_start = UI_SOURCE.index("} else if (m.type === 'review') {")
         review_end = UI_SOURCE.index("} else if (m.type === 'changes') {", review_start)
@@ -457,7 +458,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
         self.assertIn("reason === 'error'", done_block)
         self.assertIn("const text = summary || 'Task failed';", done_block)
-        self.assertIn("type: 'err', text, sessionId: sid, runId, eventKey: terminalKey", done_block)
+        for field in ("type: 'err'", "text,", "sessionId: sid", "runId,", "eventKey: terminalKey"):
+            self.assertIn(field, done_block)
 
     def test_consensus_has_no_visible_ui_mode(self) -> None:
         self.assertNotIn("MoA", HTML)
@@ -549,50 +551,30 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
 
     def test_streaming_events_stay_debounced_while_user_actions_flush(self) -> None:
-        # A-1: the SSE hot path (addToSession) must keep the debounced persistActive,
-        # otherwise every turn/tool/info event would序列化+落盘 all over again.
-        add_start = HTML.index("function addToSession(sid, m)")
-        add_end = HTML.index("function recordRunState", add_start)
-        add_block = HTML[add_start:add_end]
-        self.assertIn("persistActive();", add_block)
-        self.assertNotIn("persistActiveNow(", add_block)
-
-        # User-visible / discrete mutations flush immediately.
-        self.assertNotIn("function pushMsg(m)", HTML)
-        self.assertNotIn("pushMsg(", HTML)
-        push_start = HTML.index("function pushMsgToSession(sid, m)")
-        push_end = HTML.index("function openMenuAt", push_start)
-        push_block = HTML[push_start:push_end]
-        self.assertIn("persistActiveNow();", push_block)
-        self.assertNotIn("persistActive();", push_block)
-
-        # Terminal task events flush the coalesced state right away.
-        done_start = HTML.index("if (data.type === 'task_done')")
-        done_end = HTML.index("if (data.type === 'shell_request')", done_start)
-        done_block = HTML[done_start:done_end]
-        self.assertIn("flushUiState();", done_block)
+        source = (ASSET_DIR / "session_state_store.ts").read_text(encoding="utf8")
+        add_block = source[source.index("  addMessage("):source.index("  replaceMessage(")]
+        self.assertIn("this.deps.ui.persist();", add_block)
+        self.assertNotIn("persistNow(", add_block)
+        push_block = source[source.index("  pushMessage("):source.index("  addMessage(")]
+        self.assertIn("this.deps.ui.persistNow();", push_block)
+        self.assertNotIn("this.deps.ui.persist();", push_block)
+        self.assertIn("sessionState.addMessage(sid, m)", HTML)
+        self.assertIn("sessionState.pushMessage(sid, m)", HTML)
+        events = (ASSET_DIR / "run_event_coordinator.ts").read_text(encoding="utf8")
+        done_block = events[events.index("if (data.type === 'task_done')"):events.index("if (data.type === 'shell_request')")]
+        self.assertIn("this.deps.ui.flush();", done_block)
 
     def test_discrete_session_actions_flush_immediately(self) -> None:
-        # A-1 follow-up: switching/creating a chat and picking a provider are
-        # discrete user actions, not the SSE hot path, so they flush now.
-        switch_start = HTML.index("function switchSession(id)")
-        switch_end = HTML.index("function openProject(projectId)", switch_start)
-        self.assertIn("persistActiveNow();", HTML[switch_start:switch_end])
-
-        new_start = HTML.index("function newSession(projectId = null)")
-        new_end = HTML.index("async function forgetSessionState(", new_start)
-        self.assertIn("persistActiveNow();", HTML[new_start:new_end])
-
+        source = (ASSET_DIR / "session_state_store.ts").read_text(encoding="utf8")
+        switch_block = source[source.index("  switchSession("):source.index("  newSession(")]
+        new_block = source[source.index("  newSession("):source.index("  openProject(")]
+        self.assertIn("this.deps.ui.persistNow();", switch_block)
+        self.assertIn("this.deps.ui.persistNow();", new_block)
         prov_start = COMPOSER_JS.index("function setActiveProvider(id)")
         prov_end = COMPOSER_JS.index("function clearDraftIfUnchanged", prov_start)
         self.assertIn("persistActiveNow();", COMPOSER_JS[prov_start:prov_end])
-
-        # The debounced path is still used where coalescing matters: the SSE hot
-        # path (addToSession) and low-signal toggles like ensureProject / expand.
-        self.assertIn(
-            "persistActive();",
-            HTML[HTML.index("function ensureProject"):HTML.index("async function pickProject")],
-        )
+        project_block = source[source.index("  ensureProject("):source.index("  attachSessionToProject(")]
+        self.assertIn("this.deps.ui.persist();", project_block)
 
 
     def test_no_content_based_implementation_trigger_in_send_flow(self) -> None:
@@ -630,8 +612,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("let editingProjectId = '';", HTML)
         self.assertIn("function commitSessionRename(id, value)", HTML)
         self.assertIn("function commitProjectRename(id, value)", HTML)
-        self.assertIn("function cancelSessionRename()", HTML)
-        self.assertIn("function cancelProjectRename()", HTML)
+        self.assertIn("function cancelRename()", _source("sidebar"))
 
         # Enter commits, Escape cancels, blur commits (avoids losing the edit).
         input_start = HTML.index("function renameInputEl(value, commit, cancel)")
@@ -648,18 +629,21 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("input.onmousedown = (e) => e.stopPropagation();", input_block)
 
         # rename entry points arm inline editing rather than prompting.
-        rs_start = HTML.index("function renameSession(id)")
-        rs_end = HTML.index("async function clearMessages(id)", rs_start)
-        rs_block = HTML[rs_start:rs_end]
+        sidebar_source = _source("sidebar")
+        self.assertIn("sidebar.beginSessionRename(id)", HTML)
+        self.assertIn("sidebar.beginProjectRename(id)", HTML)
+        rs_start = sidebar_source.index("function beginSessionRename(id)")
+        rs_end = sidebar_source.index("function beginProjectRename(id)", rs_start)
+        rs_block = sidebar_source[rs_start:rs_end]
         self.assertIn("editingSessionId = id;", rs_block)
         self.assertIn("focusRenameInput();", rs_block)
-        rp_start = HTML.index("function renameProject(id)")
-        rp_end = HTML.index("async function deleteProject(id)", rp_start)
-        rp_block = HTML[rp_start:rp_end]
+        rp_start = sidebar_source.index("function beginProjectRename(id)")
+        rp_end = sidebar_source.index("function cancelRename()", rp_start)
+        rp_block = sidebar_source[rp_start:rp_end]
         self.assertIn("editingProjectId = id;", rp_block)
         self.assertIn("focusRenameInput();", rp_block)
         # committing a session rename still clamps title length (unchanged shape).
-        self.assertIn("s.title = title.slice(0, 80);", HTML)
+        self.assertIn("session.title = title.slice(0, 80);", _source("session_state_store"))
 
 
 
@@ -696,6 +680,7 @@ function makeElement(tag) {
     setAttribute: () => {},
     setSelectionRange: () => {},
     append: (...kids) => { el.children.push(...kids); },
+    prepend: (...kids) => { el.children.unshift(...kids); },
     appendChild: (kid) => { el.children.push(kid); return kid; },
     before: () => {},
     replaceChildren: (...kids) => { el.children = kids; },
@@ -748,7 +733,7 @@ global.document = {
     if (id === 'local-config-pop') return fakePop;
     if (id === 'local-config-close') return fakeButtons['local-config-close'] || (fakeButtons['local-config-close'] = fakeButton());
     if (id === 'local-config-save') return fakeButtons['local-config-save'] || (fakeButtons['local-config-save'] = fakeButton());
-    if (id === 'task') return { value: '', style: {}, disabled: false, scrollHeight:40, setSelectionRange: () => {}, addEventListener: () => {}, click: () => {}, before: () => {}, closest: () => null };
+    if (id === 'task') return { value: '', style: {}, disabled: false, scrollHeight:40, setSelectionRange: () => {}, addEventListener: () => {}, click: () => {}, before: () => {}, closest: () => makeElement('div') };
     if (id === 'composer-context') return { onclick: null, addEventListener: () => {} };
     if (id === 'send' || id === 'stop') return { onclick: null, disabled: false, style: {}, setAttribute: () => {}, click: () => {} };
     if (id === 'send-hint') return fakeButtons[id] || (fakeButtons[id] = makeElement('span'));

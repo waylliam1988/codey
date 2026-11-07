@@ -7,6 +7,12 @@ import pytest
 from tests.manual import research_semantic_review_d as d
 
 
+def test_frozen_cases_do_not_depend_on_working_directory_or_run_artifacts(tmp_path, monkeypatch):
+    expected = d.load_cases()
+    monkeypatch.chdir(tmp_path)
+    assert d.load_cases() == expected
+
+
 def test_frozen_cases_are_natural_reports_with_unchanged_drafts():
     cases = d.load_cases()
     assert len(cases) == 6

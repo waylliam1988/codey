@@ -1,0 +1,237 @@
+[
+  {
+    "id": "error_complex",
+    "question": "用中文完整交付两个版本的核查报告：分别写出 C1/C2 的 local/remote 写者限制、license 前提、C1 只读支持、两份精确 receipt tag、C1 父/子取消及 collect_errors 边界、C2 checkpoint 的停止/保存/恢复、回绕与部分 checkpoint 的区别。保留全部数字和条件。最后说明这些政策事实不能证明本机速度；只用前两份政策材料，背景不作为依据。",
+    "draft": "# 版本核查报告\n\n### C1 与 C2 政策对比\n\n**1. 写者限制与 License 前提**\n*   **C1**: \n    *   **Local**: 在 `ACTIVE` license 下允许 7 个写者 [e1]。\n    *   **Remote**: 允许 2 个写者，且不继承 local 的限制 [e1]。\n*   **C2**: \n    *   **Local**: 在 `ACTIVE` license 下允许 11 个写者；在非 `ACTIVE` license 下允许 3 个写者 [e2]。\n    *   **Remote**: 允许 4 个写者，且独立于 license 状态 [e2]。\n\n**2. C1 只读支持**\n*   C1 不支持只读打开（no read-only opening）[e1]。\n\n**3. 精确 Receipt Tag**\n*   **C1**: `ARROW-5721` [e1]。\n*   **C2**: `BIRCH-9384` [e2]。\n\n**4. C1 取消规则与 collect_errors 边界**\n*   **取消规则**: 取消 coordinator 会取消所有尚未完成的 child，且不受 `collect_errors` 影响 [e1]。\n*   **边界情况**: 仅取消一个 child 不会取消 coordinator，也不会连带取消其他 siblings [e1]。\n\n**5. C2 Checkpoint 机制**\n*   **停止/保存/恢复**: Checkpoint 在最老 reader 的 marker 处停止，进度记录在 `INDEX-P` 中，下次从该记录位置继续 [e2]。\n\n**6. 回绕与部分 Checkpoint 的区别**\n*   **回绕（Reuse）**: 需要同时满足“完整 checkpoint”且“没有 active reader”两个条件 [e2]。\n*   **部分 Checkpoint**: 不需要上述两个条件 [e2]。\n\n**结论**\n这些政策事实仅描述了机制与规则，不能证明本机速度的提升 [e1, e2]。\n\n**依据说明**\n本报告仅基于 `draft-1` [e1] 和 `draft-2` [e2] 的政策材料，`noise` [e3] 作为背景材料未作为本次政策事实的依据。\n\n## 引用来源\n[e1] SYNTHETIC draft policy 1 — https://example.org/branch-review/draft-1 (source 074fa378381c6ece, 0:6476)\n[e2] SYNTHETIC draft policy 2 — https://example.org/branch-review/draft-2 (source 5f24da432c9a84f0, 0:6490)\n[e3] SYNTHETIC irrelevant background — https://example.org/branch-review/noise (source 6359849f4ebfe086, 0:6489)",
+    "evidence": [
+      {
+        "label": "e1",
+        "source_id": "error_complex-s1",
+        "title": "SYNTHETIC draft policy 1",
+        "url": "https://example.org/branch-review/draft-1",
+        "excerpt": "## Revision 1 policy\n\nC1 local requires license ACTIVE and allows 7 writers. C1 remote allows 2 writers and does not inherit the local allowance. C1 has no read-only opening. Receipt tag is ARROW-5721.\nC1 cancellation of the coordinator cancels every unfinished child irrespective of collect_errors. Cancelling one child does not cancel the coordinator or its siblings.\n\nBackground filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. ",
+        "content_kind": "html"
+      },
+      {
+        "label": "e2",
+        "source_id": "error_complex-s2",
+        "title": "SYNTHETIC draft policy 2",
+        "url": "https://example.org/branch-review/draft-2",
+        "excerpt": "## Revision 2 policy\n\nC2 local with ACTIVE license allows 11 writers; without ACTIVE license it allows 3. C2 remote allows 4 independently of license. Receipt tag is BIRCH-9384.\nC2 checkpoint stops at the oldest reader marker, records progress in INDEX-P and resumes there. Reuse needs BOTH full checkpoint AND no active reader; partial checkpoint does not need these two conditions.\n\nBackground filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. Background filler contains no additional policy facts. ",
+        "content_kind": "html"
+      },
+      {
+        "label": "e3",
+        "source_id": "error_complex-s3",
+        "title": "SYNTHETIC irrelevant background",
+        "url": "https://example.org/branch-review/noise",
+        "excerpt": "## Background\n\nThis is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. This is unrelated filler; it supplies no version policy or cancellation rule. ",
+        "content_kind": "html"
+      }
+    ],
+    "source_report": ".e2e-artifacts\\research-fidelity-source-ab-v2-20261104\\runs\\error_complex-641-baseline\\research-report.txt",
+    "split": "frozen_natural",
+    "gold": {
+      "required": [
+        "C1",
+        "C2",
+        "7",
+        "11",
+        "ARROW",
+        "BIRCH",
+        "INDEX-P"
+      ],
+      "forbidden": [
+        "本机.*更快",
+        "证明.*速度"
+      ],
+      "citation_labels": [
+        "e1",
+        "e2"
+      ]
+    }
+  },
+  {
+    "id": "version_scope",
+    "question": "用中文分别核查 V7、V8 的 local/remote 额度、license 前提和读取支持。保留数字、每个条件的适用对象及原文未说明的部分；不要将不同版本的条件合并。",
+    "draft": "### Vela V7 与 V8 规格核查\n\n根据提供的材料，V7 和 V8 的规格如下：\n\n#### **V7**\n*   **Local 额度与 License 前提**：需要 VALID license，允许 9 个 workers [e1]。\n*   **Remote 额度与 License 前提**：允许 3 个 workers，且不继承 local 的额度 [e1]。\n*   **读取支持**：不支持 read-only opening（只读打开）[e1]。\n\n#### **V8**\n*   **Local 额度与 License 前提**：\n    *   有 VALID license 时：允许 13 个 workers [e2]。\n    *   无 VALID license 时：允许 5 个 workers [e2]。\n*   **Remote 额度与 License 前提**：允许 6 个 workers，独立于 license [e2]。\n*   **读取支持**：原文未明确说明 V8 是否支持 read-only opening（与 V7 不同点未直接对比说明）[e2]。\n\n## 引用来源\n[e1] SYNTHETIC Vela V7 policy — https://example.org/fidelity/vela-v7 (source 61cc9840c7f0de89, 0:201)\n[e2] SYNTHETIC Vela V8 policy — https://example.org/fidelity/vela-v8 (source bdcc24d792c83e82, 0:157)",
+    "evidence": [
+      {
+        "label": "e1",
+        "source_id": "version_scope-s1",
+        "title": "SYNTHETIC Vela V7 policy",
+        "url": "https://example.org/fidelity/vela-v7",
+        "excerpt": "## V7\nV7 local requires a VALID license and allows 9 workers. V7 remote allows 3 workers and does not inherit the local allowance. V7 does not support read-only opening. Its receipt tag is CEDAR-2847.\n",
+        "content_kind": "html"
+      },
+      {
+        "label": "e2",
+        "source_id": "version_scope-s2",
+        "title": "SYNTHETIC Vela V8 policy",
+        "url": "https://example.org/fidelity/vela-v8",
+        "excerpt": "## V8\nV8 local allows 13 workers with a VALID license and 5 without one. V8 remote allows 6 workers independently of license. Its receipt tag is MAPLE-6193.\n",
+        "content_kind": "html"
+      }
+    ],
+    "source_report": ".e2e-artifacts\\research-fidelity-source-ab-v2-20261104\\runs\\version_scope-641-baseline\\research-report.txt",
+    "split": "frozen_natural",
+    "gold": {
+      "required": [
+        "V7",
+        "V8",
+        "9",
+        "13",
+        "5",
+        "6"
+      ],
+      "forbidden": [
+        "V7.*只读.*支持",
+        "V8.*不支持"
+      ],
+      "citation_labels": [
+        "e1",
+        "e2"
+      ]
+    }
+  },
+  {
+    "id": "condition_scope",
+    "question": "用中文分别说明 R4、R5 的导出许可条件、例外、缓存的作用和保留天数；准确保留且/或。再说明材料是否给出只读支持或真实耗时，未说明的关系如实保留。",
+    "draft": "### R4 导出规则\n- **导出许可条件**：当同时具备有效的审计（audit）**且**有效的签名（signature）时，或者当紧急标志（emergency flag）被设置时，允许导出 [e1]。\n- **例外**：仅有现有的缓存（cache）本身是不够的 [e1]。\n- **缓存的作用**：仅有缓存本身不足以支持导出 [e1]。\n- **保留天数**：保留时间恰好为 21 天 [e1]。\n\n### R5 导出规则\n- **导出许可条件**：具备有效的审计（audit）**或**有效的签名（signature）时，允许导出 [e2]。\n- **例外**：仅有紧急标志（emergency flag）本身对于 R5 是不足的 [e2]。\n- **缓存的作用**：材料中未明确说明 R5 缓存的具体作用 [e2]。\n- **保留天数**：保留时间恰好为 28 天 [e2]。\n\n### 其他说明\n- **只读支持**：材料中未说明是否支持只读 [e1, e2]。\n- **真实耗时**：材料中未说明真实耗时 [e1, e2]。\n\n## 引用来源\n[e1] SYNTHETIC R4 export rules — https://example.org/fidelity/export-r4 (source 9a3feffe32112bb0, 0:244)\n[e2] SYNTHETIC R5 export rules — https://example.org/fidelity/export-r5 (source fb966702049f4f80, 0:209)",
+    "evidence": [
+      {
+        "label": "e1",
+        "source_id": "condition_scope-s1",
+        "title": "SYNTHETIC R4 export rules",
+        "url": "https://example.org/fidelity/export-r4",
+        "excerpt": "## R4\nR4 permits export when BOTH a valid audit AND a valid signature are present, OR when the emergency flag is set. An existing cache alone is insufficient. R4 retention is exactly 21 days. These are permission rules, not speed measurements.\n",
+        "content_kind": "html"
+      },
+      {
+        "label": "e2",
+        "source_id": "condition_scope-s2",
+        "title": "SYNTHETIC R5 export rules",
+        "url": "https://example.org/fidelity/export-r5",
+        "excerpt": "## R5\nR5 permits export with a valid audit OR a valid signature. The emergency flag alone is insufficient for R5. R5 retention is exactly 28 days. These rules do not specify read-only support or elapsed time.\n",
+        "content_kind": "html"
+      }
+    ],
+    "source_report": ".e2e-artifacts\\research-fidelity-source-ab-v2-20261104\\runs\\condition_scope-641-baseline\\research-report.txt",
+    "split": "frozen_natural",
+    "gold": {
+      "required": [
+        "21",
+        "28",
+        "且",
+        "或"
+      ],
+      "forbidden": [
+        "R4.*或.*audit",
+        "R5.*且"
+      ],
+      "citation_labels": [
+        "e1",
+        "e2"
+      ]
+    }
+  },
+  {
+    "id": "known_url",
+    "question": "阅读给定 SQLite 官方原文，用中文回答只读 WAL 的支持版本和完整 OR 条件；同时把‘SQLite 从 3.22.0 开始放宽只读 WAL 限制’保存为一条新的候选 claim，保留原始证据引用；不要把候选当成已经独立验证的知识。",
+    "draft": "### SQLite 只读 WAL 支持情况\n\n**支持版本：**\nSQLite 从 **3.22.0 (2018-01-22)** 版本开始放宽了只读 WAL 数据库的限制 [e1]。\n\n**完整 OR 条件：**\n在较新版本的 SQLite 中，即使数据库处于只读媒体上或缺乏写入权限，只要满足以下任一条件，仍可读取 WAL 模式的数据库 [e1]：\n1. `-shm` 和 `-wal` 文件已经存在且可读。\n2. 包含数据库的目录具有写入权限，以便可以创建 `-shm` 和 `-wal` 文件。\n3. 使用 `immutable` 查询参数打开数据库连接。\n\n## 引用来源\n[e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)",
+    "evidence": [
+      {
+        "label": "e1",
+        "source_id": "known_url-s1",
+        "title": "SQLite WAL read-only databases (frozen official excerpt)",
+        "url": "https://www.sqlite.org/wal.html",
+        "excerpt": "## 5. Read-Only Databases\n\nOlder versions of SQLite could not read a WAL-mode database that was\nread-only. In other words, write access was required in order to read a\nWAL-mode database. This constraint was relaxed beginning with\nSQLite version 3.22.0 (2018-01-22).\n\nOn newer versions of SQLite,\na WAL-mode database on read-only media, or a WAL-mode database that lacks\nwrite permission, can still be read as long as one or more of the following\nconditions are met:\n\nThe -shm and -wal files already exist and are readable.\n\nThere is write permission on the directory containing the database so\nthat the -shm and -wal files can be created.\n\nThe database connection is opened using the\nimmutable query parameter.\n\nEven though it is possible to open a read-only WAL-mode database,\nit is good practice to convert the database to PRAGMA journal_mode=DELETE prior to burning an\nSQLite database image onto read-only media.",
+        "content_kind": "html"
+      }
+    ],
+    "source_report": ".e2e-artifacts\\research-fidelity-source-ab-v2-20261104\\runs\\known_url-641-baseline\\research-report.txt",
+    "split": "frozen_natural",
+    "gold": {
+      "required": [
+        "3.22.0",
+        "-shm",
+        "-wal",
+        "writable",
+        "immutable"
+      ],
+      "forbidden": [
+        "key alone",
+        "必须同时满足"
+      ],
+      "citation_labels": [
+        "e1"
+      ]
+    }
+  },
+  {
+    "id": "two_errors",
+    "question": "阅读给定 SQLite 官方原文，用中文回答只读 WAL 的支持版本和完整 OR 条件；同时把‘SQLite 从 3.22.0 开始放宽只读 WAL 限制’保存为一条新的候选 claim，保留原始证据引用；不要把候选当成已经独立验证的知识。",
+    "draft": "### SQLite 只读 WAL 支持情况\n\n**支持版本：**\nSQLite 从 **3.22.0 (2018-01-22)** 版本开始放宽了只读 WAL 数据库的限制 [e1]。\n\n**完整 OR 条件：**\n在较新版本的 SQLite 中，即使数据库处于只读介质上或缺乏写入权限，只要满足以下任一条件，仍可读取 WAL 模式的数据库 [e1]：\n1. `-shm` 和 `-wal` 文件已经存在且可读。\n2. 包含数据库的目录具有写入权限，以便可以创建 `-shm` 和 `-wal` 文件。\n3. 使用 `immutable` 查询参数打开数据库连接。\n\n## 引用来源\n[e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)",
+    "evidence": [
+      {
+        "label": "e1",
+        "source_id": "two_errors-s1",
+        "title": "SQLite WAL read-only databases (frozen official excerpt)",
+        "url": "https://www.sqlite.org/wal.html",
+        "excerpt": "## 5. Read-Only Databases\n\nOlder versions of SQLite could not read a WAL-mode database that was\nread-only. In other words, write access was required in order to read a\nWAL-mode database. This constraint was relaxed beginning with\nSQLite version 3.22.0 (2018-01-22).\n\nOn newer versions of SQLite,\na WAL-mode database on read-only media, or a WAL-mode database that lacks\nwrite permission, can still be read as long as one or more of the following\nconditions are met:\n\nThe -shm and -wal files already exist and are readable.\n\nThere is write permission on the directory containing the database so\nthat the -shm and -wal files can be created.\n\nThe database connection is opened using the\nimmutable query parameter.\n\nEven though it is possible to open a read-only WAL-mode database,\nit is good practice to convert the database to PRAGMA journal_mode=DELETE prior to burning an\nSQLite database image onto read-only media.",
+        "content_kind": "html"
+      }
+    ],
+    "source_report": ".e2e-artifacts\\research-fidelity-source-ab-v2-20261104\\runs\\two_errors-641-baseline\\research-report.txt",
+    "split": "frozen_natural",
+    "gold": {
+      "required": [
+        "3.22.0",
+        "-shm",
+        "-wal",
+        "writable",
+        "immutable"
+      ],
+      "forbidden": [
+        "key alone",
+        "必须同时满足"
+      ],
+      "citation_labels": [
+        "e1"
+      ]
+    }
+  },
+  {
+    "id": "source_discovery",
+    "question": "请先搜索找到 SQLite WAL 只读数据库条件的官方材料，再读取原文，用中文回答支持版本和完整替代条件，保留 OR。不要使用材料外知识，不需要保存新 claim。",
+    "draft": "从 SQLite 3.22.0 版本开始，支持在只读媒体或缺乏写入权限的情况下读取 WAL 模式数据库。\n\n其完整的替代条件如下（满足其中任意一个即可）：\n- -shm 和 -wal 文件已经存在且可读 [e1]\n- 数据库所在的目录具有写入权限，以便可以创建 -shm 和 -wal 文件 [e1]\n- 使用 `immutable` 查询参数打开数据库连接 [e1]\n\n## 引用来源\n[e1] SQLite WAL read-only databases (frozen official excerpt) — https://www.sqlite.org/wal.html (source 5fa34fc8ef85871a, 0:915)",
+    "evidence": [
+      {
+        "label": "e1",
+        "source_id": "source_discovery-s1",
+        "title": "SQLite WAL read-only databases (frozen official excerpt)",
+        "url": "https://www.sqlite.org/wal.html",
+        "excerpt": "## 5. Read-Only Databases\n\nOlder versions of SQLite could not read a WAL-mode database that was\nread-only. In other words, write access was required in order to read a\nWAL-mode database. This constraint was relaxed beginning with\nSQLite version 3.22.0 (2018-01-22).\n\nOn newer versions of SQLite,\na WAL-mode database on read-only media, or a WAL-mode database that lacks\nwrite permission, can still be read as long as one or more of the following\nconditions are met:\n\nThe -shm and -wal files already exist and are readable.\n\nThere is write permission on the directory containing the database so\nthat the -shm and -wal files can be created.\n\nThe database connection is opened using the\nimmutable query parameter.\n\nEven though it is possible to open a read-only WAL-mode database,\nit is good practice to convert the database to PRAGMA journal_mode=DELETE prior to burning an\nSQLite database image onto read-only media.",
+        "content_kind": "html"
+      }
+    ],
+    "source_report": ".e2e-artifacts\\research-fidelity-source-ab-v2-20261104\\runs\\source_discovery-641-baseline\\research-report.txt",
+    "split": "frozen_natural",
+    "gold": {
+      "required": [
+        "3.22.0",
+        "-shm",
+        "-wal",
+        "writable",
+        "immutable"
+      ],
+      "forbidden": [
+        "key alone",
+        "必须同时满足"
+      ],
+      "citation_labels": [
+        "e1"
+      ]
+    }
+  }
+]

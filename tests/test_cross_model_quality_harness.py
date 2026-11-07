@@ -63,6 +63,8 @@ def test_model_control_is_explicit_and_limited_to_the_experiment_model():
 
 def test_local_response_cap_reaches_wire_without_changing_saved_context(monkeypatch):
     from codey.providers import api_transport, local_config
+    from codey.providers.compat_transport import provider_attribute
+    from codey.providers.token_accounting import ContextBudget
     from tests.manual.cross_model_quality_ab import provider
     from tests.test_api_generation_observations_no_replay import Response
     from tests.test_local_kobold_tool_parser_compat import configured
@@ -78,7 +80,8 @@ def test_local_response_cap_reaches_wire_without_changing_saved_context(monkeypa
     try:
         assert observed.send('Reply READY.') == 'READY'
         assert wire[0]['max_tokens'] == 2048 and wire[0]['stream'] is True
-        budget = observed.context_budget
+        budget = provider_attribute(observed, "context_budget")
+        assert isinstance(budget, ContextBudget)
         assert budget.output_tokens + budget.safety_tokens == saved.context.context_reserve_tokens
         assert budget.input_limit == saved.context.context_window_tokens - saved.context.context_reserve_tokens
         assert local_config.load_local_config() is saved

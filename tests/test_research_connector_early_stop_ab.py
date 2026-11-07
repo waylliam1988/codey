@@ -17,3 +17,13 @@ def test_baseline_stops_and_candidate_calls_browser() -> None:
         "candidate_adds_material": True,
         "limit_preserved": True,
     }
+
+
+def test_current_production_keeps_browser_material_after_connector_hits() -> None:
+    case = experiment.cases()[0]
+    browser = experiment._FakeProvider(case.browser_hits)
+    provider = experiment._ConnectorFixture(browser, case.connector_hits)
+    rows = experiment.production.ConnectorAwareSearchProvider.search(provider, "versioned limitation", limit=case.limit)
+    assert browser.calls == 1
+    assert any("official.example.org" in str(row.get("url")) for row in rows)
+    assert len(rows) <= case.limit

@@ -8,9 +8,9 @@ production merge/deduplication function.  No production default is changed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from codey.research import connector_search as production
+from codey.types.json_value import JsonObject
 
 ARMS = ("baseline", "browser_after_connector")
 
@@ -18,8 +18,8 @@ ARMS = ("baseline", "browser_after_connector")
 @dataclass(frozen=True)
 class SearchCase:
     name: str
-    connector_hits: tuple[dict[str, Any], ...]
-    browser_hits: tuple[dict[str, Any], ...]
+    connector_hits: tuple[JsonObject, ...]
+    browser_hits: tuple[JsonObject, ...]
     limit: int = 4
     early_stop_expected: bool = True
 
@@ -44,18 +44,18 @@ def cases() -> tuple[SearchCase, ...]:
 class _FakeProvider:
     name = "fixture-browser"
 
-    def __init__(self, rows: tuple[dict[str, Any], ...]) -> None:
+    def __init__(self, rows: tuple[JsonObject, ...]) -> None:
         self.rows = rows
         self.calls = 0
 
-    def search(self, query: str, *, limit: int) -> list[dict[str, Any]]:
+    def search(self, query: str, *, limit: int) -> list[JsonObject]:
         del query
         self.calls += 1
         return list(self.rows[:limit])
 
 
 class _ConnectorFixture(production.ConnectorAwareSearchProvider):
-    def __init__(self, browser: _FakeProvider, connector_rows: tuple[dict[str, Any], ...]) -> None:
+    def __init__(self, browser: _FakeProvider, connector_rows: tuple[JsonObject, ...]) -> None:
         super().__init__(browser, connector_ids=(), connector_limit=2)
         self.connector_rows = connector_rows
 
@@ -63,8 +63,16 @@ class _ConnectorFixture(production.ConnectorAwareSearchProvider):
         del query, safe_query
         return list(self.connector_rows[:limit])
 
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
+        """Freeze the historical early-stop control after production moved on."""
+        result_limit = production._bounded_limit(limit, default=8, upper=production.MAX_CONNECTOR_HITS)
+        rows = self._connector_search_results(query, limit=min(self.connector_limit, result_limit))
+        if len(rows) >= production.CONNECTOR_MIN_RESULTS:
+            return rows
+        return production._merge_results(rows, self._base_search(query, limit=result_limit), limit=result_limit)
 
-def _candidate_search(self: _ConnectorFixture, query: str, limit: int = 8) -> list[dict[str, Any]]:
+
+def _candidate_search(self: _ConnectorFixture, query: str, limit: int = 8) -> list[JsonObject]:
     query = " ".join((query or "").split())
     if not query:
         return []
@@ -74,7 +82,7 @@ def _candidate_search(self: _ConnectorFixture, query: str, limit: int = 8) -> li
     return production._merge_results(connector_rows, browser_rows, limit=result_limit)
 
 
-def run_case(case: SearchCase, arm: str) -> dict[str, Any]:
+def run_case(case: SearchCase, arm: str) -> JsonObject:
     browser = _FakeProvider(case.browser_hits)
     provider = _ConnectorFixture(browser, case.connector_hits)
     if arm == "browser_after_connector":
@@ -92,7 +100,7 @@ def run_case(case: SearchCase, arm: str) -> dict[str, Any]:
     }
 
 
-def summarize() -> dict[str, Any]:
+def summarize() -> JsonObject:
     rows = [run_case(case, arm) for case in cases() for arm in ARMS]
     by_arm = {
         arm: [row for row in rows if row["arm"] == arm]

@@ -174,7 +174,7 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
                     settings = page.get_by_role('dialog', name='Settings', exact=True)
                     expect(settings.locator('#btn-command-permissions')).to_have_count(0)
                     expect(settings.get_by_text('Permissions', exact=True)).to_have_count(0)
-                    expect(settings.get_by_text('Models', exact=True)).to_have_count(0)
+                    expect(settings.get_by_text('Models', exact=True)).to_have_count(1)
                     settings.get_by_role('button', name='Close settings', exact=True).click()
                     page.keyboard.press('Control+k')
                     page.get_by_role('combobox', name='Find an action').fill('Manage saved permissions')

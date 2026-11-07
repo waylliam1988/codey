@@ -70,7 +70,7 @@ def test_edit_replaces_old_work_and_suffix_and_rejects_late_events(page, positio
     page.wait_for_timeout(100)  # Flush the animation-frame stream coalescer.
     expect(page.locator("#chat")).not_to_contain_text("LATE OLD ANSWER")
     expect(page.locator("#chat")).not_to_contain_text("OLD COMMAND")
-    expect(page.locator("#stop")).to_be_visible()
+    expect(page.locator("#send")).to_be_visible()
     expect(page.locator("#task")).to_have_value("Separate composer draft")
     page.evaluate("() => ConversationUI.refreshHistory('a')")
     expect(page.locator(".msg.user")).to_have_count(position + 1)
@@ -92,6 +92,7 @@ def test_edit_conflict_keeps_inline_draft_and_original_history(page):
 
 def test_edit_sending_remains_stoppable_without_appending_another_user_message(page):
     seed(page)
+    page.locator("#task").fill("")
     pending, stops = [], []
     page.route("**/api/run", lambda route: pending.append(route))
     def stop(route):

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from codey.agents.writer_failover import CheckpointView, WriterAttempt
+from codey.operations.completion_context import CompletionContext
 from codey.operations.context import RunWork
 from codey.operations.project_completion_checks import _normalized_scope_and_change
 from codey.operations.project_completion_context import ProjectRun
@@ -20,7 +21,7 @@ from tests.support.kernel_runtime import run_agent as run
 def test_checkpoint_scope_is_combined_with_new_attempt_edits():
     session = TaskSession(policy=None)
     session.edited_files["adapter.py"] = 1
-    scope, changed = _normalized_scope_and_change(session, {"scope_files": ("app.py",)})
+    scope, changed = _normalized_scope_and_change(session, CompletionContext(scope_files=("app.py",)))
     assert set(scope) == {"app.py", "adapter.py"}
     assert changed is True
 

@@ -163,6 +163,9 @@ def probe(root, removed="zen"):
             enable_models(root, local=["fixture"])
             ctx = AppContext(root)
             status, bootstrap = api_models_response(ctx)
+            from codey.app.attachment_routes import image_support
+
+            assert image_support(ctx, "old", removed, "unknown-model") is False
             ctx.close()
             assert status == 200 and [r["id"] for r in bootstrap["connections"]] == ["local"]
             assert bootstrap["connections"][0]["models"]

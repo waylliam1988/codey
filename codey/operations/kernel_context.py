@@ -432,6 +432,17 @@ class KernelContext:
             completion_context=self.completion_context,
             request_scoped_contract=self.request_scoped_context)
         prompt = prepared.prompt
+        question_raw = self.durable.task(self.sink.run_id).state.get("question")
+        if question_raw is not None:
+            question = decode_json_object(thaw_json(question_raw))
+            if question["state"] == "answered":
+                # An answer can arrive before the worker parks, while this
+                # transport still predates resume_input. Use the durable fact
+                # for both warm continuation and cold recovery.
+                answer = require_json_string(question["answer"], "answer")
+                prompt += (f"\n\nThe user answered this question: {require_json_string(question['question'], 'question')}\nAnswer: {answer}\n"
+                           "Continue the original task within its existing authorization. "
+                           "Command execution still requires its own approval.")
         if state.logical_turn and self.boundary_text():
             prompt += "\n\nNew user input at provider boundary:\n" + self.boundary_text()
         admission = admit_ghost_context(prompt, self.transport.ghost_sources, request_scope=self.transport.context_scope,

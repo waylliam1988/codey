@@ -141,7 +141,6 @@ def test_real_steer_is_consumed_by_the_current_task_without_a_second_run(tmp_pat
                 page.locator('.pending-input-editor').fill('请把当前回答改成简短中文。不要运行工具。补充：只回答一句。')
                 page.locator('.pending-inputs [data-action="save"]').click()
                 expect(page.locator('.pending-input-text')).to_contain_text('只回答一句')
-                page.locator('.pending-inputs [data-action="steer"]').click()
                 expect(page.locator('.pending-inputs')).to_contain_text('Steer at next boundary')
                 release.set()
                 expect(page.locator('.pending-inputs')).to_be_hidden()
@@ -248,7 +247,18 @@ def test_real_stream_and_queued_input_keep_one_answer_and_survive_reload(tmp_pat
                 assert page.locator('.composer-wrap').bounding_box()['y'] > initial_top + 150
                 stable = first.locator("p").first.element_handle()
                 expect(page.locator(".process-summary .spinner")).to_have_count(1)
-                send(page, "只读：下一轮补充说明，不要修改文件。")
+                # Explicit follow-up uses the HTTP contract; the composer now
+                # defaults to steering the current task while it is running.
+                response = page.request.post(f"http://127.0.0.1:{httpd.server_port}/api/inputs", data={
+                    "action": "create", "id": "explicit-follow-up", "request": {
+                    "session_id": "live", "project": str(tmp_path / "project"),
+                    "task": "只读：下一轮补充说明，不要修改文件。", "provider": "local",
+                    "input_mode": "follow_up", "model_selection": {
+                        "connection_id": "local", "model": target.model, "base_url": url,
+                    }, "run_id": "run_" + "f" * 32,
+                    },
+                })
+                assert response.ok, response.text()
                 expect(page.locator('.pending-inputs [aria-label="Queued for the next turn"]')).to_have_count(1)
                 assert len(requests) == 1
                 release.set()

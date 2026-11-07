@@ -13,10 +13,11 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
 
 from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.providers.diagnostics import ProviderFailure
+from codey.runtime.core.api_selection import ApiRunSelection
+from codey.types.json_value import JsonObject, JsonValue
 
 
 @dataclass(frozen=True)
@@ -45,12 +46,12 @@ class RunRegistry:
         # keyed collection above so different sessions can run concurrently.
         self._active_run: RunSnapshot | None = None
         self._current_run_id = ""
-        self._api_selections: dict[str, Any] = {}
+        self._api_selections: dict[str, ApiRunSelection] = {}
         self._last_summary: str | None = None
         self._last_stop_reason: str | None = None
         self._last_provider_failure: ProviderFailure | None = None
-        self._last_terminal_event: dict[str, Any] | None = None
-        self._last_shell_result: dict[str, Any] | None = None
+        self._last_terminal_event: JsonObject | None = None
+        self._last_shell_result: JsonObject | None = None
         self._status = "idle"
         self._project: str | None = None
         self._task: str | None = None
@@ -121,12 +122,12 @@ class RunRegistry:
             else:
                 run.stop_event.clear()
 
-    def bind_api_selection(self, run_id: str, config: Any) -> None:
+    def bind_api_selection(self, run_id: str, config: ApiRunSelection) -> None:
         with self._lock:
             if run_id in self._active_runs:
                 self._api_selections[run_id] = config
 
-    def api_selection_for(self, run_id: str) -> Any:
+    def api_selection_for(self, run_id: str) -> ApiRunSelection | None:
         with self._lock:
             return self._api_selections.get(run_id)
 
@@ -195,19 +196,19 @@ class RunRegistry:
         with self._lock:
             return self._last_provider_failure
 
-    def set_last_terminal_event(self, value: dict[str, Any] | None) -> None:
+    def set_last_terminal_event(self, value: JsonObject | None) -> None:
         with self._lock:
             self._last_terminal_event = dict(value) if value is not None else None
 
-    def last_terminal_event(self) -> dict[str, Any] | None:
+    def last_terminal_event(self) -> JsonObject | None:
         with self._lock:
             return dict(self._last_terminal_event) if self._last_terminal_event else None
 
-    def set_last_shell_result(self, value: dict[str, Any] | None) -> None:
+    def set_last_shell_result(self, value: JsonObject | None) -> None:
         with self._lock:
             self._last_shell_result = dict(value) if value is not None else None
 
-    def last_shell_result(self) -> dict[str, Any] | None:
+    def last_shell_result(self) -> JsonObject | None:
         with self._lock:
             return dict(self._last_shell_result) if self._last_shell_result else None
 
@@ -293,7 +294,7 @@ class RunRegistry:
             if not self._active_runs:
                 self._status = "idle"
 
-    def finish(self, run_id: str, event: dict[str, Any]) -> dict[str, Any] | None:
+    def finish(self, run_id: str, event: JsonObject) -> JsonObject | None:
         with self._lock:
             run = self._active_runs.pop(run_id, None)
             if run is None:
@@ -312,7 +313,7 @@ class RunRegistry:
             self._sync_slot_event()
             return payload
 
-    def record_shell_result(self, event: dict[str, Any]) -> dict[str, Any]:
+    def record_shell_result(self, event: JsonObject) -> JsonObject:
         payload = dict(event)
         with self._lock:
             self._last_shell_result = payload
@@ -330,12 +331,12 @@ class RunRegistry:
     def payload(
         self,
         *,
-        pending_event: Callable[[RunSnapshot | None], dict[str, Any] | None],
+        pending_event: Callable[[RunSnapshot | None], JsonObject | None],
         research_restore_runs: tuple[str, ...],
-    ) -> dict[str, Any]:
+    ) -> JsonObject:
         with self._lock:
             active = self._primary_locked()
-            active_runs = [
+            active_runs: list[JsonValue] = [
                 {
                     "run_id": run.run_id,
                     "session_id": run.session_id,
@@ -348,7 +349,7 @@ class RunRegistry:
             terminal = dict(self._last_terminal_event) if self._last_terminal_event else None
             shell_result = dict(self._last_shell_result) if self._last_shell_result else None
             provider_failure = self._last_provider_failure.to_dict() if self._last_provider_failure else None
-            payload = {
+            payload: JsonObject = {
                 "run_id": active.run_id if active else str((terminal or {}).get("run_id") or ""),
                 "session_id": active.session_id if active else str((terminal or {}).get("session_id") or ""),
                 "busy": bool(active_runs) or self._manual_busy,
