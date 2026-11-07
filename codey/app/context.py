@@ -36,6 +36,7 @@ from codey.app.run_registry import RunRegistry, RunSnapshot
 from codey.app.runtime_adapters import DurableRuntimeAdapters
 from codey.app.shell_approval_coordinator import ShellApprovalCoordinator
 from codey.app.task_abort import abort_task_resources
+from codey.app.task_lifecycle import TaskLifecycleCoordinator
 from codey.app.task_runtime import TaskRuntimeCoordinator
 from codey.durable.model import (
     CommitResult,
@@ -54,6 +55,7 @@ from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.storage.ui_state_store import UiStateStore
+from codey.types.json_value import JsonObject
 from codey.utils.refs import strict_exit_code
 from codey.workspace.changes import ChangeTracker, SnapshotStore
 from codey.workspace.facts import ProjectFactsStore
@@ -188,6 +190,25 @@ class AppContext(GhostStoreAccessors):
         from codey.app.shell_approval_workflow import ShellApprovalWorkflow
 
         self.shell_approval_workflow = ShellApprovalWorkflow(self)
+        self._close_requested = False
+        self._resources_closed = False
+        self.durable_scheduler = self._durable_services.scheduler
+        self.task_lifecycle = TaskLifecycleCoordinator(
+            durable=self.durable,
+            run_registry=self.run_registry,
+            approval_expiry=self.shell_approval_coordinator.expire_locked,
+            shell_approval_workflow_cancel=self.shell_approval_workflow.cancel_queued,
+            shell_spawn_gate=lambda: self._shell_spawn_gate,
+            coordination_lock=self.lock,
+            scheduler=self.durable_scheduler,
+            emit=lambda event: self.emit(event),
+            record_shell_result=lambda event: self.record_shell_result(event),
+            flush_deferred_events=lambda: self._flush_deferred_durable_events(),
+            pause_input=lambda session_id: self.input_queue.pause(session_id),
+            is_closing=lambda: self._close_requested,
+            cancel_teach=self.approvals.cancel_teach,
+            invalidate_approval_generation=self.approvals.invalidate_generation,
+        )
         self._ghost_stores = GhostStores(state_home, self.lock)
         self.ghost_sleep_daemon = GhostSleepDaemon(
             lock=self.lock,
@@ -203,9 +224,6 @@ class AppContext(GhostStoreAccessors):
             UiStateStore(state_home) if state_home else UiStateStore()
         )
         self._project_writer_leases: dict[str, object] = {}
-        self._close_requested = False
-        self._resources_closed = False
-        self.durable_scheduler = self._durable_services.scheduler
         if start_scheduler:
             self.durable_scheduler.start()
 
@@ -464,22 +482,7 @@ class AppContext(GhostStoreAccessors):
         self.task_runtime.release_run(run_id)
 
     def finish_run(self, run_id: str, event: dict[str, Any]) -> bool:
-        from codey.app.task_lifecycle_projection import version_task_event
-        event = version_task_event(self.durable, event)
-        payload = self.run_registry.finish(run_id, event)
-        if payload is None:
-            return False
-        expired: tuple[dict[str, Any], ...] = ()
-        if str(payload.get("stop_reason") or "") in {"done", "error", "max_turns", "no_progress", "stopped"}:
-            with self._shell_spawn_gate, self.lock:
-                expired = self._expire_shell_results_locked(
-                    run_id=run_id, output="Run ended; command approval expired."
-                )
-        self.emit(payload)
-        for expired_event in expired:
-            self.record_shell_result(expired_event)
-        self._flush_deferred_durable_events()
-        return True
+        return self.task_lifecycle.finish_run(run_id, cast(JsonObject, event))
 
     def record_shell_result(self, event: dict[str, Any]) -> None:
         if "failure" not in event:
@@ -520,54 +523,7 @@ class AppContext(GhostStoreAccessors):
         (UI stop, headless shell-reject); the executor side holds the same
         gate across final-check+Popen in ``shell_service.execute_shell_ticket``.
         """
-        abort_targets: tuple[str, ...] = ()
-        with self._shell_spawn_gate:
-            self.run_registry.request_stop(run_id)
-            target_session = self.run_registry.session_for(run_id) if run_id else ""
-            if run_id and not target_session:
-                with contextlib.suppress(KeyError):
-                    target_session = self.durable.task(run_id).conversation_id
-                if not target_session:
-                    # The registry now rejects this still-unadmitted identity.
-                    # Never turn an unknown scoped Stop into a global cancel.
-                    return
-            with self.lock:
-                # Durable cancellation is the barrier for the worker and
-                # scheduler.  The in-memory stop flag only interrupts code;
-                # it must never be the authority that decides whether a
-                # restart may dispatch the task again.
-                durable = getattr(self, "durable", None)
-                if durable is not None and not self._close_requested:
-                    abort_targets = (
-                        (str(run_id),)
-                        if run_id
-                        else tuple(run.run_id for run in self.run_registry.active_runs())
-                    )
-                self.approvals.cancel_teach()
-                if self._close_requested:
-                    # Shutdown interrupts live execution but preserves durable
-                    # decisions and unanswered requests for the next process.
-                    self.approvals.invalidate_generation()
-                    events: tuple[dict[str, Any], ...] = ()
-                else:
-                    events = self._expire_shell_results_locked(run_id=run_id) if run_id else self._expire_shell_results_locked()
-                    self.shell_approval_workflow.cancel_queued(target_session)
-        # Route the durable cancellation through the scheduler's abort line so
-        # the live provider transport and shell process receive the same
-        # run-scoped cancellation signal. Do this after releasing AppContext's
-        # lock: the abort handler performs shell cleanup and may publish facts.
-        if abort_targets:
-            for target in abort_targets:
-                with contextlib.suppress(KeyError, ValueError):
-                    self.durable_scheduler.abort_task(target, reason="user stopped")
-        for event in events:
-            self.record_shell_result(event)
-        if not self._close_requested:
-            if not target_session and not run_id:
-                owner = self.run_registry.current()
-                target_session = owner.session_id if owner is not None else ""
-            self.input_queue.pause(target_session)
-        self._flush_deferred_durable_events()
+        self.task_lifecycle.request_stop(run_id)
 
     def expire_pending_shell_approvals(self) -> None:
         """Expire every pending shell approval (task stop path).
@@ -577,23 +533,12 @@ class AppContext(GhostStoreAccessors):
         denied shell_result for each expired approval under the same lock.
         """
 
-        with self._shell_spawn_gate, self.lock:
-            events = self._expire_shell_results_locked()
-        for event in events:
-            self.record_shell_result(event)
-        self._flush_deferred_durable_events()
+        self.task_lifecycle.expire_pending_shell_approvals()
 
     def expire_stale_shell_approvals(self, active_run_id: str) -> None:
         """Clear approval cards left behind when the user starts new work."""
 
-        with self._shell_spawn_gate, self.lock:
-            events = self._expire_shell_results_locked(
-                exclude_run_id=active_run_id,
-                output="A new task started; command approval expired.",
-            )
-        for event in events:
-            self.record_shell_result(event)
-        self._flush_deferred_durable_events()
+        self.task_lifecycle.expire_stale_shell_approvals(active_run_id)
 
     def _expire_shell_results_locked(self, **kwargs: Any) -> tuple[dict[str, Any], ...]:
         from codey.app.shell_approval_state import expire_shell_results_locked

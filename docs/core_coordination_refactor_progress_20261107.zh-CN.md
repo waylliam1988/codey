@@ -32,6 +32,7 @@
 - [x] 抽出任务运行协调器。
 - [x] 抽出审批协调器。
 - [x] 抽出 durable event bridge。
+- [x] 抽出任务终结、停止和审批过期协调器。
 - [x] 让 `task_submit.py` 的 admission/spawn/slot 路径停止访问内部锁和私有字段。
 - [ ] 保留兼容代理，迁移完成后再删除。
 
@@ -52,6 +53,13 @@ durable event bridge 批次把 commit record 的延迟发布队列和 flush 逻�
 `DurableEventBridge`；`AppContext` 仍保留 `_publish_durable_commit` 和
 `_flush_deferred_durable_events` 兼容代理，以保持 `DurableAppServices` 装配接口稳定。
 桥接单测与 EventBus/server 回归共 212 passed；相关 Ruff 与 mypy 通过。
+
+任务生命周期批次把 `finish_run`、`request_stop`、全量审批过期和旧运行审批过期
+移到 `TaskLifecycleCoordinator`；`AppContext` 保留旧入口。协调器只持有显式依赖，
+并通过动态 gate 访问器保留 shell executor 与 Stop 对同一把 gate 的线性化语义。
+停止流程仍在 gate 和 `AppContext.lock` 内完成取消/审批变更，在释放两把锁后调用
+scheduler abort，再发布 shell result 和延迟 durable 事件。任务生命周期、审批、停止、
+任务提交和 scheduler abort 扩大回归共 111 passed；相关 Ruff 和局部 mypy 通过。
 
 ### 第三阶段：DurableSession 查询门面
 

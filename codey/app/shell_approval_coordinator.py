@@ -10,6 +10,7 @@ from codey.app.run_registry import RunRegistry
 from codey.durable.session import DurableSession
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact, ShellApprovalRecordStore
 from codey.storage.managed_outputs import ManagedOutputStore
+from codey.types.json_value import JsonObject
 
 
 class ShellApprovalContext(Protocol):
@@ -68,6 +69,26 @@ class ShellApprovalCoordinator:
         from codey.app.shell_approval_durable import commit_fact
 
         return commit_fact(self._context, fact)
+
+    def expire_locked(
+        self,
+        *,
+        run_id: str | None = None,
+        exclude_run_id: str | None = None,
+        session_id: str | None = None,
+        output: str | None = None,
+    ) -> tuple[JsonObject, ...]:
+        """Persist approval expiry while the caller owns the app locks."""
+        from codey.app.shell_approval_state import expire_shell_results_locked
+
+        value = expire_shell_results_locked(
+            self._context,
+            run_id=run_id,
+            exclude_run_id=exclude_run_id,
+            session_id=session_id,
+            output=output,
+        )
+        return cast(tuple[JsonObject, ...], value)
 
     def claim_locked(
         self,
