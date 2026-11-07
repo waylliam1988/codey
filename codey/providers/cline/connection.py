@@ -114,7 +114,7 @@ def open_selection(selection: ApiRunSelection) -> ApiProvider:
         policy.remember_version(context.logical_id, record.token_version)
         return {**client_headers(context.logical_id), "Authorization": "Bearer " + inference_api_key(record.access_token)}
 
-    provider = ApiProvider(INFERENCE_URL, selection.model_id, supports_images=selection.supports_images, api_key="", api_protocol=selection.protocol,
+    provider = ApiProvider(INFERENCE_URL, selection.model_id, supports_images=selection.supports_images is True, api_key="", api_protocol=selection.protocol,
         context_window_tokens=selection.context_window_tokens, context_reserve_tokens=selection.context_reserve_tokens,
         context_keep_recent_tokens=selection.context_keep_recent_tokens, native_tools=selection.native_tools,
         reasoning_effort=selection.reasoning_effort, thinking_enabled=selection.thinking_enabled,

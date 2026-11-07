@@ -19,6 +19,7 @@ def validate_attachments(value: object) -> list[dict[str, object]]:
         raise ValueError("At most four attachments are allowed.")
     result: list[dict[str, object]] = []
     seen: set[str] = set()
+    total_size = 0
     for raw in value:
         if not isinstance(raw, Mapping):
             raise ValueError("Invalid attachment content.")
@@ -30,6 +31,10 @@ def validate_attachments(value: object) -> list[dict[str, object]]:
                 or type(item.get("size")) is not int or not 0 < item["size"] <= MAX_ATTACHMENT_BYTES
                 or not isinstance(item.get("sha256"), str) or len(item["sha256"]) != 64):
             raise ValueError("Invalid attachment metadata.")
+        size = item.get("size")
+        if not isinstance(size, int) or isinstance(size, bool):
+            raise ValueError("Invalid attachment size.")
+        total_size += size
         media_type = item.get("media_type")
         if media_type == "text/plain":
             if not isinstance(item.get("text"), str) or len(item["text"].encode("utf-8")) > MAX_ATTACHMENT_BYTES:
@@ -42,7 +47,7 @@ def validate_attachments(value: object) -> list[dict[str, object]]:
             raise ValueError("Unsupported attachment type. Choose a UTF-8 text file or PNG, JPEG, GIF, or WebP image.")
         seen.add(identity)
         result.append(item)
-    if sum(int(item["size"]) for item in result) > MAX_INPUT_BYTES:
+    if total_size > MAX_INPUT_BYTES:
         raise ValueError("Attachments exceed the 4 MiB total limit.")
     return result
 

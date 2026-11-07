@@ -130,7 +130,7 @@ def _restore_window_context(provider: ProviderTransport, context: ProviderReques
     return context
 
 
-def drive_provider_request(sink: KernelEffectSink, provider: object, request_ref: str) -> AssistantTurn | str:
+def drive_provider_request(sink: KernelEffectSink, provider: ProviderTransport, request_ref: str) -> AssistantTurn | str:
     """Close the explicit prior boundary, admit once, execute, then save once."""
     from codey.operations.provider_session import adapt_provider
 

@@ -130,7 +130,9 @@ def _coding_specs() -> dict[str, ToolSpec]:
 
 
 def _research_specs() -> dict[str, ToolSpec]:
+    from codey.research.knowledge_schema import schema_object, schema_strings
     from codey.research.tool_contract import TOOL_CONTRACTS
+    from codey.types.json_value import canonical_json_object
 
     grant_by_tool = {
         "research_plan": "knowledge.read",
@@ -152,12 +154,13 @@ def _research_specs() -> dict[str, ToolSpec]:
         contract = TOOL_CONTRACTS.get(name)
         if contract is None:
             continue
+        schema = canonical_json_object(contract.input_schema)
         specs[name] = ToolSpec(
             name=name,
             aliases=(),
             grant=grant,
-            parameters=tuple(contract.input_schema["properties"].items()),
-            required=tuple(contract.input_schema["required"]),
+            parameters=tuple(schema_object(schema, "properties").items()),
+            required=tuple(schema_strings(schema, "required")),
             json_examples=(contract.example,),
             description=contract.description,
             executor="source" if grant == "web.read" else "knowledge",

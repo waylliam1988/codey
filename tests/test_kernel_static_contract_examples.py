@@ -90,6 +90,20 @@ def mutate(inputs: CompletionCheckInput) -> None:
     inputs.edited_files["injected.py"] = 9
 '''
 
+BAD_RESEARCH_PAYLOAD = '''
+from codey.research.answer_values import AnswerSubmission
+from codey.research.tool_args import KnowledgeCommitRequest
+from codey.research.tools import ResearchToolOutput
+
+submission: AnswerSubmission = {
+    "schema_version": 1, "task_digest": "digest", "markdown": "answer", "state": "unresolved",
+    "scope": {"task_digest": "digest", "aliases": [], "attempt_refs": [], "schema_version": 4},
+    "citations": [],
+}  # A completed submission must carry its digest.
+KnowledgeCommitRequest(commit_id="commit", mutations=("not-a-mutation",))
+ResearchToolOutput("bad", read_passages=({"ref": False, "start": 0, "end": 1},), ok=True)
+'''
+
 
 @pytest.mark.parametrize(
     ("tool", "arguments"),
@@ -127,8 +141,10 @@ def test_type_checker_rejects_invalid_kernel_contract(tool: str, arguments: tupl
         ("ty", ("check",)),
     ],
 )
-@pytest.mark.parametrize("source_text", [BAD_PROVIDER_CALL, BAD_JSON_ARGUMENTS, BAD_TEXT_SPAN, BAD_PROVIDER_REQUEST, BAD_PROVIDER_WRAPPER, BAD_COMPLETION_INPUT],
-                         ids=["provider-call", "json-args", "text-span", "provider-request", "provider-wrapper", "completion-input"])
+@pytest.mark.parametrize("source_text", [BAD_PROVIDER_CALL, BAD_JSON_ARGUMENTS, BAD_TEXT_SPAN, BAD_PROVIDER_REQUEST,
+                                       BAD_PROVIDER_WRAPPER, BAD_COMPLETION_INPUT, BAD_RESEARCH_PAYLOAD],
+                         ids=["provider-call", "json-args", "text-span", "provider-request", "provider-wrapper",
+                              "completion-input", "research-payload"])
 def test_type_checker_rejects_untyped_provider_call_shape(
     tool: str, arguments: tuple[str, ...], source_text: str,
 ) -> None:

@@ -29,6 +29,7 @@ from codey.providers.attempt_gate import AttemptGateClient
 from codey.providers.base import ProviderToolResult
 from codey.providers.compat_transport import bind_attempt_gate
 from codey.providers.text_result_views import TextResultSpan
+from codey.providers.transport import ProviderTransport
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.observe.events import RunEvent
@@ -42,8 +43,8 @@ if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.shell_approval import ShellApprovalRequest
     from codey.agents.tools import AgentToolFns
+    from codey.durable import DurableStore
     from codey.durable.session import DurableSession
-    from codey.durable.store import DurableStore
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
     from codey.operations.task_session import TaskSession
@@ -70,7 +71,7 @@ def _payload_strings(value: object) -> list[str]:
 
 
 def _bind_attempt_gate(
-    provider: object, transport: KernelTransportDeps, trace_recorder: object,
+    provider: ProviderTransport, transport: KernelTransportDeps, trace_recorder: object,
 ) -> bool:
     gate = transport.attempt_gate
     if gate is None and transport.ghost_sources:

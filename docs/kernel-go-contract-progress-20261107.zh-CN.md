@@ -8,7 +8,7 @@
 - 不执行全量 pytest。失败先定位生产缺陷或过时测试假设，再修复根因。
 - 保留已冻结请求、摘要、effect 归属、窗口身份、未知外部结果禁止盲目重放等语义。
 - 当前主机 Python 3.12.8；仓库 minimum/CI 仍包括 3.11，除非另有明确需求不撤销兼容。
-- 当前 PATH 无 Go，跨语言执行验证需要安装或发现实际 Go 工具链；不能以 Python 自测替代 Go 验证。
+- 初始 PATH 无 Go；现已在gitignored的.e2e-artifacts/toolchains安装并校验Go 1.27.3，用于真实差分执行。
 - 开始时 git 工作区干净。原始精度基线合计 192（不是 172）。
 
 ## 批次追踪
@@ -22,8 +22,8 @@
 | 5 | provider adapter、wrapper、capabilities | 完成 | 首轮122；扩大97及67 passed；三工具/Ruff/gate通过 |
 | 6 | contracts、builder、driver、context 主链 | 完成 | 24个生产文件三工具/Ruff通过；扩大133 passed；见第六批记录 |
 | 7 | completion 输入、verification observation、纯判定 | 完成 | 扩大390 passed/64 subtests；契约与静态负例32 passed；三工具/Ruff通过 |
-| 8 | research 参数、报告、receipt、staging | 待开始 | |
-| 9 | 强化门禁、Go 差分实现与测试、最终审计 | 待开始 | |
+| 8 | research 参数、报告、receipt、staging | 完成 | 0708626e；271 passed/77 subtests，新增及修正后145 passed/77 subtests；91生产文件三工具通过 |
+| 9 | 强化门禁、Go 差分实现与测试、最终审计 | 完成 | Go615差分通过；完整生产树624文件三工具通过；扩大172及164 passed，见第九批记录 |
 
 ## 不得遗漏的契约拥有者
 
@@ -31,7 +31,7 @@
 
 ## 接续工作位置
 
-第七批已完成并验证，主十四模块显式Any为20，仅research/tools.py仍为20。下一步第八批：工具参数codec、复用ReadPassage与receipt descriptor、报告联合及其字段拥有者、ledger receipts和staging。第九批仍包括精度门禁加强、完整生产树三工具无豁免通过与真实Go差分执行。全树mypy尚有5个起始边界错误（attachments/conversation_ops/cline connection/attachment_routes/codemode kernel），不能声称全树类型检查已通过。
+九批实施与验证完成。十四个原始模块显式Any均为0，门禁保护共享拥有者；完整生产树624文件三工具target3.12通过。615条真实Go差分通过。第九批提交后本工作结束；后续Go完整运行时仍需扩展effect/batch/CAS/网络/并发的差分与故障注入，不能把reference切片当作已完成的Go应用。详细迁移说明见kernel-go-migration-guide.zh-CN.md。
 
 ## 第一批验证记录
 
@@ -122,3 +122,28 @@
 - PDF二进制边界拒绝整数和任意对象，避免bytes(integer)伪造内容；非法fetch变为明确工具失败，不污染ledger。报告恢复拒绝重新计算摘要后夹带的未知嵌套字段。
 - 扩大研究/whole-answer/report/knowledge/recovery/golden/repair回归271 passed、77 subtests。另扩大测试首轮188 passed、3 failed：旧observation测试使用TaskSession(policy=None)，已改成明确空授权TaskPolicy以保留测试本意；修正后相关合并145 passed、77 subtests。新增typed-boundary回归覆盖submission、binary、stage隔离和report字段篡改。未执行全量pytest。
 - 本批91个生产文件mypy（follow-imports=silent保留解析）、Pyrefly、ty target3.12通过；Ruff、precision baseline、diff check通过。全生产树类型检查与Go差分仍属第九批，未宣称完成。
+
+
+## 第九批变更与验证
+
+- 精度基线十四模块全部为0；AST额外保护共享codec/领域拥有者，识别typing.Any、导入别名、TypeAlias、forward annotations、cast目标；拒绝裸泛型、缺注解函数、核心通用args/kwargs、__getattr__、核心直接provider getattr分派及已知领域参数泛化object。明确保留adapter准入入口。AST不是动态数据流的形式化证明，仍依赖三工具、架构和边界测试。
+- tools/go_contract为独立Go reference，Python脚本真实build/vet/test并执行615个差分用例（508接受、107拒绝）。包含原golden输入、六请求/回复/非法参数、中文/astral/combining/span、passage、JSON摘要、256个固定seed有限IEEE-754样本、verification缺口与最新坏记录遮蔽，以及无effects/batches的reducer分支。Go单测另验证未配对surrogate拒绝与大整数保留。本机实际Go 1.27.3 windows/amd64；下载归档校验SHA-256，工具链与二进制仅在gitignored .e2e-artifacts。
+- CI新增独立kernel-go-contract job；找不到Go会失败，没有skip或Python fallback。未触发远端CI，也未修改分支保护。reference没有实现完整Go durable/effect/batch/网络/并发；真实崩溃和CAS验证仍由现有Python测试覆盖，迁移后需继续移植，文档明确记录此限制。
+- 修完整生产树的attachment对象收窄、run_id、Cline未知image能力及若干空容器/构造注解；共享工具repair在入口严格JSON解码，ToolSpec消费具名schema访问器。provider底层tools_from_specs明确ToolSpec类型；driver/bind入口继续收紧ProviderTransport。
+- 最终完整生产树mypy --python-version 3.12（无follow-imports跳过）624文件通过，Pyrefly/ty target3.12通过。Pyrefly仍有既存35处suppression、126个warning，不宣称零warning。Ruff全仓通过，精度与diff check通过。
+- durable请求/NOT_SENT/operation reducer/state/provider codec/wrapper/span/recovery/completion/研究边界合并172 passed、42 subtests。attachment/codemode/cline/static/architecture等扩大首轮278 passed、461 subtests及6个架构失败；逐项定位并修复：共享纯JSON增加精确leaf依赖许可，DurableStore从public facade仅用于类型导入，audit诊断展示投影移出Trace防止行为层依赖Trace状态模块。重跑architecture/audit/precision为164 passed、464 subtests。
+- 三项size snapshot失败属于任务开始前240e329e附件提交已改变的源码，本九批对providers/worker.py、providers/api_provider.py、toolchain/runtime.py无改动（git diff eb083405 --这三文件为空）；据当前真实尺寸校准陈旧记录，继续禁止后续增长，没有以调高精度基线掩盖Any。
+- 新research-payload三工具静态负例3 passed；最终precision/golden/CI契约47 passed。未运行全量pytest。上述测试集合存在重叠，不把它们简单相加成独立用例数。
+- 详细教学与后续Go重写路线：docs/kernel-go-migration-guide.zh-CN.md；更新wire v1的实际差分覆盖与限制。
+
+## 九批提交索引
+
+1. e365ecd1 — 行为/wire/recovery fixtures
+2. 53c15775 — 共享严格JSON
+3. cf02bf7e — span/execution/recovery
+4. 688ddbe6 — 有限provider请求及回复codec
+5. b1fd142e — 显式provider wrappers/adapters
+6. cbcb25eb — kernel主链与冻结authority
+7. dd43e2c4 — completion输入与有序verification
+8. 0708626e — research报告/receipt/staging
+9. 本文随最终gate/Go differential提交；通过git log可查最终提交号。

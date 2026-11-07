@@ -111,7 +111,7 @@ def build_execute_turn_executor(
     *,
     session: Any,
     snapshot: Any,
-    run_id: object,
+    run_id: str,
     effect_scope: str,
     turn: int,
     project_path: Any = None,

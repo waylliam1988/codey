@@ -489,7 +489,10 @@ def _history_item(entry: EntryDraft, ordinal: int) -> dict[str, object]:
     if item.get("attachments"):
         from codey.task.attachments import public_attachment
 
-        item["attachments"] = [public_attachment(ref) for ref in item["attachments"]]
+        attachments = item["attachments"]
+        if not isinstance(attachments, list) or any(not isinstance(ref, Mapping) for ref in attachments):
+            raise ValueError("invalid durable attachments")
+        item["attachments"] = [public_attachment(ref) for ref in attachments if isinstance(ref, Mapping)]
     if entry.kind == "control_review":
         review = cast(dict[str, object], item.get("data", {}))
         verdict = "Review passed" if review.get("passed") else "Changes requested"

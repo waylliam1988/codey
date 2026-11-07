@@ -10,7 +10,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from codey.types.json_value import JsonValue, ToolArgs
+from codey.types.json_value import JsonValue, ToolArgs, decode_json_object
 
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:")
 
@@ -486,7 +486,7 @@ def _normalize_run_shell(
 
 def normalize_tool_args(
     tool_name: str,
-    args: Mapping[str, JsonValue],
+    args: object,
     *,
     limits: ToolArgLimits | None = None,
 ) -> ToolArgsRepairResult:
@@ -495,21 +495,25 @@ def normalize_tool_args(
     tool_name must be a canonical runtime tool name (e.g. edit, read, search,
     references, ls, run, shell).
     """
+    try:
+        decoded_args = decode_json_object(args)
+    except ValueError as exc:
+        raise ToolArgsRepairError(str(exc)) from exc
     effective_limits = limits or ToolArgLimits()
     normalized_tool = tool_name.lower().strip()
 
     if normalized_tool == "edit":
-        return _normalize_edit(args, effective_limits)
+        return _normalize_edit(decoded_args, effective_limits)
     if normalized_tool == "read":
-        return _normalize_read(args, effective_limits)
+        return _normalize_read(decoded_args, effective_limits)
     if normalized_tool == "ls":
-        return _normalize_ls(args)
+        return _normalize_ls(decoded_args)
     if normalized_tool == "search":
-        return _normalize_search(args)
+        return _normalize_search(decoded_args)
     if normalized_tool == "references":
-        return _normalize_references(args)
+        return _normalize_references(decoded_args)
     if normalized_tool in ("run", "shell"):
-        return _normalize_run_shell(normalized_tool, args)
+        return _normalize_run_shell(normalized_tool, decoded_args)
 
     raise ToolArgsRepairError(
         f"unsupported runtime tool: {normalized_tool}",

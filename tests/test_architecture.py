@@ -411,6 +411,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "playwright.sync_api",
         }
         allowed = {
+            "codey.types.json_value",
             "codey.runtime.core.cancellation",
             "codey.runtime.observe.events",
             "codey.runtime.observe.execution_evidence",
@@ -1757,11 +1758,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_tool_args_repair_module_is_pure_and_has_no_codey_imports(self) -> None:
         path = ROOT / "codey" / "toolchain" / "tool_args_repair.py"
         modules = imported_modules(path)
-        forbidden = [name for name in modules if name.startswith("codey")]
+        forbidden = [name for name in modules if name.startswith("codey") and name != "codey.types.json_value"]
         self.assertEqual(
             forbidden,
             [],
-            f"codey/toolchain/tool_args_repair.py must be pure and have no codey imports: {forbidden}",
+            f"codey/toolchain/tool_args_repair.py must only depend on the shared pure JSON boundary: {forbidden}",
         )
 
     def test_toolchain_leaves_no_orphan_tool_modules_at_package_root(self) -> None:
@@ -1796,6 +1797,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # (runner/tools/pipeline/contracts) would drag execution into audit.
         # The split keeps this contract on trace.py and every trace_*.py.
         allowed = {
+            "codey.research.audit_projection",
             "codey.research.artifact_lineage",
             "codey.research.evidence_runtime",
             "codey.research.guards",

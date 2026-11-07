@@ -4,9 +4,12 @@ import json
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from codey.types.json_value import JsonObject
+
+if TYPE_CHECKING:
+    from codey.toolchain.tool_spec import ToolSpec
 
 
 @dataclass(frozen=True)
@@ -73,7 +76,7 @@ class ProviderToolDefinition:
     parameters: Mapping[str, object]
 
 
-def tools_from_specs(specs: tuple[Any, ...]) -> list[ProviderToolDefinition]:
+def tools_from_specs(specs: tuple[ToolSpec, ...]) -> list[ProviderToolDefinition]:
     from codey.toolchain.tool_prompt import model_tool_description
     from codey.toolchain.tool_spec import _freeze_schema_value, _schema_for_spec
 

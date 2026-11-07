@@ -14,6 +14,7 @@ from codey.operations.context import RunFrame, RunHooks
 from codey.operations.result import ModeOutcome
 from codey.operations.task_state import TaskState, stop_flag_for
 from codey.policies.permissions import allows_context_source, profile_for_name
+from codey.research.audit_projection import project_audit_diagnostics
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.evidence_ledger import EvidenceLedgerWriteResult
@@ -31,7 +32,6 @@ from codey.research.topic_continuity import (
     MAX_TOPIC_CLAIM_REFS,
     project_topic_continuity,
 )
-from codey.runs.trace_research import project_audit_diagnostics
 from codey.runtime.core import cancellation
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 

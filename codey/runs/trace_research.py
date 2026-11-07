@@ -13,7 +13,7 @@ from collections.abc import Mapping
 
 from codey.policies.redaction import looks_prompt_visible_secret
 from codey.research.artifact_lineage import is_valid_derived_ref
-from codey.research.audit_result import MAX_AUDIT_DIAGNOSTICS
+from codey.research.audit_projection import project_audit_diagnostics as project_audit_diagnostics
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.guards import (
     generated_ref as _generated_ref,
@@ -232,29 +232,6 @@ def project_research_plan(plan: object) -> dict[str, object] | None:
     if proof_ref:
         payload["proof_ref"] = proof_ref
     return payload
-
-
-def project_audit_diagnostics(value: object) -> list[dict[str, object]]:
-    """Bound untrusted diagnostics without serializing business data or messages."""
-    rows: list[dict[str, object]] = []
-    for item in _trace_list_items(value):
-        if not isinstance(item, Mapping):
-            continue
-        stage = _safe_trace_code(item.get("stage"), 80)
-        status = item.get("status")
-        phase = item.get("phase")
-        reason = _safe_trace_code(item.get("reason_code"), 80)
-        if not stage or status not in ("ok", "skipped", "error") or phase not in ("initial", "final"):
-            continue
-        if status != "ok" and not reason:
-            continue
-        rows.append({
-            "stage": stage, "status": status, "phase": phase, "reason_code": reason,
-            "error_type": _safe_trace_code(item.get("error_type"), 80),
-        })
-        if len(rows) >= MAX_AUDIT_DIAGNOSTICS:
-            break
-    return rows
 
 
 def project_research_pipeline_result(result: object) -> dict[str, object] | None:

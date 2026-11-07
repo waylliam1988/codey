@@ -76,7 +76,7 @@ def bind_attempt_gate(provider: object, gate: AttemptGateCallback | None) -> boo
     return True
 
 
-def declared_callable(provider: object, name: str, *, forwarding_owner: type | None = None) -> Callable[..., object] | None:
+def declared_callable(provider: object, name: str, *, forwarding_owner: type[object] | None = None) -> Callable[..., object] | None:
     """Find a declared hook; ignore dynamic attributes on providers and mocks."""
     seen: set[int] = set()
     while provider is not None and id(provider) not in seen:

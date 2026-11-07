@@ -51,8 +51,8 @@ from codey.runtime.observe.execution_evidence import ExecutionEvidence
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
+    from codey.durable import DurableStore
     from codey.durable.session import DurableSession
-    from codey.durable.store import DurableStore
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
     from codey.research.answer_contract import AnswerScope

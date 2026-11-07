@@ -71,7 +71,7 @@ def enrich_pending(provider: Any, pending: list[dict[str, Any]]) -> list[dict[st
     if not provider.supports_images and any(str(item["media_type"]).startswith("image/") for item in items):
         raise ValueError(IMAGE_UNSUPPORTED)
     result = [dict(item) for item in pending]
-    target = next((item for item in reversed(result) if item.get("role") == "user"), None)
+    target: dict[str, object] | None = next((item for item in reversed(result) if item.get("role") == "user"), None)
     if target is None:
         target = {"role": "user", "content": "Attached files"}
         result.append(target)

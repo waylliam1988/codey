@@ -1,8 +1,4 @@
-"""Prevent the kernel contract surface from gaining new dynamic escapes.
-
-This is an incremental gate: existing migration debt is recorded explicitly,
-while new explicit ``Any`` uses in the protected modules fail review.
-"""
+"""Protect typed kernel contracts; AST checks supplement the three type checkers."""
 
 from __future__ import annotations
 
@@ -29,10 +25,155 @@ TARGETS = (
     "codey/research/tools.py",
 )
 
+CONTRACT_TARGETS = (
+    "codey/types/json_value.py", "codey/providers/base.py",
+    "codey/providers/requests.py", "codey/providers/request_codec.py",
+    "codey/providers/transport.py", "codey/providers/compat_transport.py",
+    "codey/providers/text_result_views.py", "codey/operations/kernel_recovery_context.py",
+    "codey/operations/completion_inputs.py", "codey/operations/completion_context_codec.py",
+    "codey/runtime/core/verification_observation.py", "codey/runtime/core/execution_record.py",
+    "codey/research/passages.py", "codey/research/ledger.py", "codey/research/ledger_receipts.py",
+    "codey/research/receipt_types.py", "codey/research/source_gateway.py", "codey/research/staging.py",
+    "codey/research/finding_report.py", "codey/research/answer_report.py", "codey/research/report_values.py",
+    "codey/research/report_proposal.py", "codey/research/answer_contract.py", "codey/research/answer_values.py",
+    "codey/research/answer_archive.py", "codey/research/knowledge_updates.py",
+    "codey/research/knowledge_update_types.py", "codey/research/tool_args.py",
+    "codey/research/tool_contract.py", "codey/research/knowledge_schema.py",
+    "codey/research/questions.py", "codey/research/findings.py", "codey/research/references.py",
+    "codey/research/audit_projection.py",
+    "codey/toolchain/tool_args_repair.py",
+)
+_GENERICS = {"dict", "list", "tuple", "set", "frozenset", "type", "Dict", "List", "Tuple", "Set",
+             "Mapping", "MutableMapping", "Sequence", "Collection", "Iterable", "Callable", "Iterator"}
+
+
+def _aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
+    dynamic, typing_modules = {"Any"}, {"typing", "typing_extensions"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            typing_modules.update(item.asname or item.name for item in node.names
+                                  if item.name in {"typing", "typing_extensions"})
+        elif isinstance(node, ast.ImportFrom) and node.module in {"typing", "typing_extensions"}:
+            dynamic.update(item.asname or item.name for item in node.names if item.name == "Any")
+    # Resolve assignment aliases too, including quoted TypeAlias expressions.
+    for _ in range(len(list(ast.walk(tree)))):
+        before = len(dynamic)
+        for node in ast.walk(tree):
+            if (isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None
+                    and _dynamic_count(node.value, dynamic, typing_modules,
+                        quoted=isinstance(node, ast.AnnAssign) and isinstance(node.annotation, ast.Name)
+                        and node.annotation.id == "TypeAlias")):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                dynamic.update(target.id for target in targets if isinstance(target, ast.Name))
+        if len(dynamic) == before:
+            break
+    return dynamic, typing_modules
+
+
+def _dynamic_count(node: ast.AST, aliases: set[str], modules: set[str], *, quoted: bool = False) -> int:
+    if isinstance(node, ast.Name):
+        return int(node.id in aliases and isinstance(node.ctx, ast.Load))
+    if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+            and node.value.id in modules and node.attr == "Any"):
+        return 1
+    if isinstance(node, ast.Constant) and isinstance(node.value, str) and quoted:
+        try:
+            parsed = ast.parse(node.value, mode="eval")
+        except (SyntaxError, ValueError):
+            return 0
+        # A string literal inside a parsed forward annotation must not recurse.
+        if isinstance(parsed.body, ast.Constant):
+            return 0
+        return _dynamic_count(parsed, aliases, modules, quoted=True)
+    if isinstance(node, ast.Subscript) and (
+            isinstance(node.value, ast.Name) and node.value.id == "Literal"
+            or isinstance(node.value, ast.Attribute) and node.value.attr == "Literal"):
+        return _dynamic_count(node.value, aliases, modules)
+    if isinstance(node, ast.arg):
+        return _dynamic_count(node.annotation, aliases, modules, quoted=True) if node.annotation else 0
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return sum(_dynamic_count(child, aliases, modules) for child in ast.iter_child_nodes(node)
+                   if child is not node.returns) + (
+                       _dynamic_count(node.returns, aliases, modules, quoted=True) if node.returns else 0)
+    if isinstance(node, ast.AnnAssign):
+        return _dynamic_count(node.annotation, aliases, modules, quoted=True) + (
+            _dynamic_count(node.value, aliases, modules,
+                           quoted=isinstance(node.annotation, ast.Name) and node.annotation.id == "TypeAlias")
+            if node.value else 0)
+    if isinstance(node, ast.Call) and (
+            isinstance(node.func, ast.Name) and node.func.id == "cast"
+            or isinstance(node.func, ast.Attribute) and node.func.attr == "cast"):
+        return sum(_dynamic_count(child, aliases, modules, quoted=index == 0) for index, child in enumerate(node.args))
+    return sum(_dynamic_count(child, aliases, modules, quoted=quoted) for child in ast.iter_child_nodes(node))
+
+
+def source_violations(source: str, *, core: bool = True) -> list[str]:
+    tree = ast.parse(source)
+    aliases, modules = _aliases(tree)
+    generics = set(_GENERICS)
+    cast_names = {"cast"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module in {"typing", "collections.abc", "typing_extensions"}:
+            generics.update(item.asname or item.name for item in node.names if item.name in _GENERICS)
+            cast_names.update(item.asname or item.name for item in node.names if item.name == "cast")
+    errors = ["explicit dynamic type (including aliases/forward annotations)"] if _dynamic_count(tree, aliases, modules) else []
+
+    def annotation(node: ast.AST | None, *, subscript_base: bool = False) -> None:
+        if node is None:
+            return
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            try:
+                annotation(ast.parse(node.value, mode="eval").body)
+            except SyntaxError:
+                errors.append("invalid forward annotation")
+            return
+        name = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else ""
+        if name in generics and not subscript_base:
+            errors.append(f"bare generic annotation: {name}")
+        if isinstance(node, ast.Subscript):
+            annotation(node.value, subscript_base=True)
+            if name != "Literal" and not (isinstance(node.value, ast.Name) and node.value.id == "Literal"
+                                          or isinstance(node.value, ast.Attribute) and node.value.attr == "Literal"):
+                annotation(node.slice)
+        else:
+            for child in ast.iter_child_nodes(node):
+                annotation(child)
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
+            if node.args.vararg:
+                args.append(node.args.vararg)
+            if node.args.kwarg:
+                args.append(node.args.kwarg)
+            if node.returns is None or any(arg.annotation is None and arg.arg not in {"self", "cls"} for arg in args):
+                errors.append(f"untyped function: {node.name}")
+            if core and (node.name == "__getattr__" or node.args.vararg or node.args.kwarg):
+                errors.append(f"open core API: {node.name}")
+            annotation(node.returns)
+            for arg in args:
+                annotation(arg.annotation)
+                if arg.arg in {"provider", "session", "state", "settle", "execution_evidence"} and (
+                        isinstance(arg.annotation, ast.Name) and arg.annotation.id == "object") and core and not (arg.arg == "provider" and node.name in {
+                            "__init__", "from_provider", "adapt_provider", "bind_api_usage", "normalize_provider_reply",
+                            "_explicit_reply_normalizer", "provider_reasoning"}):
+                    errors.append(f"unmodeled core domain argument: {arg.arg}")
+        elif isinstance(node, ast.AnnAssign):
+            annotation(node.annotation)
+        elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in cast_names
+              and node.args and _dynamic_count(node.args[0], aliases, modules, quoted=True)):
+            errors.append("dynamic cast target")
+        elif core and isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr":
+            receiver = ast.unparse(node.args[0]) if node.args else ""
+            if receiver.split(".")[-1] in {"provider", "transport", "_provider", "_transport"}:
+                errors.append("provider probing/dispatch outside adapter")
+    return sorted(set(errors))
+
 
 def _count(path: Path) -> int:
     tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-    return sum(isinstance(node, ast.Name) and node.id == "Any" for node in ast.walk(tree))
+    aliases, modules = _aliases(tree)
+    return _dynamic_count(tree, aliases, modules)
 
 
 def current_counts() -> dict[str, int]:
@@ -57,7 +198,11 @@ def main() -> int:
     expected = json.loads(BASELINE.read_text(encoding="utf-8"))
     actual = current_counts()
     validate_counts(expected, actual)
-    print("kernel type precision baseline is unchanged")
+    violations = {name: errors for name in (*TARGETS, *CONTRACT_TARGETS)
+                  if (errors := source_violations((ROOT / name).read_text(encoding="utf-8-sig"), core=name in TARGETS))}
+    if violations:
+        raise SystemExit(f"kernel contract violations: {violations}")
+    print("kernel Any counts are zero; typed contract escape checks passed")
     return 0
 
 

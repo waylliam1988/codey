@@ -152,7 +152,7 @@ def _estimate_tokens(value: object) -> int:
     from codey.task.attachments import attachment_message, image_estimate_view, validate_attachments
 
     if isinstance(value, (list, tuple)):
-        value = [{**message, "attachments": [], "content": attachment_message(str(message.get("content") or ""), validate_attachments(message["attachments"]), protocol="openai-completions", images=True)}
+        value = [{**message, "attachments": list[dict[str, object]](), "content": attachment_message(str(message.get("content") or ""), validate_attachments(message["attachments"]), protocol="openai-completions", images=True)}
                  if isinstance(message, Mapping) and message.get("attachments") else message for message in value]
     view, images = image_estimate_view(value)
     encoded = json.dumps(view, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

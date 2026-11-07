@@ -1,9 +1,10 @@
 # Kernel migration behavior vectors, version 1
 
 The language-neutral vectors in `tests/fixtures/kernel_go_contract_v1.json`
-record existing behavior. They are not generated during tests. A future Go
-consumer must read the same file and compare its outputs with these committed
-expectations. Adding internal Python fields must not change this wire contract.
+record existing behavior. They are not generated during tests. The differential
+harness feeds these same inputs to the independent Go reference and compares
+its results with Python; the golden tests separately pin committed expectations.
+Adding internal Python fields must not change this wire contract.
 
 ## Coordinates and identity
 
@@ -54,3 +55,26 @@ Stricter decoding and deterministic production fixes require explicit regression
 tests and a documented behavior decision. Go integer bounds, numeric formatting,
 missing/null presence, cancellation and map/slice ownership must be explicit in
 the final codecs; Python-only checks cannot prove cross-language equivalence.
+
+
+## Executable migration reference
+
+Run `python -m tools.kernel_go_differential` with Go on PATH or `CODEY_GO`
+pointing to the compiler. It builds `tools/go_contract`, runs Go vet/test,
+and executes 615 deterministic differential cases (508 accepted, 107 rejected).
+The local validation used Go 1.27.3 on Windows; CI has a separate Linux job.
+Missing Go is an error, never a skipped equivalence check.
+
+The reference covers six provider requests, reply codecs, malformed inputs,
+Unicode spans, passage framing, canonical digests (including seeded finite
+IEEE-754 cases), verification gaps and latest-row shadowing. The reducer slice
+covers states without effects/batches and their cancellation/input guards.
+It does not yet implement Go durable storage, effect/batch recovery, actual
+networking, or full research execution. The existing Python crash/CAS tests
+remain required evidence for those behaviors until an equivalent Go runtime
+exists. Passing a bounded differential sample does not prove equivalence for
+all possible JSON numbers or every runtime interleaving.
+
+Provider counters are nonnegative int64. Existing legacy workspace revisions
+are not universally bounded to int64; the reference preserves such integers
+with arbitrary precision rather than silently adding a new wire restriction.

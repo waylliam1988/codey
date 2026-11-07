@@ -16,7 +16,7 @@ MAX_SESSION_BYTES = 32 * 1024 * 1024
 
 
 class InputAttachmentStore:
-    def __init__(self, home: Path, session_id: str):
+    def __init__(self, home: Path, session_id: str) -> None:
         if not isinstance(session_id, str) or not session_id or len(session_id) > 512:
             raise ValueError("Invalid attachment session.")
         self.root = Path(home) / "input_attachments" / session_key(session_id)

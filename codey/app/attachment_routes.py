@@ -84,7 +84,13 @@ def _read(ctx: Any, session_id: str, identity: object) -> dict[str, object]:
 
             for entry in ctx.durable.context(session_id):
                 if entry.kind == "user_message":
-                    for item in thaw_json(entry.payload).get("attachments", []):
+                    payload = thaw_json(entry.payload)
+                    if not isinstance(payload, dict):
+                        raise ValueError("invalid durable user message") from None
+                    attachments = payload.get("attachments", [])
+                    if not isinstance(attachments, list) or any(not isinstance(row, dict) for row in attachments):
+                        raise ValueError("invalid durable attachments") from None
+                    for item in attachments:
                         if item.get("id") == identity:
                             return validate_attachments([item])[0]
         raise
