@@ -57,6 +57,52 @@ def test_scheduler_retries_durable_task_when_worker_queue_is_full(tmp_path: Path
         session.close()
 
 
+def test_scheduler_bounds_reconcile_failures_and_exposes_cause(tmp_path: Path, monkeypatch) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    scheduler = DurableTaskScheduler(session, lambda _task: True, retry_interval=0.01)
+    calls = 0
+
+    def broken_reconcile() -> None:
+        nonlocal calls
+        calls += 1
+        raise OSError("injected reconcile failure")
+
+    monkeypatch.setattr(scheduler, "_reconcile", broken_reconcile)
+    try:
+        scheduler.start()
+        assert _wait_for(lambda: scheduler.loop_failure is not None and scheduler._thread is None)
+        failure = scheduler.loop_failure
+        assert failure is not None
+        assert calls == 3
+        assert failure.phase == "reconcile"
+        assert failure.error_type == "OSError"
+        assert failure.message == "injected reconcile failure"
+        assert failure.retry_count == 3
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_fails_task_after_repeated_dispatch_errors(tmp_path: Path) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    scheduler = DurableTaskScheduler(session, lambda _task: (_ for _ in ()).throw(OSError("worker unavailable")))
+    try:
+        for _ in range(3):
+            scheduler._reconcile()
+        task = session.task("task-1")
+        assert task.status is TaskStatus.FAILED
+        failure = scheduler.task_failures["task-1"]
+        assert failure.phase == "dispatch"
+        assert failure.error_type == "OSError"
+        assert failure.retry_count == 3
+        assert scheduler.blocked_tasks["task-1"] == "dispatch_failed"
+    finally:
+        scheduler.close()
+        session.close()
+
+
 def test_scheduler_blocks_workflow_without_a_compatible_definition(tmp_path: Path) -> None:
     session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
     session.admit_input(
