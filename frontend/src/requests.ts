@@ -396,36 +396,9 @@ export interface RequestsDeps {
     }
   }
   function addToSession(sid: string, m: Message): boolean {
-    const s = session(sid);
-    if (!s) return false;
-    runtime.UiState.ensureSessionIndexes(s);
-    if (m.eventKey && s._eventKeys?.has(String(m.eventKey))) return false;
-    if (['limit', 'pause', 'teach', 'err'].includes(m.type) && !m.sessionId) m.sessionId = sid;
-    const match = forRun(sid, m.runId || '');
-    const marker = match
-      ? s.messages.findIndex((item) => item.type === 'request_status' && item.requestId === match.request.id)
-      : -1;
-    if (match && marker >= 0) s.messages.splice(marker, 0, m);
-    else s.messages.push(m);
-    runtime.UiState.trackSessionMessage(s, m);
-    deps.persistActive();
-    if (sid === deps.getActiveId()) {
-      if (s.messages.length === 1) deps.renderChat();
-      else {
-        const chat = deps.$('chat'),
-          before = new Set(chat.children);
-        deps.appendMessageNode(chat, m);
-        const anchor = match && statusNode(match.request.id);
-        if (anchor)
-          for (const node of Array.from(chat.children))
-            if (!before.has(node) && node !== anchor) chat.insertBefore(node, anchor);
-        deps.scrollChat(false);
-      }
-    }
-    refreshActions();
-    runtime.ConversationUI.updateNotice();
-    return true;
+    return deps.addToSession(sid, m);
   }
+
   runtime.Requests = {
     projectLifecycle,
     init,

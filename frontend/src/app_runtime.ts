@@ -1,5 +1,6 @@
+import { SessionStateStore } from './session_state_store';
+import { SessionStateViews } from './session_state_views';
 import { ChatFork } from './chat_fork';
-import { mergeCommandResult } from './command_result';
 import { DocumentPane, type DocumentRef } from './document_pane';
 import { HistoryPanel } from './history_panel';
 import type { HistoryTask } from './history_repository';
@@ -13,7 +14,7 @@ import { showCommandPermissions } from './command_permissions';
 import { reportDesktopFailure, reportDesktopReady } from './desktop_ready';
 import { hydrateDocumentContent } from './document_content';
 import type { QueuedInput } from './input_outbox';
-import { finalStreamMessage, streamMessage } from './reply_stream';
+import { streamMessage } from './reply_stream';
 import { eventSequence, type LifecycleInput, lastRunState, lifecycleState } from './run_lifecycle';
 import { RunProjection } from './run_projection';
 import { RunStreamBuffer } from './run_stream_buffer';
@@ -199,9 +200,9 @@ const documentPane = new DocumentPane({
   },
   copy: (text) => runtime.Render.copyText(text),
 });
-workspace.register('files', 'Files', documentPane.element, () => documentPane.show(activeId));
+workspace.register('files', 'Files', documentPane.element, () => documentPane.show(sessionState.activeId));
 workspace.register('changes', 'Changes', $('changes-drawer'), (target) => {
-  const project = sessionProjectPath(activeId);
+  const project = sessionProjectPath(sessionState.activeId);
   if (project) void runtime.ChangesDrawer.open(project, target.path || '');
   else {
     $('changes-body').textContent = 'Choose a project to inspect workspace changes.';
@@ -210,8 +211,8 @@ workspace.register('changes', 'Changes', $('changes-drawer'), (target) => {
   }
 });
 workspace.register('research', 'Research', $('research-drawer'), (target) => {
-  const runId = target.runId || currentResearchRun(activeId)?.runId;
-  if (runId) runtime.ResearchDrawer.open(activeId, runId);
+  const runId = target.runId || currentResearchRun(sessionState.activeId)?.runId;
+  if (runId) runtime.ResearchDrawer.open(sessionState.activeId, runId);
   else {
     $('research-body').textContent = 'No research recorded for this conversation.';
     $('research-subtitle').textContent = 'No research yet';
@@ -219,7 +220,7 @@ workspace.register('research', 'Research', $('research-drawer'), (target) => {
   }
 });
 const recordedPanels = new RecordedPanels({
-  sessionId: () => activeId,
+  sessionId: () => sessionState.activeId,
   messages: () => activeSession()?.messages || [],
   openDocument,
   copy: (text) => runtime.Render.copyText(text),
@@ -245,8 +246,9 @@ function adoptChatFork(
   }
 }
 const chatFork = new ChatFork({
-  activeId: () => activeId,
-  isWorktree: (id) => !!sessions.find((session) => session.id === id)?.projectId?.startsWith('worktree_fork_'),
+  activeId: () => sessionState.activeId,
+  isWorktree: (id) =>
+    !!sessionState.sessions.find((session) => session.id === id)?.projectId?.startsWith('worktree_fork_'),
   workspaceChanged: () => runtime.Composer.syncSession(),
   originRendered: () => {
     if (runtime.ConversationUI.isFollowing()) runtime.ConversationUI.scrollChat();
@@ -384,7 +386,7 @@ document.addEventListener('click', (event) => {
   if (path) {
     const line = Number(link.dataset.documentLine) || undefined;
     openDocument(
-      activeId,
+      sessionState.activeId,
       link.closest('.document-pane') ? documentPane.fileLink(path, line) : { kind: 'workspace', path, line },
     );
   }
@@ -396,15 +398,43 @@ const receiptChangedCount = runtime.Render.receiptChangedCount;
 let DEFAULT_PROVIDER = runtime.UiState.DEFAULT_PROVIDER;
 const PROVIDER_LABELS = runtime.UiState.PROVIDER_LABELS;
 const PROVIDERS = runtime.UiState.PROVIDERS;
+const sessionState: SessionStateStore = new SessionStateStore({
+  ui: runtime.UiState,
+  defaultProvider: liveDefaultProvider,
+  isRenaming: (id) => sidebar.isEditingSession(id) || runtime.ConversationUI.isRenamingSession(id),
+  invalidate: (change) => sessionViews.invalidate(change),
+  forgetView: (id) => runtime.ConversationUI.forget(id),
+  forgetOnServer: forgetSessionState,
+  requestIdForRun: (sessionId, runId) => runtime.Requests.forRun(sessionId, runId)?.request.id,
+  mountedStreamId: (sessionId, runId) => sessionViews.mountedStreamId(sessionId, runId),
+  messageAdded: () => {
+    runtime.Requests.refreshActions();
+    runtime.ConversationUI.updateNotice();
+  },
+});
+const sessionViews: SessionStateViews = new SessionStateViews({
+  state: sessionState,
+  chat: () => $('chat'),
+  messages: runtime.Messages,
+  process: runtime.Process,
+  renderSidebar,
+  renderChat,
+  scrollChat,
+  appendMessageNode,
+  refreshApprovals: () => runtime.ConversationUI.refreshApprovals(),
+  scopeChanged: handleLocalContextScopeChanged,
+  syncProvider: syncProviderUI,
+  syncComposer: () => {
+    runtime.Composer.syncSession();
+    runtime.Composer.updateSend();
+  },
+  updateComposerContext,
+  closeLocalContext: closeLocalContextDrawer,
+});
+
 function liveDefaultProvider() {
   return runtime.UiState.DEFAULT_PROVIDER;
 }
-
-let sessions: Session[] = [];
-let projects: Project[] = [];
-let activeId = '';
-let uiStateUpdatedAt = 0;
-let uiStateRevision = 0;
 
 const {
   uid,
@@ -425,25 +455,25 @@ const restoreUiStateFromServer = runtime.UiState.restoreFromServer;
 const bootCachedState = cachedUiState();
 
 runtime.UiState.init({
-  getSessions: () => sessions,
+  getSessions: () => sessionState.sessions,
   setSessions: (value: Session[]) => {
-    sessions = value;
+    sessionState.sessions = value;
   },
-  getProjects: () => projects,
+  getProjects: () => sessionState.projects,
   setProjects: (value: Project[]) => {
-    projects = value;
+    sessionState.projects = value;
   },
-  getActiveId: () => activeId,
+  getActiveId: () => sessionState.activeId,
   setActiveId: (value: string) => {
-    activeId = value;
+    sessionState.activeId = value;
   },
-  getUpdatedAt: () => uiStateUpdatedAt,
+  getUpdatedAt: () => sessionState.updatedAt,
   setUpdatedAt: (value: number) => {
-    uiStateUpdatedAt = value;
+    sessionState.updatedAt = value;
   },
-  getRevision: () => uiStateRevision,
+  getRevision: () => sessionState.revision,
   setRevision: (value: number) => {
-    uiStateRevision = value;
+    sessionState.revision = value;
   },
   activeSession,
   renderSidebar,
@@ -457,24 +487,22 @@ cacheUiState();
 
 // ============================ helpers ============================
 function activeSession(): Session | undefined {
-  return sessions.find((s) => s.id === activeId);
+  return sessionState.activeSession();
 }
 function projectById(id: string): Project | null {
-  return projects.find((p) => p.id === id) || null;
+  return sessionState.projectById(id);
 }
 function sessionProject(s: Session | undefined): Project | null {
-  return s && s.projectId ? projectById(s.projectId) : null;
+  return sessionState.sessionProject(s);
 }
 function activeProject() {
-  return sessionProject(activeSession());
+  return sessionState.activeProject();
 }
 function currentProjectPath() {
-  const p = activeProject();
-  return p ? p.path : '';
+  return sessionState.currentProjectPath();
 }
 function currentProviderId() {
-  const s = activeSession();
-  return s ? s.provider : liveDefaultProvider();
+  return sessionState.currentProviderId();
 }
 // Provider picker UI lives in the provider_ui module.
 function syncProviderUI(providerId: string) {
@@ -492,7 +520,8 @@ function updateComposerContext() {
   const s = activeSession();
   const p = activeProject();
   const proj = p ? p.name : 'Choose folder';
-  const disabled = runProjection.primaryRun?.sessionId === activeId || runtime.Composer.isSending(activeId);
+  const disabled =
+    runProjection.primaryRun?.sessionId === sessionState.activeId || runtime.Composer.isSending(sessionState.activeId);
   const folderDisabled = disabled || !!p || projectPickerBusy;
   const researchActive = !!(s && s.research);
   const pieces = [
@@ -510,11 +539,12 @@ function syncResearchUI() {
   const s = activeSession();
   const active = !!(s && s.research);
   btn.classList.toggle('active', active);
-  btn.disabled = runProjection.primaryRun?.sessionId === activeId || runtime.Composer.isSending(activeId);
+  btn.disabled =
+    runProjection.primaryRun?.sessionId === sessionState.activeId || runtime.Composer.isSending(sessionState.activeId);
   btn.setAttribute('aria-pressed', String(active));
 }
 function currentIntentForSession(sessionId: string): string {
-  const s = sessions.find((x) => x.id === sessionId);
+  const s = sessionState.sessions.find((x) => x.id === sessionId);
   if (!s || !s.research) return 'auto';
   return sessionProjectPath(sessionId) ? 'hybrid' : 'research';
 }
@@ -549,38 +579,14 @@ function renameInputEl(value: string, commit: RenameCommit, cancel: () => void) 
   return input;
 }
 function commitSessionRename(id: string, value: string | undefined) {
-  const s = sessions.find((x) => x.id === id);
-  if (!s) {
-    renderSidebar();
-    return;
-  }
-  const title = (value || '').trim();
-  if (title && title !== s.title) {
-    s.title = title.slice(0, 80);
-    s.titleRenamed = true;
-    persistActiveNow();
-  }
-  renderSidebar();
-  if (id === activeId) renderChat();
+  sessionState.renameSession(id, value);
 }
 function commitProjectRename(id: string, value: string | undefined) {
-  const p = projectById(id);
-  if (!p) {
-    renderSidebar();
-    return;
-  }
-  const name = (value || '').trim();
-  if (name && name !== p.name) {
-    p.name = name.slice(0, 80);
-    persistActiveNow();
-  }
-  renderSidebar();
-  const current = activeProject();
-  if (current && current.id === id) renderChat();
+  sessionState.renameProject(id, value);
 }
 
 const sidebar = createSidebar({
-  read: () => ({ sessions, projects, activeId }),
+  read: () => ({ sessions: sessionState.sessions, projects: sessionState.projects, activeId: sessionState.activeId }),
   switchSession,
   openProject,
   newSession: (projectId) => newSession(projectId),
@@ -635,8 +641,8 @@ function armDanger(btn: HTMLButtonElement, run: () => void) {
 
 // ============================ chat rendering ============================
 function renderChat() {
-  workspace.setSession(activeId);
-  documentPane.setSession(activeId);
+  workspace.setSession(sessionState.activeId);
+  documentPane.setSession(sessionState.activeId);
   runtime.ConversationUI.renderChat();
 }
 
@@ -691,36 +697,13 @@ function scrollChat(capture = true) {
 
 // ============================ session ops ============================
 function switchSession(id: string) {
-  activeId = id;
-  persistActiveNow();
-  handleLocalContextScopeChanged();
-  renderSidebar();
-  renderChat();
-  // Session scoped provider/model settings, including effort, must be
-  // reflected immediately when the active conversation changes.
-  syncProviderUI(currentProviderId());
-  runtime.Composer.syncSession();
-  runtime.Composer.updateSend();
+  sessionState.switchSession(id);
 }
 function openProject(projectId: string) {
-  const p = projectById(projectId);
-  if (!p) return;
-  p.expanded = true;
-  const first = sessions.find((s) => s.projectId === projectId);
-  if (first) switchSession(first.id);
-  else newSession(projectId);
+  sessionState.openProject(projectId);
 }
 function newSession(projectId: string | null = null) {
-  const provider = currentProviderId();
-  const s = defaultSession(projectId, provider);
-  sessions.unshift(s);
-  activeId = s.id;
-  persistActiveNow();
-  handleLocalContextScopeChanged();
-  renderSidebar();
-  renderChat();
-  runtime.Composer.syncSession();
-  runtime.Composer.updateSend();
+  sessionState.newSession(projectId);
 }
 async function forgetSessionState(id: string, preserveUi = false): Promise<boolean> {
   try {
@@ -737,71 +720,22 @@ async function forgetSessionState(id: string, preserveUi = false): Promise<boole
   }
 }
 async function deleteSession(id: string): Promise<void> {
-  if (!(await forgetSessionState(id))) return;
-  const fallbackProvider = currentProviderId();
-  sessions = sessions.filter((s) => s.id !== id);
-  runtime.ConversationUI.forget(id);
-  if (!sessions.length) {
-    const s = defaultSession(null, fallbackProvider);
-    sessions = [s];
-  }
-  if (!sessions.find((s) => s.id === activeId)) activeId = sessions[0].id;
-  persistActiveNow();
-  handleLocalContextScopeChanged();
-  renderSidebar();
-  renderChat();
+  return sessionState.deleteSession(id);
 }
 function renameSession(id: string) {
   sidebar.beginSessionRename(id);
 }
 async function clearMessages(id: string): Promise<void> {
-  if (!(await forgetSessionState(id, true))) return;
-  const s = sessions.find((x) => x.id === id);
-  if (!s) return;
-  runtime.ConversationUI.forget(id);
-  s.messages = [];
-  s.terminalRuns = [];
-  s.researchRuns = [];
-  persistActiveNow();
-  if (id === activeId) {
-    closeLocalContextDrawer();
-    renderChat();
-  }
+  return sessionState.clearMessages(id);
 }
 function renameProject(id: string) {
   sidebar.beginProjectRename(id);
 }
 async function deleteProject(id: string): Promise<void> {
-  const p = projectById(id);
-  if (!p) return;
-  const cleared = await Promise.all(sessions.filter((s) => s.projectId === id).map((s) => forgetSessionState(s.id)));
-  if (!cleared.every(Boolean)) return;
-  projects = projects.filter((x) => x.id !== id);
-  sessions.filter((s) => s.projectId === id).forEach((s) => runtime.ConversationUI.forget(s.id));
-  sessions = sessions.filter((s) => s.projectId !== id);
-  if (!sessions.length) sessions = [defaultSession(null, liveDefaultProvider())];
-  if (!sessions.find((s) => s.id === activeId)) activeId = sessions[0].id;
-  persistActiveNow();
-  handleLocalContextScopeChanged();
-  renderSidebar();
-  renderChat();
+  return sessionState.deleteProject(id);
 }
 function ensureProject(path: string, name: string) {
-  const existing = projects.find((p) => pathKey(p.path) === pathKey(path));
-  if (existing) {
-    existing.expanded = true;
-    return existing;
-  }
-  const p = {
-    id: uid(),
-    name: name || pathName(path),
-    path,
-    expanded: true,
-    createdAt: Date.now(),
-  };
-  projects.unshift(p);
-  persistActive();
-  return p;
+  return sessionState.ensureProject(path, name);
 }
 let projectPickerBusy = false;
 async function pickProjectPath(mode = 'open', initial = '') {
@@ -831,19 +765,8 @@ async function pickProjectPath(mode = 'open', initial = '') {
     updateComposerContext();
   }
 }
-function attachSessionToProject(projectId: string | null, sessionId: string = activeId) {
-  const s = sessions.find((x) => x.id === sessionId);
-  const p = projectId ? projectById(projectId) : null;
-  if (!s || !p || sessionProject(s)) return false;
-  s.projectId = p.id;
-  s.research = false;
-  p.expanded = true;
-  persistActiveNow();
-  if (sessionId === activeId) handleLocalContextScopeChanged();
-  renderSidebar();
-  if (sessionId === activeId) renderChat();
-  else updateComposerContext();
-  return true;
+function attachSessionToProject(projectId: string | null, sessionId: string = sessionState.activeId) {
+  return sessionState.attachSessionToProject(projectId, sessionId);
 }
 async function pickProject() {
   const s = activeSession();
@@ -858,8 +781,8 @@ async function pickProject() {
 
 async function attachCurrentChatToPickedProject() {
   if (runProjection.size) return;
-  const sid = activeId;
-  const s = sessions.find((x) => x.id === sid);
+  const sid = sessionState.activeId;
+  const s = sessionState.sessions.find((x) => x.id === sid);
   if (!s || sessionProject(s)) return;
   const data = await pickProjectPath('new', currentProjectPath());
   if (!data) return;
@@ -869,33 +792,7 @@ async function attachCurrentChatToPickedProject() {
 }
 
 function pushMsgToSession(sid: string, m: Message) {
-  const s = sessions.find((x) => x.id === sid);
-  if (!s) return false;
-  const wasEmpty = s.messages.length === 0;
-  s.messages.push(m);
-  if (
-    s.title === 'New chat' &&
-    !s.titleRenamed &&
-    !sidebar.isEditingSession(sid) &&
-    !runtime.ConversationUI.isRenamingSession(sid) &&
-    m.type === 'user' &&
-    m.text
-  ) {
-    s.title = m.text.slice(0, 28) + (m.text.length > 28 ? '…' : '');
-    persistActiveNow();
-    renderSidebar();
-    if (sid === activeId) renderChat();
-    return true;
-  }
-  persistActiveNow();
-  if (sid === activeId) {
-    if (wasEmpty) renderChat();
-    else {
-      appendMessageNode($('chat'), m);
-      scrollChat(false);
-    }
-  }
-  return true;
+  return sessionState.pushMessage(sid, m);
 }
 
 // ============================ context menus ============================
@@ -964,7 +861,7 @@ $('top-menu').addEventListener('click', (e) => {
   if (!btn) return;
   const act = btn.dataset.act;
   if (act === 'clear') {
-    armDanger(btn, () => clearMessages(activeId));
+    armDanger(btn, () => clearMessages(sessionState.activeId));
     return;
   }
   closeAllMenus();
@@ -1024,9 +921,11 @@ function applyLifecycle(
     return false;
   const runId = data.run_id || '',
     sessionId = data.session_id || '';
-  const owner = sessions.find((item) => item.id === sessionId && runtime.ConversationUI.acceptsRun(item.id, runId));
-  const display = historySessionId ? sessions.find((item) => item.id === historySessionId) : owner;
-  const displays = sessions.filter(
+  const owner = sessionState.sessions.find(
+    (item) => item.id === sessionId && runtime.ConversationUI.acceptsRun(item.id, runId),
+  );
+  const display = historySessionId ? sessionState.sessions.find((item) => item.id === historySessionId) : owner;
+  const displays = sessionState.sessions.filter(
     (item) =>
       (item === owner || item === display || item.messages.some((message) => message.runId === runId)) &&
       runtime.ConversationUI.acceptsRun(item.id, runId),
@@ -1079,7 +978,7 @@ function handleReplyStream(data: ServerEventData) {
   const runIsActive = (id: string) => runProjection.isActive(id) || id === runProjection.primaryRun?.runId;
   if (!runId || !runIsActive(runId)) return;
   if (!runtime.Requests.acceptsEvent(data)) return;
-  const session = sessions.find((session) => session.id === sid);
+  const session = sessionState.sessions.find((session) => session.id === sid);
   const message = session && streamMessage(session, data);
   if (
     message &&
@@ -1182,7 +1081,7 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
   if (data.type === 'tool_started') {
     const rawToolId = (data.call_id || data.tool_id || '').toString();
     const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';
-    const s = sessions.find((x) => x.id === sid);
+    const s = sessionState.sessions.find((x) => x.id === sid);
     if (s && toolKey) {
       ensureSessionIndexes(s);
       if (s._toolKeys!.has(toolKey)) return;
@@ -1379,7 +1278,7 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
   }
   if (data.type === 'shell_request') {
     if (approvalController.decided(data.id || '')) return;
-    const isNew = !sessions
+    const isNew = !sessionState.sessions
       .find((session) => session.id === sid)
       ?.messages.some((message) => message.id === data.id && message.type === 'shell_request');
     addToSession(sid, {
@@ -1400,9 +1299,9 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
       runId,
       eventKey: `shell:${data.id}`,
     });
-    if (sid === activeId && isNew)
+    if (sid === sessionState.activeId && isNew)
       requestAnimationFrame(() => {
-        if (sid === activeId && runtime.ConversationUI.isFollowing())
+        if (sid === sessionState.activeId && runtime.ConversationUI.isFollowing())
           runtime.ConversationUI.revealApproval(data.id || '');
       });
     return;
@@ -1463,18 +1362,18 @@ function recordResearchRun(sessionId: string, runId: string, research: ResearchP
   return item;
 }
 
-function currentResearchRun(sessionId = activeId) {
+function currentResearchRun(sessionId = sessionState.activeId) {
   return runtime.ResearchRuns.current(sessionId);
 }
 
 async function restoreResearchRun() {
   const restore = $('research-restore');
   if (restore) restore.disabled = true;
-  const ownerSessionId = activeId;
+  const ownerSessionId = sessionState.activeId;
   try {
     const result = await runtime.ResearchRuns.restore(ownerSessionId);
     if (!result) return;
-    const subtitle = activeId === ownerSessionId ? $('research-subtitle') : null;
+    const subtitle = sessionState.activeId === ownerSessionId ? $('research-subtitle') : null;
     if (subtitle) subtitle.textContent = String(result.message || '');
     if (result.run) {
       runtime.ResearchDrawer.invalidateNoteCache(runtime.ResearchDrawer.noteIdsForRun(result.run));
@@ -1486,7 +1385,7 @@ async function restoreResearchRun() {
         eventKey: `research-restore:${String(result.run.runId || '')}`,
       });
     }
-    if (activeId === result.ownerSessionId) runtime.ResearchDrawer.render(activeId);
+    if (sessionState.activeId === result.ownerSessionId) runtime.ResearchDrawer.render(sessionState.activeId);
   } finally {
     const current = currentResearchRun();
     if (restore) restore.disabled = !current || !current.restoreable;
@@ -1497,7 +1396,7 @@ function markResearchRestoreAvailability(runIds: unknown) {
   const changed = runtime.ResearchRuns.markRestoreAvailability(runIds);
   const drawer = $('research-drawer');
   if (changed && drawer && drawer.classList.contains('open')) {
-    runtime.ResearchDrawer.render(activeId);
+    runtime.ResearchDrawer.render(sessionState.activeId);
   }
 }
 
@@ -1558,67 +1457,14 @@ function connectEvents() {
   return runtime.Sse.connect();
 }
 
-function addToSession(sid: string, m: Message) {
-  if (m.type === 'user' && (m.queuedInputId || m.id)) {
-    const session = sessions.find((item) => item.id === sid);
-    const duplicate = session?.messages.some(
-      (item) =>
-        item.type === 'user' &&
-        ((m.queuedInputId && item.queuedInputId === m.queuedInputId) ||
-          (m.queuedInputId && item.id === m.queuedInputId)),
-    );
-    if (duplicate) return true;
-  }
-  if (m.type === 'shell_result' && m.id) {
-    const s = sessions.find((item) => item.id === sid);
-    const replaced = replaceSessionMessage(
-      sid,
-      (item) => ['shell_request', 'shell_result'].includes(item.type) && item.id === m.id,
-      mergeCommandResult(
-        s?.messages.find((item) => item.id === m.id && ['shell_request', 'shell_result'].includes(item.type)),
-        m,
-      ),
-    );
-    if (replaced) return true;
-  }
-  if (m.type === 'asst' && !m.streamId && m.runId && m.text) {
-    const session = sessions.find((session) => session.id === sid);
-    const existing = session?.messages
-      .slice()
-      .reverse()
-      .find((item) => item.type === 'asst' && item.runId === m.runId);
-    if (existing) {
-      // A durable history refresh can replace the transient stream record
-      // before the terminal event arrives. Keep one logical answer and retain
-      // the stream identity so the mounted DOM node can be updated in place.
-      const settled = existing.streamId
-        ? { ...existing, ...m, streamId: existing.streamId, streamState: 'complete' as const, finalAnswer: true }
-        : m;
-      return replaceSessionMessage(sid, (item) => item === existing, settled);
-    }
-    if (sid === activeId) {
-      const streamNode = Array.from(document.querySelectorAll<HTMLElement>('.msg.asst[data-stream-id]')).find(
-        (node) => node.dataset.runId === m.runId,
-      );
-      const streamId = streamNode?.dataset.streamId;
-      if (streamId && session) {
-        const settled = { ...m, streamId, streamState: 'complete' as const, finalAnswer: true };
-        session.messages.push(settled);
-        runtime.UiState.trackSessionMessage(session, settled);
-        persistActive();
-        if (runtime.Messages.updateReply($('chat'), settled)) return true;
-      }
-    }
-    const final = session && finalStreamMessage(session, m.runId, m.text, m.eventKey || '');
-    if (final)
-      return replaceSessionMessage(sid, (item) => item.streamId === final.streamId && item.runId === m.runId, final);
-  }
-  return runtime.Requests.addToSession(sid, m);
+function addToSession(sid: string, m: Message): boolean {
+  return sessionState.addMessage(sid, m);
 }
+
 function observeQueuedInput(input: QueuedInput): void {
   const sid = input.request.session_id,
     runId = input.request.run_id;
-  const session = sessions.find((session) => session.id === sid);
+  const session = sessionState.sessions.find((session) => session.id === sid);
   if (!session) return;
   if (input.state === 'consumed') {
     void runtime.ConversationUI.refreshHistory(sid, true, true);
@@ -1652,7 +1498,7 @@ function observeQueuedInput(input: QueuedInput): void {
   if (input.state === 'completed' && input.terminal) handleServerEvent(input.terminal);
 }
 function observeUserQuestion(question: UserQuestion): void {
-  const session = sessions.find((session) => session.id === question.session_id);
+  const session = sessionState.sessions.find((session) => session.id === question.session_id);
   if (!session) return;
   if (!session.messages.some((message) => message.type === 'user_question' && message.id === question.id))
     addToSession(session.id, {
@@ -1671,67 +1517,11 @@ function observeUserQuestion(question: UserQuestion): void {
 }
 
 function replaceSessionMessage(sid: string, predicate: (message: Message) => boolean, message: Message) {
-  const s = sessions.find((x) => x.id === sid);
-  if (!s) return false;
-  ensureSessionIndexes(s);
-  const index = s.messages.findIndex(predicate);
-  if (index < 0) return false;
-  s.messages[index] = message;
-  runtime.UiState.trackSessionMessage(s, message);
-  persistActive();
-  if (sid === activeId) {
-    if (runtime.Messages.updateReply($('chat'), message)) {
-      scrollChat(false);
-      return true;
-    }
-    if (['shell_result', 'shell_approval_status'].includes(message.type) && runtime.ConversationUI.refreshApprovals())
-      return true;
-    if (runtime.Process.replace($('chat'), message)) {
-      scrollChat(false);
-      return true;
-    }
-    const existingNode =
-      message.toolKey &&
-      (Array.from($('chat').children) as HTMLElement[]).find(
-        (el) => el.dataset && el.dataset.toolKey === message.toolKey,
-      );
-    if (existingNode) {
-      const temp = document.createElement('div');
-      appendMessageNode(temp, message);
-      if (temp.firstElementChild) {
-        existingNode.replaceWith(temp.firstElementChild);
-        scrollChat(false);
-        return true;
-      }
-    }
-    if (message.type === 'asst' && message.runId) {
-      const existingAssistant = Array.from(document.querySelectorAll<HTMLElement>('.msg.asst')).find(
-        (node) => node.dataset.runId === message.runId,
-      );
-      if (existingAssistant) {
-        const streamId = existingAssistant.dataset.streamId;
-        if (streamId) {
-          runtime.Messages.updateReply($('chat'), {
-            ...message,
-            streamId,
-            streamState: 'complete',
-            finalAnswer: true,
-          });
-        }
-        // The mounted answer already represents this run. Do not rebuild the
-        // entire conversation merely because its durable identity changed.
-        scrollChat(false);
-        return true;
-      }
-    }
-    renderChat();
-    scrollChat();
-  }
-  return true;
+  return sessionState.replaceMessage(sid, predicate, message);
 }
 
 function recordRunState(sid: string, runId: string, state: string, data: ServerEvent & { elapsed_ms?: unknown }) {
-  const session = sessions.find((item) => item.id === sid);
+  const session = sessionState.sessions.find((item) => item.id === sid);
   if (!session || lastRunState(session, runId) === state) return;
   const revision = session.messages.filter((item) => item.type === 'run_state' && item.runId === runId).length;
   addToSession(sid, {
@@ -1744,14 +1534,7 @@ function recordRunState(sid: string, runId: string, state: string, data: ServerE
 }
 
 function dropSessionMessages(sessionId: string, pred: (message: Message) => boolean) {
-  const s = sessions.find((x) => x.id === sessionId);
-  if (!s) return;
-  const before = s.messages.length;
-  s.messages = s.messages.filter((m) => !pred(m));
-  if (s.messages.length === before) return;
-  hydrateSessionIndexes(s);
-  persistActive();
-  if (sessionId === activeId) renderChat();
+  sessionState.dropMessages(sessionId, pred);
 }
 function removeTeachMessage(sessionId: string, teachId: string) {
   dropSessionMessages(sessionId, (m) => m.type === 'teach' && (!teachId || m.id === teachId));
@@ -1777,7 +1560,7 @@ async function resumeTeaching(teachId: string, sessionId: string) {
 }
 
 function sessionProjectPath(sid: string) {
-  const s = sessions.find((x) => x.id === sid);
+  const s = sessionState.sessions.find((x) => x.id === sid);
   const p = sessionProject(s);
   return p ? p.path : '';
 }
@@ -1867,12 +1650,12 @@ function closeOtherDrawers(active: string | undefined) {
 }
 
 const approvalController = createApprovalController({
-  sessions: () => sessions,
+  sessions: () => sessionState.sessions,
   changed: (sid) => {
-    const session = sessions.find((s) => s.id === sid);
+    const session = sessionState.sessions.find((s) => s.id === sid);
     if (session) hydrateSessionIndexes(session);
     persistActive();
-    if (sid === activeId && !runtime.ConversationUI.refreshApprovals()) renderChat();
+    if (sid === sessionState.activeId && !runtime.ConversationUI.refreshApprovals()) renderChat();
   },
   fetch: (...args) => fetch(...args),
   focus: (id) => runtime.ConversationUI.revealApproval(id),
@@ -1925,7 +1708,7 @@ function syncResearchUseProjectButton() {
   const btn = $('research-use-project');
   if (!btn) return;
   const s = activeSession();
-  const busy = runProjection.primaryRun?.sessionId === activeId;
+  const busy = runProjection.primaryRun?.sessionId === sessionState.activeId;
   const unusable = busy || !s || !!sessionProject(s);
   btn.disabled = unusable;
   btn.title = busy ? 'Busy' : !s ? 'No chat' : sessionProject(s) ? 'Already in a project' : '';
@@ -1974,8 +1757,8 @@ async function boot() {
   DEFAULT_PROVIDER = runtime.UiState.DEFAULT_PROVIDER;
   bindUiStatePagehide();
   runtime.ResearchRuns.init({
-    getActiveId: () => activeId,
-    getSessions: () => sessions,
+    getActiveId: () => sessionState.activeId,
+    getSessions: () => sessionState.sessions,
     activeSession,
     receiptSummary,
     persistActive,
@@ -1984,8 +1767,8 @@ async function boot() {
   runtime.ResearchDrawer.init({
     openDocument,
     $,
-    getActiveId: () => activeId,
-    getSessionTitle: (id: string) => (sessions.find((s) => s.id === id) || {}).title || 'Chat',
+    getActiveId: () => sessionState.activeId,
+    getSessionTitle: (id: string) => (sessionState.sessions.find((s) => s.id === id) || {}).title || 'Chat',
     getCurrentRun: (id: string, runId: string) =>
       runtime.ResearchRuns.forRun(id, runId) as import('./research_drawer').ResearchRunView | null,
     getResearchGraphDepth: () => Number(workspace.getTarget('research').depth) || 1,
@@ -2016,14 +1799,14 @@ async function boot() {
   });
   runtime.LocalContextDrawer.init({
     $,
-    getActiveId: () => activeId,
+    getActiveId: () => sessionState.activeId,
     currentProjectPath: () => currentProjectPath(),
     openMenuAt,
     closeAllMenus,
     closeOtherDrawers,
     copyText,
   });
-  runtime.RunDetails.init({ getActiveId: () => activeId });
+  runtime.RunDetails.init({ getActiveId: () => sessionState.activeId });
   runtime.ProviderUI.init({
     $,
     escapeHtml,
@@ -2052,8 +1835,8 @@ async function boot() {
   });
   runtime.Requests.init({
     $,
-    getSessions: () => sessions,
-    getActiveId: () => activeId,
+    getSessions: () => sessionState.sessions,
+    getActiveId: () => sessionState.activeId,
     getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
     persistActiveNow,
     persistActive,
@@ -2067,14 +1850,14 @@ async function boot() {
   runtime.Composer.init({
     $,
     PROVIDERS,
-    getActiveId: () => activeId,
+    getActiveId: () => sessionState.activeId,
     getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
     getRunningRunId: () => runProjection.primaryRun?.runId ?? null,
     getRunningRunIdForSession: (sessionId: string) => runProjection.runIdForSession(sessionId),
     isSessionRunning,
     activeSession,
     findSession: (sessionId: string | null | undefined) =>
-      sessionId ? sessions.find((x) => x.id === sessionId) : undefined,
+      sessionId ? sessionState.sessions.find((x) => x.id === sessionId) : undefined,
     sessionProject,
     sessionProjectPath,
     currentIntentForSession,
@@ -2103,18 +1886,18 @@ async function boot() {
     approveCommand,
     continueTask,
     resumeTeaching,
-    getActiveId: () => activeId,
+    getActiveId: () => sessionState.activeId,
     getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
-    getSessions: () => sessions,
+    getSessions: () => sessionState.sessions,
   });
   runtime.ConversationUI.init({
     projectTasks: (tasks: HistoryTask[], sessionId: string) =>
       projectTaskStates(tasks, new Map(runProjection.entries()), sessionId),
     activeSession,
     activeProject,
-    getSessions: () => sessions,
-    getProjects: () => projects,
-    getActiveId: () => activeId,
+    getSessions: () => sessionState.sessions,
+    getProjects: () => sessionState.projects,
+    getActiveId: () => sessionState.activeId,
     getRunningSessionId: () => runProjection.primaryRun?.sessionId ?? null,
     sessionProject,
     currentProjectPath,
@@ -2181,9 +1964,9 @@ if (testBridgeWindow.__TEST_BRIDGE__)
   });
 if (testBridgeWindow.__TEST_BRIDGE__)
   Object.defineProperties(window, {
-    sessions: { configurable: true, get: () => sessions },
-    projects: { configurable: true, get: () => projects },
-    activeId: { configurable: true, get: () => activeId },
+    sessions: { configurable: true, get: () => sessionState.sessions },
+    projects: { configurable: true, get: () => sessionState.projects },
+    activeId: { configurable: true, get: () => sessionState.activeId },
     runningSessionId: {
       configurable: true,
       get: () => runProjection.primaryRun?.sessionId ?? null,

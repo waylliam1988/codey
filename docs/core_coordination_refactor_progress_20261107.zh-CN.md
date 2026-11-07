@@ -145,9 +145,16 @@ fork helper 改依赖 `SessionKernel`，不再反向导入公共 session。公�
 - [x] sidebar 状态归属。
 - [x] run projection 归属。
 - [x] stream buffer 归属。
-- [ ] 抽出会话/项目状态 store。
+- [x] 抽出会话/项目状态 store。
 - [ ] 抽出 SSE、snapshot 和运行事件协调器。
 - [ ] 让 `app_runtime.ts` 主要负责装配和 UI 绑定。
+
+会话状态批次新增 `SessionStateStore` 与 `SessionStateViews`。会话/项目操作、消息合并、
+request status 前插入、stream 终结身份和消息索引归 store；节点增量替换及挂载 stream
+身份查询归视图。`Requests.addToSession` 代理到同一状态入口，不再维护第二份追加算法。
+既有 UI snapshot/cache 仍负责持久化同步，不增加 durable 权威副本。TypeScript 通过；
+store/view/request recovery/run lifecycle/projection 定向回归 31 passed。导航 pending jump
+修改尚在独立验证，未计入这个批次的完成证据。
 
 ## 基线验证
 
