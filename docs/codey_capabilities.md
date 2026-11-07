@@ -171,6 +171,11 @@ Codey keeps quiet audit surfaces for people who need to inspect behavior:
 - research evidence/source/note views;
 - bounded run traces and ledgers.
 
+Research audit projections use a strict recording path for the real run trace:
+a recorder failure becomes an `error` diagnostic instead of being reported as
+`ok` by the fail-open prompt tracing adapter. The research run still completes,
+so projection success and audit write success remain distinct.
+
 Audit summaries and prompt manifests are bounded projections. Local managed
 outputs and recovery receipts may retain read source text, webpage bodies and
 tool results; conversation and enabled Ghost experience stores also retain

@@ -134,6 +134,19 @@ class FailOpenPromptTrace:
             logger.debug("prompt trace %s failed: %r", method, exc, exc_info=True)
             return
 
+    def call_strict(self, method: str, *args: object, **kwargs: object) -> None:
+        """Invoke a trace method while preserving recorder failures.
+
+        Normal prompt tracing remains fail-open. Audit projections use this
+        entry point so a failed durable write cannot be reported as a
+        successful projection.
+        """
+        if self.trace is None:
+            return
+        fn = getattr(self.trace, method, None)
+        if callable(fn):
+            fn(*args, **kwargs)
+
     def record_section(
         self,
         section: PromptEnvelopeSection | RenderedPromptSection,

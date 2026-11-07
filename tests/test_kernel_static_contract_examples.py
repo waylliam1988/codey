@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
@@ -114,7 +115,7 @@ ResearchToolOutput("bad", read_passages=({"ref": False, "start": 0, "end": 1},),
     ],
 )
 def test_type_checker_rejects_invalid_kernel_contract(tool: str, arguments: tuple[str, ...]) -> None:
-    source = ROOT / "tests" / f"_bad_kernel_contract_{tool}.py"
+    source = ROOT / "tests" / f"_bad_kernel_contract_{tool}_{uuid.uuid4().hex}.py"
     source.write_text(BAD_CONTRACT, encoding="utf-8")
     try:
         result = subprocess.run(
@@ -148,7 +149,7 @@ def test_type_checker_rejects_invalid_kernel_contract(tool: str, arguments: tupl
 def test_type_checker_rejects_untyped_provider_call_shape(
     tool: str, arguments: tuple[str, ...], source_text: str,
 ) -> None:
-    source = ROOT / "tests" / f"_bad_kernel_provider_call_{tool}.py"
+    source = ROOT / "tests" / f"_bad_kernel_provider_call_{tool}_{uuid.uuid4().hex}.py"
     source.write_text(source_text, encoding="utf-8")
     try:
         result = subprocess.run(

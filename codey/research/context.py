@@ -140,15 +140,15 @@ class RunTraceResearchSink:
         payloads = review_finding_trace_payloads(findings or ())
         if not payloads:
             return
-        self._sink.call("record_review_findings", payloads)
-        self._sink.call("flush")
+        self._sink.call_strict("record_review_findings", payloads)
+        self._sink.call_strict("flush")
 
     def record_planner_gaps(self, gaps: Iterable[object] | None) -> None:
         payloads = planner_gap_trace_payloads(gaps or ())
         if not payloads:
             return
-        self._sink.call("record_planner_gaps", payloads)
-        self._sink.call("flush")
+        self._sink.call_strict("record_planner_gaps", payloads)
+        self._sink.call_strict("flush")
 
     def record_research_source_trust(self, projections: Iterable[object] | None) -> None:
         payloads: list[object] = []
@@ -158,16 +158,16 @@ class RunTraceResearchSink:
         payloads = [item for item in payloads if isinstance(item, Mapping)]
         if not payloads:
             return
-        self._sink.call("record_research_source_trust", payloads)
-        self._sink.call("flush")
+        self._sink.call_strict("record_research_source_trust", payloads)
+        self._sink.call_strict("flush")
 
     def record_research_brief_projection(self, projection: Mapping[str, object] | None) -> None:
         to_payload = getattr(projection, "to_payload", None)
         payload = to_payload() if callable(to_payload) else projection
         if not isinstance(payload, Mapping):
             return
-        self._sink.call("record_research_brief_projection", payload)
-        self._sink.call("flush")
+        self._sink.call_strict("record_research_brief_projection", payload)
+        self._sink.call_strict("flush")
 
 
 @dataclass(frozen=True)

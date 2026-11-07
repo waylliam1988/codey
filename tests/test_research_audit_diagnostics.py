@@ -139,6 +139,18 @@ def test_diagnostics_survive_real_trace_and_operation_payload(tmp_path):
     assert research_payload(result, pipeline_result=output)["audit_diagnostics"] == expected
 
 
+def test_real_trace_audit_write_failure_is_an_error(tmp_path):
+    store = RunTraceStore(tmp_path)
+    recorder = store.open(run_id="r", session_id="s", project=None, mode_initial="research", provider_initial="p")
+    runner, _, _ = make_runner(tmp_path, trace=RunTraceResearchSink(recorder))
+    with patch.object(recorder, "record_research_source_trust", side_effect=OSError("trace unavailable")):
+        output = runner.run()
+    row = next(d for d in output.audit_diagnostics if d.stage == "source_trust")
+    assert (row.status, row.reason_code, row.error_type) == (
+        "error", "source_trust_projection_failed", "OSError",
+    )
+
+
 def test_diagnostics_are_per_run_and_legacy_phases_survive_recovery(tmp_path):
     runner, result, _ = make_runner(tmp_path, accepted=False)
     real_review = pipeline.review_research_proof(result.research_record)
