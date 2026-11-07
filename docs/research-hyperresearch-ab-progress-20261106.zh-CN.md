@@ -90,3 +90,9 @@ v10 首对真实阅读状态显示 baseline 可提交，但 coverage 候选把�
 ### 2026-11-07：③ v13 自然压力开发通过机制门槛
 
 新建 `.e2e-artifacts/research-window-coverage-dev-v13/`，使用未参加 v12 的四个自然压力题（`held_versions`、`held_middle`、`held_decoy`、`held_logic`），seed 1702，baseline/coverage 共 8/8 真实 writer、真实读取和提交成功。`held_versions`、`held_middle`、`held_decoy` 三题在两臂都实际发生 overflow，达到至少两组成对机制触发门槛；`held_logic` 两臂均未溢出。`decision.json` 判定 `proceed_to_formal_contract`，仅说明机制接线有效，不说明答案质量收益。下一步必须新建 12 个新自然任务 × 双 seed 正式合同，不能续写 v13，生产保持基线。
+
+### 2026-11-07：③ 正式 v3 结案
+
+正式合同 `.e2e-artifacts/research-window-coverage-formal-v3/` 完成 12 个新任务变体 × seed 1711/1712 × baseline/coverage，共 48/48 回执。12 个任务变体中有 8 个在两臂、两个 seed 下都实际 overflow，机制门槛有效。运行成功数为 baseline 22/24、coverage 21/24；保守冻结 rubric 结构代理完整任务数为 17 对 15。coverage 没有任务级净收益，且多 1 次失败，`decision.json` 判定 `reject`，生产保持 FIFO 基线。
+
+首轮 formal-v1 发现生成变体复用了小写 URL slug，造成材料身份映射错误；该目录已封存为 harness `inconclusive`，不进入 v3 评分。v3 修正了每个变体的 URL 身份并新建冻结目录，不能与 v1 混算。

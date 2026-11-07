@@ -912,3 +912,9 @@ Pyrefly、Ty 通过；Pyrefly 同时保留既有 warnings/suppressions，不声�
 ### 2026-11-07：③ v13 机制开发通过
 
 为修复 v12 只有一组成对 overflow 的证据不足问题，新建 `.e2e-artifacts/research-window-coverage-dev-v13/`，换用四个未参与 v12 的自然压力题，seed 1702，baseline/coverage 共 8/8 真实运行成功。三题在两臂均实际发生 overflow，一题两臂均未溢出，满足开发阶段至少两组成对机制触发门槛。`decision.json` 仅允许进入新的正式合同；它没有提供最终答案净收益证据，③候选仍未合入生产。正式阶段仍需 12 个新任务、两个 seed、两臂，并按任务级答案、条件/版本保留、引用和成本合同评分。
+
+### 2026-11-07：③ 正式矩阵结案
+
+新合同 `.e2e-artifacts/research-window-coverage-formal-v3/` 完成 12 个新任务变体、两个 seed、baseline/coverage 两臂，共 48/48。8/12 任务变体在两臂、两个 seed 下都实际发生 overflow，证明机制被有效检验。baseline 成功 22/24，coverage 成功 21/24；保守的冻结 rubric 结构代理完整任务数为 17 对 15。候选多一次任务失败且没有净质量改善，正式 `decision.json` 判定 **`reject`**，不合入生产。
+
+formal-v1 因生成任务复用了小写 URL slug，导致来源身份映射错误，已判定 harness `inconclusive` 并排除；v3 为新合同，修正每个变体的 URL 身份后重新运行。该修复是实验接线修复，不是生产行为变更。
