@@ -6,8 +6,9 @@ import contextlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, cast
 
+from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import clean_relations, normalize_concept
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, canonical_json
 from codey.knowledge.note import NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
@@ -20,6 +21,7 @@ from codey.research.source_gateway import (
     OPEN_MIN_LIMIT,
     SEARCH_LIMIT,
     ResearchSourceGateway,
+    _SearchProvider,
 )
 from codey.research.source_rendering import render_opened_source
 from codey.research.source_search import (
@@ -50,9 +52,9 @@ class ResearchToolOutput:
 
 @dataclass
 class ResearchTools:
-    search: Any
-    store: Any
-    changes: Any
+    search: _SearchProvider | None
+    store: KnowledgeStore | StagedKnowledgeStore | None
+    changes: KnowledgeChanges | StagedKnowledgeChanges | None
     diagnostics: object | None = None
     session_id: str = ""
     project: str = ""
@@ -68,7 +70,7 @@ class ResearchTools:
     finding_report: bool = False
     answer_submission: bool = False
     coherent_passages: bool = False
-    context_provider: Any = field(default=None, repr=False, compare=False)
+    context_provider: object | None = field(default=None, repr=False, compare=False)
 
     def create_staged(self) -> ResearchTools:
         staged_store = StagedKnowledgeStore(self.store) if self.store is not None else None
@@ -255,7 +257,7 @@ class ResearchTools:
                 from codey.research.knowledge_materials import read_material
 
                 try:
-                    return read_material(self, version, offset=offset, limit=limit)
+                    return cast(ResearchToolOutput, read_material(self, version, offset=offset, limit=limit))
                 except (ValueError, TypeError, KeyError) as exc:
                     return ResearchToolOutput(f"ERROR: {exc}", ok=False)
             payload = version.to_dict()
@@ -380,12 +382,12 @@ class ResearchTools:
         """Deterministic organization of one explicit, unreviewed interpretation."""
         from codey.research.findings import save_finding
 
-        return save_finding(self, args)
+        return cast(ResearchToolOutput, save_finding(self, args))
 
     def save_inference(self, args: dict[str, Any]) -> ResearchToolOutput:
         from codey.research.references import save_inference
 
-        return save_inference(self, args)
+        return cast(ResearchToolOutput, save_inference(self, args))
 
     def research_plan(self, questions: object) -> ResearchToolOutput:
         """Register questions for scoped source acquisition outside Research."""
@@ -649,7 +651,7 @@ def _prepare_write_relations(
     existing_note: KnowledgeNote | None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     if "relations" in args:
-        return clean_relations(args.get("relations"))
+        return cast(tuple[list[dict[str, Any]], list[str]], clean_relations(args.get("relations")))
     return (
         list(existing_note.relations if existing_note is not None else []),
         [],

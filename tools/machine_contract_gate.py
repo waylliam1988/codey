@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 CONTRACT_TESTS = (
+    "tests/test_kernel_type_precision_gate.py",
     "tests/test_tool_execution_lifecycle.py",
     "tests/test_read_result_contract.py",
     "tests/test_rg_search_contract.py",

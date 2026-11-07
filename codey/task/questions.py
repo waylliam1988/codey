@@ -1,10 +1,17 @@
 """The shared, bounded contract for an explicit user question."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
 
-def question_args(value: dict[str, Any]) -> dict[str, Any]:
+class QuestionPayload(TypedDict):
+    question: str
+    options: list[str]
+    descriptions: list[str]
+    allow_free_text: bool
+
+
+def question_args(value: dict[str, Any]) -> QuestionPayload:
     question = value.get("question")
     options = value.get("options")
     if not isinstance(question, str) or not 0 < len(question.strip()) <= 2000:

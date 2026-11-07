@@ -47,8 +47,13 @@
 - 第 3 批：已建立 `CompletionContext` 及单次兼容转换边界；完成检查支持该具名上下文，旧 mapping/属性对象仍在边界转换。
 - 第 4 批：已将生产入口的 sink 放入 execution 依赖；保留 observation sink 兼容字段，并修复重启时替换 sink 的确定性回归。
 - 第 5 批：已建立 provider capability source 协议并明确窗口引用是 opaque identity；未改变现有 provider 方法分派，待下一批处理。
-- 第 6 批：已将 provider 持久化调用解码边界从 `Any` 容器收紧为 `object` 容器，保留原有六种方法、参数顺序、摘要和恢复路径；完整判别调用对象待第 7 批完成。
-- 第 7 至第 8 批：未开始。
-- 最近验证：上述测试外，provider capability/native boundary 测试 7 passed；provider receipt/native delivery 测试 32 passed、3 skipped；相关 Ruff 通过。曾发现并修正窗口引用过窄导致的 2 个回归。
+- 第 6 批：已将 provider 持久化调用解码为带 `ProviderMethod` 判别字段的 `ProviderInvocation`，保留原有六种方法、参数顺序、摘要和恢复路径。
+- 第 7 批：已为 kernel result、question 和 decision result 建立具名 TypedDict/字面量边界；`result_from_payload` 已改为从 `object` 入口验证；provider invocation 通过定向测试和 mypy。
+- 第 8 批：已加入 kernel 类型精度基线、pytest machine contract 和独立 gate。当前基线保留迁移债务，但禁止目标模块新增显式 `Any`。
+- 最近验证：上述测试外，provider capability/native boundary 测试 7 passed；provider receipt/native delivery 测试 32 passed、3 skipped；结果/决策/恢复测试 43 passed；kernel contracts 与 question 的定向 mypy（follow-imports=skip）通过；类型精度 gate 与 machine contract 相关测试 4 passed；相关 Ruff 通过；machine contract `1441 passed, 14 subtests passed`。
+
+## 当前边界
+
+本次 8 批已完成第一轮契约收敛和防退化门禁。后续补强已将 provider wrapper 的六种 kernel 方法改为显式方法，并把 `ResearchTools` 的主要资源字段收紧为真实/分阶段实现联合类型；兼容边界仍保留在 wrapper 的第三方属性透传和研究开放 JSON 字段。精度 gate 已覆盖这两个模块，禁止新增显式 `Any`。
 - 已知外部问题：本地 mypy 导入用户已有的附件改动时，在 `codey/task/attachments.py:45` 和 `codey/durable/conversation_ops.py:492` 报错；未修改这些文件，待后续与用户改动一起单独处理。
 

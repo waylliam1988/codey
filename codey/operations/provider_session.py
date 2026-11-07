@@ -6,7 +6,6 @@ import contextlib
 import json
 import math
 import time
-from functools import partial
 from typing import Any
 
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget
@@ -84,23 +83,27 @@ class ProviderAdapter:
         self.provider = provider
 
     def __getattr__(self, name: str) -> Any:
-        value = getattr(self.provider, name)
-        if name in {
-            "send_turn",
-            "send_tool_results",
-            "acknowledge_tool_results",
-            # Window-bound native delivery must use the same durable provider
-            # effect path as ordinary sends.  Leaving these as raw delegated
-            # methods bypasses the adapter's normalization and leaves the runtime
-            # operation in tool_delivery_pending after recovery.
-            "send_tool_results_bound",
-            "acknowledge_tool_results_bound",
-        } and callable(value):
-            return partial(self._send, name)
-        return value
+        # Compatibility surface for provider-specific attributes. Kernel
+        # transport methods below are explicit and do not depend on this hook.
+        return getattr(self.provider, name)
 
     def send(self, *args: Any, **kwargs: Any) -> Any:
         return self._send("send", *args, **kwargs)
+
+    def send_turn(self, *args: object, **kwargs: object) -> object:
+        return self._send("send_turn", *args, **kwargs)
+
+    def send_tool_results(self, *args: object, **kwargs: object) -> object:
+        return self._send("send_tool_results", *args, **kwargs)
+
+    def acknowledge_tool_results(self, *args: object, **kwargs: object) -> object:
+        return self._send("acknowledge_tool_results", *args, **kwargs)
+
+    def send_tool_results_bound(self, *args: object, **kwargs: object) -> object:
+        return self._send("send_tool_results_bound", *args, **kwargs)
+
+    def acknowledge_tool_results_bound(self, *args: object, **kwargs: object) -> object:
+        return self._send("acknowledge_tool_results_bound", *args, **kwargs)
 
     def normalize_reply(self, reply: Any) -> Any:
         return normalize_provider_reply(self.provider, reply)

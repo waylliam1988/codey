@@ -8,9 +8,9 @@ same executors and durable mutation line.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
-from dataclasses import replace
-from typing import Any, cast
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass, replace
+from typing import Any, Literal, cast
 
 from codey.durable.checkpoint import checkpoint_entries
 from codey.operations.kernel_context import KernelContext
@@ -45,7 +45,26 @@ from codey.runtime.effects.effect_records import (
 from codey.runtime.log.session_view import SessionView, load_session_view, not_sent_continuation_effect
 from codey.runtime.write.drive import peek_next_action
 
+ProviderMethod = Literal[
+    "send", "send_turn", "send_tool_results", "acknowledge_tool_results",
+    "send_tool_results_bound", "acknowledge_tool_results_bound",
+]
 
+
+@dataclass(frozen=True)
+class ProviderInvocation:
+    """Validated provider operation decoded from a durable request."""
+
+    method: ProviderMethod
+    args: tuple[object, ...]
+    kwargs: dict[str, object]
+
+    def __iter__(self) -> Iterator[object]:
+        # Keep the internal unpacking compatibility while exposing a named
+        # typed value to new callers.
+        yield self.method
+        yield list(self.args)
+        yield self.kwargs
 def _tools(value: object) -> list[ProviderToolDefinition]:
     from codey.toolchain.tool_spec import _freeze_schema_value
 
@@ -75,10 +94,10 @@ def _results(value: object) -> list[ProviderToolResult]:
     return results
 
 
-def decode_provider_invocation(payload: dict[str, Any]) -> tuple[str, list[object], dict[str, object]]:
+def decode_provider_invocation(payload: dict[str, Any]) -> ProviderInvocation:
     """Rebuild transport types from the original request, never today's registry."""
     method, raw_args, raw_kwargs = payload.get("method"), payload.get("args"), payload.get("kwargs")
-    if method not in _METHODS or not isinstance(raw_args, list) or not isinstance(raw_kwargs, dict):
+    if not isinstance(method, str) or method not in _METHODS or not isinstance(raw_args, list) or not isinstance(raw_kwargs, dict):
         raise RuntimeEffectError("frozen provider invocation is invalid")
     args: list[object] = list(raw_args)
     kwargs: dict[str, object] = dict(raw_kwargs)
@@ -99,7 +118,7 @@ def decode_provider_invocation(payload: dict[str, Any]) -> tuple[str, list[objec
     for key in ("tools", "declared_tools"):
         if key in kwargs and kwargs[key] is not None:
             kwargs[key] = _tools(kwargs[key])
-    return str(method), args, kwargs
+    return ProviderInvocation(cast(ProviderMethod, method), tuple(args), kwargs)
 
 
 def load_prepared_request(sink: Any, request_ref: str) -> tuple[dict[str, Any], RuntimeEffectIntent]:
@@ -182,7 +201,7 @@ def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> object
             raise RecoveryFailed(f"prepared request requires {action.kind}: {action.reason}")
         payload, intent = load_prepared_request(sink, request_ref)
         admission = payload["admission"]
-        method, args, kwargs = decode_provider_invocation(payload)
+        invocation = decode_provider_invocation(payload)
         admitted = sink.mutations.admit_provider_request(sink.session_id, sink.run_id,
             intent,
             expected_counters=RuntimeExecutionCounters.from_payload(admission["expected_counters"]),
@@ -191,15 +210,17 @@ def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> object
             # A lost admission acknowledgement conveys no execution right.
             # Loading that original pending effect must never resend it.
             raise RecoveryFailed("provider intent was already admitted; its external outcome requires reconciliation")
-        return _execute_provider(sink, provider, admitted.intent, method, args, kwargs)
+        return _execute_provider(sink, provider, admitted.intent, invocation)
 
 
 def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
-                      method: str, args: list[object], kwargs: dict[str, object]) -> object:
+                      invocation: ProviderInvocation) -> object:
+    method, args, kwargs = invocation.method, invocation.args, invocation.kwargs
     try:
         gate_prompt = getattr(provider, "set_attempt_gate_prompt", None)
         if callable(gate_prompt):
-            gate_prompt(args[0] if method in {"send", "send_turn"} and args else "")
+            prompt = args[0] if method in {"send", "send_turn"} and args else ""
+            gate_prompt(prompt if isinstance(prompt, str) else "")
         result_refs = getattr(provider, "set_result_refs", None)
         if callable(result_refs):
             result_refs(tuple(effect.effect_id for effect in sink.durable.effects(sink.run_id)

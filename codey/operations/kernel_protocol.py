@@ -282,7 +282,7 @@ def _grant_for_tool(tool: str) -> str:
     if spec is None or not spec.grant:
         # Unknown tools are denied, never passed as control.
         return ""
-    return spec.grant
+    return cast(str, spec.grant)
 
 
 def _canonical_name(tool: str) -> str:
@@ -291,7 +291,7 @@ def _canonical_name(tool: str) -> str:
     except Exception:
         return (tool or "").strip().lower()
     try:
-        return canonical_tool_name(tool)
+        return cast(str, canonical_tool_name(tool))
     except Exception:
         return (tool or "").strip().lower()
 

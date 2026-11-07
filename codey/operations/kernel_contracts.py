@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal, NotRequired, Protocol, TypedDict
 
 from codey.operations.generation_boundary import GenerationBoundaryRequest, GenerationBoundaryResult
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.task.questions import QuestionPayload
 from codey.workspace.context_admission import GhostContextSource
 
 if TYPE_CHECKING:
@@ -31,6 +32,16 @@ class StopSignal(Protocol):
     def is_set(self) -> bool: ...
 
 
+class KernelResultPayload(TypedDict):
+    completed: bool
+    summary: str
+    turns: int
+    stop_reason: str
+    proof: dict[str, object] | None
+    delivery: DeliveryStatus
+    research_report: dict[str, object] | None
+
+
 @dataclass(frozen=True)
 class KernelResult:
     completed: bool
@@ -46,7 +57,7 @@ class KernelResult:
 
         return {"schema_version": 2, **cast(dict[str, Any], json_value(self))}
 
-def result_from_payload(payload: Any) -> KernelResult:
+def result_from_payload(payload: object) -> KernelResult:
     from codey.completion.contract import _proof_from_payload
 
     legacy = {"completed", "summary", "turns", "stop_reason", "proof", "delivery"}
@@ -91,21 +102,21 @@ class RetryDecision(TypedDict):
 
 class DoneDecision(TypedDict):
     purpose: Literal["done"]
-    result: dict[str, Any]
+    result: KernelResultPayload
     workspace_revision: int
     workspace_fingerprint: str
 
 
 class QuestionDecision(TypedDict):
     purpose: Literal["question"]
-    question: dict[str, Any]
+    question: QuestionPayload
     question_id: str
-    result: dict[str, Any]
+    result: KernelResultPayload
 
 
 class ClosingDecision(TypedDict):
     purpose: Literal["closing"]
-    result: dict[str, Any]
+    result: KernelResultPayload
 
 
 KernelDecision = RetryDecision | DoneDecision | QuestionDecision | ClosingDecision
