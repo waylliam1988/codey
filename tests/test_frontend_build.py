@@ -9,6 +9,15 @@ from codey.app import http_plumbing
 from tools import publish_frontend
 
 
+def test_packaged_frontend_metadata_matches_runtime_file_bytes():
+    # Check the shipped tree even when a fresh Node build is unavailable.
+    web = publish_frontend.WEB
+    recorded = json.loads((web / "frontend-build.json").read_text(encoding="utf-8"))
+    files = publish_frontend._files(web)
+    files.pop("frontend-build.json")
+    assert recorded["files"] == files
+
+
 @pytest.mark.parametrize("fault", ["source", "changed", "missing", "extra"])
 def test_publish_check_reports_mismatch_without_accepting_stale_output(tmp_path, monkeypatch, capsys, fault):
     web = tmp_path / "web"
