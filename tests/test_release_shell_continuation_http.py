@@ -179,7 +179,8 @@ def test_zen_wrapper_restores_approved_call_before_native_continuation(
         # than the HTTP handler, claims the newly committed task first.
         monkeypatch.setattr(task_submit, '_claim_admitted_task', lambda *a, **kw: False)
         reconcile = DurableTaskScheduler._reconcile
-        source, first = inspect.getsourcelines(reconcile)
+        finish_accepted_dispatch = DurableTaskScheduler._finish_accepted_dispatch
+        source, first = inspect.getsourcelines(finish_accepted_dispatch)
         snapshot_line = first + next(i for i, line in enumerate(source)
                                      if line.strip().startswith('if current.state.get("cancel_requested")'))
         settle = DurableSession.settle_approval
@@ -190,7 +191,7 @@ def test_zen_wrapper_restores_approved_call_before_native_continuation(
             return result
 
         def trace(frame, event, arg):
-            if frame.f_code is not reconcile.__code__:
+            if frame.f_code is not finish_accepted_dispatch.__code__:
                 return None
             if event == 'line' and frame.f_lineno == snapshot_line and not snapshot_observed.is_set():
                 snapshot_observed.set()
