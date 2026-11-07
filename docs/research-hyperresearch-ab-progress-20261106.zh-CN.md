@@ -127,3 +127,9 @@ v10 首对真实阅读状态显示 baseline 可提交，但 coverage 候选把�
 旧候选把 acquisition 指导拼接进用户任务；生产研究提示随后又重复包含完整任务和“立即调用工具”协议。候选文本以“先覆盖多个角度、再检查缺口”开头，没有明确禁止写计划或要求首轮立即调用工具，Gemma 在严格研究 continuation 的 4096 上限内进入重复 `<|channel>thought`，没有生成 tool call，最终 `OutputLengthError`。baseline 不触发该路径。
 
 修复后的候选指导压缩为短 checklist，并明确“静默执行、不要写计划或 reasoning、下一响应必须是一个 JSON web_search 调用”。短路径合同 `.e2e-artifacts/rha-v10/` 的 seed 1601 candidate 已真实完成搜索、来源读取和提交；`search-observations.json` 显示连接器和浏览器结果均进入实际轨迹。该轮证明接线修复有效，仍只是开发证据；正式新题双 seed 和生产合入尚未启动。
+
+### 2026-11-07：acquisition v11/v12 开发矩阵结论
+
+短路径 `.e2e-artifacts/rha-dev-v11/` 完成 4 题 × seed 1601 × 两臂，共 8/8 回执。candidate 4/4 完成，baseline 2/4 完成；baseline 的两次失败仍是本地 Gemma 的 `OutputLengthError`。两臂成功运行都只执行 1 次连接器搜索和 1 次浏览器补搜，candidate 没有稳定触发多角度或缺口补搜，因此不能把完成率差异当作策略收益。
+
+v12 单题 `.e2e-artifacts/rha-v12/` 将 candidate 指导改为“多个独立面至少追加一次定向搜索”，但真实 writer 仍只执行首轮搜索后阅读/提交。该机制未触发，按合同判定 acquisition 开发 `inconclusive`，不进入正式新题双 seed，也不合入生产。继续增加提示词会混淆提示服从性与获取策略本身，下一步应先决定是否需要独立的实验级查询编排候选。

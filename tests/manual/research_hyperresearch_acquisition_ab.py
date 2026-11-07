@@ -34,8 +34,9 @@ ACQUISITION_GUIDANCE = (
     "Acquisition checklist (follow silently; do not write a plan or reasoning). Your next response must be exactly "
     "one JSON tool call, starting with web_search. After tool results, use separate searches when needed for facts, "
     "the primary or official source, comparison conditions, and limitations or counterexamples. Open and read the "
-    "relevant source section, then make one targeted search or read for any missing point that could change the "
-    "answer. Preserve source identity, version, scope, and exact citations."
+    "relevant source section. If the task has multiple independent facets, make at least one additional targeted "
+    "search after the first result for a primary source, comparison condition, limitation, or missing point that "
+    "could change the answer. Preserve source identity, version, scope, and exact citations."
 )
 
 
