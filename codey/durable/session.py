@@ -51,7 +51,8 @@ from codey.durable.model import (
 from codey.durable.process import process_is_alive as _process_is_alive
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
 from codey.durable.store import DurableStore
-from codey.durable.timeline import TaskSnapshot, TaskTransition, snapshot_at
+from codey.durable.task_queries import TaskQueryFacade
+from codey.durable.timeline import TaskSnapshot, TaskTransition
 from codey.durable.workflow import WorkflowDefinition, workflow_digest
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,7 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
         self._owner_id = f"owner-{uuid.uuid4().hex}"
         self._execution: ContextVar[tuple[str, str] | None] = ContextVar("durable_execution", default=None)
         self.conversation_queries = ConversationQueryFacade(self, self._query_line)
+        self.task_queries = TaskQueryFacade(self.store, self._query_line)
 
     def _query_line(self, operation: Callable[[], _T]) -> _T:
         """Run one query while sharing the session mutation line."""
@@ -376,7 +378,7 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
 
     def pending_tasks(self) -> tuple[TaskCheckpoint, ...]:
         """Read schedulable checkpoints through the session mutation line."""
-        return self.conversation_queries.pending_tasks()
+        return self.task_queries.pending_tasks()
 
     def queued_submissions(self, conversation_id: str | None = None) -> tuple[SubmissionRecord, ...]:
         return self.conversation_queries.queued_submissions(conversation_id)
@@ -454,10 +456,9 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
             ),
         ))
 
-    @_mutation_line
     def tasks(self) -> tuple[TaskCheckpoint, ...]:
         """Read every checkpoint for projections that need terminal history."""
-        return tuple(self.store.tasks())
+        return self.task_queries.tasks()
 
     @_mutation_line
     def revise_queued_input(
@@ -1146,35 +1147,26 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
     ) -> list[dict[str, object]]:
         return self.conversation_queries.search_history(conversation_id, query, limit=limit)
 
-    @_mutation_line
     def task(self, task_id: str) -> TaskCheckpoint:
-        return self.store.task(task_id)
+        return self.task_queries.task(task_id)
 
-    @_mutation_line
     def task_timeline(self, task_id: str) -> tuple[TaskTransition, ...]:
-        return self.store.task_history(task_id)
+        return self.task_queries.task_timeline(task_id)
 
-    @_mutation_line
     def task_at(self, task_id: str, commit_seq: int) -> TaskSnapshot:
-        if type(commit_seq) is not int or commit_seq < 0:
-            raise ValueError("historical commit sequence must be a non-negative integer")
-        return snapshot_at(self.store.task_history(task_id, through=commit_seq))
+        return self.task_queries.task_at(task_id, commit_seq)
 
-    @_mutation_line
     def effects(self, task_id: str) -> tuple[EffectRecord, ...]:
-        return tuple(self.store.effects_for_task(task_id))
+        return self.task_queries.effects(task_id)
 
-    @_mutation_line
     def artifact(self, handle: str) -> ArtifactRecord:
-        return self.store.artifact(handle)
+        return self.task_queries.artifact(handle)
 
-    @_mutation_line
     def artifacts_for_task(self, task_id: str) -> tuple[ArtifactRecord, ...]:
-        return self.store.artifacts_for_task(task_id)
+        return self.task_queries.artifacts_for_task(task_id)
 
-    @_mutation_line
     def artifacts_for_effect(self, effect_id: str) -> tuple[ArtifactRecord, ...]:
-        return self.store.artifacts_for_effect(effect_id)
+        return self.task_queries.artifacts_for_effect(effect_id)
 
     @_mutation_line
     def register_artifacts(self, task_id: str, artifacts: tuple[ArtifactRecord, ...]) -> CommitResult:
@@ -1184,18 +1176,15 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
             raise ValueError("registered artifacts must belong to the task or an effect")
         return self._commit(DurableMutation(current.conversation_id, revision, artifacts=artifacts))
 
-    @_mutation_line
     def task_facts(self, task_id: str) -> tuple[TaskCheckpoint, tuple[EffectRecord, ...]]:
         """Read a checkpoint and its effects without an intervening commit."""
-        return self.store.task(task_id), tuple(self.store.effects_for_task(task_id))
+        return self.task_queries.task_facts(task_id)
 
-    @_mutation_line
     def effect(self, effect_id: str) -> EffectRecord:
-        return self.store.effect(effect_id)
+        return self.task_queries.effect(effect_id)
 
-    @_mutation_line
     def approval(self, approval_id: str) -> ApprovalRecord:
-        return self.store.approval(approval_id)
+        return self.task_queries.approval(approval_id)
 
     @_mutation_line
     def create_approval(self, approval: ApprovalRecord) -> CommitResult:

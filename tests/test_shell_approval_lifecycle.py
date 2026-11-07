@@ -146,11 +146,16 @@ def test_restart_accepted_allow_executes_but_claimed_allow_never_reexecutes(tmp_
     first.record_shell_approval_fact(replace(accepted, kind="approved"))
     first.record_shell_approval_fact(replace(claimed, kind="approved"))
     first.record_shell_approval_fact(replace(claimed, kind="execution_claimed"))
+    # Production parks the source task before approval decisions are accepted.
+    # A synthetic RUNNING task is reclaimed as PENDING during restart and
+    # races the shell claim, which correctly requires RUNNING or WAITING.
+    first.durable.wait_task("source", state={"stop_reason": "approval"})
     first.close()
     ctx = AppContext(tmp_path)
     execute = Mock(return_value={"ok": True, "status": "exit", "output": "done", "exit_code": 0})
     monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
     try:
+        assert ctx.durable.task("source").status.value == "waiting"
         ctx.shell_approval_workflow.start(Mock())
         assert ctx.shell_approval_workflow.wait(5)
         assert execute.call_count == 1

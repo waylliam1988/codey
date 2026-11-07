@@ -10,22 +10,16 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING
 
 from codey.durable import conversation_ops
 from codey.durable.context import ContextSnapshot
 from codey.durable.inbox import InboxDoc, InboxHistoryEvent, history_event_from_projection, item_from_record
-from codey.durable.model import EntryDraft, SubmissionRecord, TaskCheckpoint
+from codey.durable.model import EntryDraft, SubmissionRecord
+from codey.durable.query_line import QueryLine
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
-
-_T = TypeVar("_T")
-
-
-class QueryLine(Protocol):
-    def __call__(self, operation: Callable[[], _T], /) -> _T: ...
-
 
 class ConversationQueryFacade:
     """Own conversation, history, inbox, and context reads."""
@@ -82,9 +76,6 @@ class ConversationQueryFacade:
 
     def conversation_lineage(self, conversation_id: str) -> list[dict[str, object]]:
         return self._query_line(lambda: conversation_ops.conversation_lineage(self._session, conversation_id))
-
-    def pending_tasks(self) -> tuple[TaskCheckpoint, ...]:
-        return self._query_line(lambda: tuple(self._session.store.pending_tasks()))
 
     def queued_submissions(self, conversation_id: str | None = None) -> tuple[SubmissionRecord, ...]:
         return self._query_line(lambda: tuple(self._session.store.queued_submissions(conversation_id)))

@@ -66,6 +66,12 @@ scheduler abort，再发布 shell result 和延迟 durable 事件。任务生命
 默认值恢复为明确的字符串。该问题属于本次迁移引入的生产回归，不修改原有预期。
 生命周期与 scheduler abort 回归 15 passed，相关 Ruff、mypy 和 Pyrefly 通过。
 
+重启审批测试的间歇失败已在未修改基线 `39516652` 复现。失败数据库证明 source task
+从测试构造的 RUNNING 被启动恢复回收成 PENDING，审批 claim 按合同拒绝新 effect。
+生产会先 park source task，测试漏了这一状态转换；现补上 `wait_task`，并在重启后断言
+WAITING，再验证只执行未 claim 的命令一次。属于测试夹具未反映生产流程，不放宽效果准入。
+更新后任务生命周期、审批、Stop 和 scheduler abort 回归 49 passed。
+
 查询门面首批把 `conversation_ids`、head/存在性、conversation tree/lineage、
 history/navigation/window、inbox、context 和 snapshot 查询移到
 `ConversationQueryFacade`。`DurableSession` 只保留兼容代理；所有查询统一通过
@@ -77,8 +83,15 @@ Pyrefly 通过。扩大回归中唯一失败是与本批 Python 改动无关的�
 ### 第三阶段：DurableSession 查询门面
 
 - [x] 抽出 conversation/history 查询。
-- [ ] 抽出 task/effect/artifact 查询。
+- [x] 抽出 task/effect/artifact 查询。
 - [ ] 保留统一 session kernel 和 mutation line。
+
+任务查询批次新增 `TaskQueryFacade`，拥有 task/timeline/historical snapshot、effect、
+artifact、approval 和 task/effect 一致性联合读取；pending tasks 同归该门面。
+两个门面共用具名 `QueryLine` 契约，由 session 执行全部读操作，未新增锁或数据库连接。
+任务查询门面依赖 store 和 query line，不反向依赖 `DurableSession`。
+task/effect/approval/artifact/fencing 定向回归 121 passed；Ruff、mypy、Pyrefly 通过。
+SQLite 并发写入与重启审批补充回归 2 passed，未运行全量 pytest。
 
 ### 第四阶段：DurableSession 写入门面
 
