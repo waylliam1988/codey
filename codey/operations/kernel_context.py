@@ -33,6 +33,7 @@ from codey.operations.task_guidance import task_result_context, task_working_con
 from codey.operations.task_session import TaskSession
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolResult, TurnFinish, tools_from_specs
+from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core import operation_payload
 from codey.runtime.core.models import ToolPlan
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
@@ -339,7 +340,7 @@ class KernelContext:
     def freeze(self, state: Any, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None,
-               text_result_spans: list[dict[str, Any]] | None = None,
+               text_result_spans: tuple[TextResultSpan, ...] = (),
                coding_context_prepared: bool = False) -> None:
         from codey.operations.provider_request import prepare_provider_request
 
@@ -398,7 +399,7 @@ class KernelContext:
         if scoped_contract:
             options["tool_call_contract"] = kernel_prompt._text_request_prompt("", snapshot)
             if text_result_spans:
-                options["tool_call_results"] = text_result_spans
+                options["tool_call_results"] = [span.to_payload() for span in text_result_spans]
         if scoped_contract and self.capabilities.text_tool_format == "json_schema":
             from codey.providers.text_tool_schema import text_tool_schema
 
@@ -590,7 +591,6 @@ class KernelContext:
             self.close(state, no_progress_result(self.session, turn) if reason == "no_progress"
                        else KernelResult(False, summary, turn, reason))
             return
-        spans: list[dict[str, Any]] = []
         snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
         from codey.runtime.core.models import ToolResult
 
@@ -599,12 +599,9 @@ class KernelContext:
             return value
 
         advance = wiring._advance_after_results(self.native, results, self.session, None,
-            completion_context=self.completion_context, boundary_prompt=self.boundary_text(), text_result_spans=spans,
+            completion_context=self.completion_context, boundary_prompt=self.boundary_text(),
             result_context=result_context)
-        if isinstance(advance, KernelResult):
-            self.close(state, advance)
-            return
-        messages, prompt = advance
+        messages, prompt, spans = advance.messages, advance.prompt, advance.spans
         observations = "" if self.request_scoped_observations else task_working_context(
             self.session, getattr(self.execution.research_tools, "ledger", None),
                 getattr(self.execution.research_tools, "store", None),
@@ -619,7 +616,7 @@ class KernelContext:
             # findings must not displace the passage currently being inspected.
             prompt = "\n\n".join(part for part in (observations, prompt) if part)
             shift = len(observations) + 2 if observations else 0
-            spans = [{**span, "start": span["start"] + shift, "end": span["end"] + shift} for span in spans]
+            spans = tuple(replace(span, start=span.start + shift, end=span.end + shift) for span in spans)
             if reminder:
                 prompt += "\n\n" + reminder
         self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages, text_result_spans=spans)

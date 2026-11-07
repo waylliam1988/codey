@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from codey.operations.task_session import TaskSession
 from codey.policies.command_line import COMMAND_WORKDIR_DESCRIPTION
 from codey.providers.base import render_result_metadata
+from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core.models import ToolPlan, ToolResult
 from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context
@@ -312,26 +315,38 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
     return text
 
 
-def _format_results(results: list[ToolResult], session: TaskSession, *,
-                    text_result_spans: list[dict[str, Any]] | None = None, result_context: Any = None) -> str:
+@dataclass(frozen=True)
+class FormattedToolResults:
+    text: str
+    spans: tuple[TextResultSpan, ...] = ()
+
+
+def format_results(results: list[ToolResult], session: TaskSession, *,
+                   result_context: Callable[[ToolResult], str] | None = None) -> FormattedToolResults:
     if not results:
-        return "[no tool output]\n\nContinue with the next single JSON tool call."
+        return FormattedToolResults("[no tool output]\n\nContinue with the next single JSON tool call.")
     blocks = []
+    spans: list[TextResultSpan] = []
     offset = 0
     for result in results:
         label = str(getattr(result.call, "name", "") or "tool")
         content = result_context(result) if result_context else _result_context(result, session)
         block = f"[result: {label}]\n{content}".rstrip()
-        if text_result_spans is not None:
-            from codey.providers.context_ledger import digest
+        from codey.providers.context_ledger import digest
 
-            reference = next((key for key, value in session._memory_results.items() if value is result), "")
-            if reference:
-                text_result_spans.append({"start": offset, "end": offset + len(block), "digest": digest(block),
-                                          "result_ref": reference, "tool": label, "ok": result.ok})
+        reference = next((key for key, value in session._memory_results.items() if value is result), "")
+        if reference:
+            spans.append(TextResultSpan(offset, offset + len(block), digest(block), reference, label, result.ok))
         blocks.append(block)
         offset += len(block) + 2
-    return "\n\n".join(blocks) + "\n\nContinue with one bare JSON tool call, or deliver the final answer."
+    return FormattedToolResults("\n\n".join(blocks)
+        + "\n\nContinue with one bare JSON tool call, or deliver the final answer.", tuple(spans))
+
+
+def _format_results(results: list[ToolResult], session: TaskSession, *,
+                    result_context: Callable[[ToolResult], str] | None = None) -> str:
+    """Text-only projection for callers that do not submit result spans."""
+    return format_results(results, session, result_context=result_context).text
 
 
 def _pending_execution_guidance(session: TaskSession) -> str:

@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 from codey.operations import kernel_prompt as _prompt
 from codey.operations import kernel_transport as _transport
@@ -26,6 +26,7 @@ from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.policies.command_line import ShellSpec
 from codey.providers.base import ProviderToolResult
+from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.observe.events import RunEvent
@@ -319,6 +320,13 @@ def _call_execute_turn(
         return _provider_failure(exc, turns_used, propagate=propagate_provider_failure)
 
 
+@dataclass(frozen=True)
+class ResultContinuation:
+    messages: list[ProviderToolResult] | None
+    prompt: str
+    spans: tuple[TextResultSpan, ...] = ()
+
+
 def _advance_after_results(
     native: bool,
     results: list[ToolResult],
@@ -327,9 +335,8 @@ def _advance_after_results(
     *,
     completion_context: CompletionContext | None = None,
     boundary_prompt: str = "",
-    text_result_spans: list[dict[str, Any]] | None = None,
     result_context: Callable[[ToolResult], str] | None = None,
-) -> tuple[list[ProviderToolResult] | None, str] | KernelResult:
+) -> ResultContinuation:
     """Deliver native receipts or build the next text prompt."""
     if native:
         from codey.operations.kernel_errors import RecoveryFailed
@@ -340,12 +347,13 @@ def _advance_after_results(
             raise RecoveryFailed(f"native result delivery is invalid: {exc}") from exc
         if not messages:
             raise RecoveryFailed("native result delivery has no original call ids")
-        return messages, ""
-    base_prompt = _prompt._format_results(results, session, text_result_spans=text_result_spans, result_context=result_context)
+        return ResultContinuation(messages, "")
+    formatted = _prompt.format_results(results, session, result_context=result_context)
+    base_prompt = formatted.text
     if boundary_prompt:
         base_prompt = f"{base_prompt}\n\nNew user input at provider boundary:\n{boundary_prompt}"
     prepared = prepare_coding_context(session, completion_context=completion_context)
     current_context = render_coding_context(prepared) if prepared is not None else ""
     if current_context:
         base_prompt = f"{base_prompt}\n\n{current_context}"
-    return pending_native_messages, base_prompt
+    return ResultContinuation(pending_native_messages, base_prompt, formatted.spans)

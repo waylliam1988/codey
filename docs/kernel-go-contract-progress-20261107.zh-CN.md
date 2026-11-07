@@ -17,7 +17,7 @@
 |---|---|---|---|
 | 1 | 行为样例、wire/摘要/坐标/恢复契约 | 完成 | 113 passed、30 subtests；Ruff 通过；类型基线见下 |
 | 2 | 共享 JSON、ToolCall/provider arguments、底层 codec | 完成 | 105 passed/4 subtests；静态负例及 codec 21 passed；三工具定向检查/Ruff 通过 |
-| 3 | TextResultSpan、execution、recovery | 待开始 | |
+| 3 | TextResultSpan、execution、recovery | 完成 | 首轮85 passed；扩大134 passed；三工具/Ruff/gate 通过 |
 | 4 | 六种 provider 请求联合、回复、版本化 codec | 待开始 | |
 | 5 | provider adapter、wrapper、capabilities | 待开始 | |
 | 6 | contracts、builder、driver、context 主链 | 待开始 | |
@@ -31,7 +31,7 @@
 
 ## 接续工作位置
 
-第二批已完成。下一批修改 TextResultSpan/FormattedToolResults 贯穿 prompt/actions/context/provider codec，并收紧 execution/recovery 的 workspace/evidence/settle；不得破坏新旧冻结请求或移动 Any 债务。
+第三批已完成。下一批建立六种 ProviderRequest 联合、明确 options、legacy invocation codec、回复验证；随后第五批将兼容探测集中 adapter 并替换 wrapper 动态透传，第六批贯穿 driver/context/contracts/builder。当前六种 provider 签名已审计，注意 acknowledgement 使用 declared_tools，send_tool_results_bound 另有 delivery_commit。
 
 ## 第一批验证记录
 
@@ -57,3 +57,13 @@
 - 扩大回归 105 passed、4 subtests（JSON/golden/projection/CodeMode/local codec/safe replay/audit/boolean schema）；较早的 durable/projection 组合 80 passed、4 subtests。静态负例与 JSON codec 合计 21 passed，三检查器均拒绝向 ToolCall/ProviderToolCall 注入 object。
 - 修改的十个生产文件：mypy --follow-imports=silent（保留导入类型解析，不 skip）、Pyrefly、ty，target 3.12 均通过。Ruff、precision gate、git diff --check 通过。全树起始类型问题仍待后续所属批次处理。
 - 行为补强：provider serializer 现在在入口拒绝 NaN/Infinity、循环和非法 Unicode，而非将其拖入持久化；有明确边界回归。
+
+## 第三批变更与验证
+
+- TextResultSpan 使用真实六字段（start/end/digest/result_ref/tool/ok）；decoder 验证坐标、顺序、摘要和字段类型。format_results 返回 FormattedToolResults，actions 返回 ResultContinuation，context 用 replace 显式平移坐标，provider wire 最后转字典；不再依赖 mutable out 参数。
+- kernel_execution 剩余八个 Any 全部消除，复用 ExecutionEvidence/Path/WorkspaceRevisionStore/SettleToolResult；结算结果限制 trusted/unconfirmed。注入 executor 返回值仍通过独立 object 验证入口检查，未因静态注解删除运行时防御。
+- kernel_recovery_context 同步移除所有 Any，current_state 返回 WorkspaceState|None，显式处理缺失状态。未将执行路径债务转移到 recovery。
+- 原始十四模块计数：192 → 181；actions 1→0、execution 8→0、context 19→17。更新精度基线。
+- 首轮 prompt/golden/epoch/receipt/workspace/durable/gate 回归85 passed。扩大 Unicode span/三工具负例/workspace 缺失与扫描失败/native receipt/research scoped projection/parity 回归134 passed。
+- 六个修改生产模块的 mypy --follow-imports=silent、Pyrefly、ty（3.12）通过，Ruff/precision gate/diff check 通过。
+- tests/test_text_result_views.py 改为消费新返回结构；这是内部 API 演进，既有文本和 receipt wire 格式保持不变。

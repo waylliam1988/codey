@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from pathlib import Path
 
 from codey.operations.kernel_errors import RecoveryFailed
-from codey.workspace.revision import WorkspaceIdentity
+from codey.workspace.revision import WorkspaceIdentity, WorkspaceRevisionStore, WorkspaceState
 
 __all__ = [
     "RecoveryContext",
@@ -25,10 +25,12 @@ __all__ = [
 ]
 
 
-def _state_identity(state: Any) -> WorkspaceIdentity:
+def _state_identity(state: WorkspaceState | None) -> WorkspaceIdentity:
+    if state is None:
+        return WorkspaceIdentity()
     try:
-        fingerprint = getattr(state, "fingerprint", None)
-        identity = WorkspaceIdentity.trusted_pair(getattr(state, "revision", None), fingerprint)
+        fingerprint = state.fingerprint
+        identity = WorkspaceIdentity.trusted_pair(state.revision, fingerprint)
         # Preserve the store's actual identity; do not normalize its types/text.
         return identity if type(fingerprint) is str and fingerprint == identity.fingerprint else WorkspaceIdentity()
     except Exception:
@@ -39,13 +41,13 @@ def _state_identity(state: Any) -> WorkspaceIdentity:
 class RecoveryContext:
     """Per-turn durable snapshot with explicit refresh semantics."""
 
-    project_path: Any = None
-    revision_store: Any = None
+    project_path: Path | None = None
+    revision_store: WorkspaceRevisionStore | None = None
     ignored_paths: tuple[str, ...] = ()
-    _cached_state: Any | None = None
+    _cached_state: WorkspaceState | None = None
     _state_loaded: bool = False
 
-    def current_state(self, *, refresh: bool = False) -> Any | None:
+    def current_state(self, *, refresh: bool = False) -> WorkspaceState | None:
         if self._state_loaded and not refresh:
             return self._cached_state
         if self.revision_store is None or self.project_path is None:
@@ -72,13 +74,13 @@ class RecoveryContext:
 
 
 def verified_persisted_identity(
-    record: Mapping[str, Any],
+    record: Mapping[str, object],
     *,
-    project_path: Any = None,
-    revision_store: Any = None,
-    ignored_paths: Any = (),
+    project_path: Path | None = None,
+    revision_store: WorkspaceRevisionStore | None = None,
+    ignored_paths: tuple[str, ...] = (),
     recovery_ctx: RecoveryContext | None = None,
-) -> Any | None:
+) -> WorkspaceIdentity | None:
     """Return a persisted identity only when the store corroborates it.
 
     Unsafe replay deliberately refreshes a supplied context.  The batch guard
@@ -93,7 +95,7 @@ def verified_persisted_identity(
         persisted_identity = WorkspaceIdentity.trusted_pair(persisted_rev, persisted_fp)
     except Exception:
         return None
-    if persisted_identity is None or not _is_trusted_identity(persisted_identity):
+    if not _is_trusted_identity(persisted_identity):
         return None
     try:
         if recovery_ctx is not None:
@@ -111,7 +113,7 @@ def verified_persisted_identity(
     return persisted_identity
 
 
-def strict_receipt_text(record: Mapping[str, Any], field: str, *, default: str) -> str:
+def strict_receipt_text(record: Mapping[str, object], field: str, *, default: str) -> str:
     if field not in record:
         return default
     value = record[field]
@@ -120,7 +122,7 @@ def strict_receipt_text(record: Mapping[str, Any], field: str, *, default: str) 
     return value
 
 
-def strict_receipt_bool(record: Mapping[str, Any], field: str, *, default: bool) -> bool:
+def strict_receipt_bool(record: Mapping[str, object], field: str, *, default: bool) -> bool:
     if field not in record:
         return default
     value = record[field]
@@ -129,7 +131,7 @@ def strict_receipt_bool(record: Mapping[str, Any], field: str, *, default: bool)
     return value
 
 
-def strict_receipt_exit_code(record: Mapping[str, Any]) -> int | None:
+def strict_receipt_exit_code(record: Mapping[str, object]) -> int | None:
     if "exit_code" not in record:
         return None
     value = record["exit_code"]

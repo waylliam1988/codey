@@ -15,7 +15,7 @@ from collections.abc import Collection, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from codey.operations.kernel_contracts import StopSignal, ToolExecutor
 from codey.operations.kernel_errors import RecoveryFailed
@@ -248,10 +248,10 @@ def _run_via_delegate_or_fn(
         if denial is not None:
             return denial
         try:
-            produced = fn(call)
+            produced = _structured_executor_result(fn(call))
         except Exception as exc:
             return _error_result(call, str(exc) or "tool failed"), False, None
-        if not isinstance(produced, ToolResult):
+        if produced is None:
             return _error_result(call, "executor must return a structured ToolResult"), False, None
         result = _consistent_tool_result(call, produced)
         result, ok = _normalize_explicit_result(name, result)
@@ -706,8 +706,13 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
     return results
 
 
+def _structured_executor_result(value: object) -> ToolResult | None:
+    """Injected executors are runtime boundaries even when statically annotated."""
+    return value if isinstance(value, ToolResult) else None
+
+
 def _recheck_unconfirmed_workspace(
-    session: TaskSession, call: ToolCall, context: RecoveryContext, execution_evidence: Any,
+    session: TaskSession, call: ToolCall, context: RecoveryContext, execution_evidence: ExecutionEvidence | None,
 ) -> ToolResult | None:
     """A fresh complete observation can restore verification, never redo a mutation."""
     from codey.workspace.revision import WorkspaceIdentity
@@ -717,9 +722,9 @@ def _recheck_unconfirmed_workspace(
     if WorkspaceIdentity.trusted_pair(session.workspace_revision, session.workspace_fingerprint).trusted:
         return None
     state = context.current_state(refresh=True)
-    identity = WorkspaceIdentity.trusted_pair(getattr(state, "revision", 0), getattr(state, "fingerprint", ""))
+    identity = WorkspaceIdentity.trusted_pair(state.revision, state.fingerprint) if state is not None else WorkspaceIdentity()
     if not identity.trusted:
-        reason = getattr(state, "identity_reason", "") or "scan_unavailable"
+        reason = (state.identity_reason if state is not None else "") or "scan_unavailable"
         return _error_result(call, f"workspace identity unconfirmed ({reason}); verification was not executed")
     session.set_workspace_state(identity.revision, identity.fingerprint)
     if execution_evidence is not None:
@@ -736,13 +741,13 @@ def _settle_edit_with_workspace_bump(
     ok: bool,
     *,
     exit_code: int | None,
-    project_path: Any,
-    execution_evidence: Any,
-    workspace_ignored_paths: Any,
-    workspace_revision_store: Any,
-    settle: Any,
+    project_path: Path | None,
+    execution_evidence: ExecutionEvidence | None,
+    workspace_ignored_paths: tuple[str, ...],
+    workspace_revision_store: WorkspaceRevisionStore | None,
+    settle: SettleToolResult,
     results: list[ToolResult],
-) -> str | None:
+) -> Literal["trusted", "unconfirmed"] | None:
     """Settle one edit with its authoritative bump; None means not handled."""
     if name != "edit" or not ok:
         return None
@@ -784,7 +789,8 @@ def _settle_edit_with_workspace_bump(
 
 
 def _settle_unconfirmed_edit(session: TaskSession, identity: str, call: ToolCall, reason: str,
-                             *, execution_evidence: Any, settle: Any, results: list[ToolResult]) -> str:
+                             *, execution_evidence: ExecutionEvidence | None, settle: SettleToolResult,
+                             results: list[ToolResult]) -> Literal["unconfirmed"]:
     """Persist an uncertain mutation once and invalidate its live identity."""
     failed = _error_result(
         call,

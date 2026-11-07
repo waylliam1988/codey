@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from codey.operations.kernel_prompt import _format_results
+from codey.operations.kernel_prompt import format_results
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers import api_context
@@ -12,6 +12,8 @@ from codey.providers.api_provider import ApiProvider
 from codey.providers.context_ledger import digest
 from codey.providers.text_result_views import (
     TEXT_RESULTS_KEY,
+    TextResultSpan,
+    decode_text_result_spans,
     reduce_text_results,
     validate_text_results,
 )
@@ -65,12 +67,35 @@ def test_kernel_marks_whole_actual_outputs_without_marking_boundary_input():
     session = TaskSession(TaskPolicy(frozenset({"control"})))
     result = ToolResult(call=ToolCall(name="open_url", args={}), ok=True, model_text="Exact observed text.")
     session._memory_results["actual-receipt"] = result
-    spans = []
-    text = _format_results([result], session, text_result_spans=spans)
+    formatted = format_results([result], session)
+    text, spans = formatted.text, [span.to_payload() for span in formatted.spans]
     assert validate_text_results(text, spans) == spans
     assert spans[0]["result_ref"] == "actual-receipt"
     assert text[spans[0]["start"]:spans[0]["end"]].startswith("[result: open_url]")
     assert "Continue with one" not in text[spans[0]["start"]:spans[0]["end"]]
+
+
+@pytest.mark.parametrize("start,end,ok", [(True, 2, True), (0, False, True), (-1, 2, True), (2, 2, True), (0, 2, "true")])
+def test_typed_span_rejects_invalid_coordinates_and_boolean_flags(start, end, ok):
+    with pytest.raises(ValueError):
+        TextResultSpan(start, end, "digest", "receipt", "read", ok)
+
+
+def test_typed_result_format_keeps_unicode_offsets_and_detached_wire_projection():
+    session = TaskSession(TaskPolicy(frozenset({"control"})))
+    results = [ToolResult(call=ToolCall("read", {}), ok=True, model_text=text)
+               for text in ("中文😀", "e\u0301\n第二段")]
+    for index, result in enumerate(results):
+        session._memory_results[f"receipt-{index}"] = result
+    formatted = format_results(results, session)
+    payload = [span.to_payload() for span in formatted.spans]
+    assert decode_text_result_spans(formatted.text, payload) == formatted.spans
+    assert all(result.model_text in formatted.text[span.start:span.end]
+               for result, span in zip(results, formatted.spans, strict=True))
+    payload[0]["start"] = 999
+    assert formatted.spans[0].start == 0
+    with pytest.raises(ValueError, match="span"):
+        decode_text_result_spans(formatted.text, payload)
 
 
 def test_provider_compacts_only_old_marked_output_and_preserves_events_without_metadata_on_wire():
