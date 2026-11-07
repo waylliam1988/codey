@@ -942,6 +942,7 @@ def list_directory(root: Path, rel: str) -> ToolOutcome:
         )
     except (OSError, ValueError):
         return ToolOutcome.error(f"cannot list directory: {rel}")
+    limited = entry_limited
     for entry in entries:
         cancellation.check()
         kind = _dir_entry_kind(entry)
@@ -972,6 +973,7 @@ def list_directory(root: Path, rel: str) -> ToolOutcome:
                 tag = "/" if sub_kind == "dir" else ""
                 lines.append(f"  {sub.name}{tag}")
             if sub_limited:
+                limited = True
                 lines.append(
                     f"  ... list_dir stopped after {LIST_MAX_SUBDIR_ENTRIES} directory entries"
                 )
@@ -979,7 +981,7 @@ def list_directory(root: Path, rel: str) -> ToolOutcome:
             lines.append(entry.name)
     if entry_limited:
         lines.append(f"... list_dir stopped after {LIST_MAX_DIR_ENTRIES} directory entries")
-    return ToolOutcome("\n".join(lines) if lines else "(empty)", True, truncated=incomplete)
+    return ToolOutcome("\n".join(lines) if lines else "(empty)", True, truncated=incomplete or limited)
 
 
 def search_files(

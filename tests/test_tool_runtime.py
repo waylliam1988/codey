@@ -161,6 +161,8 @@ class ToolOutcomeTests(unittest.TestCase):
                 outcome = tool_runtime.list_directory(root, ".")
 
         self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.truncated)
+        self.assertTrue(outcome.audit["truncated"])
         self.assertIn("list_dir stopped after 3 directory entries", outcome.model_text)
         visible_files = [line for line in outcome.model_text.splitlines() if line.endswith(".txt")]
         self.assertLessEqual(len(visible_files), 3)
@@ -177,6 +179,8 @@ class ToolOutcomeTests(unittest.TestCase):
                 outcome = tool_runtime.list_directory(root, ".")
 
         self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.truncated)
+        self.assertTrue(outcome.audit["truncated"])
         self.assertIn("child/", outcome.model_text)
         self.assertIn("list_dir stopped after 2 directory entries", outcome.model_text)
 
