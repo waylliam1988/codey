@@ -51,7 +51,10 @@ class KernelContext:
     def __init__(self, session: TaskSession, request: KernelRunRequest) -> None:
         self.session, self.request = session, request
         self.transport, self.execution, self.observation = request.transport, request.execution, request.observation
-        self.sink = self.observation.intent_sink
+        # Compatibility callers replace the observation sink during restart;
+        # production builders place it in execution. Prefer an explicitly
+        # supplied observation replacement when both are present.
+        self.sink = self.observation.intent_sink or self.execution.intent_sink
         if self.sink is None or self.sink.durable is None or self.sink.managed_outputs is None:
             raise ValueError("kernel execution requires an admitted durable operation and managed output storage")
         self.durable = self.sink.durable

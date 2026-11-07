@@ -251,6 +251,7 @@ def run(request: AgentRequest) -> RunResult:
                 stagnant_turns=request.stagnant_turns,
                 task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
             ).build(execution=KernelExecutionDeps(
+                intent_sink=intent_sink,
                 project_path=request.project,
                 tool_fns=request.tool_fns,
                 change_tracker=request.change_tracker,
@@ -259,7 +260,6 @@ def run(request: AgentRequest) -> RunResult:
                 workspace_revision_store=request.workspace_revision_store,
                 workspace_ignored_paths=request.workspace_ignored_paths,
             ), observation=KernelObservationDeps(
-                intent_sink=intent_sink,
                 on_boundary=durable_generation_boundary_callback(
                     durable=request.durable,
                     session_id=request.session_id,

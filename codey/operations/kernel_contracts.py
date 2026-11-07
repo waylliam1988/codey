@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from codey.agents.tools import AgentToolFns
     from codey.completion.contract import CompletionProof
     from codey.operations.completion_context import CompletionContextInput
+    from codey.operations.task_effects import KernelEffectSink
     from codey.runs.trace import RunTraceRecorder
     from codey.runtime.core.protocol_window import ProtocolWindowRef
     from codey.runtime.observe.events import RunEvent
@@ -136,6 +137,10 @@ class KernelExecutionDeps:
     """Tool, project, and workspace resources for one kernel run."""
 
     executors: Mapping[str, ToolExecutor] | None = None
+    # Durable intent submission is an execution prerequisite. The observation
+    # location remains temporarily accepted for compatibility with older
+    # callers; production builders should populate this field.
+    intent_sink: KernelEffectSink | None = None
     project_path: Path | None = None
     tool_fns: AgentToolFns | None = None
     research_tools: Any = None

@@ -337,11 +337,11 @@ def run_research_iteration(
                 stop_flag=stop_flag,
                 task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
             ).build(execution=KernelExecutionDeps(
+                intent_sink=intent_sink,
                 project_path=project or None,
                 research_tools=tools,
                 permission_profile="coding_writer" if policy.allows("project.write") else "research",
             ), observation=KernelObservationDeps(
-                intent_sink=intent_sink,
                 on_boundary=durable_generation_boundary_callback(
                     durable=admitted,
                     session_id=session_id,

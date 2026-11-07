@@ -208,9 +208,9 @@ def run_project_audit_advisor(
                         stop_flag=stop,
                     ).build(execution=KernelExecutionDeps(
                         executors=cast(Mapping[str, Callable[[Any], Any]], _audit_kernel_executors(project_path)),
+                        intent_sink=sink,
                         project_path=project_path,
                     ), observation=KernelObservationDeps(
-                        intent_sink=sink,
                         on_boundary=durable_generation_boundary_callback(
                             durable=durable, session_id=run_id, task_id=run_id, sink=sink),
                         completion_context={

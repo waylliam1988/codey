@@ -455,6 +455,7 @@ def _run_entry_kernel(  # noqa: PLR0915
                     task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
                 ).build(execution=KernelExecutionDeps(
                     executors={},
+                    intent_sink=intent_sink,
                     project_path=project_path,
                     tool_fns=tool_fns,
                     change_tracker=tracker,
@@ -464,7 +465,6 @@ def _run_entry_kernel(  # noqa: PLR0915
                     workspace_revision_store=getattr(deps, "workspace_revisions", None),
                     ensure_workspace_writer=ensure_workspace_writer,
                 ), observation=KernelObservationDeps(
-                    intent_sink=intent_sink,
                     on_event=hooks.on_event,
                     on_shell_request=hooks.on_shell_request,
                     completion_context={

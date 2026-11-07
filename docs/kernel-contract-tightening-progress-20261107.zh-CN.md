@@ -45,7 +45,8 @@
 - 第 1 批：已完成基础契约定义，并把 `KernelContext` 的 view、state、decision、plan 和执行动作签名收紧。
 - 第 2 批：已完成 `TurnSnapshot` 的 policy、tool spec、custom executor 和 provider window 类型收紧；研究资源能力仍待后续批次处理。
 - 第 3 批：已建立 `CompletionContext` 及单次兼容转换边界；完成检查支持该具名上下文，旧 mapping/属性对象仍在边界转换。
-- 第 4 至第 8 批：未开始。
-- 最近验证：第一批边界测试 10 passed；状态流测试 23 passed；snapshot/protocol 测试 14 passed；完成上下文相关测试 66 passed；相关 Ruff 通过。
+- 第 4 批：已将生产入口的 sink 放入 execution 依赖；保留 observation sink 兼容字段，并修复重启时替换 sink 的确定性回归。
+- 第 5 至第 8 批：未开始。
+- 最近验证：第一批边界测试 10 passed；状态流测试 23 passed；snapshot/protocol 测试 14 passed；完成上下文相关测试 66 passed；sink/重启/控制测试 18 passed；相关 Ruff 通过。
 - 已知外部问题：本地 mypy 导入用户已有的附件改动时，在 `codey/task/attachments.py:45` 和 `codey/durable/conversation_ops.py:492` 报错；未修改这些文件，待后续与用户改动一起单独处理。
 
