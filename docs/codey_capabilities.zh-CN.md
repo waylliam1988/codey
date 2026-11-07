@@ -141,6 +141,9 @@ Codey 提供一些安静的审计入口：
 - Research evidence/source/note 视图；
 - 有界 run trace 和 ledger。
 
+Cline 安全凭据存储在 Windows Credential Manager。其他平台会安全失败，
+不会回退到明文文件；适配器也让这个平台边界对跨平台类型检查保持可见。
+
 研究审计投影对真实 run trace 使用严格记录通道：记录失败会生成 `error` 诊断，
 不会被 fail-open 的普通提示追踪适配器伪装成 `ok`。研究运行本身仍继续完成，
 从而区分投影计算成功与审计写入失败。

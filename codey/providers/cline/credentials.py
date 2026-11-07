@@ -48,14 +48,28 @@ def _storage_error() -> ConnectionActionError:
     return ConnectionActionError("auth_storage_failed", "Cannot access the operating system credential store.", 503)
 
 
+def _is_windows() -> bool:
+    return sys.platform == "win32"
+
+
+def _last_error() -> int:
+    getter = getattr(ctypes, "get_last_error", None)
+    if not callable(getter):
+        return 0
+    return int(getter())
+
+
 class WindowsTokenStore:
     def __init__(self, target: str = "Codey/Cline/default") -> None:
         self.target = target
 
     def _api(self) -> Any:
-        if sys.platform != "win32":
+        if not _is_windows():
             raise _storage_error()
-        api = ctypes.WinDLL("Advapi32.dll", use_last_error=True)
+        win_dll = getattr(ctypes, "WinDLL", None)
+        if not callable(win_dll):
+            raise _storage_error()
+        api = win_dll("Advapi32.dll", use_last_error=True)
         api.CredReadW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
                                  ctypes.POINTER(ctypes.POINTER(_Credential))]
         api.CredWriteW.argtypes = [ctypes.POINTER(_Credential), wintypes.DWORD]
@@ -67,7 +81,7 @@ class WindowsTokenStore:
         api = self._api()
         ptr = ctypes.POINTER(_Credential)()
         if not api.CredReadW(self.target, 1, 0, ctypes.byref(ptr)):
-            if ctypes.get_last_error() == 1168:
+            if _last_error() == 1168:
                 return None
             raise _storage_error()
         try:
@@ -94,5 +108,5 @@ class WindowsTokenStore:
             raise _storage_error()
 
     def delete(self) -> None:
-        if not self._api().CredDeleteW(self.target, 1, 0) and ctypes.get_last_error() != 1168:
+        if not self._api().CredDeleteW(self.target, 1, 0) and _last_error() != 1168:
             raise _storage_error()

@@ -171,6 +171,10 @@ Codey keeps quiet audit surfaces for people who need to inspect behavior:
 - research evidence/source/note views;
 - bounded run traces and ledgers.
 
+Cline secure credentials are stored in Windows Credential Manager. Other
+platforms fail closed without a plaintext fallback; the adapter keeps this
+platform boundary visible to cross platform type checkers as well.
+
 Research audit projections use a strict recording path for the real run trace:
 a recorder failure becomes an `error` diagnostic instead of being reported as
 `ok` by the fail-open prompt tracing adapter. The research run still completes,
