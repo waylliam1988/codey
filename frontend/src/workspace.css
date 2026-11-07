@@ -1,5 +1,5 @@
 .command-permissions-dialog {
-  font: 12px / 1.6 var(--font-sans);
+  font: calc(12px * var(--font-scale)) / 1.6 var(--font-sans);
 }
 .command-permissions-head {
   justify-content: flex-start;
@@ -32,7 +32,7 @@
 .command-permissions-dialog pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 12px / 1.6 var(--font-mono);
+  font: calc(12px * var(--font-scale)) / 1.6 var(--font-mono);
   margin: 0 0 5px;
 }
 body.workspace-open {
@@ -113,7 +113,7 @@ body:has(.workspace .document-pane:not([hidden])) {
   color: var(--text-dim);
   text-align: left;
   cursor: pointer;
-  font: 12px var(--font-sans);
+  font: calc(12px * var(--font-scale)) var(--font-sans);
 }
 .workspace-picker button:hover,
 .workspace-picker button:focus-visible {
@@ -123,7 +123,7 @@ body:has(.workspace .document-pane:not([hidden])) {
 }
 .input-mode {
   max-width: 150px;
-  font: 11px var(--font-sans);
+  font: calc(11px * var(--font-scale)) var(--font-sans);
   color: var(--text-dim);
   background: var(--bg-2);
   border: 0;
@@ -181,11 +181,11 @@ body:has(.workspace .document-pane:not([hidden])) {
 }
 .workspace-content h3 {
   margin: 0 0 12px;
-  font-size: 14px;
+  font-size: calc(14px * var(--font-scale));
   font-weight: 500;
 }
 .workspace-content pre {
-  font: 12px / 1.7 var(--font-mono);
+  font: calc(12px * var(--font-scale)) / 1.7 var(--font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -199,7 +199,7 @@ body:has(.workspace .document-pane:not([hidden])) {
 .workspace-empty,
 .workspace-notice {
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .workspace-notice:not(:empty) {
   padding: 8px 12px;
@@ -242,7 +242,7 @@ body.sidebar-collapsed .workspace-full {
 }
 .workspace-output .output-meta {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
 }
 .review-finding {
   padding: 12px 0;
@@ -285,7 +285,7 @@ body.sidebar-collapsed .workspace-full {
 }
 .conversation-branch > button,
 .workflow-point > button {
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
   margin-right: 12px;
   padding: 5px 0;
 }
@@ -294,7 +294,7 @@ body.sidebar-collapsed .workspace-full {
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--text-dim);
 }
 .workspace-content textarea {
@@ -348,7 +348,7 @@ body.sidebar-collapsed .workspace-full {
 }
 .document-tools button {
   white-space: nowrap;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
 }
 .document-body.wrap > pre {
   white-space: pre-wrap;
@@ -406,7 +406,7 @@ main {
   font: inherit;
 }
 .conversation-find button {
-  font: 12px var(--font-sans);
+  font: calc(12px * var(--font-scale)) var(--font-sans);
   border: 0;
   background: transparent;
   color: var(--text-dim);
@@ -415,7 +415,7 @@ main {
 }
 .conversation-find [role="status"] {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
 }
 .conversation-find-results {
   max-height: 160px;

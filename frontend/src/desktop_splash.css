@@ -9,7 +9,7 @@
   place-items: center;
   opacity: 1;
   transition: opacity 0.35s ease;
-  font: 14px / 1.6 var(--font-sans);
+  font: calc(14px * var(--font-scale)) / 1.6 var(--font-sans);
 }
 #desktop-startup > .character-pond {
   inset: 0;

@@ -126,6 +126,27 @@
     <button class="btn-icon" id="settings-dismiss" aria-label="Close settings"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
   </div>
   <div class="settings-body" id="model-settings-body">
+    <section class="model-source appearance-section" aria-label="Appearance">
+      <details id="appearance-settings">
+        <summary><span>Appearance</span></summary>
+        <div class="model-source-body">
+          <div class="appearance-row">
+            <span id="font-size-label">Font size</span>
+            <div class="font-size-control">
+              <div class="font-slider">
+                <span class="font-step is-selected" data-font="standard" aria-hidden="true"></span>
+                <span class="font-step" data-font="large" aria-hidden="true"></span>
+                <span class="font-step" data-font="extra" aria-hidden="true"></span>
+                <input type="range" id="font-size-slider" min="0" max="2" step="1"
+                  value="0" aria-labelledby="font-size-label" aria-valuetext="Standard" />
+              </div>
+              <span class="font-size-current" id="font-size-current">Standard</span>
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
+    <h3 class="models-section-title">Models</h3>
     <p class="settings-hint">Choose which models Codey can use. Websites open when you send a message.</p>
     <p class="settings-hint" id="model-settings-loading" hidden>Loading models…</p>
     <div id="model-source-list"></div>
