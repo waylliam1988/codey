@@ -12,7 +12,7 @@ import json
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
-from typing import Any, cast
+from typing import cast
 
 from codey.durable.ancestry import context_path
 from codey.durable.context import ContextSnapshot, build_context
@@ -25,14 +25,15 @@ from codey.durable.model import (
     EntryDraft,
     thaw_json,
 )
+from codey.durable.session_kernel import SessionKernel
 from codey.durable.task_projection import task_lifecycle
 
 
-def entries(session: Any, conversation_id: str) -> tuple[EntryDraft, ...]:
+def entries(session: SessionKernel, conversation_id: str) -> tuple[EntryDraft, ...]:
     return _resolve_response_entries(session, tuple(session.store.entries(conversation_id)))
 
 
-def _resolve_response_entries(session: Any, path: tuple[EntryDraft, ...]) -> tuple[EntryDraft, ...]:
+def _resolve_response_entries(session: SessionKernel, path: tuple[EntryDraft, ...]) -> tuple[EntryDraft, ...]:
     from codey.durable.provider_response import read_response_artifact, tool_call_message
 
     resolved = []
@@ -43,7 +44,7 @@ def _resolve_response_entries(session: Any, path: tuple[EntryDraft, ...]) -> tup
             continue
         if not isinstance(reference, str) or not reference or set(entry.payload) != {"response_ref"}:
             raise ValueError("invalid provider history reference")
-        artifact = session.artifact(reference)
+        artifact = session.store.artifact(reference)
         if (artifact.owner_task_id != entry.by_task_id or not artifact.owner_effect_id
                 or artifact.metadata.get("kind") != "provider_response"):
             raise ValueError("provider history reference ownership mismatch")
@@ -56,7 +57,7 @@ def _resolve_response_entries(session: Any, path: tuple[EntryDraft, ...]) -> tup
     return tuple(resolved)
 
 
-def conversation_tree(session: Any, conversation_id: str) -> dict[str, object]:
+def conversation_tree(session: SessionKernel, conversation_id: str) -> dict[str, object]:
     """Bounded branch metadata, derived under the owning session's read line."""
     head, revision = session.store.head(conversation_id)
     retained = list(session.store.entries(conversation_id))
@@ -72,7 +73,7 @@ def conversation_tree(session: Any, conversation_id: str) -> dict[str, object]:
                           'current': entry.entry_id == head} for entry in tips[-200:]]}
 
 
-def conversation_lineage(session: Any, conversation_id: str) -> list[dict[str, object]]:
+def conversation_lineage(session: SessionKernel, conversation_id: str) -> list[dict[str, object]]:
     """Read fork identities without loading conversation contents."""
     scope = conversation_id
     ancestors: list[dict[str, object]] = []
@@ -87,7 +88,7 @@ def conversation_lineage(session: Any, conversation_id: str) -> list[dict[str, o
 
 
 def history_page(
-    session: Any,
+    session: SessionKernel,
     conversation_id: str,
     *,
     before: str | None = None,
@@ -134,7 +135,7 @@ def history_page(
     }
 
 
-def navigation_page(session: Any, conversation_id: str, *, before: str | None = None,
+def navigation_page(session: SessionKernel, conversation_id: str, *, before: str | None = None,
                     limit: int = 200) -> dict[str, object]:
     """Compact question index on one pinned ancestry; never return tool bodies."""
     path = list(context(session, conversation_id))
@@ -168,7 +169,7 @@ def navigation_page(session: Any, conversation_id: str, *, before: str | None = 
 
 
 def search_history(
-    session: Any,
+    session: SessionKernel,
     conversation_id: str,
     query: str,
     *,
@@ -197,7 +198,7 @@ def search_history(
     return hits
 
 
-def history_window(session: Any, conversation_id: str, entry_id: str, *, limit: int = 100,
+def history_window(session: SessionKernel, conversation_id: str, entry_id: str, *, limit: int = 100,
                    leaf_id: str | None = None) -> dict[str, object]:
     """Read a bounded window on one validated ancestry path without moving its head."""
     path = [entry for entry in context(session, conversation_id, leaf_id=leaf_id)
@@ -220,7 +221,7 @@ def history_window(session: Any, conversation_id: str, entry_id: str, *, limit: 
     }
 
 
-def append_message(session: Any, conversation_id: str, kind: str, payload: Mapping[str, object]) -> EntryDraft:
+def append_message(session: SessionKernel, conversation_id: str, kind: str, payload: Mapping[str, object]) -> EntryDraft:
     parent_id, revision = session.store.head(conversation_id)
     entry = EntryDraft(
         entry_id=f"entry-{uuid.uuid4().hex}", conversation_id=conversation_id,
@@ -231,7 +232,7 @@ def append_message(session: Any, conversation_id: str, kind: str, payload: Mappi
 
 
 def append_tool_results(
-    session: Any,
+    session: SessionKernel,
     conversation_id: str,
     head: str | None,
     results: tuple[Mapping[str, object], ...],
@@ -296,7 +297,7 @@ def append_tool_results(
 
 
 def branch(
-    session: Any,
+    session: SessionKernel,
     conversation_id: str,
     entry_id: str,
     *,
@@ -306,11 +307,11 @@ def branch(
     try:
         _head, revision = session.store.head(conversation_id)
         captured_revision = revision if expected_revision is None else expected_revision
-        return cast(CommitResult, session._commit(DurableMutation(
+        return session._commit(DurableMutation(
             conversation_id=conversation_id,
             expected_revision=captured_revision,
             branch_entry_id=entry_id,
-        )))
+        ))
     except (CommitConflict, KeyError, TypeError, ValueError):
         raise
     except Exception:
@@ -318,7 +319,7 @@ def branch(
         raise
 
 
-def fork(session: Any, conversation_id: str, entry_id: str, *, child_conversation_id: str | None = None) -> str:
+def fork(session: SessionKernel, conversation_id: str, entry_id: str, *, child_conversation_id: str | None = None) -> str:
     child_id = child_conversation_id or f"conversation-{uuid.uuid4().hex}"
     session._commit(DurableMutation(
         conversation_id=child_id,
@@ -331,16 +332,16 @@ def fork(session: Any, conversation_id: str, entry_id: str, *, child_conversatio
     return child_id
 
 
-def delete_conversation(session: Any, conversation_id: str) -> CommitResult:
+def delete_conversation(session: SessionKernel, conversation_id: str) -> CommitResult:
     _head, revision = session.store.head(conversation_id)
-    return cast(CommitResult, session._commit(DurableMutation(
+    return session._commit(DurableMutation(
         conversation_id=conversation_id,
         expected_revision=revision,
         delete_conversation=DeleteConversation(),
-    )))
+    ))
 
 
-def context(session: Any, conversation_id: str, *, leaf_id: str | None = None) -> tuple[EntryDraft, ...]:
+def context(session: SessionKernel, conversation_id: str, *, leaf_id: str | None = None) -> tuple[EntryDraft, ...]:
     leaf = leaf_id
     if leaf is None:
         leaf, _revision = session.store.head(conversation_id)
@@ -351,7 +352,7 @@ def context(session: Any, conversation_id: str, *, leaf_id: str | None = None) -
 
 
 def context_at(
-    session: Any,
+    session: SessionKernel,
     conversation_id: str,
     commit_seq: int,
     *,
@@ -388,7 +389,7 @@ def _apply_head_cut(path: tuple[EntryDraft, ...]) -> tuple[EntryDraft, ...]:
 
 
 def context_snapshot_at(
-    session: Any,
+    session: SessionKernel,
     conversation_id: str,
     commit_seq: int,
     *,
@@ -404,7 +405,7 @@ def context_snapshot_at(
 
 
 def context_snapshot(
-    session: Any,
+    session: SessionKernel,
     conversation_id: str,
     *,
     token_budget: int,
@@ -464,7 +465,7 @@ def _include_committed_edits_before_cutoff(
     return tuple(selected)
 
 
-def save_context_snapshot(session: Any, conversation_id: str, payload: Mapping[str, object]) -> EntryDraft:
+def save_context_snapshot(session: SessionKernel, conversation_id: str, payload: Mapping[str, object]) -> EntryDraft:
     latest = latest_context_snapshot(session, conversation_id)
     if latest is not None and dict(latest.payload) == dict(payload):
         return latest
@@ -477,7 +478,7 @@ def save_context_snapshot(session: Any, conversation_id: str, payload: Mapping[s
     return replace(entry, commit_seq=result.sequence)
 
 
-def latest_context_snapshot(session: Any, conversation_id: str) -> EntryDraft | None:
+def latest_context_snapshot(session: SessionKernel, conversation_id: str) -> EntryDraft | None:
     for entry in reversed(context(session, conversation_id)):
         if entry.kind == "context_snapshot":
             return entry

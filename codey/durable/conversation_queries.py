@@ -10,21 +10,19 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING
 
 from codey.durable import conversation_ops
 from codey.durable.context import ContextSnapshot
 from codey.durable.inbox import InboxDoc, InboxHistoryEvent, history_event_from_projection, item_from_record
 from codey.durable.model import EntryDraft, SubmissionRecord
 from codey.durable.query_line import QueryLine
+from codey.durable.session_kernel import SessionKernel
 
-if TYPE_CHECKING:
-    from codey.durable.session import DurableSession
 
 class ConversationQueryFacade:
     """Own conversation, history, inbox, and context reads."""
 
-    def __init__(self, session: DurableSession, query_line: QueryLine) -> None:
+    def __init__(self, session: SessionKernel, query_line: QueryLine) -> None:
         self._session = session
         self._query_line = query_line
 

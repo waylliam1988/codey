@@ -77,14 +77,14 @@ history/navigation/window、inbox、context 和 snapshot 查询移到
 `ConversationQueryFacade`。`DurableSession` 只保留兼容代理；所有查询统一通过
 `_query_line` 共享原有 `RLock`。这也修复了 `history_window` 原本绕过 mutation line
 的确定性并发缺口。durable 查询与历史回归共 143 passed；相关 Ruff、mypy 和
-Pyrefly 通过。扩大回归中唯一失败是与本批 Python 改动无关的前端 Playwright
-滚动/会话切换像素断言，单独复现仍为 UI 测试波动，未修改生产代码或测试假设。
+Pyrefly 通过。扩大回归中有一个前端 Playwright 滚动/会话切换断言失败，单独运行也能
+复现；尚未完成基线对照与根因分析，不能据此断言是波动或与重构无关。
 
 ### 第三阶段：DurableSession 查询门面
 
 - [x] 抽出 conversation/history 查询。
 - [x] 抽出 task/effect/artifact 查询。
-- [ ] 保留统一 session kernel 和 mutation line。
+- [x] 保留统一 session kernel 和 mutation line。
 
 任务查询批次新增 `TaskQueryFacade`，拥有 task/timeline/historical snapshot、effect、
 artifact、approval 和 task/effect 一致性联合读取；pending tasks 同归该门面。
@@ -92,6 +92,13 @@ artifact、approval 和 task/effect 一致性联合读取；pending tasks 同归
 任务查询门面依赖 store 和 query line，不反向依赖 `DurableSession`。
 task/effect/approval/artifact/fencing 定向回归 121 passed；Ruff、mypy、Pyrefly 通过。
 SQLite 并发写入与重启审批补充回归 2 passed，未运行全量 pytest。
+
+共享内核批次将 store、唯一 RLock、失败/关闭状态、attempt binding、commit publication
+及订阅归属到 `SessionKernel`。`DurableSession` 继承同一个内核作为兼容桥，并未创建
+第二个锁或连接。会话操作只依赖内核，消除了 `conversation_ops.py` 的显式 Any。
+新增直接调用领域查询门面的测试，确认关闭和存储失败会同时封闭所有门面。
+内核定向回归 56 passed，扩大 durable 回归 208 passed；新增封闭状态用例 4 passed。
+全生产树 mypy（633 files）通过；相关 Ruff、Pyrefly 和 diff 检查通过。
 
 ### 第四阶段：DurableSession 写入门面
 
