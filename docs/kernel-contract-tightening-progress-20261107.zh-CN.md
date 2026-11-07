@@ -61,6 +61,7 @@
 - 后续第二批：收紧 `kernel_actions.py` 的执行调用、审批回调、attempt gate、completion evidence 和联合返回值；兼容 provider 的能力探测仍限定在边界函数。`kernel_actions.py` 的显式 `Any` 从 42 降至 1。
 - 后续第三批：收紧 `kernel_protocol.py` 的 session view、policy、冻结工具规格和 native provider call；`normalize_turn()` 现在只接受结构化 provider 回复和明确的 snapshot/policy 契约。同步把 `KernelContext` 的 sink、durable、window 和状态消费收窄，并让 `KernelResult.to_payload()` 返回具名 `KernelResultPayload`。本批没有扩大动态边界；`kernel_protocol.py` 显式 `Any` 从 31 降至 17。
 - 第三批验证：protocol/context/action/execution 定向 mypy、Pyrefly、ty 和 Ruff 通过；类型精度 gate 通过；native termination、durable decision/control 和 shell approval 定向测试 `32 passed`。
+- 收尾静态门禁：新增 provider call 结构的三工具静态负例，并增加精度 gate 对新增动态逃生的失败测试；静态契约与精度测试 `8 passed`。固定 machine contract 首轮为 `1447 passed, 14 subtests passed, 1 failed`；失败暴露了执行器在失败的研究采集上仍提交 provider-owned ledger 的确定性问题，已改为只提交成功采集，相关研究投影测试 `7 passed`。
 
 ## 当前边界
 

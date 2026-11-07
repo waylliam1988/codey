@@ -23,6 +23,15 @@ executor: ToolExecutor = wrong_executor
 delivery: DeliveryStatus = "not-a-delivery-status"
 '''
 
+BAD_PROVIDER_CALL = '''
+from collections.abc import Sequence
+from codey.operations.kernel_protocol import _native_tool_objects
+
+
+calls: Sequence[str] = ["not-a-provider-call"]
+_native_tool_objects(calls)
+'''
+
 
 @pytest.mark.parametrize(
     ("tool", "arguments"),
@@ -50,3 +59,31 @@ def test_type_checker_rejects_invalid_kernel_contract(tool: str, arguments: tupl
     assert result.returncode != 0, output
     assert f"_bad_kernel_contract_{tool}" in output, output
     assert any(marker in output for marker in ("Incompatible", "not assignable", "assignment", "does not match")), output
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("mypy", ("--python-version", "3.11")),
+        ("pyrefly", ("check",)),
+        ("ty", ("check",)),
+    ],
+)
+def test_type_checker_rejects_untyped_provider_call_shape(tool: str, arguments: tuple[str, ...]) -> None:
+    source = ROOT / "tests" / f"_bad_kernel_provider_call_{tool}.py"
+    source.write_text(BAD_PROVIDER_CALL, encoding="utf-8")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", tool, *arguments, str(source)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        output = (result.stdout or "") + (result.stderr or "")
+    finally:
+        source.unlink(missing_ok=True)
+    assert result.returncode != 0, output
+    assert f"_bad_kernel_provider_call_{tool}" in output, output
+    assert any(marker in output for marker in ("Incompatible", "not assignable", "argument", "Sequence")), output

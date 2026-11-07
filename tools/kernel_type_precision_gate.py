@@ -39,12 +39,24 @@ def current_counts() -> dict[str, int]:
     return {name: _count(ROOT / name) for name in TARGETS}
 
 
+def changed_counts(expected: dict[str, int], actual: dict[str, int]) -> dict[str, tuple[int | None, int]]:
+    return {
+        name: (expected.get(name), value)
+        for name, value in actual.items()
+        if expected.get(name) != value
+    }
+
+
+def validate_counts(expected: dict[str, int], actual: dict[str, int]) -> None:
+    changed = changed_counts(expected, actual)
+    if changed:
+        raise SystemExit(f"kernel type precision changed; update the owning contract deliberately: {changed}")
+
+
 def main() -> int:
     expected = json.loads(BASELINE.read_text(encoding="utf-8"))
     actual = current_counts()
-    if actual != expected:
-        changed = {name: (expected.get(name), actual.get(name)) for name in TARGETS if expected.get(name) != actual.get(name)}
-        raise SystemExit(f"kernel type precision changed; update the owning contract deliberately: {changed}")
+    validate_counts(expected, actual)
     print("kernel type precision baseline is unchanged")
     return 0
 
