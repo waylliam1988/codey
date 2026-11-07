@@ -50,7 +50,13 @@
 - 第 6 批：已将 provider 持久化调用解码为带 `ProviderMethod` 判别字段的 `ProviderInvocation`，保留原有六种方法、参数顺序、摘要和恢复路径。
 - 第 7 批：已为 kernel result、question 和 decision result 建立具名 TypedDict/字面量边界；`result_from_payload` 已改为从 `object` 入口验证；provider invocation 通过定向测试和 mypy。
 - 第 8 批：已加入 kernel 类型精度基线、pytest machine contract 和独立 gate。当前基线保留迁移债务，但禁止目标模块新增显式 `Any`。
-- 最近验证：上述测试外，provider capability/native boundary 测试 7 passed；provider receipt/native delivery 测试 32 passed、3 skipped；结果/决策/恢复测试 43 passed；kernel contracts 与 question 的定向 mypy（follow-imports=skip）通过；类型精度 gate 与 machine contract 相关测试 4 passed；相关 Ruff 通过；machine contract `1441 passed, 14 subtests passed`。
+- 收尾修复：`kernel_driver.py` 在 `--follow-imports=skip` 下从局部导入和跨模块方法调用得到 `Any`，导致两个 `no-any-return` 诊断；已在消费点用目标领域类型收窄为 `KernelResult` / `KernelResult | None`，没有扩大动态接口。
+- 三套检查的补强：Pyrefly 暴露了动作状态和 staged/base 研究资源联合类型的未收窄路径；已在动作入口验证运行状态和已准入 sink，在研究 staging、搜索 provider、change tracker 和 provider 回复适配边界完成显式收窄。兼容 provider 的运行时返回行为保留，核心消费类型明确为 `AssistantTurn | str`。
+- 最近验证：上述测试外，provider capability/native boundary 测试 7 passed；provider receipt/native delivery 测试 32 passed、3 skipped；结果/决策/恢复测试 43 passed；kernel contracts 与 question 的定向 mypy（follow-imports=skip）通过；类型精度 gate 与 machine contract 相关测试 4 passed；相关 Ruff 通过；kernel/provider durable 测试 54 passed；native/completion 测试 26 passed；research contract 测试 106 passed；machine contract `1441 passed, 14 subtests passed`。
+- 一次错误指定了不存在的 `tests/test_research_tools.py` 和 `tests/test_research_tool_contract.py`，没有执行任何测试；随后按仓库实际路径重跑 research contract 选择集并通过，属于测试命令路径问题，不是生产代码问题。
+- 最新类型验证：Pyrefly `0 errors`、mypy（四个核心模块，`--follow-imports=skip`）通过、ty 通过、相关 Ruff 通过；provider normalization 测试 51 passed；research staging/lifecycle 测试 46 passed；kernel restart/parity 测试 44 passed。
+- 精度基线验证：provider_session 的显式 `Any` 从 34 降至 32，已作为有意收窄更新基线；precision gate、其 3 个测试均通过。
+- 静态负例：新增真实导入核心 `ToolExecutor` / `DeliveryStatus` 的错误样例，分别由 mypy、Pyrefly 和 ty 拒绝，并要求诊断指向样例本身；machine contract gate 更新后为 `1444 passed, 14 subtests passed`。
 
 ## 当前边界
 

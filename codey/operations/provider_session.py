@@ -6,8 +6,9 @@ import contextlib
 import json
 import math
 import time
-from typing import Any
+from typing import Any, cast
 
+from codey.providers.base import AssistantTurn
 from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace
 
@@ -63,10 +64,14 @@ def _explicit_reply_normalizer(provider: Any) -> Any:
     return None
 
 
-def normalize_provider_reply(provider: Any, reply: Any) -> Any:
+def normalize_provider_reply(provider: Any, reply: Any) -> AssistantTurn | str:
     """Apply only a declared hook, including through explicit kernel wrappers."""
     normalize = _explicit_reply_normalizer(provider)
-    return normalize(reply) if callable(normalize) else reply
+    value = normalize(reply) if callable(normalize) else reply
+    # Compatibility providers historically returned an open value here.  The
+    # kernel boundary consumes only these two reply forms; preserve the
+    # runtime value while making that boundary explicit to type checkers.
+    return cast(AssistantTurn | str, value)
 
 
 def provider_reasoning(provider: Any, reply: str) -> str:
@@ -105,7 +110,7 @@ class ProviderAdapter:
     def acknowledge_tool_results_bound(self, *args: object, **kwargs: object) -> object:
         return self._send("acknowledge_tool_results_bound", *args, **kwargs)
 
-    def normalize_reply(self, reply: Any) -> Any:
+    def normalize_reply(self, reply: Any) -> AssistantTurn | str:
         return normalize_provider_reply(self.provider, reply)
 
     def reasoning_for_reply(self, reply: str) -> str:

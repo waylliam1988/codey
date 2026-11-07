@@ -11,6 +11,6 @@
   "codey/operations/completion_gate.py": 20,
   "codey/operations/project_completion_checks.py": 38,
   "codey/operations/research_completion_checks.py": 15,
-  "codey/operations/provider_session.py": 34,
+  "codey/operations/provider_session.py": 32,
   "codey/research/tools.py": 20
 }

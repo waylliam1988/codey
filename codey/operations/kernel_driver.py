@@ -18,7 +18,7 @@ from codey.operations.kernel_contracts import KernelDecision, KernelResult, Kern
 from codey.operations.kernel_errors import RecoveryFailed
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
 from codey.operations.provider_request import _METHODS
-from codey.providers.base import ProviderToolDefinition, ProviderToolResult
+from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult
 from codey.runtime.core.operation_payload import (
     LEAF_CONTROL_READY,
     LEAF_TOOL_DELIVERY_PENDING,
@@ -180,7 +180,7 @@ def restore_provider_window(sink: Any, provider: Any, state: Any) -> dict[str, A
     return payload
 
 
-def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> object:
+def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> AssistantTurn | str:
     """Close the explicit prior boundary, admit once, execute, then save once."""
     while True:
         action = peek_next_action(sink.durable, session_id=sink.session_id, run_id=sink.run_id)
@@ -214,7 +214,7 @@ def drive_provider_request(sink: Any, provider: Any, request_ref: str) -> object
 
 
 def _execute_provider(sink: Any, provider: Any, intent: RuntimeEffectIntent,
-                      invocation: ProviderInvocation) -> object:
+                      invocation: ProviderInvocation) -> AssistantTurn | str:
     method, args, kwargs = invocation.method, invocation.args, invocation.kwargs
     try:
         gate_prompt = getattr(provider, "set_attempt_gate_prompt", None)
@@ -262,6 +262,8 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
         while True:
             view = context.load_view()
             state = view.state
+            if state is None:
+                raise RecoveryFailed("operation view has no runtime state")
             last_decision = context.decision(state) if state.work_ref else None
             action = rules.next_runtime_action(view, context.decision_inputs(view))
             last_action = action.kind
@@ -300,7 +302,9 @@ def drive_kernel(session: Any, request: KernelRunRequest) -> KernelResult:
                 delivery="unknown" if getattr(exc, "provider_failure_kind", "") == "submission_uncertain" else "failed")
         if last_action in {rules.ACTION_PREPARE_TURN, rules.ACTION_REDELIVER_SETTLED_BATCH}:
             return KernelResult(False, f"controller failed [{type(exc).__name__}]: {exc}", session.turn, "controller_failure")
-        return _provider_failure(exc, session.turn, propagate=request.observation.propagate_provider_failure)
+        failure: KernelResult = _provider_failure(
+            exc, session.turn, propagate=request.observation.propagate_provider_failure)
+        return failure
 
 
 def _execute_kernel_action(context: KernelContext, view: SessionView, action: RuntimeAction) -> KernelResult | None:
@@ -308,6 +312,9 @@ def _execute_kernel_action(context: KernelContext, view: SessionView, action: Ru
     from codey.runtime.core import operation_reducer as rules
 
     state = view.state
+    assert state is not None, "operation action has no runtime state"
+    sink = context.sink
+    assert sink is not None, "operation action has no admitted sink"
     if action.kind == rules.ACTION_BEGIN_CLOSING:
         context.close(state, KernelResult(False, "stopped", state.logical_turn, "stopped"))
     elif action.kind == rules.ACTION_RESUME_QUESTION:
@@ -319,8 +326,9 @@ def _execute_kernel_action(context: KernelContext, view: SessionView, action: Ru
         context.prepare_turn(state)
     elif action.kind in {rules.ACTION_SUBMIT_PROVIDER_REQUEST, rules.ACTION_COMMIT_GENERATION_BOUNDARY}:
         if action.kind == rules.ACTION_SUBMIT_PROVIDER_REQUEST or action.reason == "before_provider_request":
-            reply = drive_provider_request(context.sink, context.provider, state.request_ref)
+            reply = drive_provider_request(sink, context.provider, state.request_ref)
             current = context.load_view().state
+            assert current is not None, "provider request removed operation state"
             received = context.response(current)
             snapshot = context.snapshots.get(received.logical_turn, received.snapshot)
             context.responses[current.response_ref] = replace(received, reply=reply, snapshot=snapshot)
@@ -330,8 +338,8 @@ def _execute_kernel_action(context: KernelContext, view: SessionView, action: Ru
         context.interpret(state)
     elif action.kind in {rules.ACTION_EXECUTE_TOOL_PLAN, rules.ACTION_REPLAY_SAFE_TOOL_BATCH}:
         if action.delivery_batch_id:
-            context.sink.delivery_batch_id = action.delivery_batch_id
-        result = context.execute_tools(state)
+            sink.delivery_batch_id = action.delivery_batch_id
+        result: KernelResult | None = context.execute_tools(state)
         if result is not None:
             return result
     elif action.kind == rules.ACTION_OBSERVE_BATCH_PROGRESS:
@@ -348,13 +356,13 @@ def _execute_kernel_action(context: KernelContext, view: SessionView, action: Ru
         from codey.durable.effects import interrupted_effect
         from codey.durable.model import thaw_json
 
-        task, effects = context.durable.task_facts(context.sink.run_id)
+        task, effects = context.durable.task_facts(sink.run_id)
         for identity in action.effect_ids or (action.effect_id,):
             original = next(effect for effect in effects if effect.effect_id == identity)
             receipt = thaw_json(interrupted_effect(task, original).settlement)
             if not isinstance(receipt, dict):
                 raise RecoveryFailed("interrupted effect has no settlement")
-            context.sink.mutations.settle_effect(context.sink.session_id, context.sink.run_id,
+            sink.mutations.settle_effect(sink.session_id, sink.run_id,
                 RuntimeEffectSettlement.from_payload(receipt))
         raise RecoveryFailed("external outcome is unknown; the original action was not replayed")
     else:

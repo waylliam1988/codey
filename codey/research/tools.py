@@ -34,6 +34,11 @@ from codey.research.url_selection import source_candidate_skip_reason
 _CITED_TYPES = {"fact", "conclusion", "decision", "implementation", "verification", "synthesis", "project_note"}
 
 
+def _base_changes(changes: KnowledgeChanges | StagedKnowledgeChanges | None) -> KnowledgeChanges | None:
+    """Return the durable change tracker; staged tracking is intentionally in-memory only."""
+    return changes if isinstance(changes, KnowledgeChanges) else None
+
+
 @dataclass(frozen=True)
 class ResearchToolOutput:
     """Model-visible text plus the full text reserved for durable receipts."""
@@ -73,8 +78,19 @@ class ResearchTools:
     context_provider: object | None = field(default=None, repr=False, compare=False)
 
     def create_staged(self) -> ResearchTools:
-        staged_store = StagedKnowledgeStore(self.store) if self.store is not None else None
-        staged_changes = StagedKnowledgeChanges(self.changes) if self.changes is not None else None
+        if self.store is None:
+            staged_store = None
+        elif isinstance(self.store, KnowledgeStore):
+            staged_store = StagedKnowledgeStore(self.store)
+        else:
+            raise TypeError("cannot stage an already staged knowledge store")
+        staged_changes = (
+            StagedKnowledgeChanges(self.changes)
+            if isinstance(self.changes, KnowledgeChanges)
+            else StagedKnowledgeChanges()
+            if self.changes is not None
+            else None
+        )
         return ResearchTools(
             search=self.search,
             store=staged_store,
@@ -99,9 +115,9 @@ class ResearchTools:
 
     def commit_staged(self, staged: ResearchTools) -> None:
         if isinstance(staged.store, StagedKnowledgeStore):
-            if self.store is None:
+            if not isinstance(self.store, KnowledgeStore):
                 raise ValueError("cannot commit knowledge into an unavailable store")
-            staged.store.commit_to(self.store, changes=self.changes)
+            staged.store.commit_to(self.store, changes=_base_changes(self.changes))
         self.sources_read.update(staged.sources_read)
         self.search_result_urls.update(staged.search_result_urls)
         self.grounded_ids.update(staged.grounded_ids)
@@ -119,6 +135,8 @@ class ResearchTools:
         Built fresh per access (no I/O): staged clones pick up their own
         ledger automatically, so staging semantics never drift.
         """
+        if self.search is None:
+            raise RuntimeError("research search provider is unavailable")
         return ResearchSourceGateway(
             search_provider=self.search,
             ledger=self.ledger,
@@ -257,7 +275,8 @@ class ResearchTools:
                 from codey.research.knowledge_materials import read_material
 
                 try:
-                    return cast(ResearchToolOutput, read_material(self, version, offset=offset, limit=limit))
+                    material: ResearchToolOutput = read_material(self, version, offset=offset, limit=limit)
+                    return material
                 except (ValueError, TypeError, KeyError) as exc:
                     return ResearchToolOutput(f"ERROR: {exc}", ok=False)
             payload = version.to_dict()
@@ -285,7 +304,10 @@ class ResearchTools:
             return ResearchToolOutput("ERROR: knowledge scope mismatch", ok=False)
         if note.type == "source" and any(s in self.sources_read for s in note.sources):
             self.grounded_ids.add(note.id)
-        references: list[dict[str, Any]] = self.store.note_references(note.id, revision) if hasattr(self.store, "note_references") else []
+        note_references = getattr(self.store, "note_references", None)
+        references: list[dict[str, Any]] = (
+            note_references(note.id, revision) if callable(note_references) else []
+        )
         answer_refs = []
         claim_states = []
         access = KnowledgeAccess(self.project, self.session_id, self.store.owner_id)
@@ -372,7 +394,7 @@ class ResearchTools:
                             self.ledger.source_record_for_url(url) is None or value.content != self.ledger.source_text_for_url(url)
                         ):
                             raise ValueError("source content must match an opened source")
-            receipt = self.store.commit_knowledge(identity, mutations, changes=self.changes,
+            receipt = self.store.commit_knowledge(identity, mutations, changes=_base_changes(self.changes),
                                                    session_id=self.session_id, project=self.project)
             return ResearchToolOutput(canonical_json({"commit_id": commit_id, "versions": receipt}), ok=True)
         except (ValueError, TypeError, KeyError) as exc:
@@ -382,12 +404,14 @@ class ResearchTools:
         """Deterministic organization of one explicit, unreviewed interpretation."""
         from codey.research.findings import save_finding
 
-        return cast(ResearchToolOutput, save_finding(self, args))
+        output: ResearchToolOutput = save_finding(self, args)
+        return output
 
     def save_inference(self, args: dict[str, Any]) -> ResearchToolOutput:
         from codey.research.references import save_inference
 
-        return cast(ResearchToolOutput, save_inference(self, args))
+        output: ResearchToolOutput = save_inference(self, args)
+        return output
 
     def research_plan(self, questions: object) -> ResearchToolOutput:
         """Register questions for scoped source acquisition outside Research."""
@@ -473,7 +497,7 @@ class ResearchTools:
                                                  conditions=args.get("conditions"))
         except (ValueError, TypeError) as exc:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)
-        rel = self.store.publish_note(note, commit_id, mutations, changes=self.changes)
+        rel = self.store.publish_note(note, commit_id, mutations, changes=_base_changes(self.changes))
         model_text = _finalize_write_note(
             self,
             note,
@@ -510,7 +534,7 @@ class ResearchTools:
         dst = (dst or "").strip()
         if not src or not dst:
             return ResearchToolOutput("ERROR: knowledge_link needs src and dst", ok=False)
-        result = self.store.link(src, dst, (kind or "relates").strip().lower(), changes=self.changes)
+        result = self.store.link(src, dst, (kind or "relates").strip().lower(), changes=_base_changes(self.changes))
         if result.ok and result.created:
             self.links_created += 1
         return ResearchToolOutput(result.model_text, ok=result.ok)
@@ -555,7 +579,7 @@ class ResearchTools:
 
 
 def _resolve_write_target(
-    store: KnowledgeStore,
+    store: KnowledgeStore | StagedKnowledgeStore,
     args: dict[str, Any],
 ) -> tuple[str, KnowledgeNote | None, bool, str | None]:
     existing_id = str(args.get("id") or "").strip()
@@ -651,7 +675,8 @@ def _prepare_write_relations(
     existing_note: KnowledgeNote | None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     if "relations" in args:
-        return cast(tuple[list[dict[str, Any]], list[str]], clean_relations(args.get("relations")))
+        relations: tuple[list[dict[str, Any]], list[str]] = clean_relations(args.get("relations"))
+        return relations
     return (
         list(existing_note.relations if existing_note is not None else []),
         [],
@@ -830,8 +855,14 @@ def clone_research_tools(
 ) -> ResearchTools:
     """Create a fresh tool facade over the same run-scoped research facts."""
 
+    candidate = search if search is not None else tools.search
+    if candidate is not None and (
+        not callable(getattr(candidate, "search", None))
+        or not callable(getattr(candidate, "fetch", None))
+    ):
+        raise TypeError("research search provider must expose search() and fetch()")
     return ResearchTools(
-        search=search if search is not None else tools.search,
+        search=cast(_SearchProvider | None, candidate),
         store=tools.store,
         changes=tools.changes,
         diagnostics=diagnostics if diagnostics is not None else tools.diagnostics,
