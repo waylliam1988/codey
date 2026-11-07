@@ -293,7 +293,8 @@ _prepare_boundary_placement/_prepare_boundary_write/_place_write_submission/_set
 | [`ShellApprovalCoordinator.resolve`](../codey/app/shell_approval_coordinator.py#L150) | A3 | 按 A3 合同实施；完整顺序见函数体 |
 | [`ShellApprovalCoordinator.claim_ticket`](../codey/app/shell_approval_coordinator.py#L156) | A3 | 按 A3 合同实施；完整顺序见函数体 |
 | [`ShellApprovalCoordinator.generation`](../codey/app/shell_approval_coordinator.py#L169) | A3 | 按 A3 合同实施；完整顺序见函数体 |
-| [`ShellApprovalCoordinator.pending`](../codey/app/shell_approval_coordinator.py#L173) | A3 | 按 A3 合同实施；完整顺序见函数体 |
+| [`ShellApprovalCoordinator.pending`](../codey/app/shell_approval_coordinator.py#L175) | A3 | 按 A3 合同实施；完整顺序见函数体 |
+| [`ShellApprovalCoordinator.discard_pending`](../codey/app/shell_approval_coordinator.py#L179) | A3 | durable decision 成功后在 owner 锁内移除 UI 投影 |
 
 ### codey/app/durable_event_bridge.py
 

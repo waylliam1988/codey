@@ -2002,6 +2002,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey/durable/memory.py",
             "codey/durable/sqlite.py",
             "codey/durable/store.py",
+            "codey/durable/session_kernel.py",
+            "codey/durable/task_queries.py",
         }
         offenders: list[str] = []
         for path in (ROOT / "codey").rglob("*.py"):

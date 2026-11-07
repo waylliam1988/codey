@@ -91,6 +91,11 @@ spawn gate 的 control/scheduler/race 测试替身改为真实 `TaskRuntimeCoord
 `ShellExecutionHarness`，没有放宽生产契约。审批恢复与生命周期定向回归为 72 passed，
 注册表/epoch/冷启动/分析回归为 40 passed、1 skipped；该批次未运行全量 pytest。
 
+架构夹具收尾同步了新的 durable owner：`SessionKernel` 和 `TaskQueryFacade` 是允许直接
+依赖 `DurableStore` 的内核/查询 owner；`AppContext` 与 `DurableSession` 已低于长文件阈值，
+旧 size exception 已删除。审批工作流的最后一个 `ctx.lock` 访问改由
+`ShellApprovalCoordinator.discard_pending` 承担，避免业务层直接持有 AppContext 协调锁。
+
 查询门面首批把 `conversation_ids`、head/存在性、conversation tree/lineage、
 history/navigation/window、inbox、context 和 snapshot 查询移到
 `ConversationQueryFacade`。`DurableSession` 只保留兼容代理；所有查询统一通过

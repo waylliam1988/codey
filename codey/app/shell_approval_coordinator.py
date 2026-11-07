@@ -176,5 +176,10 @@ class ShellApprovalCoordinator:
             value = self._context.approvals.shell_snapshot()
         return cast(dict[str, dict[str, object]], value)
 
+    def discard_pending(self, approval_id: str) -> None:
+        """Remove a UI approval projection after its durable decision commits."""
+        with self._context.lock:
+            self._context.approvals.pop_shell(approval_id)
+
 
 __all__ = ["ShellApprovalContext", "ShellApprovalCoordinator"]

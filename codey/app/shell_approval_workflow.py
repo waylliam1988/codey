@@ -95,7 +95,7 @@ class ShellApprovalWorkflow:
             record = lookup(approval_id)
         except (AttributeError, KeyError, OSError, TypeError, ValueError):
             return ()
-        return cast(tuple[ShellApprovalFact, ...], approval_record_facts(record))
+        return approval_record_facts(record)
 
     def status(self, approval_id: str) -> ApprovalStatus | None:
         facts = self._facts(approval_id)
@@ -325,8 +325,7 @@ class ShellApprovalWorkflow:
                     "approved" if approved else "denied",
                 ):
                     return 409, {"code": "decision_conflict", "error": "approval already decided"}
-                with self.ctx.lock:
-                    self.ctx.approvals.pop_shell(approval_id)
+                self.ctx.shell_approval_coordinator.discard_pending(approval_id)
                 if scope != "once":
                     try:
                         self.ctx.command_permissions.remember(pending, scope)
