@@ -36,8 +36,8 @@
 - [x] 让 `task_submit.py` 的 admission/spawn/slot 路径停止访问内部锁和私有字段。
 - [ ] 保留兼容代理，迁移完成后再删除。
 
-第二阶段首批只收敛运行槽位、输入唤醒和 shell gate 的所有权；复杂的
-`request_stop`、`finish_run` 和审批投影仍保留在 `AppContext`，下一批处理。
+第二阶段首批先收敛运行槽位、输入唤醒和 shell gate 的所有权；随后任务生命周期批次
+又迁移了 `request_stop`、`finish_run` 和审批过期流程，旧入口仍由 `AppContext` 代理。
 
 第二阶段首批回归：`tests/test_task_runtime_coordinator.py`、
 `tests/test_task_submit.py`、`tests/test_task_submit_durable.py` 和
@@ -61,9 +61,17 @@ durable event bridge 批次把 commit record 的延迟发布队列和 flush 逻�
 scheduler abort，再发布 shell result 和延迟 durable 事件。任务生命周期、审批、停止、
 任务提交和 scheduler abort 扩大回归共 111 passed；相关 Ruff 和局部 mypy 通过。
 
+查询门面首批把 `conversation_ids`、head/存在性、conversation tree/lineage、
+history/navigation/window、inbox、context 和 snapshot 查询移到
+`ConversationQueryFacade`。`DurableSession` 只保留兼容代理；所有查询统一通过
+`_query_line` 共享原有 `RLock`。这也修复了 `history_window` 原本绕过 mutation line
+的确定性并发缺口。durable 查询与历史回归共 143 passed；相关 Ruff、mypy 和
+Pyrefly 通过。扩大回归中唯一失败是与本批 Python 改动无关的前端 Playwright
+滚动/会话切换像素断言，单独复现仍为 UI 测试波动，未修改生产代码或测试假设。
+
 ### 第三阶段：DurableSession 查询门面
 
-- [ ] 抽出 conversation/history 查询。
+- [x] 抽出 conversation/history 查询。
 - [ ] 抽出 task/effect/artifact 查询。
 - [ ] 保留统一 session kernel 和 mutation line。
 

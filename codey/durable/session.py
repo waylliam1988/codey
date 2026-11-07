@@ -16,6 +16,7 @@ from codey.durable import admission, conversation_ops
 from codey.durable.approval_transition import materialize_approval
 from codey.durable.context import ContextSnapshot
 from codey.durable.contracts import ApprovalPort, DurableExecutionPort, EffectPort, TaskAdmissionPort
+from codey.durable.conversation_queries import ConversationQueryFacade
 from codey.durable.effects import interrupted_effect
 from codey.durable.errors import (
     CommitConflict,
@@ -26,8 +27,6 @@ from codey.durable.errors import (
 from codey.durable.inbox import (
     InboxDoc,
     InboxHistoryEvent,
-    history_event_from_projection,
-    item_from_record,
 )
 from codey.durable.model import (
     EXECUTION_STATE_KEYS,
@@ -101,9 +100,8 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
     def database_id(self) -> str:
         return self.store.database_id
 
-    @_mutation_line
     def conversation_ids(self) -> tuple[str, ...]:
-        return self.store.conversation_ids()
+        return self.conversation_queries.conversation_ids()
 
     @_mutation_line
     def submission(self, submission_id: str) -> SubmissionRecord:
@@ -138,6 +136,13 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
         self._close_notified = False
         self._owner_id = f"owner-{uuid.uuid4().hex}"
         self._execution: ContextVar[tuple[str, str] | None] = ContextVar("durable_execution", default=None)
+        self.conversation_queries = ConversationQueryFacade(self, self._query_line)
+
+    def _query_line(self, operation: Callable[[], _T]) -> _T:
+        """Run one query while sharing the session mutation line."""
+        with self._write_lock:
+            self._ensure_usable()
+            return operation()
 
     @_mutation_line
     def _commit(self, mutation: DurableMutation) -> CommitResult:
@@ -318,14 +323,11 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
             create_conversation=CreateConversation(),
         ))
 
-    @_mutation_line
     def head(self, conversation_id: str) -> tuple[str | None, int]:
-        head, revision = self.store.head(conversation_id)
-        return str(head) if head is not None else None, int(revision)
+        return self.conversation_queries.head(conversation_id)
 
-    @_mutation_line
     def has_conversation(self, conversation_id: str) -> bool:
-        return self.store.has_conversation(conversation_id)
+        return self.conversation_queries.has_conversation(conversation_id)
 
     @_mutation_line
     def record_display_message(self, conversation_id: str, *, run_id: str, identity: str,
@@ -350,22 +352,21 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
                            payload={**dict(payload), 'display_only': True})
         self._commit(DurableMutation(conversation_id, revision, entries=(entry,)))
 
-    @_mutation_line
     def navigation_page(self, conversation_id: str, *, before: str | None = None,
                         limit: int = 200) -> dict[str, object]:
-        return conversation_ops.navigation_page(self, conversation_id, before=before, limit=limit)
+        return self.conversation_queries.navigation_page(conversation_id, before=before, limit=limit)
 
     def history_window(self, conversation_id: str, entry_id: str, *, limit: int = 100,
                        leaf_id: str | None = None) -> dict[str, object]:
-        return conversation_ops.history_window(self, conversation_id, entry_id, limit=limit, leaf_id=leaf_id)
+        return self.conversation_queries.history_window(
+            conversation_id, entry_id, limit=limit, leaf_id=leaf_id,
+        )
 
-    @_mutation_line
     def conversation_tree(self, conversation_id: str) -> dict[str, object]:
-        return conversation_ops.conversation_tree(self, conversation_id)
+        return self.conversation_queries.conversation_tree(conversation_id)
 
-    @_mutation_line
     def conversation_lineage(self, conversation_id: str) -> list[dict[str, object]]:
-        return conversation_ops.conversation_lineage(self, conversation_id)
+        return self.conversation_queries.conversation_lineage(conversation_id)
 
     @_mutation_line
     def select_idle_branch(self, conversation_id: str, entry_id: str, *, expected_revision: int) -> CommitResult:
@@ -373,61 +374,18 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
             raise CommitConflict('Wait for this conversation to finish before switching branches.')
         return conversation_ops.branch(self, conversation_id, entry_id, expected_revision=expected_revision)
 
-    @_mutation_line
     def pending_tasks(self) -> tuple[TaskCheckpoint, ...]:
         """Read schedulable checkpoints through the session mutation line."""
-        return tuple(self.store.pending_tasks())
+        return self.conversation_queries.pending_tasks()
 
-    @_mutation_line
     def queued_submissions(self, conversation_id: str | None = None) -> tuple[SubmissionRecord, ...]:
-        return tuple(self.store.queued_submissions(conversation_id))
+        return self.conversation_queries.queued_submissions(conversation_id)
 
-    @_mutation_line
     def inbox_doc(self, conversation_id: str) -> InboxDoc:
-        """Return the current queued inbox snapshot from durable submissions."""
-        _head, revision = self.store.head(conversation_id)
-        tasks = {
-            task.submission_id: task.task_id
-            for task in self.store.tasks()
-            if task.conversation_id == conversation_id
-        }
-        items = tuple(
-            item_from_record(record, task_id=tasks.get(record.submission_id))
-            for record in self.store.queued_submissions(conversation_id)
-        )
-        return InboxDoc(conversation_id, revision, items)
+        return self.conversation_queries.inbox_doc(conversation_id)
 
-    @_mutation_line
     def inbox_history(self, conversation_id: str) -> tuple[InboxHistoryEvent, ...]:
-        """Rebuild inbox transitions from durable commit projections."""
-        events: list[InboxHistoryEvent] = []
-        cursor = 0
-        while True:
-            records = self.store.commits_after(cursor, limit=512)
-            if not records:
-                break
-            for record in records:
-                cursor = max(cursor, record.sequence)
-                if record.payload.get("session_id") != conversation_id:
-                    continue
-                projections = record.payload.get("projections", ())
-                if not isinstance(projections, (list, tuple)):
-                    continue
-                for projection in projections:
-                    if not isinstance(projection, Mapping):
-                        continue
-                    event = history_event_from_projection(record.sequence, conversation_id, projection)
-                    if event is not None:
-                        if not event.request_id:
-                            try:
-                                request_id = self.store.submission(event.submission_id).request_id
-                            except KeyError:
-                                request_id = ""
-                            event = replace(event, request_id=request_id)
-                        events.append(event)
-            if len(records) < 512:
-                break
-        return tuple(events)
+        return self.conversation_queries.inbox_history(conversation_id)
 
     @_mutation_line
     def withdraw_queued_submission_at(
@@ -1167,11 +1125,9 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
             task_id=task_id, request_id=request_id, instruction=instruction,
         )
 
-    @_mutation_line
     def entries(self, conversation_id: str) -> tuple[EntryDraft, ...]:
-        return conversation_ops.entries(self, conversation_id)
+        return self.conversation_queries.entries(conversation_id)
 
-    @_mutation_line
     def history_page(
         self,
         conversation_id: str,
@@ -1179,9 +1135,8 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
         before: str | None = None,
         limit: int = 100,
     ) -> dict[str, object]:
-        return conversation_ops.history_page(self, conversation_id, before=before, limit=limit)
+        return self.conversation_queries.history_page(conversation_id, before=before, limit=limit)
 
-    @_mutation_line
     def search_history(
         self,
         conversation_id: str,
@@ -1189,7 +1144,7 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
         *,
         limit: int = 50,
     ) -> list[dict[str, object]]:
-        return conversation_ops.search_history(self, conversation_id, query, limit=limit)
+        return self.conversation_queries.search_history(conversation_id, query, limit=limit)
 
     @_mutation_line
     def task(self, task_id: str) -> TaskCheckpoint:
@@ -2131,7 +2086,6 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
         """Delete an unreferenced conversation without orphaning a fork."""
         return conversation_ops.delete_conversation(self, conversation_id)
 
-    @_mutation_line
     def context(self, conversation_id: str, *, leaf_id: str | None = None) -> tuple[EntryDraft, ...]:
         """Return one immutable branch path, including fork ancestors.
 
@@ -2140,15 +2094,13 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
         the parent conversation is always read only through its recorded fork
         cap.
         """
-        return conversation_ops.context(self, conversation_id, leaf_id=leaf_id)
+        return self.conversation_queries.context(conversation_id, leaf_id=leaf_id)
 
-    @_mutation_line
     def context_at(
         self, conversation_id: str, commit_seq: int, *, leaf_id: str | None = None,
     ) -> tuple[EntryDraft, ...]:
-        return conversation_ops.context_at(self, conversation_id, commit_seq, leaf_id=leaf_id)
+        return self.conversation_queries.context_at(conversation_id, commit_seq, leaf_id=leaf_id)
 
-    @_mutation_line
     def context_snapshot(
         self,
         conversation_id: str,
@@ -2158,12 +2110,11 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
         before_entry_id: str | None = None,
         token_counter: Callable[[tuple[Mapping[str, object], ...]], int] | None = None,
     ) -> ContextSnapshot:
-        return conversation_ops.context_snapshot(
-            self, conversation_id, token_budget=token_budget, leaf_id=leaf_id,
+        return self.conversation_queries.context_snapshot(
+            conversation_id, token_budget=token_budget, leaf_id=leaf_id,
             before_entry_id=before_entry_id, token_counter=token_counter,
         )
 
-    @_mutation_line
     def context_snapshot_at(
         self,
         conversation_id: str,
@@ -2173,8 +2124,8 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
         leaf_id: str | None = None,
         token_counter: Callable[[tuple[Mapping[str, object], ...]], int] | None = None,
     ) -> ContextSnapshot:
-        return conversation_ops.context_snapshot_at(
-            self, conversation_id, commit_seq, token_budget=token_budget,
+        return self.conversation_queries.context_snapshot_at(
+            conversation_id, commit_seq, token_budget=token_budget,
             leaf_id=leaf_id, token_counter=token_counter,
         )
 
@@ -2190,8 +2141,7 @@ class DurableSession(TaskAdmissionPort, ApprovalPort, EffectPort, DurableExecuti
         """
         return conversation_ops.save_context_snapshot(self, conversation_id, payload)
 
-    @_mutation_line
     def latest_context_snapshot(
         self, conversation_id: str
     ) -> EntryDraft | None:
-        return conversation_ops.latest_context_snapshot(self, conversation_id)
+        return self.conversation_queries.latest_context_snapshot(conversation_id)
