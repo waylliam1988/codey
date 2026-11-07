@@ -12,11 +12,11 @@ import './workspace.css';
 import { showCommandPermissions } from './command_permissions';
 import { reportDesktopFailure, reportDesktopReady } from './desktop_ready';
 import { hydrateDocumentContent } from './document_content';
-import { FrameCoalescer } from './frame_coalescer';
 import type { QueuedInput } from './input_outbox';
 import { finalStreamMessage, streamMessage } from './reply_stream';
 import { eventSequence, type LifecycleInput, lastRunState, lifecycleState } from './run_lifecycle';
 import { RunProjection } from './run_projection';
+import { RunStreamBuffer } from './run_stream_buffer';
 import { runtime } from './runtime';
 import { createApprovalController } from './shell_approvals';
 import { createSidebar } from './sidebar';
@@ -982,13 +982,14 @@ document.addEventListener('click', (e) => {
 const runProjection = new RunProjection({
   requestIdForRun: (sessionId, runId) => runtime.Requests.forRun(sessionId, runId)?.request.id,
 });
+
 function isSessionRunning(sessionId: string): boolean {
   return runProjection.isSessionRunning(sessionId);
 }
 let turnCounter = 0;
-const replyStreamFrames = new FrameCoalescer<ServerEventData>((key, data) => {
-  if (!runtime.ConversationUI.acceptsRun(data.session_id || '', data.run_id || '')) return;
-  handleReplyStream(data);
+const replyStreamBuffer = new RunStreamBuffer<ServerEventData>({
+  acceptsRun: (sessionId, runId) => runtime.ConversationUI.acceptsRun(sessionId, runId),
+  handle: handleReplyStream,
 });
 
 function setStatus(text: string, kind: string) {
@@ -1105,11 +1106,10 @@ function handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' =
     return;
   }
   if (data.type === 'reply_stream') {
-    const key = `${data.run_id || ''}:${data.stream_id || ''}`;
-    replyStreamFrames.enqueue(key, data);
+    replyStreamBuffer.enqueue(data);
     return;
   }
-  replyStreamFrames.flush();
+  replyStreamBuffer.flush();
   if ((data.type === 'task_start' || data.type === 'task_done') && !applyLifecycle(data, lifecycleSource)) return;
   if (data.type === 'user_question' || data.type === 'user_question_state') {
     userQuestions.apply((raw as { question: unknown }).question);
@@ -1531,6 +1531,7 @@ function applyRunState(data: RunState) {
     !data.task_states.some((task) => task.run_id === acknowledged) &&
     runProjection.forgetAdmission(acknowledged)
   ) {
+    // The projection withdraws the provisional admission and updates its index.
   }
   markResearchRestoreAvailability(data.research_restore_runs || []);
   runtime.Requests.reconcile({
