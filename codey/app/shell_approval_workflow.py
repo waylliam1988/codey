@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
@@ -101,7 +101,7 @@ class ShellApprovalWorkflow:
         facts = self._facts(approval_id)
         return self._status(facts) if facts else None
 
-    def _read_result(self, fact: ShellApprovalFact) -> dict[str, Any]:
+    def _read_result(self, fact: ShellApprovalFact) -> dict[str, object]:
         if self.ctx.managed_outputs is None:
             raise ValueError("Approval result store unavailable")
         result = self.ctx.managed_outputs.read_json_artifact(
@@ -115,7 +115,7 @@ class ShellApprovalWorkflow:
         )
         if not isinstance(result, dict):
             raise ValueError("Invalid persisted shell result")
-        return result
+        return cast(dict[str, object], result)
 
     def _status(self, facts: tuple[ShellApprovalFact, ...]) -> ApprovalStatus:
         first, last = facts[0], facts[-1]
@@ -422,7 +422,7 @@ class ShellApprovalWorkflow:
     def _write_result(
         self,
         fact: ShellApprovalFact,
-        result: dict[str, Any],
+        result: Mapping[str, object],
         kind: str,
         pending: dict[str, Any],
     ) -> None:
@@ -510,6 +510,7 @@ class ShellApprovalWorkflow:
                 return
             facts = self._facts(approval_id)
             first, last = facts[0], facts[-1]
+        result: Mapping[str, object]
         if last.kind == "approved":
             if self._closing or self.ctx.shutdown_requested() or getattr(getattr(self.ctx, "control_service", None), "draining", False):
                 return

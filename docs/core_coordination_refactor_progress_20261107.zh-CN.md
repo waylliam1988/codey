@@ -211,7 +211,9 @@ lifecycle/control 回归为 20 passed；审批恢复/生命周期为 72 passed�
 shutdown drain、unknown outcome 和 shell result payload 均未改变。该修复的定向回归为
 shell contract/interpreter/command permission 68 passed、5 skipped，审批 epoch/lifecycle/
 native identity 43 passed，chat approval/coordinator 9 passed；该文件 Ruff、mypy、Pyrefly
-均通过。相对未修改基线的生产差异不再新增 `Any`。
+均通过。随后将 `ShellApprovalWorkflow._write_result()` 和 `_read_result()` 收紧为只读
+mapping，消除了生产树中该新边界的类型不一致；全生产树 mypy 644 files、Pyrefly 0 errors、
+相关 Ruff 均通过。相对未修改基线的生产差异不再新增 `Any`。
 
 ## 基线验证
 
