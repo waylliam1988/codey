@@ -4,7 +4,16 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from typing import Any
+from typing import NotRequired, TypedDict
+
+
+class CoverageRow(TypedDict):
+    question_ref: str
+    state: str
+    answer: str
+    findings: list[str]
+    investigations: list[str]
+    task_refs: NotRequired[list[str]]
 
 QUESTION_STATES = {
     "evidence_found": "已获得相关证据",
@@ -14,10 +23,10 @@ QUESTION_STATES = {
 }
 
 
-def coverage_rows(raw: object) -> list[dict[str, Any]]:
+def coverage_rows(raw: object) -> list[CoverageRow]:
     if not isinstance(raw, list) or not 1 <= len(raw) <= 8:
         raise ValueError("report_sections.coverage requires 1..8 question records")
-    rows: list[dict[str, Any]] = []
+    rows: list[CoverageRow] = []
     seen = set()
     for index, row in enumerate(raw):
         path = f"report_sections.coverage[{index}]"
@@ -56,7 +65,11 @@ def coverage_rows(raw: object) -> list[dict[str, Any]]:
             raise ValueError(path + ".investigations requires actual investigation references, e.g. [\"a1\"]")
         # Evidence sufficiency and state consistency belong to the completion
         # check. They can require investigation, not just resending formatted JSON.
-        rows.append(dict(row))
+        decoded = CoverageRow(question_ref=qid, state=row["state"], answer=row["answer"],
+                              findings=list(findings), investigations=list(attempts))
+        if "task_refs" in row:
+            decoded["task_refs"] = list(row["task_refs"])
+        rows.append(decoded)
     return rows
 
 

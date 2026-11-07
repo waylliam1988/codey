@@ -6,11 +6,9 @@ UI ledger payloads (which deliberately clip excerpts and counts).
 """
 from __future__ import annotations
 
-import copy
 import hashlib
 from dataclasses import asdict, fields
 from datetime import datetime
-from typing import Any
 
 from codey.research.ledger import (
     EvidenceItem,
@@ -20,13 +18,33 @@ from codey.research.ledger import (
     SearchResultRecord,
     SourceQuality,
 )
+from codey.research.receipt_types import SourceSearchLocator, SourceSearchObservation
 from codey.research.urls import parsed_url
+from codey.types.json_value import (
+    JsonObject,
+    canonical_json_object,
+    require_json_boolean,
+    require_json_integer,
+    require_json_string,
+)
 
 
-def _record_fields(value: object, model: type[Any]) -> dict[str, Any]:
+def decode_evidence_item(value: object) -> EvidenceItem:
+    row = _record_fields(value, EvidenceItem)
+    page = row["page"]
+    return EvidenceItem(claim=require_json_string(row["claim"], "claim"),
+        source_url=require_json_string(row["source_url"], "source_url"),
+        excerpt=require_json_string(row["excerpt"], "excerpt"),
+        stance=require_json_string(row["stance"], "stance"),
+        note_id=require_json_string(row["note_id"], "note_id"),
+        page=None if page is None else require_json_integer(page, "page"),
+        locator=require_json_string(row["locator"], "locator"))
+
+
+def _record_fields(value: object, model: type[SearchRecord] | type[SearchResultRecord] | type[OpenedSource] | type[SourceQuality] | type[EvidenceItem]) -> JsonObject:
     if not isinstance(value, dict) or set(value) != {item.name for item in fields(model)}:
         raise ValueError(f"invalid {model.__name__} observation fields")
-    return dict(value)
+    return canonical_json_object(value)
 
 
 def _source_url(value: object) -> str:
@@ -66,8 +84,10 @@ def search_observation(observation: object) -> SearchRecord:
         if (type(hit["rank"]) is not int or hit["rank"] < 1
                 or type(hit["title"]) is not str or type(hit["snippet"]) is not str):
             raise ValueError("invalid search result observation")
-        results.append(SearchResultRecord(**hit))
-    return SearchRecord(query=row["query"], timestamp=row["timestamp"], results=tuple(results))
+        results.append(SearchResultRecord(require_json_integer(hit["rank"], "rank"),
+            require_json_string(hit["title"], "title"), require_json_string(hit["url"], "url"),
+            require_json_string(hit["snippet"], "snippet")))
+    return SearchRecord(query=require_json_string(row["query"], "query"), timestamp=require_json_string(row["timestamp"], "timestamp"), results=tuple(results))
 
 
 def source_observation(observation: object) -> tuple[OpenedSource, str, dict[int, str]]:
@@ -81,17 +101,27 @@ def source_observation(observation: object) -> tuple[OpenedSource, str, dict[int
     quality = _record_fields(row["quality"], SourceQuality)
     if any(type(value) is not str for value in quality.values()):
         raise ValueError("invalid source quality observation")
-    row["quality"] = SourceQuality(**quality)
+    decoded_quality = SourceQuality(*(require_json_string(quality[key], key)
+                                     for key in ("level", "kind", "freshness", "independent_group")))
     pages_read = row["pages_read"]
     if (not isinstance(pages_read, (list, tuple))
             or any(type(page) is not int or page < 1 for page in pages_read)
             or len(set(pages_read)) != len(pages_read)):
         raise ValueError("invalid source observation pages")
-    row["pages_read"] = tuple(pages_read)
     if (type(row["truncated"]) is not bool or type(row["page_count"]) is not int or row["page_count"] < 0
             or any(type(row[key]) is not str for key in ("title", "content_kind", "mime_type", "text_hash"))):
         raise ValueError("invalid source observation metadata")
-    source = OpenedSource(**row)
+    source = OpenedSource(
+        requested_url=require_json_string(row["requested_url"], "requested_url"),
+        final_url=require_json_string(row["final_url"], "final_url"),
+        title=require_json_string(row["title"], "title"),
+        retrieved_at=require_json_string(row["retrieved_at"], "retrieved_at"),
+        text_hash=require_json_string(row["text_hash"], "text_hash"), quality=decoded_quality,
+        content_kind=require_json_string(row["content_kind"], "content_kind"),
+        mime_type=require_json_string(row["mime_type"], "mime_type"),
+        page_count=require_json_integer(row["page_count"], "page_count"),
+        pages_read=tuple(require_json_integer(page, "page") for page in pages_read),
+        truncated=require_json_boolean(row["truncated"], "truncated"))
     text = observation["text"]
     if (type(text) is not str or not text.strip()
             or hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16] != source.text_hash):
@@ -111,7 +141,7 @@ def source_observation(observation: object) -> tuple[OpenedSource, str, dict[int
     return source, text, page_map
 
 
-def source_search_observation(observation: object) -> dict[str, Any]:
+def source_search_observation(observation: object) -> SourceSearchObservation:
     """Validate locator previews without interpreting their display text."""
     if not isinstance(observation, dict) or set(observation) != {"source_search"}:
         raise ValueError("missing or invalid source search observation")
@@ -127,32 +157,34 @@ def source_search_observation(observation: object) -> dict[str, Any]:
                 or type(hit["snippet"]) is not str
                 or hit["page"] is not None and (type(hit["page"]) is not int or hit["page"] < 1)):
             raise ValueError("invalid source search locator observation")
-    return copy.deepcopy(row)
+    return SourceSearchObservation(source_url=row["source_url"], query=row["query"],
+        hits=[SourceSearchLocator(offset=hit["offset"], page=hit["page"], snippet=hit["snippet"])
+              for hit in row["hits"]])
 
 
-def ledger_observation(ledger: ResearchLedger, kind: str, *, url: str = "", evidence_start: int = 0) -> dict[str, Any]:
-    observation: dict[str, Any]
+def ledger_observation(ledger: ResearchLedger, kind: str, *, url: str = "", evidence_start: int = 0) -> JsonObject:
+    observation: JsonObject
     if kind == "web_search" and ledger.searches:
-        observation = {"search": asdict(ledger.searches[-1])}
+        observation = canonical_json_object({"search": asdict(ledger.searches[-1])})
         search_observation(observation)
-        return observation
+        return canonical_json_object(observation)
     if kind == "source_search" and ledger.source_searches:
-        observation = {"source_search": copy.deepcopy(ledger.source_searches[-1])}
+        observation = canonical_json_object({"source_search": ledger.source_searches[-1]})
         source_search_observation(observation)
-        return observation
+        return canonical_json_object(observation)
     if kind in {"knowledge_write", "save_finding"}:
-        return {"evidence": [asdict(item) for item in ledger.evidence_items[evidence_start:]]}
+        return canonical_json_object({"evidence": [asdict(item) for item in ledger.evidence_items[evidence_start:]]})
     source = ledger.source_record_for_url(url) if url else None
     if source is not None:
-        observation = {"source": asdict(source), "text": ledger.source_text_for_url(url),
+        observation = canonical_json_object({"source": asdict(source), "text": ledger.source_text_for_url(url),
                        "pages": [{"number": number, "text": text}
-                                 for number, text in ledger.source_pages_for_url(url).items()]}
+                                 for number, text in ledger.source_pages_for_url(url).items()]})
         source_observation(observation)
-        return observation
+        return canonical_json_object(observation)
     raise ValueError(f"missing research observation for {kind}")
 
 
-def restore_ledger_observation(ledger: ResearchLedger, observation: dict[str, Any]) -> None:
+def restore_ledger_observation(ledger: ResearchLedger, observation: JsonObject) -> None:
     """Apply one verified receipt, preserving source identity and timestamps.
 
     The entry stages the whole replay on a clone and commits only after all
@@ -164,8 +196,11 @@ def restore_ledger_observation(ledger: ResearchLedger, observation: dict[str, An
     if keys in ({"questions"}, {"questions", "question_details"}) or observation.get("schema_version") in (2, 3):
         from codey.research.questions import question_plan
 
-        questions = ([row["text"] for row in observation["questions"]]
-                     if observation.get("schema_version") in (2, 3) else observation["questions"])
+        questions = observation["questions"]
+        if observation.get("schema_version") in (2, 3):
+            if not isinstance(questions, list) or any(not isinstance(row, dict) for row in questions):
+                raise ValueError("invalid question observations")
+            questions = [row["text"] for row in questions if isinstance(row, dict)]
         ledger.questions = question_plan(questions, ledger.questions)
     elif keys == {"search"}:
         ledger.searches.append(search_observation(observation))
@@ -174,7 +209,10 @@ def restore_ledger_observation(ledger: ResearchLedger, observation: dict[str, An
     elif keys == {"source", "text", "pages"}:
         _restore_source(ledger, observation)
     elif keys == {"evidence"}:
-        items = [EvidenceItem(**item) for item in observation["evidence"]]
+        raw_items = observation["evidence"]
+        if not isinstance(raw_items, list):
+            raise ValueError("evidence observations must be an array")
+        items = [decode_evidence_item(item) for item in raw_items]
         for item in items:
             from codey.research.passages import passage_evidence_valid
 
@@ -188,6 +226,6 @@ def restore_ledger_observation(ledger: ResearchLedger, observation: dict[str, An
         raise ValueError("invalid research observation fields")
 
 
-def _restore_source(ledger: ResearchLedger, observation: dict[str, Any]) -> None:
+def _restore_source(ledger: ResearchLedger, observation: JsonObject) -> None:
     source, text, page_map = source_observation(observation)
     ledger.merge_opened_source(source, text, page_map)

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol
 
-from codey.reviews.research_coverage import coverage_rows
+from codey.policies.task_policy import TaskPolicy
+from codey.reviews.research_coverage import CoverageRow, coverage_rows
+from codey.types.json_value import ToolArgs
 
 if TYPE_CHECKING:
     from codey.research.ledger import ResearchLedger
@@ -15,16 +17,26 @@ INVESTIGATION_TOOLS = frozenset({"web_search", "open_url", "open_result", "reope
 QUESTION_BOUND_TOOLS = INVESTIGATION_TOOLS | {"save_finding", "save_inference"}
 
 
-def requires_question_ref(session: Any) -> bool:
+class QuestionSessionView(Protocol):
+    @property
+    def task_kind(self) -> str: ...
+
+    @property
+    def policy(self) -> TaskPolicy: ...
+
+    @property
+    def research_acquisition_limits(self) -> tuple[int, int] | None: ...
+
+
+def requires_question_ref(session: QuestionSessionView) -> bool:
     from codey.research.answer_contract import whole_research
 
     if whole_research(session):
         return False
-    return bool(getattr(getattr(session, "policy", None), "strict_research", False)
-                or getattr(session, "research_acquisition_limits", None) is not None)
+    return session.policy.strict_research or session.research_acquisition_limits is not None
 
 
-def question_ref(args: dict[str, Any], ledger: ResearchLedger, *, required: bool = False) -> str:
+def question_ref(args: ToolArgs, ledger: ResearchLedger, *, required: bool = False) -> str:
     ref = args.get("question_ref", "")
     if ref == "" and not required:
         return ""
@@ -44,7 +56,7 @@ def question_plan(raw: object, previous: tuple[str, ...] = ()) -> tuple[str, ...
     return questions
 
 
-def validate_question_coverage(raw: object, ledger: ResearchLedger) -> list[dict[str, Any]]:
+def validate_question_coverage(raw: object, ledger: ResearchLedger) -> list[CoverageRow]:
     if not ledger.questions:
         raise ValueError("Call research_plan first to register the questions; do not claim coverage without a question list")
     rows = coverage_rows(raw)

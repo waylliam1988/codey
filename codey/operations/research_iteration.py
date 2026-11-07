@@ -431,7 +431,7 @@ def run_research_iteration(
         opened_sources=ledger.opened_sources_payload(),
         coverage={**ledger.coverage_payload(),
                   "question_answers": list(compiled.coverage) if outcome.completed and policy.strict_research and compiled else []},
-        citation_map=list(compiled.source_versions) if compiled else quality.citation_payload() if quality is not None else [],
+        citation_map=[dict(row) for row in compiled.source_versions] if compiled else quality.citation_payload() if quality is not None else [],
         evidence_items=ledger.evidence_payload(),
         counterpoints=list(quality.counterpoints) if quality is not None else [],
         quality_warnings=["Interpretations remain unreviewed; question coverage is model reported."] if compiled else

@@ -5,11 +5,21 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, NotRequired, TypedDict
 
 if TYPE_CHECKING:
     from codey.research.ledger import OpenedSource, ResearchLedger
     from codey.research.source_document import SourceDocument
+
+
+class PassageDescriptor(TypedDict):
+    """Wire locator into a validated source receipt, in Unicode code points."""
+
+    ref: str
+    start: int
+    end: int
+    source_version: NotRequired[tuple[str, int]]
+    evidence_version: NotRequired[tuple[str, int]]
 
 
 @dataclass(frozen=True)
@@ -32,14 +42,18 @@ class ReadPassage:
         return next((number for number, start, end in page_body_ranges(self.source_text, self.pages)
                      if start <= self.start < self.end <= end), None)
 
-    def descriptor(self) -> dict[str, Any]:
-        return {"ref": self.ref, "start": self.start, "end": self.end,
-                **({"source_version": list(self.source_version)} if self.source_version else {}),
-                **({"evidence_version": list(self.evidence_version)} if self.evidence_version else {})}
+    def descriptor(self) -> PassageDescriptor:
+        row = PassageDescriptor(ref=self.ref, start=self.start, end=self.end)
+        if self.source_version is not None:
+            row["source_version"] = self.source_version
+        if self.evidence_version is not None:
+            row["evidence_version"] = self.evidence_version
+        return row
 
 
 def passage_ref(url: str, text_hash: str, start: int, end: int, *,
-                source_version: Any = None, evidence_version: Any = None) -> str:
+                source_version: tuple[str, int] | None = None,
+                evidence_version: tuple[str, int] | None = None) -> str:
     from codey.knowledge.model import canonical_json
 
     pin = "\n" + canonical_json([source_version, evidence_version]) if source_version else ""
@@ -64,7 +78,7 @@ def preceding_context_offset(text: str, offset: int) -> int:
     return 0 if lower == 0 else offset
 
 
-def describe_window(url: str, text_hash: str, text: str, offset: int, limit: int) -> list[dict[str, Any]]:
+def describe_window(url: str, text_hash: str, text: str, offset: int, limit: int) -> list[PassageDescriptor]:
     """Split a visible window at paragraph boundaries, preserving exact substrings."""
     end = min(len(text), offset + limit)
     if end < len(text):
@@ -73,7 +87,7 @@ def describe_window(url: str, text_hash: str, text: str, offset: int, limit: int
         boundaries = list(_SENTENCE_END.finditer(text, offset, end))
         if boundaries:
             end = boundaries[-1].end()
-    rows = []
+    rows: list[PassageDescriptor] = []
     start = min(offset, len(text))
     while start < end:
         stop = min(end, start + 1000)
@@ -107,7 +121,7 @@ def page_body_ranges(text: str, pages: tuple[tuple[int, str], ...]) -> list[tupl
 
 
 def describe_document_window(document: SourceDocument, text_hash: str, offset: int, limit: int, *,
-                             coherent: bool = False) -> list[dict[str, Any]]:
+                             coherent: bool = False) -> list[PassageDescriptor]:
     """PDF passages select exact page bodies, excluding generated page labels.
 
     Keep coordinates in the original document so receipt restoration still
@@ -118,7 +132,7 @@ def describe_document_window(document: SourceDocument, text_hash: str, offset: i
     if document.content_kind != "pdf":
         return describe(document.final_url, text_hash, document.text, offset, limit)
     end = min(len(document.text), offset + limit)
-    rows = []
+    rows: list[PassageDescriptor] = []
     pages = tuple((page.number, page.text) for page in document.page_texts)
     for _number, start, stop in page_body_ranges(document.text, pages):
         visible_start, visible_end = max(offset, start), min(end, stop)
@@ -128,7 +142,7 @@ def describe_document_window(document: SourceDocument, text_hash: str, offset: i
     return rows
 
 
-def describe_section_window(url: str, text_hash: str, text: str, offset: int, limit: int) -> list[dict[str, Any]]:
+def describe_section_window(url: str, text_hash: str, text: str, offset: int, limit: int) -> list[PassageDescriptor]:
     """Keep a displayed section together; never extend the actual read window.
 
     The original receipt still owns exact source offsets. This is structural
@@ -140,7 +154,7 @@ def describe_section_window(url: str, text_hash: str, text: str, offset: int, li
     start, end = original[0]["start"], original[-1]["end"]
     boundaries = [start, *(match.start() for match in re.finditer(r"(?m)^#{1,6} .+$", text)
                            if start < match.start() < end), end]
-    rows = []
+    rows: list[PassageDescriptor] = []
     for begin, stop in zip(boundaries, boundaries[1:], strict=False):
         if not text[begin:stop].strip():
             continue
@@ -149,7 +163,7 @@ def describe_section_window(url: str, text_hash: str, text: str, offset: int, li
     return rows
 
 
-def render_passage_window(document: SourceDocument, rows: list[dict[str, Any]]) -> str:
+def render_passage_window(document: SourceDocument, rows: list[PassageDescriptor]) -> str:
     """Show PDF page labels as metadata outside the selected original excerpt."""
     ranges = page_body_ranges(document.text, tuple((page.number, page.text) for page in document.page_texts))
     return "\n".join(

@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from codey.research.report_proposal import CharacterContribution
+
+from codey.reviews.research_coverage import CoverageRow
 
 _BOUNDARY = re.compile(r"[\n,;!?\u3002\uff0c\uff1b\uff01\uff1f]+|\.(?=\s|$)")
 _LEGACY_SENTENCE_BOUNDARY = re.compile(r"[\n!?\u3002\uff01\uff1f]+|\.(?=\s|$)")
@@ -88,7 +94,7 @@ def conclusion_characters(conclusion: str) -> int:
 
 
 def validate_report_requirements(conclusion: str, task: str, *, from_findings: bool = False,
-                                 contributions: tuple[dict[str, Any], ...] = ()) -> None:
+                                 contributions: tuple[CharacterContribution, ...] = ()) -> None:
     """Check canonical conclusion once, before any report views are published."""
     from codey.research.issues import ResearchIssue
 
@@ -118,7 +124,7 @@ def validate_report_requirements(conclusion: str, task: str, *, from_findings: b
                     allowed_actions=("read exact original passages", "save supported replacement in requested language"))
 
 
-def validate_task_accounting(coverage: list[dict[str, Any]], task: str) -> None:
+def validate_task_accounting(coverage: Sequence[CoverageRow], task: str) -> None:
     """Check explicit accounting, never whether an answer means what it claims."""
     original = {row["task_ref"] for row in task_requirements(task)}
     expected = {row["task_ref"] for row in coverage_requirements(task)}

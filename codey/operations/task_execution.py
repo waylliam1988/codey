@@ -21,7 +21,8 @@ from codey.runtime.core.models import ToolCall, ToolResult
 
 if TYPE_CHECKING:
     from codey.agents.tools import AgentToolFns
-    from codey.research.tools import ResearchTools
+    from codey.research.receipt_types import SourceSearchObservation
+from codey.research.tools import ResearchTools
 
 
 def close_research_tools(tools: Any) -> None:
@@ -754,7 +755,7 @@ class ExecutionDelegate:
             return str((getattr(session, "hit_targets", {}) or {}).get(rid, {}).get("url", "") or "")
         return str(results.get(rid, "") or sources.get(rid, "") or "")
 
-    def _build_hit_mapping(self, observation: dict[str, Any]) -> tuple[str, dict[str, dict[str, object]]]:
+    def _build_hit_mapping(self, observation: SourceSearchObservation) -> tuple[str, dict[str, dict[str, object]]]:
         """Build hit text plus its mapping without touching the session.
 
         IDs consider both the live session mapping and the current batch so

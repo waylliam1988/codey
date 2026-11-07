@@ -9,7 +9,8 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+
+from codey.types.json_value import JsonValue, ToolArgs
 
 _DRIVE_PATH_RE = re.compile(r"^[A-Za-z]:")
 
@@ -29,7 +30,7 @@ class ToolArgLimits:
 
 @dataclass(frozen=True)
 class ToolArgsRepairResult:
-    args: dict[str, Any]
+    args: ToolArgs
     alias_rewrite_count: int = 0
     arg_repair_counts: dict[str, int] = field(default_factory=dict)
 
@@ -47,7 +48,7 @@ def _record_repair(counts: dict[str, int], kind: str) -> None:
 
 
 def _reject_unknown_args(
-    args: Mapping[str, Any],
+    args: Mapping[str, JsonValue],
     allowed_keys: set[str],
     *,
     context: str,
@@ -115,7 +116,7 @@ def _normalize_path(
 
 
 def _resolve_path_arg(
-    args: Mapping[str, Any],
+    args: Mapping[str, JsonValue],
     *,
     default_path: str | None = None,
     missing_msg: str | None = None,
@@ -131,6 +132,7 @@ def _resolve_path_arg(
     counts: dict[str, int] = {}
     rewrites = 0
 
+    raw_path: JsonValue
     if not present:
         if default_path is not None:
             raw_path = default_path
@@ -153,7 +155,7 @@ def _resolve_path_arg(
 
 
 def _require_text_arg(
-    args: Mapping[str, Any],
+    args: Mapping[str, JsonValue],
     keys: tuple[str, ...],
     semantic_name: str,
     *,
@@ -270,14 +272,14 @@ def _bounded_nonnegative_int(value: object, name: str, maximum: int | None = Non
 
 
 def _normalize_edit(
-    args: Mapping[str, Any],
+    args: Mapping[str, JsonValue],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
     _reject_unknown_args(args, {"path", "cwd", "content", "replacements", "base_result_ref"}, context="edit")
     norm_path, rewrites, counts = _resolve_path_arg(
         args, missing_msg="edit requires a top-level path and can only edit one file",
     )
-    call_args: dict[str, Any] = {"path": norm_path}
+    call_args: ToolArgs = {"path": norm_path}
     if ("content" in args) == ("replacements" in args):
         raise ToolArgsRepairError("edit requires exactly one mode: content or replacements", repair_kind="invalid_args")
     if "content" in args:
@@ -298,7 +300,7 @@ def _normalize_edit(
             raise ToolArgsRepairError("edit replacements must be a non-empty list", repair_kind="invalid_args")
         if len(replacements) > limits.max_replacements:
             raise ToolArgsRepairError(f"edit supports at most {limits.max_replacements} replacements", repair_kind="invalid_args")
-        normalized: list[dict[str, str]] = []
+        normalized: list[JsonValue] = []
         for item in replacements:
             if not isinstance(item, dict):
                 raise ToolArgsRepairError("every edit replacement must be an object", repair_kind="invalid_args")
@@ -316,7 +318,7 @@ def _normalize_edit(
 
 
 def _normalize_read(
-    args: Mapping[str, Any],
+    args: Mapping[str, JsonValue],
     limits: ToolArgLimits,
 ) -> ToolArgsRepairResult:
     _reject_unknown_args(args, {"path", "cwd", "offset", "limit"}, context="read")
@@ -324,7 +326,7 @@ def _normalize_read(
         args,
         missing_msg="read requires a path",
     )
-    call_args: dict[str, Any] = {"path": norm_path}
+    call_args: ToolArgs = {"path": norm_path}
 
     if "offset" in args:
         offset, coerced = _bounded_positive_int(args.get("offset"), "offset")
@@ -351,7 +353,7 @@ def _normalize_read(
     )
 
 
-def _normalize_ls(args: Mapping[str, Any]) -> ToolArgsRepairResult:
+def _normalize_ls(args: Mapping[str, JsonValue]) -> ToolArgsRepairResult:
     _reject_unknown_args(args, {"path", "cwd"}, context="list_dir")
     norm_path, rewrites, counts = _resolve_path_arg(args, default_path=".")
     return ToolArgsRepairResult(
@@ -361,7 +363,7 @@ def _normalize_ls(args: Mapping[str, Any]) -> ToolArgsRepairResult:
     )
 
 
-def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
+def _normalize_search(args: Mapping[str, JsonValue]) -> ToolArgsRepairResult:
     # Mirrors codey.toolchain.constants.SEARCH_PAGE_MAX_RESULTS (100). The
     # constant lives in constants.py so runtime.py can share it, but this
     # module must stay import-free of sibling subpackages (purity boundary).
@@ -384,7 +386,7 @@ def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
     for k, v in path_counts.items():
         counts[k] = counts.get(k, 0) + v
 
-    call_args: dict[str, Any] = {"query": query_val, "path": norm_path}
+    call_args: ToolArgs = {"query": query_val, "path": norm_path}
     for key in ("literal", "case_sensitive"):
         if key in args:
             if type(args[key]) is not bool:
@@ -425,7 +427,7 @@ def _normalize_search(args: Mapping[str, Any]) -> ToolArgsRepairResult:
     )
 
 
-def _normalize_references(args: Mapping[str, Any]) -> ToolArgsRepairResult:
+def _normalize_references(args: Mapping[str, JsonValue]) -> ToolArgsRepairResult:
     _reject_unknown_args(args, {*REFERENCES_SYMBOL_KEYS, *PATH_ARG_KEYS}, context="find_references")
     symbol_val, symbol_alias = _require_text_arg(
         args,
@@ -454,7 +456,7 @@ def _normalize_references(args: Mapping[str, Any]) -> ToolArgsRepairResult:
 
 def _normalize_run_shell(
     tool_name: str,
-    args: Mapping[str, Any],
+    args: Mapping[str, JsonValue],
 ) -> ToolArgsRepairResult:
     _reject_unknown_args(args, {*COMMAND_KEYS, *PATH_ARG_KEYS}, context=tool_name)
     cmd_val, cmd_alias = _require_text_arg(
@@ -484,7 +486,7 @@ def _normalize_run_shell(
 
 def normalize_tool_args(
     tool_name: str,
-    args: Mapping[str, Any],
+    args: Mapping[str, JsonValue],
     *,
     limits: ToolArgLimits | None = None,
 ) -> ToolArgsRepairResult:

@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+from codey.research.knowledge_update_types import KnowledgeUpdate, MutationPayload, UpdateReference
+from codey.research.tool_args import decode_conditions
+from codey.types.json_value import JsonObject, canonical_json_object
+
+if TYPE_CHECKING:
+    from codey.research.report_values import EvidenceBinding
 
 from codey.knowledge.archive import stable_identity
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
@@ -21,7 +29,7 @@ _RELATIONS = {"claim": {"supported_by", "limited_by", "refuted_by"},
 _DEFAULT_RELATION = {"claim": "supported_by", "inference": "depends_on", "question": "motivated_by"}
 
 
-def updates_schema() -> dict[str, Any]:
+def updates_schema() -> JsonObject:
     return {"type": "array", "maxItems": MAX_UPDATES, "items": object_schema({
         "key": {"type": "string", "pattern": f"^{_KEY_PATTERN}$",
                 "description": "Unique batch-local key, e.g. k1 or writer_limit. Evidence labels eN are reserved."},
@@ -37,12 +45,12 @@ def updates_schema() -> dict[str, Any]:
     }, "key", "kind", "content", "references")}
 
 
-def _refs_schema(description: str) -> dict[str, Any]:
+def _refs_schema(description: str) -> JsonObject:
     return {"type": "array", "maxItems": 16, "description": description,
             "items": {"type": "string", "pattern": f"^{_REF_PATTERN}$"}}
 
 
-def _normalize_references(raw: Any, kind: str) -> list[dict[str, str]]:
+def _normalize_references(raw: object, kind: str) -> list[UpdateReference]:
     if not isinstance(raw, list) or len(raw) > 16:
         raise ValueError("knowledge update references must be a list of at most 16 evidence or batch keys")
     # The public contract uses strings. Exact relation objects remain readable
@@ -57,7 +65,7 @@ def _normalize_references(raw: Any, kind: str) -> list[dict[str, str]]:
              "relation": ref["relation"]} for ref in refs]
 
 
-def _normalize_update(row: Any) -> dict[str, Any]:
+def _normalize_update(row: object) -> KnowledgeUpdate:
     required = {"key", "kind", "content", "references"}
     if (not isinstance(row, dict) or not required <= row.keys()
             or row.keys() - required - {"title", "aliases", "conditions", "limited_by", "refuted_by"}):
@@ -73,7 +81,7 @@ def _normalize_update(row: Any) -> dict[str, Any]:
             or any(not isinstance(alias, str) or not 1 <= len(alias.strip()) <= 200 for alias in aliases)):
         raise ValueError("knowledge_updates title/aliases exceed their bounds")
     KnowledgeObject(key, kind, content.strip(), "model_extraction" if kind == "claim" else "model_inference",
-                    title=title, aliases=tuple(aliases), conditions=conditions)
+                    title=title, aliases=tuple(aliases), conditions=decode_conditions(conditions) or {})
     refs = _normalize_references(row["references"], kind)
     for relation in ("limited_by", "refuted_by"):
         extra = row.get(relation, [])
@@ -90,10 +98,10 @@ def _normalize_update(row: Any) -> dict[str, Any]:
     if kind == "inference" and not refs:
         raise ValueError("new inferences require pinned premises")
     return {"key": key, "kind": kind, "content": content.strip(), "title": title,
-            "aliases": aliases, "conditions": conditions, "references": refs}
+            "aliases": aliases, "conditions": decode_conditions(conditions) or {}, "references": refs}
 
 
-def normalize_updates(raw: Any, labels: set[str]) -> list[dict[str, Any]]:
+def normalize_updates(raw: object, labels: set[str]) -> list[KnowledgeUpdate]:
     if not isinstance(raw, list) or len(raw) > MAX_UPDATES:
         raise ValueError(f"knowledge_updates must be a list of at most {MAX_UPDATES} explicit entries")
     rows = [_normalize_update(row) for row in raw]
@@ -114,7 +122,7 @@ def normalize_updates(raw: Any, labels: set[str]) -> list[dict[str, Any]]:
     return rows
 
 
-def _check_cycles(rows: dict[str, dict[str, Any]]) -> None:
+def _check_cycles(rows: dict[str, KnowledgeUpdate]) -> None:
     visiting: set[str] = set()
     visited: set[str] = set()
 
@@ -134,19 +142,19 @@ def _check_cycles(rows: dict[str, dict[str, Any]]) -> None:
         visit(key)
 
 
-def evidence_labels(updates: list[dict[str, Any]]) -> list[str]:
+def evidence_labels(updates: Sequence[KnowledgeUpdate]) -> list[str]:
     return list(dict.fromkeys(ref["ref"] for row in updates for ref in row["references"]
                              if _EVIDENCE_LABEL.fullmatch(ref["ref"])))
 
 
-def compile_updates(updates: list[dict[str, Any]], evidence: Any, *, scope: str, owner: str,
-                    namespace: str, submission_digest: str) -> list[dict[str, Any]]:
+def compile_updates(updates: list[KnowledgeUpdate], evidence: Sequence[EvidenceBinding], *, scope: str, owner: str,
+                    namespace: str, submission_digest: str) -> list[MutationPayload]:
     """No writes, model calls or current-head resolution; all objects remain candidates."""
     bindings = {row["label"]: (row["evidence_id"], row["evidence_revision"]) for row in evidence}
     updates = normalize_updates(updates, set(bindings))
     targets = {row["key"]: (stable_identity(row["kind"], scope, owner, namespace, row["key"]), 1) for row in updates}
     targets.update(bindings)
-    mutations = []
+    mutations: list[MutationPayload] = []
     for row in updates:
         value = KnowledgeObject(targets[row["key"]][0], row["kind"], row["content"],
             "model_extraction" if row["kind"] == "claim" else "model_inference", title=row["title"],
@@ -154,5 +162,5 @@ def compile_updates(updates: list[dict[str, Any]], evidence: Any, *, scope: str,
             provenance={"basis": "explicit_research_update", "submission_digest": submission_digest, "key": row["key"]},
             references=tuple(KnowledgeReference(*targets[ref["ref"]], ref["relation"]) for ref in row["references"]))
         mutation = KnowledgeMutation(value)
-        mutations.append({"value": mutation.value.to_dict(), "expected_revision": mutation.expected_revision})
+        mutations.append({"value": canonical_json_object(mutation.value.to_dict()), "expected_revision": mutation.expected_revision})
     return mutations

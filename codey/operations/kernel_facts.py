@@ -21,7 +21,7 @@ from codey.research.ledger_receipts import (
 from codey.runtime.core.execution_record import ExecutionRecord, HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import canonical_tool_name
-from codey.types.json_value import ToolArgs, canonical_json_object
+from codey.types.json_value import ToolArgs, canonical_json_object, require_json_string
 
 __all__ = [
     "record_facts_for_result",
@@ -56,8 +56,8 @@ def project_result_observation(
         if not isinstance(passages, list):
             raise ValueError("investigation read passages must be an array")
         research_ledger.investigations[ref] = {"tool": call.name, "ok": ok,
-            "question_ref": call.args.get("question_ref", ""), "args": dict(call.args or {}),
-            "passage_refs": [row["ref"] for row in passages] if ok else []}
+            "question_ref": require_json_string(call.args.get("question_ref", ""), "question_ref"), "args": dict(call.args or {}),
+            "passage_refs": [require_json_string(row.get("ref"), "passage ref") for row in passages if isinstance(row, dict)] if ok else []}
     record_facts_for_result(session, call, result, ok=ok, exit_code=exit_code)
 
 

@@ -2,18 +2,37 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING
+
+from codey.knowledge.model import KnowledgeVersion
+from codey.knowledge.store import KnowledgeStore
+from codey.research.answer_values import AnswerSubmission
+from codey.research.ledger import ResearchLedger
+from codey.research.staging import StagedKnowledgeStore
+from codey.types.json_value import JsonObject, canonical_json_object
+
+if TYPE_CHECKING:
+    from codey.research.answer_report import AnswerReport
 
 from codey.knowledge.archive import stable_identity
 from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, KnowledgeReference
 from codey.research.answer_contract import digest
+from codey.research.knowledge_update_types import MutationPayload
 from codey.research.knowledge_updates import evidence_labels
 from codey.research.passages import passage_ref
+from codey.research.report_values import (
+    EvidenceBinding,
+    SourceVersion,
+    evidence_binding,
+    mutation_payload,
+    source_version,
+)
 
 
-def archive_scope(store: Any, *, project: str, session_id: str,
-                  versions: Any = ()) -> tuple[str, str]:
+def archive_scope(store: KnowledgeStore | StagedKnowledgeStore, *, project: str, session_id: str,
+                  versions: Sequence[KnowledgeVersion | None] = ()) -> tuple[str, str]:
     """Inherit restricted material; otherwise retain research for its owner.
 
     A session is provenance, not the default owner of durable research. Explicit
@@ -33,8 +52,8 @@ def archive_scope(store: Any, *, project: str, session_id: str,
         ("project", project) if project else ("personal", store.owner_id))
 
 
-def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, project: str,
-                     session_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+def prepare_evidence(submission: AnswerSubmission, ledger: ResearchLedger, store: KnowledgeStore | StagedKnowledgeStore, *, project: str,
+                     session_id: str) -> tuple[list[MutationPayload], list[SourceVersion], list[EvidenceBinding]]:
     """No writes. Select only inline citations and explicitly authored updates.
 
     Use each immutable ReadPassage, never the ledger's latest view of its URL.
@@ -49,8 +68,8 @@ def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, pro
                 for pin in (passage.source_version, passage.evidence_version) if pin is not None]
     scope, owner = archive_scope(store, project=project, session_id=session_id, versions=versions)
     mutations: dict[str, KnowledgeMutation] = {}
-    sources: dict[tuple[str, int], dict[str, Any]] = {}
-    bindings = []
+    sources: dict[tuple[str, int], SourceVersion] = {}
+    bindings: list[EvidenceBinding] = []
 
     def pinned(value: KnowledgeObject) -> KnowledgeReference:
         old = store.repository.read(value.id)
@@ -87,10 +106,10 @@ def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, pro
         else:
             source_ref = pinned(value)
         old = store.repository.read(source_id, source_ref.revision)
-        sources[source_id, source_ref.revision] = {"id": source_id, "revision": source_ref.revision, "url": source.final_url,
+        sources[source_id, source_ref.revision] = source_version({"id": source_id, "revision": source_ref.revision, "url": source.final_url,
             "title": source.title, "content_hash": source.text_hash,
             "retrieved_at": old.value.provenance.get("retrieved_at", source.retrieved_at) if old else source.retrieved_at,
-            "quality": source.quality.to_dict()}
+            "quality": source.quality.to_dict()})
         locator = "passage:" + ref
         evidence_id = stable_identity("evidence", source_id, passage.excerpt, str(passage.page), locator)
         evidence = KnowledgeObject(evidence_id, "evidence", passage.excerpt, "observed_result", title=source.title,
@@ -112,22 +131,22 @@ def prepare_evidence(submission: dict[str, Any], ledger: Any, store: Any, *, pro
             "locator": locator, "start": passage.start, "end": passage.end, "relation": "uses"})
     if len(mutations) >= 128:
         raise ValueError("selected evidence exceeds the original publication transaction budget")
-    return ([{"value": row.value.to_dict(), "expected_revision": row.expected_revision} for row in mutations.values()],
-            list(sources.values()), bindings)
+    return ([mutation_payload({"value": row.value.to_dict(), "expected_revision": row.expected_revision}) for row in mutations.values()],
+            [source_version(row) for row in sources.values()], [evidence_binding(row) for row in bindings])
 
 
-def prepared_scope(mutations: Any, evidence: Any, store: Any, *, project: str, session_id: str) -> tuple[str, str]:
+def prepared_scope(mutations: Sequence[MutationPayload], evidence: Sequence[EvidenceBinding], store: KnowledgeStore | StagedKnowledgeStore, *, project: str, session_id: str) -> tuple[str, str]:
     from codey.knowledge.model import KnowledgeVersion
 
-    pending = {row["value"]["id"]: KnowledgeObject.from_dict(row["value"]) for row in mutations}
+    pending = {value.id: value for row in mutations for value in (KnowledgeObject.from_dict(row["value"]),)}
     versions = [KnowledgeVersion(pending[row["evidence_id"]], row["evidence_revision"], "", "")
                 if row["evidence_id"] in pending else store.repository.read(row["evidence_id"], row["evidence_revision"])
                 for row in evidence]
     return archive_scope(store, project=project, session_id=session_id, versions=versions)
 
 
-def publication_command(report: Any, *, task: str, run_id: str, projection: str,
-                        note_id: str, session_id: str, project: str, store: Any) -> dict[str, Any]:
+def publication_command(report: AnswerReport, *, task: str, run_id: str, projection: str,
+                        note_id: str, session_id: str, project: str, store: KnowledgeStore | StagedKnowledgeStore) -> JsonObject:
     """The original publication command owns all writes, including its one answer."""
     from dataclasses import asdict
 
@@ -160,5 +179,5 @@ def publication_command(report: Any, *, task: str, run_id: str, projection: str,
             "citation_bindings": list(report.citation_bindings), "evidence_bindings": list(report.evidence_bindings),
             "source_versions": list(report.source_versions), "attempt_refs": list(report.attempt_refs),
             "selection_receipts": list(report.selection_receipts)})
-    return {"schema": 1, "note": asdict(note), "commit_id": stable_identity("answer-commit", run_id, projection),
-            "mutations": [*report.knowledge_mutations, {"value": answer.to_dict(), "expected_revision": 0}]}
+    return canonical_json_object({"schema": 1, "note": asdict(note), "commit_id": stable_identity("answer-commit", run_id, projection),
+            "mutations": [*report.knowledge_mutations, {"value": answer.to_dict(), "expected_revision": 0}]})

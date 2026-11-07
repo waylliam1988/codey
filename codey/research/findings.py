@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import hashlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from codey.knowledge.model import canonical_json
 from codey.research.ledger import EvidenceItem, ResearchLedger
+from codey.types.json_value import ToolArgs, canonical_json_object, require_json_string
 
 if TYPE_CHECKING:
     from codey.research.tools import ResearchToolOutput, ResearchTools
 
 
-def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutput:
+def save_finding(tools: ResearchTools, args: ToolArgs) -> ResearchToolOutput:
     from codey.research.tools import ResearchToolOutput
 
     try:
@@ -35,12 +36,14 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                              "Available raw ids (no square brackets): " + ", ".join(list(tools.ledger.read_passages)[-12:]))
         if "source_ref" in args and args["source_ref"] != passage.source.final_url:
             raise ValueError("source_ref and passage_ref refer to different sources; nothing saved")
+        ref = passage.ref
         extra = args.get("additional_passage_refs", [])
         if (not isinstance(extra, list) or len(extra) > 3 or any(not isinstance(row, str) for row in extra)
                 or len(set([ref, *extra])) != 1 + len(extra)):
             raise ValueError("additional_passage_refs requires up to 3 distinct raw passage ids")
+        additional_refs = [require_json_string(row, "additional_passage_refs") for row in extra]
         passages = [passage]
-        for identity in extra:
+        for identity in additional_refs:
             other = tools.ledger.read_passages.get(identity)
             if (other is None or (other.source.final_url, other.source.text_hash, other.source_text)
                     != (passage.source.final_url, passage.source.text_hash, passage.source_text)):
@@ -55,10 +58,10 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                 raise ValueError("comparison requires subject, factor, comparator, endpoint, direction and uncertainty; use unknown when absent")
             for name, value in comparison.items():
                 conditions[f"comparison_{name}"] = {"state": "not_extracted"} if value == "unknown" else {
-                    "state": "reported", "value": value}
+                    "state": "reported", "value": require_json_string(value, name)}
         digest = hashlib.sha256(canonical_json({"session": tools.session_id, "project": tools.project,
-            "claim": claim, "passage": ref, **({"additional_passages": extra} if extra else {}),
-            "conditions": conditions}).encode()).hexdigest()
+            "claim": claim, "passage": ref, **({"additional_passages": additional_refs} if additional_refs else {}),
+            "conditions": canonical_json_object(conditions)}).encode()).hexdigest()
         identity = "finding-" + digest[:16]
         if tools.store is None:
             raise ValueError("knowledge store is unavailable")
@@ -82,7 +85,7 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                     tools.ledger.add_evidence_items([item])
             if identity not in tools.created_ids and identity not in tools.updated_ids:
                 tools.updated_ids.append(identity)
-            return _saved(tools, identity, claim, ref, extra, question)
+            return _saved(tools, identity, claim, ref, additional_refs, question)
         # New writes must not introduce version literals outside their excerpts.
         # A previously committed transaction is recovered above without rewriting
         # history; new report selections validate its literals again on adoption.
@@ -90,8 +93,8 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
 
         validate_version_literals(claim, [selected.excerpt for selected in passages])
         # A retry reuses the same exact input identity; no fuzzy deduplication.
-        lowered: dict[str, Any] = {"type": "fact", "title": claim[:160], "body": claim,
-            "sources": [passage.source.final_url], "conditions": conditions,
+        lowered: ToolArgs = {"type": "fact", "title": claim[:160], "body": claim,
+            "sources": [passage.source.final_url], "conditions": canonical_json_object(conditions),
             "evidence": [{"claim": claim, "source_url": passage.source.final_url,
                           "excerpt": selected.excerpt.strip(), "stance": "supports",
                           "page": selected.page} for selected in passages]}
@@ -105,7 +108,7 @@ def save_finding(tools: ResearchTools, args: dict[str, Any]) -> ResearchToolOutp
                                         evidence_context=frozen)
         if not outcome.ok:
             return outcome
-        return _saved(tools, identity, claim, ref, extra, question)
+        return _saved(tools, identity, claim, ref, additional_refs, question)
     except (ValueError, TypeError, KeyError) as exc:
         return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
@@ -117,6 +120,8 @@ def _saved(tools: ResearchTools, identity: str, claim: str, ref: object, extra: 
     from codey.research.task_requirements import conclusion_characters
     from codey.research.tools import ResearchToolOutput
 
+    if tools.store is None:
+        raise ValueError("saved finding requires its knowledge store")
     version = read_version(tools.store, stable_identity("claim", identity, claim))
     if version is None:
         raise ValueError("saved finding has no exact claim version")

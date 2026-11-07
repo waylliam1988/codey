@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from codey.knowledge.concept_schema import clean_relations
+from codey.knowledge.concept_schema import ConceptRelation, clean_relations
 from codey.policies.prompt_safety import is_prompt_visible_text_safe
 
 
@@ -98,7 +98,7 @@ class KnowledgeNote:
     tags: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
-    relations: list[dict[str, Any]] = field(default_factory=list)
+    relations: list[ConceptRelation] = field(default_factory=list)
     open_questions: list[str] = field(default_factory=list)
     confidence: float | None = None
     status: str = "active"
@@ -201,7 +201,7 @@ class KnowledgeNote:
             tags=[str(t) for t in (meta.get("tags") or [])],
             sources=[str(s) for s in (meta.get("sources") or [])],
             aliases=[str(a) for a in (meta.get("aliases") or [])],
-            relations=[r for r in (meta.get("relations") or []) if isinstance(r, dict)],
+            relations=clean_relations(meta.get("relations"))[0],
             open_questions=clean_open_questions(meta.get("open_questions") or []),
             confidence=_as_float(meta.get("confidence")),
             status=str(meta.get("status") or "active"),

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from codey.knowledge.answer_refs import answer_scope
 from codey.knowledge.archive import stable_identity
@@ -16,20 +16,21 @@ from codey.knowledge.model import (
 )
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.recall import KnowledgeAccess
+from codey.knowledge.store import KnowledgeStore
 from codey.research.ledger import ResearchLedger
 from codey.research.reference import ResearchReference
+from codey.research.staging import StagedKnowledgeStore
+from codey.types.json_value import ToolArgs, require_json_string
 
 if TYPE_CHECKING:
-    from codey.research.tools import ResearchToolOutput
+    from codey.research.tools import ResearchToolOutput, ResearchTools
 
 
-def read_version(store: Any, identity: str, revision: int | None = None) -> KnowledgeVersion | None:
+def read_version(store: KnowledgeStore | StagedKnowledgeStore, identity: str, revision: int | None = None) -> KnowledgeVersion | None:
     """Read a staged mutation at its exact prospective version, or the repository."""
-    for _commit, mutations in getattr(store, "_staged_knowledge", {}).values():
-        for mutation in mutations:
-            if mutation.value.id == identity and revision in {None, mutation.expected_revision + 1}:
-                return KnowledgeVersion(mutation.value, mutation.expected_revision + 1, "", _commit)
-    return cast(KnowledgeVersion | None, store.repository.read(identity, revision))
+    if isinstance(store, StagedKnowledgeStore):
+        return store.read_version(identity, revision)
+    return store.repository.read(identity, revision)
 
 
 def bind_version(ledger: ResearchLedger, version: KnowledgeVersion, *, acquisition: str = "prior_knowledge",
@@ -62,7 +63,7 @@ def restore_bindings(ledger: ResearchLedger, raw: object) -> None:
     ledger.references = pending
 
 
-def resolve_version(ledger: ResearchLedger, store: Any, label: str) -> KnowledgeVersion:
+def resolve_version(ledger: ResearchLedger, store: KnowledgeStore | StagedKnowledgeStore, label: str) -> KnowledgeVersion:
     binding = ledger.references.get(label)
     version = read_version(store, binding.object_id, binding.revision) if binding else None
     if version is None or binding is None or version.value.kind != binding.kind:
@@ -70,8 +71,8 @@ def resolve_version(ledger: ResearchLedger, store: Any, label: str) -> Knowledge
     return version
 
 
-def save_inference(tools: Any, args: dict[str, Any]) -> ResearchToolOutput:
-    from codey.research.tools import ResearchToolOutput
+def save_inference(tools: ResearchTools, args: ToolArgs) -> ResearchToolOutput:
+    from codey.research.tools import ResearchToolOutput, _base_changes
 
     try:
         from codey.research.questions import question_ref
@@ -83,10 +84,11 @@ def save_inference(tools: Any, args: dict[str, Any]) -> ResearchToolOutput:
                 or not isinstance(labels, list) or not 1 <= len(labels) <= 16
                 or any(not isinstance(label, str) for label in labels) or len(set(labels)) != len(labels)):
             raise ValueError("save_inference needs statement (12..4000 characters), premise_refs (1..16 distinct fN), limitations")
+        premise_labels = [require_json_string(label, "premise_refs") for label in labels]
         if tools.store is None:
             raise ValueError("knowledge store is unavailable")
-        versions = [resolve_version(tools.ledger, tools.store, label) for label in labels]
-        if question and any(tools.ledger.references[label].question_ref != question for label in labels):
+        versions = [resolve_version(tools.ledger, tools.store, label) for label in premise_labels]
+        if question and any(tools.ledger.references[label].question_ref != question for label in premise_labels):
             raise ValueError("premise belongs to another question; read it explicitly for this question before inferring")
         access = KnowledgeAccess(tools.project, tools.session_id, tools.store.owner_id)
         if any(not access.allows(version) for version in versions):
@@ -106,7 +108,7 @@ def save_inference(tools: Any, args: dict[str, Any]) -> ResearchToolOutput:
             note = KnowledgeNote.create(type="hypothesis", title=value.title, body=value.content,
                 session_id=tools.session_id, project=tools.project, id=identity)
             tools.store.publish_note(note, stable_identity("inference-commit", identity),
-                                     [KnowledgeMutation(value)], changes=tools.changes)
+                                     [KnowledgeMutation(value)], changes=_base_changes(tools.changes))
             if identity not in tools.created_ids:
                 tools.created_ids.append(identity)
         version = read_version(tools.store, identity)
@@ -114,7 +116,7 @@ def save_inference(tools: Any, args: dict[str, Any]) -> ResearchToolOutput:
         label = bind_version(tools.ledger, version, acquisition="current_run", note_id=identity, question_ref=question)
         return ResearchToolOutput(canonical_json({"finding_ref": label, "statement": value.content,
             "kind": "inference", "status": "candidate", "interpretation_review": "unreviewed",
-            "limitations": limitations, "premise_refs": labels,
+            "limitations": limitations, "premise_refs": premise_labels,
             "next": "This is a candidate inference, not direct evidence. Cite it explicitly as a hypothesis."}), ok=True)
     except (ValueError, TypeError, KeyError) as exc:
         return ResearchToolOutput(f"ERROR: {exc}", ok=False)

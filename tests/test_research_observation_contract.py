@@ -8,6 +8,7 @@ import pytest
 from codey.operations.kernel_facts import record_facts_for_result
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger, SearchRecord, SearchResultRecord
 from codey.research.ledger_receipts import ledger_observation, restore_ledger_observation
 from codey.research.tools import ResearchToolOutput
@@ -37,7 +38,7 @@ def source_receipt():
     ("open_hit", {"hit_id": "h1"}),
 ])
 def test_no_success_fact_can_be_reconstructed_from_display_parameters_or_aliases(name, args):
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(grants=frozenset()))
     session.search_results["r1"] = URL
     session.source_ids["s1"] = URL
     session.hit_targets["h1"] = {"url": URL, "offset": 0, "pages": ""}
@@ -51,7 +52,7 @@ def test_no_success_fact_can_be_reconstructed_from_display_parameters_or_aliases
 
 
 def test_redirect_and_query_facts_use_only_the_observed_identity():
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(grants=frozenset()))
     search = ToolCall("web_search", {"query": "different requested query"})
     record_facts_for_result(session, search, ToolResult(search, "https://invented.example/x", ok=True,
                             canonical={"research_observation": search_receipt()}), ok=True)
@@ -72,7 +73,7 @@ def test_redirect_and_query_facts_use_only_the_observed_identity():
 def test_zero_search_results_are_a_valid_observation_not_a_missing_receipt():
     observation = search_receipt()
     observation["search"]["results"] = []
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(grants=frozenset()))
     call = ToolCall("web_search", {"query": "q"})
     record_facts_for_result(session, call, ToolResult(call, "no results https://help.example/x", ok=True,
                             canonical={"research_observation": observation}), ok=True)
@@ -85,7 +86,7 @@ def test_zero_search_results_are_a_valid_observation_not_a_missing_receipt():
 
 @pytest.mark.parametrize("name", ["web_search", "open_url", "open_result", "open_hit", "reopen_source"])
 def test_failed_reads_never_publish_sources_even_with_success_shaped_payload(name):
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(grants=frozenset()))
     call = ToolCall(name, {"url": URL})
     record_facts_for_result(session, call, ToolResult(call, f"ERROR: see {URL}", ok=False,
                             canonical={"research_observation": source_receipt()}), ok=False)
@@ -101,7 +102,7 @@ def test_failed_reads_never_publish_sources_even_with_success_shaped_payload(nam
 def test_malformed_search_rejected_identically_without_partial_projection(field, value):
     observation = search_receipt()
     observation["search"][field] = value
-    session, ledger = TaskSession(policy=None), ResearchLedger()
+    session, ledger = TaskSession(policy=TaskPolicy(grants=frozenset())), ResearchLedger()
     call = ToolCall("web_search", {"query": "q"})
     with pytest.raises(ValueError):
         record_facts_for_result(session, call, ToolResult(call, URL, ok=True,
@@ -131,7 +132,7 @@ def test_malformed_source_body_and_pages_are_not_accepted(field, value):
 
 
 def _assert_source_rejected(observation):
-    session, ledger = TaskSession(policy=None), ResearchLedger()
+    session, ledger = TaskSession(policy=TaskPolicy(grants=frozenset())), ResearchLedger()
     call = ToolCall("open_url", {"url": URL})
     with pytest.raises(ValueError):
         record_facts_for_result(session, call, ToolResult(call, URL, ok=True,
@@ -147,7 +148,7 @@ def test_delegate_rejects_success_without_matching_observation(name):
                             web_search=lambda *a: ResearchToolOutput(URL, ok=True),
                             source_search=lambda *a: ResearchToolOutput("1. offset 7: text", ok=True),
                             open_url=lambda *a, **kw: ResearchToolOutput("body", ok=True))
-    result, ok, _ = ExecutionDelegate(session=TaskSession(policy=None), research_tools=tools)._execute_research(
+    result, ok, _ = ExecutionDelegate(session=TaskSession(policy=TaskPolicy(grants=frozenset())), research_tools=tools)._execute_research(
         ToolCall(name, {"url": URL, "query": "q"}))
     assert ok is False and result.ok is False
     assert "observation" in result.model_text and not result.canonical

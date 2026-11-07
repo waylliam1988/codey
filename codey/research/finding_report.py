@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 from dataclasses import asdict, dataclass
-from typing import Any
 
-from codey.knowledge.model import KnowledgeReference, canonical_json
+from codey.knowledge.model import canonical_json
+from codey.knowledge.store import KnowledgeStore
 from codey.research.answer_report import AnswerReport
 from codey.research.evidence_view import ResolvedReference, resolve_selected_references
 from codey.research.issues import ResearchIssue
@@ -20,41 +21,62 @@ from codey.research.report_proposal import (
     parse_report_proposal,
     report_character_budget,
 )
+from codey.research.report_values import (
+    EvidenceBinding,
+    FindingMetadata,
+    ParagraphBinding,
+    SourceVersion,
+    VersionReference,
+    evidence_binding,
+    finding_metadata,
+    object_rows,
+    paragraph_binding,
+    source_version,
+    strings,
+    version_reference,
+)
+from codey.research.staging import StagedKnowledgeStore
 from codey.reviews.report_sections import section_title
-from codey.reviews.research_coverage import coverage_rows, render_coverage
+from codey.reviews.research_coverage import CoverageRow, coverage_rows, render_coverage
+from codey.types.json_value import JsonObject, ToolArgs, canonical_json_object, require_json_string
 
 
-def _digest(value: Any) -> str:
+def _digest(value: object) -> str:
     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
 
 
 @dataclass(frozen=True)
 class FindingReport:
     text: str
-    knowledge_refs: tuple[dict[str, Any], ...]
+    knowledge_refs: tuple[VersionReference, ...]
     finding_ids: tuple[str, ...]
-    coverage: tuple[dict[str, Any], ...]
-    reference_metadata: dict[str, dict[str, Any]]
-    source_versions: tuple[dict[str, Any], ...]
-    paragraph_bindings: tuple[dict[str, Any], ...]
+    coverage: tuple[CoverageRow, ...]
+    reference_metadata: dict[str, FindingMetadata]
+    source_versions: tuple[SourceVersion, ...]
+    paragraph_bindings: tuple[ParagraphBinding, ...]
     proposal_digest: str
     questions: tuple[str, ...]
-    evidence_bindings: tuple[dict[str, Any], ...] = ()
+    evidence_bindings: tuple[EvidenceBinding, ...] = ()
     open_questions: tuple[str, ...] = ()
     selection_receipts: tuple[str, ...] = ()
 
-    def to_payload(self) -> dict[str, Any]:
-        payload = asdict(self)
+    def __post_init__(self) -> None:
+        """Own detached wire containers; frozen prevents rebinding, not nested mutation."""
+        object.__setattr__(self, "knowledge_refs", deepcopy(self.knowledge_refs))
+        object.__setattr__(self, "coverage", deepcopy(self.coverage))
+        object.__setattr__(self, "reference_metadata", deepcopy(self.reference_metadata))
+        object.__setattr__(self, "source_versions", deepcopy(self.source_versions))
+        object.__setattr__(self, "paragraph_bindings", deepcopy(self.paragraph_bindings))
+        object.__setattr__(self, "evidence_bindings", deepcopy(self.evidence_bindings))
+
+    def to_payload(self) -> JsonObject:
+        payload = canonical_json_object(asdict(self))
         if not self.selection_receipts:
             payload.pop("selection_receipts")
-        # Normalize tuples at the persistence boundary, then bind every field.
-        import json
-
-        payload = json.loads(canonical_json(payload))
         return {**payload, "compilation_digest": _digest(payload)}
 
     @classmethod
-    def from_payload(cls, raw: Any) -> FindingReport | AnswerReport:
+    def from_payload(cls, raw: object) -> FindingReport | AnswerReport:
         from codey.research.answer_report import KNOWLEDGE_REPORT_SCHEMA, REPORT_SCHEMA
 
         if isinstance(raw, dict) and raw.get("schema") in {REPORT_SCHEMA, KNOWLEDGE_REPORT_SCHEMA}:
@@ -63,18 +85,27 @@ class FindingReport:
                   "source_versions", "paragraph_bindings", "proposal_digest", "questions", "evidence_bindings", "open_questions", "selection_receipts"}
         if not isinstance(raw, dict) or set(raw) not in (fields | {"compilation_digest"}, (fields - {"selection_receipts"}) | {"compilation_digest"}):
             raise ValueError("invalid accepted research report")
+        raw = canonical_json_object(raw)
         body = {key: raw[key] for key in fields if key in raw}
         if raw["compilation_digest"] != _digest(body):
             raise ValueError("accepted research report digest mismatch")
         if not isinstance(body["text"], str) or not body["text"].strip():
             raise ValueError("accepted research report has no text")
-        for row in body["knowledge_refs"]:
-            KnowledgeReference(row["id"], row["revision"], "uses")
-        coverage_rows(body["coverage"])
-        return cls(body["text"], tuple(body["knowledge_refs"]), tuple(body["finding_ids"]),
-            tuple(body["coverage"]), body["reference_metadata"], tuple(body["source_versions"]),
-            tuple(body["paragraph_bindings"]), body["proposal_digest"], tuple(body["questions"]), tuple(body["evidence_bindings"]),
-            tuple(body["open_questions"]), tuple(body.get("selection_receipts", ())))
+        metadata = body["reference_metadata"]
+        if not isinstance(metadata, dict):
+            raise ValueError("report reference_metadata must be an object")
+        report = cls(require_json_string(body["text"], "text"),
+            tuple(version_reference(row) for row in object_rows(body["knowledge_refs"], "knowledge_refs")),
+            strings(body["finding_ids"], "finding_ids"), tuple(coverage_rows(body["coverage"])),
+            {label: finding_metadata(row) for label, row in metadata.items()},
+            tuple(source_version(row) for row in object_rows(body["source_versions"], "source_versions")),
+            tuple(paragraph_binding(row) for row in object_rows(body["paragraph_bindings"], "paragraph_bindings")),
+            require_json_string(body["proposal_digest"], "proposal_digest"), strings(body["questions"], "questions"),
+            tuple(evidence_binding(row) for row in object_rows(body["evidence_bindings"], "evidence_bindings")),
+            strings(body["open_questions"], "open_questions"), strings(body.get("selection_receipts", []), "selection_receipts"))
+        if report.to_payload() != raw:
+            raise ValueError("accepted report contains unrecognized or altered fields")
+        return report
 
 
 ResearchReport = FindingReport | AnswerReport
@@ -108,8 +139,8 @@ def validate_report_bindings(proposal: ResearchReportProposal, resolved: tuple[R
 
 
 def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...],
-                  questions: tuple[str, ...], queries: tuple[str, ...]) -> tuple[str, tuple[dict[str, Any], ...]]:
-    sources: dict[tuple[str, int], dict[str, Any]] = {}
+                  questions: tuple[str, ...], queries: tuple[str, ...]) -> tuple[str, tuple[SourceVersion, ...]]:
+    sources: dict[tuple[str, int], SourceVersion] = {}
     replacements = {}
     for item in resolved:
         numbers = []
@@ -117,14 +148,14 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
             source = evidence.source
             key = source.value.id, source.revision
             if key not in sources:
-                sources[key] = {"id": key[0], "revision": key[1], "number": len(sources) + 1,
+                sources[key] = source_version({"id": key[0], "revision": key[1], "number": len(sources) + 1,
                     "title": source.value.title, "url": source.value.provenance["url"],
                     "acquisition": evidence.acquisition,
                     "content_hash": source.value.provenance.get("content_hash", ""),
                     "quality": source.value.provenance.get("quality", {}),
                     "publication_date": source.value.provenance.get("publication_date", "unknown"),
                     "release_version": source.value.provenance.get("release_version", "unknown"),
-                    "retrieved_at": source.value.provenance.get("retrieved_at", source.recorded_at)}
+                    "retrieved_at": source.value.provenance.get("retrieved_at", source.recorded_at)})
             if sources[key]["number"] not in numbers:
                 numbers.append(sources[key]["number"])
         citations = "".join(f"[{number}]" for number in numbers)
@@ -184,7 +215,7 @@ def render_report(proposal: ResearchReportProposal, resolved: tuple[ResolvedRefe
     return "\n\n".join(f"## {section_title(key)}\n{text}" for key, text in sections.items()), tuple(sources.values())
 
 
-def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: Any, *,
+def compile_finding_report(args: ToolArgs, ledger: ResearchLedger, store: KnowledgeStore | StagedKnowledgeStore, *,
                            project: str = "", session_id: str = "", task: str = "") -> FindingReport:
     proposal = parse_report_proposal(args, investigations=ledger.investigations)
     validate_question_coverage(list(proposal.coverage), ledger)
@@ -223,7 +254,7 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
     text, sources = render_report(proposal, resolved, ledger.questions, tuple(row.query for row in ledger.searches))
     from codey.research.source_literals import version_mentions
 
-    metadata = {item.label: {"id": item.version.value.id, "revision": item.version.revision,
+    metadata = {item.label: finding_metadata({"id": item.version.value.id, "revision": item.version.revision,
         "claim": item.version.value.content,
         "question_ref": item.binding.question_ref,
         "kind": item.version.value.kind, "status": item.version.value.status,
@@ -231,26 +262,26 @@ def compile_finding_report(args: dict[str, Any], ledger: ResearchLedger, store: 
         "dependencies_changed": item.version.dependencies_changed, "conditions": item.version.value.conditions,
         "origin": item.version.value.origin, "acquisition": item.binding.acquisition,
         "limitations": item.version.value.provenance.get("limitations", ""),
-        **({"version_mentions": version_mentions(item.version.value.content)} if proposal.findings_only else {})}
+        **({"version_mentions": version_mentions(item.version.value.content)} if proposal.findings_only else {})})
         for item in resolved}
     coverage_refs = {answer.path: tuple(coverage["findings"])
                      for answer, coverage in zip(proposal.coverage_answers, proposal.coverage, strict=True)}
-    paragraphs = []
+    paragraphs: list[ParagraphBinding] = []
     for row in proposal.paragraphs:
         # Coverage renders its structured findings as citations, even without inline labels.
         refs = coverage_refs.get(row.path, row.refs)
         paragraphs.append({"path": row.path, "text": row.text, "refs": list(refs),
                            "kinds": [metadata[label]["kind"] for label in refs]})
-    evidence_bindings = tuple({"label": item.label, "claim_id": ev.claim.value.id,
+    evidence_bindings = tuple(evidence_binding({"label": item.label, "claim_id": ev.claim.value.id,
         "claim_revision": ev.claim.revision, "evidence_id": ev.evidence.value.id,
         "evidence_revision": ev.evidence.revision, "source_id": ev.source.value.id,
         "source_revision": ev.source.revision, "excerpt": ev.evidence.value.content[:600],
         "excerpt_digest": _digest(ev.evidence.value.content), "display_truncated": len(ev.evidence.value.content) > 600,
         "relation": ev.relation, "locator": ev.evidence.value.provenance.get("locator", ""),
         "page": ev.evidence.value.provenance.get("page"), "acquisition": ev.acquisition,
-        **({"version_mentions": version_mentions(ev.evidence.value.content)} if proposal.findings_only else {})}
+        **({"version_mentions": version_mentions(ev.evidence.value.content)} if proposal.findings_only else {})})
         for item in resolved for ev in item.evidence)
     return FindingReport(text, tuple({"id": item.version.value.id, "revision": item.version.revision} for item in resolved),
         tuple(dict.fromkeys(item.binding.note_id for item in resolved if item.binding.note_id)),
         proposal.coverage, metadata, sources, tuple(paragraphs), _digest(args), ledger.questions, evidence_bindings,
-        tuple(args.get("open_questions", ())))
+        strings(args.get("open_questions", []), "open_questions"))

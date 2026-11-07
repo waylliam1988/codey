@@ -21,9 +21,8 @@ re-implementing policy; behavior modules must not import run projections
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol, runtime_checkable
 
 from codey.policies.network import check_fetch_url
 from codey.research.ledger import ResearchLedger
@@ -43,6 +42,7 @@ from codey.research.source_search import (
 )
 from codey.research.url_selection import source_candidate_skip_reason
 from codey.runtime.core import cancellation
+from codey.types.json_value import JsonObject
 
 OPEN_DEFAULT_LIMIT = 6000
 OPEN_MAX_LIMIT = 12000
@@ -51,9 +51,14 @@ SEARCH_LIMIT = 8
 PDF_SOURCE_SEARCH_MAX_PAGES = 30
 
 
+@runtime_checkable
 class _SearchProvider(Protocol):
-    def search(self, query: str, *, limit: int) -> list[dict[str, Any]]: ...
-    def fetch(self, url: str) -> dict[str, Any]: ...
+    def search(self, query: str, *, limit: int) -> list[JsonObject]: ...
+    def fetch(self, url: str) -> dict[str, object]: ...
+
+
+class SourceFailureRecorder(Protocol):
+    def __call__(self, area: str, action: str, error: object, *, url: str = "") -> None: ...
 
 
 @dataclass(frozen=True)
@@ -61,7 +66,7 @@ class SearchedSources:
     """Outcome of ``search``: raw provider hits, or an error string."""
 
     query: str
-    hits: tuple[dict[str, Any], ...] = ()
+    hits: tuple[JsonObject, ...] = ()
     error: str = ""
 
 
@@ -99,7 +104,7 @@ class ResearchSourceGateway:
 
     search_provider: _SearchProvider
     ledger: ResearchLedger
-    on_failure: Callable[..., None] | None = None
+    on_failure: SourceFailureRecorder | None = None
 
     def search(self, query: str, limit: int = SEARCH_LIMIT) -> SearchedSources:
         query = (query or "").strip()
@@ -172,7 +177,11 @@ class ResearchSourceGateway:
         if reason:
             self._fail("browser", "open", f"{reason} (after redirect)", page_url or url)
             return OpenedSource(status="error", detail=f"{reason} (after redirect)")
-        document = self._source_document_from_fetch(url, page, pages=pages)
+        try:
+            document = self._source_document_from_fetch(url, page, pages=pages)
+        except (ValueError, TypeError) as exc:
+            self._fail("browser", "open", exc, url)
+            return OpenedSource(status="error", detail=f"invalid fetched document: {exc}")
         if isinstance(document, PdfSkipped):
             return OpenedSource(
                 status="skipped",
@@ -183,14 +192,14 @@ class ResearchSourceGateway:
         return OpenedSource(status="ok", document=document, read_urls=read_urls)
 
     def _source_document_from_fetch(
-        self, requested_url: str, page: dict[str, Any], *, pages: str = ""
+        self, requested_url: str, page: dict[str, object], *, pages: str = ""
     ) -> SourceDocument | PdfSkipped:
         final_url = str(page.get("url") or requested_url)
         content_kind = str(page.get("content_kind") or "").lower()
         mime_type = str(page.get("mime_type") or "")
         if content_kind == "pdf":
             return extract_pdf_document(
-                bytes(page.get("bytes") or b""),
+                _fetch_bytes(page.get("bytes")),
                 requested_url=requested_url,
                 final_url=final_url,
                 title=str(page.get("title") or ""),
@@ -284,7 +293,7 @@ class ResearchSourceGateway:
                 "browser", "source_search", "redirect changed opened source", source.final_url
             )
             return []
-        data = bytes(page.get("bytes") or b"")
+        data = _fetch_bytes(page.get("bytes"))
         if not data:
             return []
         page_texts: dict[int, str] = {}
@@ -310,6 +319,15 @@ class ResearchSourceGateway:
             self.on_failure(area, action, error, url=url)
 
 
+def _fetch_bytes(value: object) -> bytes:
+    """Binary provider boundary: an integer must never allocate a fake PDF."""
+    if value is None:
+        return b""
+    if not isinstance(value, (bytes, bytearray, memoryview)):
+        raise ValueError("fetch bytes must be binary data")
+    return bytes(value)
+
+
 def _merge_source_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSearchHit]:
     seen: set[tuple[int | None, int]] = set()
     unique: list[SourceSearchHit] = []
@@ -324,11 +342,11 @@ def _merge_source_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSe
     return unique
 
 
-def _as_int(value: Any, default: int) -> int:
+def _as_int(value: object, default: int) -> int:
     if isinstance(value, bool):
         return default
     try:
-        return int(value)
+        return int(value) if isinstance(value, (int, float, str)) else default
     except (TypeError, ValueError, OverflowError):
         return default
 

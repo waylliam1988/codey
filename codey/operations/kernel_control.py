@@ -22,7 +22,7 @@ from codey.runtime.core.operation_payload import (
     RuntimeOperationState,
 )
 from codey.runtime.log.session_view import SessionView
-from codey.types.json_value import decode_json_object, require_json_integer, require_json_string
+from codey.types.json_value import canonical_json_object, decode_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
     from codey.operations.kernel_context import KernelContext
@@ -119,7 +119,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         from codey.research.answer_contract import submitted_answer, whole_research
 
         if whole_research(context.session):
-            proposal = submitted_answer(context.session) or {}
+            proposal = canonical_json_object(submitted_answer(context.session) or {})
         progress.reject_completion(proposal, followup, context.session,
             failure_key=(domain_issue["code"] + ":" + domain_issue["path"]) if domain_issue else "")
         counters = replace(state.counters, progress=progress.snapshot())

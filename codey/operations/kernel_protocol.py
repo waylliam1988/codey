@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Protocol
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
-from codey.runtime.core.models import Control, ToolCall, ToolPlan
+from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
 from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
@@ -30,6 +30,12 @@ if TYPE_CHECKING:
 
 
 class KernelSessionView(Protocol):
+    @property
+    def research_acquisition_limits(self) -> tuple[int, int] | None: ...
+
+    @property
+    def _memory_results(self) -> Mapping[str, ToolResult]: ...
+
     @property
     def policy(self) -> TaskPolicy: ...
 

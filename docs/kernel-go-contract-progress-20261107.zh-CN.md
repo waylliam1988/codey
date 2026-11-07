@@ -111,3 +111,14 @@
 - 修复blocked_result遇facts=None的确定性回归。旧测试的内部dict context、假evaluation/evidence、假native reply改为真实领域对象；不放宽生产codec以适应过时测试。
 - completion/research/project/verification及recovery/golden/convergence扩大回归390 passed、64 subtests。新增input/observation codec、candidate冲突、不可变扩展、嵌套隔离与三工具静态负例合计32 passed（含原静态负例）。未执行全量pytest。
 - 18个修改/新增生产模块mypy --follow-imports=silent、Pyrefly、ty target3.12通过；Ruff、precision gate与diff check通过。原十四模块Any 93→20，completion三个基线归零；报告/工具/receipt/staging仍属于第八批，未宣称完成。
+
+
+## 第八批变更与验证
+
+- research/tools及passages、receipt、source gateway、staging、两个报告编译/恢复入口、工具contract/repair接上共享JSON、PassageDescriptor及具名报告字段；原十四模块显式Any从20降至0。不是宣称整个research/knowledge目录没有Any，旧展示/知识库内部仍需后续独立迁移。
+- AnswerSubmission区分未签名body与必需submission_digest的完成提交；AnswerScope入口逐字段解码。InvestigationRecord、CoverageRow、关系结构与报告来源/证据/引用字段由明确拥有者定义。完整JSON合法性、工具schema和既有领域/权限检查仍是不同层。
+- FindingReport与AnswerReport拒绝恢复后被丢弃的摘要绑定字段；构造时复制嵌套容器。frozen只防重绑定，公开TypedDict仍可变，采用独立拥有、只读使用的约定，不宣称深不可变。
+- Staging复制输入note、mutation及返回read视图；精确revision读取支持待提交版本；相同commit重复调用保持既有幂等行为。补测调用方和read返回值更改不污染待提交状态，未提交不写入parent。
+- PDF二进制边界拒绝整数和任意对象，避免bytes(integer)伪造内容；非法fetch变为明确工具失败，不污染ledger。报告恢复拒绝重新计算摘要后夹带的未知嵌套字段。
+- 扩大研究/whole-answer/report/knowledge/recovery/golden/repair回归271 passed、77 subtests。另扩大测试首轮188 passed、3 failed：旧observation测试使用TaskSession(policy=None)，已改成明确空授权TaskPolicy以保留测试本意；修正后相关合并145 passed、77 subtests。新增typed-boundary回归覆盖submission、binary、stage隔离和report字段篡改。未执行全量pytest。
+- 本批91个生产文件mypy（follow-imports=silent保留解析）、Pyrefly、ty target3.12通过；Ruff、precision baseline、diff check通过。全生产树类型检查与Go差分仍属第九批，未宣称完成。

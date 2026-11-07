@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import copy
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any
 
 from codey.research.knowledge_schema import (
     array_schema,
@@ -18,8 +16,12 @@ from codey.research.knowledge_schema import (
     note_evidence_schema,
     object_schema,
     report_sections_schema,
+    schema_object,
+    schema_strings,
 )
 from codey.research.questions import QUESTION_BOUND_TOOLS
+from codey.toolchain.tool_spec import ToolSpec
+from codey.types.json_value import JsonObject, ToolArgs, canonical_json_object, decode_json_object
 
 PROTOCOL_NO_JSON = "no_json"
 PROTOCOL_UNKNOWN_TOOL = "unknown_tool"
@@ -29,7 +31,7 @@ PROTOCOL_DIRECT_ANSWER = "direct_answer"
 PROTOCOL_NATIVE_SEARCH_LEAK = "native_search_leak"
 PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
-STRUCTURED_REPORT_ARGS: dict[str, Any] = {"summary": "Supported conclusion [f1]", "report_sections": {
+STRUCTURED_REPORT_ARGS: ToolArgs = {"summary": "Supported conclusion [f1]", "report_sections": {
     "evidence": ["Saved finding with its conditions [f1]"],
     "counter": ["Observed limitation and its scope [f1]"],
     "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Answer and remaining gap",
@@ -49,7 +51,7 @@ def knowledge_read_id_guidance(*, source_tool: str = "") -> str:
 @dataclass(frozen=True)
 class ToolContract:
     name: str
-    input_schema: Mapping[str, Any]
+    input_schema: Mapping[str, object]
     example: str = ""
     description: str = ""
     parallel_safe: bool = False
@@ -57,7 +59,7 @@ class ToolContract:
 @dataclass(frozen=True)
 class ContractResult:
     ok: bool
-    args: dict[str, Any] = field(default_factory=dict)
+    args: ToolArgs = field(default_factory=dict)
     error: str = ""
     error_kind: str = ""
 
@@ -261,10 +263,10 @@ TOOL_CONTRACTS = {
 def _question_contract(contract: ToolContract) -> ToolContract:
     if contract.name not in QUESTION_BOUND_TOOLS:
         return contract
-    schema = copy.deepcopy(dict(contract.input_schema))
-    schema["properties"]["question_ref"] = {"type": "string", "pattern": "^q[1-8]$"}
-    example = json.loads(contract.example)
-    example["args"]["question_ref"] = "q1"
+    schema = canonical_json_object(contract.input_schema)
+    schema_object(schema, "properties")["question_ref"] = {"type": "string", "pattern": "^q[1-8]$"}
+    example = decode_json_object(json.loads(contract.example))
+    schema_object(example, "args")["question_ref"] = "q1"
     return replace(contract, input_schema=schema, example=json.dumps(example, separators=(",", ":")),
         description=contract.description + " Select question_ref=qN explicitly to bind this action to its registered question.")
 
@@ -272,7 +274,7 @@ def _question_contract(contract: ToolContract) -> ToolContract:
 TOOL_CONTRACTS = {name: _question_contract(contract) for name, contract in TOOL_CONTRACTS.items()}
 
 
-def question_bound_spec(spec: Any, *, required: bool = False) -> Any:
+def question_bound_spec(spec: ToolSpec, *, required: bool = False) -> ToolSpec:
     """One question argument contract shared by ordinary and strict research."""
     if spec.name not in QUESTION_BOUND_TOOLS:
         return spec
@@ -282,16 +284,16 @@ def question_bound_spec(spec: Any, *, required: bool = False) -> Any:
     keys = tuple(dict.fromkeys((*spec.required, "question_ref"))) if required else spec.required
     examples = []
     for text in spec.json_examples:
-        example = json.loads(text)
-        example["args"]["question_ref"] = "q1"
+        example = decode_json_object(json.loads(text))
+        schema_object(example, "args")["question_ref"] = "q1"
         examples.append(json.dumps(example, separators=(",", ":")))
     return replace(spec, parameters=tuple(parameters.items()), required=keys, json_examples=tuple(examples),
         description=spec.description + " Select question_ref=qN explicitly to bind this action to its registered question.")
 
 
-def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "", questions: tuple[str, ...] = ()) -> Any:
+def done_spec_for_purpose(spec: ToolSpec, purpose: str, *, task: str = "", questions: tuple[str, ...] = ()) -> ToolSpec:
     """Select one complete done contract before freezing, never patch pieces later."""
-    example: dict[str, Any]
+    example: ToolArgs
     if purpose == "ordinary":
         return spec
     if purpose == "evidence":
@@ -300,33 +302,34 @@ def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "", questions:
         description = ("End evidence investigation with a brief receipt of saved findings and specific remaining gaps. "
                        "The parent owns final synthesis; do not write its report in this phase.")
     elif purpose == "report":
-        coverage = dict(report_sections_schema()["properties"])["coverage"]
-        coverage["items"]["properties"].pop("answer")
-        coverage["items"]["required"] = [key for key in coverage["items"]["required"]
-                                           if key not in {"answer", "investigations"}]
+        coverage = schema_object(schema_object(report_sections_schema(), "properties"), "coverage")
+        item_schema = schema_object(coverage, "items")
+        properties = schema_object(item_schema, "properties")
+        properties.pop("answer")
+        required_fields = [key for key in schema_strings(item_schema, "required")
+                           if key not in {"answer", "investigations"}]
         if questions:
-            coverage["items"]["properties"]["question_ref"]["enum"] = [
+            schema_object(properties, "question_ref")["enum"] = [
                 f"q{index}" for index in range(1, len(questions) + 1)]
             coverage.update(minItems=len(questions), maxItems=len(questions))
+        refs: list[str] = []
         if task:
             from codey.research.task_requirements import coverage_requirements
 
             refs = [row["task_ref"] for row in coverage_requirements(task)]
-            coverage["items"]["properties"]["task_refs"].update(
-                items={"type": "string", **({"enum": refs} if refs else {})}, maxItems=len(refs))
-            coverage["items"]["required"].append("task_refs")
+            schema_object(properties, "task_refs").update(
+                items=canonical_json_object({"type": "string", **({"enum": refs} if refs else {})}), maxItems=len(refs))
+            required_fields.append("task_refs")
+        item_schema["required"] = list(required_fields)
         schema = object_schema({"report_sections": object_schema({"coverage": coverage}, "coverage")}, "report_sections")
-        example = {"tool": "done", "args": {"report_sections": {
-            "coverage": [{key: value for key, value in row.items() if key not in {"answer", "investigations"}}
-                         for row in STRUCTURED_REPORT_ARGS["report_sections"]["coverage"]]}}}
+        selected: list[JsonObject] = [{"question_ref": "q1", "state": "partial", "findings": ["f1"]}]
         if task:
-            example["args"]["report_sections"]["coverage"] = [
-                {**row, "task_refs": refs} for row in example["args"]["report_sections"]["coverage"]]
+            selected[0]["task_refs"] = list(refs)
         if questions:
-            example["args"]["report_sections"]["coverage"] += [
-                {"question_ref": f"q{index}", "state": "not_investigated", "findings": [],
-                 **({"task_refs": []} if task else {})}
-                for index in range(2, len(questions) + 1)]
+            selected.extend({"question_ref": f"q{index}", "state": "not_investigated", "findings": [],
+                             **({"task_refs": []} if task else {})}
+                            for index in range(2, len(questions) + 1))
+        example = canonical_json_object({"tool": "done", "args": {"report_sections": {"coverage": selected}}})
         description = ("Select existing findings once per registered question in report_sections.coverage: "
                        "{question_ref,state,findings,task_refs}. Use raw fN ids bound to that question. "
                        "The application adopts their exact pinned claim text, with no final answer rewriting. "
@@ -345,17 +348,21 @@ def done_spec_for_purpose(spec: Any, purpose: str, *, task: str = "", questions:
                        "Do not supply answer, summary, evidence, counter or source_quality prose.")
     else:
         raise ValueError("unknown done purpose")
-    return replace(spec, parameters=tuple(schema["properties"].items()), required=tuple(schema["required"]),
+    return replace(spec, parameters=tuple(schema_object(schema, "properties").items()), required=tuple(schema_strings(schema, "required")),
                    json_examples=(json.dumps(example, separators=(",", ":")),), description=description)
 
 
-def validate_tool_args(tool: str, args: dict[str, Any]) -> ContractResult:
+def validate_tool_args(tool: str, args: ToolArgs) -> ContractResult:
     """Direct callers use the same ToolSpec checker as the shared kernel."""
     from codey.toolchain.tool_spec import spec_for_tool, validate_args_with_spec
 
     spec = spec_for_tool(tool)
     if spec is None:
         return ContractResult(False, error=f"unknown tool: {tool}", error_kind=PROTOCOL_UNKNOWN_TOOL)
+    try:
+        args = decode_json_object(args)
+    except ValueError as exc:
+        return ContractResult(False, error=str(exc), error_kind=PROTOCOL_INVALID_ARGS)
     error = validate_args_with_spec(spec, args)
     return ContractResult(not error, args=dict(args) if not error else {}, error=error,
                           error_kind=PROTOCOL_INVALID_ARGS if error else "")

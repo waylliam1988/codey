@@ -9,12 +9,24 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Protocol
 
 from codey.knowledge.model import canonical_json
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from codey.research.answer_values import (
+    AnswerScopePayload,
+    AnswerSubmission,
+    CitationOccurrence,
+    UnsignedAnswerSubmission,
+)
 from codey.research.knowledge_updates import normalize_updates, updates_schema
 from codey.research.questions import INVESTIGATION_TOOLS
+from codey.runtime.core.models import ToolResult
+from codey.toolchain.tool_spec import ToolSpec
+from codey.types.json_value import ToolArgs, canonical_json_object, decode_json_object, require_json_string
 
 ANSWER_SCOPE_VERSION = 4
 ANSWER_CONTRACT_VERSION = 1
@@ -62,12 +74,27 @@ KNOWLEDGE_READ_GUIDANCE = (
 )
 
 
-def whole_research(session: Any) -> bool:
-    return (getattr(session, "task_kind", "") == "research"
-            and bool(getattr(getattr(session, "policy", None), "strict_research", False)))
+class ResearchPolicyView(Protocol):
+    @property
+    def task_kind(self) -> str: ...
+
+    @property
+    def policy(self) -> TaskPolicy: ...
 
 
-def digest(value: Any) -> str:
+class AnswerSessionView(ResearchPolicyView, Protocol):
+    @property
+    def task_text(self) -> str: ...
+
+    @property
+    def _memory_results(self) -> Mapping[str, ToolResult]: ...
+
+
+def whole_research(session: ResearchPolicyView) -> bool:
+    return session.task_kind == "research" and session.policy.strict_research
+
+
+def digest(value: object) -> str:
     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
 
 
@@ -82,56 +109,70 @@ class AnswerScope:
     def passage_refs(self) -> tuple[str, ...]:
         return tuple(ref for _, ref in self.aliases)
 
-    def to_payload(self) -> dict[str, Any]:
+    def to_payload(self) -> AnswerScopePayload:
         return {"task_digest": self.task_digest, "aliases": [list(row) for row in self.aliases],
                 "attempt_refs": list(self.attempt_refs), "schema_version": self.schema_version}
 
     @classmethod
-    def from_payload(cls, raw: Any) -> AnswerScope:
-        if (not isinstance(raw, dict) or set(raw) != set(cls.__dataclass_fields__)
-                or type(raw.get("schema_version")) is not int or raw["schema_version"] != ANSWER_SCOPE_VERSION
-                or not isinstance(raw.get("task_digest"), str)
-                or re.fullmatch(r"[0-9a-f]{64}", raw["task_digest"]) is None
-                or not isinstance(raw.get("aliases"), list) or not isinstance(raw.get("attempt_refs"), list)):
+    def from_payload(cls, raw: object) -> AnswerScope:
+        raw = decode_json_object(raw)
+        if (set(raw) != set(cls.__dataclass_fields__)
+                or type(raw.get("schema_version")) is not int or raw["schema_version"] != ANSWER_SCOPE_VERSION):
             raise ValueError("invalid whole-task research scope")
-        for row in raw["aliases"]:
-            if (not isinstance(row, list) or len(row) != 2 or not all(isinstance(v, str) for v in row)
-                    or re.fullmatch(r"e[1-9][0-9]*", row[0]) is None
-                    or re.fullmatch(r"p[0-9a-f]{12}", row[1]) is None):
+        task_digest = require_json_string(raw.get("task_digest"), "task_digest")
+        if re.fullmatch(r"[0-9a-f]{64}", task_digest) is None:
+            raise ValueError("invalid task digest")
+        aliases = raw.get("aliases")
+        attempts = raw.get("attempt_refs")
+        if not isinstance(aliases, list) or not isinstance(attempts, list):
+            raise ValueError("invalid frozen research identities")
+        bindings: list[tuple[str, str]] = []
+        for row in aliases:
+            if not isinstance(row, list) or len(row) != 2:
                 raise ValueError("invalid frozen evidence alias")
-        if (len({row[0] for row in raw["aliases"]}) != len(raw["aliases"])
-                or len({row[1] for row in raw["aliases"]}) != len(raw["aliases"])
-                or any(not isinstance(ref, str) or not ref for ref in raw["attempt_refs"])
-                or len(set(raw["attempt_refs"])) != len(raw["attempt_refs"])):
+            label = require_json_string(row[0], "label")
+            ref = require_json_string(row[1], "passage_ref")
+            if re.fullmatch(r"e[1-9][0-9]*", label) is None or re.fullmatch(r"p[0-9a-f]{12}", ref) is None:
+                raise ValueError("invalid frozen evidence alias")
+            bindings.append((label, ref))
+        attempt_refs = tuple(require_json_string(ref, "attempt_ref") for ref in attempts)
+        if (len({row[0] for row in bindings}) != len(bindings)
+                or len({row[1] for row in bindings}) != len(bindings)
+                or any(not ref for ref in attempt_refs) or len(set(attempt_refs)) != len(attempt_refs)):
             raise ValueError("duplicate or invalid frozen research identity")
-        return cls(raw["task_digest"], tuple(tuple(row) for row in raw["aliases"]), tuple(raw["attempt_refs"]))
+        return cls(task_digest, tuple(bindings), attempt_refs)
 
 
-def answer_scope(session: Any) -> AnswerScope:
+def answer_scope(session: AnswerSessionView) -> AnswerScope:
     """Stable citation labels for actual successful reads, independent of display."""
     labels: dict[str, str] = {}
     attempts = []
-    results = getattr(session, "_memory_results", {})
+    results = session._memory_results
     for identity, result in results.items():
         if result.call.name in INVESTIGATION_TOOLS:
             attempts.append(identity)
         if not result.ok:
             continue
-        original = results.get(result.call.args.get("result_ref")) if result.call.name == "read_tool_result" else result
-        rows = original.canonical.get("read_passages", []) if original is not None and original.ok else []
+        reference = result.call.args.get("result_ref")
+        original = results.get(reference) if result.call.name == "read_tool_result" and isinstance(reference, str) else result
+        rows: object = original.canonical.get("read_passages", []) if original is not None and original.ok else list[str]()
+        if not isinstance(rows, list):
+            raise ValueError("read passage receipts must be an array")
         for row in rows:
-            ref = row["ref"]
+            if not isinstance(row, dict):
+                raise ValueError("read passage descriptor must be an object")
+            ref = require_json_string(row.get("ref"), "passage ref")
             labels.setdefault(ref, f"e{len(labels) + 1}")
     return AnswerScope(digest(session.task_text), tuple((label, ref) for ref, label in labels.items()),
                        tuple(attempts))
 
 
-def citation_occurrences(markdown: str) -> list[dict[str, Any]]:
+def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
     """Record explicit prose citations; code examples do not select evidence."""
     masked = re.sub(r"(?ms)^([ \t]*)(`{3,}|~{3,})[^\n]*\n.*?^\1\2[^\n]*(?:\n|$)",
                     lambda match: " " * len(match[0]), markdown)
     masked = re.sub(r"(`+)([^`\n]*?)\1", lambda match: " " * len(match[0]), masked)
-    rows: list[dict[str, Any]] = []
+    rows: list[CitationOccurrence] = []
     for match in re.finditer(r"(?<!\\)\[(e[0-9][^\]\n]*)\](?!\()", masked):
         labels = re.split(r"\s*[,，]\s*", match[1])
         if any(re.fullmatch(r"e[1-9][0-9]*", label) is None for label in labels):
@@ -140,13 +181,16 @@ def citation_occurrences(markdown: str) -> list[dict[str, Any]]:
     return rows
 
 
-def submit_answer(scope: AnswerScope, args: dict[str, Any]) -> dict[str, Any]:
+def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
+    args = canonical_json_object(args)
+    markdown_value = args.get("markdown")
+    state = args.get("state")
     if (not {"markdown", "state"} <= args.keys() or args.keys() - {"markdown", "state", "knowledge_updates"}
-            or args.get("state") not in ANSWER_STATES
-            or not isinstance(args.get("markdown"), str)
-            or not 12 <= len(args["markdown"].strip()) <= MAX_ANSWER_CHARACTERS):
+            or not isinstance(state, str) or state not in ANSWER_STATES
+            or not isinstance(markdown_value, str)
+            or not 12 <= len(markdown_value.strip()) <= MAX_ANSWER_CHARACTERS):
         raise ValueError("Submit markdown (12..64000 characters) and state=answered/partial/unresolved.")
-    markdown = args["markdown"].strip()
+    markdown = markdown_value.strip()
     citations = citation_occurrences(markdown)
     aliases = dict(scope.aliases)
     updates = normalize_updates(args.get("knowledge_updates", []), set(aliases))
@@ -158,19 +202,21 @@ def submit_answer(scope: AnswerScope, args: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Investigate the task before submitting; failed acquisition attempts may support a gap report.")
     if not citations and args["state"] != "unresolved":
         raise ValueError("An answered or partial report needs explicit [eN] evidence citations. Describe an unresolved gap otherwise.")
-    body = {"schema_version": ANSWER_CONTRACT_VERSION, "task_digest": scope.task_digest,
-            "markdown": markdown, "state": args["state"], "scope": scope.to_payload(),
+    body: UnsignedAnswerSubmission = {"schema_version": ANSWER_CONTRACT_VERSION, "task_digest": scope.task_digest,
+            "markdown": markdown, "state": state, "scope": scope.to_payload(),
             "citations": [{**row, "passage_ref": aliases[row["label"]]} for row in citations]}
     if updates:
-        body.update(schema_version=2, knowledge_updates=updates)
-    return {**body, "submission_digest": digest(body)}
+        body["schema_version"] = 2
+        body["knowledge_updates"] = updates
+    return AnswerSubmission(**body, submission_digest=digest(body))
 
 
-def validate_submission(raw: Any, task: str) -> dict[str, Any]:
-    if not isinstance(raw, dict) or raw.get("task_digest") != digest(task):
+def validate_submission(raw: object, task: str) -> AnswerSubmission:
+    raw = canonical_json_object(raw)
+    if raw.get("task_digest") != digest(task):
         raise ValueError("research submission belongs to another task")
     scope = AnswerScope.from_payload(raw.get("scope"))
-    args = {"markdown": raw.get("markdown"), "state": raw.get("state")}
+    args: ToolArgs = {"markdown": raw.get("markdown"), "state": raw.get("state")}
     if "knowledge_updates" in raw:
         args["knowledge_updates"] = raw["knowledge_updates"]
     expected = submit_answer(scope, args)
@@ -179,33 +225,35 @@ def validate_submission(raw: Any, task: str) -> dict[str, Any]:
     return expected
 
 
-def submitted_answer(session: Any) -> dict[str, Any] | None:
+def submitted_answer(session: TaskSession) -> AnswerSubmission | None:
     selected = None
-    for result in getattr(session, "_memory_results", {}).values():
+    for result in session._memory_results.values():
         if result.ok and result.call.name == "submit_research_answer" and "research_submission" in result.canonical:
             selected = validate_submission(result.canonical["research_submission"], session.task_text)
     return selected
 
 
-def answer_spec(spec: Any, scope: AnswerScope) -> Any:
+def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
     from codey.toolchain.tool_spec import freeze_spec_parameters
 
     if spec.name != "submit_research_answer":
         parameters = {key: value for key, value in spec.parameters if key != "question_ref"}
         examples = []
         for raw in spec.json_examples:
-            example = json.loads(raw)
-            example.get("args", {}).pop("question_ref", None)
+            example = canonical_json_object(json.loads(raw))
+            example_args = example.get("args")
+            if isinstance(example_args, dict):
+                example_args.pop("question_ref", None)
             examples.append(canonical_json(example))
         description = spec.description.split(" Select question_ref=")[0]
         if spec.name == "knowledge_read":
             description += " " + KNOWLEDGE_READ_GUIDANCE
         return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()),
             required=tuple(k for k in spec.required if k != "question_ref"), json_examples=tuple(examples), description=description))
-    parameters = {"markdown": {"type": "string", "minLength": 12, "maxLength": MAX_ANSWER_CHARACTERS},
+    answer_parameters: dict[str, object] = {"markdown": {"type": "string", "minLength": 12, "maxLength": MAX_ANSWER_CHARACTERS},
                   "state": {"type": "string", "enum": list(ANSWER_STATES)},
                   "knowledge_updates": updates_schema()}
-    return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()), required=("markdown", "state"),
+    return freeze_spec_parameters(replace(spec, parameters=tuple(answer_parameters.items()), required=("markdown", "state"),
         description="Submit the whole research answer as Markdown, with explicit [eN] citations beside supported statements. "
                     "Explain any unanswered requested point in place. state is your declaration, not semantic certification. "
                     "Optional knowledge_updates saves explicitly authored candidate claims/inferences/questions atomically: "

@@ -1,14 +1,18 @@
 """Knowledge proposals and their atomic commit/rollback over the original store."""
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 from codey.knowledge.changes import KnowledgeChanges
-from codey.knowledge.model import KnowledgeMutation, canonical_json
+from codey.knowledge.index import KnowledgeIndex
+from codey.knowledge.model import KnowledgeMutation, KnowledgeVersion, canonical_json
 from codey.knowledge.note import LINK_KINDS, KnowledgeNote
+from codey.knowledge.recall import KnowledgeHit
+from codey.knowledge.repository import KnowledgeRepository
 from codey.knowledge.store import KnowledgeLinkResult, KnowledgeStore
+from codey.types.json_value import JsonObject, canonical_json_object
 
 
 class StagedKnowledgeStore:
@@ -26,22 +30,37 @@ class StagedKnowledgeStore:
         return self._parent.root
 
     @property
-    def index(self) -> object:
+    def index(self) -> KnowledgeIndex:
         return self._parent.index
 
     @property
-    def repository(self) -> Any:
+    def repository(self) -> KnowledgeRepository:
         return self._parent.repository
 
     @property
     def owner_id(self) -> str:
         return self._parent.owner_id
 
-    def search(self, query: str, **kwargs: Any) -> Any:
-        return self._parent.search(query, **kwargs)
+    def search(self, query: str, *, project: str = "", session_id: str = "", limit: int = 8,
+               depth: int = 1, exclude_kinds: tuple[str, ...] = (),
+               exclude_ids: tuple[str, ...] = ()) -> list[KnowledgeHit]:
+        return self._parent.search(query, project=project, session_id=session_id, limit=limit,
+                                   depth=depth, exclude_kinds=exclude_kinds, exclude_ids=exclude_ids)
 
-    def search_notes(self, query: str, **kwargs: Any) -> Any:
-        return self._parent.search_notes(query, **kwargs)
+    def search_notes(self, query: str, *, project: str = "", session_id: str = "") -> list[JsonObject]:
+        return [canonical_json_object(row) for row in
+                self._parent.search_notes(query, project=project, session_id=session_id)]
+
+    def note_references(self, note_id: str, revision: int | None = None) -> list[JsonObject]:
+        return [canonical_json_object(row) for row in self._parent.note_references(note_id, revision)]
+
+    def read_version(self, identity: str, revision: int | None = None) -> KnowledgeVersion | None:
+        """Read a prospective staged version without exposing the mutable buffer."""
+        for commit_id, mutations in self._staged_knowledge.values():
+            for mutation in mutations:
+                if mutation.value.id == identity and revision in {None, mutation.expected_revision + 1}:
+                    return KnowledgeVersion(deepcopy(mutation.value), mutation.expected_revision + 1, "", commit_id)
+        return self.repository.read(identity, revision)
 
     def publish_note(self, note: KnowledgeNote, commit_id: str, mutations: list[KnowledgeMutation],
                      *, changes: KnowledgeChanges | None = None) -> str:
@@ -62,7 +81,7 @@ class StagedKnowledgeStore:
             mutations = list(merged.values())
             commit_id = stable_identity("archive", note.id, canonical_json([
                 {"value": m.value.to_dict(), "expected_revision": m.expected_revision} for m in mutations]))
-        self._staged_knowledge[note.id] = (commit_id, mutations)
+        self._staged_knowledge[note.id] = (commit_id, deepcopy(mutations))
         return self.write_note(note, changes=changes)
 
     def path_for(self, note: KnowledgeNote) -> Path:
@@ -88,10 +107,10 @@ class StagedKnowledgeStore:
                 return note.id
         return None
 
-    def read_note(self, note_id: str) -> KnowledgeNote | None:
-        if note_id in self._staged_notes:
-            return self._staged_notes[note_id]
-        return self._parent.read_note(note_id)
+    def read_note(self, note_id: str, *, revision: int | None = None) -> KnowledgeNote | None:
+        if revision is None and note_id in self._staged_notes:
+            return deepcopy(self._staged_notes[note_id])
+        return self._parent.read_note(note_id, revision=revision)
 
     def write_note(
         self,
@@ -102,7 +121,7 @@ class StagedKnowledgeStore:
         if note.id not in self._staged_bases:
             original = self._parent.read_note(note.id)
             self._staged_bases[note.id] = original.to_markdown() if original else None
-        self._staged_notes[note.id] = note
+        self._staged_notes[note.id] = deepcopy(note)
         if changes is not None:
             record_staged = getattr(changes, "record_staged_note", None)
             if callable(record_staged):

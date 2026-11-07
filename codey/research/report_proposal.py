@@ -5,10 +5,13 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypedDict
 
 from codey.research.issues import ResearchIssue
+from codey.research.receipt_types import InvestigationRecord
 from codey.reviews.report_sections import REQUIRED_SECTIONS, heading_key
+from codey.reviews.research_coverage import CoverageRow, coverage_rows
+from codey.types.json_value import JsonObject, JsonValue, ToolArgs, canonical_json_object, require_json_string
 
 if TYPE_CHECKING:
     from codey.research.evidence_view import ResolvedReference
@@ -41,7 +44,7 @@ class ResearchReportProposal:
     conclusion: ReportParagraph
     evidence: tuple[ReportParagraph, ...]
     counter: tuple[ReportParagraph, ...]
-    coverage: tuple[dict[str, Any], ...]
+    coverage: tuple[CoverageRow, ...]
     coverage_answers: tuple[ReportParagraph, ...]
     answers_only: bool = False
     findings_only: bool = False
@@ -58,7 +61,7 @@ class ResearchReportProposal:
             + [ref for row in self.coverage for ref in row["findings"]]))
 
 
-def _answers_proposal(coverage: tuple[dict[str, Any], ...], *, findings_only: bool = False) -> ResearchReportProposal:
+def _answers_proposal(coverage: tuple[CoverageRow, ...], *, findings_only: bool = False) -> ResearchReportProposal:
     # Gap states authorize no factual answer. Compile their text before any
     # report views or persisted bindings are formed. Original requests remain
     # untouched in their provider/execution receipts.
@@ -73,9 +76,8 @@ def _answers_proposal(coverage: tuple[dict[str, Any], ...], *, findings_only: bo
     return ResearchReportProposal(conclusion, (), (), coverage, answers, answers_only=True, findings_only=findings_only)
 
 
-def _selection_rows(raw: list[Any], investigations: Mapping[str, Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
+def _selection_rows(raw: list[JsonValue], investigations: Mapping[str, InvestigationRecord]) -> tuple[CoverageRow, ...]:
     """Normalize a selection, without granting an evidence or completion verdict."""
-    from codey.reviews.research_coverage import coverage_rows
 
     rows = []
     for index, row in enumerate(raw):
@@ -100,7 +102,7 @@ def bind_selected_answers(proposal: ResearchReportProposal,
     if not proposal.findings_only:
         return proposal
     by_label = {item.label: item for item in resolved}
-    rows = []
+    rows: list[CoverageRow] = []
     for row in proposal.coverage:
         if row["state"] in {"evidence_found", "partial"}:
             answer = "\n\n".join(by_label[label].version.value.content + f" [{label}]" for label in row["findings"])
@@ -111,13 +113,14 @@ def bind_selected_answers(proposal: ResearchReportProposal,
                     "selected findings exceed the 4000-character question answer limit; select fewer complete findings "
                     "or save a concise supported replacement without dropping its conditions", allowed_refs=tuple(row["findings"]),
                     allowed_actions=("reselect complete findings", "read exact original passages", "save supported concise replacement"))
-            row = {**row, "answer": answer}
+            row = row.copy()
+            row["answer"] = answer
         rows.append(row)
     return _answers_proposal(tuple(rows), findings_only=True)
 
 
 def bind_gap_investigations(proposal: ResearchReportProposal,
-                            investigations: Mapping[str, Mapping[str, Any]]) -> ResearchReportProposal:
+                            investigations: Mapping[str, InvestigationRecord]) -> ResearchReportProposal:
     """Project actual attempts for declared gaps, after validating submitted refs.
 
     An omitted receipt cannot turn an actual search into an uninvestigated
@@ -126,41 +129,55 @@ def bind_gap_investigations(proposal: ResearchReportProposal,
     """
     if not proposal.answers_only:
         return proposal
-    coverage = []
+    coverage: list[CoverageRow] = []
     for row in proposal.coverage:
         if row["state"] in _GAP_ANSWERS or proposal.findings_only:
             refs = [ref for ref, attempt in investigations.items() if attempt.get("question_ref") == row["question_ref"]]
-            row = {**row, "investigations": refs, "state": (
-                "unanswered_after_search" if refs else "not_investigated") if row["state"] in _GAP_ANSWERS else row["state"]}
+            row = row.copy()
+            row["investigations"] = refs
+            row["state"] = (("unanswered_after_search" if refs else "not_investigated")
+                            if row["state"] in _GAP_ANSWERS else row["state"])
         coverage.append(row)
     return _answers_proposal(tuple(coverage), findings_only=proposal.findings_only)
 
 
 
 
-def report_character_budget(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...], task: str) -> dict[str, Any]:
+class CharacterContribution(TypedDict):
+    question_ref: str
+    ref: str
+    characters: int
+
+
+class ReportCharacterBudget(TypedDict):
+    characters: int
+    contributions: list[CharacterContribution]
+    notice_characters: int
+    limits: list[JsonObject]
+
+
+def report_character_budget(proposal: ResearchReportProposal, resolved: tuple[ResolvedReference, ...], task: str) -> ReportCharacterBudget:
     """Same canonical conclusion and exact claims for preview and admission."""
     from codey.research.task_requirements import conclusion_characters, report_requirements
 
     by_label = {item.label: item for item in resolved}
-    contributions: list[dict[str, Any]] = [{"question_ref": row["question_ref"], "ref": ref,
+    contributions: list[CharacterContribution] = [{"question_ref": row["question_ref"], "ref": ref,
                       "characters": conclusion_characters(by_label[ref].version.value.content)}
                      for row in proposal.coverage for ref in row["findings"]] if proposal.findings_only else []
     count = conclusion_characters(proposal.conclusion.text)
     return {"characters": count, "contributions": contributions,
             "notice_characters": count - sum(row["characters"] for row in contributions),
-            "limits": [{"task_ref": row["task_ref"], **row["constraints"],
+            "limits": [canonical_json_object({"task_ref": row["task_ref"], **row["constraints"],
                         **({"remaining_characters": row["constraints"]["max_characters"] - count}
-                           if "max_characters" in row["constraints"] else {})} for row in report_requirements(task)]}
+                           if "max_characters" in row["constraints"] else {})}) for row in report_requirements(task)]}
 
 
-def parse_report_proposal(args: dict[str, Any], *,
-                          investigations: Mapping[str, Mapping[str, Any]] | None = None) -> ResearchReportProposal:
+def parse_report_proposal(args: ToolArgs, *,
+                          investigations: Mapping[str, InvestigationRecord] | None = None) -> ResearchReportProposal:
     raw_sections = args.get("report_sections")
     if isinstance(raw_sections, dict) and set(raw_sections) == {"coverage"}:
         if set(args) != {"report_sections"}:
             raise ResearchIssue("report_structure", "done", "submit answers only in report_sections.coverage")
-        from codey.reviews.research_coverage import coverage_rows
 
         rows = raw_sections["coverage"]
         if isinstance(rows, list) and any(isinstance(row, dict) and "answer" not in row for row in rows):
@@ -173,16 +190,20 @@ def parse_report_proposal(args: dict[str, Any], *,
     if not isinstance(raw_sections, dict) or set(raw_sections) != {"evidence", "counter", "coverage"}:
         raise ResearchIssue("report_structure", "report_sections", "requires exactly evidence, counter, coverage; source quality is generated from pinned metadata")
 
-    sections: dict[str, Any] = raw_sections
+    sections = raw_sections
 
-    summary = args["summary"]
+    summary = require_json_string(args.get("summary"), "summary")
     if any(heading_key(line) in REQUIRED_SECTIONS for line in summary.splitlines()) or re.search(
             r"\\n\s*#{1,6}\s+", summary):
         raise ResearchIssue("duplicate_report", "summary", "keep only the conclusion without report headings")
     def paragraphs(key: str) -> tuple[ReportParagraph, ...]:
-        return tuple(_paragraph(f"report_sections.{key}[{index}]", text) for index, text in enumerate(sections[key]))
+        values = sections[key]
+        if not isinstance(values, list):
+            raise ValueError(f"report_sections.{key} must be an array")
+        return tuple(_paragraph(f"report_sections.{key}[{index}]", require_json_string(text, key))
+                     for index, text in enumerate(values))
 
     return ResearchReportProposal(_paragraph("summary", summary), paragraphs("evidence"), paragraphs("counter"),
-                                  tuple(dict(row) for row in sections["coverage"]),
+                                  tuple(coverage_rows(sections["coverage"])),
                                   tuple(_paragraph(f"report_sections.coverage[{index}].answer", row["answer"])
-                                        for index, row in enumerate(sections["coverage"])))
+                                        for index, row in enumerate(coverage_rows(sections["coverage"]))))

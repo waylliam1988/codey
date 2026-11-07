@@ -6,15 +6,15 @@ import contextlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, cast
 
 from codey.knowledge.changes import KnowledgeChanges
-from codey.knowledge.concept_schema import clean_relations, normalize_concept
-from codey.knowledge.model import KnowledgeMutation, KnowledgeObject, canonical_json
+from codey.knowledge.concept_schema import ConceptRelation, clean_relations, normalize_concept
+from codey.knowledge.model import KnowledgeMutation, canonical_json
 from codey.knowledge.note import NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
 from codey.knowledge.recall import KnowledgeAccess, KnowledgeHit, render_recall
 from codey.knowledge.store import KnowledgeStore
 from codey.research.ledger import EvidencePreparation, ResearchLedger
+from codey.research.passages import PassageDescriptor
 from codey.research.source_gateway import (
     OPEN_DEFAULT_LIMIT,
     OPEN_MAX_LIMIT,
@@ -29,7 +29,9 @@ from codey.research.source_search import (
     render_results,
 )
 from codey.research.staging import StagedKnowledgeChanges, StagedKnowledgeStore
+from codey.research.tool_args import KnowledgeCommitRequest, decode_conditions
 from codey.research.url_selection import source_candidate_skip_reason
+from codey.types.json_value import JsonObject, ToolArgs, canonical_json_object, decode_json_object
 
 _CITED_TYPES = {"fact", "conclusion", "decision", "implementation", "verification", "synthesis", "project_note"}
 
@@ -45,14 +47,22 @@ class ResearchToolOutput:
 
     model_text: str
     receipt_text: str = ""
-    read_passages: tuple[dict[str, Any], ...] = ()
-    read_observation: dict[str, Any] = field(default_factory=dict)
+    read_passages: tuple[PassageDescriptor, ...] = ()
+    read_observation: JsonObject = field(default_factory=dict)
     ok: bool = field(kw_only=True)
     knowledge_search_empty: bool = field(default=False, kw_only=True)
 
     def __post_init__(self) -> None:
         if type(self.ok) is not bool:
             raise TypeError("research output ok must be an exact boolean")
+        observation = canonical_json_object(self.read_observation)
+        object.__setattr__(self, "read_observation", observation)
+        if self.read_passages:
+            from codey.research.passages import restore_passages
+
+            ledger = ResearchLedger()
+            restore_passages(ledger, observation, self.read_passages)
+            object.__setattr__(self, "read_passages", tuple(row.descriptor() for row in ledger.read_passages.values()))
 
 
 @dataclass
@@ -304,15 +314,12 @@ class ResearchTools:
             return ResearchToolOutput("ERROR: knowledge scope mismatch", ok=False)
         if note.type == "source" and any(s in self.sources_read for s in note.sources):
             self.grounded_ids.add(note.id)
-        note_references = getattr(self.store, "note_references", None)
-        references: list[dict[str, Any]] = (
-            note_references(note.id, revision) if callable(note_references) else []
-        )
+        references = [canonical_json_object(ref) for ref in self.store.note_references(note.id, revision)]
         answer_refs = []
         claim_states = []
         access = KnowledgeAccess(self.project, self.session_id, self.store.owner_id)
         for ref in references:
-            target = self.store.repository.read(str(ref["target"]), int(ref["revision"]))
+            target = self.store.repository.read(str(ref["target"]), _as_int(ref["revision"], -1))
             if target is not None and access.allows(target) and target.value.kind in {"claim", "inference", "question"}:
                 answer_refs.append({"id": target.value.id, "revision": target.revision})
                 claim_states.append({"id": target.value.id, "revision": target.revision,
@@ -348,20 +355,16 @@ class ResearchTools:
         return ("ERROR: requested knowledge identity was not found at the requested version. "
                 "Copy an exact id and revision from knowledge_search; do not guess or shorten it." + suggestion)
 
-    def knowledge_commit(self, args: dict[str, Any]) -> ResearchToolOutput:
+    def knowledge_commit(self, args: ToolArgs) -> ResearchToolOutput:
         """The common tool dispatcher owns this effect; the repository only commits."""
         if self.store is None or isinstance(self.store, StagedKnowledgeStore):
             return ResearchToolOutput("ERROR: durable knowledge commit requires the authoritative store", ok=False)
         try:
-            raw = args.get("changes")
-            if not isinstance(raw, list) or not raw:
-                raise ValueError("changes must be a nonempty list of {value, expected_revision}")
+            request = KnowledgeCommitRequest.decode(args)
             mutations: list[KnowledgeMutation] = []
             access = KnowledgeAccess(self.project, self.session_id, self.store.owner_id)
-            for row in raw:
-                if not isinstance(row, dict) or set(row) != {"value", "expected_revision"}:
-                    raise ValueError("each change needs value and expected_revision")
-                value = KnowledgeObject.from_dict(row["value"])
+            for mutation in request.mutations:
+                value = mutation.value
                 from codey.knowledge.model import KnowledgeVersion
 
                 if not access.allows(KnowledgeVersion(value, 1, "", "")):
@@ -369,10 +372,8 @@ class ResearchTools:
                 old = self.store.repository.read(value.id)
                 if old is not None and not access.allows(old):
                     raise ValueError("knowledge scope mismatch")
-                mutations.append(KnowledgeMutation(value, row["expected_revision"]))
-            commit_id = str(args.get("commit_id") or "").strip()
-            if not commit_id:
-                raise ValueError("commit_id required")
+                mutations.append(mutation)
+            commit_id = request.commit_id
             identity = f"tool:{self.session_id}:{commit_id}"
             receipt = self.store.repository.committed(identity, mutations)
             if receipt is None:
@@ -400,17 +401,17 @@ class ResearchTools:
         except (ValueError, TypeError, KeyError) as exc:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
-    def save_finding(self, args: dict[str, Any]) -> ResearchToolOutput:
+    def save_finding(self, args: ToolArgs) -> ResearchToolOutput:
         """Deterministic organization of one explicit, unreviewed interpretation."""
         from codey.research.findings import save_finding
 
-        output: ResearchToolOutput = save_finding(self, args)
+        output: ResearchToolOutput = save_finding(self, decode_json_object(args))
         return output
 
-    def save_inference(self, args: dict[str, Any]) -> ResearchToolOutput:
+    def save_inference(self, args: ToolArgs) -> ResearchToolOutput:
         from codey.research.references import save_inference
 
-        output: ResearchToolOutput = save_inference(self, args)
+        output: ResearchToolOutput = save_inference(self, decode_json_object(args))
         return output
 
     def research_plan(self, questions: object) -> ResearchToolOutput:
@@ -420,14 +421,15 @@ class ResearchTools:
         try:
             planned = question_plan(questions, self.ledger.questions)
             self.ledger.questions = planned
-            observation = {"questions": list(planned)}
+            observation: JsonObject = {"questions": list(planned)}
             return ResearchToolOutput(canonical_json(observation), read_observation=observation, ok=True)
         except ValueError as exc:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)
 
-    def knowledge_write(self, args: dict[str, Any], *, finding_id: str = "", locator: str = "",
+    def knowledge_write(self, args: ToolArgs, *, finding_id: str = "", locator: str = "",
                         evidence_locators: tuple[str, ...] = (),
                         evidence_context: ResearchLedger | None = None) -> ResearchToolOutput:
+        args = decode_json_object(args)
         if self.store is None:
             return ResearchToolOutput("ERROR: knowledge store is unavailable", ok=False)
         existing_id, existing_note, updating, identity_error = _resolve_write_target(self.store, args)
@@ -494,7 +496,7 @@ class ResearchTools:
 
         try:
             commit_id, mutations = note_knowledge(note, evidence_context, evidence_preparation, self.store.repository,
-                                                 conditions=args.get("conditions"))
+                                                 conditions=decode_conditions(args.get("conditions")))
         except (ValueError, TypeError) as exc:
             return ResearchToolOutput(f"ERROR: {exc}", ok=False)
         rel = self.store.publish_note(note, commit_id, mutations, changes=_base_changes(self.changes))
@@ -580,7 +582,7 @@ class ResearchTools:
 
 def _resolve_write_target(
     store: KnowledgeStore | StagedKnowledgeStore,
-    args: dict[str, Any],
+    args: ToolArgs,
 ) -> tuple[str, KnowledgeNote | None, bool, str | None]:
     existing_id = str(args.get("id") or "").strip()
     if existing_id and not is_safe_id(existing_id):
@@ -595,7 +597,7 @@ def _resolve_write_target(
 
 
 def _validate_write_basis(
-    args: dict[str, Any],
+    args: ToolArgs,
     existing_note: KnowledgeNote | None,
 ) -> tuple[str, str, str, str | None]:
     note_type = str(
@@ -631,7 +633,7 @@ def _format_write_problem(problem: str | None) -> str | None:
 
 def _prepare_write_sources(
     tools: ResearchTools,
-    args: dict[str, Any],
+    args: ToolArgs,
     existing_note: KnowledgeNote | None,
     updating: bool,
     note_type: str,
@@ -643,10 +645,11 @@ def _prepare_write_sources(
     )
     # A new note can catalogue the URLs the caller already supplied on its
     # evidence items. This copies explicit locators, never invents evidence.
-    if "sources" not in args and existing_note is None and isinstance(args.get("evidence"), list):
+    evidence = args.get("evidence")
+    if "sources" not in args and existing_note is None and isinstance(evidence, list):
         sources = list(dict.fromkeys(
-            item["source_url"].strip() for item in args["evidence"]
-            if isinstance(item, dict) and isinstance(item.get("source_url"), str) and item["source_url"].strip()
+            url.strip() for item in evidence if isinstance(item, dict)
+            and isinstance((url := item.get("source_url")), str) and url.strip()
         ))
     validating_sources = not updating or "sources" in args
     if note_type == "source":
@@ -671,11 +674,11 @@ def _prepare_write_sources(
 
 
 def _prepare_write_relations(
-    args: dict[str, Any],
+    args: ToolArgs,
     existing_note: KnowledgeNote | None,
-) -> tuple[list[dict[str, Any]], list[str]]:
+) -> tuple[list[ConceptRelation], list[str]]:
     if "relations" in args:
-        relations: tuple[list[dict[str, Any]], list[str]] = clean_relations(args.get("relations"))
+        relations = clean_relations(args.get("relations"))
         return relations
     return (
         list(existing_note.relations if existing_note is not None else []),
@@ -683,7 +686,7 @@ def _prepare_write_relations(
     )
 
 
-def _resolve_write_status(args: dict[str, Any], existing_note: KnowledgeNote | None) -> str:
+def _resolve_write_status(args: ToolArgs, existing_note: KnowledgeNote | None) -> str:
     status = str(
         args.get("status")
         if "status" in args
@@ -695,14 +698,14 @@ def _resolve_write_status(args: dict[str, Any], existing_note: KnowledgeNote | N
 
 
 def _build_write_note(
-    args: dict[str, Any],
+    args: ToolArgs,
     existing_note: KnowledgeNote | None,
     existing_id: str,
     note_type: str,
     title: str,
     body: str,
     sources: list[str],
-    relations: list[dict[str, Any]],
+    relations: list[ConceptRelation],
     tags: list[str],
     status: str,
     session_id: str,
@@ -778,22 +781,22 @@ def _finalize_write_note(
     return output
 
 
-def _as_int(value: Any, default: int) -> int:
+def _as_int(value: object, default: int) -> int:
     if isinstance(value, bool):
         return default
     if isinstance(value, str) and not value.strip().isascii():
         return default
     try:
-        return int(value)
+        return int(value) if isinstance(value, (int, float, str)) else default
     except (TypeError, ValueError, OverflowError):
         return default
 
 
-def _as_float(value: Any) -> float | None:
+def _as_float(value: object) -> float | None:
     if isinstance(value, bool):
         return None
     try:
-        number = float(value) if value is not None else None
+        number = float(value) if isinstance(value, (int, float, str)) else None
     except (TypeError, ValueError, OverflowError):
         return None
     if number is None or not math.isfinite(number):
@@ -801,12 +804,12 @@ def _as_float(value: Any) -> float | None:
     return number
 
 
-def _as_opt_str(value: Any) -> str | None:
+def _as_opt_str(value: object) -> str | None:
     text = str(value).strip() if value not in (None, "") else ""
     return text or None
 
 
-def _as_str_list(value: Any) -> list[str]:
+def _as_str_list(value: object) -> list[str]:
     if isinstance(value, str):
         return [value.strip()] if value.strip() else []
     if isinstance(value, (list, tuple)):
@@ -856,13 +859,10 @@ def clone_research_tools(
     """Create a fresh tool facade over the same run-scoped research facts."""
 
     candidate = search if search is not None else tools.search
-    if candidate is not None and (
-        not callable(getattr(candidate, "search", None))
-        or not callable(getattr(candidate, "fetch", None))
-    ):
+    if candidate is not None and not isinstance(candidate, _SearchProvider):
         raise TypeError("research search provider must expose search() and fetch()")
     return ResearchTools(
-        search=cast(_SearchProvider | None, candidate),
+        search=candidate,
         store=tools.store,
         changes=tools.changes,
         diagnostics=diagnostics if diagnostics is not None else tools.diagnostics,

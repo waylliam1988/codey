@@ -8,18 +8,21 @@ searches, opened final URLs, source quality hints, and short evidence snippets.
 from __future__ import annotations
 
 import contextlib
+import copy
 import hashlib
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from difflib import get_close_matches
-from typing import Any
 
 from codey.research import source_domains
 from codey.research.passages import ReadPassage
+from codey.research.receipt_types import InvestigationRecord, SourceSearchLocator, SourceSearchObservation
 from codey.research.reference import ResearchReference
 from codey.research.source_document import SourceDocument
 from codey.research.urls import host_key, opened_url, parsed_url
+from codey.types.json_value import JsonObject, canonical_json_object
 from codey.utils.refs import coerce_int, parse_int
 
 MAX_SNIPPET_CHARS = 360
@@ -45,8 +48,8 @@ class SourceQuality:
         parts = [self.level, self.kind, self.freshness, self.independent_group]
         return " · ".join(part for part in parts if part)
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+    def to_dict(self) -> JsonObject:
+        return canonical_json_object(asdict(self))
 
 
 @dataclass(frozen=True)
@@ -56,8 +59,8 @@ class SearchResultRecord:
     url: str
     snippet: str = ""
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+    def to_dict(self) -> JsonObject:
+        return canonical_json_object(asdict(self))
 
 
 @dataclass(frozen=True)
@@ -66,8 +69,8 @@ class SearchRecord:
     timestamp: str
     results: tuple[SearchResultRecord, ...] = ()
 
-    def to_dict(self) -> dict[str, Any]:
-        data = asdict(self)
+    def to_dict(self) -> JsonObject:
+        data = canonical_json_object(asdict(self))
         data["results"] = [item.to_dict() for item in self.results]
         return data
 
@@ -86,8 +89,8 @@ class OpenedSource:
     pages_read: tuple[int, ...] = ()
     truncated: bool = False
 
-    def to_dict(self) -> dict[str, Any]:
-        data = asdict(self)
+    def to_dict(self) -> JsonObject:
+        data = canonical_json_object(asdict(self))
         data["quality"] = self.quality.to_dict()
         data["pages_read"] = list(self.pages_read)
         return data
@@ -103,8 +106,8 @@ class EvidenceItem:
     page: int | None = None
     locator: str = ""
 
-    def to_dict(self) -> dict[str, Any]:
-        data = asdict(self)
+    def to_dict(self) -> JsonObject:
+        data = canonical_json_object(asdict(self))
         # Public/UI payload boundary: the exact excerpt stays on the ledger
         # item for proof locators, while everything leaving the ledger
         # (events, UI session state) carries only the bounded display form.
@@ -125,10 +128,10 @@ class ResearchLedger:
         self.searches: list[SearchRecord] = []
         self.opened_sources: list[OpenedSource] = []
         self.evidence_items: list[EvidenceItem] = []
-        self.source_searches: list[dict[str, Any]] = []
+        self.source_searches: list[SourceSearchObservation] = []
         self.read_passages: dict[str, ReadPassage] = {}
         self.references: dict[str, ResearchReference] = {}
-        self.investigations: dict[str, dict[str, Any]] = {}
+        self.investigations: dict[str, InvestigationRecord] = {}
         self.questions: tuple[str, ...] = ()
         self._source_texts: dict[str, str] = {}
         self._source_pages: dict[str, dict[int, str]] = {}
@@ -139,10 +142,10 @@ class ResearchLedger:
         forked.searches = list(self.searches)
         forked.opened_sources = list(self.opened_sources)
         forked.evidence_items = list(self.evidence_items)
-        forked.source_searches = [dict(s) for s in self.source_searches]
+        forked.source_searches = copy.deepcopy(self.source_searches)
         forked.read_passages = dict(self.read_passages)
         forked.references = dict(self.references)
-        forked.investigations = {k: dict(v) for k, v in self.investigations.items()}
+        forked.investigations = copy.deepcopy(self.investigations)
         forked.questions = self.questions
         forked._source_texts = dict(self._source_texts)
         forked._source_pages = {k: dict(v) for k, v in self._source_pages.items()}
@@ -163,7 +166,7 @@ class ResearchLedger:
         self._source_pages = staged._source_pages
         self._source_page_versions = staged._source_page_versions
 
-    def record_search(self, query: str, results: list[dict[str, Any]]) -> None:
+    def record_search(self, query: str, results: Sequence[Mapping[str, object]]) -> None:
         query = " ".join((query or "").split())
         if not query:
             return
@@ -356,7 +359,7 @@ class ResearchLedger:
         query = " ".join((query or "").split())
         if not final_url or not query:
             return
-        bounded_hits = []
+        bounded_hits: list[SourceSearchLocator] = []
         for hit in hits[:MAX_PAYLOAD_SOURCE_SEARCHES]:
             if not isinstance(hit, dict):
                 continue
@@ -496,9 +499,9 @@ class ResearchLedger:
                 return item.title
         return ""
 
-    def search_results_payload(self) -> list[dict[str, Any]]:
+    def search_results_payload(self) -> list[JsonObject]:
         opened = self.final_url_set()
-        rows: list[dict[str, Any]] = []
+        rows: list[JsonObject] = []
         for search in self.searches[:MAX_PAYLOAD_SEARCHES]:
             for result in search.results:
                 final = self.canonical_opened_url(result.url)
@@ -515,18 +518,18 @@ class ResearchLedger:
                     return rows
         return rows
 
-    def opened_sources_payload(self) -> list[dict[str, Any]]:
+    def opened_sources_payload(self) -> list[JsonObject]:
         return [item.to_dict() for item in self.opened_sources[:MAX_PAYLOAD_SOURCES]]
 
-    def evidence_payload(self) -> list[dict[str, Any]]:
+    def evidence_payload(self) -> list[JsonObject]:
         return [item.to_dict() for item in self.evidence_items[:MAX_PAYLOAD_EVIDENCE]]
 
-    def coverage_payload(self) -> dict[str, Any]:
+    def coverage_payload(self) -> JsonObject:
         opened_final = self.final_url_set()
         opened_requested = {
             item.requested_url for item in self.opened_sources if item.requested_url
         }
-        skipped: list[dict[str, Any]] = []
+        skipped: list[JsonObject] = []
         for search in self.searches:
             for result in search.results:
                 final = self.canonical_opened_url(result.url)
@@ -543,7 +546,7 @@ class ResearchLedger:
                     break
             if len(skipped) >= 16:
                 break
-        return {
+        return canonical_json_object({
             "questions": [{"question_ref": f"q{index}", "question": text}
                           for index, text in enumerate(self.questions, 1)],
             "investigations": {k: dict(v) for k, v in self.investigations.items()},
@@ -552,7 +555,7 @@ class ResearchLedger:
             "source_searches": list(self.source_searches[:MAX_PAYLOAD_SOURCE_SEARCHES]),
             "opened_count": len(self.opened_sources),
             "skipped_results": skipped,
-        }
+        })
 
 
 def now_iso() -> str:
@@ -611,7 +614,7 @@ def _independent_group(host: str) -> str:
     return host
 
 
-def _coerce_evidence(value: object) -> list[dict[str, Any]]:
+def _coerce_evidence(value: object) -> list[JsonObject]:
     if isinstance(value, dict):
         return [value]
     if isinstance(value, (list, tuple)):

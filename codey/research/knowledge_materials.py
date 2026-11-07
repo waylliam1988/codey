@@ -4,19 +4,24 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
+from codey.knowledge.model import KnowledgeVersion
 from codey.knowledge.recall import KnowledgeAccess
 from codey.research.ledger import OpenedSource, SourceQuality
-from codey.research.passages import describe_section_window, passage_ref, restore_passages
+from codey.research.passages import PassageDescriptor, describe_section_window, passage_ref, restore_passages
+from codey.types.json_value import canonical_json_object
 
 if TYPE_CHECKING:
-    from codey.research.tools import ResearchToolOutput
+    from codey.research.tools import ResearchToolOutput, ResearchTools
 
 
-def read_material(tools: Any, version: Any, *, offset: int = 0, limit: int = 6000) -> ResearchToolOutput:
+def read_material(tools: ResearchTools, version: KnowledgeVersion, *, offset: int = 0, limit: int = 6000) -> ResearchToolOutput:
     """No acquisition or writes. Every displayed byte belongs to an exact version."""
     from codey.research.tools import ResearchToolOutput
+
+    if tools.store is None:
+        raise ValueError("knowledge material requires a store")
 
     value = version.value
     evidence = version if value.kind == "evidence" else None
@@ -24,10 +29,13 @@ def read_material(tools: Any, version: Any, *, offset: int = 0, limit: int = 600
         refs = [ref for ref in value.references if ref.relation == "from_source"]
         if len(refs) != 1:
             raise ValueError("stored evidence requires one pinned source")
-        version = tools.store.repository.read(refs[0].target, refs[0].revision)
+        source_version = tools.store.repository.read(refs[0].target, refs[0].revision)
+    else:
+        source_version = version
     access = KnowledgeAccess(tools.project, tools.session_id, tools.store.owner_id)
-    if version is None or version.value.kind != "source" or not access.allows(version):
+    if source_version is None or source_version.value.kind != "source" or not access.allows(source_version):
         raise ValueError("stored material source is missing or inaccessible")
+    version = source_version
     source_value = version.value
     text, provenance = source_value.content, source_value.provenance
     source = OpenedSource(
@@ -38,7 +46,7 @@ def read_material(tools: Any, version: Any, *, offset: int = 0, limit: int = 600
         content_kind=provenance.get("content_kind", "html"),
         truncated=bool(provenance.get("truncated", False)))
     pages = provenance.get("pages", [])
-    rows: list[dict[str, Any]]
+    rows: list[PassageDescriptor]
     if evidence is not None:
         start = evidence.value.provenance.get("start")
         if type(start) is not int:
@@ -49,7 +57,7 @@ def read_material(tools: Any, version: Any, *, offset: int = 0, limit: int = 600
         if end - start > 12000:
             raise ValueError("stored evidence exceeds read budget; read its pinned source using offset/limit")
         rows = [{"ref": passage_ref(source.final_url, source.text_hash, start, end), "start": start, "end": end,
-                 "evidence_version": [evidence.value.id, evidence.revision]}]
+                 "evidence_version": (evidence.value.id, evidence.revision)}]
         if not pages and evidence.value.provenance.get("page"):
             pages = [{"number": evidence.value.provenance["page"], "text": evidence.value.content}]
     else:
@@ -59,10 +67,10 @@ def read_material(tools: Any, version: Any, *, offset: int = 0, limit: int = 600
     if not rows:
         raise ValueError("stored source window contains no readable text")
     for row in rows:
-        row["source_version"] = [source_value.id, version.revision]
+        row["source_version"] = (source_value.id, version.revision)
         row["ref"] = passage_ref(source.final_url, source.text_hash, row["start"], row["end"],
             source_version=row["source_version"], evidence_version=row.get("evidence_version"))
-    observation = {"source": asdict(source), "text": text, "pages": pages}
+    observation = canonical_json_object({"source": asdict(source), "text": text, "pages": pages})
     restore_passages(tools.ledger, observation, rows)
     body = {"id": value.id, "revision": evidence.revision if evidence else version.revision,
             "kind": value.kind, "source_version": [source_value.id, version.revision],
