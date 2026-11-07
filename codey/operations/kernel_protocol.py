@@ -10,18 +10,21 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
+from codey.operations.kernel_contracts import ToolExecutor
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
 from codey.providers.base import AssistantTurn, TurnFinish
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
+from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
-from codey.toolchain.tool_spec import is_text_batch_tool
+from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
 
 MAX_NATIVE_CALLS_PER_TURN = 8
 
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
     from codey.research.answer_contract import AnswerScope
 
 
@@ -42,9 +45,9 @@ class TurnSnapshot:
     allowed: tuple[str, ...] | None
     contract_text: str
     tool_names: tuple[str, ...] = ()
-    policy: Any = None
-    frozen_specs: tuple[Any, ...] = ()
-    custom_executors: tuple[tuple[str, Any], ...] = ()
+    policy: TaskPolicy | None = None
+    frozen_specs: tuple[ToolSpec, ...] = ()
+    custom_executors: tuple[tuple[str, ToolExecutor], ...] = ()
     implementation_compatible: bool = True
     nested_tool_names: tuple[str, ...] = ()
     research_scope: AnswerScope | None = None
@@ -54,7 +57,7 @@ class TurnSnapshot:
         return tuple(dict.fromkeys((*self.tool_names, *self.nested_tool_names)))
 
     @property
-    def model_specs(self) -> tuple[Any, ...]:
+    def model_specs(self) -> tuple[ToolSpec, ...]:
         return tuple(spec for spec in self.frozen_specs if spec.name in self.tool_names)
 
 
@@ -67,7 +70,7 @@ class ReceivedProviderTurn:
     prompt: str
     owner_session: TaskSession
     logical_turn: int = 1
-    window_ref: Any = None
+    window_ref: ProtocolWindowRef | None = None
     effect_scope: str = ""
 
 
@@ -140,7 +143,7 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
     return tuple(name for name in base if name not in denied)
 
 
-def _frozen_specs_for_names(names: tuple[str, ...]) -> tuple[Any, ...]:
+def _frozen_specs_for_names(names: tuple[str, ...]) -> tuple[ToolSpec, ...]:
     """Capture immutable definitions for exactly the advertised names."""
     import copy as _copy
 
@@ -150,7 +153,7 @@ def _frozen_specs_for_names(names: tuple[str, ...]) -> tuple[Any, ...]:
     except Exception as exc:
         raise RuntimeError(f"tool snapshot unavailable: {exc}") from exc
     specs = _all_specs()
-    frozen: list[Any] = []
+    frozen: list[ToolSpec] = []
     for name in names:
         spec = specs.get(name)
         if spec is None:
@@ -160,29 +163,31 @@ def _frozen_specs_for_names(names: tuple[str, ...]) -> tuple[Any, ...]:
         except Exception as exc:
             raise RuntimeError(f"tool snapshot freeze failed for {name}: {exc}") from exc
         try:
-            frozen.append(_freeze(copied))
+            frozen.append(cast(ToolSpec, _freeze(copied)))
         except Exception as exc:
             raise RuntimeError(f"tool snapshot freeze failed for {name}: {exc}") from exc
     return tuple(frozen)
 
 
-def _frozen_custom_executors(names: tuple[str, ...]) -> tuple[tuple[str, Any], ...]:
+def _frozen_custom_executors(names: tuple[str, ...]) -> tuple[tuple[str, ToolExecutor], ...]:
     """Freeze third-task executor bindings for this turn (same source)."""
     try:
         from codey.toolchain.tool_spec import custom_executor_for as _fn_for
     except Exception as exc:
         raise RuntimeError(f"tool snapshot executors unavailable: {exc}") from exc
-    bindings: list[tuple[str, Any]] = []
+    bindings: list[tuple[str, ToolExecutor]] = []
     for name in names:
         try:
             fn = _fn_for(name)
         except Exception as exc:
             raise RuntimeError(f"tool snapshot executor freeze failed for {name}: {exc}") from exc
-        bindings.append((name, fn))
+        if fn is not None and not callable(fn):
+            raise RuntimeError(f"tool snapshot executor is not callable for {name}")
+        bindings.append((name, cast(ToolExecutor, fn)))
     return tuple(bindings)
 
 
-def frozen_spec_map(snapshot: TurnSnapshot | None) -> dict[str, Any] | None:
+def frozen_spec_map(snapshot: TurnSnapshot | None) -> dict[str, ToolSpec] | None:
     if snapshot is None:
         return None
     mapping = {spec.name: spec for spec in snapshot.frozen_specs}
@@ -191,7 +196,7 @@ def frozen_spec_map(snapshot: TurnSnapshot | None) -> dict[str, Any] | None:
     return mapping
 
 
-def frozen_custom_executor_map(snapshot: TurnSnapshot | None) -> dict[str, Any] | None:
+def frozen_custom_executor_map(snapshot: TurnSnapshot | None) -> dict[str, ToolExecutor] | None:
     if snapshot is None:
         return None
     mapping = dict(snapshot.custom_executors)
