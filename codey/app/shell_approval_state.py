@@ -3,126 +3,155 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from contextlib import suppress
+from typing import TYPE_CHECKING, Protocol, cast
+
+from codey.app.approval_registry import ApprovalRegistry
+from codey.app.shell_approval_durable import ApprovalFactContext, ApprovalFactDurable, record_fact
+from codey.durable.model import ApprovalRecord, TaskCheckpoint
+from codey.runtime.core.api_selection import ApiRunSelection
+from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+from codey.storage.managed_outputs import ManagedOutputStore
+from codey.types.json_value import JsonObject
+
+if TYPE_CHECKING:
+    from codey.app.shell_approval_coordinator import ShellApprovalContext
+
+PendingApproval = dict[str, object]
+ApprovalHistory = tuple[ShellApprovalFact, ...]
 
 
-def _claim_execution_fact(ctx: Any, pending: dict[str, Any], approval_id: str) -> bool:
-    durable = getattr(ctx, "durable", None)
-    lookup = getattr(durable, "task", None)
+class ApprovalRecoveryDurable(ApprovalFactDurable, Protocol):
+    """Durable capabilities required to rebuild approval projections."""
+
+    def approval(self, approval_id: str) -> ApprovalRecord: ...
+
+    def tasks(self) -> tuple[TaskCheckpoint, ...]: ...
+
+    def task(self, task_id: str) -> TaskCheckpoint: ...
+
+
+class ApprovalStateContext(ApprovalFactContext, Protocol):
+    """Approval projection resources used by claim and reconstruction paths."""
+
+    managed_outputs: ManagedOutputStore | None
+    approvals: ApprovalRegistry
+
+
+class ApprovalRecoveryContext(ApprovalStateContext, Protocol):
+    """Explicit resources used by restart-time approval reconstruction."""
+
+    @property
+    def durable(self) -> ApprovalRecoveryDurable: ...
+
+
+def _claim_execution_fact(
+    ctx: ApprovalFactContext, pending: Mapping[str, object], approval_id: str,
+) -> bool:
+    from codey.durable.errors import CommitConflict
+    from codey.durable.model import EffectRecord
+    from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
+    from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+
     source_run_id = str(pending.get("run_id") or "")
     session_id = str(pending.get("session_id") or "")
-    if durable is not None and callable(lookup) and source_run_id:
-        try:
-            task = lookup(source_run_id)
-        except (KeyError, OSError, TypeError, ValueError):
-            task = None
-        if task is not None and str(getattr(task, "conversation_id", "")) == session_id:
-            from codey.durable.errors import CommitConflict
-            from codey.durable.model import EffectRecord
-            from codey.runtime.core.operation_state import lane_for_run, operation_id_for_run
-            try:
-                effect = EffectRecord(
-                    effect_id=f"shell-{approval_id}",
-                    task_id=source_run_id,
-                    category="shell",
-                    replay_class="unsafe",
-                    args_digest=str(pending.get("command_digest") or ""),
-                    status="pending",
-                    intent={
-                        "approval_id": approval_id,
-                        "call_id": str(pending.get("call_id") or ""),
-                        "command_ref": str(pending.get("command_ref") or ""),
-                        "command_digest": str(pending.get("command_digest") or ""),
-                        "cwd": str(pending.get("cwd") or "."),
-                        "session_id": session_id,
-                        "run_id": source_run_id,
-                        "lane": lane_for_run(source_run_id),
-                        "operation_id": operation_id_for_run(source_run_id),
-                    },
-                )
-                result = ctx.durable.claim_approval_and_begin_effect(approval_id, effect)
-                if result is None:
-                    return False
-                # Audit is a post-commit projection.  It is deliberately not
-                # routed back through record_fact, which would create a
-                # second durable approval transition.
-                try:
-                    from codey.runtime.effects.shell_approval_records import ShellApprovalFact
-                    ctx.shell_approval_records.append(ShellApprovalFact(
-                        approval_id=approval_id,
-                        session_id=session_id,
-                        source_run_id=source_run_id,
-                        kind="execution_claimed",
-                        invocation_origin="native" if pending.get("call_id") else "text",
-                        command_ref=str(pending.get("command_ref") or ""),
-                        command_digest=str(pending.get("command_digest") or ""),
-                        cwd=str(pending.get("cwd") or "."),
-                    ))
-                except OSError:
-                    pass
-                return True
-            except (CommitConflict, KeyError, OSError, TypeError, ValueError):
-                return False
-    # A task without a durable checkpoint is not executable.  The audit
-    # projection cannot mint a shell claim or act as a compatibility store.
-    return False
-
-
-def _claim_decision_fact(ctx: Any, pending: dict[str, Any], approval_id: str, kind: str) -> bool:
-    durable = getattr(ctx, "durable", None)
-    lookup = getattr(durable, "task", None)
-    source_run_id = str(pending.get("run_id") or "")
-    session_id = str(pending.get("session_id") or "")
-    if durable is not None and callable(lookup) and source_run_id:
-        try:
-            task = lookup(source_run_id)
-        except (KeyError, OSError, TypeError, ValueError):
-            task = None
-        if task is not None and str(getattr(task, "conversation_id", "")) == session_id:
-            from codey.durable.errors import CommitConflict
-            from codey.runtime.effects.shell_approval_records import ShellApprovalFact
-
-            try:
-                return bool(ctx.record_shell_approval_fact(ShellApprovalFact(
-                    approval_id=approval_id,
-                    session_id=session_id,
-                    source_run_id=source_run_id,
-                    kind=kind,
-                    invocation_origin="native" if pending.get("call_id") else "text",
-                    command_ref=str(pending.get("command_ref") or ""),
-                    command_digest=str(pending.get("command_digest") or ""),
-                    cwd=str(pending.get("cwd") or "."),
-                )))
-            except (CommitConflict, KeyError, OSError, TypeError, ValueError):
-                return False
-    return False
-
-
-def _source_api_selection(ctx: Any, session_id: str, source_run_id: str) -> Any:
-    durable = getattr(ctx, "durable", None)
-    lookup = getattr(durable, "task", None)
-    if durable is None or not callable(lookup):
-        return None
+    if not source_run_id:
+        return False
     try:
-        from codey.runtime.core.api_selection import ApiRunSelection
-        checkpoint = lookup(source_run_id)
-        if str(getattr(checkpoint, "conversation_id", "")) != session_id:
+        task = ctx.durable.task(source_run_id)
+        if task.conversation_id != session_id:
+            return False
+        effect = EffectRecord(
+            effect_id=f"shell-{approval_id}",
+            task_id=source_run_id,
+            category="shell",
+            replay_class="unsafe",
+            args_digest=str(pending.get("command_digest") or ""),
+            status="pending",
+            intent={
+                "approval_id": approval_id,
+                "call_id": str(pending.get("call_id") or ""),
+                "command_ref": str(pending.get("command_ref") or ""),
+                "command_digest": str(pending.get("command_digest") or ""),
+                "cwd": str(pending.get("cwd") or "."),
+                "session_id": session_id,
+                "run_id": source_run_id,
+                "lane": lane_for_run(source_run_id),
+                "operation_id": operation_id_for_run(source_run_id),
+            },
+        )
+        result = ctx.durable.claim_approval_and_begin_effect(approval_id, effect)
+        if result is None:
+            return False
+    except (CommitConflict, KeyError, OSError, TypeError, ValueError):
+        return False
+    # Audit follows the atomic claim; it must not perform another transition.
+    with suppress(OSError):
+        ctx.shell_approval_records.append(ShellApprovalFact(
+            approval_id=approval_id,
+            session_id=session_id,
+            source_run_id=source_run_id,
+            kind="execution_claimed",
+            invocation_origin="native" if pending.get("call_id") else "text",
+            command_ref=str(pending.get("command_ref") or ""),
+            command_digest=str(pending.get("command_digest") or ""),
+            cwd=str(pending.get("cwd") or "."),
+        ))
+    return True
+
+
+def _claim_decision_fact(
+    ctx: ApprovalFactContext, pending: Mapping[str, object], approval_id: str, kind: str,
+) -> bool:
+    from codey.durable.errors import CommitConflict
+    from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+
+    source_run_id = str(pending.get("run_id") or "")
+    session_id = str(pending.get("session_id") or "")
+    if not source_run_id:
+        return False
+    try:
+        task = ctx.durable.task(source_run_id)
+        if task.conversation_id != session_id:
+            return False
+        return record_fact(ctx, ShellApprovalFact(
+            approval_id=approval_id,
+            session_id=session_id,
+            source_run_id=source_run_id,
+            kind=kind,
+            invocation_origin="native" if pending.get("call_id") else "text",
+            command_ref=str(pending.get("command_ref") or ""),
+            command_digest=str(pending.get("command_digest") or ""),
+            cwd=str(pending.get("cwd") or "."),
+        ))
+    except (CommitConflict, KeyError, OSError, TypeError, ValueError):
+        return False
+
+
+def _source_api_selection(
+    ctx: ApprovalStateContext, session_id: str, source_run_id: str,
+) -> ApiRunSelection | None:
+    try:
+        checkpoint = ctx.durable.task(source_run_id)
+        if checkpoint.conversation_id != session_id:
             return None
-        snapshot = getattr(checkpoint, "provider_snapshot", {})
-        selection = snapshot.get("model_selection") if isinstance(snapshot, Mapping) else None
+        selection = checkpoint.provider_snapshot.get("model_selection")
         if not isinstance(selection, Mapping) or not selection:
             return None
         return ApiRunSelection.from_payload(dict(selection))
-    except (AttributeError, KeyError, OSError, TypeError, ValueError):
+    except (KeyError, OSError, TypeError, ValueError):
         return None
 
 
-def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
+def _rebuild_pending_from_fact(
+    ctx: ApprovalStateContext, fact: ShellApprovalFact,
+) -> PendingApproval | None:
     """Reconstruct a pending approval projection from its verified artifact."""
-    if getattr(ctx, "managed_outputs", None) is None:
+    managed_outputs = ctx.managed_outputs
+    if managed_outputs is None:
         return None
     try:
-        payload = ctx.managed_outputs.read_json_artifact({
+        payload = managed_outputs.read_json_artifact({
             "session_id": fact.session_id,
             "run_id": fact.source_run_id,
             "handle": fact.command_ref,
@@ -131,7 +160,7 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
         })
     except (OSError, ValueError, TypeError):
         return None
-    if not isinstance(payload, dict) or not isinstance(payload.get("command"), str):
+    if not isinstance(payload, Mapping) or not isinstance(payload.get("command"), str):
         return None
     from codey.agents.shell_approval import shell_command_event_fields, shell_command_payload
     from codey.policies.shell_analysis import request_analysis
@@ -144,7 +173,13 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
         return None
 
     command_fields = shell_command_payload(payload["command"])
-    pending: dict[str, Any] = {
+    command = payload["command"]
+    assert isinstance(command, str)
+    deferred_tool_calls = [
+        item for item in (payload.get("deferred_tool_calls") or [])
+        if isinstance(item, dict)
+    ][:8]
+    pending: PendingApproval = {
         "shell": shell.to_payload(),
         "analysis": analysis.to_payload(),
         "tool_name": str(payload.get("tool_name") or "shell"),
@@ -153,7 +188,7 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
         "id": fact.approval_id,
         "session_id": fact.session_id,
         "run_id": fact.source_run_id,
-        "command": payload["command"],
+        "command": command,
         "command_preview": command_fields["command"],
         "command_sha256": command_fields["command_sha256"],
         "command_chars": command_fields["command_chars"],
@@ -177,12 +212,9 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
         "risk_title": str(payload.get("risk_title") or ""),
         "risk_detail": str(payload.get("risk_detail") or ""),
         "post_approval_instructions": str(payload.get("post_approval_instructions") or ""),
-        "deferred_tool_calls": [
-            item for item in (payload.get("deferred_tool_calls") or [])
-            if isinstance(item, dict)
-        ][:8],
+        "deferred_tool_calls": deferred_tool_calls,
     }
-    pending["ui_event"] = {
+    ui_event: dict[str, object] = {
         "shell": shell.to_payload(),
         "tool_name": pending["tool_name"],
         "type": "shell_request",
@@ -195,30 +227,30 @@ def _rebuild_pending_from_fact(ctx: Any, fact: Any) -> dict[str, Any] | None:
         "risk_label": pending["risk_label"],
         "risk_title": pending["risk_title"],
         "risk_detail": pending["risk_detail"],
-        "deferred_tool_count": len(pending["deferred_tool_calls"]),
-        "deferred_tool_calls": pending["deferred_tool_calls"],
+        "deferred_tool_count": len(deferred_tool_calls),
+        "deferred_tool_calls": deferred_tool_calls,
     }
-    if pending["call_id"]:
-        pending["ui_event"]["call_id"] = pending["call_id"]
+    call_id = pending["call_id"]
+    if isinstance(call_id, str) and call_id:
+        ui_event["call_id"] = call_id
     from codey.storage.command_permissions import project_rule_available, session_rule_available
 
-    pending["ui_event"]["session_rule_available"] = session_rule_available(payload["command"], shell=shell, analysis=analysis)
-    pending["ui_event"]["project_rule_available"] = project_rule_available(payload["command"], shell=shell, analysis=analysis)
+    ui_event["session_rule_available"] = session_rule_available(command, shell=shell, analysis=analysis)
+    ui_event["project_rule_available"] = project_rule_available(command, shell=shell, analysis=analysis)
+    pending["ui_event"] = ui_event
     source_selection = _source_api_selection(ctx, fact.session_id, fact.source_run_id)
     if source_selection is not None:
         pending["_api_selection"] = source_selection
     return pending
 
 
-def approval_record_facts(record: Any) -> tuple[Any, ...]:
+def approval_record_facts(record: ApprovalRecord) -> ApprovalHistory:
     """Render the durable approval state as the bounded workflow shape.
 
     ``ShellApprovalFact`` remains an audit/export DTO.  Production recovery
     derives this compatibility shape from the one durable ``ApprovalRecord``
     instead of reading the JSONL projection back in.
     """
-    from codey.runtime.effects.shell_approval_records import ShellApprovalFact
-
     base = dict(
         approval_id=record.approval_id,
         session_id=record.conversation_id,
@@ -243,7 +275,7 @@ def approval_record_facts(record: Any) -> tuple[Any, ...]:
             result_digest=str(settlement.get("result_digest") or ""),
             **base,
         ))
-    continuation_status = str(getattr(record, "continuation_status", "waiting_for_result"))
+    continuation_status = record.continuation_status
     continuation_kind = {
         "resuming": "continuation_claimed",
         "started": "continuation_started",
@@ -253,22 +285,18 @@ def approval_record_facts(record: Any) -> tuple[Any, ...]:
     if continuation_kind is not None:
         facts.append(ShellApprovalFact(
             kind=continuation_kind,
-            continuation_run_id=str(getattr(record, "continuation_run_id", "") or ""),
+            continuation_run_id=record.continuation_run_id,
             **base,
         ))
     return tuple(facts)
 
 
-def _durable_approval_histories(ctx: Any) -> dict[str, tuple[Any, ...]]:
-    durable = getattr(ctx, "durable", None)
-    tasks_fn = getattr(durable, "tasks", None) or getattr(durable, "pending_tasks", None)
-    if not callable(tasks_fn):
-        return {}
-    from codey.durable.model import ApprovalRecord
-
-    histories: dict[str, tuple[Any, ...]] = {}
+def _durable_approval_histories(
+    ctx: ApprovalRecoveryContext,
+) -> dict[str, ApprovalHistory]:
+    histories: dict[str, ApprovalHistory] = {}
     try:
-        tasks = tasks_fn()
+        tasks = ctx.durable.tasks()
     except (KeyError, OSError, TypeError, ValueError):
         return {}
     for task in tasks:
@@ -288,9 +316,9 @@ def _durable_approval_histories(ctx: Any) -> dict[str, tuple[Any, ...]]:
     return histories
 
 
-def _durable_approval_facts(ctx: Any) -> tuple[Any, ...]:
+def _durable_approval_facts(ctx: ApprovalRecoveryContext) -> ApprovalHistory:
     """Reconstruct approval facts from non-terminal task checkpoints."""
-    rows: list[Any] = []
+    rows: list[ShellApprovalFact] = []
     for facts in _durable_approval_histories(ctx).values():
         last = facts[-1]
         if last.kind in {"requested", "approved"}:
@@ -298,7 +326,7 @@ def _durable_approval_facts(ctx: Any) -> tuple[Any, ...]:
     return tuple(rows)
 
 
-def restore_pending_shell_approvals(ctx: Any) -> int:
+def restore_pending_shell_approvals(ctx: ApprovalRecoveryContext) -> int:
     """Restore untouched durable approvals into the in-memory projection."""
     restored = 0
     # The in-memory approval registry is a UI projection.  Rebuild it from
@@ -314,18 +342,14 @@ def restore_pending_shell_approvals(ctx: Any) -> int:
 
 
 def claim_pending_shell_approval_locked(
-    ctx: Any, approval_id: str, *, claim_execution: bool = True,
-) -> dict[str, Any] | None:
-    pending: dict[str, Any] | None = ctx.approvals.shell_snapshot().get(approval_id)
+    ctx: ApprovalStateContext, approval_id: str, *, claim_execution: bool = True,
+) -> PendingApproval | None:
+    pending: PendingApproval | None = ctx.approvals.shell_snapshot().get(approval_id)
     if pending is None:
         # Only requests and accepted-but-unclaimed decisions can execute.
         # A claimed command without a receipt remains uncertain after restart.
-        durable = getattr(ctx, "durable", None)
-        lookup = getattr(durable, "approval", None)
-        if not callable(lookup):
-            return None
         try:
-            record = lookup(approval_id)
+            record = ctx.durable.approval(approval_id)
         except (KeyError, OSError, TypeError, ValueError):
             return None
         facts = approval_record_facts(record)
@@ -345,33 +369,33 @@ def claim_pending_shell_approval_locked(
 
 
 
-def expire_shell_results_locked(ctx: Any, **kwargs: Any) -> tuple[dict[str, Any], ...]:
+def expire_shell_results_locked(
+    ctx: ShellApprovalContext, *, run_id: str | None = None,
+    exclude_run_id: str | None = None, session_id: str | None = None,
+    output: str = "Task stopped; command approval expired.",
+) -> tuple[JsonObject, ...]:
     """Persist an abandoned verdict before removing in-memory approvals."""
     from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 
-    candidates = []
+    candidates: list[tuple[str, dict[str, object]]] = []
     for approval_id, pending in ctx.approvals.shell_snapshot().items():
-        run_id = str(pending.get("run_id") or "")
-        session_id = str(pending.get("session_id") or "")
-        if kwargs.get("run_id") and run_id != kwargs["run_id"]:
+        source_run = str(pending.get("run_id") or "")
+        source_session = str(pending.get("session_id") or "")
+        if run_id and source_run != run_id:
             continue
-        if kwargs.get("exclude_run_id") and run_id == kwargs["exclude_run_id"]:
+        if exclude_run_id and source_run == exclude_run_id:
             continue
-        if kwargs.get("session_id") and session_id != kwargs["session_id"]:
+        if session_id and source_session != session_id:
             continue
         candidates.append((approval_id, pending))
     try:
         for approval_id, pending in candidates:
-            durable = getattr(ctx, "durable", None)
-            lookup = getattr(durable, "approval", None)
-            if not callable(lookup):
-                continue
             try:
-                record = lookup(approval_id)
+                record = ctx.durable.approval(approval_id)
             except (KeyError, OSError, TypeError, ValueError):
                 continue
             if str(record.status) == "requested":
-                ctx.record_shell_approval_fact(ShellApprovalFact(
+                record_fact(ctx, ShellApprovalFact(
                     approval_id=approval_id,
                     session_id=str(pending.get("session_id") or ""),
                     source_run_id=str(pending.get("run_id") or ""),
@@ -382,9 +406,9 @@ def expire_shell_results_locked(ctx: Any, **kwargs: Any) -> tuple[dict[str, Any]
                     cwd=str(pending.get("cwd") or "."),
                 ))
     except Exception:
-        # A failed durable verdict must leave the card visible while revoking
-        # any in-flight shell ticket for this generation.
+        # Keep the card on durable failure, but invalidate in-flight tickets.
         ctx.approvals.invalidate_generation()
         raise
-    events: tuple[dict[str, Any], ...] = ctx.approvals.expire_shell_results(**kwargs)
-    return events
+    return cast(tuple[JsonObject, ...], ctx.approvals.expire_shell_results(
+        run_id=run_id or "", exclude_run_id=exclude_run_id or "", session_id=session_id or "", output=output,
+    ))

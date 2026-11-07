@@ -9,24 +9,27 @@ same ``DurableSession``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.runtime.core.operation_state import RuntimeOperationStore
 from codey.runtime.effects.effect_records import RuntimeEffectStore
 from codey.runtime.effects.tool_result_delivery import ToolResultDeliveryStore
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 
+if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
+
 
 @dataclass
 class DurableRuntimeAdapters:
-    durable: Any
+    durable: DurableSession
     mutations: RuntimeMutationLine
     operations: RuntimeOperationStore
     effects: RuntimeEffectStore
     delivery: ToolResultDeliveryStore
 
     @classmethod
-    def open(cls, durable: Any) -> DurableRuntimeAdapters:
+    def open(cls, durable: DurableSession) -> DurableRuntimeAdapters:
         if durable is None:
             raise ValueError("durable runtime adapters require durable storage")
         return cls(

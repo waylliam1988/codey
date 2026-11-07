@@ -81,6 +81,16 @@ runtime/approval/lifecycle 能力，scheduler abort 不再直接访问 context �
 扩大 app/shell/停止/准入回归 160 passed、6 skipped、6 subtests passed；生产树 mypy
 和相关 Pyrefly/Ruff 通过。旧兼容入口仍为现有调用方保留，核心流程只有一个状态所有者。
 
+审批 capability boundary 收紧批次：`ShellApprovalContext` 和 approval fact bridge 改为
+显式 Protocol；claim、decision、expiry 和 restart recovery 不再通过 `AppContext` 的
+通用回绕入口，也不再从 JSONL 审计投影取得执行许可。审批恢复模块的上下文、durable
+record、task checkpoint、API selection、pending projection 和 fact history 均使用具体类型，
+消除了该边界的历史 `Any`；durable claim 先提交，审计仍在提交后追加。新增
+`tests/test_shell_approval_coordinator.py` 验证协调器只依赖声明能力；原来只提供私有
+spawn gate 的 control/scheduler/race 测试替身改为真实 `TaskRuntimeCoordinator` 和
+`ShellExecutionHarness`，没有放宽生产契约。审批恢复与生命周期定向回归为 72 passed，
+注册表/epoch/冷启动/分析回归为 40 passed、1 skipped；该批次未运行全量 pytest。
+
 查询门面首批把 `conversation_ids`、head/存在性、conversation tree/lineage、
 history/navigation/window、inbox、context 和 snapshot 查询移到
 `ConversationQueryFacade`。`DurableSession` 只保留兼容代理；所有查询统一通过

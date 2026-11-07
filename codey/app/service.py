@@ -136,7 +136,7 @@ class LocalService:
             self.ctx.durable_scheduler.start()
             self._publish()
         elif operation == "drain":
-            with self.ctx._shell_spawn_gate, self.ctx.durable.control_line():
+            with self.ctx.task_runtime.spawn_line(), self.ctx.durable.control_line():
                 self.control.draining = True
             self._publish()
         elif operation == "shutdown":

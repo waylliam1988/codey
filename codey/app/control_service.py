@@ -66,7 +66,7 @@ class ControlService:
             return self.wait(actor, args)
         selection = self._prepare_message(actor, args) if name == "send_message" else None
         post_cancel: list[str] = []
-        gate = self.ctx._shell_spawn_gate if name in {"stop_run", "pause_control"} else contextlib.nullcontext()
+        gate = self.ctx.task_runtime.spawn_line() if name in {"stop_run", "pause_control"} else contextlib.nullcontext()
         with gate, self.ctx.durable.control_line():
             if command.readonly:
                 return self._read(actor, name, args)
@@ -324,7 +324,7 @@ class ControlService:
         """A real UI action revokes automation before admitting human input."""
         conversations.import_ui(self.ctx)
         cancel: list[str] = []
-        with self.ctx._shell_spawn_gate, self.ctx.durable.control_line():
+        with self.ctx.task_runtime.spawn_line(), self.ctx.durable.control_line():
             config = control.latest(self.ctx.durable, session_id)
             if config is None or config["mode"] != "delegated":
                 return

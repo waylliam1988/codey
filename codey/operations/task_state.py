@@ -73,7 +73,6 @@ class TaskState(Protocol):
     # spine; recovery must therefore read the canonical checkpoint directly.
     durable: DurableSession
     lock: threading.Lock
-    _shell_spawn_gate: threading.Lock
     run_registry: RunRegistry
     task_runtime: TaskRuntimeCoordinator
     lifecycle: AppLifecycle

@@ -19,30 +19,30 @@ def test_handler_requires_the_server_context():
 
 
 def test_draining_cannot_mint_a_shell_execution_ticket(monkeypatch):
-    import threading
-    from types import SimpleNamespace
-
     from codey.app import shell_service
+    from tests.support.shell_execution import ShellExecutionHarness
 
     called = []
     monkeypatch.setattr(shell_service, "mint_shell_ticket", lambda **kwargs: called.append(kwargs))
-    ctx = SimpleNamespace(_shell_spawn_gate=threading.RLock(), control_service=SimpleNamespace(draining=True),
-                          lock=threading.RLock(), approvals={}, run_registry=object())
+    ctx = ShellExecutionHarness()
+    ctx.control_service = type("Control", (), {"draining": True})()
+    ctx.approvals = type("Approvals", (), {})()
     assert shell_service.claim_shell_ticket(ctx, "approval", timeout=1, output_limit=100) == (None, None)
     assert not called
 
 
 def test_native_queue_cannot_admit_after_drain(monkeypatch):
-    import threading
     from types import SimpleNamespace
 
     from codey.app import input_queue_routes
+    from tests.support.shell_execution import ShellExecutionHarness
 
     admitted = []
     monkeypatch.setattr(input_queue_routes, "bind_input_queue", lambda ctx: None)
-    ctx = SimpleNamespace(_shell_spawn_gate=threading.RLock(), control_service=SimpleNamespace(draining=True),
-                          load_ui_state=lambda: {"sessions": [{"id": "c"}], "projects": []},
-                          input_queue=SimpleNamespace(create=lambda *args, **kwargs: admitted.append(args)))
+    ctx = ShellExecutionHarness()
+    ctx.control_service = SimpleNamespace(draining=True)
+    ctx.load_ui_state = lambda: {"sessions": [{"id": "c"}], "projects": []}
+    ctx.input_queue = SimpleNamespace(create=lambda *args, **kwargs: admitted.append(args))
     status, _ = input_queue_routes.input_action_response(ctx, {"action": "create", "id": "i",
         "request": {"session_id": "c", "run_id": "r", "task": "read", "provider": "deepseek"}})
     assert status == 503

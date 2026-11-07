@@ -177,7 +177,7 @@ def test_abort_cleans_shell_and_approval_resources_without_optional_provider_hoo
             events.append(("expire", kwargs))
             return (result,)
 
-        monkeypatch.setattr(state, "_expire_shell_results_locked", expire)
+        monkeypatch.setattr(state.task_lifecycle, "_approval_expiry", expire)
         monkeypatch.setattr(state.shell_approval_workflow, "cancel_queued",
                             lambda session_id: events.append(("cancel", session_id)))
         monkeypatch.setattr(state, "record_shell_result", lambda event: events.append(("result", event)))
@@ -200,7 +200,7 @@ def test_abort_does_not_silently_skip_missing_required_wiring(tmp_path, dependen
             conversation_id="conversation", request_id="request", task_id="task",
             text="work", provider_snapshot={"provider_id": "local"},
         )
-        owner, attribute = ((state, "_expire_shell_results_locked") if dependency == "shell_results"
+        owner, attribute = ((state.task_lifecycle, "_approval_expiry") if dependency == "shell_results"
                             else (state.shell_approval_workflow, "cancel_queued"))
         with patch.object(owner, attribute, None), pytest.raises(TypeError):
             state._abort_durable_task(state.durable.task("task"), object())

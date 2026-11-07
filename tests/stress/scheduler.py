@@ -33,8 +33,6 @@ Three rules keep generation honest:
 from __future__ import annotations
 
 import queue
-import threading
-from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
@@ -61,6 +59,7 @@ from codey.runtime.effects.tool_result_delivery import (
 from tests.stress.model import fold_event_rows
 from tests.stress.oracle import InvariantChecker
 from tests.stress.world import FakeProviderTimeout
+from tests.support.shell_execution import ShellExecutionHarness
 
 # -- step kinds ----------------------------------------------------------
 
@@ -114,15 +113,24 @@ CLUSTER_PROBABILITY = 0.05
 
 # -- shell harness (also used by the P2 race test) ------------------------
 
-def shell_ctx(approvals: ApprovalRegistry) -> SimpleNamespace:
+class ShellHarness(ShellExecutionHarness):
+    def __init__(self, approvals: ApprovalRegistry) -> None:
+        super().__init__()
+        self.approvals = approvals
+
+    def approval_generation(self) -> int:
+        return self.approvals.current_generation()
+
+    def claim_shell_ticket(self, approval_id: str, *, timeout: int, output_limit: int):
+        return shell_service.mint_shell_ticket(
+            lock=self.lock, approvals=self.approvals, run_registry=self.run_registry,
+            approval_id=approval_id, timeout=timeout, output_limit=output_limit,
+        )
+
+
+def shell_ctx(approvals: ApprovalRegistry) -> ShellHarness:
     """Minimal context the shell service needs for claim/execute."""
-    return SimpleNamespace(
-        _shell_spawn_gate=threading.Lock(),
-        lock=threading.Lock(),
-        approvals=approvals,
-        run_registry=SimpleNamespace(stop_flag=threading.Event()),
-        approval_generation=approvals.current_generation,
-    )
+    return ShellHarness(approvals)
 
 
 def shell_pending_request(command: str, run_id: str, project: str = ".") -> dict:
@@ -978,7 +986,7 @@ def _exec_shell_stop(scheduler: SoakScheduler, world: Any, ctx: SoakContext, ste
         pending, ticket = shell_service.claim_shell_ticket(
             ctx_obj, step["approval"], timeout=30, output_limit=1000
         )
-        with ctx_obj._shell_spawn_gate:
+        with ctx_obj.task_runtime.spawn_line():
             ctx_obj.run_registry.stop_flag.set()
             world.approvals.expire_shell_results()
         # Stop won after claim: executing must not spawn.

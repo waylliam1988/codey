@@ -114,7 +114,7 @@ class ShellRaceTests(unittest.TestCase):
         def _stop() -> None:
             barrier.wait(timeout=5)
             time.sleep(jitter.random() * 0.001)
-            with ctx._shell_spawn_gate:
+            with ctx.task_runtime.spawn_line():
                 ctx.run_registry.stop_flag.set()
                 ctx.approvals.expire_shell_results()
             stop_done.append(time.perf_counter_ns())

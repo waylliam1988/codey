@@ -286,7 +286,7 @@ class ShellApprovalWorkflow:
         if not isinstance(scope, str) or scope not in {"once", "session", "project"} or (not approved and scope != "once"):
             return 400, {"error": "Invalid approval scope"}
         remember_error = ""
-        with self.ctx._shell_spawn_gate:
+        with self.ctx.task_runtime.spawn_line():
             facts = self._facts(approval_id)
             if not facts:
                 return 404, {"error": "approval not found"}
@@ -343,7 +343,7 @@ class ShellApprovalWorkflow:
         """Retry grant persistence only; never schedule another execution."""
         if scope not in {"session", "project"}:
             return 400, {"error": "Invalid approval scope"}
-        with self.ctx._shell_spawn_gate:
+        with self.ctx.task_runtime.spawn_line():
             facts = self._facts(approval_id)
             if not facts:
                 return 404, {"error": "approval not found"}

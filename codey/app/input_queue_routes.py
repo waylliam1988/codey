@@ -91,7 +91,7 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
             selection, message_metadata, attachment_error = prepare_queued_attachments(ctx, request, selection)
             if attachment_error:
                 return attachment_error
-            with ctx._shell_spawn_gate:
+            with ctx.task_runtime.spawn_line():
                 if getattr(getattr(ctx, "control_service", None), "draining", False):
                     return 503, {"ok": False, "error": "server_draining"}
                 item = ctx.input_queue.create(identity, request, model_selection=selection, **({"message_metadata": message_metadata} if message_metadata else {}))
@@ -113,7 +113,7 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
             elif action == "resume":
                 if ctx.active_run_for(session_id=str(item["request"].get("session_id") or "")) is not None:
                     return 409, {"ok": False, "error": "task still stopping"}
-                with ctx._shell_spawn_gate:
+                with ctx.task_runtime.spawn_line():
                     if getattr(getattr(ctx, "control_service", None), "draining", False):
                         return 503, {"ok": False, "error": "server_draining"}
                     item = ctx.input_queue.resume(identity, revision)

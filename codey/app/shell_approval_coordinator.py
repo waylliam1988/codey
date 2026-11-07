@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.run_registry import RunRegistry
-from codey.durable.session import DurableSession
+from codey.app.shell_approval_durable import ApprovalFactDurable
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact, ShellApprovalRecordStore
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject
@@ -21,7 +21,9 @@ class ShellApprovalContext(Protocol):
 
     lock: threading.Lock
     approvals: ApprovalRegistry
-    durable: DurableSession
+    @property
+    def durable(self) -> ApprovalFactDurable: ...
+
     run_registry: RunRegistry
     managed_outputs: ManagedOutputStore | None
     shell_approval_records: ShellApprovalRecordStore
@@ -84,14 +86,13 @@ class ShellApprovalCoordinator:
         """Persist approval expiry while the caller owns the app locks."""
         from codey.app.shell_approval_state import expire_shell_results_locked
 
-        value = expire_shell_results_locked(
+        return expire_shell_results_locked(
             self._context,
             run_id=run_id,
             exclude_run_id=exclude_run_id,
             session_id=session_id,
             output=output,
         )
-        return cast(tuple[JsonObject, ...], value)
 
     def claim_locked(
         self,
@@ -106,7 +107,7 @@ class ShellApprovalCoordinator:
             approval_id,
             claim_execution=claim_execution,
         )
-        return cast(dict[str, object] | None, value)
+        return value
 
     def claim(
         self,

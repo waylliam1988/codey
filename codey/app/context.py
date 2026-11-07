@@ -195,7 +195,7 @@ class AppContext(GhostStoreAccessors):
         self.task_lifecycle = TaskLifecycleCoordinator(
             durable=self.durable,
             run_registry=self.run_registry,
-            approval_expiry=lambda **kwargs: self._expire_shell_results_locked(**kwargs),
+            approval_expiry=self._expire_shell_results_locked,
             shell_approval_workflow_cancel=lambda session_id: self.shell_approval_workflow.cancel_queued(session_id),
             shell_spawn_gate=lambda: self._shell_spawn_gate,
             coordination_lock=self.lock,
@@ -260,7 +260,7 @@ class AppContext(GhostStoreAccessors):
         self.conversation_coordinator = ConversationCoordinator(
             durable=self.durable, registry=self.conversation_registry, providers=self.providers,
             runs=self.run_registry, ui=self.ui_state_store, lock=self.lock, ui_lock=self.ui_state_store_lock,
-            expire_approvals=lambda **kwargs: self._expire_shell_results_locked(**kwargs),
+            expire_approvals=self._expire_shell_results_locked,
             record_shell_result=lambda event: self.record_shell_result(event),
             flush_events=lambda: self._flush_deferred_durable_events(),
             research_changes=self.research_changes, research_owners=self._research_change_sessions,
@@ -521,10 +521,13 @@ class AppContext(GhostStoreAccessors):
 
         self.task_lifecycle.expire_stale_shell_approvals(active_run_id)
 
-    def _expire_shell_results_locked(self, **kwargs: Any) -> tuple[dict[str, Any], ...]:
-        from codey.app.shell_approval_state import expire_shell_results_locked
-
-        return expire_shell_results_locked(self, **kwargs)
+    def _expire_shell_results_locked(
+        self, *, run_id: str | None = None, exclude_run_id: str | None = None,
+        session_id: str | None = None, output: str = "Task stopped; command approval expired.",
+    ) -> tuple[JsonObject, ...]:
+        return self.shell_approval_coordinator.expire_locked(
+            run_id=run_id, exclude_run_id=exclude_run_id, session_id=session_id, output=output,
+        )
 
     def add_pending_shell_approval(self, approval_id: str, pending: dict[str, Any]) -> None:
         self.shell_approval_coordinator.add_pending(approval_id, pending)
@@ -683,10 +686,10 @@ class AppContext(GhostStoreAccessors):
     def wait_for_ghost_sleep(self, timeout: float | None = None) -> bool:
         return self.ghost_sleep_daemon.wait(timeout)
 
-    def run_state_payload(self) -> dict[str, Any]:
+    def run_state_payload(self) -> JsonObject:
         return self.run_state_projection.payload()
 
-    def _pending_ui_event(self, active: RunSnapshot | None) -> dict[str, Any] | None:
+    def _pending_ui_event(self, active: RunSnapshot | None) -> JsonObject | None:
         return self.run_state_projection.pending_ui_event(active)
 
     def emit(self, event: dict[str, Any]) -> None:

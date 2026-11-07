@@ -212,7 +212,7 @@ def _revoke_command_permission(ctx: AppContext, body: dict[str, Any]) -> tuple[i
     rule_id = body.get("id")
     if not isinstance(rule_id, str) or not rule_id:
         return 400, {"error": "permission id required"}
-    with ctx._shell_spawn_gate:
+    with ctx.task_runtime.spawn_line():
         ctx.command_permissions.revoke(rule_id)
     return 200, {"ok": True}
 

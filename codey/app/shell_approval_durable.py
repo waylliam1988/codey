@@ -7,16 +7,31 @@ stay separate from the rest of ``AppContext`` assembly.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Protocol
 
+from codey.durable.contracts import ApprovalPort
 from codey.durable.errors import CommitConflict
-from codey.durable.model import ApprovalRecord, ApprovalStatus
-from codey.runtime.effects.shell_approval_records import ShellApprovalFact
+from codey.durable.model import ApprovalRecord, ApprovalStatus, TaskCheckpoint
+from codey.runtime.effects.shell_approval_records import ShellApprovalFact, ShellApprovalRecordStore
 
 logger = logging.getLogger(__name__)
 
 
-def record_fact(ctx: Any, fact: ShellApprovalFact) -> bool:
+class ApprovalFactDurable(ApprovalPort, Protocol):
+    """Approval mutations plus source-task identity; no store or app access."""
+
+    def task(self, task_id: str) -> TaskCheckpoint: ...
+
+
+class ApprovalFactContext(Protocol):
+    @property
+    def durable(self) -> ApprovalFactDurable: ...
+
+    @property
+    def shell_approval_records(self) -> ShellApprovalRecordStore: ...
+
+
+def record_fact(ctx: ApprovalFactContext, fact: ShellApprovalFact) -> bool:
     changed = commit_fact(ctx, fact)
     if changed:
         try:
@@ -26,13 +41,10 @@ def record_fact(ctx: Any, fact: ShellApprovalFact) -> bool:
     return changed
 
 
-def commit_fact(ctx: Any, fact: ShellApprovalFact) -> bool:
-    durable = getattr(ctx, "durable", None)
-    task_lookup = getattr(durable, "task", None)
-    if durable is None or not callable(task_lookup):
-        raise CommitConflict("shell approval requires an admitted durable task")
+def commit_fact(ctx: ApprovalFactContext, fact: ShellApprovalFact) -> bool:
+    durable = ctx.durable
     try:
-        task = task_lookup(fact.source_run_id)
+        task = durable.task(fact.source_run_id)
     except (KeyError, OSError, TypeError, ValueError):
         raise CommitConflict("shell approval source task is not durable") from None
     if str(task.conversation_id) != fact.session_id:
