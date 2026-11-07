@@ -422,8 +422,9 @@ def test_approval_decision_and_task_checkpoint_share_one_commit(backend: str, tm
 
 
 @pytest.mark.parametrize("backend", ["memory", "sqlite"])
+@pytest.mark.parametrize("entry", ["session", "operations"])
 def test_approval_claim_and_shell_effect_intent_are_one_durable_commit(
-    backend: str, tmp_path: Path,
+    backend: str, entry: str, tmp_path: Path,
 ) -> None:
     session = _session(backend, tmp_path)
     requested = ApprovalRecord(
@@ -440,13 +441,15 @@ def test_approval_claim_and_shell_effect_intent_are_one_durable_commit(
         intent={"approval_id": "approval-atomic", "command_ref": "artifact:command"},
     )
     before = session.commit_sequence()
-    result = session.claim_approval_and_begin_effect("approval-atomic", effect)
+    claim = (session.claim_approval_and_begin_effect if entry == "session"
+             else session.approval_operations.claim_approval_and_begin_effect)
+    result = claim("approval-atomic", effect)
     assert result is not None
     assert session.commit_sequence() == before + 1
     assert session.approval("approval-atomic").status == ApprovalStatus.EXECUTION_CLAIMED
     assert session.effect("shell-effect-1") == effect
     assert session.task("task-1").pending_effect_id == "shell-effect-1"
-    assert session.claim_approval_and_begin_effect("approval-atomic", effect) is None
+    assert claim("approval-atomic", effect) is None
     assert session.commit_sequence() == before + 1
     session.close()
 

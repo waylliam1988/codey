@@ -13,6 +13,12 @@ from codey.durable import (
 from codey.durable.model import CommitResult, DurableMutation
 
 
+def _domain_operation(session: DurableSession, domain: str) -> object:
+    if domain == "effect":
+        return session.effect_operations.record_effect_intents("task", ())
+    return session.approval_operations.settle_approval("missing", settlement={}, resume=False)
+
+
 def _seeded_session() -> DurableSession:
     session = DurableSession(MemoryDurableStore())
     session.admit_input(
@@ -57,5 +63,30 @@ def test_failed_commit_seals_all_domain_query_facades(
 
     with pytest.raises(SessionFailedError) as raised:
         read()
+    assert raised.value.__cause__ is failure
+    session.close()
+
+
+@pytest.mark.parametrize("domain", ["effect", "approval"])
+def test_domain_writers_share_closed_kernel(domain: str) -> None:
+    session = _seeded_session()
+    session.close()
+    with pytest.raises(SessionSealedError, match="closed"):
+        _domain_operation(session, domain)
+
+
+@pytest.mark.parametrize("domain", ["effect", "approval"])
+def test_domain_writers_share_failure_cause(domain: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    session = _seeded_session()
+    failure = OSError("disk unavailable")
+
+    def fail_commit(_mutation: DurableMutation) -> CommitResult:
+        raise failure
+
+    monkeypatch.setattr(session.store, "commit", fail_commit)
+    with pytest.raises(OSError, match="disk unavailable"):
+        session.append_message("chat", "user_message", {"text": "next"})
+    with pytest.raises(SessionFailedError) as raised:
+        _domain_operation(session, domain)
     assert raised.value.__cause__ is failure
     session.close()

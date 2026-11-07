@@ -102,10 +102,18 @@ SQLite 并发写入与重启审批补充回归 2 passed，未运行全量 pytest
 
 ### 第四阶段：DurableSession 写入门面
 
-- [ ] 抽出 effect/artifact 写入。
-- [ ] 抽出 approval 操作。
+- [x] 抽出 effect/artifact 写入。
+- [x] 抽出 approval 操作。
 - [ ] 抽出 task lifecycle 操作。
 - [ ] 最后处理 submission 和 generation boundary。
+
+效果与审批批次新增 `EffectOperations`、`ApprovalOperations`。两者通过
+`SessionOperations` 加入同一个 kernel control line；不依赖公共 session，也不各自
+创建锁。兼容入口逐一转发，审批 claim/intent 和 settlement/tool result/wakeup 的
+单次 mutation 原样保留。attempt 释放提取为纯函数供后续生命周期操作共享。
+新增直接门面/兼容入口的 Memory/SQLite 原子性覆盖，以及关闭/失败后写入拒绝测试。
+扩大效果、artifact、审批与 fencing 回归 74 passed、2 skipped；新增和审批回归
+27 passed。相关 Ruff、mypy、Pyrefly 通过。
 
 ### 第五阶段：前端状态与运行投影
 

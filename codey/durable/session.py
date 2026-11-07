@@ -8,10 +8,11 @@ from dataclasses import dataclass, replace
 from typing import cast
 
 from codey.durable import admission, conversation_ops
+from codey.durable.approval_operations import ApprovalOperations
 from codey.durable.context import ContextSnapshot
 from codey.durable.contracts import ApprovalPort, DurableExecutionPort, EffectPort, TaskAdmissionPort
 from codey.durable.conversation_queries import ConversationQueryFacade
-from codey.durable.effects import interrupted_effect
+from codey.durable.effect_operations import EffectOperations
 from codey.durable.errors import (
     CommitConflict,
 )
@@ -39,7 +40,6 @@ from codey.durable.model import (
     thaw_json,
 )
 from codey.durable.process import process_is_alive as _process_is_alive
-from codey.durable.reducer import with_effect_intents, with_effect_settlement
 from codey.durable.session_kernel import SessionKernel, _mutation_line
 from codey.durable.store import DurableStore
 from codey.durable.task_queries import TaskQueryFacade
@@ -73,7 +73,6 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
     def submission(self, submission_id: str) -> SubmissionRecord:
         return self.store.submission(submission_id)
 
-
     def __init__(
         self,
         store: DurableStore,
@@ -83,7 +82,8 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
         super().__init__(store, on_commit=on_commit)
         self.conversation_queries = ConversationQueryFacade(self, self._query_line)
         self.task_queries = TaskQueryFacade(self.store, self._query_line)
-
+        self.approval_operations = ApprovalOperations(self)
+        self.effect_operations = EffectOperations(self)
 
     @_mutation_line
     def create_conversation(self, conversation_id: str) -> CommitResult:
@@ -938,13 +938,8 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
     def artifacts_for_effect(self, effect_id: str) -> tuple[ArtifactRecord, ...]:
         return self.task_queries.artifacts_for_effect(effect_id)
 
-    @_mutation_line
     def register_artifacts(self, task_id: str, artifacts: tuple[ArtifactRecord, ...]) -> CommitResult:
-        current = self.store.task(task_id)
-        _head, revision = self.store.head(current.conversation_id)
-        if any(artifact.owner_task_id not in {None, task_id} for artifact in artifacts):
-            raise ValueError("registered artifacts must belong to the task or an effect")
-        return self._commit(DurableMutation(current.conversation_id, revision, artifacts=artifacts))
+        return self.effect_operations.register_artifacts(task_id, artifacts)
 
     def task_facts(self, task_id: str) -> tuple[TaskCheckpoint, tuple[EffectRecord, ...]]:
         """Read a checkpoint and its effects without an intervening commit."""
@@ -956,18 +951,9 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
     def approval(self, approval_id: str) -> ApprovalRecord:
         return self.task_queries.approval(approval_id)
 
-    @_mutation_line
     def create_approval(self, approval: ApprovalRecord) -> CommitResult:
-        _head, revision = self.store.head(approval.conversation_id)
-        return self._commit(
-            DurableMutation(
-                conversation_id=approval.conversation_id,
-                expected_revision=revision,
-                approval=approval,
-            )
-        )
+        return self.approval_operations.create_approval(approval)
 
-    @_mutation_line
     def transition_approval(
         self,
         approval_id: str,
@@ -976,20 +962,8 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
         expected_status: ApprovalStatus | str,
         task: TaskCheckpoint | None = None,
     ) -> CommitResult:
-        if approval.approval_id != approval_id:
-            raise ValueError("approval identity does not match transition target")
-        _head, revision = self.store.head(approval.conversation_id)
-        return self._commit(
-            DurableMutation(
-                conversation_id=approval.conversation_id,
-                expected_revision=revision,
-                task=task,
-                approval=approval,
-                expected_approval_status=ApprovalStatus(expected_status),
-            )
-        )
+        return self.approval_operations.transition_approval(approval_id, approval, expected_status=expected_status, task=task)
 
-    @_mutation_line
     def claim_approval_and_begin_effect(
         self,
         approval_id: str,
@@ -997,48 +971,8 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
         *,
         expected_status: ApprovalStatus | str = ApprovalStatus.APPROVED,
     ) -> CommitResult | None:
-        """Consume an approval and record its external effect intent together.
+        return self.approval_operations.claim_approval_and_begin_effect(approval_id, effect, expected_status=expected_status)
 
-        Approval consumption is an authorization fact, while the effect intent
-        is the recovery fact that makes the subsequent shell spawn explicit.
-        They must share one checkpoint commit: after a crash, recovery sees
-        either both facts or neither.  A repeated claim is an idempotent
-        no-op only when the same pending effect is already owned by the
-        claimed approval.
-        """
-        current_approval = self.store.approval(approval_id)
-        expected = ApprovalStatus(expected_status)
-        current_task = self.store.task(current_approval.task_id)
-        if effect.task_id != current_task.task_id:
-            raise CommitConflict("approval effect belongs to another task")
-        if effect.category != "shell" or effect.status != "pending" or effect.settlement is not None:
-            raise ValueError("approval claim requires a pending shell effect intent")
-        if current_approval.status == ApprovalStatus.EXECUTION_CLAIMED:
-            existing = self.store.effect(effect.effect_id)
-            if existing != effect:
-                raise CommitConflict("approval shell effect identity changed")
-            return None
-        if current_approval.status != expected:
-            raise CommitConflict("approval status changed")
-        next_task = with_effect_intents(current_task, (effect,))
-        claimed = replace(
-            current_approval,
-            status=ApprovalStatus.EXECUTION_CLAIMED,
-            revision=current_approval.revision + 1,
-        )
-        _head, revision = self.store.head(current_task.conversation_id)
-        return self._commit(
-            DurableMutation(
-                conversation_id=current_task.conversation_id,
-                expected_revision=revision,
-                task=next_task,
-                effects=(effect,),
-                approval=claimed,
-                expected_approval_status=expected,
-            )
-        )
-
-    @_mutation_line
     def settle_approval(
         self,
         approval_id: str,
@@ -1047,72 +981,7 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
         resume: bool,
         tool_results: tuple[Mapping[str, object], ...] = (),
     ) -> CommitResult | None:
-        """Settle an approval and wake the original task atomically.
-
-        Approval continuation is a state transition of the task that emitted
-        the shell call. It never creates a second task or conversation input.
-        The optional tool result is appended beside the effect settlement and
-        the scheduler wakeup, so a crash cannot leave only one side visible.
-        """
-        current_approval = self.store.approval(approval_id)
-        current_task = self.store.task(current_approval.task_id)
-        continuation_id = current_task.task_id if resume else current_approval.continuation_run_id
-        if current_approval.continuation_status in {"started", "cancelled"}:
-            return None
-
-        effect_settlement: EffectRecord | None = None
-        next_task = current_task
-        if current_approval.status == ApprovalStatus.EXECUTION_CLAIMED:
-            effect = self.store.effect(f"shell-{approval_id}")
-            if effect.settlement is not None:
-                return None
-            if effect.status == "pending" and not settlement:
-                raise CommitConflict("shell settlement payload is required")
-            effect_settlement = replace(effect, status="ok", settlement=dict(settlement))
-            next_task = with_effect_settlement(current_task, effect_settlement)
-            next_status = ApprovalStatus.EXECUTION_SETTLED
-        elif current_approval.status == ApprovalStatus.DENIED:
-            next_status = ApprovalStatus.DENIED
-            next_task = replace(next_task, revision=next_task.revision + 1)
-        else:
-            raise CommitConflict("shell approval is not settled or denied")
-
-        entries = list(conversation_ops.append_tool_results(
-            self,
-            current_task.conversation_id,
-            self.store.head(current_task.conversation_id)[0],
-            tool_results,
-            by_task_id=current_task.task_id,
-        )) if tool_results else []
-        state = thaw_json(next_task.state)
-        if not isinstance(state, dict):
-            raise CommitConflict("task state is corrupt")
-        if resume:
-            state["resume_input"] = {"kind": "resolve_shell_approval", "approval_id": approval_id}
-            state.pop("resume_entry_id", None)
-            # Keep the single checkpoint revision consumed by the effect
-            # settlement. The wakeup is part of that same transition.
-            state = _release_attempt_state(state)
-            next_task = replace(next_task, state=state, status=TaskStatus.PENDING)
-        updated_approval = replace(
-            current_approval,
-            status=next_status,
-            revision=current_approval.revision + 1,
-            settlement=dict(settlement),
-            continuation_status="started" if resume else "not_required",
-            continuation_run_id=continuation_id,
-        )
-        _head, revision = self.store.head(current_task.conversation_id)
-        return self._commit(DurableMutation(
-            conversation_id=current_task.conversation_id,
-            expected_revision=revision,
-            entries=tuple(entries),
-            task=next_task,
-            settlements=(effect_settlement,) if effect_settlement is not None else (),
-            approval=updated_approval,
-            expected_approval_status=current_approval.status,
-            expected_attempt_token=current_task.attempt_token,
-        ))
+        return self.approval_operations.settle_approval(approval_id, settlement=settlement, resume=resume, tool_results=tool_results)
 
     @_mutation_line
     def record_task_policy(self, task_id: str, policy: Mapping[str, object]) -> CommitResult:
@@ -1727,31 +1596,14 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
             )
         )
 
-    @_mutation_line
     def record_effect_intent(self, task_id: str, effect: EffectRecord) -> CommitResult:
-        return self.record_effect_intents(task_id, (effect,))
+        return self.effect_operations.record_effect_intent(task_id, effect)
 
-    @_mutation_line
     def record_effect_intents(
         self, task_id: str, effects: tuple[EffectRecord, ...]
     ) -> CommitResult:
-        current = self.store.task(task_id)
-        if current.state.get("cancel_requested"):
-            raise CommitConflict("task cancellation barrier is active")
-        if current.status != TaskStatus.RUNNING:
-            raise CommitConflict("only a running task admits unapproved effects")
-        _head, revision = self.store.head(current.conversation_id)
-        next_task = with_effect_intents(current, effects)
-        return self._commit(
-            DurableMutation(
-                conversation_id=current.conversation_id,
-                expected_revision=revision,
-                task=next_task,
-                effects=effects,
-            )
-        )
+        return self.effect_operations.record_effect_intents(task_id, effects)
 
-    @_mutation_line
     def settle_effect(
         self,
         task_id: str,
@@ -1760,41 +1612,10 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
         expected_status: str = "pending",
         artifacts: tuple[ArtifactRecord, ...] = (),
     ) -> CommitResult:
-        self._ensure_writable()
-        if effect.task_id != task_id:
-            raise ValueError("effect must belong to the task")
-        if effect.settlement is None or effect.status == "pending":
-            raise ValueError("effect settlement requires a terminal outcome")
-        current = self.store.task(task_id)
-        _head, revision = self.store.head(current.conversation_id)
-        existing = self.store.effect(effect.effect_id)
-        if existing.settlement is not None:
-            if existing != effect:
-                raise CommitConflict("effect is already settled with a different outcome")
-            return CommitResult(revision, self.store.commit_sequence())
-        next_task = with_effect_settlement(current, effect)
-        return self._commit(
-            DurableMutation(
-                conversation_id=current.conversation_id,
-                expected_revision=revision,
-                task=next_task,
-                effect=effect,
-                expected_effect_status=expected_status,
-                artifacts=artifacts,
-            )
-        )
+        return self.effect_operations.settle_effect(task_id, effect, expected_status=expected_status, artifacts=artifacts)
 
-    @_mutation_line
     def settle_unknown_effect(self, task_id: str, effect_id: str) -> CommitResult:
-        """Record an interrupted external effect without replaying it."""
-        current = self.store.task(task_id)
-        existing = self.store.effect(effect_id)
-        return self.settle_effect(
-            task_id,
-            interrupted_effect(current, existing),
-            expected_status=existing.status,
-        )
-
+        return self.effect_operations.settle_unknown_effect(task_id, effect_id)
 
     @_mutation_line
     def append_message(
