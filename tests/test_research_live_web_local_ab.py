@@ -21,11 +21,13 @@ def provider(cls, rows, error=None):
 HITS = [{"title": f"Paper {n}", "url": f"https://pubmed.ncbi.nlm.nih.gov/{n}/", "snippet": ""} for n in (1, 2)]
 
 
-def test_candidate_only_removes_early_stop_and_keeps_connector_hits():
+def test_production_and_candidate_keep_browser_material_after_connector_hits():
     baseline, baseline_browser = provider(experiment.ObservedProduction, HITS)
     candidate, candidate_browser = provider(experiment.BrowserAfterConnector, HITS)
-    assert baseline.search("PubMed evidence") == HITS
-    baseline_browser.search.assert_not_called()
+    baseline_rows = baseline.search("PubMed evidence")
+    assert baseline_rows[:2] == HITS
+    assert baseline_rows[2]["url"] == "https://official.example/guidance"
+    baseline_browser.search.assert_called_once()
     rows = candidate.search("PubMed evidence")
     assert rows[:2] == HITS
     assert rows[2]["url"] == "https://official.example/guidance"

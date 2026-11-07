@@ -114,8 +114,6 @@ class ConnectorAwareSearchProvider:
             limit=min(self.connector_limit, result_limit),
             safe_query=safe_query,
         )
-        if len(connector_results) >= min(CONNECTOR_MIN_RESULTS, result_limit):
-            return _merge_results(connector_results, [], limit=result_limit)
         try:
             base_results = self._base_search(query, limit=result_limit)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):

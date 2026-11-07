@@ -98,3 +98,9 @@ v10 首对真实阅读状态显示 baseline 可提交，但 coverage 候选把�
 诊断上，溢出视图中关键原文命中率由 baseline 18/92（0.196）升至 coverage 36/108（0.333），说明候选确实改变了可见上下文；但可见性改善没有转化为最终答案净收益，不能据此合入。
 
 首轮 formal-v1 发现生成变体复用了小写 URL slug，造成材料身份映射错误；该目录已封存为 harness `inconclusive`，不进入 v3 评分。v3 修正了每个变体的 URL 身份并新建冻结目录，不能与 v1 混算。
+
+### 2026-11-07：2A 按研究质量优先合入
+
+原 2A 正式合同因成本比超过 1.25 判为 `reject`；该成本门槛现已按本地模型策略降为诊断项。质量证据仍为 baseline 严格成功 11/24、candidate 20/24，严重错误均为 4/24，且 20/24 配对实际触发浏览器补搜。基于研究质量优先政策，采纳最小行为：连接器结果返回后继续调用现有浏览器搜索，再沿用既有合并、去重、数量上限和浏览器失败回退。采纳记录保存在 `.e2e-artifacts/research-live-web-2a-formal-v3/quality-first-adoption.json`。
+
+本次只改善来源发现机会，不宣称解决 Research 的来源身份、上下文保留、语义理解或交付完整性问题。相关定向测试 35 项通过，Ruff 和 `mypy codey/research/connector_search.py` 通过。
