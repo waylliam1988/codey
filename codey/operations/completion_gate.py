@@ -27,6 +27,7 @@ from codey.completion.contract import (
     project_completion_proof,
     register_completion_domain,
 )
+from codey.operations.completion_context import CompletionContext
 from codey.operations.project_completion_checks import project_completion_checks
 from codey.operations.research_completion_checks import (
     citation_requirement_checks,
@@ -42,6 +43,8 @@ from codey.utils.refs import stable_ref
 
 
 def _context_get(context: Any, key: str) -> Any:
+    if isinstance(context, CompletionContext):
+        return context.get(key)
     if isinstance(context, dict):
         return context.get(key)
     return getattr(context, key, None)

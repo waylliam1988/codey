@@ -15,6 +15,7 @@ from codey.completion.contract import (
     CompletionCheck,
     completion_check,
 )
+from codey.operations.completion_context import CompletionContext
 from codey.research.finding_report import ResearchReport, compile_finding_report
 
 if TYPE_CHECKING:
@@ -52,6 +53,8 @@ def prepare_research_completion(session: TaskSession, text: str, context: Any) -
 
 
 def _context_get(context: Any, key: str) -> Any:
+    if isinstance(context, CompletionContext):
+        return context.get(key)
     if isinstance(context, dict):
         return context.get(key)
     return getattr(context, key, None)

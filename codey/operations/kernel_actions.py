@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from codey.operations import kernel_prompt as _prompt
 from codey.operations import kernel_transport as _transport
+from codey.operations.completion_context import CompletionContext, CompletionContextInput
 from codey.operations.kernel_contracts import KernelResult, KernelTransportDeps
 from codey.operations.kernel_execution import execute_turn as _execute_turn
 from codey.operations.kernel_trace import record_outbound
@@ -190,19 +191,17 @@ def _approval_stop(
     return None
 
 
-def _outer_evidence_for_context(completion_context: Any) -> Any:
+def _outer_evidence_for_context(completion_context: CompletionContext | None) -> Any:
     try:
-        if isinstance(completion_context, dict):
-            return completion_context.get("execution_evidence")
-        return getattr(completion_context, "execution_evidence", None)
+        return completion_context.execution_evidence if completion_context is not None else None
     except Exception:
         return None
 
 
-def _completion_context_with_ignores(context: Any, ignored_paths: Any) -> Any:
-    if context is None or isinstance(context, dict):
-        return {**(context or {}), "workspace_ignored_paths": tuple(ignored_paths or ())}
-    return context
+def _completion_context_with_ignores(
+    context: CompletionContextInput | None, ignored_paths: tuple[str, ...],
+) -> CompletionContext:
+    return CompletionContext.from_value(context, ignored_paths=tuple(ignored_paths))
 
 
 def _call_execute_turn(

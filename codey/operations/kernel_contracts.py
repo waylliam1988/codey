@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from codey.agents.shell_approval import ShellApprovalRequest
     from codey.agents.tools import AgentToolFns
     from codey.completion.contract import CompletionProof
+    from codey.operations.completion_context import CompletionContextInput
     from codey.runs.trace import RunTraceRecorder
     from codey.runtime.core.protocol_window import ProtocolWindowRef
     from codey.runtime.observe.events import RunEvent
@@ -149,7 +150,7 @@ class KernelObservationDeps:
     """Completion, recovery, and event sinks for one kernel run."""
 
     intent_sink: Any = None
-    completion_context: Any = None
+    completion_context: CompletionContextInput | None = None
     on_event: Callable[[RunEvent], None] | None = None
     on_shell_request: Callable[[ShellApprovalRequest], None] | None = None
     trace_recorder: RunTraceRecorder | None = None

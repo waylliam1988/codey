@@ -19,11 +19,14 @@ from codey.completion.contract import (
 )
 from codey.completion.engine import CompletionEngine
 from codey.completion.verification_policy import VerificationCandidate
+from codey.operations.completion_context import CompletionContext
 from codey.runtime.observe.execution_evidence import CheckEvidence, ExecutionEvidence
 from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
 
 
 def _context_get(context: Any, key: str) -> Any:
+    if isinstance(context, CompletionContext):
+        return context.get(key)
     if isinstance(context, dict):
         return context.get(key)
     return getattr(context, key, None)

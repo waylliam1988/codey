@@ -68,11 +68,15 @@ class KernelContext:
         self.window = self.capabilities.window_ref
         self.completion_context = wiring._completion_context_with_ignores(
             self.observation.completion_context, self.execution.workspace_ignored_paths)
-        if self.execution.research_tools is not None and isinstance(self.completion_context, dict):
+        if self.execution.research_tools is not None:
             tools = self.execution.research_tools
-            self.completion_context.update(research_ledger=getattr(tools, "ledger", None), knowledge_store=getattr(tools, "store", None),
-                                           knowledge_project=getattr(tools, "project", ""),
-                                           knowledge_session_id=getattr(tools, "session_id", ""))
+            self.completion_context = replace(
+                self.completion_context,
+                research_ledger=getattr(tools, "ledger", None),
+                knowledge_store=getattr(tools, "store", None),
+                knowledge_project=str(getattr(tools, "project", "") or ""),
+                knowledge_session_id=str(getattr(tools, "session_id", "") or ""),
+            )
         self.responses: dict[str, ReceivedProviderTurn] = {}
         self.projected_provider_effects: set[str] = set()
         self.snapshots: dict[int, TurnSnapshot] = {}
