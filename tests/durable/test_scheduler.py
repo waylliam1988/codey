@@ -4,6 +4,7 @@ import threading
 import time
 from pathlib import Path
 
+import codey.durable.scheduler as scheduler_module
 from codey.durable import CommitConflict, DurableSession, SQLiteDurableStore, TaskStatus
 from codey.durable.scheduler import DurableTaskScheduler
 from codey.durable.workflow import WorkflowDefinition
@@ -116,6 +117,68 @@ def test_scheduler_start_resumes_after_reconcile_circuit_breaker(tmp_path: Path,
         session.close()
 
 
+def test_scheduler_resume_replaces_a_thread_stuck_in_circuit_breaker_logging(tmp_path: Path, monkeypatch) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    dispatched: list[str] = []
+    scheduler = DurableTaskScheduler(
+        session,
+        lambda task: dispatched.append(task.task_id) or True,
+        retry_interval=0.01,
+    )
+    original_reconcile = scheduler._reconcile
+    calls = 0
+    entered_log = threading.Event()
+    release_log = threading.Event()
+
+    def intermittently_broken_reconcile() -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("injected circuit breaker failure")
+        original_reconcile()
+
+    def blocked_error(*args, **kwargs) -> None:
+        entered_log.set()
+        assert release_log.wait(2)
+
+    monkeypatch.setattr(scheduler, "_reconcile", intermittently_broken_reconcile)
+    monkeypatch.setattr(scheduler_module._LOGGER, "error", blocked_error)
+    scheduler._loop_failure_limit = 1
+    try:
+        scheduler.start()
+        assert entered_log.wait(2)
+        scheduler.resume()
+        assert _wait_for(lambda: dispatched == ["task-1"])
+        assert not scheduler.close(timeout=0.01)
+        release_log.set()
+        assert scheduler.close(timeout=2)
+    finally:
+        release_log.set()
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_health_publication_failure_does_not_rollback_worker(tmp_path: Path) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    dispatched = threading.Event()
+    scheduler = DurableTaskScheduler(session, lambda _task: dispatched.set() or True, retry_interval=0.01)
+
+    def broken_health_publication() -> None:
+        raise OSError("injected health publication failure")
+
+    try:
+        scheduler.set_health_callback(broken_health_publication)
+        scheduler.start()
+        assert dispatched.wait(2)
+        assert scheduler.enabled
+        assert scheduler._owns_scheduler
+    finally:
+        scheduler.close()
+        session.close()
+
+
 def test_scheduler_requeues_after_read_failure_and_retries_automatically(tmp_path: Path, monkeypatch) -> None:
     session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
     _admit(session, "task-1")
@@ -150,7 +213,7 @@ def test_scheduler_requeues_after_claim_failure(tmp_path: Path, monkeypatch) -> 
     session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
     _admit(session, "task-1")
     scheduler = DurableTaskScheduler(session, lambda _task: True)
-    original_claim = session.claim_task
+    original_claim = session.claim_task_checkpoint
     failed = True
 
     def flaky_claim(task_id: str):
@@ -160,7 +223,7 @@ def test_scheduler_requeues_after_claim_failure(tmp_path: Path, monkeypatch) -> 
             raise OSError("injected claim failure")
         return original_claim(task_id)
 
-    monkeypatch.setattr(session, "claim_task", flaky_claim)
+    monkeypatch.setattr(session, "claim_task_checkpoint", flaky_claim)
     try:
         scheduler._reconcile()
         assert scheduler.task_failures["task-1"].phase == "claim"
@@ -172,10 +235,10 @@ def test_scheduler_requeues_after_claim_failure(tmp_path: Path, monkeypatch) -> 
         session.close()
 
 
-def test_scheduler_releases_claim_when_post_claim_read_fails(tmp_path: Path, monkeypatch) -> None:
+def test_scheduler_releases_claim_without_a_post_claim_read(tmp_path: Path, monkeypatch) -> None:
     session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
     _admit(session, "task-1")
-    scheduler = DurableTaskScheduler(session, lambda _task: True)
+    scheduler = DurableTaskScheduler(session, lambda _task: False)
     original_task = session.task
     reads = 0
 
@@ -183,17 +246,63 @@ def test_scheduler_releases_claim_when_post_claim_read_fails(tmp_path: Path, mon
         nonlocal reads
         reads += 1
         if reads == 2:
-            raise OSError("injected post-claim read failure")
+            raise AssertionError("cleanup must use the claimed attempt token")
         return original_task(task_id)
 
     monkeypatch.setattr(session, "task", flaky_task)
     try:
         scheduler._reconcile()
         task = original_task("task-1")
-        assert scheduler.task_failures["task-1"].phase == "claim"
         assert task.status is TaskStatus.PENDING
         assert not task.attempt_token
         assert "task-1" in scheduler._pending
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_keeps_accepted_attempt_when_coordination_read_fails(tmp_path: Path, monkeypatch) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    dispatched: list[str] = []
+    original_task = session.task
+    reads = 0
+
+    def flaky_task(task_id: str):
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            raise OSError("injected accepted coordination read failure")
+        return original_task(task_id)
+
+    monkeypatch.setattr(session, "task", flaky_task)
+    scheduler = DurableTaskScheduler(session, lambda task: dispatched.append(task.task_id) or True)
+    try:
+        scheduler._reconcile()
+        assert dispatched == ["task-1"]
+        assert scheduler.task_failures["task-1"].phase == "accepted"
+        assert "task-1" in scheduler._scheduled
+        assert "task-1" not in scheduler._pending
+        assert original_task("task-1").status is TaskStatus.RUNNING
+        scheduler._reconcile()
+        assert dispatched == ["task-1"]
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_cleanup_does_not_release_a_later_attempt(tmp_path: Path) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    scheduler = DurableTaskScheduler(session, lambda _task: True)
+    try:
+        first = session.claim_task_checkpoint("task-1")
+        session.unclaim_task("task-1", expected_attempt_token=first.attempt_token)
+        second = session.claim_task_checkpoint("task-1")
+        scheduler._unclaim_if_owned("task-1", first.attempt_token)
+        current = session.task("task-1")
+        assert current.status is TaskStatus.RUNNING
+        assert current.attempt_token == second.attempt_token
     finally:
         scheduler.close()
         session.close()
@@ -254,6 +363,33 @@ def test_scheduler_waits_between_reconcile_retries(tmp_path: Path, monkeypatch) 
         raise OSError("injected reconcile failure")
 
     monkeypatch.setattr(scheduler, "_reconcile", broken_reconcile)
+    try:
+        scheduler.start()
+        assert _wait_for(lambda: len(timestamps) == 3, timeout=2)
+        assert timestamps[1] - timestamps[0] >= 0.04
+        assert timestamps[2] - timestamps[1] >= 0.04
+    finally:
+        scheduler.close()
+        session.close()
+
+
+def test_scheduler_waits_after_internal_notify_before_reconcile_retry(tmp_path: Path, monkeypatch) -> None:
+    session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+    _admit(session, "task-1")
+    scheduler = DurableTaskScheduler(session, lambda _task: True, retry_interval=0.05)
+    timestamps: list[float] = []
+    original_finalization_queue = session.store.finalization_queue
+    calls = 0
+
+    def broken_finalization_queue():
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return original_finalization_queue()
+        timestamps.append(time.monotonic())
+        raise OSError("injected finalization read failure")
+
+    monkeypatch.setattr(session.store, "finalization_queue", broken_finalization_queue)
     try:
         scheduler.start()
         assert _wait_for(lambda: len(timestamps) == 3, timeout=2)

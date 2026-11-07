@@ -86,6 +86,7 @@ class LocalService:
             browser_token = hmac.new(self._secrets["operator"].encode(), b"codey-browser-session-v1", hashlib.sha256).hexdigest()
             self.httpd.operator_auth = OperatorAuth(self.port, session_token=browser_token)
             continuation = partial(task_submit.submit_task_after_slot_release, get_state=lambda: self.ctx)
+            self.ctx.durable_scheduler.set_health_callback(self._publish)
             if not self.verify_only:
                 self.ctx.shell_approval_workflow.start(continuation)
                 self.ctx.durable_scheduler.start()

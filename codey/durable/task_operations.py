@@ -425,6 +425,15 @@ class TaskLifecycleOperations(SessionOperations):
 
     @operation_line
     def claim_task(self, task_id: str) -> CommitResult:
+        result, _claimed = self._claim_task(task_id)
+        return result
+
+    @operation_line
+    def claim_task_checkpoint(self, task_id: str) -> TaskCheckpoint:
+        _result, claimed = self._claim_task(task_id)
+        return claimed
+
+    def _claim_task(self, task_id: str) -> tuple[CommitResult, TaskCheckpoint]:
         current = self._kernel.store.task(task_id)
         if current.status != TaskStatus.PENDING:
             raise ValueError(f"task is not pending: {current.status}")
@@ -441,8 +450,9 @@ class TaskLifecycleOperations(SessionOperations):
                  "attempt_process_id": os.getpid()}
         next_task = replace(current, phase=phase, revision=current.revision + 1, state=state, status=TaskStatus.RUNNING)
         _head, revision = self._kernel.store.head(current.conversation_id)
-        return self._kernel._commit(DurableMutation(current.conversation_id, revision, task=next_task,
-                                           expected_attempt_token=current.attempt_token))
+        result = self._kernel._commit(DurableMutation(current.conversation_id, revision, task=next_task,
+                                                      expected_attempt_token=current.attempt_token))
+        return result, next_task
 
     @operation_line
     def recover_scheduler_state(self, *, force: bool = False) -> None:
@@ -486,7 +496,7 @@ class TaskLifecycleOperations(SessionOperations):
                 continue
 
     @operation_line
-    def unclaim_task(self, task_id: str) -> CommitResult:
+    def unclaim_task(self, task_id: str, *, expected_attempt_token: str | None = None) -> CommitResult:
         current = self._kernel.store.task(task_id)
         if current.status != TaskStatus.RUNNING:
             raise ValueError(f"task is not running: {current.status}")
@@ -494,7 +504,12 @@ class TaskLifecycleOperations(SessionOperations):
         state = release_attempt_state(current.state)
         next_task = replace(current, phase=phase, revision=current.revision + 1, state=state, status=TaskStatus.PENDING)
         _head, revision = self._kernel.store.head(current.conversation_id)
-        return self._kernel._commit(DurableMutation(current.conversation_id, revision, task=next_task))
+        return self._kernel._commit(DurableMutation(
+            current.conversation_id,
+            revision,
+            task=next_task,
+            expected_attempt_token=expected_attempt_token,
+        ))
 
     @operation_line
     def wait_task(

@@ -9,7 +9,7 @@ import pytest
 
 from codey.durable import DurableSession, SQLiteDurableStore, TaskStatus
 from codey.durable.errors import CommitConflict
-from codey.durable.model import CommitResult, TaskCheckpoint
+from codey.durable.model import TaskCheckpoint
 from codey.durable.scheduler import DurableTaskScheduler
 
 
@@ -182,6 +182,7 @@ def test_requeue_during_dispatch_skip_is_not_lost(
     scheduler = DurableTaskScheduler(session, dispatch)
     read = session.task
     claim = session.claim_task
+    claim_checkpoint = session.claim_task_checkpoint
     interleaved = False
 
     def external_worker_and_approval() -> TaskCheckpoint:
@@ -203,13 +204,13 @@ def test_requeue_during_dispatch_skip_is_not_lost(
             return external_worker_and_approval()
         return read(task_id)
 
-    def conflicting_claim(task_id: str) -> CommitResult:
+    def conflicting_claim(task_id: str) -> TaskCheckpoint:
         if not interleaved:
             external_worker_and_approval()
             raise CommitConflict("another worker claimed the observed attempt")
-        return claim(task_id)
+        return claim_checkpoint(task_id)
 
-    monkeypatch.setattr(session, "task" if boundary == "not_pending" else "claim_task",
+    monkeypatch.setattr(session, "task" if boundary == "not_pending" else "claim_task_checkpoint",
                         stale_task if boundary == "not_pending" else conflicting_claim)
     try:
         scheduler.start()

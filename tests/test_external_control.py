@@ -148,9 +148,11 @@ def test_scheduler_circuit_breaker_is_degraded_and_operator_resumable(service) -
     with scheduler._lock:
         scheduler._enabled = False
         scheduler._loop_failure = SchedulerFailure("reconcile", "OSError", "injected", 3)
+    scheduler._notify_health_change()
     health = client.call("get_health")
     assert health["status"] == "degraded"
     assert health["scheduler"]["enabled"] is False
+    assert json.loads((runtime.home / "service.json").read_text(encoding="utf-8"))["status"] == "degraded"
     with pytest.raises(ControlError) as denied:
         client.call("resume_scheduler")
     assert denied.value.code == "FORBIDDEN"
@@ -158,6 +160,7 @@ def test_scheduler_circuit_breaker_is_degraded_and_operator_resumable(service) -
     resumed = operator.call("resume_scheduler")
     assert resumed["enabled"] is True
     assert operator.call("get_health")["status"] == "ready"
+    assert json.loads((runtime.home / "service.json").read_text(encoding="utf-8"))["status"] == "ready"
 
 
 def test_config_is_recovered_without_the_ui_cache(tmp_path: Path) -> None:

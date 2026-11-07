@@ -95,10 +95,12 @@ class DurableTaskScheduler:
         self._abort_invocations: dict[str, AbortInvocation] = {}
         self._reconcile_requested = False
         self._thread: threading.Thread | None = None
+        self._retiring_threads: set[threading.Thread] = set()
         self._recovered = False
         self._enabled = False
         self._owner_id = f"scheduler-{uuid.uuid4().hex}"
         self._owns_scheduler = False
+        self._health_callback: Callable[[], None] | None = None
 
     @property
     def in_flight(self) -> tuple[str, ...]:
@@ -154,6 +156,20 @@ class DurableTaskScheduler:
                 },
                 "blocked_tasks": dict(self._blocked),
             }
+
+    def set_health_callback(self, callback: Callable[[], None]) -> None:
+        with self._lock:
+            self._health_callback = callback
+        self._notify_health_change()
+
+    def _notify_health_change(self) -> None:
+        with self._lock:
+            callback = self._health_callback
+        if callback is not None:
+            try:
+                callback()
+            except Exception:
+                _LOGGER.exception("durable scheduler health publication failed")
 
     def set_workflows(self, workflows: Mapping[str, WorkflowDefinition]) -> None:
         """Replace the registry snapshot and reconsider previously blocked work."""
@@ -266,6 +282,7 @@ class DurableTaskScheduler:
             self._session.reconcile_finalization()
             self.notify()
             self._ensure_thread()
+            self._notify_health_change()
         except BaseException:
             with self._lock:
                 if not resumed:
@@ -285,6 +302,7 @@ class DurableTaskScheduler:
         *,
         start: bool = True,
         include_queued_submissions: bool = True,
+        wake: bool = True,
     ) -> None:
         pending: set[str] | None = None
         requeued = False
@@ -320,7 +338,8 @@ class DurableTaskScheduler:
                 for dependent in dependents:
                     self._scheduled.discard(dependent)
                     self._pending.add(dependent)
-        self._wake.set()
+        if wake:
+            self._wake.set()
         if start:
             self._ensure_thread()
 
@@ -347,7 +366,9 @@ class DurableTaskScheduler:
             self._closed.set()
             invocations = tuple(self._invocations.values())
             abort_invocations = tuple(self._abort_invocations.values())
-            thread = self._thread
+            threads = tuple(dict.fromkeys(
+                thread for thread in (self._thread, *self._retiring_threads) if thread is not None
+            ))
         self._wake.set()
         for invocation in invocations:
             # Closing the scheduler is a lifecycle boundary, not a durable
@@ -356,11 +377,11 @@ class DurableTaskScheduler:
             invocation.signal.set()
         for abort_invocation in abort_invocations:
             abort_invocation.signal.set()
-        if thread is not None:
-            thread.join(max(0.0, float(timeout)))
-        closed = thread is None or not thread.is_alive()
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        for thread in threads:
+            thread.join(max(0.0, deadline - time.monotonic()))
+        closed = all(not thread.is_alive() for thread in threads)
         if closed:
-            deadline = time.monotonic() + max(0.0, float(timeout))
             for abort_invocation in abort_invocations:
                 abort_invocation.done.wait(max(0.0, deadline - time.monotonic()))
             closed = all(abort_invocation.done.is_set() for abort_invocation in abort_invocations)
@@ -390,6 +411,8 @@ class DurableTaskScheduler:
                         self._loop_failure = failure
                         if failure.retry_count >= self._loop_failure_limit:
                             self._enabled = False
+                            self._retiring_threads.add(threading.current_thread())
+                            self._thread = None
                         self._reconcile_requested = True
                     _LOGGER.error(
                         "durable scheduler reconcile failed",
@@ -401,6 +424,7 @@ class DurableTaskScheduler:
                         exc_info=exc,
                     )
                     if failure.retry_count >= self._loop_failure_limit:
+                        self._notify_health_change()
                         return
                     continue
                 with self._lock:
@@ -418,6 +442,7 @@ class DurableTaskScheduler:
             with self._lock:
                 if self._thread is threading.current_thread():
                     self._thread = None
+                self._retiring_threads.discard(threading.current_thread())
 
     def _ensure_thread(self) -> None:
         with self._lock:
@@ -441,7 +466,7 @@ class DurableTaskScheduler:
         if self._workflows:
             self._session.reconcile_workflows(self._workflows)
         self._place_ready_inputs()
-        self.notify(start=False, include_queued_submissions=False)
+        self.notify(start=False, include_queued_submissions=False, wake=False)
         finalization = self._session.store.finalization_queue()
         self._session.reconcile_finalization(finalization)
         with self._lock:
@@ -497,20 +522,11 @@ class DurableTaskScheduler:
         if task.status != TaskStatus.PENDING:
             return
         try:
-            self._session.claim_task(task_id)
+            claimed = self._session.claim_task_checkpoint(task_id)
         except (CommitConflict, KeyError, ValueError):
             return
         except Exception as exc:
             self._finish_task_error(task_id, exc, phase="claim")
-            return
-        try:
-            claimed = self._session.task(task_id)
-        except KeyError:
-            return
-        except Exception as exc:
-            # claim_task has committed the attempt, so the next durable read
-            # identifies and releases only this invocation's running attempt.
-            self._finish_task_error(task_id, exc, phase="claim", claimed=True)
             return
         invocation = TaskInvocation(
             task_id=task_id,
@@ -543,7 +559,7 @@ class DurableTaskScheduler:
             try:
                 self._finish_accepted_dispatch(task_id)
             except Exception as exc:
-                self._finish_dispatch_error(task_id, claimed.attempt_token, exc)
+                self._finish_accepted_dispatch_error(task_id, claimed.attempt_token, exc)
             return
         self._unclaim_if_owned(task_id, claimed.attempt_token)
         self._defer_retry(task_id)
@@ -554,10 +570,7 @@ class DurableTaskScheduler:
         error: Exception,
         *,
         phase: str,
-        claimed: bool = False,
     ) -> None:
-        if claimed:
-            self._unclaim_current_attempt(task_id)
         if not self._record_task_failure(task_id, error, phase=phase):
             self._defer_retry(task_id)
 
@@ -565,6 +578,18 @@ class DurableTaskScheduler:
         if not self._record_task_failure(task_id, error, phase="dispatch", attempt_token=attempt_token):
             self._unclaim_if_owned(task_id, attempt_token)
             self._defer_retry(task_id)
+
+    def _finish_accepted_dispatch_error(self, task_id: str, attempt_token: str, error: Exception) -> None:
+        self._record_task_failure(
+            task_id,
+            error,
+            phase="accepted",
+            attempt_token=attempt_token,
+            terminal=False,
+        )
+        with self._lock:
+            if task_id not in self._pending:
+                self._scheduled.add(task_id)
 
     def _finish_accepted_dispatch(self, task_id: str) -> None:
         with self._lock:
@@ -596,6 +621,7 @@ class DurableTaskScheduler:
         *,
         phase: str,
         attempt_token: str | None = None,
+        terminal: bool = True,
     ) -> bool:
         """Record a task cause and fail the task after bounded retries."""
         with self._lock:
@@ -615,6 +641,11 @@ class DurableTaskScheduler:
         )
         if retry_count < self._loop_failure_limit:
             return False
+        if not terminal:
+            if retry_count >= self._loop_failure_limit:
+                with self._lock:
+                    self._blocked[task_id] = f"{phase}_failed"
+            return True
         reason = (
             f"scheduler {phase} failed after {retry_count} attempts: "
             f"{type(error).__name__}: {error}"
@@ -667,24 +698,9 @@ class DurableTaskScheduler:
     def _unclaim_if_owned(self, task_id: str, attempt_token: str) -> None:
         """Release only the claim captured by this dispatch invocation."""
         try:
-            current = self._session.task(task_id)
-        except KeyError:
-            return
-        if current.status is not TaskStatus.RUNNING or current.attempt_token != attempt_token:
-            return
-        try:
-            self._session.unclaim_task(task_id)
+            self._session.unclaim_task(task_id, expected_attempt_token=attempt_token)
         except (CommitConflict, KeyError, ValueError):
             return
-
-    def _unclaim_current_attempt(self, task_id: str) -> None:
-        """Release the attempt committed immediately before a failed read."""
-        try:
-            current = self._session.task(task_id)
-        except KeyError:
-            return
-        if current.status is TaskStatus.RUNNING and current.attempt_token:
-            self._unclaim_if_owned(task_id, current.attempt_token)
 
     def _place_ready_inputs(self) -> None:
         """Place queued conversation inputs once their active run has settled."""

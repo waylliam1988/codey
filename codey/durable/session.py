@@ -348,11 +348,14 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
     def claim_task(self, task_id: str) -> CommitResult:
         return self.task_operations.claim_task(task_id)
 
+    def claim_task_checkpoint(self, task_id: str) -> TaskCheckpoint:
+        return self.task_operations.claim_task_checkpoint(task_id)
+
     def recover_scheduler_state(self, *, force: bool = False) -> None:
         return self.task_operations.recover_scheduler_state(force=force)
 
-    def unclaim_task(self, task_id: str) -> CommitResult:
-        return self.task_operations.unclaim_task(task_id)
+    def unclaim_task(self, task_id: str, *, expected_attempt_token: str | None = None) -> CommitResult:
+        return self.task_operations.unclaim_task(task_id, expected_attempt_token=expected_attempt_token)
 
     def wait_task(
         self,
