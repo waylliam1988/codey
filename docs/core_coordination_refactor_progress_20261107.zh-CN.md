@@ -182,6 +182,23 @@ aria-current 当作平滑滚动已精确到位的同步屏障；该属性按当�
 像素到位。改为等待原有 <2px 几何条件，未放宽阈值；导航全组 18 passed。审批、重连、fork、
 输入队列和工作流的其他 85 项已通过；最终复验在收尾记录。
 
+### 收尾验证与发布
+
+审批 capability boundary 批次已提交为 `78ab0786`。提交后工作区保持干净，生产树
+`mypy`（644 files）通过，`pyrefly check codey` 为 0 errors，变更文件 Ruff 和
+`git diff --check` 通过。控制/生命周期扩大回归为 42 passed、182 deselected，durable
+lifecycle/control 回归为 20 passed；审批恢复/生命周期为 72 passed，注册表/epoch/冷启动/分析
+回归为 40 passed、1 skipped。
+
+源代码稳定后重新执行了前端 `npm run check`（61 files、363 tests）、`npm run build`、
+`python -m tools.publish_frontend`、`python -m tools.publish_frontend --check` 和
+`python tools/publish_runtime.py`，均通过。发布验证集合中除两个安装包构建用例外的 38 项通过。
+`tests/test_installed_runtime.py` 的 wheel 冷启动和 source archive 两项在 Windows 子进程
+构建阶段超时；它们依赖的 `pyproject.toml`、`tools/build_runtime.py` 和测试文件与未修改基线
+`39516652` 完全相同，当前栈停在 setuptools package discovery/source build，未出现本次重构
+相关断言或运行时行为失败，故归类为已有发布环境/构建超时，不修改生产协调逻辑，也不把它们
+记为本批次通过。
+
 ## 基线验证
 
 2026-11-07：
