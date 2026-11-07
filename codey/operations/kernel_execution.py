@@ -51,6 +51,7 @@ from codey.runtime.observe.execution_evidence import ExecutionEvidence
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
+    from codey.durable.session import DurableSession
     from codey.durable.store import DurableStore
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
@@ -118,7 +119,7 @@ class ToolExecutionContext:
     reconcile_intent_only: ReconcileToolResult
     stop_flag: StopSignal | None
     frozen_specs: dict[str, ToolSpec] | None
-    durable: DurableStore | None
+    durable: DurableStore | DurableSession | None
     managed_outputs: ManagedOutputStore | None
     run_id: str
 
@@ -298,7 +299,7 @@ def execute_turn(
     workspace_revision_store: WorkspaceRevisionStore | None = None,
     stop_flag: StopSignal | None = None,
     snapshot: TurnSnapshot | None = None,
-    durable: DurableStore | None = None,
+    durable: DurableStore | DurableSession | None = None,
     nested: bool = False,
 ) -> list[ToolResult]:
     """Execute one turn; identity is run+turn+index with durable delivery first.

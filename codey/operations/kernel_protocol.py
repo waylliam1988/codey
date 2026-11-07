@@ -8,13 +8,13 @@ Unknown tools are denied, never passed as ``control``.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
-from codey.providers.base import AssistantTurn, TurnFinish
+from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.runtime.core.models import Control, ToolCall, ToolPlan
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
@@ -26,6 +26,41 @@ if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.research.answer_contract import AnswerScope
+
+
+class KernelSessionView(Protocol):
+    @property
+    def policy(self) -> TaskPolicy: ...
+
+    @property
+    def task_kind(self) -> str: ...
+
+    @property
+    def task_text(self) -> str: ...
+
+    @property
+    def controller_denied(self) -> tuple[str, ...]: ...
+
+    @property
+    def model_tool_names(self) -> tuple[str, ...] | None: ...
+
+    @property
+    def research_questions(self) -> tuple[str, ...]: ...
+
+    @property
+    def search_results(self) -> Mapping[str, str]: ...
+
+    @property
+    def opened_sources(self) -> Collection[str]: ...
+
+    @property
+    def source_ids(self) -> Mapping[str, str]: ...
+
+    @property
+    def hit_targets(self) -> Mapping[str, object]: ...
+
+    @property
+    def evidence(self) -> Sequence[object]: ...
 
 
 @dataclass(frozen=True)
@@ -74,16 +109,16 @@ class ReceivedProviderTurn:
     effect_scope: str = ""
 
 
-def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
-    if getattr(session, "task_kind", "") == "research_review":
+def controller_allowed_for_session(session: KernelSessionView) -> tuple[str, ...] | None:
+    if session.task_kind == "research_review":
         raise ValueError("same-model research assessment execution has been retired")
-    policy = getattr(session, "policy", None)
+    policy = session.policy
     try:
-        denied = {"submit_research_review"} | {str(n or "").strip().lower() for n in (getattr(session, "controller_denied", ()) or ())
+        denied = {"submit_research_review"} | {str(n or "").strip().lower() for n in (session.controller_denied or ())
                   if str(n or "").strip()}
     except Exception:
         denied = {"submit_research_review"}
-    if not bool(getattr(policy, "strict_research", False)):
+    if not policy.strict_research:
         denied.add("submit_research_answer")
         base: tuple[str, ...] | None = None
     else:
@@ -96,10 +131,10 @@ def controller_allowed_for_session(session: Any) -> tuple[str, ...] | None:
         # Other strict callers retain their scoped acquisition contract.
         # Whole-answer submission requires the Research task's frozen scope.
         denied.update({"knowledge_write", "knowledge_commit", "knowledge_link", "submit_research_answer"})
-        results = dict(getattr(session, "search_results", {}) or {})
-        opened = set(getattr(session, "opened_sources", set()) or set())
-        evidence = list(getattr(session, "evidence", []) or [])
-        if not getattr(session, "research_questions", ()):
+        results = dict(session.search_results or {})
+        opened = set(session.opened_sources or ())
+        evidence = list(session.evidence or ())
+        if not session.research_questions:
             base = ("research_plan", "done")
         elif not results and not opened:
             base = ("knowledge_search", "knowledge_read", "web_search", "open_url", "save_inference", "done")
@@ -163,7 +198,7 @@ def _frozen_specs_for_names(names: tuple[str, ...]) -> tuple[ToolSpec, ...]:
         except Exception as exc:
             raise RuntimeError(f"tool snapshot freeze failed for {name}: {exc}") from exc
         try:
-            frozen.append(cast(ToolSpec, _freeze(copied)))
+            frozen.append(_freeze(copied))
         except Exception as exc:
             raise RuntimeError(f"tool snapshot freeze failed for {name}: {exc}") from exc
     return tuple(frozen)
@@ -205,7 +240,7 @@ def frozen_custom_executor_map(snapshot: TurnSnapshot | None) -> dict[str, ToolE
     return mapping
 
 
-def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
+def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
     """Build the round's authoritative snapshot; raises on failure."""
     # Fail closed: a snapshot computation failure never encodes as None
     # (unlimited). Callers must treat the exception as a per-turn config
@@ -220,14 +255,14 @@ def build_turn_snapshot(session: Any, *, native: bool = False) -> TurnSnapshot:
     authorized = tuple(visible_tool_names_for_snapshot(session.policy, allowed, native=native))
     if scope is not None:
         authorized = tuple(name for name in authorized if name in (allowed or ()))
-    exposure = getattr(session, "model_tool_names", None)
+    exposure = session.model_tool_names
     if exposure is not None and (len(set(exposure)) != len(exposure) or not set(exposure) <= set(authorized)):
         raise ValueError("model exposure must narrow the authorized tool inventory")
     names = tuple(name for name in authorized if exposure is None or name in exposure)
     frozen = _frozen_specs_for_names(authorized)
     from codey.research.tool_contract import done_spec_for_purpose, question_bound_spec
 
-    purpose = ("evidence" if getattr(session, "task_kind", "") == "evidence_followup" else
+    purpose = ("evidence" if session.task_kind == "evidence_followup" else
                "report" if session.policy.strict_research else "ordinary")
     frozen = tuple(done_spec_for_purpose(spec, purpose, task=session.task_text,
                                         questions=session.research_questions) if spec.name == "done" else spec
@@ -291,7 +326,8 @@ def _canonical_name(tool: str) -> str:
     except Exception:
         return (tool or "").strip().lower()
     try:
-        return cast(str, canonical_tool_name(tool))
+        name: str = canonical_tool_name(tool)
+        return name
     except Exception:
         return (tool or "").strip().lower()
 
@@ -322,14 +358,13 @@ def _controller_allows(tool: str, allowed: set[str] | None) -> bool:
     return name in allowed
 
 
-def _policy_allows(policy: Any, tool: str, frozen_specs: dict[str, Any] | None = None) -> bool:
-    allows = getattr(policy, "allows", None)
-    if not callable(allows):
+def _policy_allows(policy: TaskPolicy | None, tool: str, frozen_specs: Mapping[str, ToolSpec] | None = None) -> bool:
+    if policy is None:
         return False
     try:
         spec = frozen_specs.get(tool) if frozen_specs is not None else None
         grant = spec.grant if spec is not None else "" if frozen_specs is not None else _grant_for_tool(tool)
-        return bool(grant and allows(grant))
+        return bool(grant and policy.allows(grant))
     except Exception:
         return False
 
@@ -433,7 +468,7 @@ def _validate_research_args(tool: str, args: dict[str, Any]) -> tuple[dict[str, 
     return {key: value for key, value in result.args.items() if key in args}, ""
 
 
-def _lookup_spec(name: str, frozen_specs: dict[str, Any] | None) -> tuple[Any, str]:
+def _lookup_spec(name: str, frozen_specs: Mapping[str, ToolSpec] | None) -> tuple[ToolSpec | None, str]:
     try:
         if frozen_specs is not None:
             spec = frozen_specs.get(name)
@@ -446,7 +481,12 @@ def _lookup_spec(name: str, frozen_specs: dict[str, Any] | None) -> tuple[Any, s
         return None, ""
 
 
-def _spec_error_for(name: str, args: dict[str, Any], spec: Any, frozen_specs: dict[str, Any] | None) -> str:
+def _spec_error_for(
+    name: str,
+    args: dict[str, Any],
+    spec: ToolSpec,
+    frozen_specs: Mapping[str, ToolSpec] | None,
+) -> str:
     payload = args if isinstance(args, dict) else dict[str, object]()
     try:
         if frozen_specs is not None:
@@ -462,7 +502,7 @@ def _spec_error_for(name: str, args: dict[str, Any], spec: Any, frozen_specs: di
 
 
 def _validate_tool_args(
-    tool: str, args: dict[str, Any], *, frozen_specs: dict[str, Any] | None = None,
+    tool: str, args: dict[str, Any], *, frozen_specs: Mapping[str, ToolSpec] | None = None,
 ) -> tuple[dict[str, Any], str]:
     name = _canonical_name(tool) or (tool or "").strip().lower()
     # ToolSpec is the single authoritative definition: required-arg presence
@@ -478,7 +518,7 @@ def _validate_tool_args(
     if name == "ask_user":
         from codey.task.questions import question_args
         try:
-            return question_args(args), ""
+            return dict(question_args(args)), ""
         except ValueError as exc:
             return {}, str(exc)
     if name == "done":
@@ -569,10 +609,10 @@ def _lower_text_batches(items: list[tuple[str, dict[str, Any], str]]) -> tuple[l
 def _plan_from_tool_objects(
     items: list[tuple[str, dict[str, Any], str]],
     *,
-    policy: Any,
+    policy: TaskPolicy | None,
     controller_allowed: set[str] | None,
     snapshot_names: tuple[str, ...] | None = None,
-    frozen_specs: dict[str, Any] | None = None,
+    frozen_specs: Mapping[str, ToolSpec] | None = None,
 ) -> ToolPlan:
     items, batch_error = _lower_text_batches(items)
     if batch_error:
@@ -624,32 +664,34 @@ def _plan_from_tool_objects(
     return ToolPlan(calls=calls, control=Control(kind="continue", body=body))
 
 
-def _native_tool_objects(calls: list[Any]) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
+def _native_tool_objects(
+    calls: Sequence[ProviderToolCall],
+) -> list[tuple[str, dict[str, Any], str]] | ToolPlan:
     """Unwrap native calls without losing or inventing provider call ids."""
     if len(calls) > MAX_NATIVE_CALLS_PER_TURN:
         return _invalid_plan(
             f"too many native tool calls in one turn ({len(calls)}); send at most {MAX_NATIVE_CALLS_PER_TURN}",
             kind="too_many_tools",
         )
-    missing = [str(getattr(c, "name", "") or "?") for c in calls if not str(getattr(c, "id", "") or "")]
+    missing = [str(c.name or "?") for c in calls if not str(c.id or "")]
     if missing:
         return _invalid_plan(
             "native tool call without an id cannot be answered: " + ", ".join(missing),
             kind="invalid_args",
         )
-    ids = [getattr(call, "id", "") for call in calls]
+    ids = [call.id for call in calls]
     if any(not isinstance(value, str) or not value.strip() or len(value) > 256 for value in ids):
         return _invalid_plan("native tool call ids must be nonempty strings of at most 256 characters", kind="invalid_args")
     if len(ids) != len(set(ids)):
         return _invalid_plan("duplicate native tool call ids cannot be answered unambiguously", kind="invalid_args")
-    names = [str(getattr(c, "name", "") or "").strip().lower() for c in calls]
+    names = [str(c.name or "").strip().lower() for c in calls]
     if "done" in names and len(calls) != 1:
         return _invalid_plan("done must be the only call in a turn", tool="done", kind="too_many_tools")
     items = []
     for item in calls:
-        name = str(getattr(item, "name", "") or "").strip().lower()
-        args = getattr(item, "arguments", {})
-        call_id = str(getattr(item, "id", "") or "")
+        name = str(item.name or "").strip().lower()
+        args = item.arguments
+        call_id = str(item.id or "")
         if not isinstance(args, dict):
             return _invalid_plan(f"{name} args must be an object", tool=name)
         items.append((name, dict(args), call_id))
@@ -683,9 +725,10 @@ def _response_objects(reply: DecodedTextTurn | AssistantTurn) -> list[tuple[str,
             if not reply.text.strip():
                 return _invalid_plan("empty assistant answer", kind="empty_answer")
             return ToolPlan(calls=[], control=Control(kind="done", body=reply.text.strip()))
-    tool_calls = getattr(reply, "tool_calls", None) if not isinstance(reply, str) else None
-    if tool_calls:
-        return _native_tool_objects(list(tool_calls))
+    if not isinstance(reply, AssistantTurn):
+        return _invalid_plan("unsupported provider reply type", kind="invalid_args")
+    if reply.tool_calls:
+        return _native_tool_objects(reply.tool_calls)
     if isinstance(reply, str):
         return _invalid_plan(
             "raw text must be decoded by the text protocol before entering the kernel",
@@ -697,20 +740,20 @@ def _response_objects(reply: DecodedTextTurn | AssistantTurn) -> list[tuple[str,
 def normalize_turn(
     reply: DecodedTextTurn | AssistantTurn,
     *,
-    policy: Any = None,
-    controller_allowed: tuple[str, ...] | list[str] | set[str] | None = None,
+    policy: TaskPolicy | None = None,
+    controller_allowed: Collection[str] | None = None,
     snapshot_names: tuple[str, ...] | None = None,
     snapshot: TurnSnapshot | None = None,
 ) -> ToolPlan:
-    frozen: dict[str, Any] | None = None
+    frozen: dict[str, ToolSpec] | None = None
     if snapshot is not None:
         try:
             if policy is not None and policy != snapshot.policy:
                 return _invalid_plan("turn policy differs from the captured authorization")
             policy = snapshot.policy
-            allowed_raw = getattr(snapshot, "allowed", None)
+            allowed_raw = snapshot.allowed
             allowed = None if allowed_raw is None else {str(n or "").strip().lower() for n in allowed_raw}
-            snapshot_names = tuple(getattr(snapshot, "tool_names", ()) or ())
+            snapshot_names = snapshot.inventory_names
             frozen = frozen_spec_map(snapshot)
         except Exception as exc:
             return _invalid_plan(f"invalid tool snapshot: {exc}")

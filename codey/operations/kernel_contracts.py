@@ -33,6 +33,7 @@ class StopSignal(Protocol):
 
 
 class KernelResultPayload(TypedDict):
+    schema_version: int
     completed: bool
     summary: str
     turns: int
@@ -52,10 +53,10 @@ class KernelResult:
     delivery: DeliveryStatus = "not_required"
     research_report: dict[str, Any] | None = None
 
-    def to_payload(self) -> dict[str, Any]:
+    def to_payload(self) -> KernelResultPayload:
         from codey.providers.response_record import json_value
 
-        return {"schema_version": 2, **cast(dict[str, Any], json_value(self))}
+        return cast(KernelResultPayload, {"schema_version": 2, **cast(dict[str, Any], json_value(self))})
 
 def result_from_payload(payload: object) -> KernelResult:
     from codey.completion.contract import _proof_from_payload

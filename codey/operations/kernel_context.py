@@ -6,8 +6,9 @@ This object contains dependencies and rebuildable caches only.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from codey.durable.checkpoint import checkpoint_entries
 from codey.durable.model import thaw_json
@@ -36,6 +37,7 @@ from codey.runtime.core import operation_payload
 from codey.runtime.core.models import ToolPlan
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.runtime.core.operation_reducer import RuntimeDecisionInputs
+from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
 from codey.runtime.log.session_view import (
     SessionView,
@@ -46,6 +48,10 @@ from codey.runtime.log.session_view import (
 from codey.workspace.coding_context import render_coding_context
 from codey.workspace.context_admission import admit_ghost_context
 
+if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
+    from codey.operations.task_effects import KernelEffectSink
+
 
 class KernelContext:
     def __init__(self, session: TaskSession, request: KernelRunRequest) -> None:
@@ -54,10 +60,11 @@ class KernelContext:
         # Compatibility callers replace the observation sink during restart;
         # production builders place it in execution. Prefer an explicitly
         # supplied observation replacement when both are present.
-        self.sink = self.observation.intent_sink or self.execution.intent_sink
-        if self.sink is None or self.sink.durable is None or self.sink.managed_outputs is None:
+        admitted_sink: KernelEffectSink | None = self.observation.intent_sink or self.execution.intent_sink
+        if admitted_sink is None or admitted_sink.durable is None or admitted_sink.managed_outputs is None:
             raise ValueError("kernel execution requires an admitted durable operation and managed output storage")
-        self.durable = self.sink.durable
+        self.sink: KernelEffectSink = admitted_sink
+        self.durable: DurableSession = cast("DurableSession", admitted_sink.durable)
         admitted = self.load_view().state
         if admitted is None:
             raise ValueError("kernel execution requires an operation checkpoint")
@@ -68,7 +75,7 @@ class KernelContext:
         self.capabilities = KernelCapabilityView.from_provider(
             self.provider, provider_id=self.transport.provider_id, fallback_window_ref=self.transport.window_ref)
         self.native = self.capabilities.native_tools
-        self.window = self.capabilities.window_ref
+        self.window = cast(ProtocolWindowRef | None, self.capabilities.window_ref)
         self.completion_context = wiring._completion_context_with_ignores(
             self.observation.completion_context, self.execution.workspace_ignored_paths)
         if self.execution.research_tools is not None:
@@ -117,11 +124,16 @@ class KernelContext:
 
         task = self.durable.task(self.sink.run_id)
         state = view.state
-        question = task.state.get("question", {})
+        if state is None:
+            raise RecoveryFailed("kernel operation has no checkpoint state")
+        question_raw = task.state.get("question", {})
+        question: Mapping[str, object] = question_raw if isinstance(question_raw, Mapping) else {}
+        approvals_raw = task.state.get("approvals", {})
+        approvals: Mapping[str, object] = approvals_raw if isinstance(approvals_raw, Mapping) else {}
         decision = self.decision(state) if state.work_ref else None
         approval = None
         if state.leaf == operation_payload.LEAF_TOOL_EFFECT_PENDING:
-            for identity in task.state.get("approvals", {}):
+            for identity in approvals:
                 record = self.durable.approval(identity)
                 command = read_approval_command(self.sink.managed_outputs, record)
                 matching = [effect for effect in view.effects if effect.intent.effect_category == "tool_call"
@@ -206,7 +218,9 @@ class KernelContext:
         from codey.operations.kernel_control import validate_decision
 
         try:
-            return validate_decision(envelope["data"], schema_version=envelope["schema_version"])
+            decision: KernelDecision = validate_decision(
+                envelope["data"], schema_version=envelope["schema_version"])
+            return decision
         except (ValueError, TypeError, KeyError) as exc:
             raise RecoveryFailed(f"invalid committed control decision: {exc}") from exc
 
@@ -581,7 +595,8 @@ class KernelContext:
         from codey.runtime.core.models import ToolResult
 
         def result_context(result: ToolResult) -> str:
-            return task_result_context(self.session, result, snapshot.research_scope)
+            value: str = task_result_context(self.session, result, snapshot.research_scope)
+            return value
 
         advance = wiring._advance_after_results(self.native, results, self.session, None,
             completion_context=self.completion_context, boundary_prompt=self.boundary_text(), text_result_spans=spans,
@@ -611,9 +626,18 @@ class KernelContext:
 
     def boundary_text(self) -> str:
         task = self.durable.task(self.sink.run_id)
-        receipt = task.state.get("generation_boundary_receipt", {})
-        return "\n\n".join(str(self.durable.submission(identity).content.get("text", ""))
-                             for identity in receipt.get("submission_ids", ()))
+        receipt_raw = task.state.get("generation_boundary_receipt", {})
+        receipt: Mapping[str, object] = receipt_raw if isinstance(receipt_raw, Mapping) else {}
+        submission_ids = receipt.get("submission_ids", ())
+        ids = submission_ids if isinstance(submission_ids, (list, tuple)) else ()
+        texts: list[str] = []
+        for identity in ids:
+            if not isinstance(identity, str):
+                continue
+            content = self.durable.submission(identity).content
+            if isinstance(content, Mapping):
+                texts.append(str(content.get("text", "")))
+        return "\n\n".join(texts)
 
     def boundary(self, action: Any) -> None:
         from codey.operations.generation_boundary import GenerationBoundaryRequest

@@ -59,6 +59,8 @@
 - 静态负例：新增真实导入核心 `ToolExecutor` / `DeliveryStatus` 的错误样例，分别由 mypy、Pyrefly 和 ty 拒绝，并要求诊断指向样例本身；machine contract gate 更新后为 `1444 passed, 14 subtests passed`。
 - 后续第一批：收紧 `kernel_execution.execute_turn`、delegate、settlement 回调和 `_execute_slots` 的具名执行上下文；`linked_scope` 同步接受最小取消信号协议。`kernel_execution.py` 的显式 `Any` 从 62 降至 8，保留运行时 `ToolResult` 校验和 settlement 顺序。
 - 后续第二批：收紧 `kernel_actions.py` 的执行调用、审批回调、attempt gate、completion evidence 和联合返回值；兼容 provider 的能力探测仍限定在边界函数。`kernel_actions.py` 的显式 `Any` 从 42 降至 1。
+- 后续第三批：收紧 `kernel_protocol.py` 的 session view、policy、冻结工具规格和 native provider call；`normalize_turn()` 现在只接受结构化 provider 回复和明确的 snapshot/policy 契约。同步把 `KernelContext` 的 sink、durable、window 和状态消费收窄，并让 `KernelResult.to_payload()` 返回具名 `KernelResultPayload`。本批没有扩大动态边界；`kernel_protocol.py` 显式 `Any` 从 31 降至 17。
+- 第三批验证：protocol/context/action/execution 定向 mypy、Pyrefly、ty 和 Ruff 通过；类型精度 gate 通过；native termination、durable decision/control 和 shell approval 定向测试 `32 passed`。
 
 ## 当前边界
 

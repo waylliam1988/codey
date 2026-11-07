@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.shell_approval import ShellApprovalRequest
     from codey.agents.tools import AgentToolFns
+    from codey.durable.session import DurableSession
     from codey.durable.store import DurableStore
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
@@ -156,7 +157,7 @@ def _approval_stop(
     provider_id: str = "",
     window_ref: ProtocolWindowRef | None = None,
     shell: ShellSpec | None = None,
-    durable: DurableStore | None = None,
+    durable: DurableStore | DurableSession | None = None,
     managed_outputs: ManagedOutputStore | None = None,
     task_id: str = "",
 ) -> KernelResult | None:
@@ -244,7 +245,7 @@ def _completion_context_with_ignores(
 def _call_execute_turn(
     session: TaskSession,
     calls: list[ToolCall],
-    runnable: Mapping[str, ToolExecutor],
+    runnable: Mapping[str, ToolExecutor] | None,
     run_id: str,
     effect_scope: str,
     turn: int,
@@ -264,13 +265,13 @@ def _call_execute_turn(
     turns_used: int,
     propagate_provider_failure: bool,
     stop_flag: StopSignal | None = None,
-    durable: DurableStore | None = None,
+    durable: DurableStore | DurableSession | None = None,
     snapshot: TurnSnapshot | None = None,
     on_event: Callable[[RunEvent], None] | None = None,
 ) -> list[ToolResult] | KernelResult:
     """Run one execution turn; faults fail closed as provider_failure."""
     try:
-        effective_runnable = dict(runnable or {})
+        effective_runnable: dict[str, ToolExecutor] = dict(runnable or {})
         if "codemode" not in effective_runnable:
             from codey.codemode.kernel import build_execute_turn_executor
 

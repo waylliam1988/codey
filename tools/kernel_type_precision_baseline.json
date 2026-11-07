@@ -1,11 +1,11 @@
 {
-  "codey/operations/kernel_contracts.py": 8,
+  "codey/operations/kernel_contracts.py": 7,
   "codey/operations/kernel_request_builder.py": 3,
   "codey/operations/kernel_actions.py": 1,
   "codey/operations/kernel_context.py": 19,
   "codey/operations/kernel_driver.py": 12,
   "codey/operations/kernel_execution.py": 8,
-  "codey/operations/kernel_protocol.py": 31,
+  "codey/operations/kernel_protocol.py": 17,
   "codey/operations/kernel_capabilities.py": 0,
   "codey/operations/completion_context.py": 0,
   "codey/operations/completion_gate.py": 20,
