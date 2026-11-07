@@ -4,8 +4,6 @@ from __future__ import annotations
 import json
 import os
 import sys
-import threading
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -21,6 +19,7 @@ from codey.policies.shell_analysis import analyze_shell
 from codey.policies.task_policy import TaskPolicy
 from codey.storage.command_permissions import CommandPermissionStore
 from tests.support.shell_approval import admit_shell_task, seed_requested_approval
+from tests.support.shell_execution import ShellExecutionHarness
 
 
 def spec(kind, executable):
@@ -141,9 +140,8 @@ def make_ticket(command, cwd, generation, timeout, output_limit, *, shell=None):
                                               selected, analyze_shell(command, selected))
 
 
-def _context():
-    return SimpleNamespace(_shell_spawn_gate=threading.Lock(), approval_generation=lambda: 0,
-                           run_registry=SimpleNamespace(stop_flag=threading.Event()))
+def _context() -> ShellExecutionHarness:
+    return ShellExecutionHarness()
 
 
 @pytest.mark.parametrize("exit_code", [0, 7])

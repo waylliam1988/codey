@@ -34,7 +34,7 @@
 - [x] 抽出 durable event bridge。
 - [x] 抽出任务终结、停止和审批过期协调器。
 - [x] 让 `task_submit.py` 的 admission/spawn/slot 路径停止访问内部锁和私有字段。
-- [ ] 保留兼容代理，迁移完成后再删除。
+- [x] 核心调用路径迁至协调器，旧入口保留兼容代理。
 
 第二阶段首批先收敛运行槽位、输入唤醒和 shell gate 的所有权；随后任务生命周期批次
 又迁移了 `request_stop`、`finish_run` 和审批过期流程，旧入口仍由 `AppContext` 代理。
@@ -72,13 +72,23 @@ scheduler abort，再发布 shell result 和延迟 durable 事件。任务生命
 WAITING，再验证只执行未 claim 的命令一次。属于测试夹具未反映生产流程，不放宽效果准入。
 更新后任务生命周期、审批、Stop 和 scheduler abort 回归 49 passed。
 
+第二阶段收尾：运行快照与 shell result 规范化归 `RunStateProjection`；写租约归
+`WorkspaceLeaseCoordinator`；快照与删除清理归 `ConversationCoordinator`；shell 执行计数、
+关闭状态、drain 和有序资源释放归 `AppLifecycle`。资源关闭失败保留句柄和引用供重试。
+Stop、shell claim 与 final-check/Popen 使用同一 gate 动态访问器；shell service 改用
+runtime/approval/lifecycle 能力，scheduler abort 不再直接访问 context 的私有锁和 provider map。
+测试替身补齐真实同步所有者，新增在途结算阻止关库、拒绝关闭后准入、资源释放重试测试。
+扩大 app/shell/停止/准入回归 160 passed、6 skipped、6 subtests passed；生产树 mypy
+和相关 Pyrefly/Ruff 通过。旧兼容入口仍为现有调用方保留，核心流程只有一个状态所有者。
+
 查询门面首批把 `conversation_ids`、head/存在性、conversation tree/lineage、
 history/navigation/window、inbox、context 和 snapshot 查询移到
 `ConversationQueryFacade`。`DurableSession` 只保留兼容代理；所有查询统一通过
 `_query_line` 共享原有 `RLock`。这也修复了 `history_window` 原本绕过 mutation line
 的确定性并发缺口。durable 查询与历史回归共 143 passed；相关 Ruff、mypy 和
 Pyrefly 通过。扩大回归中有一个前端 Playwright 滚动/会话切换断言失败，单独运行也能
-复现；尚未完成基线对照与根因分析，不能据此断言是波动或与重构无关。
+复现。后续对照 `39516652` 基线，同一用例在相同会话切换后的 aria-current 断言失败；
+已确认重构前存在，仍需定位并修复其确定性根因，不能标成随机波动。
 
 ### 第三阶段：DurableSession 查询门面
 

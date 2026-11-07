@@ -148,7 +148,7 @@ class LocalService:
         return {**self.control.health(), "quiescent": self.quiescent()}
 
     def quiescent(self) -> bool:
-        return not self.ctx.run_registry.active_runs() and not self.ctx._shell_executions and self.ctx.shell_approval_workflow.quiescent()
+        return not self.ctx.task_runtime.active_runs() and not self.ctx.lifecycle.shell_executions and self.ctx.shell_approval_workflow.quiescent()
 
     def run(self) -> None:
         try:

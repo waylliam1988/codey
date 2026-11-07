@@ -10,14 +10,19 @@ research, or concepts at import time.
 from __future__ import annotations
 
 import subprocess
+import threading
 import uuid
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from codey.agents.shell_approval import render_deferred_tool_calls
-from codey.app.run_registry import RunSnapshot
+from codey.app.approval_registry import ApprovalRegistry
+from codey.app.lifecycle import AppLifecycle
+from codey.app.run_registry import RunRegistry, RunSnapshot
+from codey.app.task_runtime import TaskRuntimeCoordinator
 from codey.operations.task_context import safe_verification_candidates
 from codey.operations.task_state import TaskState
 from codey.policies.command_line import ShellSpec, resolve_shell
@@ -28,6 +33,16 @@ from codey.providers.catalog import DEFAULT_PROVIDER_ID
 from codey.runtime.core import cancellation
 from codey.utils.text_budget import clip_middle
 from codey.workspace.setup_context import safe_setup_context
+
+
+class ShellExecutionContext(Protocol):
+    """Execution consumes synchronization capabilities, never app internals."""
+
+    task_runtime: TaskRuntimeCoordinator
+    lifecycle: AppLifecycle
+
+    def approval_generation(self) -> int: ...
+    def emit(self, event: dict[str, object]) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -164,7 +179,7 @@ class ShellExecutionTicket:
     run_id: str = ""
 
 
-def _approval_generation_current(ctx: TaskState, expected: int) -> bool:
+def _approval_generation_current(ctx: ShellExecutionContext, expected: int) -> bool:
     try:
         current = ctx.approval_generation()
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
@@ -206,15 +221,15 @@ def safe_project_cwd(project: str | Path, rel: str) -> Path:
 
 def mint_shell_ticket(
     *,
-    lock: Any,
-    approvals: Any,
-    run_registry: Any,
+    lock: threading.Lock,
+    approvals: ApprovalRegistry,
+    run_registry: RunRegistry,
     approval_id: str,
     timeout: int,
     output_limit: int,
-    claim_pending: Any = None,
+    claim_pending: Callable[[str], dict[str, object] | None] | None = None,
     claim_pending_locked: bool = True,
-) -> tuple[dict[str, Any] | None, ShellExecutionTicket | None]:
+) -> tuple[dict[str, object] | None, ShellExecutionTicket | None]:
     """Atomically consume an approval and mint a spawn ticket.
 
     Pop, generation snapshot, stop-flag snapshot, and cwd resolution happen
@@ -240,8 +255,7 @@ def mint_shell_ticket(
         claimed_generation = raw_generation
         current_generation = approvals.current_generation()
         try:
-            stop_flag_for = getattr(run_registry, "stop_flag_for", None)
-            stop_flag = stop_flag_for(str(pending.get("source_run_id") or "")) if callable(stop_flag_for) else run_registry.stop_flag
+            stop_flag = run_registry.stop_flag_for(str(pending.get("source_run_id") or ""))
             stop_set = bool(stop_flag.is_set())
         except Exception:
             return pending, None
@@ -287,22 +301,13 @@ def claim_shell_ticket(
     snapshot would mint a ticket Stop already meant to kill. Lock order is
     always gate->lock.
     """
-    with ctx._shell_spawn_gate:
+    with ctx.task_runtime.spawn_line():
         if getattr(getattr(ctx, "control_service", None), "draining", False):
             return None, None
-        return mint_shell_ticket(
-            lock=ctx.lock,
-            approvals=ctx.approvals,
-            run_registry=ctx.run_registry,
-            approval_id=approval_id,
-            timeout=timeout,
-            output_limit=output_limit,
-            claim_pending=getattr(ctx, "claim_pending_shell_approval", None),
-            claim_pending_locked=False,
-        )
+        return ctx.claim_shell_ticket(approval_id, timeout=timeout, output_limit=output_limit)
 
 
-def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[str, Any]:
+def execute_shell_ticket(ctx: ShellExecutionContext, ticket: ShellExecutionTicket) -> dict[str, Any]:
     """Track execution through output settlement so shutdown can drain it."""
     raw_command: object = ticket.command
     if not isinstance(raw_command, str):
@@ -322,22 +327,16 @@ def execute_shell_ticket(ctx: TaskState, ticket: ShellExecutionTicket) -> dict[s
             "exit_code": None,
             "output": "",
         }
-    begin_execution = getattr(ctx, "_begin_shell_execution", None)
-    end_execution = getattr(ctx, "_end_shell_execution", None)
-    execution_registered = False
-    if callable(begin_execution):
-        if not begin_execution():
-            return _stopped_shell_result()
-        execution_registered = True
+    if not ctx.lifecycle.begin_shell_execution():
+        return _stopped_shell_result()
     try:
         return _execute_shell_ticket(ctx, ticket, command)
     finally:
-        if execution_registered and callable(end_execution):
-            end_execution()
+        ctx.lifecycle.end_shell_execution()
 
 
 def _execute_shell_ticket(
-    ctx: TaskState,
+    ctx: ShellExecutionContext,
     ticket: ShellExecutionTicket,
     command: str,
 ) -> dict[str, Any]:
@@ -371,14 +370,11 @@ def _execute_shell_ticket(
                 ticket.execution_id,
                 on_update=publish_output_snapshot,
             )
-        # The gate is deliberately *not* ``ctx.lock``: the final check calls
-        # ``ctx.approval_generation()``, which takes ``ctx.lock`` itself, so
-        # gating on ``ctx.lock`` would self-deadlock.
-        with ctx._shell_spawn_gate:
+        # The runtime owns the same spawn gate used by Stop.
+        with ctx.task_runtime.spawn_line():
             if not _approval_generation_current(ctx, ticket.generation):
                 return _stopped_shell_result()
-            stop_flag_for = getattr(ctx.run_registry, "stop_flag_for", None)
-            stop_flag = stop_flag_for(ticket.run_id) if callable(stop_flag_for) else ctx.run_registry.stop_flag
+            stop_flag = ctx.task_runtime.stop_flag_for(ticket.run_id)
             if stop_flag.is_set():
                 return _stopped_shell_result()
             # Commit point: Popen while still holding the gate so a Stop that
@@ -394,8 +390,7 @@ def _execute_shell_ticket(
                     ticket.shell.invocation(command),
                     cwd=ticket.cwd,
                 )
-        stop_flag_for = getattr(ctx.run_registry, "stop_flag_for", None)
-        stop_flag_after = stop_flag_for(ticket.run_id) if callable(stop_flag_for) else ctx.run_registry.stop_flag
+        stop_flag_after = ctx.task_runtime.stop_flag_for(ticket.run_id)
         with cancellation.scope(stop_flag_after):
             from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
 
@@ -483,7 +478,7 @@ def _execute_shell_ticket(
 
 
 def execute_approved_shell(
-    ctx: TaskState,
+    ctx: ShellExecutionContext,
     project: str | Path,
     rel: str,
     command: object,
@@ -536,11 +531,8 @@ def execute_approved_shell(
     # unreadable or stale approval must prevent even that side effect.
     if not _approval_generation_current(ctx, generation):
         return _stopped_shell_result()
-    stop_flag_for = getattr(getattr(ctx, "run_registry", None), "stop_flag_for", None)
-    stop_flag = (stop_flag_for(str(getattr(ctx, "run_id", "") or "shell"))
-                 if callable(stop_flag_for)
-                 else getattr(getattr(ctx, "run_registry", None), "stop_flag", None))
-    if stop_flag is not None and stop_flag.is_set():
+    stop_flag = ctx.task_runtime.stop_flag_for(str(getattr(ctx, "run_id", "") or "shell"))
+    if stop_flag.is_set():
         return _stopped_shell_result()
     shell = resolve_shell()
     ticket = ShellExecutionTicket(

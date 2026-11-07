@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from codey.app.approval_registry import ApprovalRegistry
 from codey.app.run_registry import RunRegistry
@@ -11,6 +11,9 @@ from codey.durable.session import DurableSession
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact, ShellApprovalRecordStore
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.types.json_value import JsonObject
+
+if TYPE_CHECKING:
+    from codey.app.shell_service import ShellExecutionTicket
 
 
 class ShellApprovalContext(Protocol):
@@ -149,6 +152,19 @@ class ShellApprovalCoordinator:
 
         value = resolve_shell_approval(self._context.durable, self._context.managed_outputs, approval_id)
         return cast(dict[str, object] | None, value)
+
+    def claim_ticket(
+        self, approval_id: str, *, timeout: int, output_limit: int,
+    ) -> tuple[dict[str, object] | None, ShellExecutionTicket | None]:
+        """The caller holds the spawn gate; this owner controls claim resources."""
+        from codey.app.shell_service import mint_shell_ticket
+
+        return mint_shell_ticket(
+            lock=self._context.lock, approvals=self._context.approvals,
+            run_registry=self._context.run_registry, approval_id=approval_id,
+            timeout=timeout, output_limit=output_limit, claim_pending=self.claim,
+            claim_pending_locked=False,
+        )
 
     def generation(self) -> int:
         with self._context.lock:

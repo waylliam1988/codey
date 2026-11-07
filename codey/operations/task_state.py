@@ -27,8 +27,10 @@ if TYPE_CHECKING:
 
     from codey.agents.handoff import ConversationContext
     from codey.app.approval_registry import ApprovalRegistry
+    from codey.app.lifecycle import AppLifecycle
     from codey.app.provider_registry import ProviderRegistry
     from codey.app.run_registry import RunRegistry, RunSnapshot
+    from codey.app.shell_service import ShellExecutionTicket
     from codey.app.task_runtime import TaskRuntimeCoordinator
     from codey.durable.scheduler import DurableTaskScheduler
     from codey.durable.session import DurableSession
@@ -74,6 +76,7 @@ class TaskState(Protocol):
     _shell_spawn_gate: threading.Lock
     run_registry: RunRegistry
     task_runtime: TaskRuntimeCoordinator
+    lifecycle: AppLifecycle
     providers: ProviderRegistry
     approvals: ApprovalRegistry
     runtime_mutations: RuntimeMutationLine
@@ -106,6 +109,9 @@ class TaskState(Protocol):
     def resolve_shell_approval(self, approval_id: str) -> dict[str, Any] | None: ...
     def expire_stale_shell_approvals(self, active_run_id: str) -> None: ...
     def approval_generation(self) -> int: ...
+    def claim_shell_ticket(
+        self, approval_id: str, *, timeout: int, output_limit: int,
+    ) -> tuple[dict[str, object] | None, ShellExecutionTicket | None]: ...
     def pop_pending_teach(self, teach_id: str) -> dict[str, Any] | None: ...
     def is_busy(self) -> bool: ...
     def wait_for_ghost_sleep(self, timeout: float | None = None) -> bool: ...

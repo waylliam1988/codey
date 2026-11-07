@@ -95,7 +95,7 @@ class ForkWorkspaces:
         return data
 
     def start(self, source: str, child: str, entry: str, workspace: str) -> dict[str, Any]:
-        if self.ctx._close_requested:
+        if self.ctx.shutdown_requested():
             raise ValueError('The server is shutting down. Retry after restart.')
         with self.lock:
             path = self._file(child)

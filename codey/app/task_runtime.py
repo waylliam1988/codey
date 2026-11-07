@@ -7,6 +7,7 @@ application-facing capability surface and the input wake-up side effect.
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -23,27 +24,38 @@ class TaskRuntimeCoordinator:
         registry: RunRegistry,
         active_providers: ActiveProviderRegistry,
         coordination_lock: threading.Lock,
-        shell_spawn_gate: threading.Lock,
+        shell_spawn_gate: threading.Lock | Callable[[], threading.Lock],
         *,
         wake_input: Callable[[], None],
     ) -> None:
         self._registry = registry
         self._active_providers = active_providers
         self._coordination_lock = coordination_lock
-        self._shell_spawn_gate = shell_spawn_gate
+        self._shell_spawn_gate = shell_spawn_gate if callable(shell_spawn_gate) else lambda: shell_spawn_gate
         self._wake_input = wake_input
 
     @contextmanager
     def admission_line(self) -> Iterator[None]:
         """Hold the application admission locks in their established order."""
-        with self._shell_spawn_gate, self._coordination_lock:
+        with self._shell_spawn_gate(), self._coordination_lock:
             yield
 
     @contextmanager
     def spawn_line(self) -> Iterator[None]:
         """Serialize a final stop check with shell process creation."""
-        with self._shell_spawn_gate:
+        with self._shell_spawn_gate():
             yield
+
+    def abort_provider(self, run_id: str) -> None:
+        """Interrupt only volatile transports after the durable abort barrier."""
+        self._registry.request_stop(run_id)
+        provider = self._active_providers.get(run_id)
+        abandon = getattr(provider, "abandon_inflight", None)
+        if callable(abandon):
+            try:
+                abandon()
+            except Exception as exc:
+                logging.getLogger(__name__).debug("provider abort cleanup failed for %s: %s", run_id, exc)
 
     def register_active_provider(self, run_id: str, provider: object) -> None:
         self._active_providers.register(run_id, provider)

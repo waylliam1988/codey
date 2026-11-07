@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import Protocol, cast
 
 from codey.app.run_registry import RunRegistry
+from codey.durable.model import TaskCheckpoint
 from codey.durable.scheduler import DurableTaskScheduler
 from codey.durable.session import DurableSession
 from codey.types.json_value import JsonObject
@@ -153,6 +154,14 @@ class TaskLifecycleCoordinator:
         for event in events:
             self._record_shell_result(event)
         self._flush_deferred_events()
+
+    def abort_approvals(self, checkpoint: TaskCheckpoint) -> None:
+        """Interrupt approval work after the scheduler has persisted cancellation."""
+        with self._shell_spawn_gate(), self._coordination_lock:
+            events = self._approval_expiry(run_id=checkpoint.task_id)
+            self._cancel_queued(checkpoint.conversation_id)
+        for event in events:
+            self._record_shell_result(event)
 
     def expire_stale_shell_approvals(self, active_run_id: str) -> None:
         """Expire approval cards belonging to runs other than ``active_run_id``."""

@@ -10,18 +10,19 @@ import contextlib
 import logging
 import tempfile
 import threading
-import time
 from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    from codey.app.shell_service import ShellExecutionTicket
     from codey.repairs.self_repair import SelfRepairSupervisor
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.app import event_bus
 from codey.app.active_provider_registry import ActiveProviderRegistry
 from codey.app.approval_registry import ApprovalRegistry
+from codey.app.conversation_coordinator import ConversationCoordinator, forget_scope, forget_trace
 from codey.app.conversation_registry import ConversationRegistry
 from codey.app.conversation_runtime import ConversationRuntime
 from codey.app.durable_event_bridge import DurableEventBridge
@@ -31,18 +32,20 @@ from codey.app.event_payloads import SCHEMA_VERSION
 from codey.app.ghost_daemon import GhostSleepDaemon
 from codey.app.ghost_services import GhostStoreAccessors, GhostStores
 from codey.app.knowledge_indexer import KnowledgeIndexer
+from codey.app.lifecycle import AppLifecycle, ResourceSlot, release_optional_resource
 from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry, RunSnapshot
+from codey.app.run_state_projection import RunStateProjection
 from codey.app.runtime_adapters import DurableRuntimeAdapters
 from codey.app.shell_approval_coordinator import ShellApprovalCoordinator
 from codey.app.task_abort import abort_task_resources
 from codey.app.task_lifecycle import TaskLifecycleCoordinator
 from codey.app.task_runtime import TaskRuntimeCoordinator
+from codey.app.workspace_leases import WorkspaceLeaseCoordinator
 from codey.durable.model import (
     CommitResult,
     DurableMutation,
     TaskCheckpoint,
-    thaw_json,
 )
 from codey.knowledge.store import KnowledgeStore
 from codey.operations.task_state import TaskSubmissionStores
@@ -100,8 +103,6 @@ class AppContext(GhostStoreAccessors):
         # Shell execution releases the spawn gate while it waits for the
         # process. Keep shutdown from closing the output store during the
         # small post-wait settlement window.
-        self._shell_execution_condition = threading.Condition()
-        self._shell_executions = 0
         # Read the module global at call time (not as a default value) so
         # tests can patch SSE_REPLAY_LIMIT around construction.
         self.event_bus = EventBus(
@@ -170,7 +171,7 @@ class AppContext(GhostStoreAccessors):
             self.run_registry,
             self._active_providers,
             self.lock,
-            self._shell_spawn_gate,
+            lambda: self._shell_spawn_gate,
             wake_input=self.input_queue.wake.set,
         )
         self.execution_outputs = ExecutionOutputStore(runtime_state_home)
@@ -190,14 +191,12 @@ class AppContext(GhostStoreAccessors):
         from codey.app.shell_approval_workflow import ShellApprovalWorkflow
 
         self.shell_approval_workflow = ShellApprovalWorkflow(self)
-        self._close_requested = False
-        self._resources_closed = False
         self.durable_scheduler = self._durable_services.scheduler
         self.task_lifecycle = TaskLifecycleCoordinator(
             durable=self.durable,
             run_registry=self.run_registry,
-            approval_expiry=self.shell_approval_coordinator.expire_locked,
-            shell_approval_workflow_cancel=self.shell_approval_workflow.cancel_queued,
+            approval_expiry=lambda **kwargs: self._expire_shell_results_locked(**kwargs),
+            shell_approval_workflow_cancel=lambda session_id: self.shell_approval_workflow.cancel_queued(session_id),
             shell_spawn_gate=lambda: self._shell_spawn_gate,
             coordination_lock=self.lock,
             scheduler=self.durable_scheduler,
@@ -223,7 +222,56 @@ class AppContext(GhostStoreAccessors):
         self.ui_state_store = (
             UiStateStore(state_home) if state_home else UiStateStore()
         )
-        self._project_writer_leases: dict[str, object] = {}
+        self.workspace_leases = WorkspaceLeaseCoordinator(self.lock, lambda: self.snapshot_store)
+        self._project_writer_leases = self.workspace_leases.leases
+        self.run_state_projection = RunStateProjection(
+            registry=self.run_registry, approvals=self.approvals, workflow=self.shell_approval_workflow,
+            durable=self.durable, lock=self.lock, research_runs=lambda: tuple(sorted(self.research_changes)),
+            emit=lambda event: self.emit(event),
+        )
+        def knowledge_for_close() -> KnowledgeStore | None:
+            with self.lock:
+                self._knowledge_store_enabled = False
+                return self._knowledge_store
+
+        def clear_knowledge(store: KnowledgeStore) -> None:
+            with self.lock:
+                if self._knowledge_store is store:
+                    self._knowledge_store = None
+
+        self.lifecycle = AppLifecycle(
+            stop=lambda: self.request_stop(),
+            close_connections=lambda: self.connection_status.close(),
+            close_conversations=lambda: self.conversation_runtime.close(self.current_run()),
+            stop_scheduler=lambda: self._durable_services.stop_scheduler(),
+            wait_workers=lambda: self._wait_background_workers(),
+            close_controls=lambda: self.providers.shutdown_controls(),
+            cleanup=(
+                lambda: self.workspace_leases.close(),
+                ResourceSlot(knowledge_for_close, lambda store: store.close(), clear_knowledge).close,
+                ResourceSlot(lambda: self.evidence_ledgers, release_optional_resource,
+                             lambda _store: setattr(self, 'evidence_ledgers', None)).close,
+                ResourceSlot(lambda: self.execution_outputs, lambda store: store.close()).close,
+                ResourceSlot(lambda: self._durable_services, lambda services: services.close()).close,
+                ResourceSlot(lambda: self._ephemeral_runtime_home, lambda temporary: temporary.cleanup(),
+                             lambda _temporary: setattr(self, '_ephemeral_runtime_home', None), attempts=1).close,
+            ),
+        )
+        self.conversation_coordinator = ConversationCoordinator(
+            durable=self.durable, registry=self.conversation_registry, providers=self.providers,
+            runs=self.run_registry, ui=self.ui_state_store, lock=self.lock, ui_lock=self.ui_state_store_lock,
+            expire_approvals=lambda **kwargs: self._expire_shell_results_locked(**kwargs),
+            record_shell_result=lambda event: self.record_shell_result(event),
+            flush_events=lambda: self._flush_deferred_durable_events(),
+            research_changes=self.research_changes, research_owners=self._research_change_sessions,
+            cleanup=(
+                ('ghost_continuity', lambda sid: forget_scope(self.ghost_continuity, sid)),
+                ('ghost_sleep', lambda sid: forget_scope(self.ghost_sleep, sid)),
+                ('ghost_work_queue', lambda sid: forget_scope(self.ghost_work_queue, sid)),
+                ('ghost_affinity', lambda sid: forget_scope(self.ghost_affinity, sid)),
+                ('run_traces', lambda sid: forget_trace(self.run_traces, sid)),
+            ),
+        )
         if start_scheduler:
             self.durable_scheduler.start()
 
@@ -252,60 +300,18 @@ class AppContext(GhostStoreAccessors):
     def _load_durable_conversation_snapshot(
         self, session_id: str
     ) -> ConversationSnapshot | None:
-        durable = getattr(self, "durable", None)
-        if durable is None or not durable.has_conversation(session_id):
-            return None
-        entry = durable.latest_context_snapshot(session_id)
-        return None if entry is None else ConversationSnapshot.from_payload(thaw_json(entry.payload))
+        return self.conversation_coordinator.load_snapshot(session_id)
 
     def _save_durable_conversation_snapshot(
         self, session_id: str, snapshot: ConversationSnapshot
     ) -> None:
-        durable = getattr(self, "durable", None)
-        if durable is None:
-            return
-        if not durable.has_conversation(session_id):
-            durable.create_conversation(session_id)
-        durable.save_context_snapshot(session_id, snapshot.to_payload())
+        self.conversation_coordinator.save_snapshot(session_id, snapshot)
 
     def acquire_project_writer(self, project: str | Path) -> bool:
-        """Claim the single persistent writer for ``project`` (non-blocking).
-
-        Returns True on success; False when another task (this process or
-        another one sharing ``state_home``) already owns it. Empty projects
-        need no guard and always succeed.
-        """
-        from codey.workspace.changes import ProjectWriteBusy
-
-        text = str(project or "").strip()
-        if not text:
-            return True
-        key = str(Path(text).expanduser().resolve())
-        with self.lock:
-            if key in self._project_writer_leases:
-                return False
-        try:
-            lease = self.snapshot_store.acquire_writer(key, timeout_seconds=0.0)
-        except ProjectWriteBusy:
-            return False
-        with self.lock:
-            if key in self._project_writer_leases:
-                with contextlib.suppress(Exception):
-                    lease.release()
-                return False
-            self._project_writer_leases[key] = lease
-            return True
+        return self.workspace_leases.acquire(project)
 
     def release_project_writer(self, project: str | Path) -> None:
-        text = str(project or "").strip()
-        if not text:
-            return
-        key = str(Path(text).expanduser().resolve())
-        with self.lock:
-            lease = self._project_writer_leases.pop(key, None)
-        if lease is not None:
-            with contextlib.suppress(Exception):
-                cast(Any, lease).release()
+        self.workspace_leases.release(project)
 
     @property
 
@@ -485,32 +491,7 @@ class AppContext(GhostStoreAccessors):
         return self.task_lifecycle.finish_run(run_id, cast(JsonObject, event))
 
     def record_shell_result(self, event: dict[str, Any]) -> None:
-        if "failure" not in event:
-            status = str(event.get("status") or "")
-            failure_code = {
-                "output_read_error": "output.unavailable",
-                "drain_timeout": "output.unavailable",
-                "timeout": "execution.uncertain",
-                "wait_error": "execution.uncertain",
-            }.get(status)
-            if failure_code:
-                event = {
-                    **event,
-                    "failure": {
-                        "schema_version": SCHEMA_VERSION,
-                        "code": failure_code,
-                        "category": "execution" if failure_code.startswith("execution") else "output",
-                        "scope": "tool",
-                        "phase": status,
-                        "effect": "unknown",
-                        "incident_id": f"shell:{event.get('id') or 'unknown'}:{status}",
-                        "session_id": str(event.get("session_id") or ""),
-                        "run_id": str(event.get("run_id") or ""),
-                        "execution_id": str(event.get("execution_id") or ""),
-                    },
-                }
-        payload = self.run_registry.record_shell_result(event)
-        self.emit(payload)
+        self.run_state_projection.record_shell_result(event)
 
     def request_stop(self, run_id: str | None = None) -> None:
         """Linearized Stop: flag, teach cancel, and approval expiry share one
@@ -572,6 +553,13 @@ class AppContext(GhostStoreAccessors):
 
     def approval_generation(self) -> int:
         return self.shell_approval_coordinator.generation()
+
+    def claim_shell_ticket(
+        self, approval_id: str, *, timeout: int, output_limit: int,
+    ) -> tuple[dict[str, object] | None, ShellExecutionTicket | None]:
+        return self.shell_approval_coordinator.claim_ticket(
+            approval_id, timeout=timeout, output_limit=output_limit,
+        )
 
     def pending_shell_approvals(self) -> dict[str, dict[str, Any]]:
         value = self.shell_approval_coordinator.pending()
@@ -696,24 +684,10 @@ class AppContext(GhostStoreAccessors):
         return self.ghost_sleep_daemon.wait(timeout)
 
     def run_state_payload(self) -> dict[str, Any]:
-        with self.lock:
-            research_restore_runs = tuple(sorted(self.research_changes))
-        payload = self.run_registry.payload(
-            pending_event=self._pending_ui_event,
-            research_restore_runs=research_restore_runs,
-        )
-        payload["shell_approvals"] = self.shell_approval_workflow.list_statuses()
-        approval_work = self.shell_approval_workflow.busy_status()
-        if not payload["busy"] and approval_work is not None:
-            payload.update(busy=True, run_id=approval_work["source_run_id"],
-                           session_id=approval_work["session_id"], run_status="running")
-        from codey.app.task_lifecycle_projection import snapshot_tasks
-        payload["task_states"] = snapshot_tasks(self.durable, payload)
-        return payload
+        return self.run_state_projection.payload()
 
     def _pending_ui_event(self, active: RunSnapshot | None) -> dict[str, Any] | None:
-        with self.lock:
-            return self.approvals.pending_ui_event(active)
+        return self.run_state_projection.pending_ui_event(active)
 
     def emit(self, event: dict[str, Any]) -> None:
         from codey.app.task_lifecycle_projection import version_task_event
@@ -818,71 +792,10 @@ class AppContext(GhostStoreAccessors):
         return provider_services.provider_failover_order(self.providers)
 
     def conversation_for(self, session_id: str) -> ConversationContext:
-        return self.conversation_registry.for_session(session_id)
+        return self.conversation_coordinator.conversation_for(session_id)
 
     def forget_conversation(self, session_id: str, *, preserve_ui: bool = False) -> dict[str, str]:
-        failures: dict[str, str] = {}
-        try:
-            if self.durable.has_conversation(session_id):
-                self.durable.delete_conversation(session_id)
-        except Exception as exc:
-            failures["durable"] = str(exc)
-        if not preserve_ui:
-            try:
-                with self.ui_state_store_lock:
-                    self.ui_state_store.forget_session(session_id)
-            except Exception as exc:
-                failures["ui_state"] = str(exc)
-        # No phase may short-circuit the rest: executable pending state must
-        # be cleared even when an earlier store fails (fail closed).
-        try:
-            self.conversation_registry.forget(session_id)
-        except Exception as exc:
-            failures["conversation"] = str(exc)
-        try:
-            with self.lock:
-                self.providers.forget_session(session_id)
-        except Exception as exc:
-            failures["providers"] = str(exc)
-        try:
-            self.run_registry.clear_session_outputs(session_id)
-        except Exception as exc:
-            failures["run_outputs"] = str(exc)
-        # Executable pending state must not outlive the chat: expire this
-        # session's shell approvals (denied) and drop its restorable research
-        # changes. Audit artifacts (run ledgers, managed outputs) are kept.
-        with self.lock:
-            approval_events = self._expire_shell_results_locked(session_id=session_id)
-            orphan_runs = [
-                run_id
-                for run_id, owner in self._research_change_sessions.items()
-                if owner == session_id
-            ]
-            for run_id in orphan_runs:
-                self.research_changes.pop(run_id, None)
-                self._research_change_sessions.pop(run_id, None)
-        for event in approval_events:
-            try:
-                self.record_shell_result(event)
-            except Exception as exc:
-                failures["approvals"] = str(exc)
-                break
-        self._flush_deferred_durable_events()
-        operations: tuple[tuple[str, str, Callable[[Any], Any]], ...] = (
-            ("ghost_continuity", "ghost_continuity", lambda s: s.delete_scope("session", session_id=session_id)),
-            ("ghost_sleep", "ghost_sleep", lambda s: s.delete_scope("session", session_id=session_id)),
-            ("ghost_work_queue", "ghost_work_queue", lambda s: s.delete_scope("session", session_id=session_id)),
-            ("ghost_affinity", "ghost_affinity", lambda s: s.delete_scope("session", session_id=session_id)),
-            ("run_traces", "run_traces", lambda s: s.delete_session(session_id)),
-        )
-        for store_name, attr_name, method in operations:
-            target = getattr(self, attr_name, None)
-            if target is not None:
-                try:
-                    method(target)
-                except Exception as exc:
-                    failures[store_name] = str(exc)
-        return failures
+        return self.conversation_coordinator.forget(session_id, preserve_ui=preserve_ui)
 
     def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
         with self.lock:
@@ -893,37 +806,20 @@ class AppContext(GhostStoreAccessors):
             self.providers.set_session(provider_id, session_id)
 
     def shutdown_requested(self) -> bool:
-        """Read the shutdown signal afresh across worker boundaries."""
-        return self._close_requested
+        return self.lifecycle.close_requested
 
     def _begin_shell_execution(self) -> bool:
-        """Register a shell executor unless shutdown has already started."""
-        with self._shell_execution_condition:
-            if self._close_requested:
-                return False
-            self._shell_executions += 1
-            return True
+        return self.lifecycle.begin_shell_execution()
 
     def _end_shell_execution(self) -> None:
-        with self._shell_execution_condition:
-            self._shell_executions = max(0, self._shell_executions - 1)
-            if self._shell_executions == 0:
-                self._shell_execution_condition.notify_all()
+        self.lifecycle.end_shell_execution()
 
     def _wait_shell_executions(self, timeout: float = 2.0) -> bool:
-        end = time.monotonic() + timeout
-        with self._shell_execution_condition:
-            while self._shell_executions:
-                remaining = end - time.monotonic()
-                if remaining <= 0:
-                    return False
-                self._shell_execution_condition.wait(remaining)
-            return True
+        return self.lifecycle.wait_shell_executions(timeout)
 
     @property
     def closed(self) -> bool:
-        """Return True when resources have been completely released."""
-        return self._resources_closed
+        return self.lifecycle.resources_closed
 
     def _wait_background_workers(self) -> bool:
         try:
@@ -936,95 +832,24 @@ class AppContext(GhostStoreAccessors):
             return False
 
     def close(self) -> bool:  # noqa: C901, PLR0912
-        """Release durable resources. Returns True only when fully closed.
+        return self.lifecycle.close()
 
-        A live background Ghost owns its stores: when the short join
-        expires, resources are retained and ``closed`` stays False so the
-        caller retries or reports incomplete shutdown instead of releasing
-        files out from under the daemon (the Windows ``.lock`` handle
-        failure). Resource-cleanup failures behave the same: failed pieces
-        are retained for a later retry.
-        """
-        if self._resources_closed:
-            return True
-        if not self._close_requested:
-            self._close_requested = True
-            # Same gate as every other production Stop: a bare set() here
-            # would let close slip between an Allow's final check and Popen.
-            # request_stop emits synchronously (best-effort, registries are
-            # still alive) before durable resources release below.
-            self.request_stop()
+    @property
+    def _close_requested(self) -> bool:
+        return self.lifecycle.close_requested
 
-        self.connection_status.close()
-        if not self.conversation_runtime.close(self.current_run()):
-            return False
+    @_close_requested.setter
+    def _close_requested(self, value: bool) -> None:
+        self.lifecycle.close_requested = value
 
-        if not self._durable_services.stop_scheduler():
-            return False
+    @property
+    def _resources_closed(self) -> bool:
+        return self.lifecycle.resources_closed
 
-        if not self._wait_background_workers():
-            return False
+    @_resources_closed.setter
+    def _resources_closed(self, value: bool) -> None:
+        self.lifecycle.resources_closed = value
 
-        if not self._wait_shell_executions():
-            return False
-
-        resources_closed = self.providers.shutdown_controls()
-
-        def close_store(store: object) -> bool:
-            close = getattr(store, "close", None)
-            if not callable(close):
-                return True
-            for attempt in range(3):
-                try:
-                    close()
-                    return True
-                except Exception:
-                    if attempt == 2:
-                        logger.exception("Resource cleanup failed: %s", type(store).__name__)
-                        return False
-                    time.sleep(0.05 * (attempt + 1))
-            return False
-
-        with self.lock:
-            project_writer_leases = tuple(self._project_writer_leases.items())
-        for project, lease in project_writer_leases:
-            try:
-                cast(Any, lease).release()
-            except Exception:
-                resources_closed = False
-            else:
-                with self.lock:
-                    if self._project_writer_leases.get(project) is lease:
-                        self._project_writer_leases.pop(project, None)
-        with self.lock:
-            self._knowledge_store_enabled = False
-            knowledge_store = self._knowledge_store
-        if knowledge_store is not None:
-            if not close_store(knowledge_store):
-                resources_closed = False
-            else:
-                with self.lock:
-                    if self._knowledge_store is knowledge_store:
-                        self._knowledge_store = None
-        evidence = getattr(self, "evidence_ledgers", None)
-        if evidence is not None:
-            if not close_store(evidence):
-                resources_closed = False
-            else:
-                self.evidence_ledgers = None
-        execution_outputs = getattr(self, "execution_outputs", None)
-        if execution_outputs is not None and not close_store(execution_outputs):
-            resources_closed = False
-        if not close_store(self._durable_services):
-            resources_closed = False
-        if self._ephemeral_runtime_home is not None:
-            try:
-                self._ephemeral_runtime_home.cleanup()
-            except Exception:
-                resources_closed = False
-            else:
-                self._ephemeral_runtime_home = None
-        if resources_closed:
-            self._resources_closed = True
-            return True
-        return False
+    @property
+    def _shell_executions(self) -> int:
+        return self.lifecycle.shell_executions

@@ -11,22 +11,16 @@ from unittest import mock
 from codey.app import api as app_api
 from codey.app import shell_service
 from codey.runtime.core import cancellation
+from tests.support.shell_execution import ShellExecutionHarness
 
 
-class _FakeRegistry:
-    def __init__(self) -> None:
-        self.stop_flag = threading.Event()
-
-
-class _FakeCtx:
+class _FakeCtx(ShellExecutionHarness):
     def __init__(self, pending: dict, generation_at_pop: int, generation_now: int) -> None:
         from codey.app.approval_registry import ApprovalRegistry
 
+        super().__init__()
         self._generation_now = generation_now
-        self.run_registry = _FakeRegistry()
         self.recorded: list[dict] = []
-        self.lock = threading.Lock()
-        self._shell_spawn_gate = threading.Lock()
         # Production claim path needs a real registry: seed the pop-time
         # generation on the record and the read-time generation on the
         # counter directly (a Stop between them is what these tests pin).
@@ -34,6 +28,14 @@ class _FakeCtx:
         self.approvals.add_shell("shell-1", dict(pending))
         self.approvals._pending_shell["shell-1"]["_approval_generation"] = generation_at_pop
         self.approvals._generation = generation_now
+
+    def claim_shell_ticket(
+        self, approval_id: str, *, timeout: int, output_limit: int,
+    ) -> tuple[dict[str, object] | None, shell_service.ShellExecutionTicket | None]:
+        return shell_service.mint_shell_ticket(
+            lock=self.lock, approvals=self.approvals, run_registry=self.run_registry,
+            approval_id=approval_id, timeout=timeout, output_limit=output_limit,
+        )
 
     def pop_pending_shell_approval(self, approval_id: str) -> dict | None:
         return self.approvals.pop_shell(approval_id)
