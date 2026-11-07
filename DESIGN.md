@@ -4,6 +4,16 @@ This document is the design baseline for Codey's workspace UI. Edit sources in
 `frontend/`; `codey/web` contains the published build.
 Keep one visual language across the application.
 
+The approved 2026-11-07 attachment change adds file selection, drop/paste,
+filename/thumbnail chips and removal inside the existing composer. Normal
+attachment states have no status sentence: do not add `Attachment pending`,
+current-task/model/branch rows, or steering-scope explanations. Show attachment
+errors only; unsupported images use exactly `This model does not support image
+input. Remove the image or choose a supported model.` Files count as draft
+content for the single Send/Stop action. See
+[`docs/attachments_2026-11-07.md`](docs/attachments_2026-11-07.md) for the
+approved scope, real delivery contract and verification limits.
+
 The 2026-10-20 revision adopts deepseek-harness as the main interaction reference
 and Codex as an additional visual reference. Revised layout, branching, steering,
 icons and inspection rules describe the approved redesign target, not a claim

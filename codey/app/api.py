@@ -734,8 +734,18 @@ def run_submit_response(  # noqa: C901, PLR0912
         if error:
             return error
         submit_kwargs.update(captured)
-    return _submit_task_response(submit_task,
+    return _submit_with_attachments(ctx, body, submit_task,
         (session_id, project, task, max_turns, continue_task, provider_id, intent), submit_kwargs)
+
+
+def _submit_with_attachments(ctx: Any, body: dict[str, Any], submit: Callable[..., str | None], args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    if "attachments" in body:
+        from codey.app.attachment_routes import prepare_run_attachments
+
+        error = prepare_run_attachments(ctx, args[0], body["attachments"], kwargs)
+        if error:
+            return error
+    return _submit_task_response(submit, args, kwargs)
 
 
 def _submit_task_response(submit_task: Callable[..., str | None], args: tuple[Any, ...], kwargs: dict[str, Any]) -> tuple[int, dict[str, Any]]:

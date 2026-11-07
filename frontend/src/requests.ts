@@ -1,5 +1,5 @@
 import { runtime } from './runtime';
-import type { Message, Session } from './types/domain';
+import type { AttachmentRef, Message, Session } from './types/domain';
 import { isRunSuspension, isTerminalRun } from './run_lifecycle';
 export interface RequestAttempt {
   edit?: boolean;
@@ -36,6 +36,7 @@ export interface RequestsApi {
     text: string,
     requestId?: string,
     editEntryId?: string,
+    files?: AttachmentRef[],
   ): { request: Message; attempt: RequestAttempt } | null;
   canRetry(sessionId: string, requestId: string): boolean;
   forRun(sessionId: string, runId: string): RequestMatch | null;
@@ -147,7 +148,7 @@ export interface RequestsDeps {
     changed(match.s, match.request, attempts);
     return true;
   }
-  function begin(sessionId: string, text: string, requestId = '', editEntryId = '') {
+  function begin(sessionId: string, text: string, requestId = '', editEntryId = '', files?: AttachmentRef[]) {
     const s = session(sessionId);
     if (!s) return null;
     let request = requestId ? requestIn(s, requestId) : null;
@@ -170,7 +171,13 @@ export interface RequestsDeps {
     if (request) {
       request = changed(s, request, [...request.attempts, attempt]);
     } else {
-      request = { type: 'user', id: 'message_' + crypto.randomUUID(), text, attempts: [attempt] };
+      request = {
+        type: 'user',
+        id: 'message_' + crypto.randomUUID(),
+        text,
+        attempts: [attempt],
+        ...(files?.length ? { attachments: files } : {}),
+      };
       deps.pushMsgToSession(sessionId, request);
       deps.addToSession(sessionId, { type: 'request_status', sessionId, requestId: request.id });
     }

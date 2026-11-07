@@ -59,6 +59,12 @@ a managed session workspace under `~/.codey/workspaces/<session_key>`. Chat
 can write scripts and request local commands without choosing a folder.
 Both use the same tools; Shell commands still require approval.
 
+Use **Attach files**, drag files onto the composer, or paste an image to attach
+UTF-8 text/source files or PNG/JPEG/GIF/WebP images. Files have previews and a
+Remove action; uploaded drafts stay with their chat across reloads. Images can
+be sent only through a model connection with confirmed image-input support.
+See [attachment limits and model support](docs/attachments_2026-11-07.md).
+
 The desktop attaches to a shared local service. Closing its window leaves the
 service and its tasks running; `python -m codey ui` reconnects to it.
 The local UI authorizes itself automatically when Codey opens it. If the native

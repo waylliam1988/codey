@@ -39,4 +39,7 @@ class RequestCounter(Protocol):
 
 def estimate_request(payload: dict[str, Any], *, deadline: float) -> RequestContextCount:
     """Declared approximate mode; never used after a tokenizer failure."""
-    return RequestContextCount(estimate_tokens(json.dumps(payload, ensure_ascii=False)), "estimated")
+    from codey.task.attachments import image_estimate_view
+
+    view, images = image_estimate_view(payload)
+    return RequestContextCount(estimate_tokens(json.dumps(view, ensure_ascii=False)) + images, "estimated")

@@ -26,6 +26,7 @@ class ApiRunSelection:
     budget_source: str = "configuration"
     input_limit_tokens: int | None = None
     text_tool_format: str = "plain"
+    supports_images: bool | None = None
 
     def __post_init__(self) -> None:
         for value in (self.connection_id, self.connection_revision, self.model_id):
@@ -44,6 +45,8 @@ class ApiRunSelection:
             raise ValueError("invalid context budget source")
         if type(self.native_tools) is not bool or type(self.stream) is not bool:
             raise ValueError("API capability flags must be booleans")
+        if self.supports_images is not None and type(self.supports_images) is not bool:
+            raise ValueError("Image capability must be a boolean or unknown")
         if self.thinking_enabled is not None and type(self.thinking_enabled) is not bool:
             raise ValueError("thinking flag must be boolean")
         if self.reasoning_effort is not None and self.reasoning_effort not in REASONING_EFFORTS:

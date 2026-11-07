@@ -3,6 +3,7 @@ import type { DocumentRef } from './document_pane';
 import { commandCard } from './command_card';
 import { approvalText } from './shell_approvals';
 import { runtime } from './runtime';
+import { appendAttachmentRefs } from './attachments';
 import { hydrateDocumentContent } from './document_content';
 import { artifactRow, decorateDeliverables } from './artifacts';
 import type { Message, UiDeps } from './types/domain';
@@ -176,6 +177,7 @@ export interface MessagesApi {
       if (m.source?.actor_id) div.dataset.sourceActor = m.source.actor_id;
       const body = div.querySelector<HTMLElement>('.body');
       if (body) body.textContent = String(m.text);
+      appendAttachmentRefs(div, m.attachments, activeId);
       addMessageCopyButton(div, messageCopyText(m));
       const actions = document.createElement('div');
       actions.className = 'message-actions';

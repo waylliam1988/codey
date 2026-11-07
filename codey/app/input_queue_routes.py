@@ -68,7 +68,7 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
             source = body.get("request")
             if not isinstance(source, dict):
                 raise ValueError("request required")
-            request = {key: source[key] for key in ("session_id", "run_id", "project", "task", "provider", "intent", "model_selection", "max_turns", "input_mode") if key in source}
+            request = {key: source[key] for key in ("session_id", "run_id", "project", "task", "provider", "intent", "model_selection", "max_turns", "input_mode", "attachments") if key in source}
             if request.get("input_mode", "follow_up") not in {"steer", "follow_up"}:
                 raise ValueError("invalid input mode")
             state = ctx.load_ui_state()
@@ -86,10 +86,15 @@ def input_action_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str
             from codey.providers.snapshot import capture_provider_selection
 
             selection = capture_provider_selection(str(request.get("provider") or ""), request.get("model_selection"))
+            from codey.app.attachment_routes import prepare_queued_attachments
+
+            selection, message_metadata, attachment_error = prepare_queued_attachments(ctx, request, selection)
+            if attachment_error:
+                return attachment_error
             with ctx._shell_spawn_gate:
                 if getattr(getattr(ctx, "control_service", None), "draining", False):
                     return 503, {"ok": False, "error": "server_draining"}
-                item = ctx.input_queue.create(identity, request, model_selection=selection)
+                item = ctx.input_queue.create(identity, request, model_selection=selection, **({"message_metadata": message_metadata} if message_metadata else {}))
         else:
             revision = body.get("revision")
             if type(revision) is not int:

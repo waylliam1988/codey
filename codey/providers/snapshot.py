@@ -49,7 +49,7 @@ def provider_snapshot(
             "supports_native_session": False,
             "accepts_history_replay": True,
             "supports_tool_calls": selection.native_tools,
-            "supports_images": None,
+            "supports_images": selection.supports_images,
             "supports_reasoning": selection.thinking_enabled is not None or selection.reasoning_effort is not None,
             "max_context_tokens": selection.context_window_tokens,
         },

@@ -123,7 +123,7 @@ class DurableConversationInputQueue:
         with self.lock:
             return self._items(session_id)
 
-    def create(self, identity: str, request: dict[str, Any], *, model_selection: ApiRunSelection | None = None) -> dict[str, Any]:
+    def create(self, identity: str, request: dict[str, Any], *, model_selection: ApiRunSelection | None = None, message_metadata: dict[str, object] | None = None) -> dict[str, Any]:
         if not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", identity):
             raise ValueError("invalid input identity")
         if not request.get("session_id") or not request.get("run_id"):
@@ -164,6 +164,7 @@ class DurableConversationInputQueue:
                 provider_snapshot=snapshot,
                 task_state={
                     "input_identity": identity,
+                    **({"message_metadata": message_metadata} if message_metadata else {}),
                     "input_request": admitted_request,
                     "input_state": "queued",
                     **admitted_request,

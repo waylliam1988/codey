@@ -85,7 +85,8 @@ def _message_for(entry: EntryDraft) -> Mapping[str, object]:
     raw_payload = thaw_json(entry.payload)
     payload = raw_payload if isinstance(raw_payload, dict) else {}
     if entry.kind == "user_message":
-        return {"role": "user", "content": str(payload.get("text") or "")}
+        return {"role": "user", "content": str(payload.get("text") or ""),
+                **({"attachments": payload["attachments"]} if payload.get("attachments") else {})}
     if entry.kind == "assistant_message":
         return {"role": "assistant", "content": str(payload.get("text") or "")}
     if entry.kind == "tool_call":
@@ -148,8 +149,14 @@ def _summary_text(value: object) -> str:
 def _estimate_tokens(value: object) -> int:
     if value == () or value == []:
         return 0
-    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return estimate_tokens(encoded)
+    from codey.task.attachments import attachment_message, image_estimate_view, validate_attachments
+
+    if isinstance(value, (list, tuple)):
+        value = [{**message, "attachments": [], "content": attachment_message(str(message.get("content") or ""), validate_attachments(message["attachments"]), protocol="openai-completions", images=True)}
+                 if isinstance(message, Mapping) and message.get("attachments") else message for message in value]
+    view, images = image_estimate_view(value)
+    encoded = json.dumps(view, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return estimate_tokens(encoded) + images
 
 
 def _token_count(

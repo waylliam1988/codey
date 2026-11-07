@@ -94,6 +94,13 @@ export interface Draft {
   direction: 'none' | 'forward' | 'backward';
   revision: number;
 }
+export interface AttachmentRef {
+  id: string;
+  name: string;
+  media_type: string;
+  size: number;
+  sha256: string;
+}
 export type AttemptState = 'sending' | 'running' | 'waiting' | 'done' | 'paused' | 'failed';
 export interface RequestAttempt {
   edit?: boolean;
@@ -104,6 +111,7 @@ export interface RequestAttempt {
   runOwner?: string;
 }
 export interface Message extends importToolDisplay {
+  attachments?: AttachmentRef[];
   source?: { actor_id: string; name: string; kind: string };
   entryId?: string;
   elapsedMs?: number;

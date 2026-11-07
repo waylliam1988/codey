@@ -292,6 +292,10 @@ def _render_durable_handoff(messages: list[dict[str, object]], digest: str) -> s
     for message in messages:
         role = str(message.get("role") or "system")
         content = str(message.get("content") or "").strip()
+        if message.get("attachments"):
+            from codey.task.attachments import attachment_message, validate_attachments
+
+            content = str(attachment_message(content, validate_attachments(message["attachments"]), protocol="openai-completions", images=False))
         if content:
             lines.append(f"{role}: {content[:4000]}")
     return "\n".join(lines)

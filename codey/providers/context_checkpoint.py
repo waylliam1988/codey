@@ -166,6 +166,8 @@ def summary_source(value: Any) -> Any:
     if isinstance(value, list):
         return [summary_source(item) for item in value]
     if isinstance(value, dict):
+        if value.get("type") in {"image_url", "input_image"}:
+            return {"type": "image", "note": "An image was attached. Visual content is retained in the original input, not in this text summary."}
         return {key: summary_source(item) for key, item in value.items()}
     return value
 

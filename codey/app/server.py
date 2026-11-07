@@ -43,6 +43,9 @@ from codey.app import api as app_api
 from codey.app import connection_actions, model_settings
 from codey.app import provider_services as provider_services
 from codey.app import task_submit as task_submit
+from codey.app.attachment_routes import capabilities_response as attachment_capabilities
+from codey.app.attachment_routes import read_response as attachment_read
+from codey.app.attachment_routes import upload_response as attachment_upload
 from codey.app.context import AppContext
 from codey.app.conversation_routes import (
     conversation_action_response,
@@ -307,6 +310,9 @@ _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[s
     "/api/conversation_tree/action": conversation_action_response,
     "/api/workflows/fork": workflow_fork_response,
     "/api/inputs": input_action_response,
+    "/api/attachments": attachment_upload,
+    "/api/attachments/read": attachment_read,
+    "/api/attachments/capabilities": attachment_capabilities,
     "/api/questions": question_answer_response,
     "/api/model_settings": model_settings.save_response,
     "/api/model_catalog": model_settings.discover_response,

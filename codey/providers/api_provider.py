@@ -67,6 +67,7 @@ class ApiProvider:
         model: str,
         *,
         api_key: str = "",
+        supports_images: bool = False,
         timeout: float = DEFAULT_TIMEOUT,
         temperature: float = DEFAULT_TEMPERATURE,
         system_prompt: str = "",
@@ -122,6 +123,7 @@ class ApiProvider:
         self._context_session = ""
         self._durable: Any = None
         self._durable_session_id = ""
+        self._attachment_task_id, self.supports_images = "", supports_images
         self._durable_source_entry_ids: tuple[str | None, ...] = ()
         self._attempt_gate: Callable[[ApiProvider, dict[str, Any]], None] | None = None
         self._attempt_gate_prompt = ""
@@ -366,6 +368,16 @@ class ApiProvider:
         with self._state_lock:
             self._attempt_gate_prompt = str(prompt or "")
 
+    def bind_input_attachments(self, durable: Any, session_id: str, task_id: str) -> None:
+        if self._durable is not durable or self._durable_session_id != session_id:
+            raise ValueError("Attachment binding requires the matching durable chat context.")
+        self._attachment_task_id = task_id
+
+    def _attachment_message(self, message: dict[str, Any]) -> dict[str, Any]:
+        from codey.providers.input_attachments import with_attachment_content
+
+        return with_attachment_content(message, protocol=self.api_protocol, images=self.supports_images)
+
     def load_durable_context(self, messages: list[dict[str, Any]], *,
                              source_entry_ids: tuple[str, ...] = ()) -> None:
         """Seed a fresh local protocol window from the canonical session path."""
@@ -376,7 +388,7 @@ class ApiProvider:
         encoded: list[dict[str, Any]] = []
         encoded_ids: list[str | None] = []
         for message, entry_id in zip(messages, source_entry_ids or (None,) * len(messages), strict=True):
-            part = self._codec.encode_context([message])
+            part = self._codec.encode_context([self._attachment_message(message)])
             encoded.extend(part)
             encoded_ids.extend([entry_id] * len(part))
         with self._state_lock:
@@ -517,6 +529,9 @@ class ApiProvider:
                     raise ValueError("protocol window reference mismatch")
                 generation = self._inflight_generation = self._generation
                 base_revision = self._history_revision
+                from codey.providers.input_attachments import enrich_pending
+
+                pending = enrich_pending(self, pending)
                 candidate = self._prepare_exchange(pending, tools)
             checkpoints: list[dict[str, Any]] = []
             generation_options: dict[str, Any] = {"output_token_limit": output_token_limit,
@@ -767,7 +782,7 @@ class ApiProvider:
         from codey.providers.text_result_views import TEXT_RESULTS_KEY
 
         # View provenance is local metadata, never an API message property.
-        payload[key] = [{name: value for name, value in item.items() if name != TEXT_RESULTS_KEY}
+        payload[key] = [{name: value for name, value in item.items() if name not in {TEXT_RESULTS_KEY, "_codey_attachment_entries"}}
                         for item in payload[key]]
         if settings.text_tool_contract:
             # Frozen request declarations, like native tools, belong to this
@@ -879,7 +894,7 @@ class ApiProvider:
     def count_context_messages(self, messages: tuple[dict[str, Any], ...]) -> int:
         """Count a reconstructed durable context with this provider's request envelope."""
         items = self._codec.prepare(
-            [], self._codec.encode_context([dict(message) for message in messages]),
+            [], self._codec.encode_context([self._attachment_message(dict(message)) for message in messages]),
             system=self.system_prompt, tools=self._declared_tools or None,
         )
         count = api_context.count_context(self, items, self._declared_tools or None, time.monotonic() + self.timeout)

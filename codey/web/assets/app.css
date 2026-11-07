@@ -1627,3 +1627,19 @@
   .artifact-menu button { display: block; width: 100%; border: 0; background: transparent; color: var(--text-dim); text-align: left; padding: 8px; font: 12px var(--font-sans); cursor: pointer; }
   .artifact-menu button:hover { color: var(--text); }
   @media (hover: none) { .artifact-more > summary, .tool-result-panel .code-copy { opacity: 1; } }
+/* Attachments use the existing composer and its single primary action. */
+.composer-attachments { padding: 8px 12px 0; }
+.attachment-add { font-size: 11.5px; color: var(--text-dim); }
+.attachment-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 6px 0; }
+.attachment-list[hidden], .attachment-error[hidden] { display: none; }
+.attachment-chip { display: flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%; padding: 6px 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; font: 11.5px var(--font-mono); color: var(--text-dim); }
+.attachment-chip img { width: 36px; height: 36px; object-fit: cover; border-radius: 3px; }
+.attachment-chip > span:not(.spinner) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.attachment-chip button { border: 0; background: transparent; color: var(--text-dim); cursor: pointer; padding: 2px; font: inherit; }
+.attachment-chip button:hover { color: var(--text); }
+.attachment-error { color: var(--err-text); font-size: 11.5px; padding-top: 4px; }
+.attachment-error .link-btn { margin-left: 8px; }
+.composer-box.attachment-dragging { border-color: var(--text-dim); }
+.message-attachments { margin-top: 6px; }
+.pending-input .message-attachments { grid-column: 1 / -1; }
+.pending-input .attachment-error { grid-column: 1 / -1; }

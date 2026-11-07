@@ -99,6 +99,8 @@ class WorkerChatProvider:
     def __post_init__(self) -> None:
         self.name = f"{self.provider_id} worker"
         self.last_failure: ProviderFailure | None = None
+        self._attachment_binding: tuple[Any, str, str] | None = None
+        self._attachment_entries: set[str] = set()
         # _life_lock serializes session retirement/termination/start so a new
         # generation never reuses the browser profile while the old one is
         # still being torn down. _request_lock keeps requests single-flight.
@@ -126,7 +128,16 @@ class WorkerChatProvider:
             )
             raise
 
+    def bind_input_attachments(self, durable: Any, session_id: str, task_id: str) -> None:
+        self._attachment_binding = (durable, session_id, task_id)
+
     def send(self, text: str, timeout: float | None = None) -> str:
+        entries: list[str] = []
+        if self._attachment_binding is not None:
+            from codey.providers.input_attachments import browser_attachment_text, pending_attachments
+
+            items, entries = pending_attachments(*self._attachment_binding, self._attachment_entries)
+            text = browser_attachment_text(self.provider_id, text, items)
         try:
             result = self._request("send", {"text": text, "timeout": timeout}, timeout)
         except ProviderActionError as exc:
@@ -142,6 +153,7 @@ class WorkerChatProvider:
             self.override.generation,
             state_home=self.state_home,
         )
+        self._attachment_entries.update(entries)
         return str(result or "")
 
     def close(self) -> bool:

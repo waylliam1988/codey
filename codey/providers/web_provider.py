@@ -40,6 +40,8 @@ class WebChatProvider:
         self.session = session
         self.last_failure: ProviderFailure | None = None
         self.name: str = type(self).spec.name
+        self._attachment_binding: tuple[Any, str, str] | None = None
+        self._attachment_entries: set[str] = set()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.session!r})"
@@ -79,6 +81,9 @@ class WebChatProvider:
             timeout=timeout,
         )
 
+    def bind_input_attachments(self, durable: Any, session_id: str, task_id: str) -> None:
+        self._attachment_binding = (durable, session_id, task_id)
+
     def send(self, text: str, timeout: float | None = None) -> str:
         if not isinstance(text, str):
             raise ValueError("message must be a string")
@@ -92,17 +97,25 @@ class WebChatProvider:
             raise ValueError(self.spec.blank_message)
         from codey.providers.request_context import clock_context
 
+        entries: list[str] = []
+        if self._attachment_binding is not None:
+            from codey.providers.input_attachments import browser_attachment_text, pending_attachments
+
+            items, entries = pending_attachments(*self._attachment_binding, self._attachment_entries)
+            text = browser_attachment_text(self.spec.provider_id, text, items)
         text = clock_context() + "\n\n" + text
         kwargs = {}
         if timeout is not None:
             kwargs["response_timeout"] = timeout
-        return cast(str, run_web_send(
+        reply = cast(str, run_web_send(
             self,
             page=self.session.page,
             func=lambda: self.spec.driver.chat(self.session.page, text, **kwargs),
             response_timeout=timeout,
             grace=getattr(self.spec.driver, self.spec.grace_attr),
         ))
+        self._attachment_entries.update(entries)
+        return reply
 
     def close(self) -> None:
         self.session.close()

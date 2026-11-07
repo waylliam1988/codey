@@ -106,6 +106,9 @@ def connect_and_build_frame(
     bind_durable = getattr(provider, "bind_durable_context", None)
     if callable(bind_durable):
         bind_durable(state.durable, request.session_id)
+    bind_attachments = getattr(provider, "bind_input_attachments", None)
+    if callable(bind_attachments):
+        bind_attachments(state.durable, request.session_id, run_id)
     conversation = state.conversation_for(request.session_id)
     conversation_plan = plan_conversation(
         state=state,

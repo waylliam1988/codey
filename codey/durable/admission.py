@@ -29,9 +29,13 @@ if TYPE_CHECKING:
 
 def message_metadata(state: Mapping[str, object] | None) -> dict[str, object]:
     raw = (state or {}).get("message_metadata", {})
-    if not isinstance(raw, Mapping) or set(raw) - {"source", "in_reply_to_run_id"}:
+    if not isinstance(raw, Mapping) or set(raw) - {"source", "in_reply_to_run_id", "attachments"}:
         raise ValueError("invalid message metadata")
     result: dict[str, object] = {}
+    if "attachments" in raw:
+        from codey.task.attachments import validate_attachments
+
+        result["attachments"] = validate_attachments(raw["attachments"])
     if "source" in raw:
         source = raw["source"]
         if (not isinstance(source, Mapping) or set(source) != {"actor_id", "name", "kind"}

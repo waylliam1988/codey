@@ -77,17 +77,23 @@ def capture_selection(selection: object = None) -> ApiRunSelection:
     return ApiRunSelection("cline", _revision(record.account_epoch, capability), selection["model"],
         "openai-completions", capability.tools, capability.context, reserve, min(12000, capability.context - reserve),
         reasoning_effort=effort, thinking_enabled=thinking, stream=True, output_tokens=min(capability.output, reserve),
-        budget_source="model_catalog", input_limit_tokens=capability.input_limit)
+        budget_source="model_catalog", input_limit_tokens=capability.input_limit, supports_images=capability.images)
 
 
 def validate_selection(selection: ApiRunSelection) -> None:
+    from dataclasses import replace
+
     resource = runtime()
     record = resource.auth.store.load()
     if record is None:
         raise ConnectionActionError("reauth_required", "Sign in to Cline first.", 401)
     capability = resource.catalog.require(selection.model_id)
     if (selection.connection_id != "cline" or selection.protocol != "openai-completions"
-            or selection.connection_revision != _revision(record.account_epoch, capability)):
+            or selection.supports_images and not capability.images
+            or selection.connection_revision not in {
+                _revision(record.account_epoch, capability),
+                _revision(record.account_epoch, replace(capability, images=False)) if not selection.supports_images else "",
+            }):
         raise ValueError("Cline account or model contract changed; select the model again.")
     resource.auth._check_record(record, record.account_epoch)
     compile_selection(efforts=capability.efforts, toggle=capability.toggle,
@@ -108,7 +114,7 @@ def open_selection(selection: ApiRunSelection) -> ApiProvider:
         policy.remember_version(context.logical_id, record.token_version)
         return {**client_headers(context.logical_id), "Authorization": "Bearer " + inference_api_key(record.access_token)}
 
-    provider = ApiProvider(INFERENCE_URL, selection.model_id, api_key="", api_protocol=selection.protocol,
+    provider = ApiProvider(INFERENCE_URL, selection.model_id, supports_images=selection.supports_images, api_key="", api_protocol=selection.protocol,
         context_window_tokens=selection.context_window_tokens, context_reserve_tokens=selection.context_reserve_tokens,
         context_keep_recent_tokens=selection.context_keep_recent_tokens, native_tools=selection.native_tools,
         reasoning_effort=selection.reasoning_effort, thinking_enabled=selection.thinking_enabled,

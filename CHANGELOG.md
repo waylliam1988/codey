@@ -4,6 +4,13 @@
 
 ## Unreleased
 
+- Add composer file selection, drag/drop and image paste with persistent,
+  session-scoped attachments, previews/removal and error-only feedback. Deliver
+  real file contents and supported image inputs through durable submissions and
+  Steer; preserve files on lost replies and explicit recovery. Keep one Send/Stop
+  action and omit normal attachment/task-context hints. See the
+  [attachment contract and verification scope](docs/attachments_2026-11-07.md).
+
 - Make composer Send and Stop mutually exclusive. Sending during an active task
   now defaults to Steer; transfer the locally retained message above the composer
   and clear its draft immediately. Preserve newer drafts, visible unconfirmed

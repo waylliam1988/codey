@@ -1844,6 +1844,7 @@ function observeQueuedInput(input: QueuedInput): void {
       id: input.id,
       queuedInputId: input.id,
       text: input.request.task,
+      ...(input.request.attachments?.length ? { attachments: input.request.attachments } : {}),
       attempts: [
         { runId, state: input.state === 'completed' ? 'done' : input.state === 'submitted' ? 'running' : 'sending' },
       ],

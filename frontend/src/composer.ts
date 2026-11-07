@@ -1,4 +1,6 @@
 import { runtime } from './runtime';
+import { ComposerAttachments } from './attachments';
+import type { AttachmentRef } from './types/domain';
 import { InputOutbox, type QueuedInput, type QueuedRequest } from './input_outbox';
 import type { Draft, Message, Project, Session } from './types/domain';
 import type { RunDetailsAction } from './run_details';
@@ -88,7 +90,11 @@ export interface ComposerApi {
   async function stopCurrent() {
     const sessionId = activeId();
     const admission = admissions.get(sessionId);
-    const runId = admission?.runId || deps.getRunningRunIdForSession?.(sessionId) || pendingAdmission(sessionId)?.runId;
+    const runId =
+      admission?.runId ||
+      deps.getRunningRunIdForSession?.(sessionId) ||
+      pendingAdmission(sessionId)?.runId ||
+      outbox?.pendingRun(sessionId);
     if (!runId) return;
     if (admission) {
       admission.cancelled = true;
@@ -111,6 +117,7 @@ export interface ComposerApi {
   }
   let ready = false;
   let outbox: InputOutbox;
+  let attachments: ComposerAttachments;
 
   function liveDefaultProvider() {
     return runtime.UiState.DEFAULT_PROVIDER;
@@ -140,12 +147,22 @@ export interface ComposerApi {
       const box = $('task').closest('.composer-box');
       (box || $('task')).before(element);
       outbox = new InputOutbox(element, {
-        stored: (request, revision) => clearDraftIfUnchanged(request.session_id, request.task, revision),
+        stored: (request, revision, draftText) => {
+          clearDraftIfUnchanged(request.session_id, draftText ?? request.task, revision);
+          if (request.attachments?.length) attachments.claim(request.session_id, request.attachments);
+        },
         accepted: (request, revision) => clearDraftIfUnchanged(request.session_id, request.task, revision),
-        edit: (session, text) => recallMessage(session, text),
+        edit: (session, text, files) => {
+          recallMessage(session, text);
+          if (files?.length) attachments.restore(session, files);
+        },
         changed: () => updateSend(),
         observe: (input) => deps.observeQueuedInput(input),
       });
+    }
+    if (!attachments) {
+      attachments = new ComposerAttachments(() => updateSend());
+      attachments.bind($('task').closest('.composer-box') as HTMLElement, $<HTMLTextAreaElement>('task'));
     }
     bindHandlers();
     syncSession();
@@ -176,6 +193,7 @@ export interface ComposerApi {
 
   function syncSession() {
     outbox?.setSession(activeId());
+    attachments?.setSession(activeId());
     if (!deps) return;
     if (draftSession === deps.activeSession()) {
       $<HTMLTextAreaElement>('task').disabled = !ready || !!runtime.ChatFork?.isBlocked(activeId());
@@ -204,9 +222,10 @@ export interface ComposerApi {
   function updateSend() {
     if (!deps) return;
     document.querySelector('main')?.classList.toggle('empty-conversation', !deps.activeSession?.()?.messages.length);
-    const has = $<HTMLTextAreaElement>('task').value.trim();
+    const has = $<HTMLTextAreaElement>('task').value.trim() || attachments?.has();
     const chosen = runtime.ProviderUI.runSelection(deps.activeSession(), currentProviderId());
     const selection = chosen.model_selection;
+    attachments?.checkCapability(currentProviderId(), selection, deps.getRunningRunIdForSession?.(activeId()) || '');
     const reason = chosen.selection_error || runtime.Models.reason(currentProviderId(), selection?.model);
     const notice = $('model-notice');
     const unselected =
@@ -241,6 +260,7 @@ export interface ComposerApi {
     send.disabled =
       task.disabled ||
       !has ||
+      !!attachments?.blocked() ||
       !!reason ||
       sendingCurrent ||
       pendingSend ||
@@ -448,6 +468,7 @@ export interface ComposerApi {
     preclaimed = false,
     onSendRejected: (() => void) | null = null,
     edit?: { entryId: string; expectedRevision: number },
+    files?: AttachmentRef[],
   ) {
     const text = String(task || '').trim();
     const reject = () => {
@@ -477,7 +498,11 @@ export interface ComposerApi {
       main?.classList.add('composer-animating');
       window.setTimeout(() => main?.classList.remove('composer-animating'), 400);
     }
-    const started = runtime.Requests.begin(sessionId, text, requestId, edit?.entryId);
+    const refs: AttachmentRef[] =
+      files ||
+      s.messages.find((message) => (edit ? message.entryId === edit.entryId : message.id === requestId))?.attachments ||
+      [];
+    const started = runtime.Requests.begin(sessionId, text, requestId, edit?.entryId, refs);
     if (!started) {
       sendingSessionId = '';
       updateSend();
@@ -498,6 +523,7 @@ export interface ComposerApi {
           run_id: runId,
           project,
           task: text,
+          ...(refs.length ? { attachments: refs } : {}),
           provider,
           intent,
           ...(edit
@@ -559,9 +585,11 @@ export interface ComposerApi {
 
   async function sendActiveDraft() {
     const sessionId = activeId();
-    const task = $<HTMLTextAreaElement>('task').value.trim();
+    const rawTask = $<HTMLTextAreaElement>('task').value.trim();
+    const files = attachments?.refs() || [];
+    const task = rawTask || (files.length ? 'Review the attached files.' : '');
     const provider = currentProviderId();
-    if (!task) return;
+    if (!task || attachments?.blocked()) return;
     if (
       !runtime.Models.allows(
         provider,
@@ -585,7 +613,9 @@ export interface ComposerApi {
       captureDraft();
       const revision = deps.findSession(sessionId)?.draft.revision;
       if (revision === undefined) return;
-      if (isRunningForSession(sessionId)) {
+      // Attachments always transfer through the durable outbox, including an
+      // idle chat. A lost admission reply must not lose the selected files.
+      if (isRunningForSession(sessionId) || files.length) {
         if (outbox.blocked(sessionId)) return;
         updateSend();
         const request: QueuedRequest = {
@@ -595,7 +625,8 @@ export interface ComposerApi {
           task,
           provider,
           intent: deps.currentIntentForSession(sessionId),
-          input_mode: 'steer',
+          input_mode: isRunningForSession(sessionId) ? 'steer' : 'follow_up',
+          ...(files.length ? { attachments: files } : {}),
           ...runtime.ProviderUI.runSelection(deps.findSession(sessionId), provider),
         };
         if (!(await runtime.UiState.ensureSaved())) {
@@ -605,10 +636,10 @@ export interface ComposerApi {
           });
           return;
         }
-        await outbox.enqueue(request, revision);
+        await outbox.enqueue(request, revision, rawTask);
         return;
       }
-      const originalDraft = task;
+      const originalDraft = rawTask;
       const originalRevision = revision;
       // Clear the visible draft at admission start. The user has already
       // submitted this text, and waiting for the HTTP response makes a slow
@@ -633,7 +664,7 @@ export interface ComposerApi {
           updateSend();
         }
       };
-      await sendTaskFromSession(sessionId, task, provider, null, '', true, restoreRejectedDraft);
+      await sendTaskFromSession(sessionId, task, provider, null, '', true, restoreRejectedDraft, undefined, files);
     } finally {
       sendingSessionId = '';
       updateSend();

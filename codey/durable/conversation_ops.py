@@ -486,6 +486,10 @@ def latest_context_snapshot(session: Any, conversation_id: str) -> EntryDraft | 
 
 def _history_item(entry: EntryDraft, ordinal: int) -> dict[str, object]:
     item = cast(dict[str, object], thaw_json(entry.payload))
+    if item.get("attachments"):
+        from codey.task.attachments import public_attachment
+
+        item["attachments"] = [public_attachment(ref) for ref in item["attachments"]]
     if entry.kind == "control_review":
         review = cast(dict[str, object], item.get("data", {}))
         verdict = "Review passed" if review.get("passed") else "Changes requested"

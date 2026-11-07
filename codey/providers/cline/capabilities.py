@@ -23,10 +23,14 @@ class Capability:
     efforts: tuple[str, ...] = ()
     toggle: bool = False
     input_limit: int | None = None
+    images: bool = False
 
     @property
     def revision(self) -> str:
-        return hashlib.sha256(json.dumps(asdict(self), sort_keys=True).encode()).hexdigest()[:24]
+        values = asdict(self)
+        if not self.images:
+            values.pop("images")
+        return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()[:24]
 
 
 def parse_capability(value: dict[str, Any]) -> Capability | None:
@@ -45,4 +49,7 @@ def parse_capability(value: dict[str, Any]) -> Capability | None:
     efforts = normalize_efforts(declared) if isinstance(declared, list) and "reasoning" in parameters else ()
     # Only an explicit non-mandatory reasoning declaration enables this switch.
     toggle = "reasoning" in parameters and reasoning.get("mandatory") is False and not efforts
-    return Capability(context, min(output, context - 1), "tools" in parameters, efforts, toggle)
+    architecture = value.get("architecture") or {}
+    modalities = architecture.get("input_modalities") if isinstance(architecture, dict) else None
+    images = isinstance(modalities, list) and "image" in modalities
+    return Capability(context, min(output, context - 1), "tools" in parameters, efforts, toggle, images=images)

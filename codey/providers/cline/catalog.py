@@ -130,7 +130,7 @@ class Catalog:
                                         "unavailable_reason": "No verified model limits", "trial": True})
                     continue
                 models.append({**entry, "protocol": "openai-completions", "efforts": list(capability.efforts),
-                               "thinking_toggle": capability.toggle, "thinking_default_allowed": True,
+                               "supports_images": capability.images, "thinking_toggle": capability.toggle, "thinking_default_allowed": True,
                                "availability": "available", "trial": True})
             return {"id": "cline", "label": "Cline", "models": models, "unavailable_models": unavailable,
                     "checked_at": self.data["checked_at"], "stale": bool(self.error) or

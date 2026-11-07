@@ -1,4 +1,5 @@
 export interface QueuedRequest {
+  attachments?: AttachmentRef[];
   session_id: string;
   run_id: string;
   task: string;
@@ -22,9 +23,9 @@ export interface QueuedInput {
   entry_id?: string;
 }
 interface OutboxDeps {
-  stored?(request: QueuedRequest, revision: number): void;
+  stored?(request: QueuedRequest, revision: number, draftText?: string): void;
   accepted(request: QueuedRequest, revision: number): void;
-  edit(session: string, text: string): void;
+  edit(session: string, text: string, attachments?: AttachmentRef[]): void;
   changed(): void;
   observe(input: QueuedInput): void;
 }
@@ -76,6 +77,12 @@ export class InputOutbox {
   forRun(runId: string): QueuedInput | undefined {
     return [...this.items.values()].find((item) => item.request.run_id === runId);
   }
+  pendingRun(session: string): string {
+    return (
+      [...this.items.values()].find((item) => item.request.session_id === session && item.local && !item.rejected)
+        ?.request.run_id || ''
+    );
+  }
   blocked(session: string): boolean {
     return (
       !!this.storageError ||
@@ -102,7 +109,7 @@ export class InputOutbox {
     return true;
   }
 
-  async enqueue(request: QueuedRequest, draftRevision: number): Promise<boolean> {
+  async enqueue(request: QueuedRequest, draftRevision: number, draftText?: string): Promise<boolean> {
     if (this.blocked(request.session_id)) return false;
     const item: QueuedInput = {
       id: 'input_' + crypto.randomUUID().replaceAll('-', ''),
@@ -124,7 +131,8 @@ export class InputOutbox {
     }
     // Once the delivery identity and text are retained locally, ownership moves
     // above the composer. A slow/lost HTTP reply must not hold the draft there.
-    this.deps.stored?.(request, draftRevision);
+    if (draftText === undefined) this.deps.stored?.(request, draftRevision);
+    else this.deps.stored?.(request, draftRevision, draftText);
     this.render();
     this.deps.changed();
     try {
@@ -135,7 +143,10 @@ export class InputOutbox {
       });
       const data = await response.json();
       if (!response.ok || !inputRecord(data.item)) {
-        if (response.status === 409 && data.error === 'input_queue_full') {
+        if (
+          (response.status === 409 && data.error === 'input_queue_full') ||
+          (response.status === 400 && data.code === 'attachment_invalid')
+        ) {
           item.state = 'failed';
           item.rejected = true;
           item.error = data.error;
@@ -197,6 +208,11 @@ export class InputOutbox {
       this.render();
     }
   }
+  private editDraft(item: QueuedInput, text: string): void {
+    if (item.request.attachments?.length) this.deps.edit(item.request.session_id, text, item.request.attachments);
+    else this.deps.edit(item.request.session_id, text);
+  }
+
   private async action(
     item: QueuedInput,
     action: 'edit' | 'remove' | 'resume' | 'steer',
@@ -206,7 +222,7 @@ export class InputOutbox {
     if (item.rejected) {
       this.items.delete(item.id);
       this.persist();
-      if (action === 'edit') this.deps.edit(item.request.session_id, item.request.task);
+      if (action === 'edit') this.editDraft(item, item.request.task);
       this.render();
       this.deps.changed();
       return;
@@ -338,7 +354,7 @@ export class InputOutbox {
               ?.querySelector('textarea')
               ?.focus();
           } else if (action === 'cancel-edit' || action === 'restore') {
-            if (action === 'restore' && edit) this.deps.edit(item.request.session_id, edit.text);
+            if (action === 'restore' && edit) this.editDraft(item, edit.text);
             this.editing.delete(item.id);
             this.render();
           } else if (action === 'save' && edit) {
@@ -363,7 +379,13 @@ export class InputOutbox {
         row.append(input);
       } else row.append(text);
       row.append(actions);
-      if (item.error) {
+      if (item.error && item.rejected && item.request.attachments?.length) {
+        const error = document.createElement('div');
+        error.className = 'attachment-error';
+        error.role = 'alert';
+        error.textContent = item.error;
+        row.append(error);
+      } else if (item.error) {
         const details = document.createElement('details'),
           head = document.createElement('summary'),
           error = document.createElement('pre');
@@ -372,6 +394,7 @@ export class InputOutbox {
         details.append(head, error);
         row.append(details);
       }
+      appendAttachmentRefs(row, item.request.attachments, item.request.session_id);
       this.element.append(row);
     }
     this.element.hidden = !this.element.childNodes.length;
@@ -385,3 +408,5 @@ export class InputOutbox {
   }
 }
 import { createIconSvg } from './icon_button';
+import { appendAttachmentRefs } from './attachments';
+import type { AttachmentRef } from './types/domain';
