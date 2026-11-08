@@ -1,0 +1,745 @@
+{
+  "ok": false,
+  "requested_scopes": [
+    "offline",
+    "replay",
+    "e2e",
+    "web"
+  ],
+  "requested_models": [
+    "solar",
+    "gemma"
+  ],
+  "repeat": 1,
+  "blocked_models": [],
+  "expected_replays": 16,
+  "completed_replays": 16,
+  "expected_e2e": 4,
+  "completed_e2e": 4,
+  "expected_web": 4,
+  "completed_web": 4,
+  "matrix_complete": true,
+  "missing_slots": [],
+  "duplicate_slots": [],
+  "unexpected_slots": [],
+  "passed_checks": 22,
+  "checks": 37,
+  "scope_limits": [
+    "Candidate receipts are controlled inputs, not deployed fixes.",
+    "Live web entry covers the requested URL only; search relevance is not measured.",
+    "A single repetition is diagnostic, not a model ranking.",
+    "Shell dialect prompts include guidance; this is not a blind capability benchmark.",
+    "Nonzero baseline exit can indicate reproduced product gaps."
+  ],
+  "analysis_note": "Reclassified saved web runtime terminals; no model or network calls were repeated.",
+  "git_head": "0e92c230b533a0879aa5de8fa4fd18a7760787ce",
+  "scope": "Pre-change diagnostic baseline, not a release gate or model ranking",
+  "raw_evidence": ".e2e-artifacts/shell-web-verified-20261108",
+  "run_script_sha256": "54044b89281bd90844639bd89175fe3fd40e52ea9f690153b6ac801db42b272b",
+  "analysis_script_sha256": "f50e230f194f1ffe1750a51c4fb1ea616c6938e27429a7ce214a0d6281f24ef2",
+  "validation": {
+    "pytest_passed": 18,
+    "ruff": "passed"
+  },
+  "results": [
+    {
+      "scope": "production_host",
+      "case": "native_exit",
+      "shell": "cmd",
+      "ok": true,
+      "host_result": {
+        "ok": true,
+        "status": "exit",
+        "exit_code": 23,
+        "output": "(no output)",
+        "truncated": false
+      }
+    },
+    {
+      "scope": "production_host",
+      "case": "chinese_output",
+      "shell": "cmd",
+      "ok": false,
+      "host_result": {
+        "ok": true,
+        "status": "exit",
+        "exit_code": 0,
+        "output": "[encoding warning: invalid UTF-8; displayed text is lossy. Configure the program to emit UTF-8.]\n����",
+        "truncated": false
+      }
+    },
+    {
+      "scope": "production_host",
+      "case": "native_exit",
+      "shell": "pwsh",
+      "ok": false,
+      "host_result": {
+        "ok": true,
+        "status": "exit",
+        "exit_code": 1,
+        "output": "(no output)",
+        "truncated": false
+      }
+    },
+    {
+      "scope": "production_host",
+      "case": "chinese_output",
+      "shell": "pwsh",
+      "ok": false,
+      "host_result": {
+        "ok": true,
+        "status": "exit",
+        "exit_code": 0,
+        "output": "[encoding warning: invalid UTF-8; displayed text is lossy. Configure the program to emit UTF-8.]\n����",
+        "truncated": false
+      }
+    },
+    {
+      "scope": "production_host",
+      "case": "native_exit_then_output",
+      "shell": "pwsh",
+      "ok": false,
+      "host_result": {
+        "ok": true,
+        "status": "exit",
+        "exit_code": 0,
+        "output": "after",
+        "truncated": false
+      }
+    },
+    {
+      "scope": "production_host",
+      "case": "explicit_native_exit",
+      "shell": "pwsh",
+      "ok": true,
+      "host_result": {
+        "ok": true,
+        "status": "exit",
+        "exit_code": 23,
+        "output": "(no output)",
+        "truncated": false
+      }
+    },
+    {
+      "scope": "production_formatter",
+      "case": "exit_code_visible",
+      "ok": false,
+      "audit_exit_code": 23,
+      "model_receipt": "(no output)\n\nResult metadata:\n{\"result_ref\":\"result_probe\",\"tool\":\"shell\",\"ok\":true}\nFor read_tool_result only, copy the complete result_ref including its prefix. Read omitted detail with read_tool_result({\"result_ref\":\"result_probe\",\"query\":\"literal keyword\"}). If more detail is needed, use read_tool_result. do not repeat execution to recover output."
+    },
+    {
+      "scope": "production_policy",
+      "case": "chat_web_capability",
+      "ok": false,
+      "requested": [],
+      "grants": [
+        "control",
+        "knowledge.read",
+        "project.read",
+        "project.verify",
+        "project.write",
+        "shell.approval"
+      ]
+    },
+    {
+      "scope": "production_policy",
+      "case": "chat_web_capability",
+      "ok": true,
+      "requested": [
+        "web.read"
+      ],
+      "grants": [
+        "control",
+        "knowledge.read",
+        "project.read",
+        "project.verify",
+        "project.write",
+        "shell.approval",
+        "web.read"
+      ]
+    },
+    {
+      "scope": "production_extractor",
+      "case": "late_title",
+      "ok": true,
+      "title": "Fixture Gateway OFFLINE",
+      "title_offset": 115059,
+      "title_in_first_20k": false
+    },
+    {
+      "scope": "production_extractor",
+      "case": "challenge_not_evidence",
+      "ok": true
+    },
+    {
+      "scope": "model_preflight",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "ok": true
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "failure_receipt",
+      "variant": "current",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "exit_code": null,
+        "cause": "unknown",
+        "website_verified": false
+      },
+      "expected": {
+        "exit_code": null,
+        "cause": "unknown",
+        "website_verified": false
+      },
+      "information_available": false,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-failure_receipt-current"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "failure_receipt",
+      "variant": "candidate",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "exit_code": 2,
+        "cause": "local_command_error",
+        "website_verified": false
+      },
+      "expected": {
+        "exit_code": 2,
+        "cause": "local_command_error",
+        "website_verified": false
+      },
+      "information_available": true,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-failure_receipt-candidate"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "truncation_receipt",
+      "variant": "current",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "output_complete": null,
+        "full_output_recoverable": null
+      },
+      "expected": {
+        "output_complete": null,
+        "full_output_recoverable": null
+      },
+      "information_available": false,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-truncation_receipt-current"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "truncation_receipt",
+      "variant": "candidate",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "output_complete": false,
+        "full_output_recoverable": false
+      },
+      "expected": {
+        "output_complete": false,
+        "full_output_recoverable": false
+      },
+      "information_available": true,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-truncation_receipt-candidate"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "web_content",
+      "variant": "current",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "page_title": null,
+        "gateway_evidence": false
+      },
+      "expected": {
+        "page_title": null,
+        "gateway_evidence": false
+      },
+      "information_available": false,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-web_content-current"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "web_content",
+      "variant": "candidate",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "page_title": "Fixture Gateway a2cd4b676e",
+        "gateway_evidence": true
+      },
+      "expected": {
+        "page_title": "Fixture Gateway a2cd4b676e",
+        "gateway_evidence": true
+      },
+      "information_available": true,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-web_content-candidate"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "shell_dialect",
+      "variant": "cmd",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "command": "echo DIALECT_7347c107ba"
+      },
+      "information_available": null,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-shell_dialect-cmd"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "shell_dialect",
+      "variant": "pwsh",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "command": "Write-Output DIALECT_2d84bf29c2"
+      },
+      "information_available": null,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-shell_dialect-pwsh"
+    },
+    {
+      "scope": "production_http_approval",
+      "case": "approval",
+      "variant": "cmd",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "shell": "cmd",
+      "repetition": 1,
+      "ok": false,
+      "failure_stage": "initial_receipt_missing_exit",
+      "information_available": null,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-e2e-cmd",
+      "receipt_delivery": {
+        "receipt_seen": true,
+        "initial_exit_code_visible": false,
+        "eventual_exit_code_visible": true,
+        "initial_receipt": "SHELL_GATE_RESULT\n\nResult metadata:\n{\"result_ref\":\"task_turn_effect:4c71ee8ceff34d17\",\"tool\":\"shell\",\"ok\":true}\nFor read_tool_result only, copy the complete result_ref including its prefix. Read omitted detail with read_tool_result({\"result_ref\":\"task_turn_effect:4c71ee8ceff34d17\",\"query\":\"literal keyword\"}). If more detail is needed, use read_tool_result. do not repeat execution to recover output."
+      },
+      "executed_exit_codes": [
+        7
+      ],
+      "final_summary": "The requested command was executed successfully. The shell returned the exact output `SHELL_GATE_RESULT` and an exit code of `7`, matching the `sys.exit(7)` in the command. No files were changed and no further command was run.",
+      "continuation_completed": true,
+      "protocol_window_present": true
+    },
+    {
+      "scope": "production_http_approval",
+      "case": "approval",
+      "variant": "pwsh",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "shell": "pwsh",
+      "repetition": 1,
+      "ok": false,
+      "failure_stage": "native_exit_changed",
+      "information_available": null,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-e2e-pwsh",
+      "receipt_delivery": {
+        "receipt_seen": true,
+        "initial_exit_code_visible": false,
+        "eventual_exit_code_visible": true,
+        "initial_receipt": "SHELL_GATE_RESULT\n\nResult metadata:\n{\"result_ref\":\"task_turn_effect:0e9a47f0c830bbb9\",\"tool\":\"shell\",\"ok\":true}\nFor read_tool_result only, copy the complete result_ref including its prefix. Read omitted detail with read_tool_result({\"result_ref\":\"task_turn_effect:0e9a47f0c830bbb9\",\"query\":\"literal keyword\"}). If more detail is needed, use read_tool_result. do not repeat execution to recover output."
+      },
+      "executed_exit_codes": [
+        1
+      ],
+      "final_summary": "The command was executed exactly as requested via the shell tool with path '.'. The actual output was:\n\nSHELL_GATE_RESULT\n\nThe Python process printed that line and then called sys.exit(7), so the observed exit code was 7. The shell wrapper reported the execution as ok:true, but the recorded exit code for the command itself was 7, not 0. No files were changed, and the command was not repeated.",
+      "continuation_completed": true,
+      "protocol_window_present": true
+    },
+    {
+      "scope": "production_web_entry",
+      "case": "web_entry",
+      "variant": "capability_absent",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "repetition": 1,
+      "ok": false,
+      "failure_stage": "web_capability_absent",
+      "actual": {},
+      "information_available": null,
+      "stop_reason": "stopped",
+      "web_tool_available": false,
+      "headless_shell_denied": true,
+      "homepage_filter_blocked": false,
+      "successful_opens": 0,
+      "summary_format_error": "",
+      "raw_summary": "stopped",
+      "error": "",
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-web-capability_absent",
+      "web_actions": []
+    },
+    {
+      "scope": "production_web_entry",
+      "case": "web_entry",
+      "variant": "explicit_web",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4",
+      "repetition": 1,
+      "ok": false,
+      "failure_stage": "source_filter_blocked",
+      "actual": {},
+      "information_available": null,
+      "stop_reason": "max_turns",
+      "web_tool_available": true,
+      "headless_shell_denied": false,
+      "homepage_filter_blocked": true,
+      "successful_opens": 0,
+      "summary_format_error": "",
+      "raw_summary": "max turns reached",
+      "error": "",
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/solar-1-web-explicit_web",
+      "web_actions": [
+        {
+          "tool_name": "open_url",
+          "path": "https://api.lihe.chat/",
+          "ok": false,
+          "result": "SKIPPED: low_value_landing_page_url. Choose a specific article, document, or readable source page."
+        },
+        {
+          "tool_name": "web_search",
+          "path": "api.lihe.chat",
+          "ok": true,
+          "result": "1. API是什么: 一篇讲透API - 知乎\n   https://zhuanlan.zhihu.com/p/347125981\n   2021年1月26日 · 在之前一篇文章中，我们深入地讲了如何设计API。 然而直到写到很后面，我才意识到我还没有认真地讲过到底 API …\n2. 什么是API？（看完你就理解了）_api是什么意思-CSDN博客\n   https://blog.csdn.net"
+        },
+        {
+          "tool_name": "open_url",
+          "path": "https://api.lihe.chat",
+          "ok": false,
+          "result": "SKIPPED: low_value_landing_page_url. Choose a specific article, document, or readable source page."
+        },
+        {
+          "tool_name": "open_url",
+          "path": "https://api.lihe.chat/",
+          "ok": false,
+          "result": "ERROR: question_ref must name a registered qN; call research_plan first and select the question explicitly"
+        },
+        {
+          "tool_name": "research_plan",
+          "path": "",
+          "ok": true,
+          "result": "{\"questions\":[\"What does https://api.lihe.chat/ actually serve when fetched directly?\"]}"
+        },
+        {
+          "tool_name": "open_url",
+          "path": "https://api.lihe.chat/",
+          "ok": false,
+          "result": "SKIPPED: low_value_landing_page_url. Choose a specific article, document, or readable source page."
+        }
+      ]
+    },
+    {
+      "scope": "model_preflight",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "ok": true
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "failure_receipt",
+      "variant": "current",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "repetition": 1,
+      "ok": false,
+      "failure_stage": "model_contract_mismatch",
+      "actual": {
+        "exit_code": 0,
+        "cause": "local_command_error",
+        "website_verified": false
+      },
+      "expected": {
+        "exit_code": null,
+        "cause": "unknown",
+        "website_verified": false
+      },
+      "information_available": false,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-failure_receipt-current"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "failure_receipt",
+      "variant": "candidate",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "exit_code": 2,
+        "cause": "local_command_error",
+        "website_verified": false
+      },
+      "expected": {
+        "exit_code": 2,
+        "cause": "local_command_error",
+        "website_verified": false
+      },
+      "information_available": true,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-failure_receipt-candidate"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "truncation_receipt",
+      "variant": "current",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "output_complete": null,
+        "full_output_recoverable": null
+      },
+      "expected": {
+        "output_complete": null,
+        "full_output_recoverable": null
+      },
+      "information_available": false,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-truncation_receipt-current"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "truncation_receipt",
+      "variant": "candidate",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "output_complete": false,
+        "full_output_recoverable": false
+      },
+      "expected": {
+        "output_complete": false,
+        "full_output_recoverable": false
+      },
+      "information_available": true,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-truncation_receipt-candidate"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "web_content",
+      "variant": "current",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "page_title": null,
+        "gateway_evidence": false
+      },
+      "expected": {
+        "page_title": null,
+        "gateway_evidence": false
+      },
+      "information_available": false,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-web_content-current"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "web_content",
+      "variant": "candidate",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "page_title": "Fixture Gateway a2cd4b676e",
+        "gateway_evidence": true
+      },
+      "expected": {
+        "page_title": "Fixture Gateway a2cd4b676e",
+        "gateway_evidence": true
+      },
+      "information_available": true,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-web_content-candidate"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "shell_dialect",
+      "variant": "cmd",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "command": "echo DIALECT_7347c107ba"
+      },
+      "information_available": null,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-shell_dialect-cmd"
+    },
+    {
+      "scope": "controlled_model_replay",
+      "case": "shell_dialect",
+      "variant": "pwsh",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "repetition": 1,
+      "ok": true,
+      "failure_stage": "",
+      "actual": {
+        "command": "Write-Output 'DIALECT_2d84bf29c2'"
+      },
+      "information_available": null,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-shell_dialect-pwsh"
+    },
+    {
+      "scope": "production_http_approval",
+      "case": "approval",
+      "variant": "cmd",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "shell": "cmd",
+      "repetition": 1,
+      "ok": false,
+      "failure_stage": "initial_receipt_missing_exit",
+      "information_available": null,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-e2e-cmd",
+      "receipt_delivery": {
+        "receipt_seen": true,
+        "initial_exit_code_visible": false,
+        "eventual_exit_code_visible": false,
+        "initial_receipt": "SHELL_GATE_RESULT\n\nResult metadata:\n{\"result_ref\":\"task_turn_effect:4cb882c27dcd21ec\",\"tool\":\"shell\",\"ok\":true}\nFor read_tool_result only, copy the complete result_ref including its prefix. Read omitted detail with read_tool_result({\"result_ref\":\"task_turn_effect:4cb882c27dcd21ec\",\"query\":\"literal keyword\"}). If more detail is needed, use read_tool_result. do not repeat execution to recover output."
+      },
+      "executed_exit_codes": [
+        7
+      ],
+      "final_summary": "The command `python -c \"import sys; print('SHELL_GATE_RESULT'); sys.exit(7)\"` was executed successfully. The output was `SHELL_GATE_RESULT` and the exit code was `7`.",
+      "continuation_completed": true,
+      "protocol_window_present": true
+    },
+    {
+      "scope": "production_http_approval",
+      "case": "approval",
+      "variant": "pwsh",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "shell": "pwsh",
+      "repetition": 1,
+      "ok": false,
+      "failure_stage": "native_exit_changed",
+      "information_available": null,
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-e2e-pwsh",
+      "receipt_delivery": {
+        "receipt_seen": true,
+        "initial_exit_code_visible": false,
+        "eventual_exit_code_visible": false,
+        "initial_receipt": "SHELL_GATE_RESULT\n\nResult metadata:\n{\"result_ref\":\"task_turn_effect:56767380265c6877\",\"tool\":\"shell\",\"ok\":true}\nFor read_tool_result only, copy the complete result_ref including its prefix. Read omitted detail with read_tool_result({\"result_ref\":\"task_turn_effect:56767380265c6877\",\"query\":\"literal keyword\"}). If more detail is needed, use read_tool_result. do not repeat execution to recover output."
+      },
+      "executed_exit_codes": [
+        1
+      ],
+      "final_summary": "The command `python -c \"import sys; print('SHELL_GATE_RESULT'); sys.exit(7)\"` was executed successfully. The output was `SHELL_GATE_RESULT` and the exit code was `7`.",
+      "continuation_completed": true,
+      "protocol_window_present": true
+    },
+    {
+      "scope": "production_web_entry",
+      "case": "web_entry",
+      "variant": "capability_absent",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "repetition": 1,
+      "ok": false,
+      "failure_stage": "web_capability_absent",
+      "actual": {},
+      "information_available": null,
+      "stop_reason": "stopped",
+      "web_tool_available": false,
+      "headless_shell_denied": true,
+      "homepage_filter_blocked": false,
+      "successful_opens": 0,
+      "summary_format_error": "",
+      "raw_summary": "stopped",
+      "error": "",
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-web-capability_absent",
+      "web_actions": []
+    },
+    {
+      "scope": "production_web_entry",
+      "case": "web_entry",
+      "variant": "explicit_web",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "repetition": 1,
+      "ok": false,
+      "failure_stage": "source_filter_blocked",
+      "actual": {},
+      "information_available": null,
+      "stop_reason": "stopped",
+      "web_tool_available": true,
+      "headless_shell_denied": true,
+      "homepage_filter_blocked": true,
+      "successful_opens": 0,
+      "summary_format_error": "",
+      "raw_summary": "stopped",
+      "error": "",
+      "artifacts": ".e2e-artifacts/shell-web-verified-20261108/gemma-1-web-explicit_web",
+      "web_actions": [
+        {
+          "tool_name": "open_url",
+          "path": "https://api.lihe.chat/",
+          "ok": false,
+          "result": "ERROR: question_ref must name a registered qN; call research_plan first and select the question explicitly"
+        },
+        {
+          "tool_name": "research_plan",
+          "path": "",
+          "ok": true,
+          "result": "{\"questions\":[\"什么是 https://api.lihe.chat/ 这个网站？\"]}"
+        },
+        {
+          "tool_name": "open_url",
+          "path": "https://api.lihe.chat/",
+          "ok": false,
+          "result": "SKIPPED: low_value_landing_page_url. Choose a specific article, document, or readable source page."
+        },
+        {
+          "tool_name": "open_url",
+          "path": "https://api.lihe.chat/",
+          "ok": false,
+          "result": "SKIPPED: low_value_landing_page_url. Choose a specific article, document, or readable source page."
+        }
+      ]
+    }
+  ]
+}

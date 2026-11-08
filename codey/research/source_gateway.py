@@ -42,6 +42,7 @@ from codey.research.source_search import (
 )
 from codey.research.url_selection import source_candidate_skip_reason
 from codey.runtime.core import cancellation
+from codey.task.web_intent import source_url_key
 from codey.types.json_value import JsonObject
 
 OPEN_DEFAULT_LIMIT = 6000
@@ -105,6 +106,7 @@ class ResearchSourceGateway:
     search_provider: _SearchProvider
     ledger: ResearchLedger
     on_failure: SourceFailureRecorder | None = None
+    direct_urls: frozenset[str] = frozenset()
 
     def search(self, query: str, limit: int = SEARCH_LIMIT) -> SearchedSources:
         query = (query or "").strip()
@@ -134,7 +136,8 @@ class ResearchSourceGateway:
         url = (url or "").strip()
         if not url:
             return OpenedSource(status="error", detail="open_url needs a url")
-        skip_reason = source_candidate_skip_reason(url)
+        direct = source_url_key(url) in self.direct_urls
+        skip_reason = "" if direct else source_candidate_skip_reason(url)
         if skip_reason:
             self._fail("browser", "open", skip_reason, url)
             return OpenedSource(
@@ -149,7 +152,15 @@ class ResearchSourceGateway:
             return OpenedSource(status="error", detail=reason)
         cancellation.check()
         try:
-            page = self.search_provider.fetch(url)
+            if direct:
+                from codey.research.source_download import _download_pdf_streaming, _download_text_fallback
+
+                page: dict[str, object] = _download_text_fallback(url)
+                if page.get("content_kind") == "pdf_download":
+                    page = _download_pdf_streaming(str(page.get("url") or url),
+                                                   mime_type=str(page.get("mime_type") or ""))
+            else:
+                page = self.search_provider.fetch(url)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
@@ -160,7 +171,7 @@ class ResearchSourceGateway:
         status = page.get("status")
         if type(status) is not str or status not in {"ok", "error", "skipped"}:
             return OpenedSource(status="error", detail="fetch returned an invalid structured status")
-        skip_reason = source_candidate_skip_reason(page_url)
+        skip_reason = "" if direct else source_candidate_skip_reason(page_url)
         if skip_reason:
             self._fail("browser", "open", skip_reason + " after redirect", url)
             return OpenedSource(

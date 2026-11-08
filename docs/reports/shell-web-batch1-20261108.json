@@ -1,0 +1,155 @@
+{
+  "batch": 1,
+  "scope": "Production approval entry, explicit web authorization and bounded homepage acquisition",
+  "runs": [
+    {
+      "artifact": "shell-web-batch1-local",
+      "ok": false,
+      "matrix_complete": true,
+      "results": [
+        {
+          "scope": "model_preflight",
+          "model_label": "gemma",
+          "ok": true
+        },
+        {
+          "scope": "production_http_approval",
+          "case": "approval",
+          "variant": "cmd",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_http_approval",
+          "case": "approval",
+          "variant": "pwsh",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "gemma",
+          "ok": false,
+          "failure_stage": "web_task_not_verified"
+        }
+      ]
+    },
+    {
+      "artifact": "shell-web-batch1-local-bounded",
+      "ok": true,
+      "matrix_complete": true,
+      "results": [
+        {
+          "scope": "model_preflight",
+          "model_label": "gemma",
+          "ok": true
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": ""
+        }
+      ]
+    },
+    {
+      "artifact": "shell-web-batch1-solar",
+      "ok": false,
+      "matrix_complete": true,
+      "results": [
+        {
+          "scope": "model_preflight",
+          "model_label": "solar",
+          "ok": true
+        },
+        {
+          "scope": "production_http_approval",
+          "case": "approval",
+          "variant": "cmd",
+          "model_label": "solar",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_http_approval",
+          "case": "approval",
+          "variant": "pwsh",
+          "model_label": "solar",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "solar",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "solar",
+          "ok": false,
+          "failure_stage": "web_task_not_verified"
+        }
+      ]
+    },
+    {
+      "artifact": "shell-web-batch1-solar-bounded",
+      "ok": true,
+      "matrix_complete": true,
+      "results": [
+        {
+          "scope": "model_preflight",
+          "model_label": "solar",
+          "ok": true
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "solar",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "solar",
+          "ok": true,
+          "failure_stage": ""
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "api.lihe.chat returns a static SPA shell with no readable body; this is reported as page_blank, not verified content.",
+    "Initial Solar homepage run acquired content but expanded scope until max_turns. Both models passed the explicitly bounded single-page task.",
+    "Final-answer execution claims and honest unavailable-source completion remain batch 3 requirements."
+  ]
+}

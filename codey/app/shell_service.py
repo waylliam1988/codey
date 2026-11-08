@@ -74,22 +74,11 @@ class ShellApprovalContinuationPlan:
 def shell_result_content(*, command: str, result: Mapping[str, object], approved: bool) -> str:
     """Structure the shell outcome text answered to the original call."""
     from codey.agents.shell_approval import shell_command_text
+    from codey.runtime.core.execution_receipt import ExecutionReceipt
 
-    output = str(result.get("output") or result.get("error") or "(no output)")
-    exit_code = result.get("exit_code")
-    if approved:
-        head = (
-            f"Shell result (approved and executed): {shell_command_text(command)}\n"
-            f"Exit code: {exit_code}\nOutput:\n{output}"
-        )
-    else:
-        head = (
-            f"Shell result (NOT executed, denied by user): {shell_command_text(command)}\n"
-            f"Output:\n{output}"
-        )
-    if bool(result.get("truncated")):
-        head += "\n[output truncated; inspect narrower output if needed]"
-    return head
+    receipt = ExecutionReceipt.from_payload(result).bounded()
+    decision = "approved" if approved else "NOT executed, denied by user"
+    return f"Shell result ({decision}): {shell_command_text(command)}\n{receipt.render()}"
 
 
 def shell_result_row(

@@ -67,6 +67,7 @@ class ResearchToolOutput:
 
 @dataclass
 class ResearchTools:
+    direct_urls: frozenset[str] = field(default_factory=frozenset, kw_only=True)
     search: _SearchProvider | None
     store: KnowledgeStore | StagedKnowledgeStore | None
     changes: KnowledgeChanges | StagedKnowledgeChanges | None
@@ -102,6 +103,7 @@ class ResearchTools:
             else None
         )
         return ResearchTools(
+            direct_urls=self.direct_urls,
             search=self.search,
             store=staged_store,
             changes=staged_changes,
@@ -151,6 +153,7 @@ class ResearchTools:
             search_provider=self.search,
             ledger=self.ledger,
             on_failure=self._record_failure,
+            direct_urls=self.direct_urls,
         )
 
     def web_search(self, query: str) -> ResearchToolOutput:

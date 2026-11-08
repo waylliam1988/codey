@@ -151,7 +151,10 @@ class ShellApprovalCoordinator:
     def resolve(self, approval_id: str) -> dict[str, object] | None:
         from codey.operations.shell_approval_receipt import resolve_shell_approval
 
-        value = resolve_shell_approval(self._context.durable, self._context.managed_outputs, approval_id)
+        outputs = self._context.managed_outputs
+        if outputs is None:
+            return None
+        value = resolve_shell_approval(self._context.durable, outputs, approval_id)
         return cast(dict[str, object] | None, value)
 
     def claim_ticket(

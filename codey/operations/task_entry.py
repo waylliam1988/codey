@@ -172,6 +172,10 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
 
         research_tools = build_research_tools(
             deps, session_id=request.session_id, project=frame.project_text)
+        if policy.allows("web.read"):
+            from codey.task.web_intent import explicit_web_intent
+
+            research_tools.direct_urls = explicit_web_intent(request.task).urls
     return project_path, tool_fns, research_tools
 
 
