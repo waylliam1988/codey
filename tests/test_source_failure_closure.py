@@ -37,7 +37,7 @@ def test_fresh_work_view_exposes_verified_failure_and_closure_args() -> None:
     from codey.operations.task_guidance import task_working_context
 
     context = task_working_context(source_session())
-    marker = "Requested source coverage (verified runtime observations):\n"
+    marker = "Source coverage (verified runtime observations):\n"
     payload, _ = json.JSONDecoder().raw_decode(context.split(marker, 1)[1])
     assert payload["failed_sources"] == [{"url": URL, "result_ref": REF, "detail": "page_blank"}]
     assert payload["unattempted_urls"] == []
@@ -54,8 +54,9 @@ def test_fresh_chat_work_view_keeps_successful_source_progress() -> None:
     session.opened_sources.add(URL)
     session.source_ids["s1"] = URL
     context = task_working_context(session)
-    payload, _ = json.JSONDecoder().raw_decode(context.split("Opened external sources (verified runtime observations):\n", 1)[1])
-    assert payload == {"opened_sources": [URL], "source_ids": {"s1": URL}}
+    payload, _ = json.JSONDecoder().raw_decode(context.split("Source coverage (verified runtime observations):\n", 1)[1])
+    assert payload["opened_urls"] == [URL] and payload["source_ids"] == {"s1": URL}
+    assert payload["failed_sources"] == [] and payload["acquisition_failures"] == []
     assert "Unavailable requested sources" not in context
 
 
@@ -112,10 +113,14 @@ def test_only_actual_fetch_failure_can_be_used_for_source_gaps(monkeypatch, fail
 class FailureProvider(PageProvider):
     sent = False
 
+    def __init__(self, url: str = URL) -> None:
+        super().__init__()
+        self.url = url
+
     def send(self, text: str, timeout: float | None = None) -> str:
         if not self.sent:
             self.sent = True
-            return json.dumps({"tool": "open_url", "args": {"url": URL}})
+            return json.dumps({"tool": "open_url", "args": {"url": self.url}})
         metadata = result_metadata_from_text(text)
         assert metadata is not None
         return json.dumps({"tool": "done", "args": {"summary": "页面为空，无法验证网站内容。",
@@ -123,7 +128,10 @@ class FailureProvider(PageProvider):
 
 
 @pytest.mark.usefixtures("scripted_local_api_connection", "no_external_advisor_models", "public_source_dns")
-def test_real_entry_delivers_failed_page_answer_without_repeating_fetch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("explicit_url", [True, False])
+def test_real_entry_delivers_failed_page_answer_without_repeating_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, explicit_url: bool,
+) -> None:
     from codey.app.headless_runner import HeadlessRequest, run_headless
 
     calls: list[str] = []
@@ -134,11 +142,13 @@ def test_real_entry_delivers_failed_page_answer_without_repeating_fetch(tmp_path
 
     monkeypatch.setenv("NATIVE_TOOLS", "0")
     monkeypatch.setattr("codey.research.source_download._download_text_fallback", fetch)
-    provider = FailureProvider()
+    target = URL if explicit_url else URL + "article"
+    provider = FailureProvider(target)
     events: list[dict[str, object]] = []
-    result = run_headless(HeadlessRequest(None, f"打开 {URL} 看看这个网站是做什么的", intent="chat",
+    task = f"打开 {URL} 看看这个网站是做什么的" if explicit_url else "上网查证这个网站的用途"
+    result = run_headless(HeadlessRequest(None, task, intent="chat", sources_open_required=not explicit_url,
         provider_id="local", max_turns=4, state_home=tmp_path), emit_jsonl=events.append,
         connect_provider=lambda *args, **kwargs: provider)
-    assert result.stop_reason == "blocked" and calls == [URL], events[-1].get("summary")
+    assert result.stop_reason == "blocked" and calls == [target], events[-1].get("summary")
     terminal = next(row for row in events if row.get("type") == "task_done")
     assert terminal["summary"] == "页面为空，无法验证网站内容。"

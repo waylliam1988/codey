@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -65,23 +66,41 @@ def test_recovered_receipt_keeps_execution_reference_and_capture_truncation(tmp_
         assert "PROOF_OUTPUT" in delivered[0].content
 
 
-@pytest.mark.parametrize("code", [0, 7])
-def test_native_receipt_facts_and_ok_survive_durable_restart(tmp_path: Path, code: int) -> None:
+@pytest.mark.parametrize("code,error", [(0, ""), (7, ""), (None, "timeout"),
+                                       (None, "output_read_error"), (None, "output_drain_timeout")])
+def test_native_receipt_facts_and_ok_survive_durable_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int | None, error: str,
+) -> None:
     from codey.operations.task_effects import KernelEffectSink
+    from codey.runtime.core import cancellation
     from codey.runtime.effects.effect_records import RuntimeEffectStore
     from codey.storage.managed_outputs import ManagedOutputStore
-    from codey.toolchain.runtime import RunCommandRawResult, project_run_command_result
+    from codey.toolchain.runtime import RunCommandRawResult, project_run_command_result, run_command
     from tests.support.receipt_fixtures import rebuild_settled_tool_result
     from tests.test_settled_delivery_recovery import _accept_and_mark, _new_log
 
-    raw = RunCommandRawResult("python check.py", "proof", code == 0, code,
-                              "start", "finish", 5, 5, 0, False)
-    outcome = project_run_command_result(tmp_path, raw)
-    result = ToolResult(ToolCall("run", {"command": raw.command}, call_id="call"), outcome.model_text,
+    command = "python -m pytest"
+    if error:
+        failures: dict[str, Exception] = {"timeout": subprocess.TimeoutExpired(command, 1),
+            "output_read_error": cancellation.ProcessOutputReadError("broken pipe"),
+            "output_drain_timeout": cancellation.PipeDrainTimeout("no EOF")}
+
+        def fail(*args: object, **kwargs: object) -> None:
+            raise failures[error]
+
+        monkeypatch.setattr(cancellation, "run_process", fail)
+        outcome = run_command(tmp_path, ".", command, permission_profile="coding_writer")
+        assert outcome.error_code == error and "command_duration_ms" in outcome.audit
+    else:
+        assert code is not None
+        raw = RunCommandRawResult(command, "proof", code == 0, code, "start", "finish", 5, 5, 0, False)
+        outcome = project_run_command_result(tmp_path, raw)
+    result = ToolResult(ToolCall("run", {"command": command}, call_id="call"), outcome.model_text,
                         ok=outcome.ok, canonical=dict(outcome.canonical), audit=dict(outcome.audit))
     expected = execution_receipt(result)
     assert expected is not None
-    assert expected.facts() == ExecutionReceipt("exit", code, "proof", exit_code_scope="process").facts()
+    assert expected.facts() == ExecutionReceipt(error or "exit", code, "proof", exit_code_scope="process",
+                                               truncated=bool(error), capture_truncated=bool(error)).facts()
     assert result.ok is (code == 0)
     assert result.audit["exit_code_scope"] == "process"
     _, mutations, durable = _new_log(tmp_path, "s", "r")
@@ -105,3 +124,13 @@ def test_legacy_decoder_preserves_scope_and_does_not_infer_from_display() -> Non
         assert receipt is not None and receipt.exit_code == 7 and receipt.exit_code_scope == scope
         assert receipt.truncated and not receipt.full_output_recoverable
     assert execution_receipt(ToolResult(ToolCall("shell", {}), "Exit code: 0", ok=True)) is None
+
+
+def test_denied_native_run_has_no_process_execution_receipt(tmp_path: Path) -> None:
+    from codey.toolchain.runtime import run_command
+
+    outcome = run_command(tmp_path, ".", "python -m pytest", permission_profile="")
+    assert not outcome.ok and outcome.error_code == "policy_denied"
+    result = ToolResult(ToolCall("run", {}), outcome.model_text, ok=False,
+                        canonical=dict(outcome.canonical), audit=dict(outcome.audit))
+    assert execution_receipt(result) is None

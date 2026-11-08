@@ -10,7 +10,6 @@ over-cap proof fails closed to blocked, never complete.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
@@ -379,7 +378,7 @@ def _required_tool_checks(
 def _evaluate_inner(session: TaskSession, done_text: object, *, context: CompletionContext) -> GateVerdict:
     text = str(done_text or "").strip()
     from codey.operations.execution_claims import validate_execution_claims
-    from codey.operations.source_gaps import task_source_coverage, validate_source_gaps
+    from codey.operations.source_gaps import source_read_required, task_source_coverage, validate_source_gaps
 
     try:
         execution_check = validate_execution_claims(session)
@@ -388,7 +387,7 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
         return GateVerdict(False, str(exc), None)
     coverage = task_source_coverage(session, context.research_execution_ledger or context.research_ledger)
     if (session.task_kind == "chat" and not session.policy.strict_research
-            and session.policy.sources_open_required and coverage.unavailable):
+            and source_read_required(session) and coverage.unavailable):
         return GateVerdict(False, "", None, final_text=text, blocked=True)
     try:
         text, report = prepare_research_completion(session, text, context)
@@ -427,8 +426,6 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     required_block = _required_checks_verdict(session, deduped, tool_evaluations)
     if required_block is not None:
         feedback = research_completion_feedback(session, text, context, deduped)
-        if any(row.check_id == "research_sources_opened" and row.status != CHECK_PASS for row in deduped):
-            feedback = "Requested source coverage: " + json.dumps(coverage.facts(), ensure_ascii=False) + "\n" + feedback
         return replace(required_block, followup=required_block.followup + ("\n\n" + feedback if feedback else ""))
     domain = _domain_for_session(session)
     subject = _contract_subject(session, profile, context)
@@ -496,8 +493,6 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
                          "A passing narrower or different check may not cover this requirement. "
                          "Run this check against the current files before proposing done again; "
                          "if it cannot run, report the actual failure.")
-    if "research_sources_opened" in failed_ids:
-        followup += "\nRequested source coverage: " + json.dumps(coverage.facts(), ensure_ascii=False)
     feedback = research_completion_feedback(session, text, context, deduped)
     if feedback:
         followup += "\n\n" + feedback

@@ -9,6 +9,7 @@ import pytest
 from codey.operations.completion_gate import evaluate
 from codey.operations.source_gaps import task_source_coverage
 from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -73,6 +74,44 @@ def test_redirects_and_merged_request_aliases_remain_covered() -> None:
     opened(session, ledger, OTHER, final=final)
     assert task_source_coverage(session, ledger).satisfied
     assert not task_source_coverage(session, ledger).failures
+
+
+def test_required_urls_remain_binding_without_global_open_requirement() -> None:
+    session = source_session(actual_failure=False)
+    session.policy = TaskPolicy(frozenset({"control", "web.read"}))
+    session.last_done_args = {}
+    verdict = evaluate(session, "尚未读取")
+    assert not verdict.complete and not verdict.blocked and URL in verdict.followup
+    session._memory_results[REF] = source_session()._memory_results[REF]
+    verdict = evaluate(session, "来源无法读取")
+    assert verdict.blocked and not verdict.complete
+
+
+@pytest.mark.parametrize("required", [False, True])
+def test_discovered_page_failure_only_blocks_when_reading_is_required(required: bool) -> None:
+    session = source_session()
+    session.required_source_urls = frozenset()
+    session.last_done_args = {}
+    session.policy = TaskPolicy(frozenset({"control", "web.read"}), sources_open_required=required)
+    coverage = task_source_coverage(session)
+    assert not coverage.failures and [row.url for row in coverage.acquisition_failures] == [URL]
+    verdict = evaluate(session, "未能验证最新内容")
+    assert verdict.blocked is required and verdict.complete is not required
+    ledger = ResearchLedger()
+    opened(session, ledger, URL)
+    assert not task_source_coverage(session, ledger).acquisition_failures
+    assert evaluate(session, "现已读到来源", context={"research_ledger": ledger}).complete
+
+
+def test_failed_required_source_does_not_skip_an_unattempted_source_in_feedback() -> None:
+    session = source_session()
+    session.required_source_urls |= {OTHER}
+    session.last_done_args = {}
+    verdict = evaluate(session, "一个页面失败")
+    assert not verdict.complete and not verdict.blocked
+    assert OTHER in verdict.followup and "Open the unattempted required URLs" in verdict.followup
+    assert "submit done" not in verdict.followup and "source_gaps" not in verdict.followup
+    assert verdict.followup.count("Source coverage (verified runtime observations)") == 1
 
 
 def test_admission_snapshot_survives_reopen_and_prompt_changes(tmp_path: Path) -> None:

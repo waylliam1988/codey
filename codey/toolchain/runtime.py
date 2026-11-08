@@ -1155,6 +1155,19 @@ def run_command_raw(
                 return (snapshot["execution_state"] == "settled" and not snapshot["stdout"]["truncated"]
                         and not snapshot["stderr"]["truncated"])
         return False
+
+    def failed_execution(status: str, message: str) -> ToolOutcome:
+        mark_unavailable()
+        receipt = ExecutionReceipt(status, None, "", truncated=True, capture_truncated=True,
+                                   execution_id=execution_id, exit_code_scope="process")
+        text = f"ERROR: {message}"
+        return ToolOutcome(text + "\n\n" + receipt.render(), False, error_code=status, truncated=True,
+            canonical={"execution": receipt.facts()},
+            presentation={"status": "error", "result": _first_model_line(text, 200)},
+            audit={**receipt.audit_facts(), "command_started_at": started_at,
+                   "command_finished_at": _utc_now_iso(),
+                   "command_duration_ms": max(0, int((time.monotonic() - started_monotonic) * 1000))})
+
     try:
         proc = cancellation.run_process(
             process_argv,
@@ -1169,56 +1182,22 @@ def run_command_raw(
         mark_unavailable()
         return ToolOutcome.error(f"command not found: {argv[0]}", audit={"execution_id": execution_id} if execution_id else {})
     except cancellation.ProcessOutputReadError as exc:
-        mark_unavailable()
-        finished_at = _utc_now_iso()
-        duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
-        return ToolOutcome.error(
+        return failed_execution("output_read_error",
             f"failed reading command output ({exc}): {command}. "
             "Re-run a narrower command.",
-            error_code="output_read_error",
-            audit={
-                "execution_id": execution_id,
-                "command_started_at": started_at,
-                "command_finished_at": finished_at,
-                "command_duration_ms": duration_ms,
-            },
         )
     except cancellation.PipeDrainTimeout as exc:
-        mark_unavailable()
-        finished_at = _utc_now_iso()
-        duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
-        return ToolOutcome.error(
+        return failed_execution("output_drain_timeout",
             f"command output pipe did not drain ({exc}); output is incomplete, "
             f"not a success: {command}. Re-run a narrower command.",
-            error_code="output_drain_timeout",
-            audit={
-                "execution_id": execution_id,
-                "command_started_at": started_at,
-                "command_finished_at": finished_at,
-                "command_duration_ms": duration_ms,
-            },
         )
     except subprocess.TimeoutExpired:
-        mark_unavailable()
-        finished_at = _utc_now_iso()
-        duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
         message = (
             f"command timed out after {timeout}s (this is a timeout, not a test "
             f"failure): {command}. Re-run a smaller subset or a single test/file to "
             "verify instead of guessing a fix."
         )
-        # The process did launch, so this is an execution fact: timing flows
-        # through audit so AnalysisRun projection can record it honestly.
-        return ToolOutcome.error(
-            message,
-            error_code="timeout",
-            audit={
-                "execution_id": execution_id,
-                "command_started_at": started_at,
-                "command_finished_at": finished_at,
-                "command_duration_ms": duration_ms,
-            },
-        )
+        return failed_execution("timeout", message)
     duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
 
     output_parts = []

@@ -25,6 +25,7 @@ class SourceCoverage:
     opened: frozenset[str]
     missing: tuple[str, ...]
     failures: tuple[SourceFailure, ...]
+    acquisition_failures: tuple[SourceFailure, ...]
 
     @property
     def satisfied(self) -> bool:
@@ -32,13 +33,17 @@ class SourceCoverage:
 
     @property
     def unavailable(self) -> bool:
-        return bool(self.required and self.failures) and not self.missing
+        if self.required:
+            return bool(self.failures) and not self.missing
+        return bool(self.acquisition_failures) and not self.opened
 
     def facts(self) -> JsonObject:
         return {"required_urls": list(self.required), "opened_urls": [url for url in sorted(self.opened)],
                 "unattempted_urls": list(self.missing), "failed_sources": [
                     {"url": row.url, "result_ref": row.result_ref, "detail": row.detail}
-                    for row in self.failures]}
+                    for row in self.failures], "acquisition_failures": [
+                    {"url": row.url, "result_ref": row.result_ref, "detail": row.detail}
+                    for row in self.acquisition_failures]}
 
 
 def evaluate_source_coverage(*, required_urls: Collection[str], results: Mapping[str, ToolResult],
@@ -72,7 +77,8 @@ def evaluate_source_coverage(*, required_urls: Collection[str], results: Mapping
                 failed[key] = SourceFailure(key, ref, detail)
     unresolved = required - opened
     return SourceCoverage(tuple(sorted(required)), frozenset(opened), tuple(sorted(unresolved - failed.keys())),
-                          tuple(failed[url] for url in sorted(unresolved & failed.keys())))
+                          tuple(failed[url] for url in sorted(unresolved & failed.keys())),
+                          tuple(failed[url] for url in sorted(failed.keys() - opened)))
 
 
 def task_source_coverage(session: TaskSession, ledger: ResearchLedger | None = None) -> SourceCoverage:
@@ -80,11 +86,15 @@ def task_source_coverage(session: TaskSession, ledger: ResearchLedger | None = N
                                     ledger=ledger, opened_urls=session.opened_sources)
 
 
+def source_read_required(session: TaskSession) -> bool:
+    return bool(session.policy.sources_open_required or session.required_source_urls)
+
+
 def source_gap_context(session: TaskSession, ledger: ResearchLedger | None = None) -> str:
     coverage = task_source_coverage(session, ledger)
     if session.task_kind != "chat" or session.policy.strict_research:
         return ""
-    if not coverage.required and not coverage.opened:
+    if not source_read_required(session) and not coverage.opened and not coverage.acquisition_failures:
         return ""
     text = "Source coverage (verified runtime observations):\n" + json.dumps(
         {**coverage.facts(), "source_ids": dict(session.source_ids)}, ensure_ascii=False)
@@ -95,10 +105,13 @@ def source_gap_context(session: TaskSession, ledger: ResearchLedger | None = Non
                  "source offset. A read_tool_result query is one literal substring, not a semantic search.")
     if coverage.missing:
         text += "\nOpen the unattempted required URLs before proposing completion."
-    elif coverage.unavailable:
-        text += ("\nRequired sources remain unavailable. Deliver the acquired content and explain the actual limitations "
+    elif coverage.unavailable and source_read_required(session):
+        text += ("\nRequired source reading remains unavailable. Deliver the acquired content and explain the actual limitations "
                  "in the requested final format. Proposing done closes as blocked; source_gaps need not be copied. "
+                 "No acquired body supports conclusions about the failed pages' purpose or contents. "
                  "Do not repeat an unchanged failing fetch merely to satisfy source-open checks.")
+    elif source_read_required(session) and not coverage.satisfied:
+        text += "\nOpen a relevant source before proposing completion; source reading is required for this task."
     return text
 
 

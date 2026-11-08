@@ -69,14 +69,13 @@ def knowledge_reference_checks(session: TaskSession, context: object = None) -> 
 def source_requirement_checks(session: TaskSession, context: object = None) -> list[CompletionCheck]:
     """普通联网任务的来源要求：只检查任务要求的来源是否实际打开。"""
     context = CompletionContext.from_value(context)
-    policy = session.policy
-    if not policy.sources_open_required:
+    from codey.operations.source_gaps import source_read_required, task_source_coverage
+
+    if not source_read_required(session):
         return []
     ledger = context.research_execution_ledger or context.research_ledger
     if ledger is None and not session.required_source_urls:
         return [CompletionCheck("research_sources_opened", CHECK_FAIL, "research_ledger_missing")]
-    from codey.operations.source_gaps import task_source_coverage
-
     coverage = task_source_coverage(session, ledger)
     row = completion_check(
         "research_sources_opened",
@@ -159,13 +158,10 @@ def research_completion_feedback(session: TaskSession, text: str, context: objec
     """Explain failed report checks without rewriting the proposed answer."""
     failed = {row.check_id for row in checks if row.status != CHECK_PASS}
     if "research_sources_opened" in failed and session.task_kind == "chat" and not session.policy.strict_research:
-        receipts = [ref for ref, result in session._memory_results.items()
-                    if not result.ok and "source_failure" in result.canonical]
-        if receipts:
-            return ("A requested source was attempted but unavailable. Do not repeat the same failing fetch just to finish. "
-                    "To report this limitation honestly, submit done with your summary and source_gaps "
-                    "[{result_ref: <actual failed receipt>, reason: <observed failure>}]. "
-                    "This closes as blocked, not verified. Available failed acquisition receipts: " + ", ".join(receipts))
+        from codey.operations.source_gaps import source_gap_context
+
+        resolved = CompletionContext.from_value(context)
+        return source_gap_context(session, resolved.research_execution_ledger or resolved.research_ledger)
     if "research_investigation_attempted" in failed:
         return ("This evidence investigation has not attempted acquisition. Parent findings were saved in an "
                 "earlier phase, not here. Next action: use source_search on a previously opened URL or "
