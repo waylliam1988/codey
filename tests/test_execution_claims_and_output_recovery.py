@@ -68,17 +68,18 @@ def test_matching_claim_is_checked_by_existing_completion_gate() -> None:
     assert any(row.check_id == "execution_claims" and row.status == "pass" for row in verdict.proof.checks)
 
 
-def test_native_model_completed_status_has_copyable_factual_repair() -> None:
+def test_native_model_completed_status_is_checked_without_copying_instructions() -> None:
     from codey.operations.kernel_prompt import _result_context
 
     session = execution_session()
     delivered = _result_context(session._memory_results[REF], session)
-    expected = json.loads(delivered.split("Observed execution claim (copy verbatim into done.execution_claims): ", 1)[1])
-    assert expected == claim()
-    session.last_done_args = {"execution_claims": [{**expected, "status": "completed", "exit_code": 7}]}
+    expected = json.loads(delivered.split("Execution facts: ", 1)[1])
+    assert expected["status"] == "exit" and expected["exit_code"] == 1
+    assert "copy verbatim" not in delivered and "done.execution_claims" not in delivered
+    session.last_done_args = {"execution_claims": [{**claim(), "status": "completed", "exit_code": 7}]}
     verdict = evaluate(session, "退出码是 7")
     assert not verdict.complete
-    repaired, _ = json.JSONDecoder().raw_decode(verdict.followup.split("Copy this observed claim verbatim: ", 1)[1])
+    repaired, _ = json.JSONDecoder().raw_decode(verdict.followup.split("Observed execution facts: ", 1)[1])
     session.last_done_args = {"execution_claims": [repaired]}
     assert evaluate(session, "实际退出码是 1").complete
 

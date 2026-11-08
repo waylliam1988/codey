@@ -1,20 +1,27 @@
 """Select domain guidance at task composition, before entering the common loop."""
 
+from __future__ import annotations
+
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from codey.policies.output_requirement import guidance
 from codey.policies.task_policy import TaskPolicy
 from codey.research.completion_guidance import render_completion_guidance
 
 if TYPE_CHECKING:
+    from codey.knowledge.store import KnowledgeStore
     from codey.operations.task_session import TaskSession
+    from codey.research.answer_contract import AnswerScope
     from codey.research.ledger import ResearchLedger
+    from codey.research.staging import StagedKnowledgeStore
+    from codey.runtime.core.models import ToolResult
 
 
-def task_working_context(session: "TaskSession", research_ledger: "ResearchLedger | None" = None,
-                         knowledge_store: Any = None, knowledge_session_id: str = "", *, research_scope: Any = None,
-                         tool_names: tuple[str, ...] | None = None, provider: Any = None) -> str:
+def task_working_context(session: TaskSession, research_ledger: ResearchLedger | None = None,
+                         knowledge_store: KnowledgeStore | StagedKnowledgeStore | None = None,
+                         knowledge_session_id: str = "", *, research_scope: AnswerScope | None = None,
+                         tool_names: tuple[str, ...] | None = None, provider: object = None) -> str:
     from codey.operations.kernel_prompt import working_context
     from codey.research.completion_guidance import render_research_observations
 
@@ -74,11 +81,12 @@ def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
     ) if part)
 
 
-def task_result_context(session: Any, result: Any, research_scope: Any) -> str:
+def task_result_context(session: TaskSession, result: ToolResult, research_scope: AnswerScope | None) -> str:
     """Reuse complete reads and errors already present in the frozen work view."""
     from codey.operations.kernel_prompt import _result_context
     from codey.providers.base import render_result_metadata
     from codey.research.answer_contract import AnswerScope
+    from codey.research.passages import read_passage_refs
 
     if (isinstance(research_scope, AnswerScope) and not result.ok and len(result.model_text) <= 1600
             and next(reversed(session._memory_results.values()), None) is result):
@@ -86,13 +94,13 @@ def task_result_context(session: Any, result: Any, research_scope: Any) -> str:
         if identity:
             return ("Tool failed. The complete error appears in latest_error in the current evidence view.\n"
                     + render_result_metadata(identity, tool=result.call.name, ok=False))
-    rows = result.canonical.get("read_passages", [])
+    rows = read_passage_refs(result.canonical.get("read_passages", []))
     if isinstance(research_scope, AnswerScope) and result.ok and rows:
         labels = {ref: label for label, ref in research_scope.aliases}
-        if all(row["ref"] in labels for row in rows):
+        if all(ref in labels for ref in rows):
             identity = next((key for key, value in session._memory_results.items() if value is result), "")
             if identity:
                 return ("Read succeeded. The original window is pinned for citation as "
-                        + ", ".join(f"[{labels[row['ref']]}]" for row in rows) + ".\n"
+                        + ", ".join(f"[{labels[ref]}]" for ref in rows) + ".\n"
                         + render_result_metadata(identity, tool=result.call.name, ok=True))
     return _result_context(result, session, receipt_recovery=not isinstance(research_scope, AnswerScope))

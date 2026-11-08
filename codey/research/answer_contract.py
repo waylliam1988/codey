@@ -23,6 +23,7 @@ from codey.research.answer_values import (
     UnsignedAnswerSubmission,
 )
 from codey.research.knowledge_updates import normalize_updates, updates_schema
+from codey.research.passages import read_passage_refs
 from codey.research.questions import INVESTIGATION_TOOLS
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec
@@ -156,12 +157,7 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
         reference = result.call.args.get("result_ref")
         original = results.get(reference) if result.call.name == "read_tool_result" and isinstance(reference, str) else result
         rows: object = original.canonical.get("read_passages", []) if original is not None and original.ok else list[str]()
-        if not isinstance(rows, list):
-            raise ValueError("read passage receipts must be an array")
-        for row in rows:
-            if not isinstance(row, dict):
-                raise ValueError("read passage descriptor must be an object")
-            ref = require_json_string(row.get("ref"), "passage ref")
+        for ref in read_passage_refs(rows):
             labels.setdefault(ref, f"e{len(labels) + 1}")
     return AnswerScope(digest(session.task_text), tuple((label, ref) for ref, label in labels.items()),
                        tuple(attempts))

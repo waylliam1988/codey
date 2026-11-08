@@ -40,8 +40,7 @@ def validate_execution_claims(session: TaskSession) -> CompletionCheck | None:
                 or (receipt.exit_code is not None and (type(claim.get("exit_code")) is not int
                                                       or claim["exit_code"] != receipt.exit_code))):
             expected = json.dumps(observed_claim(ref, receipt), ensure_ascii=False)
-            raise ValueError(f"execution_claims disagrees with {ref}. Copy this observed claim verbatim: {expected}. "
-                             "status is the execution state from the receipt, not completed/success/failed. "
-                             "Correct the claim and summary using the receipt, not the command text; do not execute again")
+            raise ValueError(f"execution_claims disagrees with {ref}. Observed execution facts: {expected}. "
+                             "Correct this optional claim and its explanation using the receipt; do not execute again")
         selected.add(ref)
     return CompletionCheck("execution_claims", "pass", "verified_execution_receipts")

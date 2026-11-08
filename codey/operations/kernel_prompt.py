@@ -9,15 +9,17 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from codey.operations.task_session import TaskSession
 from codey.policies.command_line import COMMAND_WORKDIR_DESCRIPTION
-from codey.providers.base import render_result_metadata
+from codey.providers.base import AssistantTurn, render_result_metadata
 from codey.providers.text_result_views import TextResultSpan
+from codey.runtime.core.execution_receipt import execution_receipt
 from codey.runtime.core.models import ToolPlan, ToolResult
+from codey.types.json_value import JsonObject
 from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context
 from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
@@ -166,7 +168,7 @@ def kernel_prompt_for_session(
     return "\n\n".join(parts)
 
 
-def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, reply: Any = None) -> str:
+def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, reply: str | AssistantTurn | None = None) -> str:
     from codey.providers.base import AssistantTurn, TurnFinish
     from codey.research.answer_contract import AnswerScope
     from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE
@@ -228,7 +230,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
         # Derive it from the original response; never promote it to a submission.
         # Other protocol failures retain their bounded diagnostic projection.
         # Ignore provider call ids: a fresh id does not make invalid args new.
-        payload: dict[str, Any] = ({"text": reply} if isinstance(reply, str) else
+        payload: JsonObject = ({"text": reply} if isinstance(reply, str) else
                    {"text": reply.text, "finish": reply.finish.value,
                     "calls": [{"name": call.name, "args": call.arguments} for call in reply.tool_calls]})
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
@@ -289,27 +291,12 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
                      f'Read omitted detail with read_tool_result({{"result_ref":"{result_ref}","query":"literal keyword"}}). '
                      f"{instruction} do not repeat execution to recover output.")
         if result.call.name in {"shell", "run"}:
-            from codey.operations.execution_claims import observed_claim
-            from codey.runtime.core.execution_receipt import execution_receipt
-
             text += "\nAvailable receipt views: " + ("output, value" if "value" in result.canonical else "output") + "."
-            if result.audit.get("capture_truncated") is True:
-                text += (" Capture discarded bytes; read_tool_result can inspect the retained output only, "
-                         "not recover the full execution log.")
-            text += (" To report execution status, use done.execution_claims with this result_ref, status, "
-                     "exit_code_scope and observed exit_code (omit exit_code if unknown). "
-                     "ok describes tool delivery, not process success. Do not infer exit codes from command text.")
             receipt = execution_receipt(result)
             if receipt is not None:
-                text += ("\nObserved execution claim (copy verbatim into done.execution_claims): "
-                         + json.dumps(observed_claim(result_ref, receipt), ensure_ascii=False))
+                text += "\nExecution facts: " + json.dumps(receipt.facts(), ensure_ascii=False)
         if not result.ok and "source_failure" in result.canonical:
-            text += ("\nThis receipt records failed source acquisition. For ordinary chat, if the requested sources "
-                     "remain unavailable, report the observed failure honestly and finish with done.source_gaps "
-                     "selecting this result_ref and reason. This closes as blocked; it does not verify page content. "
-                     "Do not repeat an unchanged failing fetch just to satisfy source-open checks.\n"
-                     "Source gap record for done.source_gaps: "
-                     + json.dumps({"result_ref": result_ref, "reason": result.model_text}, ensure_ascii=False))
+            text += "\nSource acquisition failure: " + json.dumps(result.canonical["source_failure"], ensure_ascii=False)
     if result.ok and result.call.name == "web_search" and session.search_results:
         mapping = session.search_results
         observation = result.canonical.get("research_observation")
@@ -397,23 +384,26 @@ def working_context(session: TaskSession) -> str:
     """Fresh execution facts; narrative checkpoints cannot amend these observations."""
     import json
 
-    executions: list[dict[str, Any]] = []
-    commands = [(identity, record) for identity, record in session.executed.items() if record.get("name") == "run"]
+    executions: list[dict[str, object]] = []
+    commands = [(identity, record) for identity, record in session.executed.items() if record.get("name") in {"run", "shell"}]
     for identity, record in commands[-12:]:
         result = session._memory_results.get(identity)
-        args = result.call.args if result is not None else {}
+        args: JsonObject = result.call.args if result is not None else {}
         fingerprint = record.get("workspace_fingerprint")
-        audit: dict[str, Any] = dict(result.audit) if result is not None else {}
-        executions.append({"execution_ref": identity, "command": args.get("command", record.get("command", "")),
-            "cwd": args.get("path", record.get("cwd", ".")),
+        audit: Mapping[str, object] = result.audit if result is not None else {}
+        receipt = execution_receipt(result) if result is not None else None
+        executions.append({"execution_ref": identity, "command": args["command"] if "command" in args else record.get("command", ""),
+            "cwd": args["path"] if "path" in args else record.get("cwd", "."),
             "status": ("denied_before_execution"
                        if record.get("execution_disposition") == "denied_before_execution"
-                       else "complete" if type(record.get("exit_code")) is int else "unknown"),
+                       else receipt.status if receipt is not None
+                       else "exit" if type(record.get("exit_code")) is int else "unknown"),
+            "execution": receipt.facts() if receipt is not None else None,
             "started_at": audit.get("command_started_at"), "finished_at": audit.get("command_finished_at"),
-            "exit_code": record.get("exit_code"), "result_available": result is not None,
+            "exit_code": receipt.exit_code if receipt is not None else record.get("exit_code"), "result_available": result is not None,
             "workspace_identity": fingerprint,
             "verification": "current" if fingerprint and fingerprint == session.workspace_fingerprint else "stale or unknown"})
-    verifications: dict[tuple[str, str], dict[str, Any]] = {}
+    verifications: dict[tuple[str, str], dict[str, object]] = {}
     for row in session.verifications[-12:]:
         revision = valid_workspace_revision(row.get("workspace_revision"))
         fingerprint = valid_workspace_fingerprint(row.get("workspace_fingerprint"))

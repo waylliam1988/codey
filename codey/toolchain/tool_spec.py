@@ -269,9 +269,9 @@ def _all_specs() -> dict[str, ToolSpec]:
     specs["done"] = replace(done, description=done.description +
         " Optional execution_claims must match actual result_ref, status, exit_code_scope "
         "and observed exit_code from the receipts; omit exit_code when unknown. "
-        "Copy status verbatim (exit for an exited process, never completed/success/failed). "
-        "For ordinary chat with unavailable sources, source_gaps selects failed acquisition result_ref and reason; "
-        "the task closes as blocked, without claiming a verified page.", parameters=(*done.parameters,
+        "The runtime checks all execution receipts and required source coverage; neither execution_claims nor "
+        "source_gaps needs to list them all. Optional source_gaps cites actual failed acquisition receipts. "
+        "Use the current source coverage to explain limitations in the requested final format.", parameters=(*done.parameters,
         ("execution_claims", {"type": "array", "maxItems": 64, "items": {"type": "object",
             "required": ["result_ref", "status", "exit_code_scope"], "additionalProperties": False,
             "properties": {"result_ref": {"type": "string"}, "status": {"type": "string"},

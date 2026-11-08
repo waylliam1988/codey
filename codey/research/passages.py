@@ -7,6 +7,8 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NotRequired, TypedDict
 
+from codey.types.json_value import require_json_string
+
 if TYPE_CHECKING:
     from codey.research.ledger import OpenedSource, ResearchLedger
     from codey.research.source_document import SourceDocument
@@ -20,6 +22,18 @@ class PassageDescriptor(TypedDict):
     end: int
     source_version: NotRequired[tuple[str, int]]
     evidence_version: NotRequired[tuple[str, int]]
+
+
+def read_passage_refs(value: object) -> tuple[str, ...]:
+    """Decode citation identities from receipt descriptors without mutating them."""
+    if not isinstance(value, list):
+        raise ValueError("read passage receipts must be an array")
+    refs = []
+    for row in value:
+        if not isinstance(row, dict):
+            raise ValueError("read passage descriptor must be an object")
+        refs.append(require_json_string(row.get("ref"), "passage ref"))
+    return tuple(refs)
 
 
 @dataclass(frozen=True)
