@@ -7,6 +7,7 @@ This records answers for review; it does not certify natural-language accuracy.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import os
@@ -20,6 +21,7 @@ from urllib.request import Request
 SITE = "https://api.lihe.chat/"
 FOOD = "https://example.com/fuzhou-food-record"
 TASKS = {"site_spa": SITE + "  你帮我看看这个网站是干嘛的",
+         "site_static": SITE + "  你帮我看看这个网站是干嘛的",
          "site_blank": SITE + "  你帮我看看这个网站是干嘛的",
          "food": "你帮我上网看看福州有什么好吃的"}
 SITE_BODY = ("ToCreate。一个密钥，调用多个模型。登录后购买套餐，即可用同一个密钥调用 Claude、GPT、Gemini。"
@@ -59,6 +61,8 @@ def run(repo: Path, directory: Path, case: str, timeout: float, *, acquisition_o
     if case == "site_spa":
         html = ('<html><title>ToCreate</title><body><div id="root"></div><script type="module">'
                 "document.querySelector('#root').innerText=" + json.dumps(SITE_BODY) + ";</script></body></html>")
+    elif case == "site_static":
+        html = "<html><title>ToCreate</title><body>" + SITE_BODY + "</body></html>"
     elif case == "food":
         html = "<html><title>福州小吃记录</title><body><article>" + FOOD_BODY + "</article></body></html>"
     (directory / "page.html").write_text(html, encoding="utf-8")
@@ -92,6 +96,8 @@ def run(repo: Path, directory: Path, case: str, timeout: float, *, acquisition_o
     manifest = {"scope": "fixed_sources_real_model_production_entry", "case": case,
                 "task": TASKS[case], "repo": str(repo), "model": target.model,
                 "temperature": target.temperature, "max_turns": 8,
+                "request_timeout_seconds": timeout,
+                "fixture_sha256": hashlib.sha256(html.encode()).hexdigest(),
                 "git_head": subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip(),
                 "limits": "One trial; source responses are controlled; answer accuracy requires review."}
     (directory / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -124,7 +130,8 @@ def run(repo: Path, directory: Path, case: str, timeout: float, *, acquisition_o
     terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), {})
     report = {**manifest, "stop_reason": terminal.get("stop_reason"), "summary": terminal.get("summary"),
               "tools": [row for row in events if row.get("type") == "tool"],
-              "delivered_page_bodies": opened_bodies(directory), "answer_review_required": True}
+              "delivered_page_bodies": opened_bodies(directory) if (directory / "provider.jsonl").is_file() else [],
+              "answer_review_required": True}
     (directory / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"case": case, "stop_reason": report["stop_reason"], "summary": report["summary"]}, ensure_ascii=True))
 
