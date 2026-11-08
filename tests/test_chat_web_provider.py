@@ -54,18 +54,44 @@ def test_chat_resources_never_construct_browser_and_keep_injected_provider(monke
     assert resources.search is injected
 
 
+@pytest.mark.parametrize("browser_sources", [False, True])
+def test_explicit_factory_is_respected_for_both_chat_and_research(monkeypatch, browser_sources):
+    from codey.research.ledger import ResearchLedger
+    from codey.research.source_gateway import ResearchSourceGateway
+
+    calls = []
+
+    class Provider:
+        def search(self, query: str, *, limit: int):
+            return []
+
+        def fetch(self, url: str):
+            calls.append(url)
+            return {"status": "ok", "url": url, "title": "Configured", "text": "Configured provider body"}
+
+    selected = Provider()
+    tools = build_research_tools(SimpleNamespace(knowledge_store=None, search_factory=lambda: selected),
+        session_id="s", project="", browser_sources=browser_sources)
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *a, **k: None)
+    url = "https://example.com/"
+    gateway = ResearchSourceGateway(tools.search, ResearchLedger(), direct_urls=frozenset({url}))
+    result = gateway.open(url)
+    assert result.status == "ok" and result.document.text == "Configured provider body"
+    assert calls == [url]
+
+
 def test_http_fetch_preserves_failure_and_delegates_pdf(monkeypatch):
     failure = {"status": "error", "url": "https://example.com/", "error": "page_blank"}
-    monkeypatch.setattr("codey.research.chat_web._download_text_fallback", lambda url: failure)
+    monkeypatch.setattr("codey.research.source_download._download_text_fallback", lambda url: failure)
     assert ChatWebProvider().fetch("https://example.com/") == failure
     sentinel = {"content_kind": "pdf_download", "url": "https://example.com/a.pdf", "mime_type": "application/pdf"}
-    monkeypatch.setattr("codey.research.chat_web._download_text_fallback", lambda url: sentinel)
+    monkeypatch.setattr("codey.research.source_download._download_text_fallback", lambda url: sentinel)
     requests = []
 
     def pdf(url, *, mime_type):
         requests.append((url, mime_type))
         return {"status": "ok", "text": "Extracted PDF"}
 
-    monkeypatch.setattr("codey.research.chat_web._download_pdf_streaming", pdf)
+    monkeypatch.setattr("codey.research.source_download._download_pdf_streaming", pdf)
     assert ChatWebProvider().fetch("https://example.com/")["text"] == "Extracted PDF"
     assert requests == [("https://example.com/a.pdf", "application/pdf")]

@@ -16,9 +16,9 @@
 |---|---|---|---|
 | 1 | 执行回执统一构造与解码，保留 ok 语义 | 已提交 | 501716a7 |
 | 2 | 持久化来源要求、统一覆盖和完成检查、取消全量声明必填 | 已提交 | 78b4c0a7 |
-| 3 | 输出解析、引用归属、完整性与分页 | 已验收，随本批提交 | 见 Git 日志 |
-| 4 | Web 获取统一经过已配置 provider | 进行中 | — |
-| 5 | 精简提示词、兼容恢复与会话回放、最终审计 | 待实施 | — |
+| 3 | 输出解析、引用归属、完整性与分页 | 已提交 | c418b7e1 |
+| 4 | Web 获取统一经过已配置 provider | 已验收，随本批提交 | 见 Git 日志 |
+| 5 | 精简提示词、兼容恢复与会话回放、最终审计 | 进行中 | — |
 
 ## 已核实基线
 
@@ -78,3 +78,12 @@
 - 11 个直接相关模块 83 passed，覆盖输出损坏、重启、审批 HTTP、历史回执和真实原生进程成功/失败。因恢复职责调整，加入严格回执类型/损坏回归。
 - 新原生进程测试最初使用不被 run 授权的 python -c/--version；保持生产授权规则，改为临时测试文件的真实 pytest 验证命令。最终运行有既有长路径 RAM 盘清理警告，测试断言全部通过。
 - Ruff、mypy、Pyrefly、ty 通过；类型精度门禁随提交复查。
+
+### 第四批
+
+- gateway 删除 direct_urls 的独立下载后端；所有 open 都调用配置的 provider.fetch，direct_urls 仅影响候选选择。
+- HTTP/PDF 分流集中为现有 source_download 叶子模块的 fetch_http_document，ChatWebProvider 复用。聊天默认 HTTP、Research 默认现有浏览器/连接器组合，显式 factory 在两种策略下均生效。
+- 清除 source_download 全部 Any，明确 urllib 响应、Header、页面返回及重定向结果类型；删除重复宽泛异常兜底，使用标准 url/status 属性。
+- 110 个相关测试通过，另选 test_research 中 8 个 HTTP/PDF 测试通过，未运行整个研究测试集。新增验证指定与搜索 URL 共用注入 provider，保持跳转网络策略。
+- 类型检查发现 urllib 旧 geturl/getcode 弃用；切换标准属性后，旧响应替身缺 url/status，更新测试替身而未添加生产兼容分支。原测试“指定网址必须绕过 provider”的契约按新要求更新。
+- Ruff、mypy、Pyrefly、ty、类型精度门禁通过；无新 Any，下载模块加入保护。

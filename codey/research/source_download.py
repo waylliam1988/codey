@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import urllib.error
 import urllib.request
-from typing import Any, cast
+from collections.abc import Mapping
+from email.message import Message
+from typing import cast
 from urllib.parse import urlparse
+from urllib.response import addinfourl
 
 from codey.policies.network import check_fetch_url
 from codey.research.extract import (
@@ -47,7 +50,15 @@ def _is_pdf_url(url: str) -> bool:
     path = urlparse(url or "").path.lower()
     return path.endswith(".pdf")
 
-def _download_text_fallback(url: str) -> dict[str, Any]:
+def fetch_http_document(url: str) -> dict[str, object]:
+    """Shared bounded HTTP/PDF acquisition for the selected HTTP provider."""
+    page = _download_text_fallback(url)
+    if page.get("content_kind") == "pdf_download":
+        return _download_pdf_streaming(str(page.get("url") or url), mime_type=str(page.get("mime_type") or ""))
+    return page
+
+
+def _download_text_fallback(url: str) -> dict[str, object]:
     current_url = (url or "").strip()
     redirects = 0
     while True:
@@ -62,10 +73,9 @@ def _download_text_fallback(url: str) -> dict[str, Any]:
             if _is_redirect_status(exc.code):
                 next_url = _redirect_target(current_url, exc.headers)
                 _close_response(exc)
-                redirect = _checked_redirect(current_url, next_url, redirects, content_kind="page")
-                if redirect.get("error"):
-                    return cast(dict[str, Any], redirect["error"])
-                current_url = redirect["url"]
+                current_url, error = _checked_redirect(current_url, next_url, redirects, content_kind="page")
+                if error is not None:
+                    return error
                 redirects += 1
                 continue
             _close_response(exc)
@@ -75,17 +85,16 @@ def _download_text_fallback(url: str) -> dict[str, Any]:
         except OSError as exc:
             return _fetch_failure(current_url, f'HTTP fallback could not load page: {exc}')
         with response:
-            final_url = response.geturl() or current_url
+            final_url = response.url or current_url
             reason = check_fetch_url(final_url)
             if reason:
                 return _fetch_failure(final_url, f'{reason} (after redirect)')
-            status = int(getattr(response, "status", 0) or _response_code(response))
+            status = int(response.status or 0)
             if _is_redirect_status(status):
                 next_url = _redirect_target(current_url, response.headers)
-                redirect = _checked_redirect(current_url, next_url, redirects, content_kind="page")
-                if redirect.get("error"):
-                    return cast(dict[str, Any], redirect["error"])
-                current_url = redirect["url"]
+                current_url, error = _checked_redirect(current_url, next_url, redirects, content_kind="page")
+                if error is not None:
+                    return error
                 redirects += 1
                 continue
             headers = response.headers
@@ -120,17 +129,14 @@ def _download_text_fallback(url: str) -> dict[str, Any]:
                 "truncated": truncated or text_truncated,
             }
 
-def _content_length(headers: dict[str, Any]) -> int | None:
-    try:
-        value = headers.get("content-length")
-    except AttributeError:
-        value = None
+def _content_length(headers: Mapping[str, str] | Message) -> int | None:
+    value = headers.get("content-length")
     try:
         return int(str(value or "").strip())
     except ValueError:
         return None
 
-def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict[str, Any]:
+def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict[str, object]:
     current_url = (url or "").strip()
     redirects = 0
     while True:
@@ -145,10 +151,9 @@ def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict[str, Any]:
             if _is_redirect_status(exc.code):
                 next_url = _redirect_target(current_url, exc.headers)
                 _close_response(exc)
-                redirect = _checked_redirect(current_url, next_url, redirects)
-                if redirect.get("error"):
-                    return cast(dict[str, Any], redirect["error"])
-                current_url = redirect["url"]
+                current_url, error = _checked_redirect(current_url, next_url, redirects)
+                if error is not None:
+                    return error
                 redirects += 1
                 continue
             _close_response(exc)
@@ -160,17 +165,16 @@ def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict[str, Any]:
         except OSError as exc:
             return _pdf_skipped(current_url, mime_type or "application/pdf", f"PDF could not be downloaded: {exc}")
         with response:
-            final_url = response.geturl() or current_url
+            final_url = response.url or current_url
             reason = check_fetch_url(final_url)
             if reason:
                 return _fetch_failure(final_url, f'{reason} (after redirect)')
-            status = int(getattr(response, "status", 0) or _response_code(response))
+            status = int(response.status or 0)
             if _is_redirect_status(status):
                 next_url = _redirect_target(current_url, response.headers)
-                redirect = _checked_redirect(current_url, next_url, redirects)
-                if redirect.get("error"):
-                    return cast(dict[str, Any], redirect["error"])
-                current_url = redirect["url"]
+                current_url, error = _checked_redirect(current_url, next_url, redirects)
+                if error is not None:
+                    return error
                 redirects += 1
                 continue
             headers = response.headers
@@ -220,11 +224,11 @@ def _text_request(url: str) -> urllib.request.Request:
         },
     )
 
-def _open_url_no_redirect(request: urllib.request.Request, *, timeout: int) -> Any:
+def _open_url_no_redirect(request: urllib.request.Request, *, timeout: int) -> addinfourl:
     opener = build_no_redirect_opener()
-    return opener.open(request, timeout=timeout)
+    return cast(addinfourl, opener.open(request, timeout=timeout))
 
-def _pdf_download_sentinel(url: str, *, mime_type: str = "") -> dict[str, Any]:
+def _pdf_download_sentinel(url: str, *, mime_type: str = "") -> dict[str, object]:
     return {"status": "ok",
         "url": url,
         "title": _title_from_url(url),
@@ -240,28 +244,20 @@ def _checked_redirect(
     redirects: int,
     *,
     content_kind: str = "pdf",
-) -> dict[str, Any]:
+) -> tuple[str, dict[str, object] | None]:
     if not next_url:
-        return {"error": _redirect_error(current_url, content_kind, "redirect did not include a Location header")}
+        return current_url, _redirect_error(current_url, content_kind, "redirect did not include a Location header")
     if redirects >= _PDF_MAX_REDIRECTS:
-        return {"error": _redirect_error(current_url, content_kind, "redirect limit exceeded")}
+        return current_url, _redirect_error(current_url, content_kind, "redirect limit exceeded")
     reason = check_fetch_url(next_url)
     if reason:
-        return {
-            "error": _fetch_failure(next_url, f'{reason} (after redirect)')
-        }
-    return {"url": next_url}
-
-def _response_code(response: Any) -> int:
-    try:
-        return int(response.getcode() or 0)
-    except Exception:
-        return 0
+        return current_url, _fetch_failure(next_url, f'{reason} (after redirect)')
+    return next_url, None
 
 def _fetch_failure(url: str, detail: str, *, status: str = "error", title: str = "",
-                   content_kind: str = "", mime_type: str = "") -> dict[str, Any]:
+                   content_kind: str = "", mime_type: str = "") -> dict[str, object]:
     prefix = "SKIPPED" if status == "skipped" else "ERROR"
-    payload = {"status": status, "detail": detail, "url": url, "title": title,
+    payload: dict[str, object] = {"status": status, "detail": detail, "url": url, "title": title,
                "text": f"{prefix}: {detail}", "truncated": False}
     if content_kind:
         payload["content_kind"] = content_kind
@@ -269,10 +265,10 @@ def _fetch_failure(url: str, detail: str, *, status: str = "error", title: str =
         payload["mime_type"] = mime_type
     return payload
 
-def _pdf_skipped(url: str, mime_type: str, message: str) -> dict[str, Any]:
+def _pdf_skipped(url: str, mime_type: str, message: str) -> dict[str, object]:
     return _fetch_failure(url, f'{message}', status="skipped", title=_title_from_url(url), content_kind="pdf", mime_type=mime_type or "application/pdf")
 
-def _redirect_error(url: str, content_kind: str, message: str) -> dict[str, Any]:
+def _redirect_error(url: str, content_kind: str, message: str) -> dict[str, object]:
     if (content_kind or "").casefold() == "pdf":
         return _pdf_skipped(url, "application/pdf", "PDF " + message)
     return _fetch_failure(url, f'page {message}', title=_title_from_url(url))

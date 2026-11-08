@@ -4009,7 +4009,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-            def geturl(self) -> str:
+            @property
+            def url(self) -> str:
                 return "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
 
             def read(self, _size=-1) -> bytes:
@@ -4057,7 +4058,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-            def geturl(self) -> str:
+            @property
+            def url(self) -> str:
                 return "https://example.com/long"
 
             def read(self, _size=-1) -> bytes:
@@ -4080,6 +4082,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_browser_search_fetch_streams_known_pdf_without_opening_browser_page(self) -> None:
         class StreamingResponse:
+            status = 200
             headers = {
                 "content-type": "application/pdf",
                 "content-length": str(PDF_MAX_BYTES + 1),
@@ -4092,7 +4095,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-            def geturl(self) -> str:
+            @property
+            def url(self) -> str:
                 return "https://example.com/report.pdf"
 
             def read(self, size=-1) -> bytes:
@@ -4118,6 +4122,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_browser_search_pdf_streaming_stops_after_cap_without_content_length(self) -> None:
         class StreamingResponse:
+            status = 200
             headers = {"content-type": "application/pdf"}
 
             def __init__(self) -> None:
@@ -4130,7 +4135,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-            def geturl(self) -> str:
+            @property
+            def url(self) -> str:
                 return "https://example.com/report.pdf"
 
             def read(self, size=-1) -> bytes:
@@ -4169,7 +4175,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-            def geturl(self) -> str:
+            @property
+            def url(self) -> str:
                 return "https://example.com/report.pdf"
 
             def getcode(self) -> int:
@@ -4280,7 +4287,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
 
-            def geturl(self) -> str:
+            @property
+            def url(self) -> str:
                 return "https://example.com/report.pdf"
 
             def getcode(self) -> int:

@@ -153,15 +153,7 @@ class ResearchSourceGateway:
             return OpenedSource(status="error", detail=reason)
         cancellation.check()
         try:
-            if direct:
-                from codey.research.source_download import _download_pdf_streaming, _download_text_fallback
-
-                page: dict[str, object] = _download_text_fallback(url)
-                if page.get("content_kind") == "pdf_download":
-                    page = _download_pdf_streaming(str(page.get("url") or url),
-                                                   mime_type=str(page.get("mime_type") or ""))
-            else:
-                page = self.search_provider.fetch(url)
+            page = self.search_provider.fetch(url)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:

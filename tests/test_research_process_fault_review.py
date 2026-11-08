@@ -240,10 +240,10 @@ def test_kernel_work_bound_fault(tmp_path, monkeypatch, repeated):
 
 def test_redirect_fault(monkeypatch):
     original = source_download._checked_redirect(URL, "http://127.0.0.1/private", 0, content_kind="page")
-    assert original.get("error")
+    assert original[1] is not None
     monkeypatch.setattr(source_download, "check_fetch_url", lambda *args, **kwargs: "")
     disabled = source_download._checked_redirect(URL, "http://127.0.0.1/private", 0, content_kind="page")
-    assert disabled["url"] == "http://127.0.0.1/private" and not disabled.get("error")
+    assert disabled == ("http://127.0.0.1/private", None)
     record("redirect_policy", "deny_private_redirect", "private_redirect_accepted", boundary="_checked_redirect",
            limitation="No private network request was made.")
 
@@ -253,7 +253,8 @@ def test_pdf_bound_and_close_fault(monkeypatch):
         headers = {"content-type": "application/pdf"}
         status = 200
 
-        def geturl(self):
+        @property
+        def url(self):
             return URL + "/paper.pdf"
 
     responses = []

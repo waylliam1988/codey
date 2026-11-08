@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from codey.providers.token_accounting import ContextBudget
+from codey.research.chat_web import ChatWebProvider
 from codey.research.ledger import ResearchLedger
 from codey.research.source_gateway import ResearchSourceGateway
 from codey.task.entry_auth import derive_entry_auth
@@ -18,13 +19,9 @@ from codey.types.json_value import JsonObject
 URL = "https://example.com/"
 
 
-class Sources:
+class Sources(ChatWebProvider):
     def search(self, query: str, *, limit: int) -> list[JsonObject]:
         return []
-
-    def fetch(self, url: str) -> dict[str, object]:
-        raise AssertionError("explicit URL must use bounded HTTP, not the browser provider")
-
 
 class PageProvider:
     name = "Local"

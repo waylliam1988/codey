@@ -80,6 +80,19 @@ class GatewaySearchTests(unittest.TestCase):
 
 
 class GatewayOpenTests(unittest.TestCase):
+    def test_direct_and_discovered_urls_both_use_configured_provider(self) -> None:
+        from unittest import mock
+
+        home = "https://example.com/"
+        article = "https://example.com/article"
+        gateway, ledger, failures = _gateway(pages={home: dict(_HTML_PAGE, url=home), article: _HTML_PAGE})
+        gateway.direct_urls = frozenset({home})
+        with mock.patch("codey.research.source_download._download_text_fallback",
+                        side_effect=AssertionError("gateway bypassed its provider")):
+            assert gateway.open(home).status == "ok"
+            assert gateway.open(article).status == "ok"
+        assert len(ledger.opened_sources) == 2 and failures == []
+
     def test_open_abstract_preserves_scope_in_ledger(self) -> None:
         page = dict(_HTML_PAGE, content_kind="abstract", mime_type="application/xml")
         gateway, ledger, _failures = _gateway(pages={page["url"]: page})

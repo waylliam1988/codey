@@ -37,7 +37,7 @@ def test_browser_close_detaches_inflight_routes_before_context_close():
 def test_chinese_challenge_is_not_acquired_as_citable_evidence():
     response = mock.MagicMock(status=200, headers={"content-type": "text/html; charset=utf-8"})
     response.__enter__.return_value = response
-    response.geturl.return_value = URL
+    response.url = URL
     response.read.return_value = (
         "<html><title>页面安全校验中</title><body>页面安全校验中。"
         "正在验证您的浏览器，请稍候。校验通过后将自动跳转到请求的页面。</body></html>"

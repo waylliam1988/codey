@@ -31,7 +31,7 @@ def test_failed_acquisition_is_error_and_never_records_evidence(monkeypatch, tra
     response = io.BytesIO(html.encode("utf-8"))
     response.status = 200
     response.headers = {"content-type": "text/html"}
-    response.geturl = lambda: URL
+    response.url = URL
     monkeypatch.setattr(source_download, "_open_url_no_redirect", lambda *args, **kwargs: response)
     monkeypatch.setattr(browser_search, "check_fetch_url", lambda *args, **kwargs: "")
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: "")
@@ -73,7 +73,7 @@ def test_http_error_body_cannot_become_a_citable_source(monkeypatch, transport, 
     response = io.BytesIO(html.encode())
     response.status = status
     response.headers = {"content-type": "text/html"}
-    response.geturl = lambda: URL
+    response.url = URL
     monkeypatch.setattr(source_download, "_open_url_no_redirect", lambda *a, **k: response)
     monkeypatch.setattr(browser_search, "check_fetch_url", lambda *a, **k: "")
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *a, **k: "")

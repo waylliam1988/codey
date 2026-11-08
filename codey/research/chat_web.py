@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 
 from codey.research.connector_search import _read_url_text
 from codey.research.extract import extract_text
-from codey.research.source_download import _download_pdf_streaming, _download_text_fallback
+from codey.research.source_download import fetch_http_document
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject
 
@@ -33,10 +33,7 @@ class ChatWebProvider:
         return results
 
     def fetch(self, url: str) -> dict[str, object]:
-        page: dict[str, object] = _download_text_fallback(url)
-        if page.get("content_kind") == "pdf_download":
-            return _download_pdf_streaming(str(page.get("url") or url), mime_type=str(page.get("mime_type") or ""))
-        return page
+        return fetch_http_document(url)
 
     def close(self) -> None:
         pass
