@@ -7,8 +7,8 @@ record), ``search_inside`` (ledger lookup, PDF page scan, in-source search).
 ``source_connectors.py`` stays the pure connector contract (specs, hits,
 fetch of recorded hits) and ``browser_search.py`` stays the browser runtime;
 neither imports the other and neither knows about the ledger. All
-cross-cutting decisions -- which provider to try, what counts as opened,
-which failures are recorded -- live here.
+The configured provider owns backend selection and rendering upgrades;
+this gateway owns source policy, document construction and opened records.
 
 ``ResearchTools`` keeps model-visible rendering (windows, markdown, the
 exact ``ERROR:``/``SKIPPED:`` strings) plus the diagnostics sink, and

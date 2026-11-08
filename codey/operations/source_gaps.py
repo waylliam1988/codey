@@ -82,9 +82,17 @@ def task_source_coverage(session: TaskSession, ledger: ResearchLedger | None = N
 
 def source_gap_context(session: TaskSession, ledger: ResearchLedger | None = None) -> str:
     coverage = task_source_coverage(session, ledger)
-    if not coverage.required or session.task_kind != "chat" or session.policy.strict_research:
+    if session.task_kind != "chat" or session.policy.strict_research:
         return ""
-    text = "Requested source coverage (verified runtime observations):\n" + json.dumps(coverage.facts(), ensure_ascii=False)
+    if not coverage.required and not coverage.opened:
+        return ""
+    text = "Source coverage (verified runtime observations):\n" + json.dumps(
+        {**coverage.facts(), "source_ids": dict(session.source_ids)}, ensure_ascii=False)
+    if coverage.opened:
+        text += ("\nOpened sources already delivered page text. Once that text supports the requested answer, "
+                 "finish with done in the requested format; do not reopen the same page just to complete. "
+                 "If a different passage is needed, use source_search with short relevant terms, then open its "
+                 "source offset. A read_tool_result query is one literal substring, not a semantic search.")
     if coverage.missing:
         text += "\nOpen the unattempted required URLs before proposing completion."
     elif coverage.unavailable:

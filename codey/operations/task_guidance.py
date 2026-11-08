@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
 from codey.policies.output_requirement import guidance
@@ -46,14 +45,6 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
     failure_context = source_gap_context(session, research_ledger)
     if failure_context:
         parts.append(failure_context)
-    if session.task_kind == "chat" and session.opened_sources:
-        parts.append("Opened external sources (verified runtime observations):\n"
-                     + json.dumps({"opened_sources": sorted(session.opened_sources),
-                                   "source_ids": dict(session.source_ids)}, ensure_ascii=False)
-                     + "\nTheir tool results already delivered page text. Once that text supports the requested answer, "
-                       "finish with done in the requested format; do not reopen the same page just to complete. "
-                       "If a different passage is needed, use source_search with short relevant terms, then open its "
-                       "source offset. A read_tool_result query is one literal substring, not a semantic search.")
     if session.policy.strict_research or session.task_kind == "evidence_followup":
         parts.append(render_research_observations(session, research_ledger, knowledge_store, session_id=knowledge_session_id))
         if session.policy.strict_research and session.task_text.strip():

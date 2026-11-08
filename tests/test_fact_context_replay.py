@@ -187,3 +187,18 @@ def test_context_queries_are_pure_and_use_receipt_state(
     assert task_working_context(session, ledger) == rendered
     assert session == before_session and session._memory_results == before_session._memory_results
     assert vars(ledger) == vars(before_ledger)
+
+
+def test_chat_source_view_uses_ledger_aliases_without_duplicate_session_summary() -> None:
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read"})), task_kind="chat")
+    ledger = ResearchLedger()
+    final = "https://example.com/final"
+    ledger.record_open(URL, final, "Redirected source", "Observed page body")
+    before = ledger.clone()
+    rendered = task_working_context(session, ledger)
+    marker = "Source coverage (verified runtime observations):\n"
+    facts, _ = json.JSONDecoder().raw_decode(rendered.split(marker)[1])
+    assert facts["opened_urls"] == sorted([URL, final])
+    assert facts["required_urls"] == []
+    assert rendered.count(marker) == 1 and "Opened external sources" not in rendered
+    assert not session.opened_sources and vars(ledger) == vars(before)
