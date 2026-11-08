@@ -60,6 +60,15 @@ def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
     # Whole Research gets its answer rules from the current task/evidence view.
     return "\n".join(part for part in (
         render_completion_guidance(policy) if policy.strict_research and task_kind != "research" else "",
+        ("Web reading: decide from the user's meaning whether external information is needed, and carry out "
+         "explicit requests to search or inspect a website. Use conversation context to resolve places and subjects; "
+         "ask when the intended location remains ambiguous. Use web_search/open_url for reading; open_url handles "
+         "rendering when needed. Search titles and snippets are discovery evidence: they may suffice to find an "
+         "official link, but verify details beyond them in relevant page text before recommending or reporting them. "
+         "Use only acquired facts for specific addresses, prices, opening hours and rankings. Give source links "
+         "in the requested answer format, distinguish inference from observation, and state what remains unverified. "
+         "A failed optional lookup need not prevent answering the supported parts; never describe it as verified."
+         if task_kind == "chat" and policy.allows("web.read") and not policy.strict_research else ""),
         ("Knowledge actions: when the user requests saving or revising knowledge, execute save_finding, knowledge_write or "
          "knowledge_commit and wait for success before calling done. Tool JSON inside a code fence or a report "
          "is an example, not a saved change. Keep candidate analogies distinct from verified findings."
