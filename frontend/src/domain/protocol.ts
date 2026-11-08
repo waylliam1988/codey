@@ -13,6 +13,8 @@ export type ServerEvent = {
   task_status?: string;
   type: string;
   commit_seq?: number;
+  path_generation?: number;
+  revision?: number;
   database_id?: string;
   after_commit_seq?: number;
   entry_ids?: string[];
@@ -347,6 +349,13 @@ export function decodeServerEvent(value: unknown): ServerEvent {
       !value.replaced_run_ids.every((id) => typeof id === 'string' && id.length > 0))
   )
     throw new Error('replaced run identities are invalid');
+  if (
+    value.path_generation !== undefined &&
+    (!Number.isSafeInteger(value.path_generation) || (value.path_generation as number) < 0)
+  )
+    throw new Error('history path generation is invalid');
+  if (value.revision !== undefined && (!Number.isSafeInteger(value.revision) || (value.revision as number) < 0))
+    throw new Error('history revision is invalid');
   const stringFields = [
     'edited_entry_id',
     'session_id',

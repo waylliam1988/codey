@@ -25,10 +25,31 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
                 id TEXT PRIMARY KEY,
                 head_entry_id TEXT,
                 revision INTEGER NOT NULL CHECK(revision >= 0),
+                path_generation INTEGER NOT NULL DEFAULT 0 CHECK(path_generation >= 0),
                 parent_conversation_id TEXT,
                 parent_entry_id TEXT,
                 created_at TEXT NOT NULL DEFAULT '',
                 updated_at TEXT NOT NULL DEFAULT ''
+            ) STRICT""",
+            """CREATE TABLE display_nodes (
+                id TEXT PRIMARY KEY,
+                owner TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                node_key TEXT NOT NULL,
+                value TEXT NOT NULL,
+                question INTEGER NOT NULL CHECK(question IN (0, 1)),
+                left_id TEXT,
+                right_id TEXT,
+                height INTEGER NOT NULL,
+                count INTEGER NOT NULL,
+                questions INTEGER NOT NULL
+            ) STRICT""",
+            """CREATE TABLE display_versions (
+                entry_id TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+                order_root TEXT,
+                locations_root TEXT,
+                runs_root TEXT,
+                cut_id TEXT NOT NULL,
+                question_text TEXT NOT NULL
             ) STRICT""",
             """CREATE TABLE entries (
                 id TEXT PRIMARY KEY,
@@ -118,6 +139,7 @@ MIGRATIONS: tuple[tuple[int, tuple[str, ...]], ...] = (
             "CREATE TABLE schema_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT",
             "CREATE INDEX entries_by_conversation_parent ON entries(conversation_id, parent_id)",
             "CREATE INDEX entries_by_task ON entries(by_task_id)",
+            "CREATE INDEX display_nodes_by_owner ON display_nodes(owner)",
             "CREATE INDEX tasks_by_phase ON tasks(phase)",
             "CREATE INDEX tasks_by_status ON tasks(status)",
             "CREATE INDEX tasks_by_checkpoint_schema ON tasks(schema_version)",

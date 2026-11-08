@@ -7,6 +7,7 @@ describe('RunStreamBuffer', () => {
     let accepted = true;
     const buffer = new RunStreamBuffer({
       acceptsRun: () => accepted,
+      version: () => '0',
       handle,
     });
 
@@ -15,6 +16,16 @@ describe('RunStreamBuffer', () => {
     accepted = false;
     buffer.flush();
 
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  it('drops a coalesced frame from an older path even if its run is visible again', () => {
+    const handle = vi.fn();
+    let version = 'old';
+    const buffer = new RunStreamBuffer({ acceptsRun: () => true, version: () => version, handle });
+    buffer.enqueue({ session_id: 'chat', run_id: 'run', stream_id: 'stream' });
+    version = 'new';
+    buffer.flush();
     expect(handle).not.toHaveBeenCalled();
   });
 });

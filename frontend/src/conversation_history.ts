@@ -1,4 +1,11 @@
-import { HistoryRepository, type HistoryResult, type HistoryTask } from './history_repository';
+import {
+  HistoryRepository,
+  type HistoryResult,
+  type HistoryTask,
+  type HistoryIdentity,
+  validateHistoryRuns,
+} from './history_repository';
+import { RunVisibility } from './run_visibility';
 import type { Message, Session } from './types/domain';
 
 /** Durable entry identity replaces a live projection; message text is never an identity. */
@@ -78,20 +85,109 @@ export class ConversationHistory {
   private sessions = new Map<string, Session>();
   private requests = new Map<string, symbol>();
   private errors = new Set<string>();
-  private inactiveRuns = new Map<string, Set<string>>();
+  private visibility = new Map<string, RunVisibility>();
+  private identities = new Map<string, HistoryIdentity>();
+  private resyncing = new Set<string>();
+  private rewritten = new Set<string>();
 
   revision(id: string): number | undefined {
     return this.repositories.get(id)?.current?.revision;
   }
 
   acceptsRun(id: string, runId: string): boolean {
-    return !runId || !this.inactiveRuns.get(id)?.has(runId);
+    return !runId || this.runs(id).accepts(runId);
+  }
+
+  runEventVersion(id: string): string {
+    return this.runs(id).version();
+  }
+
+  acceptRunEvent(id: string, runId: string, accept: () => void): void {
+    this.runs(id).admit(runId, accept);
+  }
+
+  observePath(id: string, generation: number, revision: number): boolean {
+    const previous = this.identities.get(id);
+    const changed = !!previous && generation > previous.pathGeneration;
+    if (previous && generation >= previous.pathGeneration)
+      this.identities.set(id, {
+        epoch: previous.epoch,
+        pathGeneration: generation,
+        revision: Math.max(revision, previous.revision),
+      });
+    this.runs(id).observe(generation, revision);
+    if (changed) {
+      this.rewritten.add(id);
+      this.repositories.get(id)?.invalidate();
+      this.requests.delete(id);
+    }
+    return changed;
+  }
+
+  private runs(id: string): RunVisibility {
+    let visibility = this.visibility.get(id);
+    if (!visibility) {
+      visibility = new RunVisibility(
+        (runs, identity) => validateHistoryRuns(id, runs, identity),
+        () => {
+          const session = this.sessions.get(id);
+          if (!session || this.resyncing.has(id)) return;
+          this.resyncing.add(id);
+          void this.refresh(session).finally(() => this.resyncing.delete(id));
+        },
+        (runs) => {
+          const session = this.sessions.get(id);
+          if (!session || !runs.length) return;
+          if (this.removeRuns(session, runs)) this.changed(session, false, undefined, true);
+        },
+      );
+      this.visibility.set(id, visibility);
+    }
+    return visibility;
+  }
+
+  private applyPage(session: Session, page: HistoryResult): boolean {
+    const previous = this.identities.get(session.id);
+    if (previous?.epoch === page.epoch && page.pathGeneration < previous.pathGeneration) return false;
+    const changed =
+      this.rewritten.has(session.id) ||
+      (!!previous && (previous.epoch !== page.epoch || previous.pathGeneration !== page.pathGeneration));
+    const visibleRuns = page.items.flatMap((item) => (typeof item.runId === 'string' ? [item.runId] : []));
+    this.runs(session.id).update(page, visibleRuns);
+    this.identities.set(
+      session.id,
+      previous?.epoch === page.epoch && previous.pathGeneration === page.pathGeneration
+        ? { ...page, revision: Math.max(previous.revision, page.revision) }
+        : page,
+    );
+    if (page.items.length || !session.messages.length || changed)
+      session.messages = reconcileHistory(session.messages, page.items);
+    this.rewritten.delete(session.id);
+    this.runs(session.id).check([
+      ...new Set(
+        session.messages.flatMap((message) => [
+          ...(message.runId ? [message.runId] : []),
+          ...(message.attempts || []).map((attempt) => attempt.runId),
+        ]),
+      ),
+    ]);
+    return true;
   }
 
   retireRuns(session: Session, runIds: string[], invalidate = true): void {
-    const retired = invalidate ? this.inactiveRuns.get(session.id) || new Set<string>() : new Set<string>();
-    runIds.forEach((id) => retired.add(id));
-    this.inactiveRuns.set(session.id, retired);
+    if (invalidate) this.runs(session.id).reset();
+    this.runs(session.id).reject(runIds);
+    this.removeRuns(session, runIds);
+    if (invalidate) {
+      this.rewritten.add(session.id);
+      this.repositories.get(session.id)?.invalidate();
+      this.requests.delete(session.id);
+    }
+  }
+
+  private removeRuns(session: Session, runIds: string[]): boolean {
+    const previousCount = session.messages.length;
+    const retired = new Set(runIds);
     const removedRequests = new Set(
       session.messages.filter((message) => message.runId && retired.has(message.runId)).map((message) => message.id),
     );
@@ -100,13 +196,12 @@ export class ConversationHistory {
         (!message.runId || !retired.has(message.runId)) &&
         !(message.type === 'request_status' && removedRequests.has(message.requestId)),
     );
-    if (invalidate) {
-      this.repositories.get(session.id)?.invalidate();
-      this.requests.delete(session.id);
-    }
+    return session.messages.length !== previousCount;
   }
 
-  constructor(private changed: (session: Session, revealEarlier?: boolean, tasks?: HistoryTask[]) => void) {}
+  constructor(
+    private changed: (session: Session, revealEarlier?: boolean, tasks?: HistoryTask[], removedRuns?: boolean) => void,
+  ) {}
 
   ensure(session: Session): void {
     if (this.sessions.get(session.id) !== session) void this.refresh(session);
@@ -135,7 +230,7 @@ export class ConversationHistory {
     this.requests.set(session.id, request);
     const page = await repository.loadAround(session.id, entryId);
     if (!page || this.requests.get(session.id) !== request) return false;
-    session.messages = reconcileHistory(session.messages, page.items);
+    if (!this.applyPage(session, page)) return false;
     this.errors.delete(session.id);
     this.changed(session, false, page.taskStates);
     return true;
@@ -151,13 +246,11 @@ export class ConversationHistory {
     try {
       const page = await repository.loadLatest(session.id);
       if (!page || this.requests.get(session.id) !== request) return;
-      if (page.inactiveRuns) this.retireRuns(session, page.inactiveRuns, false);
       // An empty page can race the commit that admitted the current turn. Do
       // not erase a mounted/live projection on that transient response; an
       // explicit clear starts with an empty session and still converges to an
       // empty durable page.
-      if (page.items.length > 0 || session.messages.length === 0)
-        session.messages = reconcileHistory(session.messages, page.items);
+      if (!this.applyPage(session, page)) return;
     } catch {
       if (this.requests.get(session.id) !== request) return;
       this.errors.add(session.id);
@@ -171,7 +264,7 @@ export class ConversationHistory {
     try {
       const page = await repository.loadEarlier(session.id);
       if (!page || this.sessions.get(session.id) !== session) return;
-      session.messages = reconcileHistory(session.messages, page.items);
+      if (!this.applyPage(session, page)) return;
       this.errors.delete(session.id);
     } catch {
       this.errors.add(session.id);
@@ -185,6 +278,9 @@ export class ConversationHistory {
     this.sessions.delete(id);
     this.requests.delete(id);
     this.errors.delete(id);
-    this.inactiveRuns.delete(id);
+    this.visibility.get(id)?.reset();
+    this.visibility.delete(id);
+    this.identities.delete(id);
+    this.rewritten.delete(id);
   }
 }

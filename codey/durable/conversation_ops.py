@@ -7,17 +7,15 @@ algorithms together so the task/effect coordinator remains small.
 
 from __future__ import annotations
 
-import base64
-import json
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import cast
 
+from codey.durable import history_queries
 from codey.durable.ancestry import context_path
 from codey.durable.context import ContextSnapshot, build_context
 from codey.durable.errors import CommitConflict
-from codey.durable.history import HistoryReader, history_path
 from codey.durable.model import (
     ArtifactRecord,
     CommitResult,
@@ -28,7 +26,6 @@ from codey.durable.model import (
     thaw_json,
 )
 from codey.durable.session_kernel import SessionKernel
-from codey.durable.task_projection import task_lifecycle
 
 
 def entries(session: SessionKernel, conversation_id: str) -> tuple[EntryDraft, ...]:
@@ -92,90 +89,14 @@ def conversation_lineage(session: SessionKernel, conversation_id: str) -> list[d
     return ancestors
 
 
-def history_page(
-    session: SessionKernel,
-    conversation_id: str,
-    *,
-    before: str | None = None,
-    limit: int = 100,
-) -> dict[str, object]:
-    with session.store.history_snapshot() as reader:
-        return _history_page(session, reader, conversation_id, before=before, limit=limit)
-
-
-def _history_page(
-    session: SessionKernel, reader: HistoryReader, conversation_id: str, *, before: str | None, limit: int,
-) -> dict[str, object]:
-    limit = max(1, min(200, int(limit)))
-    head, revision = reader.head(conversation_id)
-    path = history_path(reader, conversation_id, head)
-    visible_runs = {entry.by_task_id for entry in path if entry.by_task_id}
-    inactive_runs = sorted(reader.run_ids(conversation_id) - visible_runs)
-    boundary = len(path)
-    if before:
-        decoded_cursor = _decode_history_cursor(before)
-        if decoded_cursor[0] != conversation_id:
-            raise ValueError("invalid conversation cursor")
-        positions = {entry.entry_id: index for index, entry in enumerate(path)}
-        if decoded_cursor[2] is not None:
-            if decoded_cursor[2] not in positions:
-                raise ValueError("history snapshot changed")
-            path = path[:positions[decoded_cursor[2]] + 1]
-            positions = {entry.entry_id: index for index, entry in enumerate(path)}
-            revision = decoded_cursor[3] if decoded_cursor[3] is not None else revision
-        if decoded_cursor[1] not in positions:
-            raise ValueError("cursor does not belong to current conversation path")
-        boundary = positions[decoded_cursor[1]]
-    start = max(0, boundary - limit)
-    selected = _resolve_response_entries(session, reader.select_entries(path[start:boundary]), artifact=reader.artifact)
-    items = [_history_item(entry, start + index + 1) for index, entry in enumerate(selected)]
-    has_more = start > 0
-    cursor = _encode_history_cursor(conversation_id, selected[0].entry_id,
-                                    path[-1].entry_id, revision) if has_more and selected else None
-    return {
-        "schema_version": 1,
-        "session_id": conversation_id,
-        "epoch": session.database_id,
-        "snapshot_revision": revision,
-        "inactive_run_ids": inactive_runs,
-        "items": items,
-        "task_states": [task_lifecycle(reader.task(run)) for run in sorted({entry.by_task_id for entry in selected if entry.by_task_id})],
-        "before_cursor": cursor,
-        "has_more": has_more,
-    }
+def history_page(session: SessionKernel, conversation_id: str, *, before: str | None = None,
+                 limit: int = 100) -> dict[str, object]:
+    return history_queries.history_page(session, conversation_id, before=before, limit=limit)
 
 
 def navigation_page(session: SessionKernel, conversation_id: str, *, before: str | None = None,
                     limit: int = 200) -> dict[str, object]:
-    """Compact question index on one pinned ancestry; never return tool bodies."""
-    path = list(context(session, conversation_id))
-    revision = session.store.head(conversation_id)[1]
-    boundary = len(path)
-    if before:
-        scope, entry_id, head, pinned_revision = _decode_history_cursor(before)
-        if scope != conversation_id:
-            raise ValueError('invalid conversation cursor')
-        positions = {entry.entry_id: index for index, entry in enumerate(path)}
-        if head is not None:
-            if head not in positions:
-                raise ValueError('history snapshot changed')
-            path = path[:positions[head] + 1]
-            revision = pinned_revision if pinned_revision is not None else revision
-        boundary = next((index for index, entry in enumerate(path) if entry.entry_id == entry_id), -1)
-        if boundary < 0:
-            raise ValueError('cursor does not belong to current conversation path')
-    questions = [entry for entry in path[:boundary] if entry.kind == 'user_message']
-    selected = questions[-max(1, min(200, int(limit))):]
-    more = len(selected) < len(questions)
-    return {
-        'schema_version': 1, 'session_id': conversation_id, 'epoch': session.database_id,
-        'snapshot_revision': revision,
-        'items': [{'id': entry.entry_id, 'text': str(_history_item(entry, 0).get('text') or '')[:240]}
-                  for entry in selected],
-        'has_more': more,
-        'before_cursor': _encode_history_cursor(conversation_id, selected[0].entry_id,
-                                               path[-1].entry_id, revision) if more else None,
-    }
+    return history_queries.navigation_page(session, conversation_id, before=before, limit=limit)
 
 
 def search_history(
@@ -210,25 +131,7 @@ def search_history(
 
 def history_window(session: SessionKernel, conversation_id: str, entry_id: str, *, limit: int = 100,
                    leaf_id: str | None = None) -> dict[str, object]:
-    """Read a bounded window on one validated ancestry path without moving its head."""
-    path = [entry for entry in context(session, conversation_id, leaf_id=leaf_id)
-            if entry.kind not in {"context_snapshot", "control_config", "control_receipt"}]
-    position = next((index for index, entry in enumerate(path) if entry.entry_id == entry_id), None)
-    if position is None:
-        raise KeyError('entry is not on this conversation path')
-    limit = max(1, min(200, int(limit)))
-    start = max(0, position - limit // 2)
-    end = min(len(path), start + limit)
-    selected = path[start:end]
-    revision = session.store.head(conversation_id)[1]
-    return {
-        'schema_version': 1, 'session_id': conversation_id, 'epoch': session.database_id,
-        'snapshot_revision': revision,
-        'items': [_history_item(entry, start + index + 1) for index, entry in enumerate(selected)],
-        'task_states': [task_lifecycle(session.store.task(run)) for run in sorted({entry.by_task_id for entry in selected if entry.by_task_id})],
-        'has_more': start > 0, 'has_after': end < len(path),
-        'before_cursor': _encode_history_cursor(conversation_id, selected[0].entry_id, path[-1].entry_id, revision) if start else None,
-    }
+    return history_queries.history_window(session, conversation_id, entry_id, limit=limit, leaf_id=leaf_id)
 
 
 def append_message(session: SessionKernel, conversation_id: str, kind: str, payload: Mapping[str, object]) -> EntryDraft:
@@ -521,26 +424,6 @@ def _history_item(entry: EntryDraft, ordinal: int) -> dict[str, object]:
             item["finalAnswer"] = True
             item["contentRole"] = "final"
     return item
-
-
-def _encode_history_cursor(conversation_id: str, entry_id: str, head: str | None = None,
-                           revision: int | None = None) -> str:
-    raw = json.dumps({"s": conversation_id, "e": entry_id, "h": head, "r": revision}, separators=(",", ":")).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
-
-
-def _decode_history_cursor(value: str) -> tuple[str, str, str | None, int | None]:
-    try:
-        raw = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-        payload = json.loads(raw)
-        if not isinstance(payload, dict) or not isinstance(payload.get("s"), str) or not isinstance(payload.get("e"), str):
-            raise ValueError
-        head, revision = payload.get("h"), payload.get("r")
-        if head is not None and (not isinstance(head, str) or not head or type(revision) is not int or revision < 0):
-            raise ValueError
-        return payload["s"], payload["e"], head, revision
-    except Exception as exc:
-        raise ValueError("invalid conversation cursor") from exc
 
 
 __all__ = [

@@ -18,16 +18,17 @@ it('replaces live thinking with the committed turn without losing newer thinking
   }
 });
 
-function page(items: object[], inactive: string[], revision = 5) {
+function page(items: object[], _inactive: string[], revision = 5) {
   return new Response(
     JSON.stringify({
       schema_version: 1,
       session_id: 'chat',
       epoch: 'db',
       snapshot_revision: revision,
+      path_generation: revision,
+      display_version: null,
       items,
       has_more: false,
-      inactive_run_ids: inactive,
     }),
   );
 }
@@ -61,6 +62,84 @@ it('replaces removed Work and replies while retaining new live output and the pr
   expect(history.revision('chat')).toBe(5);
   expect(history.acceptsRun('chat', 'old-run')).toBe(false);
   expect(history.acceptsRun('chat', 'new-run')).toBe(true);
+});
+
+it('clears committed messages when a rewritten path becomes empty', async () => {
+  const session = { id: 'chat', messages: [] } as unknown as Session;
+  const history = new ConversationHistory(() => {});
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValueOnce(page([{ id: 'old', type: 'user' }], [], 5))
+      .mockResolvedValueOnce(page([], [], 6)),
+  );
+  await history.refresh(session);
+  expect(history.observePath('chat', 6, 6)).toBe(true);
+  history.retireRuns(session, []);
+  await history.refresh(session);
+  expect(session.messages).toEqual([]);
+  history.forget('chat');
+});
+
+it('does not restore a response overtaken by a second path rewrite', async () => {
+  const session = { id: 'chat', messages: [] } as unknown as Session;
+  const history = new ConversationHistory(() => {});
+  let resolve!: (response: Response) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValueOnce(page([{ id: 'initial', type: 'user' }], [], 5))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((done) => {
+            resolve = done;
+          }),
+      )
+      .mockResolvedValueOnce(page([{ id: 'current', type: 'user' }], [], 7)),
+  );
+  await history.refresh(session);
+  history.observePath('chat', 6, 6);
+  const stale = history.refresh(session);
+  history.observePath('chat', 7, 7);
+  await history.refresh(session);
+  resolve(page([{ id: 'stale', type: 'user' }], [], 6));
+  await stale;
+  expect(session.messages.map((message) => message.entryId)).toEqual(['current']);
+  expect(history.revision('chat')).toBe(7);
+  history.forget('chat');
+});
+
+it('requests a mounted-view update when validation removes a stale pause', async () => {
+  const session = { id: 'chat', messages: [] } as unknown as Session;
+  const changed = vi.fn();
+  const history = new ConversationHistory(changed);
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValueOnce(page([{ id: 'old', type: 'user', runId: 'old-run' }], [], 5))
+      .mockResolvedValueOnce(page([{ id: 'new', type: 'user', runId: 'new-run' }], [], 6))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            schema_version: 1,
+            session_id: 'chat',
+            epoch: 'db',
+            path_generation: 6,
+            snapshot_revision: 6,
+            runs: [{ run_id: 'old-run', visible: false }],
+          }),
+        ),
+      ),
+  );
+  await history.refresh(session);
+  session.messages.push({ type: 'pause', runId: 'old-run', text: 'Old pause' });
+  await history.refresh(session);
+  await vi.waitFor(() => expect(session.messages.some((message) => message.type === 'pause')).toBe(false));
+  expect(changed).toHaveBeenCalledWith(session, false, undefined, true);
+  history.forget('chat');
 });
 
 it('ignores a history response started before the edit boundary', async () => {

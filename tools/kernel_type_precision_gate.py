@@ -43,6 +43,11 @@ SCOPED_TARGETS = {
 }
 
 CONTRACT_TARGETS = (
+    "codey/app/history_routes.py",
+    "codey/durable/entry_ownership.py",
+    "codey/durable/history.py", "codey/durable/history_index.py",
+    "codey/durable/history_lifetime.py", "codey/durable/history_queries.py",
+    "codey/durable/sqlite_display.py", "codey/durable/sqlite_history.py",
     "codey/durable/contracts.py",
     "codey/types/json_value.py", "codey/providers/base.py",
     "codey/providers/requests.py", "codey/providers/request_codec.py",

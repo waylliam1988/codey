@@ -54,7 +54,7 @@ def test_fork_is_published_as_the_child_creation_commit(backend: str, tmp_path: 
     assert mutation.create_conversation.parent_entry_id == entry.entry_id
 
 
-def test_history_window_shares_the_session_mutation_line(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_history_window_holds_the_session_line_only_for_admission(monkeypatch: pytest.MonkeyPatch) -> None:
     session = DurableSession(MemoryDurableStore())
     session.create_conversation("conversation")
     entry = session.append_message("conversation", "user_message", {"text": "hello"})
@@ -63,15 +63,17 @@ def test_history_window_shares_the_session_mutation_line(monkeypatch: pytest.Mon
     release_store_entries = threading.Event()
     completed = threading.Event()
     errors: list[BaseException] = []
-    original_entries = session.store.entries
+    from codey.durable.history import HistoryEntry, MemoryHistoryReader
 
-    def blocked_entries(conversation_id: str) -> tuple[EntryDraft, ...]:
+    original_entries = MemoryHistoryReader.select_entries
+
+    def blocked_entries(reader: MemoryHistoryReader, selected: tuple[HistoryEntry, ...]) -> tuple[EntryDraft, ...]:
         store_entries_entered.set()
         if not release_store_entries.wait(5):
             raise AssertionError("test did not release the store read")
-        return original_entries(conversation_id)
+        return original_entries(reader, selected)
 
-    monkeypatch.setattr(session.store, "entries", blocked_entries)
+    monkeypatch.setattr(MemoryHistoryReader, "select_entries", blocked_entries)
 
     def read_window() -> None:
         try:
@@ -88,6 +90,7 @@ def test_history_window_shares_the_session_mutation_line(monkeypatch: pytest.Mon
         assert not completed.is_set()
 
     assert store_entries_entered.wait(5)
+    session.append_message("conversation", "assistant_message", {"text": "concurrent"})
     release_store_entries.set()
     worker.join(5)
     assert completed.is_set()

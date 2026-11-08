@@ -236,6 +236,11 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
     ) -> dict[str, object]:
         return self.conversation_queries.history_page(conversation_id, before=before, limit=limit)
 
+    def validate_history_runs(self, conversation_id: str, run_ids: list[str], *, epoch: str,
+                              generation: int) -> dict[str, object]:
+        return self.conversation_queries.validate_history_runs(conversation_id, run_ids,
+                                                               epoch=epoch, generation=generation)
+
     def search_history(
         self,
         conversation_id: str,

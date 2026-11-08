@@ -8,9 +8,12 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from codey.durable.ancestry import context_path
+from codey.durable.entry_ownership import finalized_entries
 from codey.durable.errors import CommitConflict, IdempotencyConflict, SchedulerOwnershipError
 from codey.durable.events import mutation_projection
 from codey.durable.history import HistoryReader, MemoryHistoryReader
+from codey.durable.history_index import DisplayNode, DisplayVersion, NodeBatch, extend, rewrites_path
+from codey.durable.history_lifetime import HistoryLifetime
 from codey.durable.model import (
     TASK_TERMINAL_STATUSES,
     ApprovalRecord,
@@ -58,6 +61,7 @@ class MemoryDurableStore:
     def __init__(self) -> None:
         self._database_id = f"database-{uuid.uuid4().hex}"
         self._lock = threading.RLock()
+        self.history_lifetime = HistoryLifetime()
         self._entries: dict[str, list[EntryDraft]] = {}
         self._heads: dict[str, tuple[str | None, int]] = {}
         self._parents: dict[str, tuple[str | None, str | None]] = {}
@@ -75,6 +79,31 @@ class MemoryDurableStore:
         self._commits: list[CommitRecord] = []
         self._history: dict[str, list[TaskTransition]] = {}
         self._scheduler_owner: tuple[str, int] | None = None
+        self._display_nodes: dict[str, DisplayNode] = {}
+        self._node_owners: dict[str, str] = {}
+        self._display_versions: dict[str, DisplayVersion] = {}
+        self._entry_by_id: dict[str, EntryDraft] = {}
+        self._path_generations: dict[str, int] = {}
+        self._history_cursor_key = uuid.uuid4().hex.encode("ascii")
+
+    def node(self, identity: str) -> DisplayNode:
+        return self._display_nodes[identity]
+
+    def version(self, entry_id: str | None) -> DisplayVersion:
+        return DisplayVersion() if entry_id is None else self._display_versions[entry_id]
+
+    def _prepare_display_index(self, entries: tuple[EntryDraft, ...], inherited: str | None
+                               ) -> tuple[dict[str, DisplayVersion], dict[str, DisplayNode]]:
+        batch = NodeBatch(self)
+        versions: dict[str, DisplayVersion] = {}
+        for entry in entries:
+            base = entry.parent_id or inherited
+            if entry.payload.get("edited_entry_id"):
+                bridge = entry.payload.get("edit_parent_entry_id")
+                base = bridge if isinstance(bridge, str) else None
+            previous = versions.get(base) if base else None
+            versions[entry.entry_id] = extend(batch, previous if previous is not None else self.version(base), entry)
+        return versions, batch.reachable(list(versions.values()))
 
     def create_conversation(self, conversation_id: str, *, parent_conversation_id: str | None = None, parent_entry_id: str | None = None) -> None:
         if not conversation_id:
@@ -87,6 +116,7 @@ class MemoryDurableStore:
             self._heads[conversation_id] = (None, 0)
             self._entries[conversation_id] = []
             self._parents[conversation_id] = (parent_conversation_id, parent_entry_id)
+            self._path_generations[conversation_id] = 0
 
     def append(self, draft: EntryDraft, *, expected_revision: int) -> CommitResult:
         return self.commit(DurableMutation(draft.conversation_id, expected_revision, entries=(draft,)))
@@ -97,6 +127,12 @@ class MemoryDurableStore:
         return self.commit(DurableMutation(draft.conversation_id, revision, entries=entries, submission=draft))
 
     def commit(self, mutation: DurableMutation) -> CommitResult:
+        if mutation.delete_conversation is not None:
+            with self.history_lifetime.exclusive():
+                return self._commit(mutation)
+        return self._commit(mutation)
+
+    def _commit(self, mutation: DurableMutation) -> CommitResult:
         with self._lock:
             creation = mutation.create_conversation
             if creation is not None:
@@ -141,37 +177,26 @@ class MemoryDurableStore:
                 and creation is None
             ):
                 return CommitResult(revision, self._sequence)
+            stored_entries = finalized_entries(mutation, self._sequence + 1)
+            inherited = creation.parent_entry_id if creation else self._parents[mutation.conversation_id][1]
+            versions, nodes = self._prepare_display_index(stored_entries, inherited)
+            generation = self._path_generations.get(mutation.conversation_id, 0) + int(rewrites_path(mutation))
             self._sequence += 1
             record = CommitRecord(self._sequence, "durable", datetime.now(UTC).isoformat(), {
                 **mutation_projection(mutation), "database_id": self.database_id,
+                "path_generation": generation,
+                "revision": new_revision,
             })
             self._commits.append(record)
             result = CommitResult(new_revision, self._sequence, record=record)
-            task_by_submission = {
-                task.submission_id: task.task_id
-                for task in ((mutation.task,) if mutation.task is not None else ()) + mutation.task_updates
-            }
-            entry_task_ids = {
-                update.input_entry_id: task_by_submission[submission_id]
-                for submission_id, update in (
-                    [(mutation.submission_update.submission_id, mutation.submission_update)]
-                    if mutation.submission_update is not None else []
-                ) + [
-                    (update.submission_id, update) for update in mutation.submission_updates
-                ]
-                if update.input_entry_id is not None and submission_id in task_by_submission
-            }
-            stored_entries = tuple(
-                replace(
-                    entry,
-                    commit_seq=self._sequence,
-                    by_task_id=entry.by_task_id or entry_task_ids.get(entry.entry_id),
-                )
-                for entry in mutation.entries
-            )
             if creation is not None:
                 self._entries[mutation.conversation_id] = []
                 self._parents[mutation.conversation_id] = (creation.parent_conversation_id, creation.parent_entry_id)
+            self._display_versions.update(versions)
+            self._display_nodes.update(nodes)
+            self._node_owners.update((identity, mutation.conversation_id) for identity in nodes)
+            self._entry_by_id.update((entry.entry_id, entry) for entry in stored_entries)
+            self._path_generations[mutation.conversation_id] = generation
             self._entries[mutation.conversation_id].extend(stored_entries)
             self._heads[mutation.conversation_id] = (new_head, new_revision)
             if mutation.task is not None:
@@ -336,7 +361,14 @@ class MemoryDurableStore:
         for handle, artifact in tuple(self._artifacts.items()):
             if artifact.owner_task_id in task_ids or artifact.owner_effect_id in removed_effect_ids:
                 self._artifacts.pop(handle, None)
-        self._entries.pop(mutation.conversation_id, None)
+        for entry in self._entries.pop(mutation.conversation_id, ()):
+            self._display_versions.pop(entry.entry_id)
+            self._entry_by_id.pop(entry.entry_id)
+        for identity, owner in tuple(self._node_owners.items()):
+            if owner == mutation.conversation_id:
+                self._display_nodes.pop(identity)
+                self._node_owners.pop(identity)
+        self._path_generations.pop(mutation.conversation_id)
         self._heads.pop(mutation.conversation_id, None)
         self._parents.pop(mutation.conversation_id, None)
         return CommitResult(revision + 1, self._sequence, record=record)
@@ -629,8 +661,10 @@ class MemoryDurableStore:
 
     @contextmanager
     def history_snapshot(self) -> Generator[HistoryReader, None, None]:
-        with self._lock:
-            yield MemoryHistoryReader(self)
+        with self.history_lifetime.read():
+            with self._lock:
+                reader = MemoryHistoryReader(self)
+            yield reader
 
     def head(self, conversation_id: str) -> tuple[str | None, int]:
         with self._lock:
@@ -666,7 +700,7 @@ class MemoryDurableStore:
             return CommitResult(0, self._sequence, record=record)
 
     def delete_conversation(self, conversation_id: str) -> None:
-        with self._lock:
+        with self.history_lifetime.exclusive(), self._lock:
             _head, revision = self._conversation(conversation_id)
             self.commit(DurableMutation(conversation_id, revision, delete_conversation=DeleteConversation()))
 

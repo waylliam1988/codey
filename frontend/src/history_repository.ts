@@ -5,11 +5,12 @@ export interface HistoryPage {
   session_id: string;
   epoch: string;
   snapshot_revision: number;
+  path_generation: number;
+  display_version: string | null;
   items: Array<Record<string, unknown>>;
   before_cursor?: string | null;
   has_more: boolean;
   has_after?: boolean;
-  inactive_run_ids?: string[];
   task_states?: HistoryTask[];
 }
 
@@ -19,12 +20,65 @@ export interface HistoryResult {
   cursor: string | null;
   epoch: string;
   revision: number;
+  pathGeneration: number;
+  displayVersion: string | null;
   hasAfter?: boolean;
-  inactiveRuns?: string[];
   taskStates?: HistoryTask[];
 }
 
-class HistorySnapshotChanged extends Error {}
+export class HistorySnapshotChanged extends Error {}
+
+export interface HistoryIdentity {
+  epoch: string;
+  pathGeneration: number;
+  revision: number;
+}
+
+export interface RunValidation extends HistoryIdentity {
+  runs: Array<{ run_id: string; visible: boolean }>;
+}
+
+export async function validateHistoryRuns(
+  sessionId: string,
+  runIds: string[],
+  identity: HistoryIdentity,
+): Promise<RunValidation> {
+  const response = await fetch('/api/history/validate_runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: sessionId,
+      epoch: identity.epoch,
+      path_generation: identity.pathGeneration,
+      run_ids: runIds,
+    }),
+    signal: AbortSignal.timeout(5000),
+  });
+  if (response.status === 409) throw new HistorySnapshotChanged('Conversation history changed');
+  if (!response.ok) throw new Error('Could not validate conversation tasks');
+  const data = (await response.json()) as Partial<HistoryPage> & { runs?: RunValidation['runs'] };
+  if (
+    data.schema_version !== 1 ||
+    data.session_id !== sessionId ||
+    data.epoch !== identity.epoch ||
+    data.path_generation !== identity.pathGeneration ||
+    !Number.isSafeInteger(data.snapshot_revision) ||
+    (data.snapshot_revision as number) < identity.revision ||
+    !Array.isArray(data.runs) ||
+    data.runs.length !== runIds.length ||
+    !data.runs.every(
+      (run) => run && typeof run.run_id === 'string' && runIds.includes(run.run_id) && typeof run.visible === 'boolean',
+    ) ||
+    new Set(data.runs.map((run) => run.run_id)).size !== runIds.length
+  )
+    throw new HistorySnapshotChanged('Conversation task validation changed');
+  return {
+    epoch: data.epoch,
+    pathGeneration: data.path_generation,
+    revision: data.snapshot_revision as number,
+    runs: data.runs,
+  };
+}
 
 export class HistoryRepository {
   private session = '';
@@ -75,8 +129,9 @@ export class HistoryRepository {
       cursor: page.before_cursor || null,
       epoch: page.epoch,
       revision: page.snapshot_revision,
+      pathGeneration: page.path_generation,
+      displayVersion: page.display_version,
       taskStates: page.task_states,
-      inactiveRuns: page.inactive_run_ids,
     };
     return this.page;
   }
@@ -90,7 +145,11 @@ export class HistoryRepository {
     try {
       const page = await this.fetchPage(sessionId, this.page.cursor);
       if (generation !== this.generation || this.session !== sessionId) return null;
-      if (page.epoch !== previous.epoch || page.snapshot_revision !== previous.revision)
+      if (
+        page.epoch !== previous.epoch ||
+        page.path_generation !== previous.pathGeneration ||
+        page.snapshot_revision !== previous.revision
+      )
         return await this.loadLatest(sessionId);
       if (page.has_more && page.before_cursor === previous.cursor)
         throw new Error('Conversation history did not advance');
@@ -103,6 +162,8 @@ export class HistoryRepository {
         cursor: page.before_cursor || null,
         epoch: page.epoch,
         revision: page.snapshot_revision,
+        pathGeneration: page.path_generation,
+        displayVersion: page.display_version,
         taskStates: page.task_states,
         hasAfter: previous.hasAfter,
       };
@@ -141,6 +202,8 @@ export class HistoryRepository {
       cursor: page.before_cursor || null,
       epoch: page.epoch,
       revision: page.snapshot_revision,
+      pathGeneration: page.path_generation,
+      displayVersion: page.display_version,
       taskStates: page.task_states,
       hasAfter: page.has_after === true,
     };
@@ -153,7 +216,7 @@ export class HistoryRepository {
       : `/api/sessions/${encodeURIComponent(sessionId)}/messages?limit=100${cursor ? `&before=${encodeURIComponent(cursor)}` : ''}`;
     const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!response.ok) {
-      const failure = await response.json().catch(() => ({}));
+      const failure = (await response.json()) as { error?: string };
       if (
         failure.error === 'history snapshot changed' ||
         failure.error === 'cursor does not belong to current conversation path'
@@ -169,6 +232,9 @@ export class HistoryRepository {
       !data.epoch ||
       !Number.isSafeInteger(data.snapshot_revision) ||
       (data.snapshot_revision as number) < 0 ||
+      !Number.isSafeInteger(data.path_generation) ||
+      (data.path_generation as number) < 0 ||
+      !(data.display_version === null || typeof data.display_version === 'string') ||
       !Array.isArray(data.items) ||
       !data.items.every(
         (item) => item && typeof item === 'object' && typeof item.id === 'string' && item.id.length > 0,

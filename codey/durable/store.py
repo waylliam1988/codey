@@ -4,6 +4,7 @@ from contextlib import AbstractContextManager
 from typing import Protocol
 
 from codey.durable.history import HistoryReader
+from codey.durable.history_lifetime import HistoryLifetime
 from codey.durable.model import (
     ApprovalRecord,
     ArtifactRecord,
@@ -20,6 +21,8 @@ from codey.durable.timeline import TaskTransition
 
 
 class DurableStore(Protocol):
+    history_lifetime: HistoryLifetime
+
     @property
     def database_id(self) -> str: ...
 

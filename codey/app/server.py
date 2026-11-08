@@ -54,6 +54,7 @@ from codey.app.conversation_routes import (
     retry_fork_response,
 )
 from codey.app.documents import document_response
+from codey.app.history_routes import validate_runs_response
 from codey.app.http_plumbing import (
     WEB_DIR,
     request_origin_allowed,
@@ -230,7 +231,7 @@ def _shell_approval_route(ctx: AppContext, body: dict[str, Any]) -> tuple[int, d
     return response
 
 
-def _transcript_route(ctx: AppContext, session_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, Any]]:
+def _transcript_route(ctx: AppContext, session_id: str, query: dict[str, list[str]]) -> tuple[int, dict[str, object]]:
     # A newly created chat has UI metadata before it has a durable conversation.
     # Its first history read is therefore a valid empty snapshot, rather than a
     # load failure.  The conversation is created when the first message is
@@ -241,6 +242,8 @@ def _transcript_route(ctx: AppContext, session_id: str, query: dict[str, list[st
             "session_id": session_id,
             "epoch": ctx.durable.database_id,
             "snapshot_revision": 0,
+            "path_generation": 0,
+            "display_version": None,
             "items": [],
             "before_cursor": None,
             "has_more": False,
@@ -306,6 +309,7 @@ _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, d
 
 
 _POST_ROUTES: dict[str, Callable[[AppContext, dict[str, Any]], tuple[int, dict[str, Any]]]] = {
+    "/api/history/validate_runs": validate_runs_response,
     "/api/conversation_fork/retry": retry_fork_response,
     "/api/conversation_tree/action": conversation_action_response,
     "/api/workflows/fork": workflow_fork_response,

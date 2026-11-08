@@ -14,6 +14,8 @@ export interface ConversationUiApi {
   refreshHistory(sessionId: string, force?: boolean, background?: boolean): Promise<void>;
   historyRevision(sessionId: string): number | undefined;
   acceptsRun(sessionId: string, runId: string): boolean;
+  acceptRunEvent(sessionId: string, runId: string, accept: () => void): void;
+  runEventVersion(sessionId: string): string;
   searchHistory(): void;
   observeCommit(event: ServerEvent): Promise<void>;
   scrollChat(capture?: boolean): void;
@@ -180,7 +182,7 @@ export interface ConversationUiDeps {
     }
     searchPanel.open();
   }
-  const history = new ConversationHistory((session, revealEarlier, tasks) => {
+  const history = new ConversationHistory((session, revealEarlier, tasks, removedRuns) => {
     if (tasks) deps.projectTasks(tasks, session.id);
     runtime.UiState?.hydrateSessionIndexes(session);
     if (revealEarlier) {
@@ -197,7 +199,7 @@ export interface ConversationUiDeps {
     // arriving. Durable commits are still reconciled into the session model,
     // but rebuilding the tree here would detach nodes the user is reading.
     // An empty mount still needs the first authoritative history render.
-    const force = forcedHistoryRefresh.delete(session.id);
+    const force = forcedHistoryRefresh.delete(session.id) || removedRuns;
     if (deps.activeSession() === session && historyRendered.has(session.id) && !force) return;
     historyRendered.add(session.id);
     views.delete(session.id);
@@ -688,7 +690,10 @@ export interface ConversationUiDeps {
     await history.refresh(session);
   }
   async function observeCommit(event: ServerEvent): Promise<void> {
-    if (event.type === 'durable_commit' && event.session_id && event.edited_entry_id) {
+    let pathChanged = false;
+    if (event.session_id && event.path_generation !== undefined && event.revision !== undefined)
+      pathChanged = history.observePath(event.session_id, event.path_generation, event.revision);
+    if (event.type === 'durable_commit' && event.session_id && (event.edited_entry_id || pathChanged)) {
       const session = deps.getSessions().find((item) => item.id === event.session_id);
       if (session) history.retireRuns(session, event.replaced_run_ids || []);
       views.delete(event.session_id);
@@ -705,7 +710,7 @@ export interface ConversationUiDeps {
     if (
       event.type === 'durable_commit' &&
       event.session_id &&
-      (event.entry_ids?.length || event.kind === 'branch' || event.kind === 'fork')
+      (event.entry_ids?.length || pathChanged || event.kind === 'branch' || event.kind === 'fork')
     ) {
       // Every durable entry commit can change the visible conversation. The
       // render path preserves an active stream node, so forcing the history
@@ -716,10 +721,10 @@ export interface ConversationUiDeps {
       await refreshHistory(
         event.session_id,
         force,
-        !event.edited_entry_id && event.kind !== 'branch' && event.kind !== 'fork',
+        !event.edited_entry_id && !pathChanged && event.kind !== 'branch' && event.kind !== 'fork',
       );
       if (event.session_id === deps.getActiveId())
-        runtime.ConversationNav.refresh(event.kind === 'branch' || event.kind === 'fork');
+        runtime.ConversationNav.refresh(pathChanged || event.kind === 'branch' || event.kind === 'fork');
     }
   }
   function historyBoundary(messages: Message[], index: number): number {
@@ -1436,6 +1441,13 @@ export interface ConversationUiDeps {
     refreshHistory,
     historyRevision: (id: string) => history.revision(id),
     acceptsRun: (id: string, runId: string) => history.acceptsRun(id, runId),
+    acceptRunEvent: (id: string, runId: string, accept: () => void) => {
+      const session = deps.getSessions().find((item) => item.id === id);
+      if (!session) return;
+      history.ensure(session);
+      history.acceptRunEvent(id, runId, accept);
+    },
+    runEventVersion: (id: string) => history.runEventVersion(id),
     searchHistory,
     observeCommit,
     scrollChat,
@@ -1458,5 +1470,5 @@ export interface ConversationUiDeps {
     openFile,
     menuOpened,
     menusClosed,
-  };
+  } satisfies ConversationUiApi;
 })();

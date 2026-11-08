@@ -18,6 +18,15 @@ def event(page, call, kind='codemode', *, pending=True, parent='', error=False, 
 
 
 def begin(page):
+    # These renderer scenarios synthesize a run rather than dispatching a
+    # provider. Supply its authoritative visibility contract as well.
+    def visibility(route):
+        body = route.request.post_data_json
+        route.fulfill(json={"schema_version": 1, "session_id": body["session_id"], "epoch": body["epoch"],
+                            "path_generation": body["path_generation"], "snapshot_revision": 0,
+                            "runs": [{"run_id": run, "visible": run == "order-review"} for run in body["run_ids"]]})
+
+    page.route("**/api/history/validate_runs", visibility)
     page.evaluate("""() => {
         addToSession('a', {type:'user',text:'Fix the login form and verify the changes.'});
         handleServerEvent({type:'task_start',schema_version:1,session_id:'a',run_id:'order-review',provider:'local'});

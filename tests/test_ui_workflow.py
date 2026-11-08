@@ -13,6 +13,7 @@ from playwright.sync_api import expect, sync_playwright
 
 from codey.app import api as app_api
 from codey.app import server
+from codey.app.history_routes import validate_runs_response
 from codey.app.http_plumbing import resolve_web_asset, send_index
 from codey.storage.ui_state_store import UiStateStore
 
@@ -104,6 +105,10 @@ def page(ui_browser):
             status, data = app_api.new_chat_response(app_context, route.request.post_data_json)
             route.fulfill(status=status, json=data)
             return
+        elif path == "history/validate_runs":
+            status, data = validate_runs_response(app_context, route.request.post_data_json)
+            route.fulfill(status=status, json=data)
+            return
         elif path.startswith("sessions/") and path.endswith("/messages"):
             session_id = path.split("/")[1]
             query = parse_qs(parsed.query)
@@ -119,6 +124,8 @@ def page(ui_browser):
                     "session_id": session_id,
                     "epoch": app_context.durable.database_id,
                     "snapshot_revision": 0,
+                    "path_generation": 0,
+                    "display_version": None,
                     "items": [],
                     "before_cursor": None,
                     "has_more": False,

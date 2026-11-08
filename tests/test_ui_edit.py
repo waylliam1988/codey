@@ -114,10 +114,24 @@ def test_edit_sending_remains_stoppable_without_appending_another_user_message(p
 @pytest.mark.parametrize("target_busy", [False, True])
 def test_edit_uses_target_chat_ownership_when_another_chat_is_primary(page, target_busy):
     seed(page)
+    from codey.app.history_routes import validate_runs_response
+
+    def visibility(route):
+        body = route.request.post_data_json
+        status, result = validate_runs_response(page.codey_context, body)
+        if status == 200:
+            for run in result["runs"]:
+                if run["run_id"] in {"active-a", "active-b"}:
+                    run["visible"] = True
+        route.fulfill(status=status, json=result)
+
+    page.route("**/api/history/validate_runs", visibility)
     page.evaluate("""targetBusy => {
       if(targetBusy) handleServerEvent({type:'task_start',session_id:'a',run_id:'active-a',task_revision:1,task_status:'running'});
       handleServerEvent({type:'task_start',session_id:'b',run_id:'active-b',task_revision:1,task_status:'running'});
     }""", target_busy)
+    page.wait_for_function("targetBusy => ConversationUI.acceptsRun('a', 'active-a') === targetBusy "
+                           "&& ConversationUI.acceptsRun('b', 'active-b')", arg=target_busy)
     page.locator(".msg.user .msg-edit").first.click(force=True)
     expect(page.locator(".msg-edit-input")).to_have_count(0 if target_busy else 1)
     if not target_busy:

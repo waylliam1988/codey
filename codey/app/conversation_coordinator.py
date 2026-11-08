@@ -71,6 +71,10 @@ class ConversationCoordinator:
         self._durable.save_context_snapshot(session_id, snapshot.to_payload())
 
     def forget(self, session_id: str, *, preserve_ui: bool = False) -> dict[str, str]:
+        with self._durable.store.history_lifetime.exclusive():
+            return self._forget(session_id, preserve_ui=preserve_ui)
+
+    def _forget(self, session_id: str, *, preserve_ui: bool) -> dict[str, str]:
         failures: dict[str, str] = {}
         try:
             if self._durable.has_conversation(session_id):

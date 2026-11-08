@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codey.durable.ancestry import context_path
+from codey.durable.entry_ownership import finalized_entries
 from codey.durable.errors import (
     CommitConflict,
     IdempotencyConflict,
@@ -16,6 +17,8 @@ from codey.durable.errors import (
 )
 from codey.durable.events import mutation_projection
 from codey.durable.history import HistoryReader
+from codey.durable.history_index import rewrites_path
+from codey.durable.history_lifetime import database_lifetime
 from codey.durable.model import (
     ApprovalRecord,
     ArtifactRecord,
@@ -43,6 +46,7 @@ from codey.durable.model import (
     valid_task_status_transition,
     valid_task_transition,
 )
+from codey.durable.sqlite_display import write_display_index
 from codey.durable.sqlite_history import SQLiteHistoryReader
 from codey.durable.sqlite_records import (
     artifact_from_row,
@@ -70,6 +74,7 @@ class SQLiteDurableStore:
         self.path = Path(path)
         self._synchronous = synchronous
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.history_lifetime = database_lifetime(self.path)
         # WAL mode changes precede BEGIN IMMEDIATE and do not reliably invoke
         # SQLite's busy handler. Serialize that complete cold-start boundary.
         with acquire_lease(self.path.with_name(self.path.name + ".initialization"), timeout_seconds=30):
@@ -115,6 +120,12 @@ class SQLiteDurableStore:
         return self.commit(DurableMutation(draft.conversation_id, revision, entries=entries, submission=draft))
 
     def commit(self, mutation: DurableMutation) -> CommitResult:
+        if mutation.delete_conversation is not None:
+            with self.history_lifetime.exclusive():
+                return self._commit(mutation)
+        return self._commit(mutation)
+
+    def _commit(self, mutation: DurableMutation) -> CommitResult:
         with closing(self._connect()) as database:
             database.execute("BEGIN IMMEDIATE")
             try:
@@ -178,12 +189,16 @@ class SQLiteDurableStore:
                 ).fetchone() is not None:
                     raise IdempotencyConflict("submission ID was already used")
                 new_head = mutation.branch_entry_id or (mutation.entries[-1].entry_id if mutation.entries else head)
+                new_revision = current_revision + (1 if mutation.branch_entry_id is not None else len(mutation.entries))
+                generation = int(database.execute("SELECT path_generation FROM conversations WHERE id=?",
+                                                  (mutation.conversation_id,)).fetchone()[0]) + int(rewrites_path(mutation))
                 record = _new_commit(database, "durable", {
                     **mutation_projection(mutation), "_workflow": execution_payload(mutation, new_head),
+                    "path_generation": generation, "revision": new_revision,
                 })
                 sequence = record.sequence
-                _write_entries(database, mutation, current_revision, sequence)
-                new_revision = current_revision + (1 if mutation.branch_entry_id is not None else len(mutation.entries))
+                stored_entries = _write_entries(database, mutation, current_revision, sequence)
+                write_display_index(database, mutation, stored_entries)
                 if mutation.entries or mutation.branch_entry_id is not None:
                     database.execute(
                         "UPDATE conversations SET head_entry_id=?, revision=?, updated_at=? WHERE id=?",
@@ -259,7 +274,7 @@ class SQLiteDurableStore:
 
     @contextmanager
     def history_snapshot(self) -> Generator[HistoryReader, None, None]:
-        with closing(self._connect()) as database:
+        with self.history_lifetime.read(), closing(self._connect()) as database:
             database.execute("BEGIN")
             try:
                 yield SQLiteHistoryReader(database)
@@ -852,25 +867,16 @@ def _validate_submission_update(
             raise CommitConflict("placing a submission requires an input entry")
 
 
-def _write_entries(database: sqlite3.Connection, mutation: DurableMutation, revision: int, sequence: int) -> None:
-    task_by_submission = {
-        task.submission_id: task.task_id
-        for task in ((mutation.task,) if mutation.task is not None else ()) + mutation.task_updates
-    }
-    entry_task_ids = {
-        update.input_entry_id: task_by_submission[update.submission_id]
-        for update in (
-            ((mutation.submission_update,) if mutation.submission_update is not None else ())
-            + mutation.submission_updates
-        )
-        if update.input_entry_id is not None and update.submission_id in task_by_submission
-    }
-    for ordinal, entry in enumerate(mutation.entries, start=revision + 1):
+def _write_entries(database: sqlite3.Connection, mutation: DurableMutation, revision: int,
+                   sequence: int) -> tuple[EntryDraft, ...]:
+    stored = finalized_entries(mutation, sequence)
+    for ordinal, entry in enumerate(stored, start=revision + 1):
         database.execute(
             "INSERT INTO entries(id, conversation_id, parent_id, kind, payload, ordinal, commit_seq, by_task_id) VALUES(?,?,?,?,?,?,?,?)",
             (entry.entry_id, entry.conversation_id, entry.parent_id, entry.kind, _encode(entry.payload), ordinal, sequence,
-             entry.by_task_id or entry_task_ids.get(entry.entry_id)),
+             entry.by_task_id),
         )
+    return stored
 
 
 def _write_task(database: sqlite3.Connection, task: TaskCheckpoint | None) -> None:

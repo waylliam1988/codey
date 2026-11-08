@@ -19,6 +19,7 @@ from typing import Concatenate, ParamSpec, TypeVar
 
 from codey.durable.approval_transition import materialize_approval
 from codey.durable.errors import CommitConflict, IdempotencyConflict, SessionFailedError, SessionSealedError
+from codey.durable.history import HistoryReader
 from codey.durable.model import CommitRecord, CommitResult, DurableMutation, EffectRecord, TaskCheckpoint, TaskStatus
 from codey.durable.store import DurableStore
 
@@ -84,6 +85,15 @@ class SessionKernel:
         with self._write_lock:
             self._ensure_usable()
             return operation()
+
+    @contextmanager
+    def history_read(self, conversation_id: str) -> Generator[HistoryReader]:
+        with self.store.history_snapshot() as reader:
+            with self._write_lock:
+                self._ensure_usable()
+                # BEGIN alone is deferred: this SELECT fixes the WAL snapshot.
+                reader.display_head(conversation_id)
+            yield reader
 
     @_mutation_line
     def _commit(self, mutation: DurableMutation) -> CommitResult:
@@ -255,7 +265,7 @@ class SessionKernel:
                 logger.exception("durable session close listener failed")
 
     def close(self) -> None:
-        with self._write_lock:
+        with self.store.history_lifetime.exclusive(), self._write_lock:
             if self._closed:
                 return
             self._closed = True

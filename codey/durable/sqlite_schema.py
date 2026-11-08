@@ -88,6 +88,11 @@ def initialize_database(connect: Callable[[], sqlite3.Connection]) -> str:
                     "INSERT INTO schema_metadata(key, value) VALUES('database_id', ?)",
                     (f"database-{uuid.uuid4().hex}",),
                 )
+                database.execute(
+                    "INSERT INTO schema_metadata(key, value) VALUES('history_cursor_key', ?)",
+                    (uuid.uuid4().hex + uuid.uuid4().hex,),
+                )
+                database.execute("INSERT INTO schema_metadata(key, value) VALUES('display_node_sequence', '0')")
             identity = database.execute(
                 "SELECT value FROM schema_metadata WHERE key='database_id'"
             ).fetchone()

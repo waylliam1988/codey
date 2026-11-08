@@ -29,7 +29,10 @@ export interface RunEventDeps {
     'sessions' | 'addMessage' | 'replaceMessage' | 'dropMessages' | 'projectTerminalRun' | 'projectPathFor'
   >;
   ui: Pick<UiStateApi, 'persist' | 'flush' | 'refreshInventory' | 'ensureSessionIndexes'>;
-  history: Pick<ConversationUiApi, 'acceptsRun' | 'observeCommit' | 'refreshHistory' | 'syncAnswerIdentity'>;
+  history: Pick<
+    ConversationUiApi,
+    'acceptsRun' | 'acceptRunEvent' | 'runEventVersion' | 'observeCommit' | 'refreshHistory' | 'syncAnswerIdentity'
+  >;
   requests: Pick<RequestsApi, 'forRun' | 'acceptsEvent' | 'projectLifecycle' | 'reconcile' | 'warning' | 'fail'>;
   composer: Pick<ComposerApi, 'observeRun' | 'refreshQueuedInputs' | 'applyQueuedInput' | 'queuedInputForRun'>;
   approvals(): Pick<ReturnType<typeof createApprovalController>, 'apply' | 'decided'>;
@@ -76,6 +79,7 @@ export class RunEventCoordinator {
     });
     this.replyStreamBuffer = new RunStreamBuffer({
       acceptsRun: (sessionId, runId) => deps.history.acceptsRun(sessionId, runId),
+      version: (sessionId) => deps.history.runEventVersion(sessionId),
       handle: (data) => this.handleReplyStream(data),
     });
   }
@@ -94,9 +98,7 @@ export class RunEventCoordinator {
       return false;
     const runId = data.run_id || '',
       sessionId = data.session_id || '';
-    const owner = this.deps.state.sessions.find(
-      (item) => item.id === sessionId && this.deps.history.acceptsRun(item.id, runId),
-    );
+    const owner = this.deps.state.sessions.find((item) => item.id === sessionId);
     const display = historySessionId ? this.deps.state.sessions.find((item) => item.id === historySessionId) : owner;
     const displays = this.deps.state.sessions.filter(
       (item) =>
@@ -164,7 +166,6 @@ export class RunEventCoordinator {
 
   handleServerEvent(raw: unknown, lifecycleSource: 'event' | 'snapshot' = 'event') {
     const data = decodeServerEvent(raw) as ServerEventData;
-    if (data.run_id && this.deps.history.acceptsRun?.(data.session_id || '', data.run_id) === false) return;
     if (data.type === 'conversation_inventory_changed') {
       void this.deps.ui.refreshInventory?.();
       return;
@@ -178,13 +179,6 @@ export class RunEventCoordinator {
         }, 200);
       return;
     }
-    if (data.type === 'reply_stream') {
-      this.replyStreamBuffer.enqueue(data);
-      return;
-    }
-    this.replyStreamBuffer.flush();
-    if ((data.type === 'task_start' || data.type === 'task_done') && !this.applyLifecycle(data, lifecycleSource))
-      return;
     if (data.type === 'user_question' || data.type === 'user_question_state') {
       this.deps.questions.apply((raw as { question: unknown }).question);
       return;
@@ -193,14 +187,44 @@ export class RunEventCoordinator {
       this.deps.composer.applyQueuedInput((raw as { input: unknown }).input);
       return;
     }
-    if (data.type === 'task_start') {
-      const input = this.deps.composer.queuedInputForRun(data.run_id || '');
-      if (input) this.observeQueuedInput({ ...input, state: 'dispatching' });
-    }
     if (data.type === 'shell_approval_status') {
       this.deps.approvals().apply(raw);
       void this.reconcileRunState();
       return;
+    }
+    if (data.type === 'resync_required') {
+      void this.reconcileRunState();
+      this.deps.refreshProviderStatus(true);
+      return;
+    }
+    if (data.type === 'status') {
+      this.deps.transport.displayRunStatus(data.status || '');
+      return;
+    }
+    if (data.type === 'providers') {
+      this.deps.applyProviderStatus(data.providers);
+      return;
+    }
+    // Terminal control releases the run even when its display was removed.
+    if (data.type === 'task_done') {
+      this.replyStreamBuffer.flush();
+      if (!this.applyLifecycle(data, lifecycleSource)) return;
+    }
+    this.deps.history.acceptRunEvent(data.session_id || '', data.run_id || '', () =>
+      this.handleDisplayEvent(raw, data, lifecycleSource),
+    );
+  }
+
+  private handleDisplayEvent(raw: unknown, data: ServerEventData, lifecycleSource: 'event' | 'snapshot'): void {
+    if (data.type === 'reply_stream') {
+      this.replyStreamBuffer.enqueue(data);
+      return;
+    }
+    this.replyStreamBuffer.flush();
+    if (data.type === 'task_start') {
+      if (!this.applyLifecycle(data, lifecycleSource)) return;
+      const input = this.deps.composer.queuedInputForRun(data.run_id || '');
+      if (input) this.observeQueuedInput({ ...input, state: 'dispatching' });
     }
     const runId = (data.run_id || '').toString();
     const sid = data.session_id || '';
@@ -222,20 +246,6 @@ export class RunEventCoordinator {
     ];
     const runIsActive = (id: string) => this.projection.isActive(id) || id === this.projection.primaryRun?.runId;
     if (runId && !mayOutliveRun.includes(data.type) && !runIsActive(runId)) return;
-    // Server dropped queued events for this client: re-pull authoritative state.
-    if (data.type === 'resync_required') {
-      this.reconcileRunState();
-      this.deps.refreshProviderStatus(true);
-      return;
-    }
-    if (data.type === 'status') {
-      this.deps.transport.displayRunStatus(data.status || '');
-      return;
-    }
-    if (data.type === 'providers') {
-      this.deps.applyProviderStatus(data.providers);
-      return;
-    }
     if (data.type === 'turn') {
       this.deps.state.addMessage(sid, {
         type: 'turn',

@@ -37,6 +37,7 @@ function setup() {
   state.sessions = [session];
   state.activeId = session.id;
   const approvals = { apply: vi.fn(), decided: vi.fn(() => false) };
+  const acceptsRun = vi.fn(() => true);
   const deps = {
     state,
     requests,
@@ -47,7 +48,11 @@ function setup() {
       ensureSessionIndexes: ui.ensureSessionIndexes,
     },
     history: {
-      acceptsRun: vi.fn(() => true),
+      acceptsRun,
+      acceptRunEvent: vi.fn((_sid: string, _run: string, accept: () => void) => {
+        if (acceptsRun()) accept();
+      }),
+      runEventVersion: vi.fn(() => '0'),
       observeCommit: vi.fn(async () => {}),
       refreshHistory: vi.fn(async () => {}),
       syncAnswerIdentity: vi.fn(async () => {}),
@@ -225,5 +230,17 @@ describe('RunEventCoordinator ordering', () => {
     expect(coordinator.projection.size).toBe(0);
     expect(session.messages).toEqual([]);
     expect(deps.requests.projectLifecycle).not.toHaveBeenCalled();
+  });
+
+  it('keeps control information flowing while unknown display events await validation', () => {
+    const { coordinator, deps, approvals, session } = setup();
+    deps.history.acceptRunEvent.mockImplementation(() => {});
+    coordinator.handleServerEvent(start);
+    expect(session.messages).toEqual([]);
+    coordinator.handleServerEvent({ type: 'conversation_input', session_id: 'session', run_id: 'unknown', input: {} });
+    coordinator.handleServerEvent({ type: 'shell_approval_status', session_id: 'session', run_id: 'unknown' });
+    expect(deps.composer.applyQueuedInput).toHaveBeenCalledOnce();
+    expect(approvals.apply).toHaveBeenCalledOnce();
+    expect(deps.history.acceptRunEvent).toHaveBeenCalledOnce();
   });
 });

@@ -2,6 +2,7 @@
 
 import base64
 import json
+import threading
 from unittest.mock import Mock
 
 import pytest
@@ -43,35 +44,66 @@ def test_sqlite_decodes_only_the_requested_page_and_never_loads_all_entries(tmp_
         session.close()
 
 
-def test_sqlite_page_keeps_one_snapshot_even_when_another_writer_deletes_the_chat(tmp_path, monkeypatch):
+def test_sqlite_page_finishes_before_another_session_deletes_the_chat(tmp_path, monkeypatch):
     from codey.durable.sqlite_history import SQLiteHistoryReader
     from codey.durable.task_projection import task_lifecycle
 
     path = tmp_path / "snapshot.sqlite3"
     session = DurableSession(SQLiteDurableStore(path))
     writer = DurableSession(SQLiteDurableStore(path))
+    reading = threading.Event()
+    release = threading.Event()
+    deleted = threading.Event()
+    pages = []
+    errors = []
     try:
         session.admit_input(conversation_id="chat", request_id="r", task_id="task", text="snapshot", provider_snapshot={})
         revision = session.store.head("chat")[1]
         expected_task = task_lifecycle(session.task("task"))
         select = SQLiteHistoryReader.select_entries
 
-        def delete_before_loading_bodies(reader, selected):
-            writer.delete_conversation("chat")
+        def pause_before_loading_bodies(reader, selected):
+            reading.set()
+            assert release.wait(5)
             return select(reader, selected)
 
-        monkeypatch.setattr(SQLiteHistoryReader, "select_entries", delete_before_loading_bodies)
-        page = session.history_page("chat", limit=1)
+        def read():
+            try:
+                pages.append(session.history_page("chat", limit=1))
+            except BaseException as error:
+                errors.append(error)
+
+        def delete():
+            try:
+                writer.delete_conversation("chat")
+                deleted.set()
+            except BaseException as error:
+                errors.append(error)
+
+        monkeypatch.setattr(SQLiteHistoryReader, "select_entries", pause_before_loading_bodies)
+        reader_thread = threading.Thread(target=read)
+        reader_thread.start()
+        assert reading.wait(5)
+        deleting_thread = threading.Thread(target=delete)
+        deleting_thread.start()
+        assert not deleted.wait(.1)
+        release.set()
+        reader_thread.join(5)
+        deleting_thread.join(5)
+        assert deleted.is_set()
+        assert not errors
+        page = pages[0]
         assert page["snapshot_revision"] == revision
         assert [item["text"] for item in page["items"]] == ["snapshot"]
         assert page["task_states"] == [expected_task]
         assert not session.has_conversation("chat")
     finally:
+        release.set()
         writer.close()
         session.close()
 
 
-def test_paging_nested_forks_edit_rewinds_head_markers_and_legacy_cursors(durable):
+def test_paging_nested_forks_edit_rewinds_head_markers_and_rejects_unsigned_cursors(durable):
     first = durable.append_message("chat", "user_message", {"text": "one"})
     second = durable.append_message("chat", "assistant_message", {"text": "two"})
     durable.fork("chat", second.entry_id, child_conversation_id="child")
@@ -80,7 +112,9 @@ def test_paging_nested_forks_edit_rewinds_head_markers_and_legacy_cursors(durabl
     durable.append_message("grandchild", "user_message", {"text": "three"})
     page = durable.history_page("grandchild", limit=1)
     legacy = base64.urlsafe_b64encode(json.dumps({"s": "grandchild", "e": page["items"][0]["id"]}).encode()).decode()
-    older = durable.history_page("grandchild", before=legacy, limit=1)
+    with pytest.raises(ValueError, match="cursor"):
+        durable.history_page("grandchild", before=legacy, limit=1)
+    older = durable.history_page("grandchild", before=page["before_cursor"], limit=1)
     assert [item["text"] for item in older["items"] + page["items"]] == ["one", "three"]
     with pytest.raises(ValueError, match="cursor"):
         durable.history_page("child", before=page["before_cursor"])

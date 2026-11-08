@@ -7,6 +7,8 @@ const page = (items: Array<{ id: string; text: string }>, cursor = '') => ({
   session_id: 'chat',
   epoch: 'db',
   snapshot_revision: 1,
+  path_generation: 0,
+  display_version: null,
   items,
   has_more: !!cursor,
   before_cursor: cursor || null,

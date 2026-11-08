@@ -46,7 +46,10 @@ def test_edit_atomically_replaces_suffix_retains_audit_and_replays_once(durable,
     assert durable.task("edit").state["input_entry_id"] == durable.store.head("chat")[0]
     expected_runs = {"second"} if position else {"first", "second"}
     assert set(result.record.payload["replaced_run_ids"]) == expected_runs
-    assert set(durable.history_page("chat")["inactive_run_ids"]) == expected_runs
+    page = durable.history_page("chat")
+    validation = durable.validate_history_runs("chat", ["first", "second", "edit"],
+                                               epoch=page["epoch"], generation=page["path_generation"])
+    assert {run["run_id"] for run in validation["runs"] if not run["visible"]} == expected_runs
     sequence = durable.commit_sequence()
     assert edit(durable, [first, second][position], revision=revision) == result
     assert durable.commit_sequence() == sequence

@@ -170,6 +170,15 @@ describe('protocol decoders', () => {
     expect(() => decodeRunState({ busy: false, task_states: [{ ...row, task_status: 'unknown' }] })).toThrow('status');
   });
 
+  it('requires integer history generation and revision on commit events', () => {
+    const event = { type: 'durable_commit', session_id: 'chat', commit_seq: 12, path_generation: 2, revision: 8 };
+    expect(decodeServerEvent(event)).toMatchObject(event);
+    for (const value of [-1, true, '8', Number.NaN, 1.5]) {
+      expect(() => decodeServerEvent({ ...event, path_generation: value })).toThrow('generation');
+      expect(() => decodeServerEvent({ ...event, revision: value })).toThrow('revision');
+    }
+  });
+
   it('preserves changes mode and metadata required by the drawer', () => {
     expect(
       decodeChangesData({

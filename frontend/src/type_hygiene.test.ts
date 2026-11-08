@@ -1,9 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 
 describe('frontend type boundary hygiene', () => {
   const root = join(process.cwd(), 'src');
+  it('keeps history and event visibility contracts free of explicit any', () => {
+    for (const name of [
+      'history_repository.ts',
+      'conversation_history.ts',
+      'conversation_nav_index.ts',
+      'conversation_ui.ts',
+      'run_visibility.ts',
+      'run_event_coordinator.ts',
+      'run_stream_buffer.ts',
+    ]) {
+      const source = ts.createSourceFile(name, readFileSync(join(root, name), 'utf8'), ts.ScriptTarget.Latest);
+      const offenders: number[] = [];
+      const visit = (node: ts.Node): void => {
+        if (node.kind === ts.SyntaxKind.AnyKeyword) offenders.push(node.getStart(source));
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+      expect(offenders, name).toEqual([]);
+    }
+  });
   const interfaceBody = (source: string, name: string): string => {
     const start = source.indexOf(`interface ${name}`);
     if (start < 0) return '';

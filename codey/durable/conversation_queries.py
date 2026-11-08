@@ -1,9 +1,7 @@
 """Read-only conversation and history facade for one durable session.
 
-The facade owns conversation query algorithms while ``DurableSession`` keeps
-the single mutation line and commit kernel.  Every public method executes
-through the callback supplied by that kernel, so a read/derive operation
-cannot observe a writer between its reads.
+History pages use short, independent snapshots. Other context and control
+queries continue to share the session mutation line.
 """
 
 from __future__ import annotations
@@ -11,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 
-from codey.durable import conversation_ops
+from codey.durable import conversation_ops, history_queries
 from codey.durable.context import ContextSnapshot
 from codey.durable.inbox import InboxDoc, InboxHistoryEvent, history_event_from_projection, item_from_record
 from codey.durable.model import EntryDraft, SubmissionRecord
@@ -49,25 +47,16 @@ class ConversationQueryFacade:
         before: str | None = None,
         limit: int = 200,
     ) -> dict[str, object]:
-        return self._query_line(
-            lambda: conversation_ops.navigation_page(
-                self._session, conversation_id, before=before, limit=limit,
-            )
-        )
+        return conversation_ops.navigation_page(self._session, conversation_id, before=before, limit=limit)
 
     def history_window(
-        self,
-        conversation_id: str,
-        entry_id: str,
-        *,
-        limit: int = 100,
-        leaf_id: str | None = None,
+        self, conversation_id: str, entry_id: str, *, limit: int = 100, leaf_id: str | None = None,
     ) -> dict[str, object]:
-        return self._query_line(
-            lambda: conversation_ops.history_window(
-                self._session, conversation_id, entry_id, limit=limit, leaf_id=leaf_id,
-            )
-        )
+        return conversation_ops.history_window(self._session, conversation_id, entry_id, limit=limit, leaf_id=leaf_id)
+
+    def validate_history_runs(self, conversation_id: str, run_ids: list[str], *, epoch: str,
+                              generation: int) -> dict[str, object]:
+        return history_queries.validate_runs(self._session, conversation_id, run_ids, epoch=epoch, generation=generation)
 
     def conversation_tree(self, conversation_id: str) -> dict[str, object]:
         return self._query_line(lambda: conversation_ops.conversation_tree(self._session, conversation_id))
@@ -137,11 +126,7 @@ class ConversationQueryFacade:
         before: str | None = None,
         limit: int = 100,
     ) -> dict[str, object]:
-        return self._query_line(
-            lambda: conversation_ops.history_page(
-                self._session, conversation_id, before=before, limit=limit,
-            )
-        )
+        return conversation_ops.history_page(self._session, conversation_id, before=before, limit=limit)
 
     def search_history(
         self,

@@ -6,12 +6,53 @@ import sqlite3
 
 from codey.durable.history import HistoryEntry
 from codey.durable.model import ArtifactRecord, EntryDraft, TaskCheckpoint
+from codey.durable.sqlite_display import SQLiteDisplayIndex
 from codey.durable.sqlite_records import artifact_from_row, entry_from_row, task_from_row
 
 
-class SQLiteHistoryReader:
+class SQLiteHistoryReader(SQLiteDisplayIndex):
     def __init__(self, database: sqlite3.Connection) -> None:
+        super().__init__(database)
         self._database = database
+
+    def display_head(self, conversation_id: str) -> tuple[str | None, int, int]:
+        row = self._database.execute(
+            "SELECT head_entry_id, parent_entry_id, revision, path_generation FROM conversations WHERE id=?",
+            (conversation_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown conversation: {conversation_id}")
+        return row["head_entry_id"] or row["parent_entry_id"], int(row["revision"]), int(row["path_generation"])
+
+    def cursor_key(self) -> bytes:
+        row = self._database.execute(
+            "SELECT value FROM schema_metadata WHERE key='history_cursor_key'",
+        ).fetchone()
+        if row is None:
+            raise ValueError("missing history cursor key")
+        return str(row[0]).encode("ascii")
+
+    def navigation_items(self, identities: list[str]) -> list[dict[str, object]]:
+        if not identities:
+            return []
+        placeholders = ",".join("?" for _ in identities)
+        rows = self._database.execute(
+            f"SELECT entry_id, question_text FROM display_versions WHERE entry_id IN ({placeholders})", identities,
+        ).fetchall()
+        texts = {str(row[0]): str(row[1]) for row in rows}
+        return [{"id": identity, "text": texts[identity]} for identity in identities]
+
+    def display_entries(self, identities: list[str]) -> tuple[HistoryEntry, ...]:
+        if not identities:
+            return ()
+        placeholders = ",".join("?" for _ in identities)
+        rows = self._database.execute(
+            f"SELECT id, conversation_id, parent_id, kind, by_task_id FROM entries WHERE id IN ({placeholders})",
+            identities,
+        ).fetchall()
+        entries = {str(row["id"]): HistoryEntry(str(row["id"]), str(row["conversation_id"]), row["parent_id"],
+                                               str(row["kind"]), row["by_task_id"], {}) for row in rows}
+        return tuple(entries[identity] for identity in identities)
 
     def head(self, conversation_id: str) -> tuple[str | None, int]:
         row = self._database.execute(

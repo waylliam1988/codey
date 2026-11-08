@@ -17,6 +17,8 @@ function response(items: object[], more = false) {
       session_id: session.id,
       epoch: 'db',
       snapshot_revision: 1,
+      path_generation: 0,
+      display_version: null,
       items,
       has_more: more,
       before_cursor: more ? 'older' : null,

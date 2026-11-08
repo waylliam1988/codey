@@ -128,7 +128,11 @@ def conversation_tree_response(ctx: Any, query: dict[str, list[str]]) -> tuple[i
                 related.append({'session_id': identity, 'title': candidate['title'], 'ancestors': ancestors})
         tree['related_sessions'] = related
         return 200, tree
-    except (KeyError, ValueError):
+    except ValueError as exc:
+        if str(exc) == 'history snapshot changed':
+            return 409, {'ok': False, 'error': str(exc)}
+        return 404, {'ok': False, 'error': 'conversation_path_not_found'}
+    except KeyError:
         return 404, {'ok': False, 'error': 'conversation_path_not_found'}
 
 

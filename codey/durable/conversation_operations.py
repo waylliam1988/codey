@@ -83,10 +83,10 @@ class ConversationOperations(SessionOperations):
     def fork(self, conversation_id: str, entry_id: str, *, child_conversation_id: str | None = None) -> str:
         return conversation_ops.fork(self._kernel, conversation_id, entry_id, child_conversation_id=child_conversation_id)
 
-    @operation_line
     def delete_conversation(self, conversation_id: str) -> CommitResult:
         """Delete an unreferenced conversation without orphaning a fork."""
-        return conversation_ops.delete_conversation(self._kernel, conversation_id)
+        with self._kernel.store.history_lifetime.exclusive(), self._kernel.control_line():
+            return conversation_ops.delete_conversation(self._kernel, conversation_id)
 
     @operation_line
     def save_context_snapshot(
