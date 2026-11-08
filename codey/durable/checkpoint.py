@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from codey.durable.model import (
     ArtifactRecord,
@@ -25,18 +25,12 @@ from codey.durable.model import (
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
 
 if TYPE_CHECKING:
-    from codey.durable.session import DurableSession
+    from codey.durable.contracts import RuntimeCheckpointPort
     from codey.runtime.core.operation_payload import RuntimeOperationState
     from codey.runtime.effects.effect_records import RuntimeEffectProjection
     from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection
     from codey.runtime.log.entries import RuntimeLogEntry
-    from codey.runtime.log.session_projection import RuntimeProjection
-
-
-RuntimeRows: TypeAlias = tuple[dict[str, object], ...]
-RuntimeRowsBuilder: TypeAlias = Callable[
-    ["RuntimeProjection", tuple["RuntimeLogEntry", ...]], RuntimeRows,
-]
+    from codey.runtime.log.session_projection import RuntimeRowsBuilder
 
 
 def _entry(session_id: str, row: dict[str, Any]) -> RuntimeLogEntry:
@@ -195,7 +189,7 @@ def _effect_changes(projections: tuple[RuntimeEffectProjection, ...], effects: t
     return intents, settlements
 
 
-def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
+def mutate_checkpoint(durable: RuntimeCheckpointPort, session_id: str, run_id: str,
                       derive_rows: RuntimeRowsBuilder, *,
                       messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
                       artifacts: tuple[ArtifactRecord, ...] = (),
@@ -269,7 +263,7 @@ def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
                 raise
 
 
-def _unregistered_artifacts(durable: DurableSession, artifacts: tuple[ArtifactRecord, ...]) -> tuple[ArtifactRecord, ...]:
+def _unregistered_artifacts(durable: RuntimeCheckpointPort, artifacts: tuple[ArtifactRecord, ...]) -> tuple[ArtifactRecord, ...]:
     """Reuse immutable content references inside the same transaction read line."""
     from codey.durable.errors import CommitConflict
 

@@ -1,6 +1,6 @@
 """Checkpoint callbacks retain the same inputs across transaction retries."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 import pytest
@@ -71,7 +71,9 @@ def test_tool_batch_iterator_survives_checkpoint_conflicts(
             assert committed.effect_ids == ("read-1",)
             assert durable.effect("read-1").settlement is None
             assert durable.commit_sequence() == before_sequence + 1
-            assert durable.task("r").state["operation"]["leaf"] == "tool_effect_pending"
+            operation = durable.task("r").state["operation"]
+            assert isinstance(operation, Mapping)
+            assert operation["leaf"] == "tool_effect_pending"
         assert attempts == min(conflicts + 1, 3)
     finally:
         durable.close()

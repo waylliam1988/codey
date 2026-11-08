@@ -445,6 +445,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "codey.runtime.write.tool_batches",
             "codey.runtime.effects.tool_result_delivery",
             "codey.durable.checkpoint",
+            "codey.durable.contracts",
             "codey.durable.session",
             "codey.durable.model",
             "codey.storage.atomic_io",

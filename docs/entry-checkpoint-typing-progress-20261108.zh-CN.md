@@ -15,6 +15,7 @@
 - 开始时 HEAD：`b9e8d19a`；工作区干净。此前聊天中的未提交修改已经在当前 HEAD 中提交，不属于本次修改。
 - 未发现适用的 AGENTS.md。
 - 已重新读取目标附件；之前只提供教程，本轮开始落实代码。
+- 三批代码与验证已完成；第三批提交标题为 `refactor(types): define checkpoint port and guard typed boundaries`。
 
 ## 第一批：任务入口与恢复
 
@@ -29,7 +30,7 @@
 
 ## 第二批：写入回调与静态导入
 
-已完成，准备提交。
+已完成并提交：`0c9fa774 refactor(types): type checkpoint callbacks and preserve retry inputs`。
 
 - RuntimeMutationLine.durable 使用 DurableSession；全部 mutation 回调明确 RuntimeProjection、RuntimeLogEntry、RuntimeRows。
 - checkpoint 的 derive_rows、boundary_transition、boundary_result 与返回的 SubmissionRecord 同步标注。
@@ -41,7 +42,17 @@
 
 ## 第三批：durable Protocol 与精度保护
 
-待开始。
+已完成，随本批提交。
+
+- RuntimeCheckpointPort 定义 task/head/artifact/transact_task/merge_generation_boundary；写入层与 checkpoint 两个接收函数统一依赖该协议。
+- RuntimeRows / RuntimeRowsBuilder 合并到已有 session_projection 模块，避免重复定义与循环依赖。
+- 架构白名单明确允许 codey.durable.contracts，durable 内核仍可独立导入。
+- 委托实现不继承 DurableSession，只实现协议能力；Memory / SQLite 验证工件写入、final 边界原子放置并重开写入、取消时无新提交。
+- 协议测试初版越过 writer_running → closing 的合法步骤，修正测试流程而未放宽生产状态机。
+- 精度门禁新增 8 个完整文件的零动态类型保护，以及 task_entry / context / checkpoint 的已迁移符号保护；新增符号缺失、别名、嵌套回调、完整 Callable 签名的检测回归。
+- 精度门禁的首版回调检测误取 AST Subscript 自身名称，新增回归暴露后修复为检查其基类型名称。
+- 额外对新增两份 durable 测试运行 mypy：发现一个读取 object 直接索引的测试错误，使用 Mapping 收窄后检查通过。
+- 已更新 docs/typechecking.md，明确保护范围与剩余历史动态类型。
 
 ## 验证记录
 
@@ -61,3 +72,23 @@
 - `python -m ruff check codey tools tests`：通过。
 - mypy / Pyrefly / ty 全量生产目录，目标 Python 3.11：全部通过；mypy 646 files，Pyrefly 0 errors。
 - kernel_type_precision_gate 与 git diff --check：通过。
+
+第三批验证：
+
+- 直接相关 pytest（runtime_checkpoint_port、checkpoint_mutation_contract、kernel_type_precision_gate、runtime_transaction_owner、kernel_boundary、generation_boundary_commit、provider_sink_generation_boundary、recovery_requires_original_policy、architecture）：178 passed、464 subtests passed。
+- `python -m ruff check codey tools tests`：通过。
+- `python -m mypy codey --python-version 3.11`：646 files，通过。
+- `pyrefly check codey --python-version 3.11`：0 errors，保留既有 suppressed / warnings。
+- `ty check codey --python-version 3.11`：通过。
+- `python -m mypy tests/durable/test_runtime_checkpoint_port.py tests/durable/test_checkpoint_mutation_contract.py --python-version 3.11`：2 files，通过；同时检查委托实现与协议的结构兼容性。
+- `python -m tools.kernel_type_precision_gate`：包括新增整文件、命名符号、完整回调保护，检查通过。
+
+## 完成核对与边界
+
+- 入口与恢复输出明确 TaskPolicy，frame 明确保存 TaskPolicy / TaskSession；继续任务策略不可更换。
+- RuntimeMutationLine 全文件无显式动态类型；checkpoint 的回调、durable 依赖及边界放置结果具有明确类型。
+- Protocol 覆盖适配器的完整能力需求，真实 DurableSession 及委托实现均通过类型检查。
+- 一次性迭代器重试丢失意图的生产缺陷先复现后修复；两个存储后端验证成功重试只提交一次，重试耗尽不留下部分事实。
+- 对照开始时 HEAD，12 个变更生产文件的 AST `Any` 标识符引用由 132 降至 53，共移除 79；每个文件都未增加。其余引用在 task_entry.py（41）、context.py（8）、checkpoint.py（4）的旧边界，未伪称全项目动态类型清零。
+- 未新增生产 cast、类型忽略、非零精度基线或关闭检查目标；没有添加运行时协议探测与兼容兜底。
+- 按约束未运行完整 pytest、覆盖率报告、安装包构建或安装包测试；验证聚焦实际改动路径。

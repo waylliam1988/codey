@@ -12,5 +12,13 @@
   "codey/operations/project_completion_checks.py": 0,
   "codey/operations/research_completion_checks.py": 0,
   "codey/operations/provider_session.py": 0,
-  "codey/research/tools.py": 0
+  "codey/research/tools.py": 0,
+  "codey/operations/recovery.py": 0,
+  "codey/runtime/log/session_projection.py": 0,
+  "codey/runtime/log/session_view.py": 0,
+  "codey/runtime/write/mutation_line.py": 0,
+  "codey/runtime/write/provider_effects.py": 0,
+  "codey/runtime/write/tool_batches.py": 0,
+  "codey/runtime/write/delivery_recovery.py": 0,
+  "codey/runtime/write/research_publication.py": 0
 }

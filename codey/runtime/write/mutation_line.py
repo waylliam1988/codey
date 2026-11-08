@@ -9,13 +9,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from codey.durable.contracts import RuntimeCheckpointPort
     from codey.durable.model import ArtifactRecord, SubmissionRecord
-    from codey.durable.session import DurableSession
     from codey.runtime.log.entries import RuntimeLogEntry
-    from codey.runtime.log.session_projection import RuntimeProjection
+    from codey.runtime.log.session_projection import RuntimeProjection, RuntimeRows, RuntimeRowsBuilder
 
 from codey.runtime.core.operation_payload import (
     LEAF_TERMINAL,
@@ -85,18 +85,13 @@ from codey.runtime.write.tool_batches import (
     build_tool_settle_rows,
 )
 
-RuntimeRows: TypeAlias = tuple[dict[str, object], ...]
-RuntimeRowsBuilder: TypeAlias = Callable[
-    ["RuntimeProjection", tuple["RuntimeLogEntry", ...]], RuntimeRows,
-]
-
 
 class RuntimeMutationLine:
     """Single writer-facing API for runtime durable mutations."""
-    def __init__(self, *, durable: DurableSession) -> None:
+    def __init__(self, *, durable: RuntimeCheckpointPort) -> None:
         if durable is None:
             raise ValueError("a runtime mutation line requires durable storage")
-        self.durable: DurableSession = durable
+        self.durable: RuntimeCheckpointPort = durable
 
     def advance_execution(
         self, session_id: str, run_id: str, *, expected: RuntimeOperationState,

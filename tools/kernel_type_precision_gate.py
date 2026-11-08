@@ -23,9 +23,27 @@ TARGETS = (
     "codey/operations/research_completion_checks.py",
     "codey/operations/provider_session.py",
     "codey/research/tools.py",
+    "codey/operations/recovery.py",
+    "codey/runtime/log/session_projection.py",
+    "codey/runtime/log/session_view.py",
+    "codey/runtime/write/mutation_line.py",
+    "codey/runtime/write/provider_effects.py",
+    "codey/runtime/write/tool_batches.py",
+    "codey/runtime/write/delivery_recovery.py",
+    "codey/runtime/write/research_publication.py",
 )
 
+SCOPED_TARGETS = {
+    "codey/operations/task_entry.py": (
+        "build_task_policy_for_entry", "start_task_session",
+        "_entry_policy_with_recovery", "_entry_check_conflict",
+    ),
+    "codey/operations/context.py": ("RunFrame.entry_policy", "RunFrame.entry_session"),
+    "codey/durable/checkpoint.py": ("mutate_checkpoint", "_unregistered_artifacts", "_effect_changes"),
+}
+
 CONTRACT_TARGETS = (
+    "codey/durable/contracts.py",
     "codey/types/json_value.py", "codey/providers/base.py",
     "codey/providers/requests.py", "codey/providers/request_codec.py",
     "codey/providers/transport.py", "codey/providers/compat_transport.py",
@@ -107,16 +125,39 @@ def _dynamic_count(node: ast.AST, aliases: set[str], modules: set[str], *, quote
     return sum(_dynamic_count(child, aliases, modules, quoted=quoted) for child in ast.iter_child_nodes(node))
 
 
-def source_violations(source: str, *, core: bool = True) -> list[str]:
+def _selected_nodes(tree: ast.Module, symbols: tuple[str, ...]) -> tuple[ast.Module, list[str]]:
+    selected: list[ast.stmt] = []
+    missing: list[str] = []
+    for symbol in symbols:
+        body = tree.body
+        found: ast.stmt | None = None
+        for part in symbol.split("."):
+            found = next((node for node in body if getattr(node, "name", None) == part
+                          or isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+                          and node.target.id == part), None)
+            body = found.body if isinstance(found, ast.ClassDef) else []
+        if found is None:
+            missing.append(f"missing protected symbol: {symbol}")
+        else:
+            selected.append(found)
+    return ast.Module(body=selected, type_ignores=[]), missing
+
+
+def source_violations(source: str, *, core: bool = True, symbols: tuple[str, ...] | None = None,
+                      closed_callables: bool = False) -> list[str]:
     tree = ast.parse(source)
     aliases, modules = _aliases(tree)
     generics = set(_GENERICS)
     cast_names = {"cast"}
+    callable_names = {"Callable"}
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module in {"typing", "collections.abc", "typing_extensions"}:
             generics.update(item.asname or item.name for item in node.names if item.name in _GENERICS)
             cast_names.update(item.asname or item.name for item in node.names if item.name == "cast")
-    errors = ["explicit dynamic type (including aliases/forward annotations)"] if _dynamic_count(tree, aliases, modules) else []
+            callable_names.update(item.asname or item.name for item in node.names if item.name == "Callable")
+    checked, errors = _selected_nodes(tree, symbols) if symbols is not None else (tree, [])
+    if _dynamic_count(checked, aliases, modules):
+        errors.append("explicit dynamic type (including aliases/forward annotations)")
 
     def annotation(node: ast.AST | None, *, subscript_base: bool = False) -> None:
         if node is None:
@@ -131,6 +172,11 @@ def source_violations(source: str, *, core: bool = True) -> list[str]:
         if name in generics and not subscript_base:
             errors.append(f"bare generic annotation: {name}")
         if isinstance(node, ast.Subscript):
+            base = node.value
+            base_name = base.id if isinstance(base, ast.Name) else base.attr if isinstance(base, ast.Attribute) else ""
+            if (closed_callables and base_name in callable_names and isinstance(node.slice, ast.Tuple)
+                    and isinstance(node.slice.elts[0], ast.Constant) and node.slice.elts[0].value is Ellipsis):
+                errors.append("callback signature has unspecified parameters")
             annotation(node.value, subscript_base=True)
             if name != "Literal" and not (isinstance(node.value, ast.Name) and node.value.id == "Literal"
                                           or isinstance(node.value, ast.Attribute) and node.value.attr == "Literal"):
@@ -139,7 +185,7 @@ def source_violations(source: str, *, core: bool = True) -> list[str]:
             for child in ast.iter_child_nodes(node):
                 annotation(child)
 
-    for node in ast.walk(tree):
+    for node in ast.walk(checked):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             args = [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]
             if node.args.vararg:
@@ -160,6 +206,8 @@ def source_violations(source: str, *, core: bool = True) -> list[str]:
                     errors.append(f"unmodeled core domain argument: {arg.arg}")
         elif isinstance(node, ast.AnnAssign):
             annotation(node.annotation)
+            if isinstance(node.annotation, ast.Name) and node.annotation.id == "TypeAlias":
+                annotation(node.value)
         elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in cast_names
               and node.args and _dynamic_count(node.args[0], aliases, modules, quoted=True)):
             errors.append("dynamic cast target")
@@ -199,7 +247,12 @@ def main() -> int:
     actual = current_counts()
     validate_counts(expected, actual)
     violations = {name: errors for name in (*TARGETS, *CONTRACT_TARGETS)
-                  if (errors := source_violations((ROOT / name).read_text(encoding="utf-8-sig"), core=name in TARGETS))}
+                  if (errors := source_violations((ROOT / name).read_text(encoding="utf-8-sig"), core=name in TARGETS,
+                                                 closed_callables=name != "codey/operations/provider_session.py"
+                                                 and name != "codey/providers/compat_transport.py"))}
+    violations.update({name: errors for name, symbols in SCOPED_TARGETS.items()
+                       if (errors := source_violations((ROOT / name).read_text(encoding="utf-8-sig"), symbols=symbols,
+                                                      closed_callables=True))})
     if violations:
         raise SystemExit(f"kernel contract violations: {violations}")
     print("kernel Any counts are zero; typed contract escape checks passed")

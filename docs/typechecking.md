@@ -31,6 +31,22 @@ checks above and the lightweight kernel precision checks remain required.
 Run local checks serially; package installation and upgrade smoke tests belong
 to release validation and are not required for every ordinary code change.
 
+The lightweight precision gate also protects task entry policy/session fields,
+policy recovery, and runtime checkpoint callbacks:
+
+```powershell
+python -m tools.kernel_type_precision_gate
+```
+
+Files migrated completely are protected at zero explicit dynamic types. The
+remaining mixed modules (`task_entry.py`, `context.py`, `durable/checkpoint.py`)
+have named function/field scopes in `SCOPED_TARGETS`; removing a protected symbol
+fails the gate. This does not claim the surrounding legacy code is fully typed.
+Checkpoint callbacks declare their parameters and return rows explicitly, and
+the writer and adapter share `RuntimeCheckpointPort`. Keep annotations complete;
+do not replace a callback signature with `Callable[..., object]`. The existing
+provider compatibility adapters retain their deliberately open call signatures.
+
 Mypy uses the strict settings in `pyproject.toml`. Pyrefly has an explicit
 `legacy` preset and error severities in that file. Warnings, existing suppression
 directives and active errors are separate facts: a successful error gate is not

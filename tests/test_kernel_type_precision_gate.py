@@ -49,3 +49,56 @@ def decode(raw: object, kind: Literal["Any", "list"]) -> dict[str, str]:
 def test_adapter_can_accept_raw_provider_and_finite_dynamic_calls():
     source = 'def probe(provider: object) -> object: return getattr(provider, "send", None)'
     assert not source_violations(source, core=False)
+
+
+def test_scoped_gate_ignores_unmigrated_neighbors_but_checks_imported_aliases() -> None:
+    source = '''from typing import Any as Dynamic
+Alias = Dynamic
+def legacy(value: Dynamic) -> Dynamic: return value
+def protected(value: str) -> str: return value
+'''
+    assert not source_violations(source, symbols=("protected",))
+    assert source_violations(source.replace("value: str", "value: Alias"), symbols=("protected",))
+
+
+def test_scoped_gate_checks_dataclass_fields_individually() -> None:
+    source = '''from typing import Any
+class Frame:
+    provider: Any
+    entry_policy: "TaskPolicy | None" = None
+'''
+    assert not source_violations(source, symbols=("Frame.entry_policy",))
+    assert source_violations(source.replace('"TaskPolicy | None"', "Any"), symbols=("Frame.entry_policy",))
+
+
+def test_scoped_gate_rejects_removed_contracts() -> None:
+    assert source_violations("class Frame: pass", symbols=("Frame.entry_policy",)) == [
+        "missing protected symbol: Frame.entry_policy",
+    ]
+
+
+def test_scoped_gate_checks_nested_callback_annotations() -> None:
+    source = '''from typing import Any
+def protected(value: str) -> str:
+    def mutation(projection: Any) -> str:
+        return value
+    return value
+'''
+    assert source_violations(source, symbols=("protected",))
+
+
+@pytest.mark.parametrize("source", [
+    'from collections.abc import Callable\ndef f(callback: Callable[..., object]) -> None: pass',
+    'from typing import Callable as Callback\ndef f(callback: "Callback[..., str]") -> None: pass',
+    'from typing import TypeAlias\nfrom collections.abc import Callable\nRowsBuilder: TypeAlias = Callable[..., str]',
+])
+def test_closed_callback_gate_rejects_unspecified_parameters(source: str) -> None:
+    assert source_violations(source, closed_callables=True)
+
+
+def test_closed_callback_gate_allows_exact_signatures() -> None:
+    assert not source_violations('''from collections.abc import Callable
+from typing import TypeAlias
+RowsBuilder: TypeAlias = Callable[[str, tuple[int, ...]], tuple[str, ...]]
+def f(callback: RowsBuilder) -> None: pass
+''', closed_callables=True)

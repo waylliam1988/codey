@@ -7,8 +7,9 @@ which external ledger refs belong to each operation.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from typing import TypeAlias
 
 from codey.runtime.core.outcome import OperationOutcomeStatus
 from codey.runtime.log.entries import RuntimeLogCorruption, RuntimeLogEntry
@@ -38,6 +39,12 @@ class LaneProjection:
 class RuntimeProjection:
     lanes: dict[str, LaneProjection]
     operations: dict[str, OperationProjection]
+
+
+RuntimeRows: TypeAlias = tuple[dict[str, object], ...]
+RuntimeRowsBuilder: TypeAlias = Callable[
+    [RuntimeProjection, tuple[RuntimeLogEntry, ...]], RuntimeRows,
+]
 
 
 def reduce_session(entries: tuple[RuntimeLogEntry, ...]) -> RuntimeProjection:

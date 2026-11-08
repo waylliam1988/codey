@@ -175,10 +175,37 @@ class DurableExecutionPort(Protocol):
     ) -> CommitResult | None: ...
 
 
+class RuntimeCheckpointPort(Protocol):
+    """Transaction and read capabilities used by the runtime checkpoint adapter."""
+
+    def task(self, task_id: str) -> TaskCheckpoint: ...
+
+    def head(self, conversation_id: str) -> tuple[str | None, int]: ...
+
+    def artifact(self, handle: str) -> ArtifactRecord: ...
+
+    def transact_task(
+        self,
+        task_id: str,
+        derive: Callable[[TaskCheckpoint, tuple[EffectRecord, ...], int], DurableMutation | None],
+    ) -> CommitResult | None: ...
+
+    def merge_generation_boundary(
+        self,
+        mutation: DurableMutation,
+        *,
+        task_id: str,
+        at: str,
+        steering_mode: str = "one-at-a-time",
+        follow_up_mode: str = "one-at-a-time",
+    ) -> tuple[tuple[SubmissionRecord, ...], DurableMutation]: ...
+
+
 __all__ = [
     "ApprovalPort",
     "DurableCommitObserver",
     "DurableExecutionPort",
     "EffectPort",
+    "RuntimeCheckpointPort",
     "TaskAdmissionPort",
 ]
