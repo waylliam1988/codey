@@ -11,7 +11,7 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
-_RUN_ENV = "CODEY_PYTEST_RAMDISK_RUN"
+_RUN_ENV = "PYTEST_RAMDISK_RUN"
 _TEMP_ENV = ("TEMP", "TMP", "TMPDIR")
 _MIN_FREE_BYTES = 16 * 1024 * 1024
 _RUNS: dict[Path, TempRun] = {}

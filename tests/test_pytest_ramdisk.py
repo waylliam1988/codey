@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 _REPO = Path(__file__).resolve().parents[1]
-_RUN_ENV = "CODEY_PYTEST_RAMDISK_RUN"
+_RUN_ENV = "PYTEST_RAMDISK_RUN"
 _PROBE = r'''
 import json, os, subprocess, sys, tempfile
 from pathlib import Path
@@ -21,7 +21,7 @@ from types import SimpleNamespace
 from tests.support.pytest_temp import bootstrap
 
 project, mode = Path(sys.argv[1]), sys.argv[2]
-before = {key: os.environ.get(key) for key in ('TEMP', 'TMP', 'TMPDIR', 'CODEY_PYTEST_RAMDISK_RUN')}
+before = {key: os.environ.get(key) for key in ('TEMP', 'TMP', 'TMPDIR', 'PYTEST_RAMDISK_RUN')}
 cached = tempfile.gettempdir()
 if mode == 'unwritable':
     with patch('tests.support.pytest_temp.tempfile.TemporaryFile', side_effect=PermissionError('read-only')):
