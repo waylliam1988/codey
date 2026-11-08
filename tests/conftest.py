@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.support.pytest_temp import bootstrap as _bootstrap_temp
+
 # AppContext now owns a durable SQLite lease and requires an explicit close.
 # A large body of older tests constructed contexts directly and relied on
 # TemporaryDirectory cleanup.  Keep that test-only construction style while
@@ -238,10 +240,34 @@ def _install_isolated_state_home() -> Path:
 def _remove_test_home(root: Path) -> None:
     import shutil
 
+    if _PYTEST_TEMP is not None and _PYTEST_TEMP.preserve_home(root):
+        return
     shutil.rmtree(root, ignore_errors=True)
 
 
+_PYTEST_TEMP = _bootstrap_temp(Path(__file__).resolve().parents[1])
 _PYTEST_STATE_HOME = _install_isolated_state_home()
+
+
+def pytest_report_header(config):
+    if _PYTEST_TEMP is None:
+        return None
+    pytest_temp = config.option.basetemp or os.environ.get("PYTEST_DEBUG_TEMPROOT") or tempfile.gettempdir()
+    return [
+        f"RAM disk temporary files: {tempfile.gettempdir()}",
+        f"pytest temporary root: {pytest_temp}; isolated home: {_PYTEST_STATE_HOME}",
+    ]
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if _PYTEST_TEMP is not None:
+        _PYTEST_TEMP.finish(int(exitstatus))
+
+
+def pytest_terminal_summary(terminalreporter):
+    if _PYTEST_TEMP is not None:
+        disposition = "retained after failure" if _PYTEST_TEMP.retained else "cleaned at process exit"
+        terminalreporter.write_line(f"RAM disk: {_PYTEST_TEMP.root} ({disposition})")
 
 
 def _is_pytest_current_cleanup_permission_error(root: Path, exc: PermissionError) -> bool:
