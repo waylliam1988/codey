@@ -89,8 +89,10 @@ def build_task_policy_for_entry(request: TaskSubmission, task_kind: object) -> T
     return policy
 
 
-def start_task_session(frame: RunFrame, work: RunWork, policy: TaskPolicy, kind: str) -> TaskSession:
+def start_task_session(frame: RunFrame, work: RunWork, policy: TaskPolicy, kind: str,
+                       *, durable: DurableSession | None = None) -> TaskSession:
     from codey.operations.task_session import TaskSession
+    from codey.task.web_intent import explicit_web_intent, restored_source_requirements
 
     existing = frame.entry_session
     if existing is not None:
@@ -98,12 +100,15 @@ def start_task_session(frame: RunFrame, work: RunWork, policy: TaskPolicy, kind:
             raise ValueError("task continuation cannot replace authorization")
         return existing
     request = frame.request
+    required_urls = (restored_source_requirements(durable.task(frame.run_id).state) if durable is not None
+                     else explicit_web_intent(request.task).urls)
     session = TaskSession(
         policy=policy,
         task_kind=_task_kind(kind),
         project=frame.project_text,
         max_turns=max(1, request.max_turns or 8),
         task_text=request.task,
+        required_source_urls=required_urls,
         handoff=frame.handoff,
         project_changes_required=request.project_changes_required is True,
         verification_forbidden=("project.verify" in policy.denied_capabilities),
@@ -173,9 +178,8 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
         research_tools = build_research_tools(
             deps, session_id=request.session_id, project=frame.project_text, browser_sources=policy.strict_research)
         if policy.allows("web.read"):
-            from codey.task.web_intent import explicit_web_intent
-
-            research_tools.direct_urls = explicit_web_intent(request.task).urls
+            assert frame.entry_session is not None
+            research_tools.direct_urls = frame.entry_session.required_source_urls
     return project_path, tool_fns, research_tools
 
 
@@ -366,7 +370,7 @@ def _run_entry_kernel(  # noqa: PLR0915
         frame.project_text = str(session_workspace(state_home, request.session_id))
     policy = _entry_policy_with_recovery(frame, deps.state.durable, kind)
     _entry_check_conflict(policy, request, kind)
-    session = start_task_session(frame, work, policy, kind)
+    session = start_task_session(frame, work, policy, kind, durable=deps.state.durable)
     from codey.operations.recovery import durable_task_for, record_entry_policy
 
     record_entry_policy(

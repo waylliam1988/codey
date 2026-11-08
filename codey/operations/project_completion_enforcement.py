@@ -129,12 +129,14 @@ def _record_completion_evidence(ctx: ProjectRun) -> None:
     if ctx.task_session is None:
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import build_task_policy
+        from codey.task.web_intent import explicit_web_intent
 
         # Project facts can also be projected from the operation's local
         # evidence (e.g. resumed checkpoints); no model claims enter here.
         ctx.task_session = TaskSession(
             policy=build_task_policy(ctx.request, task_kind="project"),
             task_kind="project", task_text=ctx.request.task, project=ctx.project,
+            required_source_urls=explicit_web_intent(ctx.request.task).urls,
         )
     import contextlib
 

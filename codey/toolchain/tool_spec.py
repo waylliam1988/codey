@@ -267,7 +267,7 @@ def _all_specs() -> dict[str, ToolSpec]:
         specs["done"] = _coding_specs().get("done", ToolSpec(name="done", grant="control"))
     done = specs["done"]
     specs["done"] = replace(done, description=done.description +
-        " When reporting execution status, execution_claims must copy actual result_ref, status, exit_code_scope "
+        " Optional execution_claims must match actual result_ref, status, exit_code_scope "
         "and observed exit_code from the receipts; omit exit_code when unknown. "
         "Copy status verbatim (exit for an exited process, never completed/success/failed). "
         "For ordinary chat with unavailable sources, source_gaps selects failed acquisition result_ref and reason; "

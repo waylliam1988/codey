@@ -161,8 +161,11 @@ def admit_input(
         mode=mode,
         content={"text": text, "message_metadata": metadata},
     )
+    from codey.task.web_intent import source_requirements
+
     state = {
         **dict(task_state or {}),
+        "source_requirements": source_requirements(text),
         "input_state": "queued" if placement is SubmissionPlacement.QUEUED else "placed",
         "input_text": text,
         "input_mode": mode,

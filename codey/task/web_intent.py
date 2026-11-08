@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
@@ -57,3 +58,26 @@ def explicit_web_intent(task: str) -> WebIntent:
                                       for match in _OPEN.finditer(masked)):
                 direct.update(urls)
     return WebIntent(requested, frozenset(direct))
+
+
+def source_requirements(task: str) -> dict[str, object]:
+    """Freeze explicit source requirements at task admission."""
+    return {"version": 1, "required_urls": sorted(explicit_web_intent(task).urls)}
+
+
+def restored_source_requirements(state: Mapping[str, object]) -> frozenset[str]:
+    """Decode the entry snapshot; legacy tasks use their stored original input."""
+    if "source_requirements" not in state:
+        task = state.get("input_text", state.get("task", ""))
+        if not isinstance(task, str):
+            raise ValueError("original source requirement input must be text")
+        return explicit_web_intent(task).urls
+    payload = state["source_requirements"]
+    if (not isinstance(payload, Mapping) or set(payload) != {"version", "required_urls"}
+            or type(payload["version"]) is not int or payload["version"] != 1):
+        raise ValueError("invalid source requirement snapshot")
+    urls = payload["required_urls"]
+    if (not isinstance(urls, (list, tuple)) or any(not isinstance(url, str) or not url
+            or source_url_key(url) != url for url in urls)):
+        raise ValueError("invalid required source URLs")
+    return frozenset(urls)

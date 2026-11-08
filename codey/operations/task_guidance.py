@@ -36,7 +36,7 @@ def task_working_context(session: "TaskSession", research_ledger: "ResearchLedge
         return answer_context(session, research_ledger, scope, count_tokens=count, token_budget=cap)
     from codey.operations.source_gaps import source_gap_context
 
-    failure_context = source_gap_context(session)
+    failure_context = source_gap_context(session, research_ledger)
     if failure_context:
         parts.append(failure_context)
     if session.task_kind == "chat" and session.opened_sources:

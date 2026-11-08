@@ -38,6 +38,7 @@ FROZEN_TASK_STATE_KEYS = (
     "input_identity",
     "input_request",
     "task_policy",
+    "source_requirements",
     "reviewer_selection",
     "workflow_origin",
     # Ownership is immutable: a task cannot move between owners after it has

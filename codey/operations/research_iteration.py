@@ -271,9 +271,12 @@ def run_research_iteration(
         task_kind="research",
         strict_research=True,
     )
+    from codey.task.web_intent import explicit_web_intent
+
     session = TaskSession(
         policy=policy, task_kind="research", project=project,
         max_turns=max_turns, task_text=task,
+        required_source_urls=explicit_web_intent(task).urls,
         controller_denied=tuple(controller_denied or ()),
         handoff="\n".join(x for x in (
             f"Conversation context from this chat:\n{chat_handoff}" if chat_handoff else "",

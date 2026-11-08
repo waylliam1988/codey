@@ -20,7 +20,8 @@ REF = "task_turn_effect:source_failure"
 def source_session(*, actual_failure: bool = True) -> TaskSession:
     session = TaskSession(TaskPolicy(frozenset({"web.read", "control"}), sources_open_required=True,
                                     required_checks=("research_sources_opened",)),
-                          task_kind="chat", task_text=f"请打开 {URL} 看看是干嘛的")
+                          task_kind="chat", task_text=f"请打开 {URL} 看看是干嘛的",
+                          required_source_urls=frozenset({URL}))
     session._memory_results[REF] = ToolResult(ToolCall("open_url", {"url": URL}), "ERROR: page_blank", ok=False,
         canonical={"source_failure": {"url": URL, "detail": "page_blank"}} if actual_failure else {})
     session.last_done_args = {"source_gaps": [{"result_ref": REF, "reason": "page_blank"}]}
@@ -36,10 +37,11 @@ def test_fresh_work_view_exposes_verified_failure_and_closure_args() -> None:
     from codey.operations.task_guidance import task_working_context
 
     context = task_working_context(source_session())
-    marker = "Unavailable requested sources (verified runtime failures, not opened evidence):\n"
+    marker = "Requested source coverage (verified runtime observations):\n"
     payload, _ = json.JSONDecoder().raw_decode(context.split(marker, 1)[1])
-    assert payload == {"source_gaps": [{"result_ref": REF, "reason": "page_blank"}]}
-    assert marker not in task_working_context(source_session(actual_failure=False))
+    assert payload["failed_sources"] == [{"url": URL, "result_ref": REF, "detail": "page_blank"}]
+    assert payload["unattempted_urls"] == []
+    assert '"unattempted_urls": ["https://example.com/"]' in task_working_context(source_session(actual_failure=False))
     session = source_session()
     session.task_kind = "research"
     assert marker not in task_working_context(session)
@@ -69,6 +71,7 @@ def test_unknown_reference_or_unaccounted_requested_url_cannot_close() -> None:
     assert not evaluate(session, "unavailable").blocked
     session = source_session()
     session.task_text += "，再打开 https://other.example.com/"
+    session.required_source_urls |= {"https://other.example.com/"}
     assert not evaluate(session, "unavailable").blocked
 
 

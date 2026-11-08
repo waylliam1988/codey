@@ -58,6 +58,8 @@ class TaskSession:
     project: str = ""
     max_turns: int = 8
     task_text: str = ""
+    # Admitted source requirements, independent of mutable prompt text.
+    required_source_urls: frozenset[str] = frozenset()
     handoff: str = ""
     # Explicit per-session controller deny-list (e.g. experiment arms):
     # subtracted from the state-derived allow-list every turn, so the

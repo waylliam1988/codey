@@ -73,13 +73,15 @@ def source_requirement_checks(session: TaskSession, context: object = None) -> l
     if not policy.sources_open_required:
         return []
     ledger = context.research_execution_ledger or context.research_ledger
-    if ledger is None:
+    if ledger is None and not session.required_source_urls:
         return [CompletionCheck("research_sources_opened", CHECK_FAIL, "research_ledger_missing")]
-    opened = ledger.final_url_set()
+    from codey.operations.source_gaps import task_source_coverage
+
+    coverage = task_source_coverage(session, ledger)
     row = completion_check(
         "research_sources_opened",
-        CHECK_PASS if opened else CHECK_NOT_RUN,
-        "" if opened else "research_source_not_opened",
+        CHECK_PASS if coverage.satisfied else CHECK_NOT_RUN,
+        "" if coverage.satisfied else "research_source_not_opened",
     )
     return [row] if row is not None else []
 

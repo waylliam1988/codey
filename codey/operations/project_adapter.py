@@ -208,12 +208,15 @@ def run(request: AgentRequest) -> RunResult:
         )
     session = request.task_session
     if session is None:
+        from codey.task.web_intent import explicit_web_intent
+
         session = TaskSession(
             policy=policy,
             task_kind=task_kind,
             project=str(request.project),
             max_turns=request.max_turns,
             task_text=request.task,
+            required_source_urls=explicit_web_intent(request.task).urls,
             handoff=request.handoff,
             project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
             coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),

@@ -33,9 +33,23 @@ def claim(code: object = 1) -> JsonObject:
     return decode_json_object({"result_ref": REF, "status": "exit", "exit_code_scope": "shell", "exit_code": code})
 
 
-def test_missing_claim_is_required_when_user_requests_exit_code() -> None:
-    verdict = evaluate(execution_session(), "The code is 7")
-    assert not verdict.complete and "execution_claims" in verdict.followup
+def test_receipts_are_checked_without_requiring_model_to_copy_them() -> None:
+    verdict = evaluate(execution_session(), "实际退出码是 1")
+    assert verdict.complete and verdict.proof is not None
+    assert any(row.check_id == "execution_claims" for row in verdict.proof.checks)
+
+
+def test_more_than_64_receipts_allow_completion_and_optional_subset_claims() -> None:
+    session = execution_session()
+    for index in range(100):
+        session._memory_results[f"exec:{index}"] = session._memory_results[REF]
+    assert evaluate(session, "已读取 101 条执行回执").complete
+    session.last_done_args = {"execution_claims": [claim()]}
+    assert evaluate(session, "部分执行事实说明").complete
+    bad = ToolResult(ToolCall("run", {}), "invalid", ok=True,
+                     canonical={"execution": {"exit_code": "0"}})
+    session._memory_results["invalid:101"] = bad
+    assert not evaluate(session, "不能忽略集合中的非法回执").complete
 
 
 @pytest.mark.parametrize("code", [7, True, "1", None])
