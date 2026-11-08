@@ -5,8 +5,8 @@ import json
 import sqlite3
 from typing import Protocol
 
-from codey.operations.execution_claims import execution_receipt
 from codey.operations.task_session import TaskSession
+from codey.runtime.core.execution_receipt import execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.storage.managed_outputs import ManagedOutputStore

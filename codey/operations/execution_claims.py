@@ -6,24 +6,10 @@ import re
 
 from codey.completion.contract import CompletionCheck
 from codey.operations.task_session import TaskSession
-from codey.runtime.core.execution_receipt import ExecutionReceipt
-from codey.runtime.core.models import ToolResult
+from codey.runtime.core.execution_receipt import ExecutionReceipt, execution_receipt
 from codey.types.json_value import JsonObject, decode_json_object
 
 _REPORT_STATUS = re.compile(r"退出码|退出状态|执行状态|exit[ _-]*code|exit status|execution status", re.IGNORECASE)
-
-
-def execution_receipt(result: ToolResult) -> ExecutionReceipt | None:
-    if result.call.name not in {"shell", "run"}:
-        return None
-    execution = result.canonical.get("execution")
-    if isinstance(execution, dict):
-        return ExecutionReceipt.from_payload(execution)
-    if "exit_code" not in result.audit:
-        return None
-    code = result.audit["exit_code"]
-    return ExecutionReceipt.from_payload({"status": "exit" if type(code) is int else "unknown",
-        "exit_code": code, "exit_code_scope": "process" if result.call.name == "run" else "shell"})
 
 
 def observed_claim(ref: str, receipt: ExecutionReceipt) -> JsonObject:

@@ -289,7 +289,8 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
                      f'Read omitted detail with read_tool_result({{"result_ref":"{result_ref}","query":"literal keyword"}}). '
                      f"{instruction} do not repeat execution to recover output.")
         if result.call.name in {"shell", "run"}:
-            from codey.operations.execution_claims import execution_receipt, observed_claim
+            from codey.operations.execution_claims import observed_claim
+            from codey.runtime.core.execution_receipt import execution_receipt
 
             text += "\nAvailable receipt views: " + ("output, value" if "value" in result.canonical else "output") + "."
             if result.audit.get("capture_truncated") is True:

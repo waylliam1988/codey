@@ -92,6 +92,7 @@ def shell_result_row(
     """
     from codey.agents.request import RecoveredToolOutcome
     from codey.agents.shell_approval import valid_shell_call_id
+    from codey.runtime.core.execution_receipt import ExecutionReceipt
     from codey.runtime.core.models import ToolCall
     from codey.runtime.core.protocol_window import ProtocolWindowRef
     from codey.toolchain.runtime import ToolOutcome
@@ -112,8 +113,8 @@ def shell_result_row(
             command=command, result={**result, "output": output_tail(str(result.get("output") or ""), count)},
             approved=approved,
         )
-    exit_code = result.get("exit_code")
-    exit_code = exit_code if type(exit_code) is int else None
+    receipt = ExecutionReceipt.from_payload(result).bounded()
+    exit_code = receipt.exit_code
     ok = approved and result.get("ok") is True and result.get("status") != "denied"
     if not approved:
         ok = False
@@ -130,9 +131,11 @@ def shell_result_row(
     )
     outcome = ToolOutcome(
         text, ok,
-        audit={"exit_code": exit_code} if exit_code is not None else {},
+        canonical={"execution": receipt.facts()},
+        audit=receipt.audit_facts(),
         error_code="" if ok else str(result.get("status") or "denied" if not approved else "shell_error"),
         exit_code=exit_code,
+        truncated=receipt.truncated,
     )
     return RecoveredToolOutcome(
         call=call,

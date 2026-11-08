@@ -14,10 +14,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from codey.policies.action import (
     DECISION_DENY,
+    ActionPolicyDecision,
     ActionSubject,
     evaluate_action,
 )
@@ -27,6 +27,7 @@ from codey.policies.run_command_semantics import (
     is_suite_run_command,
 )
 from codey.runtime.core import cancellation
+from codey.runtime.core.execution_receipt import ExecutionReceipt
 from codey.runtime.core.models import (
     canonical_json_mapping,
     json_safe_projection,
@@ -35,6 +36,7 @@ from codey.runtime.core.models import (
 )
 from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
 from codey.storage.atomic_io import write_text_atomic
+from codey.storage.execution_output_store import ExecutionOutputStore
 from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, MAX_REPLACEMENTS, STALE_READ_REFERENCE_ERROR
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.toolchain.presentation import edit_preview
@@ -47,6 +49,7 @@ from codey.workspace.bounded_scan import (
     DEFAULT_MAX_SCAN_FILES,
     BoundedScanBudget,
 )
+from codey.workspace.file_index import IncrementalFileIndex
 from codey.workspace.paths import bounded_directory_entries as _bounded_directory_entries
 from codey.workspace.paths import safe_join
 
@@ -218,8 +221,8 @@ class ToolOutcome:
         return normalized_managed_output(value)
 
 
-def _policy_error_outcome(decision: Any) -> ToolOutcome:
-    message = str(getattr(decision, "display", "") or "action denied by policy")
+def _policy_error_outcome(decision: ActionPolicyDecision) -> ToolOutcome:
+    message = decision.display or "action denied by policy"
     text = message if message.startswith("ERROR:") else f"ERROR: {message}"
     return ToolOutcome(
         text,
@@ -989,7 +992,7 @@ def search_files(
     root: Path, rel: str, query: str, *, offset: int = 1, limit: int = SEARCH_MAX_RESULTS,
     max_results: int | None = None, literal: bool = True, case_sensitive: bool = False, include: str = "",
     exclude: tuple[str, ...] | list[str] = (), before_context: int = 0, after_context: int = 0,
-    file_index: Any = None,
+    file_index: IncrementalFileIndex | None = None,
 ) -> ToolOutcome:
     from codey.toolchain.rg_search import search
     from codey.toolchain.search_page import normalize_page_args
@@ -1007,7 +1010,6 @@ def search_files(
     root = root.resolve()
     budget = BoundedScanBudget(max_files=SEARCH_MAX_SCAN_FILES, max_dirs=SEARCH_MAX_SCAN_DIRS,
                                max_dir_entries=SEARCH_MAX_DIR_ENTRIES)
-    from codey.workspace.file_index import IncrementalFileIndex
     index = file_index if file_index is not None else IncrementalFileIndex()
     try:
         snapshot = index.discover(root, start, excluded_dirs=SEARCH_EXCLUDED_DIRS, budget=budget,
@@ -1097,7 +1099,7 @@ def run_command_raw(
     permission_profile: str,
     phase: str = "tool_runtime",
     capture_limit_bytes: int = CAPTURE_LIMIT_BYTES,
-    execution_store: Any = None,
+    execution_store: ExecutionOutputStore | None = None,
     session_id: str = "",
     run_id: str = "",
 ) -> RunCommandRawResult | ToolOutcome:
@@ -1247,13 +1249,12 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
             "\nOnly head and tail of the process output were retained; "
             "run a narrower command to inspect omitted content."
         )
-    recoverable = not capture_truncated and (not truncated or raw.full_output_retained)
+    receipt = ExecutionReceipt("exit", raw.exit_code, output, truncated=truncated,
+        capture_truncated=capture_truncated, execution_id=raw.execution_id,
+        exit_code_scope="process", full_output_retained=raw.full_output_retained)
     display = (f"exit {raw.exit_code}: {raw.command}\nExit code scope: process\n"
-               f"Full execution output recoverable: {str(recoverable).lower()}\n{output}")
-    audit: dict[str, object] = {}
-    audit["exit_code_scope"] = "process"
-    if raw.execution_id:
-        audit["execution_id"] = raw.execution_id
+               f"Full execution output recoverable: {str(receipt.full_output_recoverable).lower()}\n{output}")
+    audit: dict[str, object] = dict(receipt.audit_facts())
     if raw.started_at:
         audit["command_started_at"] = raw.started_at
     if raw.finished_at:
@@ -1265,16 +1266,10 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
     audit["process_stdout_bytes"] = stdout_bytes
     audit["process_stderr_bytes"] = stderr_bytes
     audit["process_bytes"] = stdout_bytes + stderr_bytes
-    if capture_truncated:
-        audit["capture_truncated"] = True
     return ToolOutcome(
         display,
         raw.ok,
-        canonical={"execution": {"status": "exit", "exit_code": raw.exit_code,
-                                  "exit_code_scope": "process", "capture_truncated": capture_truncated,
-                                  "truncated": truncated, "execution_id": raw.execution_id,
-                                  "full_output_retained": raw.full_output_retained,
-                                  "full_output_recoverable": recoverable}},
+        canonical={"execution": receipt.facts()},
         audit=audit,
         exit_code=raw.exit_code,
         truncated=truncated,

@@ -190,12 +190,13 @@ class KernelContext:
             text, ok, code = "ERROR: command cancelled before execution", False, None
         else:
             text, ok, code = payload["model_text"], payload["ok"], payload["exit_code"]
+        from codey.runtime.core.execution_receipt import ExecutionReceipt
+
+        execution = ExecutionReceipt.from_payload(payload["execution"]) if payload is not None else None
         result = ToolResult(call, text, ok=ok,
             truncated=payload["truncated"] if payload is not None else False,
-            audit={"exit_code": code,
-                   "capture_truncated": payload["capture_truncated"] if payload is not None else False,
-                   "execution_id": payload["execution_id"] if payload is not None else ""},
-            canonical={"execution": payload["execution"]} if payload is not None else {})
+            audit=execution.audit_facts() if execution is not None else {"exit_code": code},
+            canonical={"execution": execution.facts()} if execution is not None else {})
         receipt = RuntimeEffectSettlement(effect_id=effect.intent.effect_id, effect_category="tool_call",
             session_id=self.sink.session_id, run_id=self.sink.run_id, status="ok" if ok else "error",
             error_code="" if ok else "cancelled" if payload is None else payload["error_code"] or "shell_error",

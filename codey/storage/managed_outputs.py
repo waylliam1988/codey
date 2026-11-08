@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codey.durable.model import ArtifactRecord
+    from codey.storage.execution_output_store import ExecutionOutputStore
 
 from codey.policies.action import (
     DECISION_DENY,
@@ -372,7 +373,7 @@ def run_command_with_managed_output(
     run_id: str,
     phase: str = "tool_runtime",
     tool_id: str = "",
-    execution_store: object | None = None,
+    execution_store: ExecutionOutputStore | None = None,
 ) -> ToolOutcome:
     raw = tool_runtime.run_command_raw(
         root,

@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from codey.runtime.core.models import ToolResult
 from codey.types.json_value import JsonObject, require_json_boolean, require_json_string
 from codey.utils.text_budget import clip_middle
 
@@ -52,6 +53,12 @@ class ExecutionReceipt:
                 "execution_id": self.execution_id, "full_output_retained": self.full_output_retained,
                 "full_output_recoverable": self.full_output_recoverable}
 
+    def audit_facts(self) -> JsonObject:
+        """Compatibility fields derived from the same execution observation."""
+        return {"exit_code": self.exit_code, "exit_code_scope": self.exit_code_scope,
+                "execution_id": self.execution_id, "capture_truncated": self.capture_truncated,
+                "full_output_retained": self.full_output_retained}
+
     def _header(self) -> str:
         header = (f"Execution status: {self.status}\n"
                   f"Exit code: {self.exit_code if self.exit_code is not None else 'unknown'}\n"
@@ -69,3 +76,20 @@ class ExecutionReceipt:
 
     def render(self) -> str:
         return self._header() + self.output
+
+
+def execution_receipt(result: ToolResult) -> ExecutionReceipt | None:
+    """Decode canonical facts, or the explicit legacy audit representation."""
+    if result.call.name not in {"shell", "run"}:
+        return None
+    execution = result.canonical.get("execution")
+    if isinstance(execution, dict):
+        return ExecutionReceipt.from_payload(execution)
+    if "exit_code" not in result.audit:
+        return None
+    code = result.audit["exit_code"]
+    return ExecutionReceipt.from_payload({"status": "exit" if type(code) is int else "unknown",
+        "exit_code": code, "exit_code_scope": "process" if result.call.name == "run" else "shell",
+        "truncated": result.truncated, "capture_truncated": result.audit.get("capture_truncated", False),
+        "execution_id": result.audit.get("execution_id", ""),
+        "full_output_retained": result.audit.get("full_output_retained", False)})
