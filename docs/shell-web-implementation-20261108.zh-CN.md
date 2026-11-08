@@ -1,69 +1,97 @@
-# Shell / Web 三批实施进度（2026-11-08）
+# Shell / Web 三批实施记录（2026-11-08）
 
-## 目标与授权
+## 授权与范围
 
-执行用户目标文件 `attachments/b42c336c-14ff-4ef3-bc48-8cc2f5788943/goal-objective.md` 中的三批方案，全部验证后才完成目标。每批独立 commit；本地 Gemma4 实机通过后才使用 Solar Mini4，并在两者验证后进入下一批。不要把完成第一批当成整个目标完成。
+用户授权三批实施、每批单独提交；先本地 KoboldCpp Gemma4，再 Cline Solar Mini4。相关测试优先，不运行全量 pytest、覆盖率和安装包构建。
+执行 Ruff、全生产树 mypy/Pyrefly/ty 及 kernel precision gate，检查器串行运行。新增代码使用明确类型，消除所重构边界的显式 Any；不声称历史代码库已无 Any。
+遵守 `DESIGN.md`，本次不改变 UI 外观，状态来自真实执行记录。
 
-用户约束：相关测试优先；不主动全量 pytest、覆盖率或安装包构建；扩大范围需解释原因；执行 Ruff 与类型检查；新增/重构边界使用明确类型、消除所触及的 Any，不新增 Any 或冗余防御；遇到失败先分清生产错误、测试过时和环境原因；UI/UX 遵循 DESIGN.md。
+## 三批交付
 
-## 实施顺序
+| 批次 | 提交 | 结果 |
+| --- | --- | --- |
+| 第一批 | `fc0cd737` | 公共执行回执、审批/恢复事实保留、明确联网意图、指定首页直接获取 |
+| 第二批 | `d26b7a9f` | Windows 默认优先 PowerShell、任务内 Shell 绑定、退出码作用域、统一捕获/存储解码 |
+| 第三批 | 本文件所属提交 `fix: verify execution claims and close unavailable web tasks` | 输出恢复与分页、执行结论核对、普通聊天 HTTP 搜索、不可用来源诚实收尾、真实美食来源验收 |
 
-### 第一批：结果与网页入口
+三批验收均已完成。第三批最终相关 pytest **206 passed**（19 个模块）；Ruff、全生产树三套类型检查及 precision gate 通过。
+Gemma 与 Solar 的生产审批、禁止联网、原站不可用收尾和最终美食来源验收均通过。第三批随本文件提交，详细证据见 batch3 报告。
 
-- [x] 公共、有类型的执行回执；初次显示实际状态、退出码及作用域。
-- [x] 审批重建保留截断、执行输出引用；持久化/恢复、原生/兼容协议保持一致。
-- [x] 联网意图覆盖“上网看看”及明确打开 URL，保留否定和只读约束。
-- [x] 用户指定首页与研究候选筛选分离，涵盖重定向；复用现有获取与提取能力。
-- [x] 修正诊断 gate 的契约预期，冻结旧回执基线，区分正常 Shell 语义与产品缺口。
-- [x] 相关测试、Ruff、类型检查、本地实机、在线实机。
-- [x] 更新报告并提交第一批（本次 commit）。
+## 第一批完成项
 
-### 第二批：PowerShell 与编码
+- 公共 `ExecutionReceipt` 集中展示状态、退出码、作用域、截断及执行输出引用。
+- 审批重建保留执行事实，首次投递、原生/兼容协议和历史恢复使用一致契约。
+- 意图识别覆盖“上网看看”“打开网址看看”，保留明确否定、代码引用及显式禁用约束。
+- 用户指定 URL 使用有界 HTTP 获取；研究候选继续使用质量筛选。重定向和 PDF 保持网络策略。
+- 冻结旧回执作为历史基线，修正 PowerShell 验收预期。
 
-- [x] 显式配置 → pwsh → powershell → CMD；保持任务执行环境绑定。
-- [x] 原生 argv 与 Shell 退出码明确区分，不擅自改写脚本语义。
-- [x] 捕获/实时存储/最终回执统一解码，有限编码回退及正确字符边界。
-- [x] 覆盖 PowerShell 内部转换已损失信息的边界，不假称可以从宿主恢复。
-- [x] 相关测试、Ruff、类型检查、本地实机、在线实机。
-- [x] 更新报告并提交第二批（本次 commit）。
+相关旧回归 46 项、新增/诊断回归 46 项通过；Ruff、三套类型检查和 precision gate 通过。
+Gemma 与 Solar 均通过 CMD/PowerShell 生产 HTTP 审批、明确禁止联网和可读首页获取。
+报告：`reports/shell-web-batch1-20261108.json`。
 
-### 第三批：读取、恢复与回答核验
+## 第二批完成项
 
-- [ ] 明确展示/存储/采集截断与完整读回能力，复用已有存储。
-- [ ] 回执声明可用视图，命令没有 value 时明确提示 output。
-- [ ] 绑定回执的结构化执行结论与现有完成检查核对；执行状态 UI 取真实记录。
-- [ ] 审核相关工具卡片状态；如需 UI 修改按 DESIGN 实施并验证。
-- [ ] 增加恢复、否定联网、首页、两类退出码、回答事实、福州美食来源的验收。
-- [ ] 相关测试、Ruff、类型检查、本地实机、在线实机。
-- [ ] 更新文档、提交第三批，逐项审计完整目标后结束。
+- Windows 发现顺序：用户显式配置 → `pwsh` → `powershell` → CMD；失败不自动切换解释器。
+- 原生参数数组报告 `process` 作用域，Shell 报告 `shell`；不统一追加 `exit $LASTEXITCODE`。
+- 捕获优先 UTF-8；无效时仅回退到主机 Windows 代码页，并显示编码说明。实时存储与最终捕获共用解码。
+- 正确处理 UTF-8/DBCS 裁剪边界和被丢弃字节中的无效编码；迁移 SQLite 输出元数据。
+- 修复确定性缺陷：旧观察队列过载丢字节。现在同步有界捕获字节，异步合并刷新通知。
+- 存储失败的 `unknown` 状态不再被结算覆盖；快照和观察边界使用明确类型。
 
-## 当前证据
+相关捕获/取消/执行测试 126 passed、1 skipped；补充存储/删除/状态/作用域回归 59 passed；补充 gate 回归 19 passed。
+两模型均正确读取原生 7、PowerShell 1、后续输出 0、显式返回 7 的数值和作用域。
+Solar 曾在纯中文字段保留编码说明：事实正确、精确格式不符，分别记录，没有为此重复调用。
+生产审批、Ruff、三套类型检查与 precision gate 通过。
+报告：`reports/shell-web-batch2-20261108.json`。
 
-- 工作区原有四个未跟踪文件均是本会话前期诊断产物：`tools/shell_web_diagnostic_gate.py`、其测试及两份 baseline 报告，保留并随相关提交纳入。
-- 基线：`docs/reports/shell-web-baseline-20261108.zh-CN.md`，37 项矩阵完整；不能把 22/37 当作模型成功率。
-- `DESIGN.md` 已读：UI 英文、安静且复用现有交互；普通聊天不自动启用 Research 的浏览器来源流程，需检查轻量获取路径。
-- 第一批业务修改已落地：公共 `ExecutionReceipt`、有类型审批重建和恢复、普通聊天明确联网意图、指定 URL 的有界 HTTP 获取（含重定向和 PDF）。新增/重构模块无显式 Any。
-- 相关回归 91 项通过；全生产树 mypy（654 文件）、Pyrefly、ty 与 kernel precision gate 通过。Ruff 有一个诊断脚本导入顺序待修。
-- 本地 Gemma4 实机：CMD/PowerShell 两种生产 HTTP 审批与首次退出码投递通过；明确禁止联网通过。
-- 原始站点 `api.lihe.chat` 实际返回 233075 字节 SPA HTML，大型内嵌图标占据开头，静态提取正文为空。首页质量筛选已绕过，失败现为真实 `page_blank`；不可声称已读取网站内容。普通聊天按 DESIGN 不自动启动浏览器。
-- 本地首个 open_url 失败的 qN 原因需对照请求参数：`question_ref` 即使非必填，传入不存在的 qN 仍应拒绝，不能简单移除校验。
-- 以实际可读 API 站点 `openrouter.ai` 补做同一真实入口的成功获取验证；原始失败证据保留。失败后如实完成的契约列入第三批，不能用静态空页宣称成功。
-- 实机证据目录：`.e2e-artifacts/shell-web-batch1-local` 与 `shell-web-batch1-local-readable`。尚未使用在线额度、尚未提交。
+## 第三批实施
 
-## 继续工作位置
+- 分开报告展示截断、存储截断、采集丢失和完整读回能力。展示省略可读回；已丢弃字节、未知状态和未执行回执不承诺完整执行日志。
+- `read_tool_result` 复用已有执行数据库，核对 session/run 所有权；没有 `value` 时提示支持 `output`。
+  分页明确指向原始引用和下一页偏移，避免转读分页结果自身的回执。读取失败不授权重新执行。
+- `done.execution_claims` 绑定真实回执，核对状态、退出码、作用域；未知退出码省略，不能变成 0/null/字符串。
+  要求汇报执行状态的任务必须覆盖已观察回执；纠错提供可复制的真实结论。
+- `done.source_gaps` 只接受本任务实际失败的获取回执，并核对明确请求的 URL。
+  参数错误、策略拒绝和无效偏移不能冒充获取失败。无页面的普通聊天以 `blocked` 收尾，不生成成功证明；严格 Research 保持原契约。
+- 每轮当前事实补齐已打开来源和实际失败，避免来源进度仅存在于工具正文。
+- 修复 HTML 来源定位偏移：打开位置现在覆盖定位预览中出现的前文，避免预览含某道菜而打开后的正文从其后开始。
+- 普通聊天默认使用有界 HTTP 搜索（Bing RSS）及页面/PDF 获取，完整保留中文查询；不自动启动 Research 浏览器，保留显式注入提供者。
+- 审核命令状态卡片和执行输出，现有逻辑读取真实状态，无需改 UI；相关 Vitest 10 项通过。
 
-第一批验收完成，开始第二批：`shell_discovery.py` 默认顺序、`output_capture.py` 与 `execution_output_store.py` 共用编码/边界契约、原生 run 的 process 作用域。不要改写用户脚本的退出语义。
+## 实机发现与处理
 
-第二批实施中：Windows 顺序已改为显式配置 → pwsh → powershell → CMD。原生 run 保留参数数组，回执和 canonical 记录 process 作用域；Shell 不追加 exit。捕获优先 UTF-8，仅在无效时回退 Windows 主机代码页，并显示所用编码；不猜测任意字符集。采集与实时快照共用 `BoundedByteCapture`，保留原始字节计数、实际省略字节及编码信息，并迁移旧 SQLite 快照。
+| 发现 | 归因与处理 |
+| --- | --- |
+| Windows 使用 `head`、`;`，模型看不到退出码 | Shell 语法混用与回执丢失是独立问题；绑定 Shell，并在首次结果显示实际执行事实 |
+| 原站 `api.lihe.chat` 读取不到正文 | 约 233075 字节的 SPA HTML，大型内嵌图标在前、静态正文为空；真实为 `page_blank`，不能据此宣称已验证网站用途 |
+| 模型传不存在的 `question_ref=q1` | 参数错误，保留校验并允许修正；不改成普通聊天必须先做研究计划 |
+| 内部 `sys.exit(7)`，PowerShell 观测为 1 | 正常 Shell 语义；验收真实值和作用域，不按命令文本猜测 |
+| Solar 先报 7，后报 1，但状态仍写 `completed` | 完成核对正确拒绝；增加可复制的真实 `exit/1/shell` 结论后通过 |
+| Solar 空页反复获取 | 每轮工作视图缺失败事实；补齐后实际请求一次即诚实 blocked 收尾 |
+| Solar 美食首次耗尽轮次 | 已读正文却重复读取，转读分页结果回执；修正分页目标及当前来源进度，保留首轮失败 |
+| Solar 美食第二次有一道菜只有预览支持 | 定位预览含匹配点之前的内容，打开偏移可能跳过该内容；回归复现后修正偏移，不把该次回答重算为通过 |
+| 定位修复后一次仍引用未打开段落 | 模型选了另一定位，却使用别处预览中的名菜；保留为未通过，最终验收明确仅从实际打开段落选名称，两模型通过 |
+| 可读首页一次 TLS EOF | 环境瞬时失败，真实 blocked 回答正确；独立 HTTP 探测恢复后复验通过，未改写生产逻辑掩盖错误 |
+| 两个入口单测缺字段 | 旧 SimpleNamespace 夹具缺必需字段及 ExecutionEvidence；修夹具，不放宽生产校验 |
 
-发现并修复生产确定性问题：旧观察队列满会丢字节；现在同步有界捕获、异步合并刷新通知，不丢字节。存储失败的 unknown 状态不再被后续 settled 擦除。旧 CMD 测试应显式选择 CMD，跨平台引用测试补 PowerShell 的调用运算符和显式退出，而非改写生产脚本迎合旧测试。
+## 证据与复现
 
-第二批验证：相关捕获/取消/执行测试 126 passed、1 skipped，补充存储/删除/状态/退出作用域回归 59 passed；未运行全套 pytest。Gemma 实机 14/14（离线观测及两种审批）通过；新增宿主实测回执核验通过。Solar 正确复述全部四种退出码及作用域，中文正文正确，但保留了编码说明，与要求的纯正文格式不同；记录 exact_format=false，事实核验=true，基于保存证据重分析，没有为此重发模型请求。生产审批复验进行中。
+汇总见 `reports/shell-web-batch3-20261108.json` 及对应中文报告。
+原始请求、事件和响应保留于本机 `.e2e-artifacts/shell-web-batch3-*`，不提交原始模型载荷。失败尝试与最终通过分别记录；重分析保存证据不重复调用模型。
 
-第二批已验收：Solar 的 PowerShell HTTP 审批与首次回执通过。新增编码 gate 回归与相关用例 19 项通过；最终全树 mypy/Pyrefly/ty、Ruff 和 precision gate 通过。汇总见 `docs/reports/shell-web-batch2-20261108.json`。当前无 UI 外观变化。
+```powershell
+python tools/shell_web_diagnostic_gate.py --models gemma --only e2e web --shells pwsh --expect-unavailable --run-dir .e2e-artifacts/new-local --timeout 180
+python tools/shell_web_food_gate.py --model gemma --run-dir .e2e-artifacts/new-local-food
+python tools/shell_web_food_gate.py --model solar --local-report .e2e-artifacts/new-local-food/summary.json --run-dir .e2e-artifacts/new-solar-food
+```
 
-下一步第三批：输出恢复边界与 available views；done 结构化 execution_claims 绑定 result_ref 并接入现有完成检查；失败网页用 source_gaps 绑定真实失败回执完成，防止空页导致无限重试；审核状态卡片并添加福州美食真实来源验收。仍先本地后在线，第三批提交后逐项核对全目标。
+本地先通过，再单独执行 Solar；食品 gate 要求已通过的本地报告。前两批历史报告不修改。
 
-第一批最终记录：相关旧回归 46 项、新增/诊断回归 46 项通过；Ruff、全树 mypy/Pyrefly/ty、kernel precision gate 通过。Gemma 和 Solar 都通过两种 Shell 审批、明确禁止联网和单页首页获取。汇总见 `docs/reports/shell-web-batch1-20261108.json`。
+## 验收边界
 
-修正先前猜测：本地首次 open_url 传入未注册的 `question_ref=q1`，不是普通聊天强制需要研究计划；现有拒绝正确，模型可恢复，不修改校验。Solar 初次成功获取后反复扩展文档是模型范围控制问题；明确单页任务后两个模型都通过。
+- 一轮实机不是模型成功率评测，也不能证明所有维度超过 Codex。
+- 结构化执行结论由程序核对，任意自然语言的全部语义仍需评测。
+- 食品 gate 核对实际查询意图、打开来源及交付正文中的食品名称，不以搜索摘要替代正文。
+- 静态 HTTP 不能保证解析 JavaScript、验证码或登录页面；普通聊天不自动启动浏览器。
+- 无法恢复已经在 PowerShell 内部转换丢失的字节；应让程序输出 UTF-8 或使用原生参数数组。
+- 未运行全量 pytest、覆盖率、安装包构建或重新发布前端。

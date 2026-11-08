@@ -243,6 +243,7 @@ class RunCommandRawResult:
     stderr_bytes: int
     capture_truncated: bool
     execution_id: str = ""
+    full_output_retained: bool = False
 
 
 def _utc_now_iso() -> str:
@@ -1140,10 +1141,13 @@ def run_command_raw(
         if execution_store is not None and execution_id:
             with contextlib.suppress(Exception):
                 execution_store.unavailable(execution_id)
-    def mark_settled(code: int | None) -> None:
+    def mark_settled(code: int | None) -> bool:
         if execution_store is not None and execution_id:
             with contextlib.suppress(Exception):
-                execution_store.settled(execution_id, code)
+                snapshot = execution_store.settled(execution_id, code)
+                return (snapshot["execution_state"] == "settled" and not snapshot["stdout"]["truncated"]
+                        and not snapshot["stderr"]["truncated"])
+        return False
     try:
         proc = cancellation.run_process(
             process_argv,
@@ -1228,8 +1232,8 @@ def run_command_raw(
         stderr_bytes=proc.stderr_bytes,
         capture_truncated=(proc.stdout_truncated or proc.stderr_truncated),
         execution_id=execution_id,
+        full_output_retained=mark_settled(proc.returncode),
     )
-    mark_settled(result.exit_code)
     return result
 
 
@@ -1243,7 +1247,9 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
             "\nOnly head and tail of the process output were retained; "
             "run a narrower command to inspect omitted content."
         )
-    display = f"exit {raw.exit_code}: {raw.command}\nExit code scope: process\n{output}"
+    recoverable = not capture_truncated and (not truncated or raw.full_output_retained)
+    display = (f"exit {raw.exit_code}: {raw.command}\nExit code scope: process\n"
+               f"Full execution output recoverable: {str(recoverable).lower()}\n{output}")
     audit: dict[str, object] = {}
     audit["exit_code_scope"] = "process"
     if raw.execution_id:
@@ -1266,7 +1272,9 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
         raw.ok,
         canonical={"execution": {"status": "exit", "exit_code": raw.exit_code,
                                   "exit_code_scope": "process", "capture_truncated": capture_truncated,
-                                  "truncated": truncated, "execution_id": raw.execution_id}},
+                                  "truncated": truncated, "execution_id": raw.execution_id,
+                                  "full_output_retained": raw.full_output_retained,
+                                  "full_output_recoverable": recoverable}},
         audit=audit,
         exit_code=raw.exit_code,
         truncated=truncated,

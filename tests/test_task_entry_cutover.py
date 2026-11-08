@@ -9,7 +9,9 @@ from unittest.mock import patch
 
 import pytest
 
+from codey.operations.context import RunWork
 from codey.operations.task_loop import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest, KernelTransportDeps
+from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.storage.managed_outputs import ManagedOutputStore
 
 
@@ -125,7 +127,7 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
         provider_id="deepseek", project_text=str(tmp_path), handoff="",
         recovered_tool_outcomes=(),
         settled_tool_outcomes=(), recovered_tool_result_batch_id="", entry_initial_turn=None,
-        window_action=None,
+        window_action=None, entry_policy=None, entry_session=None,
     )
     events: list[object] = []
     hooks = SimpleNamespace(on_event=events.append, on_shell_request=events.append)
@@ -141,7 +143,7 @@ def test_task_entry_uses_same_runtime_receipts_and_events(tmp_path) -> None:
     with (patch("codey.operations.task_loop.run_task_kernel",
                 return_value=KernelResult(True, "done", 1, "done")) as kernel,
           patch("codey.operations.task_effects.KernelEffectSink") as sink_type):
-        result = run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
+        result = run_entry_kernel(frame, RunWork(recent_events=[], evidence=ExecutionEvidence()),
                                   hooks, deps)
     assert result.event["stop_reason"] == "done"
     sink_type.assert_called_once()
@@ -168,7 +170,7 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
         provider_id="local", project_text=str(project), handoff="",
         recovered_tool_outcomes=(),
         settled_tool_outcomes=(), recovered_tool_result_batch_id="", entry_initial_turn=None,
-        window_action=None,
+        window_action=None, entry_policy=None, entry_session=None,
     )
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
     state = AppContext(tmp_path / "state")
@@ -178,7 +180,7 @@ def test_task_entry_creates_new_authorized_project(tmp_path) -> None:
     admit_entry_frame(frame, state)
     with patch("codey.operations.task_loop.run_task_kernel",
                return_value=KernelResult(True, "done", 1, "done")) as kernel:
-        run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]),
+        run_entry_kernel(frame, RunWork(recent_events=[], evidence=ExecutionEvidence()),
                          hooks, deps)
     assert project.is_dir()
     state.close()

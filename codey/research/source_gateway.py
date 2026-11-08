@@ -83,6 +83,7 @@ class OpenedSource:
     detail: str = ""
     document: SourceDocument | None = None
     read_urls: tuple[str, ...] = ()
+    acquisition_failed: bool = False
 
 
 @dataclass(frozen=True)
@@ -165,7 +166,7 @@ class ResearchSourceGateway:
             raise
         except Exception as exc:
             self._fail("browser", "open", exc, url)
-            return OpenedSource(status="error", detail=f"open failed: {exc}")
+            return OpenedSource(status="error", detail=f"open failed: {exc}", acquisition_failed=True)
         cancellation.check()
         page_url = str(page.get("url") or url)
         status = page.get("status")
@@ -183,7 +184,7 @@ class ResearchSourceGateway:
             if type(message) is not str or not message:
                 return OpenedSource(status="error", detail="fetch returned an invalid failure detail")
             self._fail("browser", "open", message, url)
-            return OpenedSource(status=status, detail=message)
+            return OpenedSource(status=status, detail=message, acquisition_failed=True)
         reason = check_fetch_url(page_url, use_cache=True)
         if reason:
             self._fail("browser", "open", f"{reason} (after redirect)", page_url or url)

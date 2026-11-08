@@ -1,9 +1,9 @@
-"""Pre-change shell/web baseline for Solar Mini4 and local KoboldCpp Gemma4.
+"""Shell/web diagnostics for Solar Mini4 and local KoboldCpp Gemma4.
 
 Separately labelled scopes: production host probes, controlled model
 receipt replays (candidate receipts are NOT production fixes), and the existing
-real HTTP shell-approval entry, plus optional live webpage acquisition. Baseline failures are findings, not a reason to
-change production code while collecting evidence. No user settings are saved.
+real HTTP shell-approval entry, plus optional live webpage acquisition. Frozen
+pre-change receipts remain explicit controls. No user settings are saved.
 
 Run: python tools/shell_web_diagnostic_gate.py --run-dir .e2e-artifacts/shell-web-baseline
 Offline: add --only offline. Default: both models, one repetition, CMD and pwsh.
@@ -13,6 +13,7 @@ Provider payloads and replies are local artifacts; authorization headers are not
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -326,7 +327,9 @@ def approval_worker(target: attempts.GateTarget, directory: Path) -> dict:
         if target.provider_id == "local":
             selection["base_url"] = target.base_url
         submitted = client.post("/api/run", {
-            "session_id": "gate-shell", "input": {"kind": "start_task", "text": shell_prompt("shell_failure")},
+            "session_id": "gate-shell", "input": {"kind": "start_task", "text": shell_prompt("shell_failure") +
+                ' Use done.summary as bare JSON with exit_code (observed integer), exit_code_scope (shell), '
+                'and output_marker (the marker actually printed). Bind done.execution_claims to the original result_ref.'},
             "provider": target.provider_id, "model_selection": selection, "intent": "chat", "max_turns": 8})
         run_id = submitted["run_id"]
         terminal = wait_for_run(client, run_id, target.request_timeout)
@@ -358,11 +361,19 @@ def approval_worker(target: attempts.GateTarget, directory: Path) -> dict:
         execution_ok = (len(executions) == 1 and executions[0].get("exit_code") == expected_code
                         and "SHELL_GATE_RESULT" in executions[0].get("output", ""))
         continued = final is not None and final.get("stop_reason") == "done"
-        return {"ok": execution_ok and continued and audit["initial_exit_code_visible"],
+        actual_summary = {}
+        if continued:
+            with contextlib.suppress(ValueError):
+                actual_summary = parse_json_reply(final.get("summary", ""))
+        final_matches = exact_fields(actual_summary, {"exit_code": expected_code,
+            "exit_code_scope": "shell", "output_marker": "SHELL_GATE_RESULT"})
+        return {"ok": execution_ok and continued and final_matches and audit["initial_exit_code_visible"],
                 "execution_matches_shell_exit": execution_ok, "continuation_completed": continued,
+                "final_answer_matches_receipt": final_matches, "actual_summary": actual_summary,
                 "scope": "production_http_approval", "expected_shell_exit": expected_code,
                 "failure_stage": ("continuation_incomplete" if not continued else
                                   "shell_exit_mismatch" if not execution_ok else
+                                  "final_answer_mismatch" if not final_matches else
                                   "initial_receipt_missing_exit" if not audit["initial_exit_code_visible"] else ""),
                 "protocol_window_present": bool(record.get("window_ref")), "executions": executions,
                 "terminal": final, "receipt_delivery": audit,
@@ -419,7 +430,7 @@ def analyze_web_artifacts(directory: Path, job: dict) -> dict:
     text = terminal.get("summary", "")
     actual, format_error = {}, ""
     # A stopped/max-turns terminal is runtime status, not a model JSON reply.
-    if terminal.get("stop_reason") == "done":
+    if terminal.get("stop_reason") in {"done", "blocked"}:
         try:
             actual = parse_json_reply(text)
         except ValueError as exc:
@@ -444,6 +455,10 @@ def analyze_web_artifacts(directory: Path, job: dict) -> dict:
     ok = bool(matched_opens) and verified and terminal.get("stop_reason") == "done"
     if job.get("variant") == "capability_absent":
         ok = not opened and "open_url" not in available and honest_without_page and terminal.get("stop_reason") == "done"
+    elif job.get("expect_unavailable") is True:
+        failures = [row for row in events if row.get("type") == "tool" and row.get("tool_name") == "open_url"
+                    and row.get("ok") is False and row.get("path", "").rstrip("/") == job["url"].rstrip("/")]
+        ok = not opened and bool(failures) and honest_without_page and terminal.get("stop_reason") == "blocked"
     blocked_homepage = any("low_value_landing_page_url" in str(row.get("result", "")) for row in events)
     stage = ("" if ok else "source_filter_blocked" if blocked_homepage else
              "web_capability_absent" if "open_url" not in available else
@@ -560,6 +575,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--url", default="https://api.lihe.chat/", help="URL for optional --only web")
+    parser.add_argument("--expect-unavailable", action="store_true", help="Require honest blocked closure for an unreadable website")
     parser.add_argument("--worker", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--reanalyze", type=Path, help="reclassify saved web terminals without model/network calls")
     args = parser.parse_args()
@@ -581,7 +597,7 @@ def main() -> int:
                 "python": sys.version, "script": str(Path(__file__).resolve()),
                 "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 "initial_worktree": subprocess.check_output(["git", "status", "--short"], cwd=ROOT, text=True),
-                "production_changes": False, "arguments": {k: str(v) if isinstance(v, Path) else v
+                "production_revision": "shell-web-batch3", "arguments": {k: str(v) if isinstance(v, Path) else v
                                                            for k, v in vars(args).items()}}
     attempts.write_json(directory / "manifest.json", manifest)
 
@@ -629,7 +645,8 @@ def main() -> int:
                     for variant in ("capability_absent", "explicit_web"):
                         case_dir = directory / f"{label}-{repetition}-web-{variant}"
                         emit({"starting": case_dir.name})
-                        result = run_replay(target, {"case": "web_entry", "variant": variant, "url": args.url},
+                        result = run_replay(target, {"case": "web_entry", "variant": variant, "url": args.url,
+                                                    "expect_unavailable": args.expect_unavailable},
                                             case_dir, args.timeout)
                         record({**result, "scope": "production_web_entry", "model_label": label,
                                 "model": target.model, "repetition": repetition})

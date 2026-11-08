@@ -50,6 +50,7 @@ class ShellResult(TypedDict, total=False):
     truncated: bool
     capture_truncated: bool
     execution_id: str
+    full_output_retained: bool
 
 
 class ShellExecutionContext(Protocol):
@@ -485,7 +486,9 @@ def _execute_shell_ticket(
     output_store = getattr(ctx, "execution_outputs", None)
     if output_store is not None and ticket.execution_id:
         with suppress(Exception):
-            output_store.settled(ticket.execution_id, completed.returncode if completed is not None else None)
+            snapshot = output_store.settled(ticket.execution_id, completed.returncode if completed is not None else None)
+            result["full_output_retained"] = (snapshot["execution_state"] == "settled"
+                and not snapshot["stdout"]["truncated"] and not snapshot["stderr"]["truncated"])
     if capture_truncated:
         result["capture_truncated"] = True
     return result

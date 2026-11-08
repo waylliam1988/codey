@@ -265,6 +265,21 @@ def _all_specs() -> dict[str, ToolSpec]:
         specs[name] = spec
     if "done" not in specs:
         specs["done"] = _coding_specs().get("done", ToolSpec(name="done", grant="control"))
+    done = specs["done"]
+    specs["done"] = replace(done, description=done.description +
+        " When reporting execution status, execution_claims must copy actual result_ref, status, exit_code_scope "
+        "and observed exit_code from the receipts; omit exit_code when unknown. "
+        "Copy status verbatim (exit for an exited process, never completed/success/failed). "
+        "For ordinary chat with unavailable sources, source_gaps selects failed acquisition result_ref and reason; "
+        "the task closes as blocked, without claiming a verified page.", parameters=(*done.parameters,
+        ("execution_claims", {"type": "array", "maxItems": 64, "items": {"type": "object",
+            "required": ["result_ref", "status", "exit_code_scope"], "additionalProperties": False,
+            "properties": {"result_ref": {"type": "string"}, "status": {"type": "string"},
+                "exit_code_scope": {"type": "string", "enum": ["shell", "process"]}, "exit_code": {"type": "integer"}}}}),
+        ("source_gaps", {"type": "array", "minItems": 1, "maxItems": 16, "items": {"type": "object",
+            "required": ["result_ref", "reason"], "additionalProperties": False,
+            "properties": {"result_ref": {"type": "string"}, "reason": {"type": "string", "minLength": 1}}}}),
+    ))
     return specs
 
 

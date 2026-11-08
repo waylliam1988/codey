@@ -1,0 +1,600 @@
+{
+  "batch": 3,
+  "ok": true,
+  "final_cases": [
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-final",
+      "scope": "production_http_approval",
+      "case": "approval",
+      "variant": "pwsh",
+      "model_label": "gemma",
+      "ok": true,
+      "failure_stage": "",
+      "actual_summary": {
+        "exit_code": 1,
+        "exit_code_scope": "shell",
+        "output_marker": "SHELL_GATE_RESULT"
+      },
+      "expected_shell_exit": 1,
+      "final_answer_matches_receipt": true
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar-final",
+      "scope": "production_http_approval",
+      "case": "approval",
+      "variant": "pwsh",
+      "model_label": "solar",
+      "ok": true,
+      "failure_stage": "",
+      "actual_summary": {
+        "exit_code": 1,
+        "exit_code_scope": "shell",
+        "output_marker": "SHELL_GATE_RESULT"
+      },
+      "expected_shell_exit": 1,
+      "final_answer_matches_receipt": true
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-gap-context",
+      "scope": "production_web_entry",
+      "case": "web_entry",
+      "variant": "capability_absent",
+      "model_label": "gemma",
+      "ok": true,
+      "failure_stage": "",
+      "stop_reason": "done",
+      "actual": {
+        "site_type": "unknown",
+        "verified": false,
+        "sources": [],
+        "reason": "未联网"
+      }
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar-final",
+      "scope": "production_web_entry",
+      "case": "web_entry",
+      "variant": "capability_absent",
+      "model_label": "solar",
+      "ok": true,
+      "failure_stage": "",
+      "stop_reason": "done",
+      "actual": {
+        "site_type": "unknown",
+        "verified": false,
+        "sources": [],
+        "reason": "未联网"
+      }
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-gap-context",
+      "scope": "production_web_entry",
+      "case": "web_entry",
+      "variant": "explicit_web",
+      "model_label": "gemma",
+      "ok": true,
+      "failure_stage": "",
+      "stop_reason": "blocked",
+      "actual": {
+        "site_type": "unknown",
+        "verified": false,
+        "sources": [],
+        "reason": "未能成功读取页面内容（页面为空）。"
+      }
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar-gap-context",
+      "scope": "production_web_entry",
+      "model_label": "solar",
+      "ok": true,
+      "stop_reason": "blocked",
+      "actual": {
+        "site_type": "unknown",
+        "verified": false,
+        "sources": [],
+        "reason": "未能读取到 https://api.lihe.chat/ 的实际页面内容。首页仅尝试一次，open_url 返回错误：HTTP fallback had no usable visible content: page_blank。由于没有实际读取的页面内容，无法判断该网站是 API 网关还是其他类型，因此 site_type 为 unknown，verified 为 false，sources 为空数组。"
+      }
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-readable-retry",
+      "scope": "production_web_entry",
+      "case": "web_entry",
+      "variant": "explicit_web",
+      "model_label": "gemma",
+      "ok": true,
+      "failure_stage": "",
+      "stop_reason": "done",
+      "actual": {
+        "site_type": "api_gateway",
+        "verified": true,
+        "sources": [
+          "https://openrouter.ai/"
+        ],
+        "reason": "OpenRouter 是一个统一的 AI 模型 API 网关，它将来自不同供应商（如 OpenAI、Anthropic、Google 等）的 600 多个模型整合到一个统一的接口中，用户可以通过单一的 API 密钥和兼容的格式来调用所有主流模型。"
+      }
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-food-grounded",
+      "ok": true,
+      "scope": "production_ordinary_chat_food_lookup",
+      "stop_reason": "done",
+      "query_preserved": true,
+      "queries": [
+        "福州美食"
+      ],
+      "opened_urls": [
+        "https://www.eastchinatrip.com/zh-hant/fuzhou-food-guide/"
+      ],
+      "food_names_in_delivered_page_body": true,
+      "sources_match_opened_pages": true,
+      "delivered_open_bodies": 1,
+      "actual": {
+        "foods": [
+          "佛跳牆",
+          "魚丸",
+          "肉燕"
+        ],
+        "sources": [
+          "https://www.eastchinatrip.com/zh-hant/fuzhou-food-guide/"
+        ],
+        "reason": "正文介紹了福州多道代表性美食，包括作為閩菜經典代表的佛跳牆、具代表性的海味小吃魚丸，以及傳統小吃肉燕。"
+      },
+      "format_error": "",
+      "limits": "One live lookup; checks exact food names and opened URLs, not all natural-language claims.",
+      "model_label": "gemma",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M"
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar-food-grounded",
+      "ok": true,
+      "scope": "production_ordinary_chat_food_lookup",
+      "stop_reason": "done",
+      "query_preserved": true,
+      "queries": [
+        "福州美食 推荐 吃货"
+      ],
+      "opened_urls": [
+        "https://chinatraveljetso.com/%e7%a6%8f%e5%b7%9e%e8%87%aa%e7%94%b1%e8%a1%8c/",
+        "https://chinatraveljetso.com/%e7%a6%8f%e5%b7%9e%e8%87%aa%e7%94%b1%e8%a1%8c/"
+      ],
+      "food_names_in_delivered_page_body": true,
+      "sources_match_opened_pages": true,
+      "delivered_open_bodies": 2,
+      "actual": {
+        "foods": [
+          "撈化（撈興化米粉）",
+          "肉燕",
+          "福州魚丸"
+        ],
+        "sources": [
+          "https://chinatraveljetso.com/%e7%a6%8f%e5%b7%9e%e8%87%aa%e7%94%b1%e8%a1%8c/"
+        ],
+        "reason": "正文「必試地道美食」段落列出福州特色早餐與名菜：撈化是福州特色早餐，必加福州魚丸和肉燕；肉燕燕皮薄如紙、包裹肉餡、口感滑嫩；福州魚丸為新鮮魚肉製成、彈性十足。"
+      },
+      "format_error": "",
+      "limits": "One live lookup; checks exact food names and opened URLs, not all natural-language claims.",
+      "model_label": "solar",
+      "model": "cline-free/solar-mini4"
+    }
+  ],
+  "attempt_history": [
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local",
+      "original_ok": false,
+      "cases": [
+        {
+          "scope": "model_preflight",
+          "model_label": "gemma",
+          "ok": true
+        },
+        {
+          "scope": "production_http_approval",
+          "case": "approval",
+          "variant": "pwsh",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "done"
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "gemma",
+          "ok": false,
+          "failure_stage": "web_task_not_verified",
+          "stop_reason": "max_turns"
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-final",
+      "original_ok": true,
+      "cases": [
+        {
+          "scope": "model_preflight",
+          "model_label": "gemma",
+          "ok": true
+        },
+        {
+          "scope": "production_http_approval",
+          "case": "approval",
+          "variant": "pwsh",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "done"
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "blocked"
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-food",
+      "original_ok": true,
+      "cases": [
+        {
+          "scope": "production_ordinary_chat_food_lookup",
+          "model_label": "gemma",
+          "ok": true,
+          "stop_reason": "done",
+          "food_names_in_delivered_page_body": true
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-food-final",
+      "original_ok": true,
+      "cases": [
+        {
+          "scope": "production_ordinary_chat_food_lookup",
+          "model_label": "gemma",
+          "ok": true,
+          "stop_reason": "done",
+          "food_names_in_delivered_page_body": true
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-food-grounded",
+      "original_ok": true,
+      "cases": [
+        {
+          "scope": "production_ordinary_chat_food_lookup",
+          "model_label": "gemma",
+          "ok": true,
+          "stop_reason": "done",
+          "food_names_in_delivered_page_body": true
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-food-locator",
+      "original_ok": true,
+      "cases": [
+        {
+          "scope": "production_ordinary_chat_food_lookup",
+          "model_label": "gemma",
+          "ok": true,
+          "stop_reason": "done",
+          "food_names_in_delivered_page_body": true
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-gap-context",
+      "original_ok": true,
+      "cases": [
+        {
+          "scope": "model_preflight",
+          "model_label": "gemma",
+          "ok": true
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "done"
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "blocked"
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-readable",
+      "original_ok": false,
+      "cases": [
+        {
+          "scope": "model_preflight",
+          "model_label": "gemma",
+          "ok": true
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "done"
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "gemma",
+          "ok": false,
+          "failure_stage": "web_task_not_verified",
+          "stop_reason": "blocked"
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-readable-retry",
+      "original_ok": true,
+      "cases": [
+        {
+          "scope": "model_preflight",
+          "model_label": "gemma",
+          "ok": true
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "done"
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "done"
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-local-recovery",
+      "original_ok": true,
+      "cases": [
+        {
+          "scope": "model_preflight",
+          "model_label": "gemma",
+          "ok": true
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "done"
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "gemma",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "blocked"
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar",
+      "original_ok": false,
+      "cases": [
+        {
+          "scope": "model_preflight",
+          "model_label": "solar",
+          "ok": true
+        },
+        {
+          "scope": "production_http_approval",
+          "case": "approval",
+          "variant": "pwsh",
+          "model_label": "solar",
+          "ok": false,
+          "failure_stage": "continuation_incomplete"
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "solar",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "done"
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "solar",
+          "ok": false,
+          "failure_stage": "web_task_not_verified",
+          "stop_reason": "no_progress"
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar-final",
+      "original_ok": false,
+      "cases": [
+        {
+          "scope": "model_preflight",
+          "model_label": "solar",
+          "ok": true
+        },
+        {
+          "scope": "production_http_approval",
+          "case": "approval",
+          "variant": "pwsh",
+          "model_label": "solar",
+          "ok": true,
+          "failure_stage": ""
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "capability_absent",
+          "model_label": "solar",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "done"
+        },
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "solar",
+          "ok": false,
+          "failure_stage": "web_task_not_verified",
+          "stop_reason": "no_progress"
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar-food",
+      "original_ok": false,
+      "cases": [
+        {
+          "scope": "production_ordinary_chat_food_lookup",
+          "model_label": "solar",
+          "ok": false,
+          "stop_reason": "max_turns",
+          "food_names_in_delivered_page_body": false
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar-food-final",
+      "original_ok": false,
+      "cases": [
+        {
+          "scope": "production_ordinary_chat_food_lookup",
+          "model_label": "solar",
+          "ok": false,
+          "stop_reason": "done",
+          "food_names_in_delivered_page_body": false
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar-food-grounded",
+      "original_ok": true,
+      "cases": [
+        {
+          "scope": "production_ordinary_chat_food_lookup",
+          "model_label": "solar",
+          "ok": true,
+          "stop_reason": "done",
+          "food_names_in_delivered_page_body": true
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar-food-locator",
+      "original_ok": false,
+      "cases": [
+        {
+          "scope": "production_ordinary_chat_food_lookup",
+          "model_label": "solar",
+          "ok": false,
+          "stop_reason": "done",
+          "food_names_in_delivered_page_body": false
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts\\shell-web-batch3-solar-gap-context",
+      "original_ok": true,
+      "cases": [
+        {
+          "scope": "production_web_entry",
+          "case": "web_entry",
+          "variant": "explicit_web",
+          "model_label": "solar",
+          "ok": true,
+          "failure_stage": "",
+          "stop_reason": "blocked"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "related_pytest": {
+      "passed": 206,
+      "modules": 19
+    },
+    "frontend_vitest": {
+      "passed": 10,
+      "ui_sources_changed": false
+    },
+    "ruff": "passed",
+    "mypy": {
+      "files": 657,
+      "errors": 0
+    },
+    "pyrefly": {
+      "errors": 0,
+      "suppressed": 35,
+      "warnings": 130
+    },
+    "ty": "passed",
+    "kernel_precision": "passed",
+    "new_explicit_any_annotations": 0,
+    "full_pytest": false,
+    "coverage": false,
+    "package_build": false
+  },
+  "scope_notes": [
+    "Passing evidence is selected per case after its relevant fix. Historical attempts are preserved, not overwritten.",
+    "Solar homepage success was verified in batch 1; batch 3 revalidated readable homepage locally and real article acquisition on both models.",
+    "Solar failed food attempts include max_turns and one food supported only by search/locator previews. These remain failures.",
+    "The final food task explicitly requests names from the last actually opened passage; this is a guided diagnostic, not a blind model benchmark.",
+    "Structured execution claims are machine-checked. Arbitrary natural-language claims are not formally verified.",
+    "An unreadable requested page closes blocked without a satisfied completion proof. This does not verify website content.",
+    "Static HTTP does not render JavaScript, bypass challenges or guarantee website availability. Ordinary chat does not auto-start a browser."
+  ]
+}

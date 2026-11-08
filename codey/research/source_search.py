@@ -12,6 +12,7 @@ from codey.utils.refs import coerce_int
 SOURCE_SEARCH_DEFAULT_LIMIT = 6
 SOURCE_SEARCH_MAX_LIMIT = 12
 SOURCE_SEARCH_SNIPPET_CHARS = 320
+SOURCE_SEARCH_PREVIEW_BEFORE = 130
 SOURCE_SEARCH_MAX_TOKEN_HITS = 64
 _TOKEN_RE = re.compile(r"[A-Za-z0-9$._/-]{3,}|[\u4e00-\u9fff]{2,}")
 _QUERY_STOP_WORDS = frozenset({"and", "the", "for", "with", "from", "that", "this", "are", "was", "were", "has", "have"})
@@ -48,7 +49,8 @@ def search_text(text: str, query: str, limit: int = SOURCE_SEARCH_DEFAULT_LIMIT)
         score = _score(snippet, tokens)
         if _label_match(text, offset):
             score -= len(tokens) + 1
-        hits.append(SourceSearchHit(offset=preceding_context_offset(text, offset), snippet=snippet, score=score))
+        start = max(0, offset - SOURCE_SEARCH_PREVIEW_BEFORE)
+        hits.append(SourceSearchHit(offset=preceding_context_offset(text, start), snippet=snippet, score=score))
     return _rank_hits(hits, bounded_limit(limit), tokens)
 
 
@@ -130,7 +132,7 @@ def snippet_at(text: str, offset: int) -> str:
         except (TypeError, ValueError, OverflowError):
             offset_int = 0
     offset = max(0, min(len(text), offset_int))
-    start = max(0, offset - 130)
+    start = max(0, offset - SOURCE_SEARCH_PREVIEW_BEFORE)
     return _clip(" ".join(text[start : start + SOURCE_SEARCH_SNIPPET_CHARS].split()), SOURCE_SEARCH_SNIPPET_CHARS)
 
 

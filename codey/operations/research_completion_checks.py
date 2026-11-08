@@ -156,6 +156,14 @@ def strict_research_checks(session: TaskSession, done_text: str, context: object
 def research_completion_feedback(session: TaskSession, text: str, context: object, checks: list[CompletionCheck]) -> str:
     """Explain failed report checks without rewriting the proposed answer."""
     failed = {row.check_id for row in checks if row.status != CHECK_PASS}
+    if "research_sources_opened" in failed and session.task_kind == "chat" and not session.policy.strict_research:
+        receipts = [ref for ref, result in session._memory_results.items()
+                    if not result.ok and "source_failure" in result.canonical]
+        if receipts:
+            return ("A requested source was attempted but unavailable. Do not repeat the same failing fetch just to finish. "
+                    "To report this limitation honestly, submit done with your summary and source_gaps "
+                    "[{result_ref: <actual failed receipt>, reason: <observed failure>}]. "
+                    "This closes as blocked, not verified. Available failed acquisition receipts: " + ", ".join(receipts))
     if "research_investigation_attempted" in failed:
         return ("This evidence investigation has not attempted acquisition. Parent findings were saved in an "
                 "earlier phase, not here. Next action: use source_search on a previously opened URL or "

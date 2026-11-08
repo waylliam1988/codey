@@ -145,5 +145,7 @@ def test_native_run_projects_process_scope_with_its_observed_code(tmp_path: Path
     result = project_run_command_result(tmp_path, raw)
     assert result.audit["exit_code_scope"] == "process"
     assert "Exit code scope: process" in result.model_text
-    assert result.canonical["execution"] == {"status": "exit", "exit_code": 1, "exit_code_scope": "process",
-                                              "capture_truncated": False, "truncated": False, "execution_id": ""}
+    execution = result.canonical["execution"]
+    assert isinstance(execution, dict)
+    assert execution["status"] == "exit" and execution["exit_code"] == 1
+    assert execution["exit_code_scope"] == "process" and execution["full_output_recoverable"] is True

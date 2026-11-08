@@ -71,3 +71,10 @@ def test_page_reading_guidance_does_not_route_source_offsets_into_tool_receipts(
     assert "Source offsets are not receipt offsets" in text
     assert "source_search with the opened URL" in text
     assert "If more detail is needed, use read_tool_result" not in text
+
+
+def test_source_locator_opens_the_context_its_preview_actually_shows():
+    text = "前言。" * 100 + "\n\n佛跳牆是代表菜。\n\n撈化是福州特色早餐。" + "\n\n其他。" * 200
+    hits = search_text(text, "福州特色早餐", limit=1)
+    assert len(hits) == 1 and "佛跳牆" in hits[0].snippet
+    assert "佛跳牆" in text[hits[0].offset:hits[0].offset + 1000]

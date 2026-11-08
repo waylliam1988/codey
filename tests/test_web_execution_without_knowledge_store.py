@@ -69,7 +69,9 @@ def test_real_headless_hybrid_executes_search_and_open_in_isolated_state(tmp_pat
     provider.bind_usage = lambda connection_id, sink: None
     rows = []
     with (
-        mock.patch("codey.research.search_factory.default_research_search_provider", side_effect=Search),
+        mock.patch("codey.research.chat_web.ChatWebProvider", side_effect=Search) as http_search,
+        mock.patch("codey.research.search_factory.default_research_search_provider",
+                   side_effect=AssertionError("ordinary chat must not start a Research browser")),
         mock.patch("codey.research.source_gateway.check_fetch_url", return_value=None) as guard,
     ):
         result = run_headless(
@@ -81,5 +83,6 @@ def test_real_headless_hybrid_executes_search_and_open_in_isolated_state(tmp_pat
     assert result.stop_reason == "done", rows
     successful = [row["tool_name"] for row in rows if row.get("type") == "tool" and row.get("ok") is True]
     assert successful == ["web_search", "open_url"]
+    http_search.assert_called_once_with()
     guard.assert_called()
     assert not (tmp_path / "state/vault").exists()

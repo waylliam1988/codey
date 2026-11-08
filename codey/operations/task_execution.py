@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import contextlib
 import copy
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation, source_search_observation
@@ -21,8 +22,10 @@ from codey.runtime.core.models import ToolCall, ToolResult
 
 if TYPE_CHECKING:
     from codey.agents.tools import AgentToolFns
+    from codey.knowledge.store import KnowledgeStore
     from codey.research.receipt_types import SourceSearchObservation
-from codey.research.tools import ResearchTools
+    from codey.research.source_gateway import _SearchProvider
+from codey.research.tools import ResearchToolOutput, ResearchTools
 
 
 def close_research_tools(tools: Any) -> None:
@@ -33,17 +36,18 @@ def close_research_tools(tools: Any) -> None:
             close()
 
 
-def build_research_tools(deps: Any, *, session_id: str, project: str) -> ResearchTools:
+def build_research_tools(deps: object, *, session_id: str, project: str, browser_sources: bool = True) -> ResearchTools:
     """Build the execution resources; configuration errors propagate to entry."""
     from codey.knowledge.changes import KnowledgeChanges
     from codey.research.tools import ResearchTools
 
-    knowledge_store = getattr(deps, "knowledge_store", None)
-    search_factory = getattr(deps, "search_factory", None)
+    knowledge_store = cast("KnowledgeStore | None", getattr(deps, "knowledge_store", None))
+    search_factory = cast("Callable[[], _SearchProvider] | None", getattr(deps, "search_factory", None))
     if search_factory is None:
+        from codey.research.chat_web import ChatWebProvider
         from codey.research.search_factory import default_research_search_provider
 
-        search_factory = default_research_search_provider
+        search_factory = default_research_search_provider if browser_sources else ChatWebProvider
     search = search_factory()
     try:
         return ResearchTools(
@@ -394,11 +398,13 @@ class ExecutionDelegate:
             self.change_tracker.capture_after(path)
         return outcome
 
-    def _opened_result(self, call: ToolCall, opened: Any, url: str, *, ledger: ResearchLedger, turn: int,
+    def _opened_result(self, call: ToolCall, opened: ResearchToolOutput, url: str, *, ledger: ResearchLedger, turn: int,
                        tool_index: int) -> tuple[ToolResult, bool, int | None]:
         model_text = opened.model_text
         if not opened.ok:
-            return ToolResult(ok=False, call=call, model_text=model_text), False, None
+            canonical = {"source_failure": {"url": url, "detail": model_text}} if opened.acquisition_failed else {}
+            return ToolResult(ok=False, call=call, model_text=model_text,
+                              canonical=canonical), False, None
         if not isinstance(ledger, ResearchLedger):
             raise ValueError("successful source read requires a research ledger observation")
         from codey.research.answer_contract import AnswerScope

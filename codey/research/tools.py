@@ -51,6 +51,7 @@ class ResearchToolOutput:
     read_observation: JsonObject = field(default_factory=dict)
     ok: bool = field(kw_only=True)
     knowledge_search_empty: bool = field(default=False, kw_only=True)
+    acquisition_failed: bool = field(default=False, kw_only=True)
 
     def __post_init__(self) -> None:
         if type(self.ok) is not bool:
@@ -191,9 +192,11 @@ class ResearchTools:
     ) -> ResearchToolOutput:
         outcome = self.gateway.open(url, offset=offset, limit=limit, pages=pages)
         if outcome.status == "error":
-            return ResearchToolOutput(f"ERROR: {outcome.detail}", ok=False)
+            return ResearchToolOutput(f"ERROR: {outcome.detail}", ok=False,
+                                      acquisition_failed=outcome.acquisition_failed)
         if outcome.status == "skipped":
-            return ResearchToolOutput(f"SKIPPED: {outcome.detail}", ok=False)
+            return ResearchToolOutput(f"SKIPPED: {outcome.detail}", ok=False,
+                                      acquisition_failed=outcome.acquisition_failed)
         document = outcome.document
         assert document is not None
         self.sources_read.update(outcome.read_urls)

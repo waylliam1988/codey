@@ -168,6 +168,7 @@ class GateVerdict:
     error_type: str = ""
     research_report: ResearchReport | None = None
     research_issue: ResearchIssuePayload | None = None
+    blocked: bool = False
 
 
 def evaluate(session: TaskSession, done_text: object, *, context: object = None) -> GateVerdict:
@@ -376,6 +377,16 @@ def _required_tool_checks(
 
 def _evaluate_inner(session: TaskSession, done_text: object, *, context: CompletionContext) -> GateVerdict:
     text = str(done_text or "").strip()
+    from codey.operations.execution_claims import validate_execution_claims
+    from codey.operations.source_gaps import validate_source_gaps
+
+    try:
+        execution_check = validate_execution_claims(session)
+        source_gaps = validate_source_gaps(session)
+    except ValueError as exc:
+        return GateVerdict(False, str(exc), None)
+    if source_gaps and not session.opened_sources:
+        return GateVerdict(False, "", None, final_text=text, blocked=True)
     try:
         text, report = prepare_research_completion(session, text, context)
     except ValueError as exc:
@@ -388,6 +399,8 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
                            research_issue=exc.to_payload() if isinstance(exc, ResearchIssue) else None)
     citation_checks = citation_requirement_checks(session, text, context, report=report)
     checks: list[CompletionCheck] = []
+    if execution_check is not None:
+        checks.append(execution_check)
     checks.extend(evaluate_project_completion(ProjectCompletionFacts.capture(session), context))
     from codey.operations.explicit_execution_requirements import requested_output_read_check
 

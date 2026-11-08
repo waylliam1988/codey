@@ -171,7 +171,7 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
         from codey.operations.task_execution import build_research_tools
 
         research_tools = build_research_tools(
-            deps, session_id=request.session_id, project=frame.project_text)
+            deps, session_id=request.session_id, project=frame.project_text, browser_sources=policy.strict_research)
         if policy.allows("web.read"):
             from codey.task.web_intent import explicit_web_intent
 

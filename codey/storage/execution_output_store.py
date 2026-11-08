@@ -147,6 +147,18 @@ class ExecutionOutputStore:
         if database is None:
             with conversation_database(self.path) as connection:
                 return self.snapshot(execution_id, database=connection)
+        return self._snapshot(execution_id, database)
+
+    @classmethod
+    def read_existing(cls, root: Path, execution_id: str) -> ExecutionSnapshot:
+        path = root / "execution_outputs.sqlite3"
+        if not path.is_file():
+            raise KeyError(execution_id)
+        with conversation_database(path) as database:
+            return cls._snapshot(execution_id, database)
+
+    @staticmethod
+    def _snapshot(execution_id: str, database: sqlite3.Connection) -> ExecutionSnapshot:
         row = database.execute("SELECT execution_id,session_id,run_id,state,revision,stdout,stderr,stdout_bytes,stderr_bytes,exit_code,max_bytes,stdout_meta,stderr_meta FROM execution_outputs WHERE execution_id=?", (execution_id,)).fetchone()
         if row is None:
             raise KeyError(execution_id)

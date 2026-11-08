@@ -274,12 +274,41 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
         text += f"\n\n{render_result_metadata(result_ref, tool=result.call.name, ok=result.ok)}\n"
         if source_result and receipt_recovery:
             text += ("result_ref identifies this tool receipt only; it is not a source URL, source offset or hit id. "
-                     "Use the source URLs/locators below for further page reading. "
                      "Use read_tool_result only to recover an omitted receipt, copying the complete result_ref.")
+        elif result.call.name == "read_tool_result" and result.ok:
+            page = result.canonical.get("receipt_page")
+            if isinstance(page, dict):
+                continuation = {"result_ref": page["result_ref"], "view": page["view"],
+                                "offset": page["next_offset"]}
+                text += ("This is a page of the original receipt, not a new source. "
+                         "Do not read this read_tool_result receipt to recover the original content. ")
+                text += ("The original receipt has no further retained pages." if page["next_offset"] is None else
+                         "To continue the original receipt, use read_tool_result(" + json.dumps(continuation) + ").")
         elif receipt_recovery:
             text += ("For read_tool_result only, copy the complete result_ref including its prefix. "
                      f'Read omitted detail with read_tool_result({{"result_ref":"{result_ref}","query":"literal keyword"}}). '
                      f"{instruction} do not repeat execution to recover output.")
+        if result.call.name in {"shell", "run"}:
+            from codey.operations.execution_claims import execution_receipt, observed_claim
+
+            text += "\nAvailable receipt views: " + ("output, value" if "value" in result.canonical else "output") + "."
+            if result.audit.get("capture_truncated") is True:
+                text += (" Capture discarded bytes; read_tool_result can inspect the retained output only, "
+                         "not recover the full execution log.")
+            text += (" To report execution status, use done.execution_claims with this result_ref, status, "
+                     "exit_code_scope and observed exit_code (omit exit_code if unknown). "
+                     "ok describes tool delivery, not process success. Do not infer exit codes from command text.")
+            receipt = execution_receipt(result)
+            if receipt is not None:
+                text += ("\nObserved execution claim (copy verbatim into done.execution_claims): "
+                         + json.dumps(observed_claim(result_ref, receipt), ensure_ascii=False))
+        if not result.ok and "source_failure" in result.canonical:
+            text += ("\nThis receipt records failed source acquisition. For ordinary chat, if the requested sources "
+                     "remain unavailable, report the observed failure honestly and finish with done.source_gaps "
+                     "selecting this result_ref and reason. This closes as blocked; it does not verify page content. "
+                     "Do not repeat an unchanged failing fetch just to satisfy source-open checks.\n"
+                     "Source gap record for done.source_gaps: "
+                     + json.dumps({"result_ref": result_ref, "reason": result.model_text}, ensure_ascii=False))
     if result.ok and result.call.name == "web_search" and session.search_results:
         mapping = session.search_results
         observation = result.canonical.get("research_observation")

@@ -89,12 +89,14 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     error_type = ""
     compiled = None
     domain_issue = None
+    blocked = False
     try:
         refresh_verification_candidates(context.session)
         verdict = evaluate(context.session, context.session.last_done_text, context=context.completion_context)
         if type(verdict.complete) is not bool:
             raise ValueError("completion gate returned an invalid verdict")
         complete, followup, proof = verdict.complete, verdict.followup, verdict.proof
+        blocked = verdict.blocked
         compiled = verdict.research_report
         domain_issue = verdict.research_issue
         error_source = getattr(verdict, "error_source", "")
@@ -105,6 +107,9 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         followup = f"Completion check failed ({exc}); cannot complete yet. Continue the task."
         error_source = "completion_check"
         error_type = type(exc).__name__
+    if blocked:
+        context.close(state, KernelResult(False, final_text, context.session.turn, "blocked"))
+        return
     if complete:
         result = KernelResult(True, final_text, context.session.turn, "done", proof=proof,
                               research_report=compiled)
