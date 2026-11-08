@@ -83,7 +83,9 @@ def test_explicit_factory_is_respected_for_both_chat_and_research(monkeypatch, b
 def test_http_fetch_preserves_failure_and_delegates_pdf(monkeypatch):
     failure = {"status": "error", "url": "https://example.com/", "error": "page_blank"}
     monkeypatch.setattr("codey.research.source_download._download_text_fallback", lambda url: failure)
-    assert ChatWebProvider().fetch("https://example.com/") == failure
+    result = ChatWebProvider().fetch("https://example.com/")
+    assert {key: value for key, value in result.items() if key != "acquisition"} == failure
+    assert result["acquisition"]["attempts"][0]["backend"] == "http"
     sentinel = {"content_kind": "pdf_download", "url": "https://example.com/a.pdf", "mime_type": "application/pdf"}
     monkeypatch.setattr("codey.research.source_download._download_text_fallback", lambda url: sentinel)
     requests = []

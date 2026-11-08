@@ -1,6 +1,7 @@
 """Bounded HTTP and PDF acquisition under the existing research network policy."""
 from __future__ import annotations
 
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
@@ -16,6 +17,7 @@ from codey.research.extract import (
     _usable_fetch_page_text,
     extract_text,
     extract_title,
+    is_application_shell,
 )
 from codey.research.http_redirects import (
     build_no_redirect_opener,
@@ -68,7 +70,7 @@ def _download_text_fallback(url: str) -> dict[str, object]:
             return _fetch_failure(current_url, f'{reason}')
         request = _text_request(current_url)
         try:
-            response = _open_url_no_redirect(request, timeout=_FETCH_HTTP_TIMEOUT)
+            response = _open_url_no_redirect(request, timeout=_remaining_timeout(_FETCH_HTTP_TIMEOUT))
         except urllib.error.HTTPError as exc:
             if _is_redirect_status(exc.code):
                 next_url = _redirect_target(current_url, exc.headers)
@@ -106,18 +108,23 @@ def _download_text_fallback(url: str) -> dict[str, object]:
             if ctype and not any(t in ctype for t in ("html", "text", "xml", "json")):
                 return _fetch_failure(final_url, f'unsupported content type: {ctype}', status="skipped")
             data = response.read(_FETCH_HTTP_MAX_BYTES + 1)
+            cancellation.check()
             truncated = len(data) > _FETCH_HTTP_MAX_BYTES
             if truncated:
                 data = data[:_FETCH_HTTP_MAX_BYTES]
             html = data.decode(response_charset(headers), errors="replace")
             text = extract_text(html)
-            if not _usable_fetch_page_text(text):
+            shell = is_application_shell(html) and _fetch_page_failure_kind(text) != "page_unavailable"
+            if shell or not _usable_fetch_page_text(text):
                 failure = _fetch_failure(
                     final_url,
+                    "HTTP returned an unfilled application shell; JavaScript rendering is required" if shell else
                     "HTTP fallback had no usable visible content: " + _fetch_page_failure_kind(text),
                     title=extract_title(html),
                 )
                 failure["truncated"] = truncated
+                if shell:
+                    failure["render_required"] = True
                 return failure
             text_truncated = len(text) > _MAX_PAGE_CHARS
             if text_truncated:
@@ -146,7 +153,7 @@ def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict[str, objec
             return _fetch_failure(current_url, f'{reason}')
         request = _pdf_request(current_url)
         try:
-            response = _open_url_no_redirect(request, timeout=_PDF_DOWNLOAD_TIMEOUT)
+            response = _open_url_no_redirect(request, timeout=_remaining_timeout(_PDF_DOWNLOAD_TIMEOUT))
         except urllib.error.HTTPError as exc:
             if _is_redirect_status(exc.code):
                 next_url = _redirect_target(current_url, exc.headers)
@@ -224,7 +231,13 @@ def _text_request(url: str) -> urllib.request.Request:
         },
     )
 
-def _open_url_no_redirect(request: urllib.request.Request, *, timeout: int) -> addinfourl:
+def _remaining_timeout(limit: float) -> float:
+    cancellation.check()
+    deadline = cancellation.current_deadline()
+    return limit if deadline is None else min(limit, max(0.001, deadline - time.monotonic()))
+
+
+def _open_url_no_redirect(request: urllib.request.Request, *, timeout: float) -> addinfourl:
     opener = build_no_redirect_opener()
     return cast(addinfourl, opener.open(request, timeout=timeout))
 

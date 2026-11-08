@@ -402,7 +402,11 @@ class ExecutionDelegate:
                        tool_index: int) -> tuple[ToolResult, bool, int | None]:
         model_text = opened.model_text
         if not opened.ok:
-            canonical = {"source_failure": {"url": url, "detail": model_text}} if opened.acquisition_failed else {}
+            from codey.types.json_value import JsonObject
+
+            canonical: JsonObject = {"source_failure": {"url": url, "detail": model_text}} if opened.acquisition_failed else {}
+            if opened.acquisition:
+                canonical["source_acquisition"] = opened.acquisition
             return ToolResult(ok=False, call=call, model_text=model_text,
                               canonical=canonical), False, None
         if not isinstance(ledger, ResearchLedger):
@@ -430,6 +434,8 @@ class ExecutionDelegate:
         base = _tool_result(call, outcome)
         merged = dict(base.canonical)
         merged["research_observation"] = observation
+        if opened.acquisition:
+            merged["source_acquisition"] = opened.acquisition
         if opened.read_passages:
             merged["read_passages"] = list(opened.read_passages)
         result = ToolResult(

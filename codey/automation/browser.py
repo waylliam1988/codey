@@ -101,7 +101,7 @@ class BrowserExecutable:
 @dataclass(frozen=True)
 class CdpEndpoint:
     port: int
-    process: subprocess.Popen[Any] | None = None
+    process: subprocess.Popen[bytes] | None = None
 
 
 def _browser_profile(kind: str) -> Path:
@@ -152,7 +152,7 @@ def _launch_browser(
     start_url: str,
     *,
     browser_path: str | Path | None = None,
-) -> subprocess.Popen[Any]:
+) -> subprocess.Popen[bytes]:
     if browser_path:
         executable = Path(browser_path).expanduser()
         if not executable.is_file():
@@ -528,29 +528,34 @@ class Session:
     pw: Playwright
     browser: Browser
     page: Page
-    process: subprocess.Popen[Any] | None = None
+    process: subprocess.Popen[bytes] | None = None
     close_page_on_close: bool = False
     cdp_port: int = 0
+    owns_browser: bool = False
 
     def close(self) -> None:
         try:
-            if self.process is not None:
+            if self.process is not None or self.owns_browser:
                 # An owned isolated browser must finish its context lifecycle
                 # while the Playwright transport can still acknowledge routes.
                 # pw.stop() alone disconnects with pending interception calls.
                 for context in self.browser.contexts:
                     with contextlib.suppress(Exception):
                         context.close()
+                if self.owns_browser:
+                    self.browser.close()
             elif self.close_page_on_close:
                 with contextlib.suppress(Exception):
                     self.page.close()
-            self.pw.stop()
         finally:
-            if self.process is not None:
-                _terminate_browser_process(self.process)
+            try:
+                self.pw.stop()
+            finally:
+                if self.process is not None:
+                    _terminate_browser_process(self.process)
 
 
-def _terminate_browser_process(process: subprocess.Popen[Any]) -> None:
+def _terminate_browser_process(process: subprocess.Popen[bytes]) -> None:
     try:
         if process.poll() is not None:
             return
@@ -578,6 +583,30 @@ def _start_playwright_with_retry() -> Playwright:
         "Playwright failed to initialize. Close stale Codey browser automation "
         "sessions and try again."
     ) from last_error
+
+
+def open_headless_page(*, browser_path: str | None = None) -> Session:
+    """Own a temporary background browser without touching provider CDP tabs."""
+    cancellation.check()
+    pw = _start_playwright_with_retry()
+    try:
+        deadline = cancellation.current_deadline()
+        timeout = 10_000.0 if deadline is None else max(1.0, min(10_000.0, (deadline - time.monotonic()) * 1000))
+        executable = browser_path
+        if executable is None and (os.name == "nt" or os.environ.get(BROWSER_PATH_ENV)):
+            executable = str(_find_browser().path)
+        browser = pw.chromium.launch(executable_path=executable, headless=True, timeout=timeout)
+        try:
+            context = browser.new_context(service_workers="block", accept_downloads=False)
+            page = context.new_page()
+            cancellation.check()
+            return Session(pw, browser, page, owns_browser=True)
+        except BaseException:
+            browser.close()
+            raise
+    except BaseException:
+        pw.stop()
+        raise
 
 
 def _is_playwright_startup_race(exc: AttributeError) -> bool:

@@ -52,12 +52,14 @@ class ResearchToolOutput:
     ok: bool = field(kw_only=True)
     knowledge_search_empty: bool = field(default=False, kw_only=True)
     acquisition_failed: bool = field(default=False, kw_only=True)
+    acquisition: JsonObject = field(default_factory=dict, kw_only=True)
 
     def __post_init__(self) -> None:
         if type(self.ok) is not bool:
             raise TypeError("research output ok must be an exact boolean")
         observation = canonical_json_object(self.read_observation)
         object.__setattr__(self, "read_observation", observation)
+        object.__setattr__(self, "acquisition", canonical_json_object(self.acquisition))
         if self.read_passages:
             from codey.research.passages import restore_passages
 
@@ -193,10 +195,10 @@ class ResearchTools:
         outcome = self.gateway.open(url, offset=offset, limit=limit, pages=pages)
         if outcome.status == "error":
             return ResearchToolOutput(f"ERROR: {outcome.detail}", ok=False,
-                                      acquisition_failed=outcome.acquisition_failed)
+                                      acquisition_failed=outcome.acquisition_failed, acquisition=outcome.acquisition)
         if outcome.status == "skipped":
             return ResearchToolOutput(f"SKIPPED: {outcome.detail}", ok=False,
-                                      acquisition_failed=outcome.acquisition_failed)
+                                      acquisition_failed=outcome.acquisition_failed, acquisition=outcome.acquisition)
         document = outcome.document
         assert document is not None
         self.sources_read.update(outcome.read_urls)
@@ -205,7 +207,8 @@ class ResearchTools:
             return ResearchToolOutput(
                 f"ERROR: source offset={offset} is at or beyond the end of available extracted text "
                 f"(length={len(document.text)} characters). No passage was read. "
-                "Do not advance the offset; use source_search on an earlier section or investigate another source.", ok=False)
+                "Do not advance the offset; use source_search on an earlier section or investigate another source.",
+                ok=False, acquisition=outcome.acquisition)
         # Leave room for exact passage labels, metadata and source boundaries.
         limit = min(OPEN_MAX_LIMIT - 2500, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
         from codey.research.ledger_receipts import ledger_observation
@@ -219,7 +222,7 @@ class ResearchTools:
         passages = describe_document_window(document, source.text_hash, offset, limit, coherent=self.coherent_passages)
         if not passages:
             return ResearchToolOutput("ERROR: the requested source window contains no readable text; no passage was read.",
-                                      ok=False)
+                                      ok=False, acquisition=outcome.acquisition)
         window = render_passage_window(document, passages)
         next_offset = passages[-1]["end"]
         more = next_offset < len(document.text)
@@ -239,11 +242,11 @@ class ResearchTools:
                     read_window=(passages[0]["start"], passages[-1]["end"]))
             if len(body) > OPEN_MAX_LIMIT:
                 return ResearchToolOutput("ERROR: source metadata exceeds the readable window budget; no passage was read.",
-                                          ok=False)
+                                          ok=False, acquisition=outcome.acquisition)
         restore_passages(self.ledger, observation, passages)
         full = render_opened_source(document, document.text)
         return ResearchToolOutput(model_text=body, receipt_text=full, read_passages=tuple(passages),
-                                  read_observation=observation, ok=True)
+                                  read_observation=observation, ok=True, acquisition=outcome.acquisition)
 
     def source_search(self, url: str, query: str, limit: object = SOURCE_SEARCH_DEFAULT_LIMIT) -> ResearchToolOutput:
         outcome = self.gateway.search_inside(url, query, limit)

@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -63,8 +64,20 @@ def schema(home: Path) -> str:
     for path in sorted(home.glob("*.sqlite3")):
         with contextlib.closing(sqlite3.connect(path)) as database:
             rows.append((path.name, database.execute("PRAGMA user_version").fetchone(),
-                         database.execute("SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name").fetchall()))
+                         [(kind, name, _compatible_schema_sql(path.name, kind, name, sql))
+                          for kind, name, sql in database.execute(
+                              "SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name")]))
     return hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
+
+
+def _compatible_schema_sql(database: str, kind: str, name: str, sql: str | None) -> str | None:
+    # Execution capture added optional metadata without changing any legacy
+    # column or writer contract. Admit exactly those declarations; renamed,
+    # constrained, retyped columns and all other schema changes remain visible.
+    # This coordinator is copied as a standalone stdlib script at activation.
+    if database == "execution_outputs.sqlite3" and kind == "table" and name == "execution_outputs" and sql:
+        return re.sub(r", (?:stdout|stderr)_meta TEXT NOT NULL DEFAULT '\{\}'(?=,|\))", "", sql)
+    return sql
 
 
 def request(home: Path, operation: str, instance: str = "", *, lifecycle: bool = True) -> dict[str, Any]:

@@ -13,8 +13,11 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
+from playwright.sync_api import Error as BrowserError
+from playwright.sync_api import Page, Request, Response
+
 from codey.automation import browser_worker
-from codey.automation.browser import DEFAULT_PORT, open_chat_page
+from codey.automation.browser import DEFAULT_PORT, Session, open_chat_page, open_headless_page
 from codey.policies.network import check_fetch_url
 from codey.research import source_download
 from codey.research.extract import (
@@ -45,6 +48,44 @@ _CONTENT_RETRY_TICK = 0.2
 T = TypeVar("T")
 _SEARCH_WORKER_LOCK = threading.Lock()
 _SEARCH_WORKER: browser_worker.BrowserWorker | None = None
+
+
+class _PageFailures:
+    """Bounded observations for one navigation; unrelated errors cannot veto usable text."""
+
+    def __init__(self, page: Page) -> None:
+        self.page = page
+        self.errors: list[str] = []
+        page.on("pageerror", self.script_error)
+        page.on("requestfailed", self.request_failed)
+        page.on("response", self.response_failed)
+
+    def script_error(self, error: BrowserError) -> None:
+        if len(self.errors) < 8:
+            self.errors.append("render_script_error: " + error.message[:240])
+
+    def request_failed(self, request: Request) -> None:
+        if request.resource_type in {"script", "xhr", "fetch"} and len(self.errors) < 8:
+            self.errors.append("render_request_failed: " + (request.failure or "unknown")[:240])
+
+    def response_failed(self, response: Response) -> None:
+        if response.status >= 400 and response.request.resource_type in {"script", "xhr", "fetch"} and len(self.errors) < 8:
+            self.errors.append(f"render_request_failed: HTTP {response.status}")
+
+    def detail(self, text: str) -> str:
+        if self.errors:
+            return "; ".join(self.errors)
+        return "render_timeout" if _application_content_pending(self.page) else _fetch_page_failure_kind(text)
+
+    def close(self) -> None:
+        self.page.remove_listener("pageerror", self.script_error)
+        self.page.remove_listener("requestfailed", self.request_failed)
+        self.page.remove_listener("response", self.response_failed)
+
+
+def _requires_login(page: Page, text: str) -> bool:
+    return (len(text) < 1500 and any(marker in text.casefold() for marker in ("log in", "sign in", "登录", "登入"))
+            and page.query_selector('input[type="password"]') is not None)
 
 
 class SearchUnavailableError(RuntimeError):
@@ -103,6 +144,8 @@ class BrowserSearchProvider:
         launch: bool = True,
         isolated: bool = True,
         bring_to_front: bool = False,
+        headless: bool = False,
+        http_fallback: bool = True,
     ) -> None:
         profiles = load_profiles()
         engine_profiles = profiles.get("engines", {})
@@ -132,19 +175,27 @@ class BrowserSearchProvider:
         self.launch = launch
         self.isolated = isolated
         self.bring_to_front = bring_to_front
-        self._session: Any | None = None
+        self.headless = headless
+        self.http_fallback = http_fallback
+        self._session: Session | None = None
         self._search_page: Any | None = None
         self._fetch_page: Any | None = None
         self._last_worker_health: dict[str, object] = {}
         self.last_search_errors: list[dict[str, str]] = []
         self.last_search_failure: dict[str, str] = {}
 
-    def _ensure_session_on_browser_thread(self, *, reuse_url_contains: str = "") -> Any:
+    def _ensure_session_on_browser_thread(self, *, reuse_url_contains: str = "") -> Session:
         if self._session is not None:
             connected = getattr(self._session.browser, "is_connected", None)
             if callable(connected) and not connected():
                 self._close_on_browser_thread()
         if self._session is not None:
+            return self._session
+        if self.headless:
+            self._session = open_headless_page(browser_path=self.browser_path)
+            # Context routing also covers the first request of script-opened
+            # pages, which a route attached only to the main page cannot see.
+            self._session.page.context.route("**/*", self._guard_request)
             return self._session
         target_reuse = "" if self.isolated else reuse_url_contains
         self._session = open_chat_page(
@@ -162,7 +213,7 @@ class BrowserSearchProvider:
 
     def _prepare_page_on_browser_thread(self, page: Any) -> Any:
         page.set_default_navigation_timeout(_NAV_TIMEOUT_MS)
-        if not getattr(page, "_codey_research_guarded", False):
+        if not self.headless and not getattr(page, "_codey_research_guarded", False):
             page.route("**/*", self._guard_request)
             with contextlib.suppress(Exception):
                 page._codey_research_guarded = True
@@ -405,7 +456,7 @@ class BrowserSearchProvider:
                 break
         return results
 
-    def fetch(self, url: str) -> dict[str, Any]:
+    def fetch(self, url: str) -> dict[str, object]:
         cancellation.check()
         if source_download._is_pdf_url(url):
             page = source_download._download_pdf_streaming(url)
@@ -419,9 +470,7 @@ class BrowserSearchProvider:
                     # leave the shared fetch page mid-navigation. Discard
                     # whatever page is current when the worker gets there;
                     # the discard is idempotent with the job's own paths.
-                    on_abandoned=lambda: self._discard_fetch_page_on_browser_thread(
-                        self._fetch_page
-                    ),
+                    on_abandoned=self._abandon_fetch_on_browser_thread,
                 )
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 self._record_worker_health()
@@ -438,18 +487,19 @@ class BrowserSearchProvider:
         cancellation.check()
         return page
 
-    def _fetch_on_browser_thread(self, url: str) -> dict[str, Any]:
+    def _fetch_on_browser_thread(self, url: str) -> dict[str, object]:
         reason = check_fetch_url(url)
         if reason:
             return source_download._fetch_failure(url, f'{reason}')
         if source_download._is_pdf_url(url):
             return source_download._pdf_download_sentinel(url)
         try:
-            page = self._prepare_fetch_page_on_browser_thread(url)
+            page: Page = self._prepare_fetch_page_on_browser_thread(url)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
             return source_download._fetch_failure(url, f'could not prepare page: {exc}')
+        failures = _PageFailures(page)
         try:
             cancellation.check()
             _set_navigation_timeout(page, _FETCH_NAV_TIMEOUT_MS)
@@ -489,19 +539,11 @@ class BrowserSearchProvider:
                 self._discard_fetch_page_on_browser_thread(page)
                 return source_download._fetch_failure(final_url, f'could not read page content: {exc}')
             cancellation.check()
-            if not _usable_fetch_page_text(text):
-                title = extract_title(html)
-                fallback = source_download._download_text_fallback(final_url)
-                fallback_text = str(fallback.get("text") or "")
-                if fallback.get("status") == "ok" and fallback_text:
-                    self._discard_fetch_page_on_browser_thread(page)
-                    return fallback
+            if _requires_login(page, text):
                 self._discard_fetch_page_on_browser_thread(page)
-                return source_download._fetch_failure(
-                    final_url,
-                    "page had no usable visible content after navigation: " + _fetch_page_failure_kind(text),
-                    title=title,
-                )
+                return source_download._fetch_failure(final_url, "login_required: page requires authentication")
+            if not _usable_fetch_page_text(text):
+                return self._unreadable_page_on_browser_thread(page, final_url, html, text, failures)
             truncated = len(text) > _MAX_PAGE_CHARS
             if truncated:
                 text = text[:_MAX_PAGE_CHARS]
@@ -509,6 +551,27 @@ class BrowserSearchProvider:
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             self._discard_fetch_page_on_browser_thread(page)
             raise
+        finally:
+            failures.close()
+
+    def _unreadable_page_on_browser_thread(
+        self, page: Page, url: str, html: str, text: str, failures: _PageFailures,
+    ) -> dict[str, object]:
+        if self.http_fallback:
+            fallback = source_download._download_text_fallback(url)
+            if fallback.get("status") == "ok" and fallback.get("text"):
+                self._discard_fetch_page_on_browser_thread(page)
+                return fallback
+        detail = failures.detail(text)
+        self._discard_fetch_page_on_browser_thread(page)
+        return source_download._fetch_failure(url,
+            "page had no usable visible content after navigation: " + detail, title=extract_title(html))
+
+    def _abandon_fetch_on_browser_thread(self) -> None:
+        if self.headless:
+            self._close_on_browser_thread()
+        else:
+            self._discard_fetch_page_on_browser_thread(self._fetch_page)
 
     def close(self) -> None:
         if self._session is None:
@@ -554,6 +617,8 @@ class BrowserSearchProvider:
                 seen_pages.add(id(page))
                 self._release_page_guard_on_browser_thread(page)
             if self._session is not None:
+                if self.headless:
+                    self._session.page.context.unroute_all(behavior="wait")
                 self._session.close()
         finally:
             self._fetch_page = None

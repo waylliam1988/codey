@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import re
 from html.parser import HTMLParser
-from typing import Any
 
 _SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head"}
 _BLOCK_TAGS = {
@@ -31,7 +30,7 @@ class _Extractor(HTMLParser):
         self._title_seen = False
         self._hidden_tags: list[str] = []
 
-    def handle_starttag(self, tag: str, attrs: Any) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = dict(attrs)
         hidden = ("hidden" in attributes or (attributes.get("aria-hidden") or "").lower() == "true"
                   or _HIDDEN_STYLE_RE.search(attributes.get("style", "") or ""))
@@ -101,6 +100,49 @@ def extract_title(html: str) -> str:
     with contextlib.suppress(Exception):
         parser.feed(html or "")
     return _SPACES_RE.sub(" ", parser.title).strip()
+
+
+class _ApplicationShellParser(_Extractor):
+    """Recognize an unfilled application region, not an arbitrary short page."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.bootstrap_script = False
+        self.regions: list[tuple[int, int, bool]] = []
+        self.tags: list[str] = []
+        self.roots: list[str] = []
+        self.mains: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        if tag == "script" and (attributes.get("src") or attributes.get("type") == "module"):
+            self.bootstrap_script = True
+        root = tag == "app-root" or attributes.get("id") in {"root", "app", "__next"}
+        main = bool(self.regions) and (tag == "main" or attributes.get("role") == "main")
+        super().handle_starttag(tag, attrs)
+        if root or main:
+            self.regions.append((len(self.tags), len(self.parts), main))
+        if tag not in _VOID_TAGS:
+            self.tags.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self.tags:
+            depth = len(self.tags) - 1 - self.tags[::-1].index(tag)
+            while self.regions and self.regions[-1][0] >= depth:
+                _, start, main = self.regions.pop()
+                (self.mains if main else self.roots).append("".join(self.parts[start:]))
+            del self.tags[depth:]
+        super().handle_endtag(tag)
+
+
+def is_application_shell(html: str) -> bool:
+    parser = _ApplicationShellParser()
+    parser.feed(html)
+    regions = parser.mains or parser.roots
+    return bool(parser.bootstrap_script and regions) and all(
+        not text.strip() or re.fullmatch(r"(?:loading|please wait|加载中)[.\s…]*", text.strip(), re.I)
+        for text in regions
+    )
 
 
 _MAX_PAGE_CHARS = 200_000

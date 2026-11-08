@@ -126,8 +126,11 @@ version watermarks are disposable projections, not a persisted task runtime.
 Reconnection must not hide Stop, suppress the final answer or execute a command
 a second time.
 An ordinary external-data lookup may use an approved bounded Shell HTTP command
-without opening a browser. Do not automatically enable Research's browser-backed
-source provider for ordinary chat. CodeMode host-access failures describe that
+without opening a browser. The approved 2026-11-08 exception lets ordinary chat's
+configured page provider render an unfilled JavaScript application shell in an
+isolated headless browser after HTTP, under one shared deadline and network policy.
+This does not enable Research's browser search or full workflow. Both acquisition
+attempts belong to the same tool receipt. CodeMode host-access failures describe that
 sandbox alone and must not be presented as a machine-wide network prohibition.
 
 ---

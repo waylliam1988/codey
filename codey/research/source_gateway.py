@@ -21,7 +21,7 @@ re-implementing policy; behavior modules must not import run projections
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
 from codey.policies.network import check_fetch_url
@@ -43,7 +43,7 @@ from codey.research.source_search import (
 from codey.research.url_selection import source_candidate_skip_reason
 from codey.runtime.core import cancellation
 from codey.task.web_intent import source_url_key
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, decode_json_object
 
 OPEN_DEFAULT_LIMIT = 6000
 OPEN_MAX_LIMIT = 12000
@@ -84,6 +84,7 @@ class OpenedSource:
     document: SourceDocument | None = None
     read_urls: tuple[str, ...] = ()
     acquisition_failed: bool = False
+    acquisition: JsonObject = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -160,40 +161,43 @@ class ResearchSourceGateway:
             self._fail("browser", "open", exc, url)
             return OpenedSource(status="error", detail=f"open failed: {exc}", acquisition_failed=True)
         cancellation.check()
+        acquisition = decode_json_object(page.get("acquisition", {}))
         page_url = str(page.get("url") or url)
         status = page.get("status")
         if type(status) is not str or status not in {"ok", "error", "skipped"}:
-            return OpenedSource(status="error", detail="fetch returned an invalid structured status")
+            return OpenedSource(status="error", detail="fetch returned an invalid structured status", acquisition=acquisition)
         skip_reason = "" if direct else source_candidate_skip_reason(page_url)
         if skip_reason:
             self._fail("browser", "open", skip_reason + " after redirect", url)
             return OpenedSource(
                 status="skipped",
                 detail=f"{skip_reason} after redirect. Choose a specific article, document, or readable source page.",
+                acquisition=acquisition,
             )
         if status != "ok":
             message = page.get("detail")
             if type(message) is not str or not message:
-                return OpenedSource(status="error", detail="fetch returned an invalid failure detail")
+                return OpenedSource(status="error", detail="fetch returned an invalid failure detail", acquisition=acquisition)
             self._fail("browser", "open", message, url)
-            return OpenedSource(status=status, detail=message, acquisition_failed=True)
+            return OpenedSource(status=status, detail=message, acquisition_failed=True, acquisition=acquisition)
         reason = check_fetch_url(page_url, use_cache=True)
         if reason:
             self._fail("browser", "open", f"{reason} (after redirect)", page_url or url)
-            return OpenedSource(status="error", detail=f"{reason} (after redirect)")
+            return OpenedSource(status="error", detail=f"{reason} (after redirect)", acquisition=acquisition)
         try:
             document = self._source_document_from_fetch(url, page, pages=pages)
         except (ValueError, TypeError) as exc:
             self._fail("browser", "open", exc, url)
-            return OpenedSource(status="error", detail=f"invalid fetched document: {exc}")
+            return OpenedSource(status="error", detail=f"invalid fetched document: {exc}", acquisition=acquisition)
         if isinstance(document, PdfSkipped):
             return OpenedSource(
                 status="skipped",
                 detail=f"{document.reason}. Choose an HTML source or another readable PDF.",
+                acquisition=acquisition,
             )
         read_urls = (url,) if not page_url or page_url == url else (url, page_url)
         self.ledger.record_open_document(document)
-        return OpenedSource(status="ok", document=document, read_urls=read_urls)
+        return OpenedSource(status="ok", document=document, read_urls=read_urls, acquisition=acquisition)
 
     def _source_document_from_fetch(
         self, requested_url: str, page: dict[str, object], *, pages: str = ""
