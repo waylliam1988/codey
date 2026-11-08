@@ -117,7 +117,7 @@ class ManagedOutputStore:
                 )
                 digest = hashlib.sha256(stored_text.encode("utf-8")).hexdigest()
                 original_digest = hashlib.sha256(original_text.encode("utf-8")).hexdigest()
-                handle = f"{HANDLE_PREFIX}{len(existing) + 1:04d}_{digest[:12]}"
+                handle = f"{HANDLE_PREFIX}{_artifact_scope(session_id, run_id)}_{len(existing) + 1:04d}_{digest[:12]}"
                 path = self.path_for(session_id, run_id, handle)
                 metadata_path = self.metadata_path_for(session_id, run_id, handle)
                 write_bytes_atomic(path, stored_text.encode("utf-8"))
@@ -253,7 +253,7 @@ class ManagedOutputStore:
         if len(raw) > MAX_MANAGED_OUTPUT_BYTES:
             raise ValueError("json artifact exceeds size limit")
         digest = hashlib.sha256(raw).hexdigest()
-        handle = f"artifact_{digest[:24]}"
+        handle = f"artifact_{_artifact_scope(session_id, run_id)}_{digest[:24]}"
         run_dir = self._run_dir(session_id, run_id)
         with with_file_lock(filesystem_path(run_dir)):
             path = self._handle_path(session_id, run_id, handle, ".json")
@@ -448,6 +448,11 @@ def _now() -> str:
 def _clip(value: object, limit: int) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     return text if len(text) <= limit else text[:limit].rstrip()
+
+
+def _artifact_scope(session_id: str, run_id: str) -> str:
+    """Artifact ledger keys are global; filesystem directories alone cannot scope them."""
+    return hashlib.sha256(json.dumps((session_id, run_id)).encode("utf-8")).hexdigest()[:24]
 
 
 def _safe_component(value: object, fallback: str) -> str:

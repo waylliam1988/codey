@@ -1,5 +1,7 @@
 # Shell / Web 三批实施记录（2026-11-08）
 
+后续变更：普通 Chat 搜索现已从 Bing RSS 切换为真实浏览器，静态正文/PDF 仍优先 HTTP；见[本批实现与实机结果](reports/chat-browser-search-20261108.zh-CN.md)。下文记录前三批当时的行为。
+
 ## 授权与范围
 
 用户授权三批实施、每批单独提交；先本地 KoboldCpp Gemma4，再 Cline Solar Mini4。相关测试优先，不运行全量 pytest、覆盖率和安装包构建。

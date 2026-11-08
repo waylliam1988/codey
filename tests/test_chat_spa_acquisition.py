@@ -18,7 +18,7 @@ from codey.research.chat_web import ChatWebProvider
 from codey.research.extract import is_application_shell
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall
-from codey.types.json_value import decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object
 from tests.support.receipt_fixtures import inspect_receipt_facts
 from tests.support.session_projection import restore_task_session
 from tests.test_committed_research_projection import runtime
@@ -63,7 +63,7 @@ def test_http_reports_shell_even_when_navigation_is_long(monkeypatch: pytest.Mon
 def test_no_browser_for_non_shell_results(monkeypatch: pytest.MonkeyPatch, page: dict[str, object]) -> None:
     factory = Mock(side_effect=AssertionError("unnecessary browser"))
     monkeypatch.setattr("codey.research.chat_web.fetch_http_document", lambda _: page)
-    provider = ChatWebProvider(renderer_factory=factory)
+    provider = ChatWebProvider(browser_factory=factory)
     provider.fetch("https://example.com/")
     provider.close()
     factory.assert_not_called()
@@ -77,7 +77,7 @@ def test_interruptions_never_trigger_rendering(monkeypatch: pytest.MonkeyPatch, 
     monkeypatch.setattr("codey.research.chat_web.fetch_http_document", interrupted)
     factory = Mock(side_effect=AssertionError("rendered after interruption"))
     with pytest.raises(error):
-        ChatWebProvider(renderer_factory=factory).fetch("https://example.com/")
+        ChatWebProvider(browser_factory=factory).fetch("https://example.com/")
 
 
 def test_http_and_rendering_share_earlier_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -88,6 +88,9 @@ def test_http_and_rendering_share_earlier_deadline(monkeypatch: pytest.MonkeyPat
         return {"status": "error", "render_required": True}
 
     class Renderer:
+        def search(self, query: str, *, limit: int) -> list[JsonObject]:
+            pytest.fail("page acquisition must not search")
+
         def fetch(self, url: str) -> dict[str, object]:
             deadlines.append(cancellation.current_deadline())
             return {"status": "ok", "text": BODY}
@@ -98,7 +101,7 @@ def test_http_and_rendering_share_earlier_deadline(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr("codey.research.chat_web.fetch_http_document", http)
     deadline = time.monotonic() + 5
     with cancellation.deadline_scope(deadline):
-        ChatWebProvider(renderer_factory=Renderer).fetch("https://example.com/")
+        ChatWebProvider(browser_factory=Renderer).fetch("https://example.com/")
     assert deadlines == [deadline, deadline]
 
 
@@ -131,7 +134,7 @@ def test_real_headless_spa_and_receipt_recovery_never_refetch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spa_server: str,
 ) -> None:
     session, tools, managed, deps, sink = runtime(tmp_path, monkeypatch)
-    provider = ChatWebProvider()
+    provider = ChatWebProvider(browser_factory=lambda: browser_search.BrowserSearchProvider(headless=True, http_fallback=False))
     tools.search = provider
     tools.direct_urls = frozenset({spa_server})
     monkeypatch.setattr(source_download, "check_fetch_url", lambda *a, **k: "")

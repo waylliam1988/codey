@@ -234,7 +234,7 @@ def test_settled_shell_approval_resolves_from_durable_state_without_audit_projec
     from codey.app.context import AppContext
     from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 
-    state = AppContext(tmp_path)
+    state = AppContext(tmp_path, start_scheduler=False)
     try:
         state.durable.admit_input(
             conversation_id="conversation-1",
@@ -276,7 +276,12 @@ def test_settled_shell_approval_resolves_from_durable_state_without_audit_projec
         resolved = state.resolve_shell_approval("approval-1")
         assert resolved is not None
         assert resolved["ok"] is True
-        assert resolved["model_text"] == "hello"
+        # Legacy settlements have no status; recovery retains that uncertainty
+        # while delivering the same structured receipt as a fresh execution.
+        assert resolved["execution"]["status"] == "unknown"
+        assert resolved["execution"]["exit_code"] == 0
+        assert "Execution status: unknown" in resolved["model_text"]
+        assert resolved["model_text"].endswith("Output:\nhello")
     finally:
         state.close()
 

@@ -1,5 +1,6 @@
 from dataclasses import replace
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -142,3 +143,47 @@ def test_managed_output_builds_verified_durable_record(tmp_path: Path) -> None:
     assert record.sha256 == ref.sha256
     assert record.byte_count == ref.stored_bytes
     assert record.storage_path.endswith(f"{ref.handle}.txt")
+
+
+@pytest.mark.parametrize("backend", ["memory", "sqlite"])
+@pytest.mark.parametrize("kind", ["text", "json"])
+@pytest.mark.parametrize("same_conversation", [False, True])
+def test_identical_content_in_two_tasks_registers_and_recovers_independently(
+    backend: str, kind: Literal["text", "json"], same_conversation: bool, tmp_path: Path,
+) -> None:
+    session = _session(backend, tmp_path)
+    outputs = ManagedOutputStore(tmp_path)
+    conversation = "c" if same_conversation else "other"
+    session.admit_input(conversation_id=conversation, request_id="r2", task_id="t2", text="read again", provider_snapshot={})
+    records: list[ArtifactRecord] = []
+    try:
+        for session_id, task_id in (("c", "t"), (conversation, "t2")):
+            if kind == "text":
+                output = outputs.write_tool_output(session_id=session_id, run_id=task_id, tool_id="read",
+                    permission_profile="coding_writer", tool_name="open_result", display_ref="https://example.com/",
+                    text="Identical acquired body " * 1000)
+                assert output is not None
+                record = outputs.durable_record(output, session_id=session_id, run_id=task_id, owner_task_id=task_id)
+            else:
+                ref = outputs.write_json_artifact(session_id=session_id, run_id=task_id, payload={"same": "content"})
+                record = outputs.json_artifact_record(ref, owner_task_id=task_id, owner_effect_id=None,
+                                                     metadata={"kind": "test"})
+                repeated = outputs.write_json_artifact(session_id=session_id, run_id=task_id, payload={"same": "content"})
+                assert repeated == ref
+            session.register_artifacts(task_id, (record,))
+            records.append(record)
+        first, second = records
+        assert first.sha256 == second.sha256
+        assert first.handle != second.handle
+        assert first.storage_path != second.storage_path
+        assert session.artifact(first.handle) == first
+        assert session.artifact(second.handle) == second
+        if backend == "sqlite":
+            session.close()
+            session = DurableSession(SQLiteDurableStore(tmp_path / "durable.sqlite3"))
+        for record in records:
+            stored = session.artifact(record.handle)
+            assert stored.owner_task_id == record.owner_task_id
+            assert Path(stored.storage_path).read_bytes() == Path(first.storage_path).read_bytes()
+    finally:
+        session.close()
