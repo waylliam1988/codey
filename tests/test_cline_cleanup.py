@@ -26,7 +26,7 @@ def test_complete_cleanup_removes_credentials_cache_and_preferences_but_not_hist
     history.write_text(json.dumps({"provider": "cline", "model": MODEL, "text": "Keep this"}), encoding="utf8")
     ctx = SimpleNamespace(lock=threading.RLock(), active_runs=lambda: (),
         approvals=SimpleNamespace(shell_snapshot=lambda: {}),
-        providers=SimpleNamespace(model_preferences=preferences, model_uses=[]))
+        providers=SimpleNamespace(model_preferences=preferences, model_uses_snapshot=lambda: ()))
     status, payload = connection_actions.action_response(ctx, {"source": "cline", "action": "clear_data"})
     assert status == 200 and payload["authentication"]["state"] == "signed_out"
     assert instance.auth.store.load() is None and not instance.catalog.path.exists()

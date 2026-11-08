@@ -285,14 +285,26 @@ class RunRegistry:
 
     def release(self, run_id: str) -> None:
         with self._lock:
-            self._active_runs.pop(run_id, None)
-            self._api_selections.pop(run_id, None)
-            if self._current_run_id == run_id:
-                self._current_run_id = next(reversed(self._active_runs), "") if self._active_runs else ""
-            self._sync_primary_locked()
-            self._sync_slot_event()
-            if not self._active_runs:
-                self._status = "idle"
+            self._release_locked(run_id)
+
+    def release_unstarted(self, run_id: str) -> bool:
+        """Release a stale admission without consuming a worker's completion."""
+        with self._lock:
+            run = self._active_runs.get(run_id)
+            if run is None or run.status != "queued":
+                return False
+            self._release_locked(run_id)
+            return True
+
+    def _release_locked(self, run_id: str) -> None:
+        self._active_runs.pop(run_id, None)
+        self._api_selections.pop(run_id, None)
+        if self._current_run_id == run_id:
+            self._current_run_id = next(reversed(self._active_runs), "") if self._active_runs else ""
+        self._sync_primary_locked()
+        self._sync_slot_event()
+        if not self._active_runs:
+            self._status = "idle"
 
     def finish(self, run_id: str, event: JsonObject) -> JsonObject | None:
         with self._lock:

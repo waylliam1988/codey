@@ -2022,8 +2022,8 @@ class LocalProviderApiTests(unittest.TestCase):
                 body = json.loads(response.read().decode("utf-8"))
                 conn.close()
 
-            self.assertEqual(response.status, 200)
-            self.assertTrue(body.get("ok"))
+            self.assertEqual(response.status, 503)
+            self.assertFalse(body.get("ok"))
             self.assertIn("unpurged_stores", body)
             self.assertIn("ghost_continuity", body["unpurged_stores"])
         finally:

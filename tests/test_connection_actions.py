@@ -10,9 +10,11 @@ from codey.providers.model_preferences import ModelPreferences
 
 
 def context(tmp_path):
+    providers = SimpleNamespace(model_preferences=ModelPreferences(tmp_path), model_uses=[])
+    providers.model_uses_snapshot = lambda: tuple(providers.model_uses)
     return SimpleNamespace(lock=threading.RLock(), active_runs=lambda: (),
         approvals=SimpleNamespace(shell_snapshot=lambda: {}),
-        providers=SimpleNamespace(model_preferences=ModelPreferences(tmp_path), model_uses=[]))
+        providers=providers)
 
 
 def connector():

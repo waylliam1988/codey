@@ -793,10 +793,14 @@ def new_chat_response(ctx: Any, body: dict[str, Any]) -> tuple[int, dict[str, An
         return 400, {"ok": False, "error": "session_id required"}
     if ctx.active_run_for(session_id=session_id) is not None:
         return 409, {"ok": False, "error": "run in progress"}
-    failures = ctx.forget_conversation(session_id, preserve_ui=body.get("preserve_ui", True) is not False)
+    try:
+        failures = ctx.forget_conversation(session_id, preserve_ui=body.get("preserve_ui", True) is not False)
+    except CommitConflict as exc:
+        return 409, {"ok": False, "error": str(exc)}
     if failures:
-        return 200, {
-            "ok": True,
+        return 503, {
+            "ok": False,
+            "error": "Conversation cleanup incomplete; retry deletion.",
             "state": ctx.load_ui_state(),
             "warnings": [f"Failed to purge store {k}: {v}" for k, v in failures.items()],
             "unpurged_stores": list(failures.keys()),

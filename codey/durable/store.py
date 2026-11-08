@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 from typing import Protocol
 
+from codey.durable.history import HistoryReader
 from codey.durable.model import (
     ApprovalRecord,
     ArtifactRecord,
@@ -62,6 +64,8 @@ class DurableStore(Protocol):
     def release_scheduler_owner(self, owner_id: str) -> None: ...
 
     def entries(self, conversation_id: str) -> tuple[EntryDraft, ...]: ...
+
+    def history_snapshot(self) -> AbstractContextManager[HistoryReader]: ...
 
     def head(self, conversation_id: str) -> tuple[str | None, int]: ...
 

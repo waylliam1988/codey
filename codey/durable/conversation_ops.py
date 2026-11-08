@@ -17,7 +17,9 @@ from typing import cast
 from codey.durable.ancestry import context_path
 from codey.durable.context import ContextSnapshot, build_context
 from codey.durable.errors import CommitConflict
+from codey.durable.history import HistoryReader, history_path
 from codey.durable.model import (
+    ArtifactRecord,
     CommitResult,
     CreateConversation,
     DeleteConversation,
@@ -33,7 +35,10 @@ def entries(session: SessionKernel, conversation_id: str) -> tuple[EntryDraft, .
     return _resolve_response_entries(session, tuple(session.store.entries(conversation_id)))
 
 
-def _resolve_response_entries(session: SessionKernel, path: tuple[EntryDraft, ...]) -> tuple[EntryDraft, ...]:
+def _resolve_response_entries(
+    session: SessionKernel, path: tuple[EntryDraft, ...],
+    *, artifact: Callable[[str], ArtifactRecord] | None = None,
+) -> tuple[EntryDraft, ...]:
     from codey.durable.provider_response import read_response_artifact, tool_call_message
 
     resolved = []
@@ -44,14 +49,14 @@ def _resolve_response_entries(session: SessionKernel, path: tuple[EntryDraft, ..
             continue
         if not isinstance(reference, str) or not reference or set(entry.payload) != {"response_ref"}:
             raise ValueError("invalid provider history reference")
-        artifact = session.store.artifact(reference)
-        if (artifact.owner_task_id != entry.by_task_id or not artifact.owner_effect_id
-                or artifact.metadata.get("kind") != "provider_response"):
+        record = (artifact or session.store.artifact)(reference)
+        if (record.owner_task_id != entry.by_task_id or not record.owner_effect_id
+                or record.metadata.get("kind") != "provider_response"):
             raise ValueError("provider history reference ownership mismatch")
-        envelope = read_response_artifact(artifact)
+        envelope = read_response_artifact(record)
         if (not isinstance(envelope, dict) or envelope.get("schema_version") != 1
                 or envelope.get("kind") != "provider_response"
-                or envelope.get("effect_id") != artifact.owner_effect_id):
+                or envelope.get("effect_id") != record.owner_effect_id):
             raise ValueError("invalid provider history response")
         resolved.append(replace(entry, payload=tool_call_message(envelope.get("payload"))))
     return tuple(resolved)
@@ -94,13 +99,18 @@ def history_page(
     before: str | None = None,
     limit: int = 100,
 ) -> dict[str, object]:
+    with session.store.history_snapshot() as reader:
+        return _history_page(session, reader, conversation_id, before=before, limit=limit)
+
+
+def _history_page(
+    session: SessionKernel, reader: HistoryReader, conversation_id: str, *, before: str | None, limit: int,
+) -> dict[str, object]:
     limit = max(1, min(200, int(limit)))
-    path = [entry for entry in context(session, conversation_id)
-            if entry.kind not in {"context_snapshot", "control_config", "control_receipt"}]
+    head, revision = reader.head(conversation_id)
+    path = history_path(reader, conversation_id, head)
     visible_runs = {entry.by_task_id for entry in path if entry.by_task_id}
-    inactive_runs = sorted({entry.by_task_id for entry in session.store.entries(conversation_id)
-                            if entry.by_task_id and entry.by_task_id not in visible_runs})
-    _head, revision = session.store.head(conversation_id)
+    inactive_runs = sorted(reader.run_ids(conversation_id) - visible_runs)
     boundary = len(path)
     if before:
         decoded_cursor = _decode_history_cursor(before)
@@ -117,7 +127,7 @@ def history_page(
             raise ValueError("cursor does not belong to current conversation path")
         boundary = positions[decoded_cursor[1]]
     start = max(0, boundary - limit)
-    selected = path[start:boundary]
+    selected = _resolve_response_entries(session, reader.select_entries(path[start:boundary]), artifact=reader.artifact)
     items = [_history_item(entry, start + index + 1) for index, entry in enumerate(selected)]
     has_more = start > 0
     cursor = _encode_history_cursor(conversation_id, selected[0].entry_id,
@@ -129,7 +139,7 @@ def history_page(
         "snapshot_revision": revision,
         "inactive_run_ids": inactive_runs,
         "items": items,
-        "task_states": [task_lifecycle(session.store.task(run)) for run in sorted({entry.by_task_id for entry in selected if entry.by_task_id})],
+        "task_states": [task_lifecycle(reader.task(run)) for run in sorted({entry.by_task_id for entry in selected if entry.by_task_id})],
         "before_cursor": cursor,
         "has_more": has_more,
     }

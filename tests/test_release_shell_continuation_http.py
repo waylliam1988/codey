@@ -100,6 +100,25 @@ def model_peer(protocol, case, tool_name="shell", repeat=False, retry_denied=Fal
         thread.join(timeout=5)
 
 
+def wait_for_completed_task(ctx, events, run_id, requests, errors, *, timeout=10):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        terminal = next((event for event in reversed(events)
+                         if event.get('type') == 'task_done' and event.get('run_id') == run_id), {})
+        if terminal.get('stop_reason') == 'done' and not ctx.is_busy():
+            assert str(ctx.durable.task(run_id).status) == 'completed'
+            return
+        if errors or terminal.get('stop_reason') not in {None, 'approval', 'done'}:
+            break
+        time.sleep(.02)
+    task = ctx.durable.task(run_id)
+    pytest.fail(f'remembered task did not finish within {timeout}s: '
+        f'approval={ctx.shell_approval_workflow.list_statuses()}, '
+        f'task={task.phase}/{task.status}@{task.revision}, scheduler={ctx.durable_scheduler.health()}, '
+        f'busy={ctx.is_busy()}, terminals={[e for e in events if e.get("type") == "task_done"]}, '
+        f'requests={len(requests)}, errors={errors}')
+
+
 @pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
 @pytest.mark.parametrize("case", SHELL_CASES)
 @pytest.mark.parametrize("tool_name", ["shell", "run"])
@@ -147,16 +166,55 @@ def test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_p
                     assert wait_for_run(client, run_id, 10)['stop_reason'] == 'approval'
                     approval_id = next(iter(ctx.pending_shell_approvals()))
                     client.post('/api/shell_approval', {'id': approval_id, 'approved': True, 'scope': 'session'})
-                deadline = time.monotonic() + 10
-                while time.monotonic() < deadline:
-                    if any(event.get('type') == 'task_done' and event.get('run_id') == run_id
-                           and event.get('stop_reason') == 'done' for event in events) and not ctx.is_busy():
-                        break
-                    time.sleep(.02)
-                else:
-                    pytest.fail(f'remembered task did not finish: {ctx.shell_approval_workflow.list_statuses()}')
+                wait_for_completed_task(ctx, events, run_id, requests, errors)
                 assert ctx.shell_approval_workflow.for_source('remembered-chat', run_id)['execution'] == 'settled'
             assert len(requests) == 4 and not errors
+
+
+@pytest.mark.parametrize('boundary', ['running', 'terminal'])
+@pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])
+def test_remembered_approval_keeps_worker_reservation_when_http_admission_loses_claim(tmp_path, monkeypatch, boundary, protocol):
+    from codey.app import task_submit
+    from codey.app.task_lifecycle import TaskLifecycleCoordinator
+    from codey.durable import DurableSession
+
+    original_claim = task_submit._claim_admitted_task
+    complete = DurableSession.complete_task
+    finish = TaskLifecycleCoordinator.finish_run
+    worker_ready = threading.Event()
+    admission_finished = threading.Event()
+    delayed_run = []
+    admissions = 0
+
+    def late_http_claim(state, reserved, **kwargs):
+        nonlocal admissions
+        admissions += 1
+        if admissions != 2:
+            return original_claim(state, reserved, **kwargs)
+        delayed_run.append(reserved.run_id)
+        assert worker_ready.wait(5), 'scheduler did not reach the completion boundary'
+        try:
+            return original_claim(state, reserved, **kwargs)
+        finally:
+            admission_finished.set()
+
+    def before_complete(self, task_id, *args, **kwargs):
+        if boundary == 'running' and task_id in delayed_run:
+            worker_ready.set()
+            assert admission_finished.wait(5), 'HTTP claim did not finish'
+        return complete(self, task_id, *args, **kwargs)
+
+    def before_finish(self, run_id, event):
+        if boundary == 'terminal' and run_id in delayed_run and event.get('stop_reason') == 'done':
+            worker_ready.set()
+            assert admission_finished.wait(5), 'HTTP claim did not finish'
+        return finish(self, run_id, event)
+
+    monkeypatch.setattr(task_submit, '_claim_admitted_task', late_http_claim)
+    monkeypatch.setattr(DurableSession, 'complete_task', before_complete)
+    monkeypatch.setattr(TaskLifecycleCoordinator, 'finish_run', before_finish)
+    test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_path)
+    assert worker_ready.is_set() and admission_finished.is_set()
 
 
 @pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])

@@ -1,5 +1,6 @@
 import { RunEventCoordinator } from './run_event_coordinator';
 import { SessionStateStore } from './session_state_store';
+import { forgetSessionOnServer } from './session_deletion';
 import { SessionStateViews } from './session_state_views';
 import { ChatFork } from './chat_fork';
 import { DocumentPane, type DocumentRef } from './document_pane';
@@ -595,18 +596,12 @@ function newSession(projectId: string | null = null) {
   sessionState.newSession(projectId);
 }
 async function forgetSessionState(id: string, preserveUi = false): Promise<boolean> {
-  try {
-    const response = await fetch('/api/new_chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: id, preserve_ui: preserveUi }),
-    });
-    if (!response.ok) return false;
-    runtime.UiState.accept((await response.json()).state);
-    return true;
-  } catch {
-    return false;
-  }
+  return forgetSessionOnServer(
+    id,
+    preserveUi,
+    (state) => runtime.UiState.accept(state),
+    (error) => setStatus(error, 'err'),
+  );
 }
 async function deleteSession(id: string): Promise<void> {
   return sessionState.deleteSession(id);

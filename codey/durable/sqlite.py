@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping
-from contextlib import closing
+from collections.abc import Generator, Mapping
+from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,11 +15,13 @@ from codey.durable.errors import (
     SchemaVersionError,
 )
 from codey.durable.events import mutation_projection
+from codey.durable.history import HistoryReader
 from codey.durable.model import (
     ApprovalRecord,
     ArtifactRecord,
     CommitRecord,
     CommitResult,
+    DeleteConversation,
     DurableMutation,
     EffectRecord,
     EntryDraft,
@@ -41,6 +43,7 @@ from codey.durable.model import (
     valid_task_status_transition,
     valid_task_transition,
 )
+from codey.durable.sqlite_history import SQLiteHistoryReader
 from codey.durable.sqlite_records import (
     artifact_from_row,
     effect_from_row,
@@ -146,6 +149,13 @@ class SQLiteDurableStore:
                     record = _new_commit(database, "durable", {
                         **mutation_projection(mutation),
                     })
+                    # Retain public commit cursors/tombstones, but purge private
+                    # checkpoints and effect bodies in the same delete transaction.
+                    database.execute(
+                        "UPDATE commits SET payload=json_remove(payload, '$._workflow') "
+                        "WHERE json_extract(payload, '$.session_id')=?",
+                        (mutation.conversation_id,),
+                    )
                     task_ids = [
                         str(row[0]) for row in database.execute(
                             "SELECT id FROM tasks WHERE conversation_id=?",
@@ -247,6 +257,15 @@ class SQLiteDurableStore:
         with closing(self._connect()) as database:
             return _entries(database, conversation_id)
 
+    @contextmanager
+    def history_snapshot(self) -> Generator[HistoryReader, None, None]:
+        with closing(self._connect()) as database:
+            database.execute("BEGIN")
+            try:
+                yield SQLiteHistoryReader(database)
+            finally:
+                database.execute("ROLLBACK")
+
     def head(self, conversation_id: str) -> tuple[str | None, int]:
         with closing(self._connect()) as database:
             row = database.execute("SELECT head_entry_id, revision FROM conversations WHERE id=?", (conversation_id,)).fetchone()
@@ -288,32 +307,8 @@ class SQLiteDurableStore:
                 raise
 
     def delete_conversation(self, conversation_id: str) -> None:
-        with closing(self._connect()) as database:
-            database.execute("BEGIN IMMEDIATE")
-            try:
-                if database.execute("SELECT 1 FROM conversations WHERE id=?", (conversation_id,)).fetchone() is None:
-                    raise KeyError(f"unknown conversation: {conversation_id}")
-                if database.execute(
-                    "SELECT 1 FROM conversations WHERE parent_conversation_id=? LIMIT 1",
-                    (conversation_id,),
-                ).fetchone() is not None:
-                    raise CommitConflict("conversation has forked children")
-                task_rows = database.execute(
-                    "SELECT id FROM tasks WHERE conversation_id=?", (conversation_id,)
-                ).fetchall()
-                task_ids = [str(row[0]) for row in task_rows]
-                if task_ids:
-                    database.executemany("DELETE FROM effects WHERE task_id=?", ((task_id,) for task_id in task_ids))
-                    database.executemany("DELETE FROM artifacts WHERE owner_task_id=?", ((task_id,) for task_id in task_ids))
-                database.execute("DELETE FROM tasks WHERE conversation_id=?", (conversation_id,))
-                database.execute("DELETE FROM submissions WHERE conversation_id=?", (conversation_id,))
-                database.execute("DELETE FROM entries WHERE conversation_id=?", (conversation_id,))
-                database.execute("DELETE FROM conversations WHERE id=?", (conversation_id,))
-                database.execute("COMMIT")
-            except BaseException:
-                if database.in_transaction:
-                    database.execute("ROLLBACK")
-                raise
+        _head, revision = self.head(conversation_id)
+        self.commit(DurableMutation(conversation_id, revision, delete_conversation=DeleteConversation()))
 
     def conversation_parent(self, conversation_id: str) -> tuple[str | None, str | None]:
         with closing(self._connect()) as database:

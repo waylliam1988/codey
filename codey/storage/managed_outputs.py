@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -74,6 +75,12 @@ class ManagedOutputStore:
         if not state_home:
             raise ValueError("state_home required")
         self.root = Path(state_home) / "managed_outputs"
+
+    def delete_session(self, session_id: str) -> None:
+        """Remove only application-owned files for this session; safe to retry."""
+        directory = self.root.resolve() / session_key(session_id)
+        if directory.exists():
+            shutil.rmtree(directory)
 
     def write_tool_output(
         self,

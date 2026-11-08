@@ -9,6 +9,7 @@ from codey.providers.api_http import ApiHttpSession, ConnectionKey
 from codey.providers.api_provider import ApiProvider
 from codey.providers.api_request_policy import LocalRequestPolicy, RetryDirective
 from codey.providers.api_transport import (
+    AttemptControl,
     GenerationNotSentError,
     GenerationRejectedError,
     GenerationUnknownError,
@@ -74,7 +75,7 @@ def test_policy_can_retry_a_pre_submission_tls_eof_once(monkeypatch) -> None:  #
     assert calls == 2
 
 
-def test_pooled_tls_eof_after_generation_write_is_unknown() -> None:
+def test_pooled_tls_eof_after_generation_write_is_unknown(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     class Connection:
         def request(self, *_args, **_kwargs):
             self._codey_submission_started = True
@@ -84,12 +85,15 @@ def test_pooled_tls_eof_after_generation_write_is_unknown() -> None:
             pass
 
     session = ApiHttpSession()
+    monkeypatch.setattr(urllib.request, "getproxies", lambda: {})
     key = ConnectionKey("http://fixture.test", "", "", "http")
     session.release_connection(key, Connection())
     request = urllib.request.Request("http://fixture.test/v1", data=b"{}", method="POST")
-    with pytest.raises(GenerationUnknownError) as caught:
-        _open_pooled_request(request, 1, control=type("Control", (), {
-            "cancelled": False,
-            "register_lease": lambda self, lease: None,
-        })(), http_session=session)
-    assert caught.value.reason_code == "post_submission_tls_eof"
+    control = AttemptControl()
+    try:
+        with pytest.raises(GenerationUnknownError) as caught:
+            _open_pooled_request(request, 1, control=control, http_session=session)
+        assert caught.value.reason_code == "post_submission_tls_eof"
+    finally:
+        control.cancel()
+        session.release()

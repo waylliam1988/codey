@@ -138,6 +138,10 @@ class TaskRuntimeCoordinator:
         self._registry.release(run_id)
         self._wake_input()
 
+    def release_unstarted_run(self, run_id: str) -> None:
+        if self._registry.release_unstarted(run_id):
+            self._wake_input()
+
     def wait_for_slot(self, timeout: float | None = None) -> bool:
         return self._registry.wait_for_slot(timeout)
 

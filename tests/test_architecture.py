@@ -214,7 +214,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("class RunRegistry", registry_source)
         self.assertNotIn("class RunSnapshot", server_source)
         self.assertIn("self._active_run: RunSnapshot | None", registry_source)
-        self.assertIn("self._last_terminal_event: dict[str, Any] | None", registry_source)
+        self.assertIn("self._last_terminal_event: JsonObject | None", registry_source)
         for token in (
             "self.active_run: RunSnapshot",
             "self.project: str | None",

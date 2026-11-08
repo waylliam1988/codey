@@ -270,6 +270,8 @@ class AppContext(GhostStoreAccessors):
                 ('ghost_work_queue', lambda sid: forget_scope(self.ghost_work_queue, sid)),
                 ('ghost_affinity', lambda sid: forget_scope(self.ghost_affinity, sid)),
                 ('run_traces', lambda sid: forget_trace(self.run_traces, sid)),
+                ('managed_outputs', lambda sid: self.managed_outputs.delete_session(sid) if self.managed_outputs else None),
+                ('execution_outputs', lambda sid: self.execution_outputs.delete_session(sid)),
             ),
         )
         if start_scheduler:

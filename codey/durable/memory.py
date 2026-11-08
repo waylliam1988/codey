@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from codey.durable.ancestry import context_path
 from codey.durable.errors import CommitConflict, IdempotencyConflict, SchedulerOwnershipError
 from codey.durable.events import mutation_projection
+from codey.durable.history import HistoryReader, MemoryHistoryReader
 from codey.durable.model import (
     TASK_TERMINAL_STATUSES,
     ApprovalRecord,
     ArtifactRecord,
     CommitRecord,
     CommitResult,
+    DeleteConversation,
     DurableMutation,
     EffectRecord,
     EntryDraft,
@@ -624,6 +627,11 @@ class MemoryDurableStore:
             self._conversation(conversation_id)
             return tuple(self._entries[conversation_id])
 
+    @contextmanager
+    def history_snapshot(self) -> Generator[HistoryReader, None, None]:
+        with self._lock:
+            yield MemoryHistoryReader(self)
+
     def head(self, conversation_id: str) -> tuple[str | None, int]:
         with self._lock:
             return self._conversation(conversation_id)
@@ -659,24 +667,8 @@ class MemoryDurableStore:
 
     def delete_conversation(self, conversation_id: str) -> None:
         with self._lock:
-            self._conversation(conversation_id)
-            if any(parent == conversation_id for parent, _entry in self._parents.values()):
-                raise CommitConflict("conversation has forked children")
-            self._entries.pop(conversation_id, None)
-            self._heads.pop(conversation_id, None)
-            self._parents.pop(conversation_id, None)
-            for key, value in tuple(self._submissions.items()):
-                if value.record.conversation_id == conversation_id:
-                    self._submissions.pop(key)
-                    self._submission_ids.discard(value.record.submission_id)
-                    self._tasks.pop(value.record.submission_id, None)
-            for task_id, task in tuple(self._tasks.items()):
-                if task.conversation_id == conversation_id:
-                    self._tasks.pop(task_id, None)
-                    self._finalization.discard(task_id)
-                    for effect_id, effect in tuple(self._effects.items()):
-                        if effect.task_id == task_id:
-                            self._effects.pop(effect_id, None)
+            _head, revision = self._conversation(conversation_id)
+            self.commit(DurableMutation(conversation_id, revision, delete_conversation=DeleteConversation()))
 
     def conversation_parent(self, conversation_id: str) -> tuple[str | None, str | None]:
         with self._lock:

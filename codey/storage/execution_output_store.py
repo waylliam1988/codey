@@ -51,6 +51,10 @@ class ExecutionOutputStore:
         with conversation_database(self.path) as database:
             database.execute("INSERT OR IGNORE INTO execution_outputs(execution_id,session_id,run_id,state,revision,stdout,stderr,stdout_bytes,stderr_bytes,exit_code,max_bytes) VALUES(?,?,?,?,?,?,?,?,?,?,?)", (execution_id, session_id, run_id, "running", 0, "", "", 0, 0, None, max(1, int(max_bytes or self.max_bytes))))
 
+    def delete_session(self, session_id: str) -> None:
+        with conversation_database(self.path) as database:
+            database.execute("DELETE FROM execution_outputs WHERE session_id=?", (session_id,))
+
     def append(self, execution_id: str, channel: str, chunk: bytes) -> dict[str, Any]:
         if channel not in {"stdout", "stderr"}:
             raise ValueError("invalid output channel")

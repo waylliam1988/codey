@@ -11,6 +11,7 @@ from codey.app.conversation_registry import ConversationRegistry
 from codey.app.provider_registry import ProviderRegistry
 from codey.app.run_registry import RunRegistry
 from codey.app.task_lifecycle import ShellApprovalExpiry
+from codey.durable.errors import CommitConflict
 from codey.durable.model import thaw_json
 from codey.durable.session import DurableSession
 from codey.runs.trace import RunTraceStore
@@ -74,14 +75,11 @@ class ConversationCoordinator:
         try:
             if self._durable.has_conversation(session_id):
                 self._durable.delete_conversation(session_id)
+        except CommitConflict:
+            raise
         except Exception as exc:
             failures["durable"] = str(exc)
-        if not preserve_ui:
-            try:
-                with self._ui_lock:
-                    self._ui.forget_session(session_id)
-            except Exception as exc:
-                failures["ui_state"] = str(exc)
+            return failures
         # Cleanup must continue after failures: executable state cannot outlive the chat.
         try:
             self._registry.forget(session_id)
@@ -97,7 +95,11 @@ class ConversationCoordinator:
         except Exception as exc:
             failures["run_outputs"] = str(exc)
         with self._lock:
-            events = self._expire_approvals(session_id=session_id)
+            try:
+                events = self._expire_approvals(session_id=session_id)
+            except Exception as exc:
+                failures["approvals"] = str(exc)
+                events = ()
             orphan_runs = [run_id for run_id, owner in self._research_owners.items() if owner == session_id]
             for run_id in orphan_runs:
                 self._research_changes.pop(run_id, None)
@@ -108,10 +110,20 @@ class ConversationCoordinator:
             except Exception as exc:
                 failures["approvals"] = str(exc)
                 break
-        self._flush_events()
+        try:
+            self._flush_events()
+        except Exception as exc:
+            failures["events"] = str(exc)
         for name, cleanup in self._cleanup:
             try:
                 cleanup(session_id)
             except Exception as exc:
                 failures[name] = str(exc)
+        # Keep the chat discoverable for an idempotent retry of partial cleanup.
+        if not preserve_ui and not failures:
+            try:
+                with self._ui_lock:
+                    self._ui.forget_session(session_id)
+            except Exception as exc:
+                failures["ui_state"] = str(exc)
         return failures

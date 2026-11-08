@@ -351,8 +351,7 @@ def _claim_admitted_task(state: TaskSubmissionState, reserved: RunSnapshot, *, e
     """Claim once; repeated HTTP confirmation must not dispatch another worker."""
     checkpoint = state.durable.task(reserved.run_id)
     if checkpoint.status in TASK_TERMINAL_STATUSES:
-        if not existing_reservation:
-            state.release_run(reserved.run_id)
+        _release_unstarted_admission(state, reserved.run_id, existing_reservation=existing_reservation)
         return False
     # Stop can land after reservation but before the checkpoint exists.
     if reserved.stop_event.is_set():
@@ -360,19 +359,31 @@ def _claim_admitted_task(state: TaskSubmissionState, reserved: RunSnapshot, *, e
         state.release_run(reserved.run_id)
         return False
     if checkpoint.status != TaskStatus.PENDING:
-        if not existing_reservation:
-            state.release_run(reserved.run_id)
+        _release_unstarted_admission(state, reserved.run_id, existing_reservation=existing_reservation)
         return False
     try:
         state.durable.claim_task(reserved.run_id)
     except (CommitConflict, ValueError):
         if state.durable.task(reserved.run_id).status == TaskStatus.PENDING:
             raise
-        if not existing_reservation:
-            state.release_run(reserved.run_id)
+        _release_unstarted_admission(state, reserved.run_id, existing_reservation=existing_reservation)
         return False
     state.durable_scheduler.claim(reserved.run_id)
     return True
+
+
+def _release_unstarted_admission(state: TaskSubmissionState, run_id: str, *, existing_reservation: bool) -> None:
+    if existing_reservation:
+        return
+    # Admission publication can let the scheduler claim and even complete a
+    # task before HTTP gets here. Its worker still owns the live reservation
+    # until finish_run publishes task_done. Keep that ownership intact.
+    with state.durable.control_line():
+        status = state.durable.task(run_id).status
+        if status in TASK_TERMINAL_STATUSES or status == TaskStatus.WAITING:
+            # Couple the parked/terminal check to the conditional registry
+            # release so an approval cannot requeue between the two reads.
+            state.task_runtime.release_unstarted_run(run_id)
 
 
 def _task_input_payload(input: TaskInput | None) -> dict[str, object] | None:
