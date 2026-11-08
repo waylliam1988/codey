@@ -1,13 +1,52 @@
 """Execution facts shared by model delivery and approval reconstruction."""
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import Literal
 
 from codey.runtime.core.models import ToolResult
-from codey.types.json_value import JsonObject, require_json_boolean, require_json_string
+from codey.types.json_value import JsonObject, require_json_boolean, require_json_integer, require_json_string
 from codey.utils.text_budget import clip_middle
+
+
+@dataclass(frozen=True)
+class ExecutionOutputReference:
+    execution_id: str
+    session_id: str
+    run_id: str
+    revision: int
+    sha256: str
+
+    @classmethod
+    def from_snapshot(cls, snapshot: Mapping[str, object]) -> ExecutionOutputReference:
+        raw = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        return cls(require_json_string(snapshot["execution_id"], "execution_id"),
+                   require_json_string(snapshot["session_id"], "session_id"),
+                   require_json_string(snapshot["run_id"], "run_id"),
+                   require_json_integer(snapshot["revision"], "revision"),
+                   hashlib.sha256(raw.encode("utf-8")).hexdigest())
+
+    @classmethod
+    def from_payload(cls, payload: object) -> ExecutionOutputReference:
+        if not isinstance(payload, dict) or set(payload) != {"version", "execution_id", "session_id", "run_id", "revision", "sha256"}:
+            raise ValueError("invalid execution output reference")
+        if type(payload["version"]) is not int or payload["version"] != 1:
+            raise ValueError("invalid execution output reference version")
+        ref = cls(require_json_string(payload["execution_id"], "execution_id"),
+                  require_json_string(payload["session_id"], "session_id"),
+                  require_json_string(payload["run_id"], "run_id"),
+                  require_json_integer(payload["revision"], "revision"), require_json_string(payload["sha256"], "sha256"))
+        if (not ref.execution_id or not ref.session_id or not ref.run_id or ref.revision < 0
+                or len(ref.sha256) != 64 or any(char not in "0123456789abcdef" for char in ref.sha256)):
+            raise ValueError("invalid execution output reference identity")
+        return ref
+
+    def facts(self) -> JsonObject:
+        return {"version": 1, "execution_id": self.execution_id, "session_id": self.session_id,
+                "run_id": self.run_id, "revision": self.revision, "sha256": self.sha256}
 
 
 @dataclass(frozen=True)
@@ -20,6 +59,7 @@ class ExecutionReceipt:
     execution_id: str = ""
     exit_code_scope: Literal["shell", "process"] = "shell"
     full_output_retained: bool = False
+    output_ref: ExecutionOutputReference | None = None
 
     @classmethod
     def from_payload(cls, payload: Mapping[str, object]) -> ExecutionReceipt:
@@ -41,17 +81,22 @@ class ExecutionReceipt:
             execution_id=require_json_string(payload.get("execution_id", ""), "execution_id"),
             exit_code_scope="process" if scope == "process" else "shell",
             full_output_retained=require_json_boolean(payload.get("full_output_retained", False), "full_output_retained"),
+            output_ref=ExecutionOutputReference.from_payload(payload["output_ref"]) if "output_ref" in payload else None,
         )
 
     @property
     def full_output_recoverable(self) -> bool:
-        return self.status == "exit" and not self.capture_truncated and (not self.truncated or self.full_output_retained)
+        return ((self.status == "exit" or self.full_output_retained) and not self.capture_truncated
+                and (not self.truncated or self.full_output_retained))
 
     def facts(self) -> JsonObject:
-        return {"status": self.status, "exit_code": self.exit_code, "exit_code_scope": self.exit_code_scope,
+        facts: JsonObject = {"status": self.status, "exit_code": self.exit_code, "exit_code_scope": self.exit_code_scope,
                 "truncated": self.truncated, "capture_truncated": self.capture_truncated,
                 "execution_id": self.execution_id, "full_output_retained": self.full_output_retained,
                 "full_output_recoverable": self.full_output_recoverable}
+        if self.output_ref is not None:
+            facts["output_ref"] = self.output_ref.facts()
+        return facts
 
     def audit_facts(self) -> JsonObject:
         """Compatibility fields derived from the same execution observation."""
@@ -85,6 +130,8 @@ def execution_receipt(result: ToolResult) -> ExecutionReceipt | None:
     execution = result.canonical.get("execution")
     if isinstance(execution, dict):
         return ExecutionReceipt.from_payload(execution)
+    if "execution" in result.canonical:
+        raise ValueError("canonical execution facts must be an object")
     if "exit_code" not in result.audit:
         return None
     code = result.audit["exit_code"]

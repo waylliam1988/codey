@@ -8,12 +8,33 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from pathlib import Path
+from typing import TypedDict
 
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.runtime.effects.effect_records import RuntimeEffectSettlement, compute_args_digest
+from codey.runtime.effects.effect_records import (
+    RuntimeEffectIntent,
+    RuntimeEffectProjection,
+    RuntimeEffectSettlement,
+    compute_args_digest,
+)
+from codey.storage.managed_outputs import ManagedOutputStore
+from codey.types.json_value import JsonObject, decode_json_object, require_json_boolean, require_json_string
+from codey.workspace.revision import WorkspaceRevisionStore
 
 INLINE_RECEIPT_CHARS = 8000
+
+
+class ResultReceiptFields(TypedDict):
+    result_payload: str
+    result_payload_sha256: str
+    result_ref: str
+    result_excerpt: str
+    result_text: str
+    result_len: int
+    result_sha256: str
+    result_truncated: bool
+    call_id: str
 
 
 def tool_history_messages(settlement: RuntimeEffectSettlement) -> tuple[tuple[str, dict[str, object]], ...]:
@@ -32,8 +53,8 @@ def text_digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def result_receipt_fields(result: ToolResult, *, store: Any,
-                          session_id: str, run_id: str, effect_id: str) -> dict[str, Any]:
+def result_receipt_fields(result: ToolResult, *, store: ManagedOutputStore | None,
+                          session_id: str, run_id: str, effect_id: str) -> ResultReceiptFields:
     from codey.operations.kernel_provenance import _kernel_workspace_identity_of
 
     identity = _kernel_workspace_identity_of(result)
@@ -76,7 +97,8 @@ def result_receipt_fields(result: ToolResult, *, store: Any,
     }
 
 
-def _managed_receipt_payload(settlement: Any, intent: Any, store: Any, session_id: str, run_id: str) -> str:
+def _managed_receipt_payload(settlement: RuntimeEffectSettlement, intent: RuntimeEffectIntent,
+                             store: ManagedOutputStore, session_id: str, run_id: str) -> str:
     if settlement.result_ref.startswith("out_"):
         # Legacy receipts hash the original insertion-ordered JSON bytes.
         # Do not parse/re-encode before checking the settlement digest.
@@ -98,9 +120,10 @@ def _managed_receipt_payload(settlement: Any, intent: Any, store: Any, session_i
     return payload
 
 
-def restore_result_receipt(projection: Any, *, store: Any,
-                           session_id: str, run_id: str, project_path: Any = None,
-                           workspace_store: Any = None, ignored_paths: tuple[str, ...] = ()) -> ToolResult:
+def restore_result_receipt(projection: RuntimeEffectProjection, *, store: ManagedOutputStore | None,
+                           session_id: str, run_id: str, project_path: Path | None = None,
+                           workspace_store: WorkspaceRevisionStore | None = None,
+                           ignored_paths: tuple[str, ...] = ()) -> ToolResult:
     settlement, intent = projection.settlement, projection.intent
     if settlement is None:
         raise ValueError("effect has no settlement")
@@ -111,8 +134,8 @@ def restore_result_receipt(projection: Any, *, store: Any,
         payload = _managed_receipt_payload(settlement, intent, store, session_id, run_id)
     if not payload or text_digest(payload) != settlement.result_payload_sha256:
         raise ValueError("tool result receipt digest mismatch")
-    data = json.loads(payload)
-    if not isinstance(data, dict) or set(data) != {
+    data = decode_json_object(json.loads(payload))
+    if set(data) != {
         "schema_version", "call_name", "ok", "args", "model_text", "canonical", "presentation", "audit", "truncated", "workspace_identity",
     }:
         raise ValueError("invalid tool result receipt fields")
@@ -132,17 +155,13 @@ def restore_result_receipt(projection: Any, *, store: Any,
     for key in ("canonical", "presentation", "audit"):
         if not isinstance(data[key], dict):
             raise ValueError(f"invalid tool result {key}")
-    artifact = data["audit"].get("managed_output")
-    if artifact:
-        if not isinstance(artifact, dict) or store is None:
-            raise ValueError("cannot verify tool output artifact")
-        _, metadata = store.read_tool_output(session_id, run_id, artifact["handle"])
-        if artifact.get("sha256") != metadata.get("sha256"):
-            raise ValueError("tool output artifact differs from receipt")
+    # Verify the full receipt here. External output is checked by the output
+    # resolver when read; losing an attachment cannot erase known execution facts.
     result = ToolResult(
-        ok=data["ok"], call=ToolCall(data["call_name"], data["args"], call_id=intent.call_id),
-        model_text=text, canonical=data["canonical"], presentation=data["presentation"],
-        audit=data["audit"], truncated=data["truncated"],
+        ok=require_json_boolean(data["ok"], "ok"),
+        call=ToolCall(require_json_string(data["call_name"], "call_name"), decode_json_object(data["args"]), call_id=intent.call_id),
+        model_text=text, canonical=decode_json_object(data["canonical"]), presentation=decode_json_object(data["presentation"]),
+        audit=decode_json_object(data["audit"]), truncated=require_json_boolean(data["truncated"], "truncated"),
     )
     if data["workspace_identity"] is not None:
         from codey.operations.kernel_provenance import _trusted_workspace_proof, attach_trusted_workspace
@@ -159,7 +178,7 @@ def restore_result_receipt(projection: Any, *, store: Any,
     return result
 
 
-def _validate_call_name(data: dict[str, Any], tool_name: str) -> None:
+def _validate_call_name(data: JsonObject, tool_name: str) -> None:
     from codey.operations.task_effects import _runtime_name
     if (type(data["schema_version"]) is not int or data["schema_version"] != 2
             or not isinstance(data["call_name"], str) or not data["call_name"]

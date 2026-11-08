@@ -51,6 +51,7 @@ class ShellResult(TypedDict, total=False):
     capture_truncated: bool
     execution_id: str
     full_output_retained: bool
+    output_ref: JsonObject
 
 
 class ShellExecutionContext(Protocol):
@@ -490,6 +491,9 @@ def _execute_shell_ticket(
     if output_store is not None and ticket.execution_id:
         with suppress(Exception):
             snapshot = output_store.settled(ticket.execution_id, completed.returncode if completed is not None else None)
+            from codey.runtime.core.execution_receipt import ExecutionOutputReference
+
+            result["output_ref"] = ExecutionOutputReference.from_snapshot(snapshot).facts()
             result["full_output_retained"] = (snapshot["execution_state"] == "settled"
                 and not snapshot["stdout"]["truncated"] and not snapshot["stderr"]["truncated"])
     if capture_truncated:

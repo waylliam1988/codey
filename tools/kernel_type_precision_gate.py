@@ -43,6 +43,9 @@ SCOPED_TARGETS = {
 }
 
 CONTRACT_TARGETS = (
+    "codey/runtime/core/execution_receipt.py", "codey/operations/kernel_receipts.py",
+    "codey/operations/tool_result_reader.py", "codey/operations/execution_claims.py",
+    "codey/operations/source_gaps.py", "codey/toolchain/runtime.py",
     "codey/app/history_routes.py",
     "codey/durable/entry_ownership.py",
     "codey/durable/history.py", "codey/durable/history_index.py",

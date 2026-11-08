@@ -52,6 +52,39 @@ def test_managed_receipt_preserves_crlf_bytes(tmp_path):
     assert restored == text
 
 
+def test_missing_output_attachment_does_not_erase_restored_execution_facts(tmp_path):
+    from codey.operations.task_session import TaskSession
+    from codey.operations.tool_result_reader import read_tool_result
+    from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.core.execution_receipt import ExecutionReceipt, execution_receipt
+    from tests.test_execution_claims_and_output_recovery import Reader
+
+    _, mutations, durable = _new_log(tmp_path, "s", "r")
+    _accept_and_mark(mutations, "s", "r", str(tmp_path))
+    store = ManagedOutputStore(tmp_path / "state")
+    ref = store.write_tool_output(session_id="s", run_id="r", tool_id="effect", permission_profile="coding_writer",
+                                  tool_name="run", display_ref="check", text="original output")
+    assert ref is not None
+    receipt = ExecutionReceipt("exit", 7, "preview", truncated=True)
+    call = ToolCall("run", {"command": "check"}, call_id="call")
+    result = ToolResult(call, receipt.render(), ok=False, truncated=True,
+        canonical={"execution": receipt.facts()}, audit={**receipt.audit_facts(),
+            "managed_output": {"handle": ref.handle, "sha256": ref.sha256}})
+    sink = KernelEffectSink(mutations, session_id="s", run_id="r", provider_id="local", managed_outputs=store, durable=durable)
+    sink.begin_turn([("effect", call, 0)], turn=1)
+    sink.settle("effect", False, result=result, exit_code=7)
+    store.path_for("s", "r", ref.handle).unlink()
+    projection = RuntimeEffectStore(durable=durable).load_effects("s", "r")[0]
+    restored = rebuild_settled_tool_result(projection, managed_store=store, session_id="s", run_id="r")
+    assert restored is not None
+    execution = execution_receipt(restored)
+    assert execution is not None and execution.exit_code == 7
+    session = TaskSession(TaskPolicy(frozenset({"control"})))
+    session._memory_results["effect"] = restored
+    page = read_tool_result(Reader(session, store), ToolCall("read_tool_result", {"result_ref": "effect"}))
+    assert not page.ok and "missing" in page.model_text
+
+
 def test_large_source_observation_survives_real_result_receipt_and_restart(tmp_path):
     from codey.operations.kernel_facts import record_facts_for_result
     from codey.operations.task_session import TaskSession

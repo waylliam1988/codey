@@ -27,7 +27,7 @@ from codey.policies.run_command_semantics import (
     is_suite_run_command,
 )
 from codey.runtime.core import cancellation
-from codey.runtime.core.execution_receipt import ExecutionReceipt
+from codey.runtime.core.execution_receipt import ExecutionOutputReference, ExecutionReceipt
 from codey.runtime.core.models import (
     canonical_json_mapping,
     json_safe_projection,
@@ -247,6 +247,7 @@ class RunCommandRawResult:
     capture_truncated: bool
     execution_id: str = ""
     full_output_retained: bool = False
+    output_ref: ExecutionOutputReference | None = None
 
 
 def _utc_now_iso() -> str:
@@ -1143,10 +1144,14 @@ def run_command_raw(
         if execution_store is not None and execution_id:
             with contextlib.suppress(Exception):
                 execution_store.unavailable(execution_id)
+    output_ref: ExecutionOutputReference | None = None
+
     def mark_settled(code: int | None) -> bool:
+        nonlocal output_ref
         if execution_store is not None and execution_id:
             with contextlib.suppress(Exception):
                 snapshot = execution_store.settled(execution_id, code)
+                output_ref = ExecutionOutputReference.from_snapshot(snapshot)
                 return (snapshot["execution_state"] == "settled" and not snapshot["stdout"]["truncated"]
                         and not snapshot["stderr"]["truncated"])
         return False
@@ -1222,6 +1227,7 @@ def run_command_raw(
     if proc.stderr:
         output_parts.append("[stderr]\n" + proc.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
+    full_output_retained = mark_settled(proc.returncode)
     result = RunCommandRawResult(
         command=command,
         output=output,
@@ -1234,7 +1240,8 @@ def run_command_raw(
         stderr_bytes=proc.stderr_bytes,
         capture_truncated=(proc.stdout_truncated or proc.stderr_truncated),
         execution_id=execution_id,
-        full_output_retained=mark_settled(proc.returncode),
+        full_output_retained=full_output_retained,
+        output_ref=output_ref,
     )
     return result
 
@@ -1251,7 +1258,7 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
         )
     receipt = ExecutionReceipt("exit", raw.exit_code, output, truncated=truncated,
         capture_truncated=capture_truncated, execution_id=raw.execution_id,
-        exit_code_scope="process", full_output_retained=raw.full_output_retained)
+        exit_code_scope="process", full_output_retained=raw.full_output_retained, output_ref=raw.output_ref)
     display = (f"exit {raw.exit_code}: {raw.command}\nExit code scope: process\n"
                f"Full execution output recoverable: {str(receipt.full_output_recoverable).lower()}\n{output}")
     audit: dict[str, object] = dict(receipt.audit_facts())

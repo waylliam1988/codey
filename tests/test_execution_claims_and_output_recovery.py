@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
@@ -12,7 +12,7 @@ from codey.operations.execution_claims import validate_execution_claims
 from codey.operations.task_session import TaskSession
 from codey.operations.tool_result_reader import read_tool_result
 from codey.policies.task_policy import TaskPolicy
-from codey.runtime.core.execution_receipt import ExecutionReceipt
+from codey.runtime.core.execution_receipt import ExecutionOutputReference, ExecutionReceipt, execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.execution_output_store import ExecutionOutputObserver, ExecutionOutputStore
 from codey.storage.managed_outputs import ManagedOutputStore
@@ -183,3 +183,119 @@ def test_status_header_does_not_promise_recovery_after_formatter_clipping() -> N
     receipt = ExecutionReceipt("exit", 0, "A" * 50_000).bounded(limit=1000)
     assert not receipt.full_output_recoverable
     assert "Full execution output recoverable: false" in receipt.render()
+
+
+def bind_output(reader: Reader, *, status: str = "exit", truncated: bool = True) -> None:
+    assert reader.managed_outputs is not None
+    result = reader.session._memory_results[REF]
+    receipt = execution_receipt(result)
+    assert receipt is not None
+    snapshot = ExecutionOutputStore.read_existing(reader.managed_outputs.root.parent, receipt.execution_id)
+    bound = replace(receipt, status=status, exit_code=1 if status == "exit" else None, truncated=truncated,
+                    output_ref=ExecutionOutputReference.from_snapshot(snapshot))
+    reader.session._memory_results[REF] = replace(result, truncated=truncated, canonical={"execution": bound.facts()})
+
+
+def test_bound_snapshot_is_used_even_without_display_clipping(tmp_path: Path) -> None:
+    reader = output_reader(tmp_path, limit=4096, payload=b"complete snapshot")
+    bind_output(reader, truncated=False)
+    result = read_tool_result(reader, ToolCall("read_tool_result", {"result_ref": REF, "limit": 5}))
+    data = json.loads(result.model_text)
+    assert result.ok and data["text"] == "compl" and data["output_source"] == "execution"
+    assert data["page_truncated"] and data["storage_complete"] and data["full_output_recoverable"]
+
+
+@pytest.mark.parametrize("mutation", ["content", "revision", "owner", "missing"])
+def test_bound_snapshot_corruption_fails_without_preview_fallback(tmp_path: Path, mutation: str) -> None:
+    import sqlite3
+
+    reader = output_reader(tmp_path, limit=4096, payload=b"actual output")
+    bind_output(reader)
+    with sqlite3.connect(tmp_path / "execution_outputs.sqlite3") as database:
+        if mutation == "content":
+            database.execute("UPDATE execution_outputs SET stdout='forged'")
+        elif mutation == "revision":
+            database.execute("UPDATE execution_outputs SET revision=revision+1")
+        elif mutation == "owner":
+            database.execute("UPDATE execution_outputs SET run_id='other'")
+        else:
+            database.execute("DELETE FROM execution_outputs")
+    result = read_tool_result(reader, ToolCall("read_tool_result", {"result_ref": REF}))
+    assert not result.ok and "preview only" not in result.model_text
+    assert result.canonical["execution"]["exit_code"] == 1
+    assert result.canonical["output_available"] is False
+    assert "does not authorize re-execution" in result.model_text
+    receipt = execution_receipt(reader.session._memory_results[REF])
+    assert receipt is not None and receipt.exit_code == 1
+
+
+def test_execution_reference_has_priority_over_unused_managed_attachment(tmp_path: Path) -> None:
+    reader = output_reader(tmp_path, limit=4096, payload=b"authoritative output")
+    bind_output(reader)
+    original = reader.session._memory_results[REF]
+    reader.session._memory_results[REF] = replace(original, audit={**original.audit,
+        "managed_output": {"handle": "out_missing", "sha256": "0" * 64}})
+    result = read_tool_result(reader, ToolCall("read_tool_result", {"result_ref": REF}))
+    assert result.ok and json.loads(result.model_text)["text"] == "authoritative output"
+
+
+def test_diagnostic_execution_id_does_not_require_external_storage() -> None:
+    session = execution_session(code=0)
+    receipt = ExecutionReceipt("exit", 0, "full inline output", execution_id="diagnostic_only")
+    session._memory_results[REF] = ToolResult(ToolCall("run", {}), receipt.render(), ok=True,
+        canonical={"execution": receipt.facts()}, audit=receipt.audit_facts())
+    result = read_tool_result(Reader(session, None), ToolCall("read_tool_result", {"result_ref": REF}))
+    data = json.loads(result.model_text)
+    assert result.ok and data["output_source"] == "receipt" and data["full_output_recoverable"]
+
+
+def test_timeout_state_and_retained_attempt_output_are_independent(tmp_path: Path) -> None:
+    reader = output_reader(tmp_path, limit=4096, payload=b"all bytes emitted before timeout")
+    bind_output(reader, status="timeout")
+    result = read_tool_result(reader, ToolCall("read_tool_result", {"result_ref": REF}))
+    data = json.loads(result.model_text)
+    assert result.ok and data["execution"]["status"] == "timeout" and data["exit_code"] is None
+    assert data["full_output_recoverable"] and not data["original_output_incomplete"]
+
+
+@pytest.mark.parametrize("corruption", ["missing", "content", "digest"])
+def test_managed_output_failure_never_falls_back_to_preview(tmp_path: Path, corruption: str) -> None:
+    store = ManagedOutputStore(tmp_path)
+    ref = store.write_tool_output(session_id="s", run_id="r", tool_id="t", permission_profile="coding_writer",
+                                  tool_name="run", display_ref="check", text="saved output")
+    assert ref is not None
+    session = execution_session()
+    original = session._memory_results[REF]
+    session._memory_results[REF] = replace(original, truncated=True, audit={**original.audit,
+        "managed_output": {"handle": ref.handle, "sha256": "0" * 64 if corruption == "digest" else ref.sha256}})
+    path = store.path_for("s", "r", ref.handle)
+    if corruption == "missing":
+        path.unlink()
+    elif corruption == "content":
+        path.write_text("forged", encoding="utf-8")
+    result = read_tool_result(Reader(session, store), ToolCall("read_tool_result", {"result_ref": REF}))
+    assert not result.ok and result.canonical["output_available"] is False
+    assert result.canonical["execution"]["exit_code"] == 1
+
+
+@pytest.mark.parametrize("code", [0, 1])
+def test_native_producer_binds_exact_snapshot_without_changing_exit_verdict(tmp_path: Path, code: int) -> None:
+    from codey.storage.managed_outputs import run_command_with_managed_output
+
+    store = ExecutionOutputStore(tmp_path)
+    (tmp_path / "test_probe.py").write_text("def test_probe():\n    assert " + str(code == 0) + "\n", encoding="utf-8")
+    try:
+        outcome = run_command_with_managed_output(tmp_path, ".", "python -m pytest -q test_probe.py",
+            permission_profile="coding_writer", store=ManagedOutputStore(tmp_path), session_id="s", run_id="r",
+            execution_store=store)
+        assert outcome.ok is (code == 0) and outcome.exit_code == code
+        result = ToolResult(ToolCall("run", {}), outcome.model_text, ok=outcome.ok,
+                            canonical=dict(outcome.canonical), audit=dict(outcome.audit))
+        receipt = execution_receipt(result)
+        assert receipt is not None and receipt.output_ref is not None
+        session = execution_session()
+        session._memory_results[REF] = result
+        page = read_tool_result(Reader(session, ManagedOutputStore(tmp_path)), ToolCall("read_tool_result", {"result_ref": REF}))
+        assert page.ok and ("1 passed" if code == 0 else "1 failed") in json.loads(page.model_text)["text"]
+    finally:
+        store.close()
