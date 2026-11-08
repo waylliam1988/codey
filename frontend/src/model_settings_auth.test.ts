@@ -135,4 +135,91 @@ it('merges auth revision independently of catalog time and retains full model ca
   expect(source.models[0].id).toBe('new');
   expect(source.authentication.revision).toBe(6);
   expect(source.state).toBe('unavailable');
+  runtime.Models.observeCatalog(
+    JSON.parse(
+      JSON.stringify({
+        id: 'fixture',
+        checked_at: 120,
+        models: [{ id: 'latest' }],
+        state: 'ready',
+        authentication: 'public',
+      }),
+    ),
+  );
+  source = runtime.Models.snapshot().sources[0];
+  expect(source.models[0].id).toBe('latest');
+  expect(source.authentication.revision).toBe(6);
+  expect(source.state).toBe('unavailable');
+});
+
+it.each(['public', null, { kind: 'oauth_device', state: 'ready', revision: 1 }])(
+  'ignores non-interactive authentication in an initial settings response: %j',
+  async (authentication) => {
+    const { runtime } = await import('./runtime');
+    await import('./models');
+    runtime.Models.applySettings(
+      JSON.parse(
+        JSON.stringify({
+          preferences: { revision: 1, sources: {} },
+          sources: [{ id: 'fixture', models: [{ id: 'one' }], authentication }],
+          in_use: [],
+        }),
+      ),
+    );
+    expect(runtime.Models.snapshot().sources[0].authentication).toBeUndefined();
+    expect(runtime.Models.snapshot().sources[0].models).toEqual([{ id: 'one' }]);
+  },
+);
+
+it('opens all cached sources after a catalog supplies a transport authentication label', async () => {
+  const { runtime } = await import('./runtime');
+  await import('./models');
+  await import('./model_settings');
+  document.body.innerHTML = `<button id="model-settings-save"></button><button id="model-settings-cancel"></button>
+    <button id="model-settings-retry"></button><div id="model-settings-error"></div>
+    <div id="model-settings-loading"></div><div id="model-settings-body"><div id="local-connection-editor"></div>
+    <div id="model-source-list"></div></div>`;
+  const sources = [
+    { id: 'websites', label: 'Websites', models: [{ id: 'web' }] },
+    { id: 'local', label: 'Local', models: [] },
+    { id: 'zen', label: 'Zen', models: [{ id: 'zen-model' }] },
+    {
+      id: 'cline',
+      label: 'Cline',
+      models: [],
+      authentication: { kind: 'oauth_device' as const, state: 'signed_out', revision: 1, actions: ['login' as const] },
+    },
+  ];
+  const state: ModelState = {
+    preferences: {
+      revision: 1,
+      sources: Object.fromEntries(sources.map((source) => [source.id, { enabled: false, models: [] }])),
+    },
+    sources,
+    in_use: [],
+  };
+  runtime.Models.applySettings(state);
+  // /api/api_models and /api/model_catalog include this transport label.
+  runtime.Models.observeCatalog(JSON.parse(JSON.stringify({ ...sources[2], authentication: 'public' })));
+  let finishRefresh!: (response: unknown) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise((resolve) => (finishRefresh = resolve))),
+  );
+  runtime.ModelSettings.init({ close: vi.fn() });
+  const opening = runtime.ModelSettings.open();
+  expect(document.getElementById('model-source-list')?.hidden).toBe(false);
+  expect(Array.from(document.querySelectorAll<HTMLElement>('.model-source'), (node) => node.dataset.sourceId)).toEqual([
+    'websites',
+    'local',
+    'zen',
+    'cline',
+  ]);
+  expect(document.querySelector('[data-source-id="zen"] .connection-auth')?.hasAttribute('hidden')).toBe(true);
+  expect(document.querySelector('[data-source-id="cline"] [data-action="login"]')).not.toBeNull();
+  finishRefresh({ ok: true, json: async () => structuredClone(state) });
+  await opening;
+  expect(document.getElementById('model-settings-loading')?.hidden).toBe(true);
+  expect(document.getElementById('model-settings-error')?.textContent).toBe('');
+  runtime.ModelSettings.close();
 });

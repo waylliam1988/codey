@@ -13,8 +13,8 @@ interface AuthPanelDeps {
   error(message: string): void;
 }
 
-function authentication(value: unknown): ConnectionAuthentication {
-  if (!value || typeof value !== 'object') throw new Error('Invalid authentication response');
+export function parseConnectionAuthentication(value: unknown): ConnectionAuthentication | undefined {
+  if (!value || typeof value !== 'object') return undefined;
   const auth = value as Partial<ConnectionAuthentication>;
   if (
     auth.kind !== 'oauth_device' ||
@@ -28,8 +28,14 @@ function authentication(value: unknown): ConnectionAuthentication {
     (auth.expires_at != null && (typeof auth.expires_at !== 'number' || !Number.isFinite(auth.expires_at))) ||
     (auth.attempt_id != null && typeof auth.attempt_id !== 'string')
   )
-    throw new Error('Invalid authentication response');
+    return undefined;
   return auth as ConnectionAuthentication;
+}
+
+function authentication(value: unknown): ConnectionAuthentication {
+  const auth = parseConnectionAuthentication(value);
+  if (!auth) throw new Error('Invalid authentication response');
+  return auth;
 }
 
 /** One mounted settings generation owns one poll; no credential or URL persistence. */

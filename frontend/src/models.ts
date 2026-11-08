@@ -1,4 +1,5 @@
 import { runtime } from './runtime';
+import { parseConnectionAuthentication } from './connection_auth';
 import type { ModelSource, ModelState } from './types/domain';
 /* Source preferences are authoritative; discovery supplies names, never choices. */
 (function () {
@@ -12,9 +13,13 @@ import type { ModelSource, ModelState } from './types/domain';
   function catalogTime(source: ModelSource): number {
     return source.checked_at ?? source.updated_at ?? 0;
   }
-  function mergeSource(current: ModelSource | undefined, source: ModelSource): ModelSource {
+  function mergeSource(current: ModelSource | undefined, incoming: ModelSource): ModelSource {
+    // Catalogs may use this field for a transport label such as "public".
+    // Only validated interactive authentication snapshots belong in UI state.
+    const { authentication: rawAuthentication, ...catalog } = incoming;
+    const nextAuth = parseConnectionAuthentication(rawAuthentication);
+    const source: ModelSource = { ...catalog, ...(nextAuth ? { authentication: nextAuth } : {}) };
     if (!current) return source;
-    const nextAuth = source.authentication;
     const currentAuth = current.authentication;
     const newerAuth = nextAuth && (!currentAuth || nextAuth.revision >= currentAuth.revision);
     const auth = newerAuth ? nextAuth : currentAuth;
