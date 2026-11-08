@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,12 +30,11 @@ class TaskStateProtocolTests(unittest.TestCase):
         self.assertEqual(missing, [])
 
     def test_protocol_hides_moved_domain_methods(self) -> None:
-        # claim_shell_ticket / handle_* / kick left AppContext for
-        # shell_service / sibling_probe / SelfRepairSupervisor on purpose.
+        # Domain handlers live in their owners. Ticket claims retain a typed
+        # AppContext seam delegating to ShellApprovalCoordinator.
         # get_provider stays as a thin test seam delegating to the single
         # provider entry point.
         for name in (
-            "claim_shell_ticket",
             "handle_control_teach",
             "handle_profile_doctor",
             "handle_flow_recovery",
@@ -44,6 +42,10 @@ class TaskStateProtocolTests(unittest.TestCase):
         ):
             self.assertNotIn(name, _protocol_members())
             self.assertFalse(hasattr(AppContext, name), name)
+
+    def test_ticket_claim_is_an_explicit_coordination_port(self) -> None:
+        self.assertIn("claim_shell_ticket", _protocol_members())
+        self.assertTrue(hasattr(AppContext, "claim_shell_ticket"))
 
     def test_protocol_source_has_no_any_leak(self) -> None:
         source = Path(__file__).resolve().parents[1] / "codey" / "operations" / "task_state.py"
@@ -94,39 +96,36 @@ class MovedGlueTests(unittest.TestCase):
     def test_claim_shell_ticket_mints_under_gate(self) -> None:
         from codey.agents.shell_approval import ShellApprovalRequest
 
-        gate = threading.Lock()
-        lock = threading.Lock()
-        approvals = mock.Mock()
-        approvals.pop_shell.return_value = {
-            "_approval_generation": 3,
-            "project": ".",
-            **ShellApprovalRequest(cwd=".", command="echo hi").to_payload(),
-        }
-        approvals.current_generation.return_value = 3
-        run_registry = SimpleNamespace(stop_flag=SimpleNamespace(is_set=lambda: False))
-        ctx = SimpleNamespace(
-            _shell_spawn_gate=gate, lock=lock, approvals=approvals, run_registry=run_registry
-        )
         with tempfile.TemporaryDirectory() as td:
-            approvals.pop_shell.return_value["project"] = td
-            pending, ticket = shell_service.claim_shell_ticket(
-                ctx, "a1", timeout=30, output_limit=100
-            )
+            ctx = AppContext(Path(td), start_scheduler=False)
+            expected: dict[str, object] = {
+                "_approval_generation": ctx.approval_generation(), "project": td,
+                **ShellApprovalRequest(cwd=".", command="echo hi").to_payload(),
+            }
+
+            def claim(approval_id: str) -> dict[str, object]:
+                self.assertEqual(approval_id, "a1")
+                self.assertTrue(ctx._shell_spawn_gate.locked())
+                return expected
+
+            try:
+                with mock.patch.object(ctx.shell_approval_coordinator, "claim", side_effect=claim):
+                    pending, ticket = shell_service.claim_shell_ticket(ctx, "a1", timeout=30, output_limit=100)
+            finally:
+                ctx.close()
         self.assertIsNotNone(ticket)
+        self.assertIs(pending, expected)
         self.assertEqual(ticket.command, "echo hi")
-        self.assertEqual(ticket.generation, 3)
+        self.assertEqual(ticket.generation, 0)
 
     def test_claim_shell_ticket_stale_generation_mints_nothing(self) -> None:
-        ctx = SimpleNamespace(
-            _shell_spawn_gate=threading.Lock(),
-            lock=threading.Lock(),
-            approvals=mock.Mock(
-                pop_shell=mock.Mock(return_value={"_approval_generation": 1}),
-                current_generation=mock.Mock(return_value=2),
-            ),
-            run_registry=SimpleNamespace(stop_flag=SimpleNamespace(is_set=lambda: False)),
-        )
-        pending, ticket = shell_service.claim_shell_ticket(ctx, "a1", timeout=30, output_limit=100)
+        with tempfile.TemporaryDirectory() as td:
+            ctx = AppContext(Path(td), start_scheduler=False)
+            try:
+                with mock.patch.object(ctx.shell_approval_coordinator, "claim", return_value={"_approval_generation": -1}):
+                    pending, ticket = shell_service.claim_shell_ticket(ctx, "a1", timeout=30, output_limit=100)
+            finally:
+                ctx.close()
         self.assertIsNotNone(pending)
         self.assertIsNone(ticket)
 

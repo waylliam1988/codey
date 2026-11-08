@@ -6,8 +6,11 @@ import json
 import sys
 import threading
 import time
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import ParamSpec, TypeVar
 
 import pytest
 
@@ -20,6 +23,17 @@ from tools.local_model_gate_shell import (
     run_shell_case,
     wait_for_run,
 )
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
+
+
+def _after_return(function: Callable[_P, _T], callback: Callable[[], None]) -> Callable[_P, _T]:
+    def wrapped(*args: _P.args, **kwargs: _P.kwargs) -> _T:
+        result = function(*args, **kwargs)
+        callback()
+        return result
+    return wrapped
 
 
 @contextmanager
@@ -173,43 +187,82 @@ def test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_p
 
 @pytest.mark.parametrize('boundary', ['running', 'terminal'])
 @pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])
-def test_remembered_approval_keeps_worker_reservation_when_http_admission_loses_claim(tmp_path, monkeypatch, boundary, protocol):
+@pytest.mark.parametrize('worker_before_claim', [False, True])
+def test_remembered_approval_keeps_worker_reservation_when_http_admission_loses_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, boundary: str, protocol: str, worker_before_claim: bool,
+) -> None:
     from codey.app import task_submit
+    from codey.app.run_registry import RunSnapshot
     from codey.app.task_lifecycle import TaskLifecycleCoordinator
+    from codey.app.task_runtime import TaskRuntimeCoordinator
     from codey.durable import DurableSession
+    from codey.durable.model import CommitResult
+    from codey.operations.task_state import TaskSubmissionState
+    from codey.types.json_value import JsonObject
 
     original_claim = task_submit._claim_admitted_task
+    reserve = TaskRuntimeCoordinator.reserve_run
     complete = DurableSession.complete_task
     finish = TaskLifecycleCoordinator.finish_run
     worker_ready = threading.Event()
     admission_finished = threading.Event()
-    delayed_run = []
+    delayed_run: list[str] = []
     admissions = 0
 
-    def late_http_claim(state, reserved, **kwargs):
+    def reserve_before_publication(
+        self: TaskRuntimeCoordinator, *, session_id: str, project: str | None,
+        task: str, provider_id: str, run_id: str = "", abort_if_stopped: bool = False,
+    ) -> RunSnapshot | None:
         nonlocal admissions
-        admissions += 1
-        if admissions != 2:
-            return original_claim(state, reserved, **kwargs)
-        delayed_run.append(reserved.run_id)
-        assert worker_ready.wait(5), 'scheduler did not reach the completion boundary'
+        reserved = reserve(
+            self, session_id=session_id, project=project, task=task, provider_id=provider_id,
+            run_id=run_id, abort_if_stopped=abort_if_stopped,
+        )
+        # Register the target before admit_input publishes it to the scheduler.
+        # A fast worker may finish before the HTTP claim callback even starts.
+        if not run_id and reserved is not None:
+            admissions += 1
+            if admissions == 2:
+                delayed_run.append(reserved.run_id)
+        return reserved
+
+    def late_http_claim(
+        state: TaskSubmissionState, reserved: RunSnapshot, *, existing_reservation: bool,
+    ) -> bool:
+        if reserved.run_id not in delayed_run:
+            return original_claim(state, reserved, existing_reservation=existing_reservation)
         try:
-            return original_claim(state, reserved, **kwargs)
+            assert worker_ready.wait(5), 'scheduler did not reach the completion boundary'
+            return original_claim(state, reserved, existing_reservation=existing_reservation)
         finally:
             admission_finished.set()
 
-    def before_complete(self, task_id, *args, **kwargs):
+    def before_complete(
+        self: DurableSession, task_id: str, answer: str, *, state: Mapping[str, object],
+    ) -> CommitResult:
         if boundary == 'running' and task_id in delayed_run:
             worker_ready.set()
             assert admission_finished.wait(5), 'HTTP claim did not finish'
-        return complete(self, task_id, *args, **kwargs)
+        return complete(self, task_id, answer, state=state)
 
-    def before_finish(self, run_id, event):
+    def before_finish(self: TaskLifecycleCoordinator, run_id: str, event: JsonObject) -> bool:
         if boundary == 'terminal' and run_id in delayed_run and event.get('stop_reason') == 'done':
             worker_ready.set()
             assert admission_finished.wait(5), 'HTTP claim did not finish'
         return finish(self, run_id, event)
 
+    def before_admission_returns() -> None:
+        if delayed_run:
+            ready = worker_ready.wait(5)
+            if not ready:
+                admission_finished.set()
+            assert ready, 'worker did not reach the boundary before HTTP admission returned'
+
+    if worker_before_claim:
+        monkeypatch.setattr(DurableSession, 'admit_input', _after_return(
+            DurableSession.admit_input, before_admission_returns,
+        ))
+    monkeypatch.setattr(TaskRuntimeCoordinator, 'reserve_run', reserve_before_publication)
     monkeypatch.setattr(task_submit, '_claim_admitted_task', late_http_claim)
     monkeypatch.setattr(DurableSession, 'complete_task', before_complete)
     monkeypatch.setattr(TaskLifecycleCoordinator, 'finish_run', before_finish)

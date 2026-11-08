@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -14,6 +17,7 @@ from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.providers.token_accounting import ContextBudget
+from codey.runtime.core import shell_discovery
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 
 pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
@@ -77,7 +81,24 @@ def test_initial_result_and_repair_prompt_surfaces_have_frozen_hashes() -> None:
     assert _sha256(repair) == "575bf736319b09d736d2ed999055392e33b1f7cf2043b0ff8dbf11646e7e841f"
 
 
-def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> None:
+@dataclass(frozen=True)
+class _PromptHost:
+    platform: str = "win32"
+
+
+def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fixed_shell(
+        platform: str, env: Mapping[str, str], *, startup: Literal["noninteractive", "login"] | None = None,
+    ) -> tuple[Literal["cmd"], str, str, str]:
+        return "cmd", r"C:\Windows\System32\cmd.exe", "fixture-version", "0" * 64
+
+    # Interpreter path/version and host platform are admission facts, not
+    # prompt edits. Freeze them so the same golden applies on CI and locally.
+    monkeypatch.setattr(shell_discovery, "discover_shell", fixed_shell)
+    monkeypatch.setattr(kernel_prompt, "sys", _PromptHost())
+    from codey.env_names import SHELL_STARTUP_ENV
+
+    monkeypatch.setenv(SHELL_STARTUP_ENV, "noninteractive")
     project = tmp_path / "project"
     project.mkdir()
     provider = _PromptCaptureProvider()
@@ -106,5 +127,5 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path) -> Non
     assert "submit_research_review" not in prompt
     assert "Calls return {ok:true, value}" in prompt
     assert "Only frozen read-only tools" not in prompt
-    # Reviewed after read-only tasks stopped receiving knowledge-write guidance.
-    assert _sha256(prompt) == "0e29152b37ee62562c1ea5a08906d4ffc6f5643f275453bdddaaaeb24ab69242"
+    # Reviewed: only the interpreter path/version above became fixed inputs.
+    assert _sha256(prompt) == "a8efb12fd24924da7f5dafd2047906236e85e375d8b1760a5d0ac5798458cab2"

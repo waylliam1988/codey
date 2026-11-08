@@ -7,7 +7,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,7 @@ from codey.providers.zen.declarations import TRANSPORT_CONTRACT
 from codey.providers.zen.identity import CONNECTION_REVISION, ZenIdentity, validate_endpoint
 from codey.runtime.core.reasoning import normalize_efforts
 from codey.storage.local_store import StoreCorruption, read_json_strict, write_json_atomic
+from codey.types.json_value import JsonObject
 
 DIRECTORY_URL = "https://models.opencode.ai/api.json"
 CACHE_TTL_S = 5 * 60
@@ -35,8 +36,13 @@ class ZenModel:
     input_limit_tokens: int | None = None
     thinking_toggle: bool = False
 
-    def to_payload(self) -> dict[str, Any]:
-        return asdict(self)
+    def to_payload(self) -> JsonObject:
+        return {
+            "id": self.id, "name": self.name, "protocol": self.protocol,
+            "context": self.context, "output": self.output, "api": self.api,
+            "efforts": list(self.efforts), "input_limit_tokens": self.input_limit_tokens,
+            "thinking_toggle": self.thinking_toggle,
+        }
 
 
 def _model_limits(model: dict[str, Any]) -> tuple[int, int, int | None] | None:

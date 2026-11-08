@@ -305,6 +305,7 @@ def submit_task(
     try:
         if not _claim_admitted_task(state, reserved, existing_reservation=existing_reservation):
             return reserved_run_id
+        state.task_runtime.claim_worker(reserved.run_id)
         accepted = submit_browser_task(
             run_task,
             session_id,
@@ -339,7 +340,9 @@ def submit_task(
         state.release_run(reserved.run_id)
         raise
     if not accepted:
-        state.durable.unclaim_task(reserved.run_id)
+        with state.durable.control_line():
+            state.durable.unclaim_task(reserved.run_id)
+            state.task_runtime.unclaim_worker(reserved.run_id)
         state.durable_scheduler.retry(reserved.run_id)
         return reserved_run_id
     state.expire_stale_shell_approvals(reserved.run_id)
@@ -375,12 +378,12 @@ def _claim_admitted_task(state: TaskSubmissionState, reserved: RunSnapshot, *, e
 def _release_unstarted_admission(state: TaskSubmissionState, run_id: str, *, existing_reservation: bool) -> None:
     if existing_reservation:
         return
-    # Admission publication can let the scheduler claim and even complete a
-    # task before HTTP gets here. Its worker still owns the live reservation
-    # until finish_run publishes task_done. Keep that ownership intact.
+    # Durable status does not identify the owner of a volatile reservation.
+    # A queued worker owns it before start_run, whereas a replay may have
+    # reserved a fresh slot for a task already claimed by an older invocation.
     with state.durable.control_line():
         status = state.durable.task(run_id).status
-        if status in TASK_TERMINAL_STATUSES or status == TaskStatus.WAITING:
+        if status != TaskStatus.PENDING:
             # Couple the parked/terminal check to the conditional registry
             # release so an approval cannot requeue between the two reads.
             state.task_runtime.release_unstarted_run(run_id)
@@ -424,19 +427,21 @@ def _dispatch_durable_task(checkpoint: object, *, state: TaskSubmissionState) ->
     provider_id = str(stored.get("provider_id") or checkpoint.provider_snapshot.get("provider_id") or "")
     if not task or not provider_id:
         raise ValueError("accepted durable task is missing dispatch identity")
-    active = state.active_run_for(session_id=session_id)
-    if active is None:
-        reserved = state.reserve_run(
-            session_id=session_id,
-            project=project,
-            task=task,
-            provider_id=provider_id,
-            run_id=task_id,
-        )
-        if reserved is None:
+    with state.durable.control_line():
+        active = state.active_run_for(session_id=session_id)
+        if active is None:
+            reserved = state.reserve_run(
+                session_id=session_id,
+                project=project,
+                task=task,
+                provider_id=provider_id,
+                run_id=task_id,
+            )
+            if reserved is None:
+                return False
+        elif active.run_id != task_id:
             return False
-    elif active.run_id != task_id:
-        return False
+        state.task_runtime.claim_worker(task_id)
     model_payload = stored.get("model_selection")
     model_selection = None
     if isinstance(model_payload, dict) and model_payload:

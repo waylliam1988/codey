@@ -29,6 +29,7 @@ class RunSnapshot:
     provider_id: str
     status: str = "queued"
     stop_event: threading.Event = field(default_factory=threading.Event, compare=False, repr=False)
+    worker_owned: bool = False
 
 
 class RunRegistry:
@@ -136,7 +137,7 @@ class RunRegistry:
             if current_run_id not in self._active_runs:
                 return False
             previous = self._active_runs[current_run_id]
-            replacement = replace(run, stop_event=previous.stop_event)
+            replacement = replace(run, stop_event=previous.stop_event, worker_owned=previous.worker_owned)
             self._active_runs.pop(current_run_id, None)
             self._active_runs[replacement.run_id] = replacement
             if self._current_run_id == current_run_id:
@@ -257,10 +258,20 @@ class RunRegistry:
             run = self._active_runs.get(run_id)
             if run is None:
                 return False
-            self._active_runs[run_id] = replace(run, status="running")
+            self._active_runs[run_id] = replace(run, status="running", worker_owned=True)
             if self._current_run_id == run_id:
                 self._status = "running"
             return True
+
+    def claim_worker(self, run_id: str) -> None:
+        """Transfer a reservation to the worker before publishing its job."""
+        with self._lock:
+            self._active_runs[run_id] = replace(self._active_runs[run_id], worker_owned=True)
+
+    def unclaim_worker(self, run_id: str) -> None:
+        """Return a rejected job's reservation to admission for retry."""
+        with self._lock:
+            self._active_runs[run_id] = replace(self._active_runs[run_id], worker_owned=False)
 
     def set_status(self, status: str, run_id: str = "") -> None:
         with self._lock:
@@ -291,7 +302,7 @@ class RunRegistry:
         """Release a stale admission without consuming a worker's completion."""
         with self._lock:
             run = self._active_runs.get(run_id)
-            if run is None or run.status != "queued":
+            if run is None or run.status != "queued" or run.worker_owned:
                 return False
             self._release_locked(run_id)
             return True

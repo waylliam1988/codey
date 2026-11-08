@@ -125,6 +125,44 @@ def capture(page, tmp_path, name):
     page.screenshot(path=str(root / name), full_page=True)
 
 
+@pytest.mark.parametrize("protocol", ["openai-completions", "openai-responses"])
+def test_cached_zen_catalog_keeps_local_composer_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, protocol: str,
+) -> None:
+    from codey.providers.zen import connection
+    from codey.providers.zen.catalog import ZenCatalog
+    from codey.types.json_value import JsonObject
+
+    def fetch_catalog(url: str, etag: str) -> tuple[JsonObject, str]:
+        return {"opencode": {
+            "api": "https://opencode.ai/inference/openai/v1", "npm": "@ai-sdk/openai-compatible",
+            "models": {"cached-free": {
+                "name": "Cached Free", "tool_call": True, "cost": {"input": 0, "output": 0},
+                "limit": {"context": 32768, "output": 4096},
+                "reasoning_options": [{"type": "effort", "values": ["low", "high"]}],
+            }},
+        }}, "fixture"
+
+    catalog_home = tmp_path / "zen"
+    catalog = ZenCatalog(catalog_home, fetch=fetch_catalog)
+    assert catalog.refresh(force=True)
+    monkeypatch.setattr(connection, "DEFAULT_STATE_HOME", catalog_home)
+    monkeypatch.setattr(connection, "_CATALOG", catalog)
+    with streaming_peer(protocol) as (url, release, requests, peer_errors):
+        release.set()
+        target = GateTarget(url, "live-fixture", 32768, 8192, 12000, api_protocol=protocol, request_timeout=30)
+        with gate_application(target, tmp_path / "gate") as (httpd, ctx, _events), sync_playwright() as pw:
+            seed(ctx, tmp_path, url, target.model)
+            assert not ctx.providers.model_preferences.enabled("zen")
+            browser, page, errors = open_live(pw, httpd)
+            try:
+                send(page, "只读说明项目。")
+                expect(page.locator(".msg.asst .body")).to_contain_text("完整回答")
+                assert len(requests) == 1 and not errors and not peer_errors
+            finally:
+                browser.close()
+
+
 @pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])
 def test_real_steer_is_consumed_by_the_current_task_without_a_second_run(tmp_path, protocol):
     with streaming_peer(protocol) as (url, release, requests, peer_errors):

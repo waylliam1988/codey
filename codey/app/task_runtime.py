@@ -128,6 +128,12 @@ class TaskRuntimeCoordinator:
     def start_run(self, run_id: str) -> bool:
         return self._registry.start(run_id)
 
+    def claim_worker(self, run_id: str) -> None:
+        self._registry.claim_worker(run_id)
+
+    def unclaim_worker(self, run_id: str) -> None:
+        self._registry.unclaim_worker(run_id)
+
     def set_run_status(self, status: str) -> None:
         self._registry.set_status(status)
 

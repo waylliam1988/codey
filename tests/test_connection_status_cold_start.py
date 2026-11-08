@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from codey.app import api
 from codey.app.context import AppContext
@@ -137,17 +137,19 @@ def test_changed_connection_discards_old_probe_result(tmp_path, monkeypatch):
 
 
 def test_removed_zen_is_not_scheduled_or_imported(tmp_path, monkeypatch):
-    monkeypatch.delitem(catalog.API_CONNECTIONS, "zen")
-    monkeypatch.delitem(catalog.PROVIDER_LABELS, "zen")
     connection_for = Mock(side_effect=AssertionError("no API connector import"))
     monkeypatch.setattr("codey.providers.api_connections.connection_for", connection_for)
-    ctx = AppContext(tmp_path)
-    try:
-        _, payload = api.providers_response(ctx)
-        assert all(row["id"] != "zen" for row in payload["providers"])
-        assert all(call.args[0] != "zen" for call in connection_for.call_args_list)
-    finally:
-        ctx.close()
+    # Restore insertion order too; delitem's undo appends Zen after Cline.
+    with patch.dict(catalog.API_CONNECTIONS), patch.dict(catalog.PROVIDER_LABELS):
+        catalog.API_CONNECTIONS.pop("zen")
+        catalog.PROVIDER_LABELS.pop("zen")
+        ctx = AppContext(tmp_path)
+        try:
+            _, payload = api.providers_response(ctx)
+            assert all(row["id"] != "zen" for row in payload["providers"])
+            assert all(call.args[0] != "zen" for call in connection_for.call_args_list)
+        finally:
+            ctx.close()
 
 
 def test_failed_refresh_preserves_last_ready_result_as_stale(tmp_path, monkeypatch):

@@ -61,6 +61,40 @@ def test_task_parked_during_claim_does_not_leak_a_new_reservation(tmp_path, reta
         state.close()
 
 
+@pytest.mark.parametrize("phase", ["dispatching", "waiting", "completed"])
+def test_scheduler_job_owns_its_queued_reservation_until_completion_projection(tmp_path: Path, phase: str) -> None:
+    state = AppContext(tmp_path / "state", start_scheduler=False)
+    try:
+        reserved = state.reserve_run(
+            session_id="session", project=None, task="work", provider_id="deepseek", run_id="scheduled",
+        )
+        assert reserved is not None
+        state.durable.admit_input(
+            conversation_id="session", request_id=reserved.run_id, task_id=reserved.run_id,
+            text="work", provider_snapshot={"provider_id": "deepseek"},
+            task_state={"task": "work", "provider_id": "deepseek"},
+        )
+        claimed = state.durable.claim_task_checkpoint(reserved.run_id)
+        with mock.patch.object(task_submit, "submit_browser_task", return_value=True) as worker:
+            assert task_submit.dispatch_durable_task(claimed, state=state)
+        assert worker.call_count == 1
+        if phase != "dispatching":
+            state.durable.start_task(reserved.run_id, state={})
+            if phase == "waiting":
+                state.durable.wait_task(reserved.run_id, state={"stop_reason": "approval"})
+            else:
+                state.durable.complete_task(reserved.run_id, "finished", state={})
+
+        assert not task_submit._claim_admitted_task(state, reserved, existing_reservation=False)
+        active = state.active_run_for(session_id="session")
+        assert active is not None and active.status == "queued"
+        assert state.finish_run(reserved.run_id, {"type": "task_done", "stop_reason": "done"})
+        assert not state.is_busy()
+        assert not state.finish_run(reserved.run_id, {"type": "task_done", "stop_reason": "done"})
+    finally:
+        state.close()
+
+
 def test_submit_commits_input_and_task_before_worker_dispatch(tmp_path: Path) -> None:
     state = AppContext(tmp_path / "state")
     observed: list[tuple[str, tuple[str, ...]]] = []

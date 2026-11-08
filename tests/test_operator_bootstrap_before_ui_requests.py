@@ -45,6 +45,8 @@ const context = vm.createContext({{window, URLSearchParams,
 
 def test_real_ui_boot_awaits_operator_auth_before_catalog_or_sse():
     boot = frontend_source("legacy-runtime")
+    # The reconnect handler also calls connectEvents; only boot starts the UI.
+    boot = boot[boot.index("async function boot()") :]
     assert boot.index("await runtime.OperatorAuth.authorize()") < boot.index("adoptCatalog()")
     assert boot.index("await runtime.OperatorAuth.authorize()") < boot.index("connectEvents();")
 
