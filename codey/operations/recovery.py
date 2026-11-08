@@ -4,14 +4,13 @@ Execution and recovery are owned by the operation reducer and kernel driver.
 """
 from __future__ import annotations
 
-from typing import Any
-
 from codey.durable.model import thaw_json
 from codey.durable.session import DurableSession
+from codey.policies.task_policy import TaskPolicy
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 
 
-def durable_task_for(value: Any, task_id: str) -> DurableSession | None:
+def durable_task_for(value: object, task_id: str) -> DurableSession | None:
     """Return durable authority only when this run was actually admitted."""
     if not isinstance(value, DurableSession) or not task_id:
         return None
@@ -23,18 +22,16 @@ def durable_task_for(value: Any, task_id: str) -> DurableSession | None:
 
 
 def record_entry_policy(
-    mutations: Any,
+    mutations: RuntimeMutationLine | None,
     *,
     session_id: str,
     run_id: str,
-    policy: Any,
+    policy: TaskPolicy,
     durable: DurableSession | None = None,
 ) -> None:
     """Record immutable authorization with the operation checkpoint."""
-    if policy is None:
-        return
     try:
-        payload = policy.to_payload() if hasattr(policy, "to_payload") else dict[str, object]()
+        payload = policy.to_payload()
     except Exception as exc:
         raise RuntimeError(f"task policy serialization failed: {exc}") from exc
     if not isinstance(mutations, RuntimeMutationLine) or durable is None or mutations.durable is not durable:
@@ -44,10 +41,9 @@ def record_entry_policy(
 
 def policy_from_durable_task(
     durable: DurableSession | None, *, task_id: str,
-) -> Any:
+) -> TaskPolicy:
     """Restore the immutable authorization snapshot from one durable task."""
     from codey.operations.kernel_errors import RecoveryFailed
-    from codey.policies.task_policy import TaskPolicy
 
     if durable is None or not task_id:
         raise RecoveryFailed("durable task policy recovery requires an admitted task")

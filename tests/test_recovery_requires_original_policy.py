@@ -236,15 +236,14 @@ def test_resume_before_first_settlement_keeps_original_policy_or_blocks(tmp_path
 
 
 def test_verification_requirement_parser_failure_cannot_grant_verification(monkeypatch):
-    from types import SimpleNamespace
-
     from codey.operations.task_entry import build_task_policy_for_entry
+    from tests.support.task_entry_helpers import submission
 
     def broken(task):
         raise ValueError("cannot classify requirement")
     monkeypatch.setattr("codey.agents.protocol.task_forbids_verification", broken)
     with pytest.raises(ValueError, match="classify"):
-        build_task_policy_for_entry(SimpleNamespace(project="project", task="do not run tests"), "project")
+        build_task_policy_for_entry(submission("do not run tests"), "project")
 
 
 

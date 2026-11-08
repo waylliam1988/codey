@@ -14,7 +14,12 @@ from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from functools import partial
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
 
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.conversation_window import WindowActivationError, activate_window
@@ -68,26 +73,26 @@ def _task_kind(task_kind: object) -> str:
     return "chat" if kind == "auto" else kind
 
 
-def build_task_policy_for_entry(request: Any, task_kind: object) -> Any:
+def build_task_policy_for_entry(request: TaskSubmission, task_kind: object) -> TaskPolicy:
     from codey.agents.protocol import task_forbids_verification
     from codey.policies.task_policy import policy_for_dispatch
 
     kind = _task_kind(task_kind)
-    strict = kind == "research" or bool(getattr(request, "strict_research", False) is True)
+    strict = kind == "research" or request.strict_research is True
     policy = policy_for_dispatch(request, kind, strict_research=strict)
     if policy is None:
         raise RuntimeError("task policy configuration failed")
-    if task_forbids_verification(str(getattr(request, "task", "") or "")):
+    if task_forbids_verification(request.task):
         policy = replace(policy, grants=policy.grants - {"project.verify"},
                          denied_capabilities=policy.denied_capabilities | {"project.verify"},
                          source=policy.source + ";verification:forbidden")
     return policy
 
 
-def start_task_session(frame: RunFrame, work: RunWork, policy: Any, kind: str) -> Any:
+def start_task_session(frame: RunFrame, work: RunWork, policy: TaskPolicy, kind: str) -> TaskSession:
     from codey.operations.task_session import TaskSession
 
-    existing = getattr(frame, "entry_session", None)
+    existing = frame.entry_session
     if existing is not None:
         if existing.policy != policy:
             raise ValueError("task continuation cannot replace authorization")
@@ -97,16 +102,13 @@ def start_task_session(frame: RunFrame, work: RunWork, policy: Any, kind: str) -
         policy=policy,
         task_kind=_task_kind(kind),
         project=frame.project_text,
-        max_turns=max(1, int(getattr(request, "max_turns", 8) or 8)),
+        max_turns=max(1, request.max_turns or 8),
         task_text=request.task,
-        handoff=str(getattr(frame, "handoff", "") or ""),
-        project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
-        coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
+        handoff=frame.handoff,
+        project_changes_required=request.project_changes_required is True,
         verification_forbidden=("project.verify" in policy.denied_capabilities),
     )
-    ev = getattr(work, "evidence", None)
-    if ev is not None:
-        session.set_workspace_state(ev.workspace_revision, ev.workspace_fingerprint)
+    session.set_workspace_state(work.evidence.workspace_revision, work.evidence.workspace_fingerprint)
     # The entry owns the common fact view: stash it on the frame for strategy
     # phases so project/research/planning projections read the same session
     # instead of forking their own facts.
@@ -114,16 +116,16 @@ def start_task_session(frame: RunFrame, work: RunWork, policy: Any, kind: str) -
     return session
 
 
-def _entry_policy_with_recovery(frame: RunFrame, deps: Any, kind: str) -> Any:
+def _entry_policy_with_recovery(frame: RunFrame, durable: DurableSession | None, kind: str) -> TaskPolicy:
     request = frame.request
     from codey.operations.recovery import durable_task_for, policy_from_durable_task
 
-    durable = durable_task_for(getattr(getattr(deps, "state", None), "durable", None), frame.run_id)
-    incoming = getattr(frame, "entry_policy", None)
+    durable = durable_task_for(durable, frame.run_id)
+    incoming = frame.entry_policy
     if incoming is None:
         incoming = build_task_policy_for_entry(replace(request, project=frame.project_text or None), kind)
-    if getattr(request, "previous_run_id", ""):
-        if getattr(frame, "entry_policy", None) is None:
+    if request.previous_run_id:
+        if frame.entry_policy is None:
             raise RuntimeError("original task authorization unavailable for approval continuation")
         return incoming
     recovered = durable is not None and bool(durable.task(frame.run_id).state.get("task_policy"))
@@ -137,22 +139,14 @@ def _entry_policy_with_recovery(frame: RunFrame, deps: Any, kind: str) -> Any:
     return policy_from_durable_task(durable, task_id=frame.run_id)
 
 
-def _entry_check_conflict(policy: Any, request: Any, kind: str) -> None:
-    try:
-        requires = (getattr(request, "project_changes_required", False) is True
-                    or "project_changes_required" in policy.required_checks)
-    except Exception:
-        requires = False
-    if requires and kind in {"project", "hybrid"}:
-        try:
-            allows = bool(policy.allows("project.write"))
-        except Exception:
-            allows = False
-        if not allows:
-            raise RuntimeError(
-                "project_changes_required without project.write: task declares must-change "
-                "but entry grants no write permission"
-            )
+def _entry_check_conflict(policy: TaskPolicy, request: TaskSubmission, kind: str) -> None:
+    requires = (request.project_changes_required is True
+                or "project_changes_required" in policy.required_checks)
+    if requires and kind in {"project", "hybrid"} and not policy.allows("project.write"):
+        raise RuntimeError(
+            "project_changes_required without project.write: task declares must-change "
+            "but entry grants no write permission"
+        )
 
 
 def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | None, Any, Any | None]:
@@ -366,9 +360,7 @@ def _run_entry_kernel(  # noqa: PLR0915
         state_home = getattr(getattr(deps, "workspace_revisions", None), "state_home", None)
         state_home = state_home or getattr(deps.state, "state_home", None) or DEFAULT_STATE_HOME
         frame.project_text = str(session_workspace(state_home, request.session_id))
-    policy = _entry_policy_with_recovery(frame, deps, kind)
-    if policy is None:
-        raise RuntimeError("task policy unavailable during recovery")
+    policy = _entry_policy_with_recovery(frame, deps.state.durable, kind)
     _entry_check_conflict(policy, request, kind)
     session = start_task_session(frame, work, policy, kind)
     from codey.operations.recovery import durable_task_for, record_entry_policy

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
 
 from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.agents.shell_approval import ShellApprovalRequest
@@ -39,8 +43,8 @@ class RunFrame:
     preflight_switches: int
     window_action: WindowAction | None = None
     trace: Any | None = None
-    entry_policy: Any | None = None
-    entry_session: Any | None = None
+    entry_policy: TaskPolicy | None = None
+    entry_session: TaskSession | None = None
     entry_research_tools: Any | None = None
 
 

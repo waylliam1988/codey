@@ -22,10 +22,10 @@ class EntryAuthTests(unittest.TestCase):
         request = TaskSubmission("s", "E:/tmp", "resume", 8, False, "local",
                                  requested_capabilities=("web.read", "project.write"),
                                  project_changes_required=True)
-        frame = SimpleNamespace(request=request, run_id="r", project_text="E:/tmp", recovered_tool_outcomes=(object(),))
-        deps = SimpleNamespace(runtime_mutations=None)
+        frame = SimpleNamespace(request=request, run_id="r", project_text="E:/tmp", entry_policy=None,
+                                recovered_tool_outcomes=(object(),))
         with self.assertRaisesRegex(RuntimeError, "durable task policy recovery"):
-            _entry_policy_with_recovery(frame, deps, "project")
+            _entry_policy_with_recovery(frame, None, "project")
 
     def test_http_research_entry_sets_strict_without_default_write(self) -> None:
         import tempfile

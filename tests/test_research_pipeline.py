@@ -551,11 +551,10 @@ def test_pipeline_projects_final_review_findings_and_gaps_to_trace_only(strict) 
             tools=tools,
         )
 
-        from types import SimpleNamespace
-
         from codey.operations.task_entry import build_task_policy_for_entry
+        from tests.support.task_entry_helpers import submission
 
-        policy = build_task_policy_for_entry(SimpleNamespace(task="Pipeline question"), "research")
+        policy = build_task_policy_for_entry(submission("Pipeline question", project=None), "research")
         if not strict:
             policy = replace(policy, strict_research=False)
         writer_calls = []

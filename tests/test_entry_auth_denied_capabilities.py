@@ -118,12 +118,17 @@ def test_recovered_policy_rejects_malformed_fields_instead_of_dropping_restricti
 
 
 def test_execution_hint_preserves_explicit_denial():
-    from types import SimpleNamespace
+    from dataclasses import dataclass
 
     from codey.operations.task_entry import build_task_policy_for_entry
+    from codey.task.model import TaskSubmission
 
-    request = SimpleNamespace(project="", requested_capabilities=("web.read",),
-                              denied_capabilities=("web.read",), model_hint="ACTION: research\nPLAN: read docs")
+    @dataclass(frozen=True)
+    class RoutedSubmission(TaskSubmission):
+        model_hint: str = "ACTION: research\nPLAN: read docs"
+
+    request = RoutedSubmission("s", None, "inspect code", 8, False, "local",
+                               requested_capabilities=("web.read",), denied_capabilities=("web.read",))
     policy = build_task_policy_for_entry(request, "project")
     assert not policy.allows("web.read")
     assert policy.denied_capabilities == frozenset({"web.read"})
