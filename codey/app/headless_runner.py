@@ -59,6 +59,7 @@ class HeadlessRequest:
     output_format: str = "text"
     output_schema: str = ""
     required_tools: tuple[str, ...] = ()
+    allow_web: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -321,6 +322,7 @@ def _run_headless_task(
         auth = derive_entry_auth({
             "intent": _request_intent(request.intent), "task": request.task,
             "requested_capabilities": request.requested_capabilities,
+            "allow_web": request.allow_web,
             "strict_research": request.strict_research,
             "project_changes_required": request.project_changes_required,
             "sources_open_required": request.sources_open_required,

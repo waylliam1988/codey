@@ -54,7 +54,7 @@ COMMANDS = {
     "list_conversations": Command("List accessible persistent conversations.", {}),
     "create_conversation": Command("Create a visible conversation in an authorized project.", {
         "request_id": "string", "project": "string", "title": "string", "provider": "string",
-        "model_selection": "object", "max_revisions": "integer", "max_seconds": "integer",
+        "model_selection": "object", "max_revisions": "integer", "max_seconds": "integer", "allow_web": "boolean",
     }, ("request_id",), False),
     "read_conversation": Command("Read one consistent history, inbox and run snapshot.", S, ("conversation_id",)),
     "get_control": Command("Read control owner, generation and remaining delegation budget.", S, ("conversation_id",)),
@@ -66,6 +66,7 @@ COMMANDS = {
     "send_message": Command("Durably admit a task, correction or targeted steering input.", {
         **W, "text": "string", "mode": "string", "expected_run_id": "string",
         "in_reply_to_run_id": "string", "max_turns": "integer", "intent": "string",
+        "allow_web": "boolean", "sources_open_required": "boolean",
     }, ("conversation_id", "request_id", "control_generation", "text"), False),
     "get_run_result": Command("Read the actual task status, answer, verification and evidence references.", R,
                               ("conversation_id", "run_id")),

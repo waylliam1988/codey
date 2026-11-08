@@ -181,7 +181,8 @@ class ControlService:
                 "created_by": actor.actor_id, "created_at": time.time(), "mode": "delegated",
                 "controller_actor_id": "codex", "control_generation": 1, "root_request_id": "",
                 "expires_at": time.time() + self._seconds(args), "max_seconds": self._seconds(args),
-                "max_revisions": self._revisions(args)}
+                "max_revisions": self._revisions(args),
+                **({"allow_web": args["allow_web"]} if "allow_web" in args else {})}
 
     def _prepare_message(self, actor: Actor, args: dict[str, Any]) -> Any:
         from codey.providers.snapshot import capture_provider_selection
@@ -236,7 +237,7 @@ class ControlService:
         from codey.task.entry_auth import derive_entry_auth
 
         intent = args.get("intent", "auto")
-        auth = derive_entry_auth({"task": args["text"], "intent": intent}, project=config["project"])
+        auth = derive_entry_auth({**config, **args, "task": args["text"], "intent": intent}, project=config["project"])
         request = {
             "session_id": session_id, "run_id": "run_" + uuid.uuid4().hex, "task": args["text"],
             "project": config["project"], "provider": config["provider"], "intent": intent,

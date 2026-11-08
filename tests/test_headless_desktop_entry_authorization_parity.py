@@ -10,13 +10,17 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
     ("查官方文档并修复 bug", "project"),
     ("检查代码，不要修改任何文件", "project"),
     ("Find official evidence", "research"),
+    ("东百中心 ？你帮我搜索一下，这里附近有什么好玩的", "auto"),
+    ("你好", "chat"),
 ])
-def test_headless_submission_preserves_the_same_authorization_as_desktop(tmp_path, monkeypatch, task, intent):
+@pytest.mark.parametrize("allow_web", [None, False, True])
+def test_headless_submission_preserves_the_same_authorization_as_desktop(tmp_path, monkeypatch, task, intent, allow_web):
     captured = []
     monkeypatch.setattr("codey.app.headless_runner.run_task_submission", lambda deps, request: captured.append((deps, request)))
     project = tmp_path / "project"
-    run_headless(HeadlessRequest(project=project, task=task, intent=intent, state_home=tmp_path / "state"), emit_jsonl=lambda _: None)
-    expected = derive_entry_auth({"task": task, "intent": intent}, project=str(project))
+    run_headless(HeadlessRequest(project=project, task=task, intent=intent, state_home=tmp_path / "state",
+                                allow_web=allow_web), emit_jsonl=lambda _: None)
+    expected = derive_entry_auth({"task": task, "intent": intent, "allow_web": allow_web}, project=str(project))
     request = captured[0][1]
     for name in ("requested_capabilities", "strict_research", "sources_open_required", "project_changes_required", "denied_capabilities"):
         assert getattr(request, name) == getattr(expected, name), name

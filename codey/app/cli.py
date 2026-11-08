@@ -92,8 +92,9 @@ def cmd_agent(args: argparse.Namespace) -> int:
         port=args.port,
         session_id=args.session_id,
         review_source_run_id=args.review_source_run_id,
+        allow_web=args.allow_web,
         requested_capabilities=tuple(name for name, enabled in (
-            ("web.read", args.allow_web), ("project.write", args.allow_write),
+            ("project.write", args.allow_write),
         ) if enabled),
         continue_task=args.continue_task,
         review_policy=args.review_policy,
@@ -585,7 +586,9 @@ def main(argv: list[str] | None = None) -> int:
     modes.add_argument("--intent", choices=("auto", "chat", "project", "hybrid", "research", "review", "planning_readonly"), help="task mode")
     modes.add_argument("--readonly", action="store_true", help="read-only planning")
     modes.add_argument("--auto", action="store_true", help="choose the task path automatically")
-    sp_agent.add_argument("--allow-web", action="store_true", help="authorize web reading")
+    web = sp_agent.add_mutually_exclusive_group()
+    web.add_argument("--allow-web", action="store_true", default=None, help="authorize web reading")
+    web.add_argument("--no-web", action="store_false", dest="allow_web", help="disable Web tools for this task")
     sp_agent.add_argument("--allow-write", action="store_true", help="authorize project writing, including Research")
     sp_agent.add_argument("--session-id", default="", help="existing or new task session")
     sp_agent.add_argument("--continue", dest="continue_task", action="store_true", help="continue the selected session")

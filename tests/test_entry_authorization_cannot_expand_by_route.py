@@ -10,7 +10,7 @@ def test_negated_url_does_not_grant_web_read() -> None:
     auth = derive_entry_auth(
         {
             "intent": "auto",
-            "task": "不要浏览 https://example.com，只检查本地代码",
+            "task": "不要浏览 https://example.com，只检查本地代码", "allow_web": False,
         },
         project="/tmp/project",
     )

@@ -26,6 +26,7 @@ from tools.shell_web_food_gate import OPEN_TOOLS, opened_bodies
 TASKS = {
     "site": "https://api.lihe.chat/  你帮我看看这个网站是干嘛的",
     "food": "你帮我上网看看福州有什么好吃的",
+    "nearby": "东百中心 ？你帮我搜索一下，这里附近有什么好玩的",
 }
 
 

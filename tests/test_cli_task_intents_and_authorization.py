@@ -23,7 +23,25 @@ def test_cli_reuse_session_and_explicit_network_grant_reach_request(tmp_path, mo
                      "--review-source-run-id", "run_" + "1" * 32, "--allow-web", "task"]) == 0
     assert requests[0].session_id == "s"
     assert requests[0].review_source_run_id == "run_" + "1" * 32
-    assert requests[0].requested_capabilities == ("web.read",)
+    assert requests[0].allow_web is True
+    assert requests[0].requested_capabilities == ()
+
+
+@pytest.mark.parametrize("options,expected", [([], None), (["--allow-web"], True), (["--no-web"], False)])
+def test_cli_preserves_unspecified_and_disabled_web_separately(
+    monkeypatch: pytest.MonkeyPatch, options: list[str], expected: bool | None,
+) -> None:
+    from codey.app.headless_runner import HeadlessRequest
+
+    captured: list[HeadlessRequest] = []
+
+    def run(request: HeadlessRequest, *, emit_jsonl: object) -> HeadlessResult:
+        captured.append(request)
+        return HeadlessResult(0, "r", "s", "done")
+
+    monkeypatch.setattr("codey.app.headless_runner.run_headless", run)
+    assert cli.main(["agent", "--intent", "chat", *options, "hello"]) == 0
+    assert captured[0].allow_web is expected
 
 
 def test_conflicting_cli_modes_are_rejected_before_execution(tmp_path, monkeypatch):

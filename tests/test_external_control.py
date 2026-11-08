@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from codey.app.public_event_feed import FeedOverflow, PublicEventFeed
+from codey.app.service import LocalService
 from codey.control.client import ControlClient
 from codey.control.protocol import ControlError
 from tests.release_helpers import start_local_service
@@ -55,6 +56,36 @@ def test_visible_creation_and_original_receipt_are_idempotent(service) -> None:
     user = next(item for item in snapshot["history"]["items"] if item["type"] == "user")
     assert user["source"]["name"] == "Codex"
     assert all(item["type"] not in {"control_config", "control_receipt"} for item in snapshot["history"]["items"])
+
+
+def test_web_setting_survives_followups_and_explicit_override(
+    service: tuple[LocalService, ControlClient, Path],
+) -> None:
+    runtime, client, root = service
+    config = client.call("create_conversation", {"request_id": "web-off", "project": str(root), "allow_web": False})
+    base = {"conversation_id": config["conversation_id"], "control_generation": config["control_generation"],
+            "text": "搜索一下附近有什么好玩的"}
+    for request_id, extra, allowed in (
+        ("web-inherited-off", {}, False),
+        ("web-explicit-on", {"allow_web": True, "sources_open_required": True}, True),
+        ("web-followup-off", {}, False),
+    ):
+        admitted = client.call("send_message", {**base, "request_id": request_id, **extra})
+        task = runtime.ctx.durable.task(admitted["run_id"])
+        assert ("web.read" in task.state["requested_capabilities"]) is allowed
+        assert ("web.read" in task.state["denied_capabilities"]) is not allowed
+        assert task.state["sources_open_required"] is allowed
+
+
+def test_control_default_auto_web_needs_no_trigger_words(
+    service: tuple[LocalService, ControlClient, Path],
+) -> None:
+    runtime, client, root = service
+    config = create(client, root)
+    admitted = send(client, config, text="东百中心 ？你帮我搜索一下，这里附近有什么好玩的")
+    task = runtime.ctx.durable.task(admitted["run_id"])
+    assert "web.read" in task.state["requested_capabilities"]
+    assert not task.state["sources_open_required"]
 
 
 def test_external_model_selection_has_a_connection_identity_in_the_desktop(service):

@@ -11,9 +11,14 @@ def test_explicit_readonly_chat_denies_write_and_shell(intent):
 
 
 @pytest.mark.parametrize("intent", ["chat", "auto"])
-def test_explicit_web_request_in_chat_preserves_source_requirement(intent):
+def test_chat_permission_does_not_infer_source_obligations_from_words(intent):
     auth = derive_entry_auth({"intent": intent, "task": "上网搜索官方文档"}, project=None)
     assert "web.read" in auth.requested_capabilities
+    assert not auth.sources_open_required
+
+
+def test_structured_source_requirement_is_preserved() -> None:
+    auth = derive_entry_auth({"intent": "chat", "task": "查证", "sources_open_required": True})
     assert auth.sources_open_required
 
 

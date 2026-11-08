@@ -6,7 +6,6 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from codey.task.model import derive_project_changes_required
-from codey.task.web_intent import explicit_web_intent
 
 
 @dataclass(frozen=True)
@@ -55,9 +54,9 @@ def derive_entry_auth(body: Mapping[str, object] | None, *, project: str | None 
     """Derive entry auth from user submission only; never from model output.
 
     权限回答“可以做什么”，完成要求回答“必须做什么”：
-    - 宽泛“查一下”不再视为联网授权，仅明确动作表达才授权；
-    - 否定仅作用于同一分句的对应动作，不影响另一分句；
-    - allow_web/requested 仅给“可以”，不自动等于“必须打开来源”；
+    - Chat/auto 默认允许使用 Web 工具，由当前模型选择是否调用；
+    - 显式 allow_web=False 优先于默认许可和 requested；
+    - 联网许可不产生必须打开来源的义务；
     - 明确只读目标不生成必须修改要求。
     """
     data = dict(body) if body is not None else dict[str, object]()
@@ -72,27 +71,18 @@ def derive_entry_auth(body: Mapping[str, object] | None, *, project: str | None 
         text = str(item or "").strip().lower()
         if text in _KNOWN_ENTRY_GRANTS:
             requested.add(text)
-    if data.get("allow_web") is True:
+    allow_web = data.get("allow_web")
+    if allow_web is True or allow_web is None and intent in {"chat", "auto"}:
         requested.add("web.read")
     if data.get("allow_write") is True:
         requested.add("project.write")
-    web_via_task_text = intent in {"project", "hybrid", "auto", "chat"} and explicit_web_intent(task).requested
-    if web_via_task_text:
-        requested.add("web.read")
     strict = data.get("strict_research") is True or intent == "research"
     requires = derive_project_changes_required(data, intent=intent, project=project)
     if requires and _explicit_readonly_task(task) and data.get("project_changes_required") is not True:
         requires = False
-    explicit_sources = data.get("sources_open_required")
-    if explicit_sources is True:
-        sources_required = True
-    elif explicit_sources is False:
-        sources_required = False
-    else:
-        # “可以”不等于“必须”：仅任务文本明确需要来源时才必须打开
-        sources_required = (web_via_task_text and intent in {"auto", "project", "hybrid", "chat"})
+    sources_required = data.get("sources_open_required") is True
     denied: set[str] = set()
-    if data.get("allow_web") is False:
+    if allow_web is False:
         denied.add("web.read")
         sources_required = False
     if intent in {"project", "hybrid", "auto", "chat"} and _explicit_readonly_task(task):
