@@ -18,6 +18,7 @@ from codey.providers.base import ProviderToolDefinition, ProviderToolResult
 from codey.runtime.core import cancellation
 from codey.runtime.core.output_capture import BoundedByteCapture
 from codey.storage.managed_outputs import ManagedOutputStore
+from tests.support.shell_execution import ShellExecutionHarness
 
 
 def _pid_alive(pid: int) -> bool:
@@ -208,12 +209,7 @@ class ReaderErrorTests(unittest.TestCase):
         from codey.policies.command_line import ShellSpec
 
         with tempfile.TemporaryDirectory() as td:
-            ctx = SimpleNamespace(
-                approval_generation=lambda: 0,
-                run_registry=SimpleNamespace(stop_flag=threading.Event()),
-                lock=threading.Lock(),
-            )
-            ctx._shell_spawn_gate = threading.Lock()
+            ctx = ShellExecutionHarness()
             with (
                 mock.patch.object(
                     shell_service, "resolve_shell",
@@ -230,11 +226,15 @@ class ReaderErrorTests(unittest.TestCase):
                 mock.patch.object(
                     cancellation, "wait_process",
                     side_effect=cancellation.ProcessOutputReadError("boom"),
-                ),
+                ) as wait_process,
             ):
                 data = shell_service.execute_approved_shell(ctx, td, ".", "cmd")
+        wait_process.assert_called_once()
         self.assertFalse(data["ok"])
         self.assertEqual(data["status"], "output_read_error")
+        self.assertIn("boom", data["error"] or "")
+        self.assertIsNone(data["exit_code"])
+        self.assertEqual(ctx.lifecycle.shell_executions, 0)
 
     def test_worker_maps_read_error_distinctly(self) -> None:
         from codey.repairs import self_repair_worker as worker
@@ -376,6 +376,7 @@ class TruncationPropagationTests(unittest.TestCase):
 
     def test_shell_result_merges_capture_truncation(self) -> None:
         from codey.app import shell_service
+        from codey.policies.command_line import ShellSpec
         from codey.runtime.core.cancellation import CapturedProcess
 
         completed = CapturedProcess(
@@ -389,24 +390,33 @@ class TruncationPropagationTests(unittest.TestCase):
             stderr_truncated=False,
         )
         with tempfile.TemporaryDirectory() as td:
-            ctx = SimpleNamespace(
-                approval_generation=lambda: 0,
-                run_registry=SimpleNamespace(stop_flag=threading.Event()),
-                lock=threading.Lock(),
-            )
-            ctx._shell_spawn_gate = threading.Lock()
+            ctx = ShellExecutionHarness()
             with (
+                mock.patch.object(
+                    shell_service, "resolve_shell",
+                    return_value=ShellSpec("cmd", r"C:\\Windows\\System32\\cmd.exe", None, "noninteractive", "0" * 64),
+                ),
+                mock.patch(
+                    "codey.runtime.core.shell_discovery.binary_fingerprint",
+                    return_value="0" * 64,
+                ),
                 mock.patch.object(
                     cancellation, "start_process",
                     return_value=(mock.Mock(), mock.Mock()),
                 ),
                 mock.patch.object(
                     cancellation, "wait_process", return_value=completed
-                ),
+                ) as wait_process,
             ):
                 data = shell_service.execute_approved_shell(ctx, td, ".", "cmd")
+        wait_process.assert_called_once()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["status"], "exit")
+        self.assertEqual(data["exit_code"], 0)
+        self.assertEqual(data["output"], "HEAD")
         self.assertTrue(data["truncated"])
         self.assertTrue(data.get("capture_truncated"))
+        self.assertEqual(ctx.lifecycle.shell_executions, 0)
 
     def test_managed_output_matches_stored_json(self) -> None:
         import json as _json

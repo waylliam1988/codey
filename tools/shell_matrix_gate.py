@@ -4,15 +4,44 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import tempfile
 import threading
 from pathlib import Path
-from types import SimpleNamespace
 
+from codey.app.active_provider_registry import ActiveProviderRegistry
+from codey.app.lifecycle import AppLifecycle
+from codey.app.run_registry import RunRegistry
 from codey.app.shell_service import ShellExecutionTicket, execute_shell_ticket
+from codey.app.task_runtime import TaskRuntimeCoordinator
 from codey.env_names import SHELL_EXECUTABLE_ENV, SHELL_STARTUP_ENV
 from codey.policies.command_line import resolve_shell
 from codey.policies.shell_analysis import analyze_shell
+
+
+class ShellMatrixContext:
+    """Exercise the executor with its production lifecycle and spawn owners."""
+
+    def __init__(self) -> None:
+        self.task_runtime = TaskRuntimeCoordinator(
+            RunRegistry(), ActiveProviderRegistry(), threading.Lock(), threading.Lock(),
+            wake_input=lambda: None,
+        )
+
+        def stop() -> None:
+            self.task_runtime.request_stop()
+
+        self.lifecycle = AppLifecycle(
+            stop=stop, close_connections=lambda: None,
+            close_conversations=lambda: True, stop_scheduler=lambda: True,
+            wait_workers=lambda: True, close_controls=lambda: True, cleanup=(),
+        )
+
+    def approval_generation(self) -> int:
+        return 0
+
+    def emit(self, event: dict[str, object]) -> None:
+        pass
 
 
 def main():
@@ -30,17 +59,22 @@ def main():
                     command = {"cmd": "echo SHELL_MATRIX", "powershell": "Write-Output 'SHELL_MATRIX'; exit 7"}.get(
                         shell.kind, "printf '%s\\n' SHELL_MATRIX; exit 7")
                     analysis = analyze_shell(command, shell)
-                    context = SimpleNamespace(_shell_spawn_gate=threading.Lock(), approval_generation=lambda: 0,
-                                              run_registry=SimpleNamespace(stop_flag=threading.Event()))
-                    result = execute_shell_ticket(context, ShellExecutionTicket(command, Path(temporary), 0, 15, 4000,
-                                                                               shell, analysis))
+                    row.update(shell=shell.to_payload(), analysis=analysis.to_payload())
+                    context = ShellMatrixContext()
+                    try:
+                        result = execute_shell_ticket(context, ShellExecutionTicket(
+                            command, Path(temporary), 0, 15, 4000, shell, analysis))
+                    finally:
+                        context.lifecycle.close()
                     expected = 0 if shell.kind == "cmd" else 7
-                    row.update(shell=shell.to_payload(), analysis=analysis.to_payload(), result=result)
+                    row["result"] = result
                     row["ok"] = (analysis.status != "invalid" and result.get("status") == "exit"
                                  and result.get("exit_code") == expected and "SHELL_MATRIX" in result.get("output", ""))
                 except Exception as exc:
                     row["error"] = f"{type(exc).__name__}: {exc}"
                 rows.append(row)
+                if not row["ok"]:
+                    print(json.dumps({"failure": row}), file=sys.stderr)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({"results": rows}, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({"passed": sum(bool(row["ok"]) for row in rows), "cases": len(rows)}))

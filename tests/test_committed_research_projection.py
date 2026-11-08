@@ -8,6 +8,7 @@ from codey.operations.recovery import record_entry_policy
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
+from codey.research.source_gateway import OPEN_DEFAULT_LIMIT
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core.models import ToolCall
 from codey.runtime.effects.effect_records import RuntimeEffectStore
@@ -112,20 +113,26 @@ def test_live_and_recovery_share_projection_without_duplicate_searches(tmp_path,
     assert session.searches == fresh.searches and tools.ledger.searches == ledger.searches
 
 
-def test_failed_acquisition_cannot_leave_source_evidence_in_formal_ledger():
-    class FailedTools:
-        ledger = ResearchLedger()
-
-        def open_url(self, url, **kwargs):
+def test_failed_acquisition_cannot_leave_source_evidence_in_formal_ledger() -> None:
+    class FailedTools(ResearchTools):
+        def open_url(
+            self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = "",
+        ) -> ResearchToolOutput:
             self.ledger.record_open(url, url, "Uncommitted", "partial body")
+            self.sources_read.add(url)
+            self.search_result_urls.add(url)
             return ResearchToolOutput("ERROR: partial acquisition", ok=False)
 
-    tools = FailedTools()
+    tools = FailedTools(search=None, store=None, changes=None)
     session = TaskSession(policy=TaskPolicy(frozenset({"control", "web.read"})))
     result = execute_turn(session, [ToolCall("open_url", {"url": URL})], research_tools=tools,
                           run_id="r", turn=1)[0]
     assert not result.ok
+    assert result.model_text == "ERROR: partial acquisition"
+    assert "research_observation" not in result.canonical
     assert not tools.ledger.opened_sources and not session.opened_sources
+    assert not tools.sources_read and not tools.search_result_urls
+    assert not tools.ledger.evidence_items
 
 
 def test_knowledge_acquisition_view_uses_restored_ledger_not_stale_caches():
