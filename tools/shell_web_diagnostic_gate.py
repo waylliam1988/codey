@@ -83,7 +83,7 @@ def offline_probes(shell_names: list[str]) -> list[dict]:
                 shell = resolve_shell(environ={**os.environ, SHELL_EXECUTABLE_ENV: name})
                 native = 'python -c "import sys; sys.exit(23)"'
                 commands = [("native_exit", native, 1 if shell.kind == "powershell" else 23),
-                            ("chinese_output", 'python -c "import sys; sys.stdout.buffer.write(bytes.fromhex(\'d6d0cec4\'))"', None)]
+                            ("chinese_output", 'python -c "print(\'中文\')"', None)]
                 if shell.kind == "powershell":
                     commands += [("native_exit_then_output", native + "; Write-Output after", 0),
                                  ("explicit_native_exit", native + "; exit $LASTEXITCODE", 23)]
@@ -110,7 +110,7 @@ def offline_probes(shell_names: list[str]) -> list[dict]:
         policy = build_task_policy(submission, task_kind="chat")
         rows.append({"scope": "production_policy", "case": "chat_web_capability",
                      "requested": list(requested), "grants": sorted(policy.grants),
-                     "ok": policy.allows("web.read"),
+                     "ok": policy.allows("web.read") == bool(requested),
                      "interpretation": "Records current policy; does not change authorization."})
     html = page_fixture("OFFLINE")
     title = extract_title(html)

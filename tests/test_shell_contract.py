@@ -12,6 +12,7 @@ from codey.agents.shell_approval import ShellApprovalRequest, build_shell_approv
 from codey.app import shell_service
 from codey.app.context import AppContext
 from codey.app.shell_approval_state import restore_pending_shell_approvals
+from codey.env_names import SHELL_EXECUTABLE_ENV
 from codey.operations.kernel_prompt import kernel_prompt_for_session
 from codey.operations.task_session import TaskSession
 from codey.policies.command_line import ShellSpec, resolve_shell
@@ -153,6 +154,8 @@ def test_real_shell_keeps_quotes_unicode_cwd_and_exit_status(tmp_path, monkeypat
     shell = resolve_shell()
     if shell.kind == "cmd":
         command = f'"{sys.executable}" "probe script.py" "argument with spaces" {exit_code}'
+    elif shell.kind == "powershell":
+        command = f'& \'{sys.executable}\' "probe script.py" "argument with spaces" {exit_code}; exit $LASTEXITCODE'
     else:
         import shlex
         command = f'{shlex.quote(sys.executable)} "probe script.py" "argument with spaces" {exit_code}'
@@ -166,7 +169,8 @@ def test_real_shell_keeps_quotes_unicode_cwd_and_exit_status(tmp_path, monkeypat
 @pytest.mark.skipif(os.name != "nt", reason="CMD quoting is a Windows process contract")
 def test_cmd_preserves_raw_quotes_and_environment_assignment(tmp_path):
     command = 'set "SHELL_PROBE=two words" && python -c "import os; print(os.environ[\'SHELL_PROBE\'])"'
-    ticket = make_ticket(command, tmp_path, 0, 10, 4000)
+    ticket = make_ticket(command, tmp_path, 0, 10, 4000,
+                         shell=resolve_shell(environ={**os.environ, SHELL_EXECUTABLE_ENV: "cmd"}))
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert result["status"] == "exit" and result["exit_code"] == 0, result
     assert result["output"] == "two words"
@@ -176,7 +180,8 @@ def test_cmd_preserves_raw_quotes_and_environment_assignment(tmp_path):
 def test_cmd_executes_a_quoted_batch_path_with_spaces(tmp_path):
     script = tmp_path / "batch with spaces.cmd"
     script.write_bytes(b"@echo off\r\necho [%~1]\r\nexit /b 7\r\n")
-    ticket = make_ticket(f'"{script}" "two words"', tmp_path, 0, 10, 4000)
+    ticket = make_ticket(f'"{script}" "two words"', tmp_path, 0, 10, 4000,
+                         shell=resolve_shell(environ={**os.environ, SHELL_EXECUTABLE_ENV: "cmd"}))
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert result["status"] == "exit" and result["exit_code"] == 7, result
     assert result["output"] == "[two words]"
@@ -189,9 +194,9 @@ def test_real_shell_timeout_is_not_a_successful_exit(tmp_path):
 
 
 def test_spawn_error_never_switches_interpreters(tmp_path, monkeypatch):
+    ticket = make_ticket("echo hello", tmp_path, 0, 10, 4000)
     start = Mock(side_effect=FileNotFoundError("interpreter missing"))
     monkeypatch.setattr(shell_service.cancellation, "start_process", start)
-    ticket = make_ticket("echo hello", tmp_path, 0, 10, 4000)
     result = shell_service.execute_shell_ticket(_context(), ticket)
     assert not result["ok"] and result["status"] == "spawn_error" and result["exit_code"] is None
     assert start.call_count == 1

@@ -280,8 +280,8 @@ def _execution_output_route(ctx: AppContext, execution_id: str, query: dict[str,
         return 404, {"ok": False, "error": "execution_not_found"}
     after = (query.get("after_revision") or [""])[0]
     if after and after.isdigit() and int(after) >= int(snapshot["revision"]):
-        return 304, snapshot
-    return 200, snapshot
+        return 304, dict(snapshot)
+    return 200, dict(snapshot)
 
 
 _GET_ROUTES: dict[str, Callable[[AppContext, dict[str, list[str]]], tuple[int, dict[str, Any]]]] = {

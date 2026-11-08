@@ -1,0 +1,114 @@
+{
+  "batch": 2,
+  "runs": {
+    "local": {
+      "ok": true,
+      "matrix_complete": true,
+      "passed_checks": 14,
+      "checks": 14
+    },
+    "solar": {
+      "ok": true,
+      "matrix_complete": true,
+      "passed_checks": 2,
+      "checks": 2
+    },
+    "local-encoding": {
+      "ok": true,
+      "scope": "production host facts and controlled interpretation",
+      "expected": {
+        "native": {
+          "exit_code": 7,
+          "exit_code_scope": "process"
+        },
+        "shell": {
+          "exit_code": 1,
+          "exit_code_scope": "shell"
+        },
+        "trailing_output": {
+          "exit_code": 0,
+          "exit_code_scope": "shell"
+        },
+        "explicit_exit": {
+          "exit_code": 7,
+          "exit_code_scope": "shell"
+        },
+        "chinese_error": "中文错误"
+      },
+      "actual": {
+        "shell": {
+          "exit_code": 1,
+          "exit_code_scope": "shell"
+        },
+        "native": {
+          "exit_code": 7,
+          "exit_code_scope": "process"
+        },
+        "trailing_output": {
+          "exit_code": 0,
+          "exit_code_scope": "shell"
+        },
+        "explicit_exit": {
+          "exit_code": 7,
+          "exit_code_scope": "shell"
+        },
+        "chinese_error": "中文错误"
+      },
+      "exact_format": true,
+      "execution_facts_match": true,
+      "chinese_facts_match": true,
+      "original_ok": true
+    },
+    "solar-encoding": {
+      "ok": true,
+      "scope": "production host facts and controlled interpretation",
+      "expected": {
+        "native": {
+          "exit_code": 7,
+          "exit_code_scope": "process"
+        },
+        "shell": {
+          "exit_code": 1,
+          "exit_code_scope": "shell"
+        },
+        "trailing_output": {
+          "exit_code": 0,
+          "exit_code_scope": "shell"
+        },
+        "explicit_exit": {
+          "exit_code": 7,
+          "exit_code_scope": "shell"
+        },
+        "chinese_error": "中文错误"
+      },
+      "actual": {
+        "native": {
+          "exit_code": 7,
+          "exit_code_scope": "process"
+        },
+        "shell": {
+          "exit_code": 1,
+          "exit_code_scope": "shell"
+        },
+        "trailing_output": {
+          "exit_code": 0,
+          "exit_code_scope": "shell"
+        },
+        "explicit_exit": {
+          "exit_code": 7,
+          "exit_code_scope": "shell"
+        },
+        "chinese_error": "[encoding: gbk; UTF-8 was invalid, using the host code page.]\n中文错误"
+      },
+      "exact_format": false,
+      "execution_facts_match": true,
+      "chinese_facts_match": true,
+      "original_ok": false
+    }
+  },
+  "limits": [
+    "Host fallback is the Windows code page, not universal charset detection.",
+    "PowerShell may already have replaced legacy child bytes before host capture; emit UTF-8 or use direct argv.",
+    "Model interpretation is a controlled replay of actual host results; HTTP approval is tested separately."
+  ]
+}

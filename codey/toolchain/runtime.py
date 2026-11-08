@@ -1243,8 +1243,9 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
             "\nOnly head and tail of the process output were retained; "
             "run a narrower command to inspect omitted content."
         )
-    display = f"exit {raw.exit_code}: {raw.command}\n{output}"
+    display = f"exit {raw.exit_code}: {raw.command}\nExit code scope: process\n{output}"
     audit: dict[str, object] = {}
+    audit["exit_code_scope"] = "process"
     if raw.execution_id:
         audit["execution_id"] = raw.execution_id
     if raw.started_at:
@@ -1263,6 +1264,9 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
     return ToolOutcome(
         display,
         raw.ok,
+        canonical={"execution": {"status": "exit", "exit_code": raw.exit_code,
+                                  "exit_code_scope": "process", "capture_truncated": capture_truncated,
+                                  "truncated": truncated, "execution_id": raw.execution_id}},
         audit=audit,
         exit_code=raw.exit_code,
         truncated=truncated,

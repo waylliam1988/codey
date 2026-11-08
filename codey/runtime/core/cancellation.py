@@ -38,6 +38,11 @@ class CancellationSignal(Protocol):
     def is_set(self) -> bool: ...
 
 
+class ProcessOutputObserver(Protocol):
+    def offer(self, channel: str, chunk: bytes) -> None: ...
+    def close(self) -> None: ...
+
+
 class _PopenWithHandle(Protocol):
     _handle: int
 
@@ -207,7 +212,7 @@ class _StreamPump:
     capture: BoundedByteCapture
     error: Exception | None = None
     finished: threading.Event = dataclasses.field(default_factory=threading.Event)
-    observer: Any = None
+    observer: ProcessOutputObserver | None = None
     channel: str = "stdout"
 
 
@@ -467,7 +472,7 @@ def wait_process(
     timeout: float,
     *,
     capture_limit_bytes: int,
-    observer: Any = None,
+    observer: ProcessOutputObserver | None = None,
 ) -> CapturedProcess:
     """Wait with bounded per-stream capture; never buffers output unbounded.
 
@@ -533,9 +538,8 @@ def wait_process(
                 )
         stdout_done = stdout_state.capture.finish()
         stderr_done = stderr_state.capture.finish()
-        close_observer = getattr(observer, "close", None)
-        if callable(close_observer):
-            close_observer()
+        if observer is not None:
+            observer.close()
         result = CapturedProcess(
             args=args,
             returncode=returncode,
@@ -552,10 +556,9 @@ def wait_process(
         if not completed:
             _terminate_process_tree(proc, job)
             _wait_readers(readers, timeout=READER_CLEANUP_TIMEOUT_SECONDS)
-        close_observer = getattr(observer, "close", None)
-        if callable(close_observer):
+        if observer is not None:
             with suppress(Exception):
-                close_observer()
+                observer.close()
         _close_owned_pipes(proc, owned)
         close = getattr(job, "close", None)
         if callable(close):
@@ -571,7 +574,7 @@ def run_process(
     env: dict[str, str] | None = None,
     shell: bool = False,
     capture_limit_bytes: int,
-    observer: Any = None,
+    observer: ProcessOutputObserver | None = None,
 ) -> CapturedProcess:
     """Run a captured process and terminate its process group when cancelled."""
     proc, job = start_process(args, cwd=cwd, env=env, shell=shell)

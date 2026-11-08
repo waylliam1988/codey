@@ -7,6 +7,8 @@ pipe so children never block, but only head + tail bytes are retained.
 from __future__ import annotations
 
 import codecs
+import locale
+import os
 from collections import deque
 from dataclasses import dataclass
 from typing import SupportsIndex, SupportsInt, TypeAlias, cast
@@ -38,46 +40,9 @@ class CapturedText:
     truncated: bool
     omitted_bytes: int
     decoding_errors: bool = False
-
-
-def _trim_trailing_incomplete(data: bytes) -> bytes:
-    """Drop a trailing incomplete UTF-8 sequence (cold start: no compat)."""
-    if not data:
-        return data
-    # Count trailing continuation bytes.
-    cont = 0
-    for byte in reversed(data[-4:]):
-        if 0x80 <= byte <= 0xBF:
-            cont += 1
-        else:
-            break
-    if cont == 0:
-        # Last byte is ASCII or a complete start byte; check if it starts
-        # a multi-byte sequence that needs more bytes.
-        last = data[-1]
-        if last <= 0x7F or 0xC2 <= last <= 0xF4:
-            # A start byte at the very end with no continuations is
-            # incomplete when it expects more bytes.
-            if last >= 0xC2:
-                return data[:-1]
-            return data
-        # Invalid byte: let the decoder replace it, keep it visible.
-        return data
-    if len(data) <= cont:
-        return b""
-    start = data[-(cont + 1)]
-    if 0xC2 <= start <= 0xDF:
-        expected = 2
-    elif 0xE0 <= start <= 0xEF:
-        expected = 3
-    elif 0xF0 <= start <= 0xF4:
-        expected = 4
-    else:
-        # Orphan continuations (no valid start): drop them.
-        return data[: len(data) - cont]
-    if cont + 1 < expected:
-        return data[: len(data) - (cont + 1)]
-    return data
+    encoding: str = "utf-8"
+    head: str = ""
+    tail: str = ""
 
 
 def _trim_leading_incomplete(data: bytes) -> bytes:
@@ -104,6 +69,7 @@ class BoundedByteCapture:
         *,
         head_limit: int = HEAD_LIMIT_BYTES,
         tail_limit: int = TAIL_LIMIT_BYTES,
+        fallback_encoding: str | None = None,
     ) -> None:
         self._head_limit = _safe_limit(head_limit, HEAD_LIMIT_BYTES)
         self._tail_limit = _safe_limit(tail_limit, TAIL_LIMIT_BYTES)
@@ -111,22 +77,28 @@ class BoundedByteCapture:
         self._tail: deque[bytes] = deque()
         self._tail_len = 0
         self._total = 0
-        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="strict")
-        self._decoding_errors = False
+        fallback = fallback_encoding or (locale.getencoding() if os.name == "nt" else "utf-8")
+        self._encodings = tuple(dict.fromkeys(("utf-8", codecs.lookup(fallback).name)))
+        self._validators = {name: codecs.getincrementaldecoder(name)(errors="strict") for name in self._encodings}
+        self._prefix = {name: codecs.getincrementaldecoder(name)(errors="replace") for name in self._encodings}
+        self._invalid: set[str] = set()
 
     def feed(self, chunk: bytes) -> None:
         if not chunk:
             return
         self._total += len(chunk)
-        if not self._decoding_errors:
+        for name, decoder in self._validators.items():
+            if name in self._invalid:
+                continue
             try:
-                self._decoder.decode(chunk)
+                decoder.decode(chunk)
             except UnicodeDecodeError:
-                self._decoding_errors = True
+                self._invalid.add(name)
         view = chunk
         if len(self._head) < self._head_limit:
             need = self._head_limit - len(self._head)
             self._head.extend(view[:need])
+            self._advance_prefix(view[:need])
             view = view[need:]
             if not view:
                 return
@@ -138,37 +110,69 @@ class BoundedByteCapture:
             if len(left) <= excess:
                 self._tail.popleft()
                 self._tail_len -= len(left)
+                self._advance_prefix(left)
             else:
                 self._tail[0] = left[excess:]
                 self._tail_len -= excess
+                self._advance_prefix(left[:excess])
+
+    def _advance_prefix(self, raw: bytes) -> None:
+        for decoder in self._prefix.values():
+            decoder.decode(raw)
 
     @property
     def total_bytes(self) -> int:
         return self._total
 
-    def finish(self) -> CapturedText:
-        if not self._decoding_errors:
+    def finish(self, *, final: bool = True) -> CapturedText:
+        """A repeatable snapshot; stream validation includes discarded bytes."""
+        encoding = "utf-8"
+        lossy = True
+        for name, validator in self._validators.items():
+            if name in self._invalid:
+                continue
+            probe = codecs.getincrementaldecoder(name)(errors="strict")
+            probe.setstate(validator.getstate())
             try:
-                self._decoder.decode(b"", final=True)
+                probe.decode(b"", final=final)
             except UnicodeDecodeError:
-                self._decoding_errors = True
+                continue
+            encoding, lossy = name, False
+            break
         warning = ("[encoding warning: invalid UTF-8; displayed text is lossy. Configure the program to emit UTF-8.]\n"
-                   if self._decoding_errors else "")
+                   if lossy else "")
+        if not lossy and encoding != "utf-8":
+            warning = f"[encoding: {encoding}; UTF-8 was invalid, using the host code page.]\n"
         head = bytes(self._head)
         tail = b"".join(self._tail)
         if self._total <= len(head) + len(tail):
-            text = (head + tail).decode("utf-8", errors="replace")
+            decoder = codecs.getincrementaldecoder(encoding)(errors="replace")
+            text = decoder.decode(head + tail, final=final)
             return CapturedText(
                 text=warning + text,
                 total_bytes=self._total,
                 truncated=False,
                 omitted_bytes=0,
-                decoding_errors=self._decoding_errors,
+                decoding_errors=lossy, encoding=encoding, head=text,
             )
-        head = _trim_trailing_incomplete(head)
-        tail = _trim_leading_incomplete(tail)
-        head_text = head.decode("utf-8", errors="replace")
-        tail_text = tail.decode("utf-8", errors="replace")
+        head_decoder = codecs.getincrementaldecoder(encoding)(errors="replace")
+        head_text = head_decoder.decode(head, final=False)
+        pending = len(head_decoder.getstate()[0])
+        head = head[:len(head) - pending]
+        if encoding == "utf-8":
+            tail = _trim_leading_incomplete(tail)
+        else:
+            # The state immediately before the retained suffix identifies
+            # a split DBCS character even when its trail byte looks like ASCII.
+            boundary = codecs.getincrementaldecoder(encoding)(errors="replace")
+            boundary.setstate(self._prefix[encoding].getstate())
+            offset = 0
+            while boundary.getstate()[0] and offset < len(tail):
+                boundary.decode(tail[offset:offset + 1])
+                offset += 1
+            tail = tail[offset:]
+        tail_decoder = codecs.getincrementaldecoder(encoding)(errors="replace")
+        tail_text = tail_decoder.decode(tail, final=final)
         # Report what the displayed text actually omits: raw middle bytes
         # plus edge bytes dropped to avoid splitting a UTF-8 character.
         omitted = self._total - len(head) - len(tail)
@@ -181,7 +185,7 @@ class BoundedByteCapture:
             total_bytes=self._total,
             truncated=True,
             omitted_bytes=omitted,
-            decoding_errors=self._decoding_errors,
+            decoding_errors=lossy, encoding=encoding, head=head_text, tail=tail_text,
         )
 
 

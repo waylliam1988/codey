@@ -27,8 +27,13 @@ def discover_shell(
 ) -> tuple[ShellKind, str, str | None, str]:
     selected = env.get(SHELL_EXECUTABLE_ENV, "").strip()
     if not selected:
-        selected = ((env.get("COMSPEC") or str(PureWindowsPath(env.get("SystemRoot", r"C:\Windows"), "System32", "cmd.exe")))
-                    if platform == "win32" else "/bin/sh")
+        if platform == "win32":
+            selected = (shutil.which("pwsh", path=env.get("PATH"))
+                        or shutil.which("powershell", path=env.get("PATH"))
+                        or env.get("COMSPEC")
+                        or str(PureWindowsPath(env.get("SystemRoot", r"C:\Windows"), "System32", "cmd.exe")))
+        else:
+            selected = "/bin/sh"
     name = PureWindowsPath(selected).stem.lower() if platform == "win32" else Path(selected).name
     kind = _NAMES.get(name)
     if kind is None:

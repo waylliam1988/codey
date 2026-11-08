@@ -20,12 +20,12 @@
 
 ### 第二批：PowerShell 与编码
 
-- [ ] 显式配置 → pwsh → powershell → CMD；保持任务执行环境绑定。
-- [ ] 原生 argv 与 Shell 退出码明确区分，不擅自改写脚本语义。
-- [ ] 捕获/实时存储/最终回执统一解码，有限编码回退及正确字符边界。
-- [ ] 覆盖 PowerShell 内部转换已损失信息的边界，不假称可以从宿主恢复。
-- [ ] 相关测试、Ruff、类型检查、本地实机、在线实机。
-- [ ] 更新报告并提交第二批。
+- [x] 显式配置 → pwsh → powershell → CMD；保持任务执行环境绑定。
+- [x] 原生 argv 与 Shell 退出码明确区分，不擅自改写脚本语义。
+- [x] 捕获/实时存储/最终回执统一解码，有限编码回退及正确字符边界。
+- [x] 覆盖 PowerShell 内部转换已损失信息的边界，不假称可以从宿主恢复。
+- [x] 相关测试、Ruff、类型检查、本地实机、在线实机。
+- [x] 更新报告并提交第二批（本次 commit）。
 
 ### 第三批：读取、恢复与回答核验
 
@@ -53,6 +53,16 @@
 ## 继续工作位置
 
 第一批验收完成，开始第二批：`shell_discovery.py` 默认顺序、`output_capture.py` 与 `execution_output_store.py` 共用编码/边界契约、原生 run 的 process 作用域。不要改写用户脚本的退出语义。
+
+第二批实施中：Windows 顺序已改为显式配置 → pwsh → powershell → CMD。原生 run 保留参数数组，回执和 canonical 记录 process 作用域；Shell 不追加 exit。捕获优先 UTF-8，仅在无效时回退 Windows 主机代码页，并显示所用编码；不猜测任意字符集。采集与实时快照共用 `BoundedByteCapture`，保留原始字节计数、实际省略字节及编码信息，并迁移旧 SQLite 快照。
+
+发现并修复生产确定性问题：旧观察队列满会丢字节；现在同步有界捕获、异步合并刷新通知，不丢字节。存储失败的 unknown 状态不再被后续 settled 擦除。旧 CMD 测试应显式选择 CMD，跨平台引用测试补 PowerShell 的调用运算符和显式退出，而非改写生产脚本迎合旧测试。
+
+第二批验证：相关捕获/取消/执行测试 126 passed、1 skipped，补充存储/删除/状态/退出作用域回归 59 passed；未运行全套 pytest。Gemma 实机 14/14（离线观测及两种审批）通过；新增宿主实测回执核验通过。Solar 正确复述全部四种退出码及作用域，中文正文正确，但保留了编码说明，与要求的纯正文格式不同；记录 exact_format=false，事实核验=true，基于保存证据重分析，没有为此重发模型请求。生产审批复验进行中。
+
+第二批已验收：Solar 的 PowerShell HTTP 审批与首次回执通过。新增编码 gate 回归与相关用例 19 项通过；最终全树 mypy/Pyrefly/ty、Ruff 和 precision gate 通过。汇总见 `docs/reports/shell-web-batch2-20261108.json`。当前无 UI 外观变化。
+
+下一步第三批：输出恢复边界与 available views；done 结构化 execution_claims 绑定 result_ref 并接入现有完成检查；失败网页用 source_gaps 绑定真实失败回执完成，防止空页导致无限重试；审核状态卡片并添加福州美食真实来源验收。仍先本地后在线，第三批提交后逐项核对全目标。
 
 第一批最终记录：相关旧回归 46 项、新增/诊断回归 46 项通过；Ruff、全树 mypy/Pyrefly/ty、kernel precision gate 通过。Gemma 和 Solar 都通过两种 Shell 审批、明确禁止联网和单页首页获取。汇总见 `docs/reports/shell-web-batch1-20261108.json`。
 

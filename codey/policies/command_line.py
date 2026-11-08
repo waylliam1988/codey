@@ -126,7 +126,9 @@ class ShellSpec:
             return common + (
                 "Use PowerShell syntax and $env:NAME environment variables. Pipelines can carry objects. "
                 "Use -LiteralPath for literal file paths. POSIX heredocs are not PowerShell syntax. "
-                "For a native program's exact exit code, end with exit $LASTEXITCODE."
+                "The receipt reports this shell's exit code, which can differ from a native child's code. "
+                "To return one native program's code, save $LASTEXITCODE immediately after it and explicitly exit that code. "
+                "Native output is decoded as UTF-8; configure legacy programs to emit UTF-8 or capture their bytes directly."
             )
         dialect = ("Use POSIX sh syntax; Bash arrays, [[ ... ]] and process substitution require explicit Bash. "
                    if self.kind == "sh" else f"Use {self.kind} syntax. ")

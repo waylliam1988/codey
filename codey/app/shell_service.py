@@ -369,7 +369,7 @@ def _execute_shell_ticket(
         if output_store is not None and ticket.execution_id:
             from codey.storage.execution_output_store import ExecutionOutputObserver
 
-            def publish_output_snapshot(snapshot: dict[str, object]) -> None:
+            def publish_output_snapshot(snapshot: Mapping[str, object]) -> None:
                 ctx.emit({
                     "type": "execution_output_available",
                     "execution_id": ticket.execution_id,
