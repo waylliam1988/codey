@@ -7,10 +7,9 @@ line commits its rows atomically.
 
 from __future__ import annotations
 
-from typing import Any
-
 from codey.runtime.core.operation_payload import LEAF_TOOL_DELIVERY_PENDING, RuntimeOperationTransitionError
 from codey.runtime.effects.tool_result_delivery import recovered_entry
+from codey.runtime.log.session_projection import RuntimeProjection
 from codey.runtime.log.session_view import (
     SessionView,
     pending_for,
@@ -19,7 +18,7 @@ from codey.runtime.log.session_view import (
 
 
 def build_delivery_recovered_rows(
-    projection: Any,
+    projection: RuntimeProjection,
     view: SessionView,
     *,
     session_id: str,

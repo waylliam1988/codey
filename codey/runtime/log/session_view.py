@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
 
 from codey.runtime.core.operation_payload import (
     DRIVER_REPAIR,
@@ -37,6 +36,7 @@ from codey.runtime.effects.effect_records import (
 )
 from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection, batches_from_entries
 from codey.runtime.log.entries import RuntimeLogEntry
+from codey.runtime.log.session_projection import RuntimeProjection
 
 
 @dataclass(frozen=True)
@@ -145,7 +145,7 @@ def pending_for(view: SessionView) -> PendingRuntimeFacts:
     return PendingRuntimeFacts()
 
 
-def require_open_view(projection: Any, view: SessionView) -> RuntimeOperationState:
+def require_open_view(projection: RuntimeProjection, view: SessionView) -> RuntimeOperationState:
     if view.state is None:
         raise RuntimeOperationTransitionError("operation state is missing")
     operation_is_open(projection, view.state)

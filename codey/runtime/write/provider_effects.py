@@ -8,7 +8,6 @@ mutation line commits their rows atomically.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any
 
 from codey.runtime.core.operation_payload import (
     LEAF_PROVIDER_REQUEST_READY,
@@ -43,6 +42,7 @@ from codey.runtime.effects.tool_result_delivery import (
     send_attempt_entry,
     send_superseded_entry,
 )
+from codey.runtime.log.session_projection import RuntimeProjection
 from codey.runtime.log.session_view import (
     SessionView,
     driver_for_state,
@@ -57,7 +57,7 @@ class ProviderAdmission:
 
 
 def build_provider_prepare_rows(
-    projection: Any, view: SessionView, *, expected: RuntimeOperationState,
+    projection: RuntimeProjection, view: SessionView, *, expected: RuntimeOperationState,
     request_ref: str, turn: int, logical_turn: int | None = None,
 ) -> tuple[dict[str, object], ...]:
     state = require_open_view(projection, view)
@@ -118,7 +118,7 @@ def _require_supersedable_not_sent(
 
 
 def build_provider_begin_rows(
-    projection: Any,
+    projection: RuntimeProjection,
     view: SessionView,
     *,
     session_id: str,
@@ -212,7 +212,7 @@ def build_provider_begin_rows(
 
 
 def build_provider_settle_rows(
-    projection: Any,
+    projection: RuntimeProjection,
     view: SessionView,
     *,
     session_id: str,
@@ -268,7 +268,7 @@ def build_provider_settle_rows(
 
 
 def build_delivery_delivered_rows(
-    projection: Any,
+    projection: RuntimeProjection,
     view: SessionView,
     *,
     session_id: str,

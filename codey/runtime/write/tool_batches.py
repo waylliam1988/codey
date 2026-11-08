@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
 
 from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.operation_state import (
@@ -33,6 +32,7 @@ from codey.runtime.effects.tool_result_delivery import (
     batch_intent_entry,
     prepare_batch_intent,
 )
+from codey.runtime.log.session_projection import RuntimeProjection
 from codey.runtime.log.session_view import (
     SessionView,
     driver_for_state,
@@ -49,7 +49,7 @@ class ToolBatchCommit:
 
 
 def build_tool_batch_rows(
-    projection: Any,
+    projection: RuntimeProjection,
     view: SessionView,
     *,
     session_id: str,
@@ -121,7 +121,7 @@ def build_tool_batch_rows(
 
 
 def build_tool_settle_rows(
-    projection: Any,
+    projection: RuntimeProjection,
     view: SessionView,
     *,
     session_id: str,

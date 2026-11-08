@@ -11,16 +11,32 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, cast
 
-from codey.durable.model import ArtifactRecord, DurableMutation, EffectRecord, EntryDraft, TaskCheckpoint, thaw_json
+from codey.durable.model import (
+    ArtifactRecord,
+    DurableMutation,
+    EffectRecord,
+    EntryDraft,
+    SubmissionRecord,
+    TaskCheckpoint,
+    thaw_json,
+)
 from codey.durable.reducer import with_effect_intents, with_effect_settlement
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
     from codey.runtime.core.operation_payload import RuntimeOperationState
+    from codey.runtime.effects.effect_records import RuntimeEffectProjection
     from codey.runtime.effects.tool_result_delivery import DeliveryBatchProjection
     from codey.runtime.log.entries import RuntimeLogEntry
+    from codey.runtime.log.session_projection import RuntimeProjection
+
+
+RuntimeRows: TypeAlias = tuple[dict[str, object], ...]
+RuntimeRowsBuilder: TypeAlias = Callable[
+    ["RuntimeProjection", tuple["RuntimeLogEntry", ...]], RuntimeRows,
+]
 
 
 def _entry(session_id: str, row: dict[str, Any]) -> RuntimeLogEntry:
@@ -147,7 +163,7 @@ def _apply_boundary_transition(mutation: DurableMutation, state: RuntimeOperatio
     return replace(mutation, task=replace(mutation.task, state={**mutation.task.state, "operation": payload}))
 
 
-def _effect_changes(projections: Any, effects: tuple[EffectRecord, ...]) -> tuple[list[EffectRecord], list[EffectRecord]]:
+def _effect_changes(projections: tuple[RuntimeEffectProjection, ...], effects: tuple[EffectRecord, ...]) -> tuple[list[EffectRecord], list[EffectRecord]]:
     from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 
     known = {effect.effect_id: effect for effect in effects}
@@ -180,12 +196,12 @@ def _effect_changes(projections: Any, effects: tuple[EffectRecord, ...]) -> tupl
 
 
 def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
-                      derive_rows: Callable[..., Any], *,
+                      derive_rows: RuntimeRowsBuilder, *,
                       messages: tuple[tuple[str, Mapping[str, object]], ...] = (),
                       artifacts: tuple[ArtifactRecord, ...] = (),
                       generation_boundary: str | None = None,
-                      boundary_result: list[object] | None = None,
-                      boundary_transition: Callable[..., RuntimeOperationState] | None = None) -> None:
+                      boundary_result: list[SubmissionRecord] | None = None,
+                      boundary_transition: Callable[[RuntimeOperationState, tuple[SubmissionRecord, ...]], RuntimeOperationState] | None = None) -> None:
     from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
     from codey.runtime.log.session_projection import reduce_session
     from codey.runtime.log.session_view import load_session_view
@@ -253,7 +269,7 @@ def mutate_checkpoint(durable: DurableSession, session_id: str, run_id: str,
                 raise
 
 
-def _unregistered_artifacts(durable: Any, artifacts: tuple[ArtifactRecord, ...]) -> tuple[ArtifactRecord, ...]:
+def _unregistered_artifacts(durable: DurableSession, artifacts: tuple[ArtifactRecord, ...]) -> tuple[ArtifactRecord, ...]:
     """Reuse immutable content references inside the same transaction read line."""
     from codey.durable.errors import CommitConflict
 
