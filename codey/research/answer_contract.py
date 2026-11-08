@@ -7,7 +7,6 @@ The ordinary kernel freezes them in its existing provider request and effect.
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -233,19 +232,9 @@ def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
     from codey.toolchain.tool_spec import freeze_spec_parameters
 
     if spec.name != "submit_research_answer":
-        parameters = {key: value for key, value in spec.parameters if key != "question_ref"}
-        examples = []
-        for raw in spec.json_examples:
-            example = canonical_json_object(json.loads(raw))
-            example_args = example.get("args")
-            if isinstance(example_args, dict):
-                example_args.pop("question_ref", None)
-            examples.append(canonical_json(example))
-        description = spec.description.split(" Select question_ref=")[0]
         if spec.name == "knowledge_read":
-            description += " " + KNOWLEDGE_READ_GUIDANCE
-        return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()),
-            required=tuple(k for k in spec.required if k != "question_ref"), json_examples=tuple(examples), description=description))
+            return freeze_spec_parameters(replace(spec, description=spec.description + " " + KNOWLEDGE_READ_GUIDANCE))
+        return spec
     answer_parameters: dict[str, object] = {"markdown": {"type": "string", "minLength": 12, "maxLength": MAX_ANSWER_CHARACTERS},
                   "state": {"type": "string", "enum": list(ANSWER_STATES)},
                   "knowledge_updates": updates_schema()}

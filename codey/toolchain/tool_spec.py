@@ -19,6 +19,7 @@ from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE
 from codey.toolchain.result_schema import text_output_schema
 from codey.toolchain.tool_prompt import json_contract_text as json_contract_text
 from codey.toolchain.tool_prompt import model_tool_description
+from codey.types.json_value import ToolArgs
 
 _TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
 
@@ -185,9 +186,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             executor="source",
             replay_class="safe",
         )
-    from codey.research.tool_contract import question_bound_spec
-
-    return {name: question_bound_spec(spec) for name, spec in specs.items()}
+    return specs
 
 
 def _all_specs() -> dict[str, ToolSpec]:
@@ -784,7 +783,7 @@ def _builtin_alias_allowed_keys(tool: str) -> set[str] | None:
         return {"command", "cmd", "path", "cwd"}
     if name == "source_search":
         # Controller alias form: source_id + query without url.
-        return {"url", "query", "limit", "source_id", "question_ref"}
+        return {"source_id"}
     return None
 
 
@@ -867,11 +866,13 @@ def validate_args_against_spec(name: object, args: object) -> str:
     return validate_args_with_spec(spec, args)
 
 
-def _validate_no_extra(spec: Any, declared: dict[str, object], is_builtin: bool, args: dict[str, Any]) -> str:
+def _validate_no_extra(spec: ToolSpec, declared: dict[str, object], is_builtin: bool, args: ToolArgs) -> str:
     if is_builtin:
         allowed = _builtin_alias_allowed_keys(spec.name)
         if allowed is None:
             allowed = set(declared.keys())
+        else:
+            allowed |= declared.keys()
         for key in args:
             if key not in allowed:
                 return f"{spec.name} unexpected arg '{key}'"

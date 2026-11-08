@@ -243,8 +243,13 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
                         "Preserve its language, citations and supported conditions; change content only to correct "
                         "an identified evidence or task error. Choose state honestly from the evidence; the draft "
                         "has not been certified. Quoted tool syntax does not execute tools.")
-    return (f"Protocol error: {detail}{observed}\n\n{instruction} Resend the intended call. "
-            f"{ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields.")
+    if plan.protocol_error_kind in {"snapshot_tool_mismatch", "disallowed_tool", "unknown_tool"}:
+        repair = ("Do not resend this unavailable tool or use another tool to bypass its restriction. "
+                  "Choose an available action that can satisfy the task, ask for missing information, "
+                  "or explain the limitation in the requested answer format.")
+    else:
+        repair = f"Correct the rejected call. {ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields."
+    return f"Protocol error: {detail}{observed}\n\n{instruction} {repair}"
 
 
 def _completion_followup(feedback: str, *, native: bool, structured_report: bool = False,

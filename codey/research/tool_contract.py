@@ -260,35 +260,22 @@ TOOL_CONTRACTS = {
 }
 
 
-def _question_contract(contract: ToolContract) -> ToolContract:
-    if contract.name not in QUESTION_BOUND_TOOLS:
-        return contract
-    schema = canonical_json_object(contract.input_schema)
-    schema_object(schema, "properties")["question_ref"] = {"type": "string", "pattern": "^q[1-8]$"}
-    example = decode_json_object(json.loads(contract.example))
-    schema_object(example, "args")["question_ref"] = "q1"
-    return replace(contract, input_schema=schema, example=json.dumps(example, separators=(",", ":")),
-        description=contract.description + " Select question_ref=qN explicitly to bind this action to its registered question.")
-
-
-TOOL_CONTRACTS = {name: _question_contract(contract) for name, contract in TOOL_CONTRACTS.items()}
-
-
-def question_bound_spec(spec: ToolSpec, *, required: bool = False) -> ToolSpec:
-    """One question argument contract shared by ordinary and strict research."""
+def question_bound_spec(spec: ToolSpec, *, question_refs: tuple[str, ...]) -> ToolSpec:
+    """Bind this turn's research actions to its registered questions."""
     if spec.name not in QUESTION_BOUND_TOOLS:
         return spec
-    if "question_ref" in dict(spec.parameters):
-        return replace(spec, required=tuple(dict.fromkeys((*spec.required, "question_ref")))) if required else spec
-    parameters = {**dict(spec.parameters), "question_ref": {"type": "string", "pattern": "^q[1-8]$"}}
-    keys = tuple(dict.fromkeys((*spec.required, "question_ref"))) if required else spec.required
+    from codey.toolchain.tool_spec import freeze_spec_parameters
+
+    parameters = {**dict(spec.parameters), "question_ref": {"type": "string", "enum": list(question_refs)}}
+    keys = (*spec.required, "question_ref")
     examples = []
     for text in spec.json_examples:
         example = decode_json_object(json.loads(text))
-        schema_object(example, "args")["question_ref"] = "q1"
+        schema_object(example, "args")["question_ref"] = question_refs[0]
         examples.append(json.dumps(example, separators=(",", ":")))
-    return replace(spec, parameters=tuple(parameters.items()), required=keys, json_examples=tuple(examples),
-        description=spec.description + " Select question_ref=qN explicitly to bind this action to its registered question.")
+    return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()), required=keys,
+        json_examples=tuple(examples), description=spec.description
+        + " Select question_ref from the registered questions: " + ", ".join(question_refs) + "."))
 
 
 def done_spec_for_purpose(spec: ToolSpec, purpose: str, *, task: str = "", questions: tuple[str, ...] = ()) -> ToolSpec:

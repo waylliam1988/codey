@@ -98,7 +98,7 @@ def test_source_search_alias_preserves_question_and_enforces_its_frozen_requirem
     assert not plan.protocol_error and plan.calls[0].args == valid
 
 
-def test_question_argument_is_the_same_contract_in_direct_and_kernel_tool_projections():
+def test_base_tools_do_not_invent_a_question_binding():
     from codey.research.tool_contract import TOOL_CONTRACTS
     from codey.toolchain.tool_spec import spec_for_tool
     from tests.support.research_tool_contract import openai_parameters_schema
@@ -108,8 +108,9 @@ def test_question_argument_is_the_same_contract_in_direct_and_kernel_tool_projec
             continue
         direct = openai_parameters_schema(name)
         spec = spec_for_tool(name)
-        assert direct["properties"]["question_ref"] == dict(spec.parameters)["question_ref"]
-        assert json.loads(spec.json_examples[0])["args"]["question_ref"] == "q1"
+        assert "question_ref" not in direct["properties"]
+        assert "question_ref" not in dict(spec.parameters)
+        assert "question_ref" not in json.loads(spec.json_examples[0])["args"]
 
 
 @pytest.mark.parametrize("evidence_only", [False, True])
@@ -144,11 +145,12 @@ def test_strict_snapshot_requires_question_on_all_investigation_and_adoption_too
         example = json.loads(spec.json_examples[0])
         example["args"].pop("question_ref")
         assert normalize_turn(decode_text_turn(json.dumps(example)), snapshot=snapshot).protocol_error
-        # Even a direct executor call cannot execute an unbound strict action.
-        result, ok, _ = delegate._execute_research(ToolCall(name, example["args"]))
-        assert not ok and "question_ref" in result.model_text
-        project_result_observation(session, result.call, result, ok=False, research_ledger=tools.ledger)
-        assert not tools.ledger.investigations
+        # Execution rechecks the captured contract, rather than guessing the mode.
+        from codey.operations.kernel_execution import execute_turn
+
+        result = execute_turn(session, [ToolCall(name, example["args"])], snapshot=snapshot)[0]
+        assert not result.ok and "question_ref" in result.model_text
+        assert not session._memory_results
     finally:
         store.close()
 

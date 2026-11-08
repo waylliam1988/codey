@@ -24,16 +24,12 @@ class QuestionSessionView(Protocol):
     @property
     def policy(self) -> TaskPolicy: ...
 
-    @property
-    def research_acquisition_limits(self) -> tuple[int, int] | None: ...
-
-
 def requires_question_ref(session: QuestionSessionView) -> bool:
     from codey.research.answer_contract import whole_research
 
     if whole_research(session):
         return False
-    return session.policy.strict_research or session.research_acquisition_limits is not None
+    return session.policy.strict_research or session.task_kind == "evidence_followup"
 
 
 def question_ref(args: ToolArgs, ledger: ResearchLedger, *, required: bool = False) -> str:

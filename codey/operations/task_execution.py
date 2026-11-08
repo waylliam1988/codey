@@ -497,7 +497,6 @@ class ExecutionDelegate:
     def _research_call_denial(self, call: ToolCall) -> tuple[ToolResult, bool, int | None] | None:
         from codey.operations.kernel_result import policy_denial_result
         from codey.research.answer_contract import AnswerScope, digest, whole_research
-        from codey.research.questions import QUESTION_BOUND_TOOLS, question_ref, requires_question_ref
 
         try:
             if (call.name == "knowledge_commit" and self.session is not None
@@ -513,10 +512,8 @@ class ExecutionDelegate:
                     raise ValueError("legacy local Research scope is no longer supported; start a new Research task")
                 if scope.task_digest != digest(self.session.task_text):
                     raise ValueError("research scope belongs to another task")
-            if call.name in QUESTION_BOUND_TOOLS:
-                question_ref(call.args, self.research_tools.ledger, required=requires_question_ref(self.session))
         except ValueError as exc:
-            return policy_denial_result(call, str(exc), reason_code="research_question_required"), False, None
+            return policy_denial_result(call, str(exc), reason_code="research_scope_denied"), False, None
         return None
 
     def _execute_research(self, call: ToolCall, *, turn: int = 0,

@@ -127,7 +127,14 @@ def controller_allowed_for_session(session: KernelSessionView) -> tuple[str, ...
         denied = {"submit_research_review"}
     if not policy.strict_research:
         denied.add("submit_research_answer")
+        from codey.research.questions import requires_question_ref
+
+        question_binding = requires_question_ref(session)
+        if not question_binding:
+            denied.add("research_plan")
         base: tuple[str, ...] | None = None
+        if question_binding and not session.research_questions:
+            base = ("research_plan", "done")
     else:
         from codey.research.answer_contract import ANSWER_TOOLS, whole_research
 
@@ -277,7 +284,8 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     from codey.research.questions import requires_question_ref
 
     if requires_question_ref(session):
-        frozen = tuple(question_bound_spec(spec, required=True) for spec in frozen)
+        question_refs = tuple(f"q{index}" for index in range(1, len(session.research_questions) + 1))
+        frozen = tuple(question_bound_spec(spec, question_refs=question_refs) for spec in frozen)
     if isinstance(scope, AnswerScope):
         frozen = tuple(answer_spec(spec, scope) for spec in frozen)
     nested: tuple[str, ...] = ()
