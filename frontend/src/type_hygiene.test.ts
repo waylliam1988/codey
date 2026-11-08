@@ -14,6 +14,7 @@ describe('frontend type boundary hygiene', () => {
       'run_visibility.ts',
       'run_event_coordinator.ts',
       'run_stream_buffer.ts',
+      'messages.ts',
     ]) {
       const source = ts.createSourceFile(name, readFileSync(join(root, name), 'utf8'), ts.ScriptTarget.Latest);
       const offenders: number[] = [];

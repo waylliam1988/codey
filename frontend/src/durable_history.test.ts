@@ -3,6 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { runtime } from './runtime';
 import './ui_state';
 import './process';
+import './render';
+import './messages';
 import './conversation_ui';
 import type { ConversationUiDeps } from './conversation_ui';
 import type { Session } from './types/domain';
@@ -182,4 +184,58 @@ it('honors an upward user scroll even when a tool update changes the content hei
   runtime.ConversationUI.scrollChat(false);
   expect(area.scrollTop).toBe(500);
   expect(runtime.ConversationUI.isFollowing()).toBe(false);
+});
+
+it('syncs a committed final answer onto its mounted stream after a tool turn', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      response([
+        {
+          id: 'saved-answer',
+          type: 'asst',
+          runId: 'run',
+          answerId: 'terminal:run:answer',
+          contentRole: 'final',
+          finalAnswer: true,
+          text: 'Answer',
+        },
+      ]),
+    ),
+  );
+  await runtime.ConversationUI.refreshHistory(session.id);
+  runtime.Messages.init({
+    getActiveId: () => session.id,
+    getRunningSessionId: () => null,
+    isSessionRunning: () => false,
+    openDocument: vi.fn(),
+    currentProjectPath: () => '',
+    openChangesDrawer: vi.fn(),
+    attachCurrentChatToPickedProject: vi.fn(),
+    approveCommand: vi.fn(),
+    continueTask: vi.fn(),
+    resumeTeaching: vi.fn(),
+    statusRow: () => document.createElement('div'),
+  });
+  const open = vi.fn();
+  runtime.ChatFork = { open };
+  const chat = document.getElementById('chat')!;
+  chat.replaceChildren();
+  runtime.Messages.append(chat, { type: 'asst', runId: 'run', streamId: 'tool-stream', finalAnswer: false, text: '' });
+  runtime.Messages.append(chat, {
+    type: 'asst',
+    runId: 'run',
+    streamId: 'answer-stream',
+    finalAnswer: true,
+    answerId: 'terminal:run:answer',
+    contentRole: 'final',
+    text: 'Answer',
+  });
+  const mounted = chat.lastElementChild;
+  await runtime.ConversationUI.syncAnswerIdentity(session.id, 'run');
+  expect(chat.lastElementChild).toBe(mounted);
+  expect(mounted?.querySelectorAll('.msg-fork')).toHaveLength(1);
+  expect(chat.querySelector('[data-stream-id="tool-stream"] .msg-fork')).toBeNull();
+  mounted?.querySelector<HTMLButtonElement>('.msg-fork')?.click();
+  expect(open).toHaveBeenCalledWith(session.id, 'saved-answer');
 });

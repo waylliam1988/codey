@@ -62,24 +62,15 @@ it('keeps an interrupted stream notice visible even when it has no prose', () =>
   expect(host.querySelector('.reply-stream-note')).not.toBeNull();
 });
 
-it('orders message actions as copy, edit and fork and opens the message-local flow', () => {
-  const open = vi.fn();
-  runtime.ChatFork = { open };
+it('offers copy and edit on a user message without a fork action', () => {
   window.Messages.init({ getActiveId: () => 'chat', getRunningSessionId: () => null } as Parameters<
     typeof window.Messages.init
   >[0]);
   const host = document.createElement('div');
   window.Messages.append(host, { type: 'user', id: 'u', entryId: 'entry', text: 'Question' });
   const actions = [...host.querySelectorAll<HTMLButtonElement>('.message-actions button')];
-  expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual([
-    'Copy message',
-    'Edit message',
-    'Fork chat from here',
-  ]);
+  expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual(['Copy message', 'Edit message']);
   expect(actions[1].querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 21 21');
-  expect(actions[2].querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 16 16');
-  actions[2].click();
-  expect(open).toHaveBeenCalledWith('chat', 'entry');
 });
 
 it('edits a user message inline and submits the edited text', async () => {
@@ -191,6 +182,68 @@ it('adds the canonical fork action when a mounted streaming answer settles, with
   expect(actions.map((button) => button.getAttribute('aria-label'))).toEqual(['Copy message', 'Fork chat from here']);
   actions[1].click();
   expect(open).toHaveBeenCalledWith('chat', 'entry-final');
+});
+
+it.each([undefined, 'terminal:run:answer'])(
+  'attaches the committed identity after an empty tool-turn stream: %s',
+  (answerId) => {
+    const open = vi.fn();
+    runtime.ChatFork = { open };
+    window.Messages.init(editDeps());
+    const host = document.createElement('div');
+    window.Messages.append(host, { type: 'asst', runId: 'run', streamId: 'tool-turn', finalAnswer: false, text: '' });
+    window.Messages.append(host, {
+      type: 'asst',
+      runId: 'run',
+      streamId: 'answer-stream',
+      finalAnswer: false,
+      text: 'Answer',
+    });
+    window.Messages.updateReply(host, {
+      type: 'asst',
+      runId: 'run',
+      streamId: 'answer-stream',
+      finalAnswer: true,
+      answerId,
+      contentRole: 'final',
+      text: 'Answer',
+    });
+    const finalNode = host.querySelector('[data-stream-id="answer-stream"]');
+    const canonical = {
+      type: 'asst',
+      runId: 'run',
+      entryId: 'saved-answer',
+      finalAnswer: true,
+      answerId,
+      contentRole: 'final' as const,
+      text: 'Answer',
+    };
+    expect(window.Messages.updateAnswerIdentity(host, canonical)).toBe(true);
+    expect(window.Messages.updateAnswerIdentity(host, canonical)).toBe(true);
+    expect(host.querySelector('[data-stream-id="answer-stream"]')).toBe(finalNode);
+    expect(host.querySelector('[data-stream-id="tool-turn"] .msg-fork')).toBeNull();
+    expect(finalNode?.querySelectorAll('.msg-fork')).toHaveLength(1);
+    finalNode?.querySelector<HTMLButtonElement>('.msg-fork')?.click();
+    expect(open).toHaveBeenCalledWith('chat', 'saved-answer');
+  },
+);
+
+it('matches each settled answer by identity when a run has multiple answer nodes', () => {
+  window.Messages.init(editDeps());
+  const host = document.createElement('div');
+  for (const answerId of ['first', 'second'])
+    window.Messages.append(host, { type: 'asst', runId: 'run', answerId, text: answerId, finalAnswer: true });
+  expect(
+    window.Messages.updateAnswerIdentity(host, {
+      type: 'asst',
+      runId: 'run',
+      answerId: 'second',
+      entryId: 'entry-second',
+      finalAnswer: true,
+    }),
+  ).toBe(true);
+  expect(host.querySelector('[data-answer-id="first"] .msg-fork')).toBeNull();
+  expect(host.querySelector('[data-answer-id="second"]')?.getAttribute('data-entry-id')).toBe('entry-second');
 });
 
 it('opens the research report belonging to the message run', () => {

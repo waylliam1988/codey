@@ -306,6 +306,8 @@ def test_real_stream_and_queued_input_keep_one_answer_and_survive_reload(tmp_pat
                 expect(page.locator(".spinner:visible")).to_have_count(0)
                 expect(page.locator(".msg.user")).to_have_count(2)
                 expect(page.locator(".msg.asst")).to_have_count(2)
+                expect(page.locator(".msg.asst").last.get_by_role("button", name="Fork chat from here", exact=True)).to_have_count(1)
+                expect(page.locator(".msg.user").get_by_role("button", name="Fork chat from here", exact=True)).to_have_count(0)
                 assert len(requests) == 2 and not peer_errors
                 assert any(event["type"] == "reply_stream" and event["state"] == "partial" for event in events)
                 assert ctx.input_queue.list()[0]["state"] == "completed"
@@ -418,6 +420,8 @@ def test_real_question_card_resumes_the_native_run_and_opens_read_details(tmp_pa
                 expect(page.locator(".msg.asst")).to_contain_text("已完成只读文档检查")
                 expect(page.locator(".spinner:visible")).to_have_count(0)
                 detail = page.locator(".tool-disclosure").filter(has_text="pyproject.toml")
+                expect(page.locator(".msg.asst").last.get_by_role("button", name="Fork chat from here", exact=True)).to_have_count(1)
+                expect(page.locator(".msg.user").get_by_role("button", name="Fork chat from here", exact=True)).to_have_count(0)
                 page.locator(".process-block").filter(has=detail).locator(".process-summary").click()
                 detail.locator("summary").click()
                 expect(detail.locator("pre")).to_contain_text("[project]")

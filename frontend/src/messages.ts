@@ -61,6 +61,11 @@ export interface MessagesApi {
     if (!runtime.Process.append(chat, m, appendContent)) appendContent(chat, m);
   }
   function answerActions(node: HTMLElement, message: Message): void {
+    node.dataset.finalAnswer = String(message.finalAnswer !== false && message.contentRole !== 'commentary');
+    if (message.answerId) {
+      node.dataset.answerId = message.answerId;
+      node.dataset.answerPartIndex = String(message.answerPartIndex ?? 0);
+    }
     if (!message.entryId || message.finalAnswer === false) return;
     node.dataset.entryId = message.entryId;
     let actions = node.querySelector<HTMLElement>(':scope > .message-actions');
@@ -82,11 +87,15 @@ export interface MessagesApi {
     if (feedback) actions.append(feedback);
   }
   function updateAnswerIdentity(chat: HTMLElement, message: Message): boolean {
-    const candidates = Array.from(chat.querySelectorAll<HTMLElement>('.msg.asst')).filter((node) =>
-      message.streamId
-        ? node.dataset.streamId === message.streamId && node.dataset.runId === message.runId
-        : node.dataset.entryId === message.entryId || (!!message.runId && node.dataset.runId === message.runId),
-    );
+    const candidates = Array.from(chat.querySelectorAll<HTMLElement>('.msg.asst')).filter((node) => {
+      if (message.streamId) return node.dataset.streamId === message.streamId && node.dataset.runId === message.runId;
+      if (message.entryId && node.dataset.entryId === message.entryId) return true;
+      if (!message.runId || node.dataset.runId !== message.runId) return false;
+      return message.answerId
+        ? node.dataset.answerId === message.answerId &&
+            node.dataset.answerPartIndex === String(message.answerPartIndex ?? 0)
+        : node.dataset.finalAnswer === 'true';
+    });
     if (candidates.length !== 1) return false;
     answerActions(candidates[0], message);
     return true;
@@ -192,8 +201,6 @@ export interface MessagesApi {
         feedback = div.querySelector('.copy-feedback');
       if (copy) actions.append(copy);
       if (m.entryId) actions.append(edit);
-      if (m.entryId)
-        actions.append(iconButton('Fork chat from here', 'branch', () => runtime.ChatFork?.open(activeId, m.entryId)));
       if (feedback) actions.append(feedback);
       div.append(actions);
       chat.appendChild(div);

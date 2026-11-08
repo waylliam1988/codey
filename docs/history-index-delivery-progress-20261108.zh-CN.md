@@ -124,3 +124,16 @@
 ## 收尾
 
 所有生产功能已经接通，不留“仅后端完成、前端未接入”的半成品；生成资源及 runtime 清单一起交付。提交说明：`feat: deliver indexed history snapshots and versioned frontend visibility`。
+
+## 后续：刚完成回答的分支按钮（2026-11-08）
+
+- 用户反馈：最新回答刚完成时缺少分支图标，而旧回答存在；用户消息不需要分支按钮。
+- 根因已用新增回归在旧实现上复现：工具回合留下隐藏空流节点，最终回答的 canonical 投影不再带 streamId 时，原逻辑只按 runId 匹配，得到多个候选，拒绝补上 entryId 和按钮。
+- 回答节点保留 answerId、part index 和最终回答标记；同步已落库身份时按流 / entry / 回答身份匹配，缺少 answerId 的记录仅匹配同任务的最终回答。重复同步不添加重复按钮，不重建流节点，也不按正文猜测数据库 ID。
+- 移除用户消息的分支操作，保留复制与编辑；助手回答上的分支流程保持可用。
+- 补充隐藏工具流、没有 answerId、多回答身份以及 ConversationUI 与实际 Messages 渲染器的集成回归。首个回归在修改前失败，修改后通过。
+- 相关前端六文件：65 passed；真实 SSE 流式和工具问答浏览器：4 passed / 10 deselected；实际分支目标选择浏览器：4 passed。
+- 分支浏览器测试本身通过；Windows 测试退出提示临时 Git 对象只读导致 RAM 盘目录清理失败。已核对为本次测试目录 R:\codey-pytest\run-gmxanrff，随后递归清理被自动安全审查拒绝（blocked by policy），目录暂留；不绕过审查，不修改生产逻辑。
+- TypeScript typecheck、四文件 Biome 检查、相关 Python 测试 Ruff 通过；messages.ts 纳入无 Any AST 门禁。没有新增 Any/any 或类型忽略。
+- Vite 构建、本地前端发布及来源一致性检查通过，runtime 描述文件随资源更新；未改打包配置，未运行全量 pytest、覆盖率或安装包测试。
+- 提交说明：`fix: show fork actions on newly completed answers`。
