@@ -50,19 +50,20 @@ class PageProvider:
     "你帮我上网看看福州有什么好吃的", f"请打开 {URL} 看看是干嘛的", f"{URL}\n帮我看看这个网站",
     f"Please open {URL}", "只检查代码，不要修改，请上网查官方文档", "不要打开网页，请上网搜索文档",
 ])
-def test_explicit_web_actions_authorize_ordinary_chat(task: str) -> None:
+def test_chat_web_permission_does_not_imply_mandatory_reading(task: str) -> None:
     auth = derive_entry_auth({"intent": "chat", "task": task})
     assert "web.read" in auth.requested_capabilities
-    assert auth.sources_open_required
+    assert not auth.sources_open_required
 
 
 @pytest.mark.parametrize("task", [
     URL, f"解释这段代码：`open('{URL}')`", f"```python\nopen_url('{URL}')\n```", "查一下本地函数定义",
     "不要上网看看", f"不要打开 {URL}", f"Don't open {URL}",
 ])
-def test_examples_and_negations_do_not_authorize_network(task: str) -> None:
+def test_examples_and_negations_do_not_create_required_urls(task: str) -> None:
     auth = derive_entry_auth({"intent": "chat", "task": task})
-    assert "web.read" not in auth.requested_capabilities
+    assert "web.read" in auth.requested_capabilities
+    assert not auth.sources_open_required
     assert not explicit_web_intent(task).urls
 
 

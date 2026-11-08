@@ -48,15 +48,18 @@ def analyze(directory: Path, case: str) -> JsonObject:
     return {"scope": "production_ordinary_chat_original_prompt", "case": case,
             "task": TASKS[case], "acquisition_ok": acquisition_ok,
             "stop_reason": terminal.get("stop_reason"), "summary": terminal.get("summary"),
-            "searches": searches, "successful_opens": successful, "failed_opens": failures,
-            "delivered_page_bodies": bodies,
+            "searches": [row for row in searches], "successful_opens": [row for row in successful],
+            "failed_opens": [row for row in failures], "delivered_page_bodies": [body for body in bodies],
             "answer_review_required": True,
             "limits": "One original-prompt trial. Acquisition checks do not certify natural-language claims or reliability."}
 
 
-def run(directory: Path, case: str, timeout: float) -> JsonObject:
+def run(directory: Path, case: str, timeout: float, *, state_home: Path | None = None,
+        session_id: str = "") -> JsonObject:
     target = select_target("gemma", timeout, "http://127.0.0.1:5001/v1")
     manifest = {"task": TASKS[case], "model": target.model, "case": case,
+                "temperature": target.temperature, "max_turns": 8, "timeout": timeout,
+                "session_id": session_id,
                 "git_head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()}
     (directory / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -75,20 +78,50 @@ def run(directory: Path, case: str, timeout: float) -> JsonObject:
         attempts.record_api_generations(directory / "provider.jsonl"),
     ):
         run_headless(HeadlessRequest(None, TASKS[case], intent="chat", provider_id="local", max_turns=8,
-            state_home=directory / "state", model_selection={"model": target.model, "base_url": target.base_url},
+            state_home=state_home if state_home is not None else directory / "state", session_id=session_id,
+            model_selection={"model": target.model, "base_url": target.base_url},
             requested_capabilities=(), project_changes_required=False), emit_jsonl=observe, connect_provider=connect)
     return analyze(directory, case)
 
 
+def conversation_history_present(directory: Path, prior_task: str, prior_answer: str) -> bool:
+    """Check the recorded next request, without injecting conversation history."""
+    for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines():
+        row = decode_json_object(json.loads(line))
+        if row.get("type") == "request":
+            payload = json.dumps(row["payload"], ensure_ascii=False)
+            return all(json.dumps(text, ensure_ascii=False)[1:-1] in payload for text in (prior_task, prior_answer))
+    return False
+
+
+def run_conversation(directory: Path, timeout: float) -> JsonObject:
+    """Submit two user turns to the existing production conversation lifecycle."""
+    reports: list[JsonObject] = []
+    for case in ("food", "nearby"):
+        turn_dir = directory / case
+        turn_dir.mkdir()
+        report = run(turn_dir, case, timeout, state_home=directory / "state", session_id="original-food-nearby")
+        (turn_dir / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        reports.append(report)
+    answer = reports[0].get("summary")
+    history_present = isinstance(answer, str) and bool(answer) and conversation_history_present(
+        directory / "nearby", TASKS["food"], answer)
+    return {"scope": "production_same_conversation_original_prompts", "turns": [row for row in reports],
+            "prior_task_and_answer_in_next_request": history_present,
+            "acquisition_ok": history_present and all(row["acquisition_ok"] is True for row in reports),
+            "answer_review_required": True,
+            "limits": "Two user turns, one state home and conversation id; no injected history or semantic scoring."}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--case", choices=tuple(TASKS), required=True)
+    parser.add_argument("--case", choices=(*TASKS, "conversation"), required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=180)
     args = parser.parse_args()
     directory = args.run_dir.resolve()
     directory.mkdir(parents=True, exist_ok=False)
-    report = run(directory, args.case, args.timeout)
+    report = run_conversation(directory, args.timeout) if args.case == "conversation" else run(directory, args.case, args.timeout)
     (directory / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=True), flush=True)
     return 0 if report["acquisition_ok"] else 1
