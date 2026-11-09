@@ -154,6 +154,7 @@ class BrowserSearchProvider:
         browser_path: str | None = None,
         launch: bool = True,
         isolated: bool = True,
+        require_existing_session: bool = False,
         bring_to_front: bool = False,
         headless: bool = False,
     ) -> None:
@@ -185,6 +186,7 @@ class BrowserSearchProvider:
         self.browser_path = browser_path
         self.launch = launch
         self.isolated = isolated
+        self.require_existing_session = bool(require_existing_session)
         self.bring_to_front = bring_to_front
         self.headless = headless
         self._session: Session | None = None
@@ -213,11 +215,12 @@ class BrowserSearchProvider:
             target_reuse or "",
             port=self.cdp_port,
             profile=self.profile_dir,
-            open_if_missing=self.launch,
+            open_if_missing=self.launch and not self.require_existing_session,
             bring_to_front=False,
             isolated=self.isolated,
             fresh_tab=False,
             browser_path=self.browser_path,
+            allow_new_page=True,
         )
         return self._session
 

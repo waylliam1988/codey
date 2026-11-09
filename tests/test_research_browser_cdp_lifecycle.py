@@ -39,7 +39,13 @@ def test_task_close_releases_task_pages_and_keeps_borrowed_browser(
             user_page = browser.contexts[0].pages[0]
             user_page.set_content("<article>User page must remain</article>")
             before = len(browser.contexts[0].pages)
-            browser_source = BrowserSearchProvider(headless=False, isolated=False, cdp_port=port)
+            browser_source = BrowserSearchProvider(
+                headless=False,
+                isolated=False,
+                launch=False,
+                require_existing_session=True,
+                cdp_port=port,
+            )
             provider = WebSourceProvider(browser_factory=lambda: browser_source)
             monkeypatch.setattr("codey.research.web_sources.fetch_http_document", lambda url: with_attempt(
                 {"status": "error", "url": url, "failure_code": "access_restricted", "http_status": 403,

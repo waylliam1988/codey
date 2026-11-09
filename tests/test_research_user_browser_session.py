@@ -8,7 +8,7 @@ def test_existing_session_mode_connects_existing_cdp_and_can_create_task_page(mo
 
     captured: dict[str, object] = {}
 
-    def open_page(**kwargs: object) -> object:
+    def open_page(*args: object, **kwargs: object) -> object:
         captured.update(kwargs)
         return object()
 

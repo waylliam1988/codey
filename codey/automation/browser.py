@@ -631,11 +631,14 @@ def open_chat_page(
     isolated: bool = False,
     fresh_tab: bool = False,
     browser_path: str | Path | None = None,
+    allow_new_page: bool | None = None,
 ) -> Session:
     """Return a Playwright session attached to a matching provider tab."""
     cancellation.check()
     if fresh_tab and not open_if_missing:
         raise RuntimeError("fresh provider tabs require open_if_missing=True")
+    if allow_new_page is None:
+        allow_new_page = open_if_missing
     endpoint = _ensure_cdp_endpoint(
         preferred=port,
         profile=profile,
@@ -672,7 +675,7 @@ def open_chat_page(
                     break
 
         if page is None:
-            if not open_if_missing:
+            if not allow_new_page:
                 raise RuntimeError(f"no existing provider tab matched {url_contains}")
             if len(browser.contexts) > 1:
                 raise RuntimeError("cannot create an unbound page when multiple browser contexts exist")

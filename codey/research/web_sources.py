@@ -3,12 +3,24 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from codey.research.source_acquisition import combine_acquisitions, with_attempt
 from codey.research.source_download import fetch_http_document, finish_pdf_download
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject
+
+
+@dataclass(frozen=True)
+class BrowserSessionConfig:
+    """Explicit browser-session policy for HTTP fallback rendering."""
+
+    cdp_port: int = 0
+    profile_dir: Path | None = None
+    require_existing: bool = False
+    bring_to_front: bool = False
 
 
 class BrowserSource(Protocol):
@@ -19,10 +31,23 @@ class BrowserSource(Protocol):
     def close(self) -> None: ...
 
 
-def _background_browser() -> BrowserSource:
-    from codey.research.browser_search import BrowserSearchProvider
+def _background_browser(config: BrowserSessionConfig | None = None) -> BrowserSource:
+    from codey.research.browser_search import (
+        RESEARCH_CDP_PORT,
+        RESEARCH_PROFILE,
+        BrowserSearchProvider,
+    )
 
-    return BrowserSearchProvider(headless=False, isolated=False)
+    if config is None:
+        return BrowserSearchProvider(headless=False, isolated=False)
+    return BrowserSearchProvider(
+        headless=False,
+        isolated=False,
+        cdp_port=config.cdp_port or RESEARCH_CDP_PORT,
+        profile_dir=config.profile_dir or RESEARCH_PROFILE,
+        require_existing_session=config.require_existing,
+        bring_to_front=config.bring_to_front,
+    )
 
 
 def _should_try_browser(page: dict[str, object]) -> bool:
@@ -43,13 +68,22 @@ def _should_try_browser(page: dict[str, object]) -> bool:
 class WebSourceProvider:
     name = "http_browser"
 
-    def __init__(self, *, browser_factory: Callable[[], BrowserSource] = _background_browser) -> None:
+    def __init__(
+        self,
+        *,
+        browser_factory: Callable[[], BrowserSource] = _background_browser,
+        browser_session: BrowserSessionConfig | None = None,
+    ) -> None:
         self._browser_factory = browser_factory
+        self.browser_session = browser_session
         self._browser: BrowserSource | None = None
 
     def _browser_source(self) -> BrowserSource:
         if self._browser is None:
-            self._browser = self._browser_factory()
+            if self.browser_session is not None and self._browser_factory is _background_browser:
+                self._browser = _background_browser(self.browser_session)
+            else:
+                self._browser = self._browser_factory()
         return self._browser
 
     def search(self, query: str, *, limit: int = 8) -> list[JsonObject]:
