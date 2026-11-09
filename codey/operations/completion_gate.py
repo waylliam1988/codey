@@ -415,7 +415,7 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     requested_read = requested_output_read_check(session, context.task or session.task_text)
     if requested_read is not None:
         checks.append(requested_read)
-    checks.extend(source_requirement_checks(session, context))
+    checks.extend(source_requirement_checks(session, context, report=report))
     from codey.operations.research_completion_checks import investigation_attempt_checks, knowledge_reference_checks
 
     checks.extend(knowledge_reference_checks(session, context))

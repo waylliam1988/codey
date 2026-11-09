@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from typing import cast
+from uuid import uuid4
 
 from playwright.sync_api import ElementHandle, Error, Page
 
@@ -42,6 +43,7 @@ class BrowserInteraction:
     def __init__(self, provider: ResumableBrowserSearchProvider) -> None:
         self.provider = provider
         self._binding: BrowserTargetBinding | None = None
+        self._reference_scope = uuid4().hex
         self._generation = 0
         self._refs: dict[str, _ElementRef] = {}
 
@@ -118,7 +120,7 @@ class BrowserInteraction:
             if len(elements) >= max(1, min(max_elements, MAX_SNAPSHOT_ELEMENTS)):
                 elements_truncated = True
                 break
-            ref = f"g{self._generation}e{len(elements) + 1}"
+            ref = f"b{self._reference_scope}g{self._generation}e{len(elements) + 1}"
             self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url)
             elements.append({"ref": ref, "role": role, "name": name,
                              **{key: metadata[key] for key in ("value", "disabled", "checked")}})

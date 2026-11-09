@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import re
 from html.parser import HTMLParser
+
+from codey.types.json_value import decode_json_object
 
 _SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head"}
 _BLOCK_TAGS = {
@@ -191,9 +194,27 @@ def _fetch_page_failure_kind(text: str) -> str:
     return "page_blank"
 
 def _looks_like_short_fetch_challenge(normalized_text: str) -> bool:
+    if _is_json_error_document(normalized_text):
+        return True
     if len(normalized_text) > _FETCH_CHALLENGE_TEXT_MAX_CHARS:
         return False
     return any(marker in normalized_text for marker in _FETCH_PAGE_ERROR_MARKERS)
+
+def _is_json_error_document(text: str) -> bool:
+    """Recognize a whole failure envelope; prose quoting one remains source text."""
+    if not text.startswith("{"):
+        return False
+    try:
+        envelope = decode_json_object(json.loads(text))
+    except ValueError:
+        return False
+    if not set(envelope) <= {"error", "message", "code", "status", "request_id", "trace_id"}:
+        return False
+    error = envelope.get("error")
+    return bool(error.strip()) if isinstance(error, str) else (
+        isinstance(error, dict) and bool(error.get("message") or error.get("code"))
+    )
+
 
 def _clean_space(text: str) -> str:
     return " ".join((text or "").split())

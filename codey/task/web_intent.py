@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
 _CODE = re.compile(r"```[\s\S]*?```|`[^`\n]*`")
-_URL = re.compile(r"https?://[^\s<>`\"'，。；！？（）\[\]]+", re.IGNORECASE)
+_URL = re.compile(r"https?://[^\s<>`\"'、，。；！？（）\[\]]+", re.IGNORECASE)
 _CLAUSES = re.compile(r"[，。；;!?！？\n]|\.\s+")
 _ACTION = re.compile(
     r"web_search|open_url|上网|联网查询|在线查找|查网页|查资料|官方文档|浏览网页|读取网页|"

@@ -147,6 +147,18 @@ def test_ref_ids_are_not_reused_and_snapshots_report_truncation(
     assert interaction.click(old_ref).observation["delivery"] == "not_delivered"
 
 
+def test_new_controller_cannot_reuse_reference_from_previous_controller(
+    browser_fixture: tuple[ResumableBrowserSearchProvider, BrowserInteraction],
+) -> None:
+    provider, interaction = browser_fixture
+    _install_page(provider, "<button>Original control</button>")
+    old_ref = _ref(interaction, "button")
+    replacement = BrowserInteraction(provider)
+    new_ref = _ref(replacement, "button")
+    assert old_ref != new_ref
+    assert replacement.click(old_ref).observation["delivery"] == "not_delivered"
+
+
 def test_wait_requires_visible_condition_and_propagates_cancel(
     browser_fixture: tuple[ResumableBrowserSearchProvider, BrowserInteraction],
 ) -> None:

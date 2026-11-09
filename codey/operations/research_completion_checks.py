@@ -67,7 +67,8 @@ def knowledge_reference_checks(session: TaskSession, context: object = None) -> 
     return [CompletionCheck("knowledge_versions", CHECK_PASS)]
 
 
-def source_requirement_checks(session: TaskSession, context: object = None) -> list[CompletionCheck]:
+def source_requirement_checks(session: TaskSession, context: object = None, *,
+                              report: ResearchReport | None = None) -> list[CompletionCheck]:
     """普通联网任务的来源要求：只检查任务要求的来源是否实际打开。"""
     context = CompletionContext.from_value(context)
     from codey.operations.source_gaps import source_read_required, task_source_coverage
@@ -78,6 +79,14 @@ def source_requirement_checks(session: TaskSession, context: object = None) -> l
     if ledger is None and not session.required_source_urls:
         return [CompletionCheck("research_sources_opened", CHECK_FAIL, "research_ledger_missing")]
     coverage = task_source_coverage(session, ledger)
+    from codey.research.answer_report import AnswerReport
+
+    delivered_gap = (isinstance(report, AnswerReport) and report.state in {"partial", "unresolved"}
+                     and coverage.unavailable)
+    if delivered_gap:
+        # The frozen whole-answer report accounts for failed attempts. It does
+        # not certify the legacy requirement that a source was actually read.
+        return []
     row = completion_check(
         "research_sources_opened",
         CHECK_PASS if coverage.satisfied else CHECK_NOT_RUN,

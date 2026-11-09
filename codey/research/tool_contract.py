@@ -133,12 +133,12 @@ TOOL_CONTRACTS = {
     ),
     "browser_click": ToolContract(
         name="browser_click", input_schema=object_schema({"ref": {"type": "string"}}, "ref"),
-        example='{"tool":"browser_click","args":{"ref":"g1e1"}}',
+        example='{"tool":"browser_click","args":{"ref":"<ref from latest browser_snapshot>"}}',
         description="click an element ref from the latest browser_snapshot once, then observe the resulting page state",
     ),
     "browser_fill": ToolContract(
         name="browser_fill", input_schema=object_schema({"ref": {"type": "string"}, "value": {"type": "string"}}, "ref", "value"),
-        example='{"tool":"browser_fill","args":{"ref":"g1e1","value":"福州小吃"}}',
+        example='{"tool":"browser_fill","args":{"ref":"<ref from latest browser_snapshot>","value":"福州小吃"}}',
         description="fill a textbox ref from the latest browser_snapshot and verify its value; stale refs are rejected",
     ),
     "browser_scroll": ToolContract(

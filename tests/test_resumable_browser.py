@@ -16,10 +16,11 @@ from tests.support.real_cdp import chromium_executable
 
 class _ChallengeHandler(BaseHTTPRequestHandler):
     requests = 0
+    body = b"<html><body>Verify you are human</body></html>"
 
     def do_GET(self) -> None:  # noqa: N802
         type(self).requests += 1
-        body = b"<html><body>Verify you are human</body></html>"
+        body = type(self).body
         self.send_response(403)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -30,9 +31,15 @@ class _ChallengeHandler(BaseHTTPRequestHandler):
         return
 
 
+@pytest.mark.parametrize("body", [
+    b"<html><body>Verify you are human</body></html>",
+    '{"error":{"message":"您当前请求存在异常，暂时限制本次访问。","code":40362}}'.encode(),
+])
 def test_research_provider_retains_challenge_page_and_resumes_in_place(
     monkeypatch: pytest.MonkeyPatch,
+    body: bytes,
 ) -> None:
+    monkeypatch.setattr(_ChallengeHandler, "body", body)
     server = HTTPServer(("127.0.0.1", 0), _ChallengeHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -50,6 +57,9 @@ def test_research_provider_retains_challenge_page_and_resumes_in_place(
     try:
         failed = provider.fetch(url)
         assert failed["status"] == "error"
+        unresolved = provider.resume_fetch()
+        assert unresolved["status"] == "error"
+        assert unresolved["failure_code"] == "page_unavailable"
         page_id = id(cast(Page, provider._fetch_page))
 
         def user_resolves_challenge() -> int:

@@ -14,7 +14,7 @@ from codey.research.browser_search import (
     _requires_login,
     _search_browser_call,
 )
-from codey.research.extract import _MAX_PAGE_CHARS, _usable_fetch_page_text, extract_title
+from codey.research.extract import _MAX_PAGE_CHARS, _fetch_page_failure_kind, _usable_fetch_page_text, extract_title
 from codey.research.source_acquisition import with_attempt
 
 
@@ -75,10 +75,11 @@ class ResumableBrowserSearchProvider(BrowserSearchProvider):
                 delivery="confirmed",
             )
         if not _usable_fetch_page_text(text):
+            kind = _fetch_page_failure_kind(text)
             return source_download._fetch_failure(
                 url,
-                "page had no usable visible content after the current-page observation",
-                code="page_not_loaded",
+                f"page had no usable visible content after the current-page observation: {kind}",
+                code="page_unavailable" if kind == "page_unavailable" else "page_not_loaded",
                 delivery="confirmed",
             )
         truncated = len(text) > _MAX_PAGE_CHARS

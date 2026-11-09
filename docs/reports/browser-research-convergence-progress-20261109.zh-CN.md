@@ -130,3 +130,24 @@
 - 共用一个 Chromium 路径/临时 CDP 启动测试 helper，删除三个测试文件里的重复查找。正文截断上限引用 `extract.py` 原常量，移除适配层重复字面量。
 - 相关真实浏览器、会话、恢复和失败页回归 `57 passed`。KoboldCpp `batch9-cdp-diagnostic/summary.json` `passed=true / done`，经过借用 CDP 浏览器的生产 provider/kernel，交互、同页 capture 与 eN 答案正确完成。
 - Ruff、Mypy、Pyrefly、ty 和 kernel precision gate 通过，改动文件无显式 `Any` 或新豁免。首个 Mypy 提示截断常量的隐式转导出，已改为从真正 owner `extract.py` 导入。
+
+### 实验阶段接续记录（进行中，未作为默认策略通过）
+
+- 当前已提交 HEAD 为 `dbad9a1e`。72 次自然任务矩阵使用固定 cases/gate hash 和同一生产 HEAD；矩阵运行期间不修改其生产输入。时间与 token 只记录，不参与淘汰。
+- 连接中断时保留34份完整结果；只将未完成的 `research_expand_exception-2-candidate` 目录移至同根的 `*-interrupted`，记录 interruption.json 后接续。随后该单项在模型调用前触发 Local selection admission 错误；保留 process.log 和 durable.sqlite3，不能把它计作模型质量失败。当前从其持久化 selection 验证相同连接已成功，尚无证据将一次失败归为确定性生产缺陷；完成矩阵后单独复核。
+- 已完成样本明确发现候选工具默认开放的风险：模型读取 DOM 新值却未 browser_read，以旧 `[e1]` 引用新值；季节选择还出现用夏季83克回答冬季的错误。不能用“看到新值”认定引用正确。目前不合入默认工具接线。
+- 真实网站 acquisition 对照已经完成7站点 × 两种策略 × 3次（42次），位于 `.e2e-artifacts/browser-research-next/real-sites-repeat/`。头条 HTTP 无正文而浏览器稳定取得3722字符；两条知乎冷会话仍403；搜狐、Python/Playwright 官方文档两侧均可读；PDF保留HTTP字节路径且三轮均成功。此前独立单轮 PDF TLS EOF 作为瞬时失败保留，不算浏览器收益。
+- 已补充两项确定性失败用例，待冻结矩阵完成再修生产：重新构造控制器复用 `g1e1` 引用；知乎 JSON403 文档在 resume 时被误当正文。两者须修根因、跑相关真实浏览器与 KoboldCpp 诊断后独立提交。
+- 新实验脚本：browser_research_cases / browser_research_matrix / browser_site_comparison / browser_site_model_gate；最后一个24次真实网站+模型对照尚未开始，避免并发争用 KoboldCpp。快照/compact/delta/等待默认值及研究指导实验也尚未完成。
+
+### 批次 10：矩阵暴露的确定性缺陷
+
+- 固定72个矩阵位置已全部结束。71次进入模型，一次在准入阶段失败；原失败和中断痕迹保留，另建 `research_expand_exception-2-candidate-admission-recheck` 在相同生产 HEAD/gate/cases 下复核成功，达到72份可审阅模型结果。准入失败没有复现，当前证据不足以认定根因；不将其混作模型失败或删除。
+- 默认工具开放未通过：四个动态题两侧均0/3达到数值及实际 passage 的机械筛查；候选三种展开题看到了新值，却仍引用没有新值的 e1；冬季题两次误答夏季83克，一次如实不足。资格例外题虽通过21/9数字筛查，人工核对仍遗漏危险作业例外。控制题两侧各12/12通过。后续可实验工作流指导，不把本次开放直接设为默认。
+- 修复控制器重建重号：ref 带独立 UUID scope 和观察代次；复制旧 ref 不能命中新控制器节点，不按同名节点恢复。工具示例不再诱导猜测 g1e1。UUID ref 仍需模型照抄；一次诊断出现截短 ref，生产正确拒绝且未误点，作为模型边界保留。
+- 共享可读性识别器拒绝完整 JSON error envelope，不依赖知乎域名或错误码。普通正文引用错误示例、带有效数据的 JSON 不受影响。resume 使用同一失败分类；同页解决验证后仍可读取，HTTP请求保持一次。
+- 实机新增发现并修复 Research 完成冲突：已失败的明确必需 URL 配合合法 partial/unresolved whole-answer 可以交付缺口报告；不再重复要求正文成功。未尝试 URL、策略拒绝、丢失捕获、answered 声明仍不满足此例外；显式 legacy `research_sources_opened` 成功要求仍不被绕过。失败不增加 opened sources/passages，也不生成该成功检查。
+- 中文枚举诊断又复现 URL 意图解析遗漏 `、`：其后的工具名被吞进 required URL，造成无法满足的来源要求。现将顿号作为 URL 文本边界，沿用同一 intent 解析器。
+- 真实浏览器/获取相关73项通过；因实机暴露完成合同冲突，扩大到 whole-answer 发布/冷恢复、来源要求与失败闭环67项通过；新增顿号及入口回归29项通过。新测试曾误用 SourceVersion.final_url，类型检查和测试共同指出其正确字段为 url，已修测试，未向生产添加别名字段。
+- KoboldCpp `batch10-failure-contracts-d/summary.json` `passed=true`：新 ref 的填/点/等待/滚动/同页读取完整通过；JSON403经 snapshot、browser_read 后仍失败，没有任何原文 passage，最终合法 unresolved 交付。a/b/c 原始失败保留，其中分别暴露完成冲突、模型步骤遗漏和顿号解析问题，未覆写失败记录。
+- Ruff、Mypy、Pyrefly、ty、kernel precision gate 通过；本批生产与新增测试无显式 Any 或新增类型豁免。默认工具、获取策略、快照和研究指导未改。没有运行完整pytest、覆盖率或安装包测试。
