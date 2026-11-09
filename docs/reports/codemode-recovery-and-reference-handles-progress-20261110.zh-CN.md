@@ -72,7 +72,7 @@
 - 专用 gate：脚本模式和 KoboldCpp 均完成，`source_fetches=1`、`codemode_open_url_children=1`、`repair_replayed=true`。
 - 静态检查：相关 Python 文件 ruff 通过；修改生产模块的 mypy strict 检查通过。
 - 追加确定性修复：repair token 的摘要和 metadata 显式绑定 `session_id`；跨 session 复制原始内存回执后提交同一 token 会被拒绝。真实运行中若 sink 已提供 session ID，kernel 自动使用该身份；不新增回执存储。
-- commit：`6d06d9bc fix: preserve CodeMode repair token during normalization`；session 绑定修复待提交。
+- commits：`6d06d9bc fix: preserve CodeMode repair token during normalization`、`37909022 fix: bind CodeMode repairs to their session`。
 
 ## 第五至第六批记录
 
