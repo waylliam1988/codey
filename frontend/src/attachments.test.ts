@@ -30,11 +30,19 @@ beforeEach(() => {
   vi.stubGlobal('URL', { createObjectURL: () => 'blob:preview', revokeObjectURL: vi.fn() });
 });
 
+it('collapses an empty attachment area without a file picker or attach button', () => {
+  const files = setup();
+  expect(files.element.hidden).toBe(true);
+  expect(document.querySelector('input[type="file"]')).toBeNull();
+  expect(document.body.textContent).not.toContain('Attach files');
+});
+
 it('keeps successful attachment UI quiet and persists only opaque references', async () => {
   const files = setup();
   await files.add([new File(['text'], 'notes.txt', { type: 'text/plain' })]);
   await tick();
   expect(files.refs()).toEqual([ref]);
+  expect(files.element.hidden).toBe(false);
   expect(files.blocked()).toBe(false);
   expect(document.querySelector('.attachment-error')?.hasAttribute('hidden')).toBe(true);
   expect(document.body.textContent).not.toContain('Attachment pending');
@@ -73,10 +81,12 @@ it('preserves a failed upload until retry or removal', async () => {
   await files.add([new File(['text'], 'notes.txt')]);
   await tick();
   expect(files.blocked()).toBe(true);
+  expect(files.element.hidden).toBe(false);
   expect(document.querySelector('.attachment-error')?.textContent).toBe('Upload failed');
   expect(document.body.textContent).toContain('Retry');
   (document.querySelector('[aria-label="Remove notes.txt"]') as HTMLButtonElement).click();
   expect(files.has()).toBe(false);
+  expect(files.element.hidden).toBe(true);
   expect(document.querySelector('.attachment-error')?.hasAttribute('hidden')).toBe(true);
 });
 
@@ -104,8 +114,31 @@ it('claims only the submitted references and can restore a rejected admission', 
   await tick();
   files.claim('alpha', [ref]);
   expect(files.has()).toBe(false);
+  expect(files.element.hidden).toBe(true);
   files.restore('alpha', [ref]);
   expect(files.refs()).toEqual([ref]);
+  expect(files.element.hidden).toBe(false);
+});
+
+it('shows validation errors even without attachments and collapses in a clean chat', async () => {
+  const files = setup();
+  await files.add([new File([], 'empty.png', { type: 'image/png' })]);
+  expect(files.has()).toBe(false);
+  expect(files.element.hidden).toBe(false);
+  expect(document.querySelector('.attachment-error')?.textContent).toContain('1 byte');
+  files.setSession('beta');
+  expect(files.element.hidden).toBe(true);
+});
+
+it('clears drag highlighting when a file drag ends without a readable file', () => {
+  setup();
+  const box = document.querySelector('.composer-box')!;
+  const drag = new Event('dragover', { cancelable: true });
+  Object.defineProperty(drag, 'dataTransfer', { value: { types: ['Files'] } });
+  box.dispatchEvent(drag);
+  expect(box.classList.contains('attachment-dragging')).toBe(true);
+  box.dispatchEvent(new Event('drop'));
+  expect(box.classList.contains('attachment-dragging')).toBe(false);
 });
 
 it('ignores stale capability replies after model changes', async () => {

@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+- Remove the `Attach files` button and collapse the empty attachment area to
+  restore the compact composer. Keep file drop, image paste, previews, removal,
+  upload retry, saved drafts and model image capability checks. Clear stale drag
+  highlighting when a drop contains no readable files.
+
 - Retry failed durable claim releases with their original attempt tokens; trip
   the scheduler circuit after repeated storage errors and resume cleanup before
   dispatch. Finish rejected-claim cleanup during shutdown. Preserve answered
@@ -15,7 +20,7 @@
   selection and recursive JSON contracts.
   See the [Python 3.12 investigation](docs/reports/ci-42371356637-python312.zh-CN.md).
 
-- Add composer file selection, drag/drop and image paste with persistent,
+- Add composer drag/drop and image paste with persistent,
   session-scoped attachments, previews/removal and error-only feedback. Deliver
   real file contents and supported image inputs through durable submissions and
   Steer; preserve files on lost replies and explicit recovery. Keep one Send/Stop

@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from playwright.sync_api import expect
+from playwright.sync_api import Page, expect
 
 from codey.app import attachment_routes, input_queue_routes
 from codey.runtime.core.api_selection import ApiRunSelection
@@ -33,8 +33,18 @@ def routes(page):
     return ctx
 
 
-def attach(page, name="notes.txt", data=b"Retain the API response shape.", mime="text/plain"):
-    page.locator('.composer-attachments input[type=file]').set_input_files({"name": name, "mimeType": mime, "buffer": data})
+def attach(
+    page: Page,
+    name: str = "notes.txt",
+    data: bytes = b"Retain the API response shape.",
+    mime: str = "text/plain",
+) -> None:
+    page.locator('.composer-box').evaluate('''(node, file) => {
+      const data = new DataTransfer();
+      data.items.add(new File([new Uint8Array(file.bytes)], file.name, {type: file.mime}));
+      node.dispatchEvent(new DragEvent('dragover', {bubbles: true, cancelable: true, dataTransfer: data}));
+      node.dispatchEvent(new DragEvent('drop', {bubbles: true, cancelable: true, dataTransfer: data}));
+    }''', {"name": name, "mime": mime, "bytes": list(data)})
     expect(page.locator('.composer-attachments .spinner')).to_have_count(0)
 
 
@@ -44,6 +54,57 @@ def quiet(page):
     assert "Attachment pending" not in page.locator('body').inner_text()
     assert "Current task ·" not in page.locator('body').inner_text()
     assert "Steering applies to the current task" not in page.locator('body').inner_text()
+
+
+def composer_size(page: Page) -> tuple[float, float]:
+    bounds = page.locator('.composer-box').bounding_box()
+    assert bounds is not None
+    return bounds["width"], bounds["height"]
+
+
+@pytest.mark.parametrize("width", [1280, 480])
+def test_empty_composer_matches_layout_without_attachment_row_and_collapses_after_removal(page: Page, width: int) -> None:
+    routes(page)
+    page.set_viewport_size({"width": width, "height": 800})
+    area = page.locator('.composer-attachments')
+    expect(page.get_by_role('button', name='Attach files', exact=True)).to_have_count(0)
+    expect(page.locator('input[type=file]')).to_have_count(0)
+    expect(area).to_be_hidden()
+    empty_size = composer_size(page)
+    # Measure the same input without the new row, rather than hard-coding font/platform pixels.
+    area.evaluate("node => node.remove()")
+    assert composer_size(page) == empty_size
+    page.reload()
+    expect(page.locator('#task')).to_be_enabled()
+    assert composer_size(page) == empty_size
+    evidence = Path('.e2e-artifacts/attachments-compact-ui')
+    evidence.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(evidence / f'empty-{width}.png'))
+
+    attach(page, 'screen.png', PNG, 'image/png')
+    expect(area).to_be_visible()
+    expect(area.locator('img')).to_be_visible()
+    expect(area).to_contain_text('screen.png')
+    expect(area.locator('.attachment-error')).to_have_text(attachment_routes.IMAGE_UNSUPPORTED)
+    assert composer_size(page)[0] == empty_size[0]
+    assert composer_size(page)[1] > empty_size[1]
+    expect(page.locator('.composer-box.attachment-dragging')).to_have_count(0)
+    page.reload()
+    expect(area.locator('img')).to_be_visible()
+    expect(area.locator('.attachment-error')).to_have_text(attachment_routes.IMAGE_UNSUPPORTED)
+    page.screenshot(path=str(evidence / f'image-{width}.png'))
+    page.get_by_role('button', name='Remove screen.png', exact=True).click()
+    expect(area).to_be_hidden()
+    assert composer_size(page) == empty_size
+    page.screenshot(path=str(evidence / f'removed-{width}.png'))
+
+
+def test_empty_attachment_validation_error_stays_visible_without_a_file_chip(page: Page) -> None:
+    routes(page)
+    attach(page, 'empty.png', b'', 'image/png')
+    expect(page.locator('.composer-attachments')).to_be_visible()
+    expect(page.locator('.composer-attachments .attachment-chip')).to_have_count(0)
+    expect(page.locator('.attachment-error')).to_have_text('File must contain between 1 byte and 2 MiB.')
 
 
 @pytest.mark.parametrize("width", [1280, 480])

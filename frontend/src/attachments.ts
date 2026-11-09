@@ -23,7 +23,6 @@ export class ComposerAttachments {
   private session = '';
   private list = document.createElement('div');
   private error = document.createElement('div');
-  private picker = document.createElement('input');
   private notice = '';
   private capabilityKey = '';
   private capability: boolean | undefined;
@@ -32,23 +31,12 @@ export class ComposerAttachments {
 
   constructor(private changed: () => void) {
     this.element.className = 'composer-attachments';
-    const add = document.createElement('button');
-    add.type = 'button';
-    add.className = 'link-btn attachment-add';
-    add.textContent = 'Attach files';
-    this.picker.type = 'file';
-    this.picker.multiple = true;
-    this.picker.hidden = true;
-    add.onclick = () => this.picker.click();
-    this.picker.onchange = () => {
-      void this.add([...(this.picker.files || [])]);
-      this.picker.value = '';
-    };
+    this.element.hidden = true;
     this.list.className = 'attachment-list';
     this.error.className = 'attachment-error';
     this.error.role = 'alert';
     this.error.hidden = true;
-    this.element.append(add, this.picker, this.list, this.error);
+    this.element.append(this.list, this.error);
     try {
       const entries = JSON.parse(localStorage.getItem(STORAGE) || '[]');
       if (!Array.isArray(entries)) throw new Error('Invalid attachment drafts');
@@ -77,9 +65,9 @@ export class ComposerAttachments {
       if (!box.contains(event.relatedTarget as Node)) box.classList.remove('attachment-dragging');
     });
     box.addEventListener('drop', (event) => {
+      box.classList.remove('attachment-dragging');
       if (!event.dataTransfer?.files.length) return;
       event.preventDefault();
-      box.classList.remove('attachment-dragging');
       void this.add([...event.dataTransfer.files]);
     });
     task.addEventListener('paste', (event) => {
@@ -361,6 +349,7 @@ export class ComposerAttachments {
     }
     this.error.hidden = !error;
     this.list.hidden = !this.has();
+    this.element.hidden = !this.has() && !error;
   }
 }
 

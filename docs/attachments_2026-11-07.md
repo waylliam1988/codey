@@ -7,9 +7,12 @@ existing sidebar, Settings, model picker, tool stream, Changes view, and reading
 behavior. Do not add current-task/model/branch context rows above the composer.
 Do not display `Attachment pending` or another normal-state attachment banner.
 
-`Attach files` opens the native file picker. Files can also be dropped onto the
-composer; pasting an image uploads the clipboard file instead of inserting a
-filename as text. Chips show the filename, a 36px image thumbnail when applicable,
+Files can be dropped onto the composer; pasting an image uploads the clipboard
+file instead of inserting a filename as text. There is no `Attach files` button
+or file picker. With no attachments or errors, the attachment area is hidden
+and reserves no height or padding. It expands for attachments or errors and
+collapses again after the final attachment is removed and errors are cleared.
+Chips show the filename, a 36px image thumbnail when applicable,
 and an accessible Remove action. Uploads use a small spinner; failures retain the
 file and offer Retry. Successful attachment UI contains no status sentence.
 
@@ -100,10 +103,13 @@ The focused suites are `tests/test_input_attachments.py`,
 existing outbox/composer, durable admission, Cline capability, API codec, and
 context-budget regressions. Browser checks exercise the shipped frontend and
 real storage/queue routes at desktop and narrow widths. They cover error-only
-copy, single Send/Stop action, picker/drop/paste, reload/session scope, retry,
+copy, single Send/Stop action, drop/paste, collapsed empty layout, reload/session scope, retry,
 rejected-input recovery, and lost-reply Steer consumption.
 
 Model transport tests exercise both actual protocol serializers with controlled
 responses; they do not claim a live external model/image invocation. Native
 desktop review uses an isolated state directory and controlled run facts. No
 full pytest run is required or performed for this change.
+
+The compact-layout update is recorded in
+[the 2026-11-09 work report](reports/composer-attachments-compact-20261109.zh-CN.md).

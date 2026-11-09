@@ -4,8 +4,10 @@ This document is the design baseline for Codey's workspace UI. Edit sources in
 `frontend/`; `codey/web` contains the published build.
 Keep one visual language across the application.
 
-The approved 2026-11-07 attachment change adds file selection, drop/paste,
-filename/thumbnail chips and removal inside the existing composer. Normal
+The approved attachment interaction uses file drop/image paste,
+filename/thumbnail chips and removal inside the existing composer. The
+2026-11-09 compact layout removes the `Attach files` button and file picker;
+the attachment area takes no space without attachments or errors. Normal
 attachment states have no status sentence: do not add `Attachment pending`,
 current-task/model/branch rows, or steering-scope explanations. Show attachment
 errors only; unsupported images use exactly `This model does not support image

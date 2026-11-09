@@ -1648,9 +1648,8 @@
   @media (hover: none) { .artifact-more > summary, .tool-result-panel .code-copy { opacity: 1; } }
 /* Attachments use the existing composer and its single primary action. */
 .composer-attachments { padding: 8px 12px 0; }
-.attachment-add { font-size: calc(11.5px * var(--font-scale)); color: var(--text-dim); }
 .attachment-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 6px 0; }
-.attachment-list[hidden], .attachment-error[hidden] { display: none; }
+.composer-attachments[hidden], .attachment-list[hidden], .attachment-error[hidden] { display: none; }
 .attachment-chip { display: flex; align-items: center; gap: 7px; min-width: 0; max-width: 100%; padding: 6px 8px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; font: calc(11.5px * var(--font-scale)) var(--font-mono); color: var(--text-dim); }
 .attachment-chip img { width: 36px; height: 36px; object-fit: cover; border-radius: 3px; }
 .attachment-chip > span:not(.spinner) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }

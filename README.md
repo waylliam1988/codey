@@ -59,9 +59,10 @@ a managed session workspace under `~/.codey/workspaces/<session_key>`. Chat
 can write scripts and request local commands without choosing a folder.
 Both use the same tools; Shell commands still require approval.
 
-Use **Attach files**, drag files onto the composer, or paste an image to attach
+Drag files onto the composer or paste an image to attach
 UTF-8 text/source files or PNG/JPEG/GIF/WebP images. Files have previews and a
-Remove action; uploaded drafts stay with their chat across reloads. Images can
+Remove action; uploaded drafts stay with their chat across reloads. The attachment
+area takes no space when there are no attachments or errors. Images can
 be sent only through a model connection with confirmed image-input support.
 See [attachment limits and model support](docs/attachments_2026-11-07.md).
 
