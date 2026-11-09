@@ -11,10 +11,10 @@
 | 1 | `unwrap` 合同测试 | 已完成 |
 | 2 | schema 驱动 `unwrap` runtime | 已完成 |
 | 3 | receipt-only repair 测试 | 已完成 |
-| 4 | repair token 与精确回放 | 未开始 |
-| 5 | receipt/source/evidence 短句柄测试 | 未开始 |
-| 6 | 句柄 resolver | 未开始 |
-| 7 | 已有浏览器会话与知乎 403 | 未开始 |
+| 4 | repair token 与精确回放 | 已完成 |
+| 5 | receipt/source/evidence 短句柄测试 | 已完成 |
+| 6 | 句柄 resolver | 已完成 |
+| 7 | 已有浏览器会话与知乎 403 | 已完成 |
 
 ## 约束
 
@@ -23,6 +23,15 @@
 - 每批先写确定性测试，再修改生产代码；只运行与改动直接相关的测试和 gate。
 - CodeMode repair 只能读取已经 settled 的原始 receipt，不能重新调用 `execute_turn`。
 - `r1` 等现有研究句柄不能与 receipt 句柄混用；最终需要有类型前缀的命名空间。
+
+## 最终架构边界
+
+- `ToolSpec.output_schema` 是唯一工具结果类型来源；catalog、TypeScript 声明和示例都从它生成。
+- `NodeWorkerRuntime` 是唯一 CodeMode 执行 runtime；`unwrap` 只解包已有的 `Result<T>`，失败仍抛错。
+- kernel effect/receipt durable ledger 是唯一事实账本；repair 只保存 token、工具名、参数摘要和原始 `result_ref`，不复制正文。
+- repair 通过 `repair_of` 精确匹配原 child sequence、能力摘要和 settled receipt；参数或工具变化、未确定结果、能力变化都会 fail closed。省略 `repair_of` 就是 fresh execution。
+- `rc1`、`r1`、`s1@version`、`e1@version` 是已有 task/ledger 投影的展示别名；resolver 负责权限、任务范围、来源版本和证据正文绑定，不维护第二张映射表。
+- 知乎等受会话保护的页面只通过用户明确提供的既有 Edge/CDP 会话读取。全新会话的 403 是站点会话/风控事实，不能通过复制 cookie、伪造请求头或无限重试解决。
 
 ## 第一批记录
 
@@ -54,3 +63,27 @@
 - 静态检查：ruff、mypy、`git diff --check` 通过
 - KoboldCpp gate：待专用 gate 脚本完成后执行
 - commit：`c9c35a73 feat: replay settled CodeMode child receipts`
+
+## 第四批记录
+
+- 生产修复：kernel 参数规范化保留 `repair_of`；此前真实 task kernel 会丢弃该字段，使 repair 请求退化成 fresh execution 并重新获取来源。
+- 新增 durable restart 测试：第一次失败父 CodeMode 先通过现有 provider delivery 路径合法 settle，关闭并重开 SQLite durable store，修改源文件为 V2 后以 `repair_of` 修复，结果仍为 V1 且没有第二次获取。
+- 测试结果：`tests/test_codemode_repair_replay.py` 9 passed；CodeMode/runtime/catalog 回归 63 passed。
+- 专用 gate：脚本模式和 KoboldCpp 均完成，`source_fetches=1`、`codemode_open_url_children=1`、`repair_replayed=true`。
+- 静态检查：相关 Python 文件 ruff 通过；修改生产模块的 mypy strict 检查通过。
+- commit：待提交 `repair_of` 规范化回归与 gate 脚本。
+
+## 第五至第六批记录
+
+- 测试文件：`tests/test_receipt_handle_resolution.py`。
+- `ReferenceHandleResolver` 只从现有 `_memory_results`、`ResearchLedger` 和 task source IDs 派生句柄；`rc`、`r`、`s`、`e` 命名空间互相拒绝，来源和证据句柄必须匹配正文版本，权限撤销或任务外引用 fail closed。
+- `read_tool_result` 和 prompt surface 接受短 receipt 句柄，内部仍解析到原始 durable receipt；没有第二个 receipt store，也没有正文复制。
+- 测试结果：11 项句柄/浏览器生命周期测试通过。
+- commits：`a2d45228 test: define receipt and source handle resolution`、`a97f8770 feat: resolve typed receipt and source handles`。
+
+## 第七批记录
+
+- `BrowserSessionConfig(require_existing=True)` 明确要求使用已有 CDP/Edge 会话，`open_if_missing=False`，允许在用户浏览器 context 创建 task page，并在任务结束时只关闭借用的 task page。
+- 测试覆盖已有会话接入、借用页面生命周期、浏览器重启/页面替换和跨 context 隔离；没有引入 cookie 复制或 HTTP 绕过。
+- 知乎全新会话仍返回 403 属于站点访问策略；可行路径是使用用户已登录、可见的 Codey Edge 会话并保持其 context/page 身份，若会话失效则要求用户重新观察或重新连接。
+- commits：`d46a7149 test: define existing browser session acquisition`、`74eeba66 feat: support explicit existing browser sessions`。

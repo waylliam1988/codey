@@ -548,8 +548,14 @@ def _validate_tool_args(
             program = parse_codemode_args(args if isinstance(args, dict) else {})
             from codey.runtime.core.models import canonical_json_mapping
 
-            return {"code": program.code, "language": program.language,
-                    "inputs": canonical_json_mapping(program.inputs)}, ""
+            normalized: ToolArgs = {
+                "code": program.code,
+                "language": program.language,
+                "inputs": canonical_json_mapping(program.inputs),
+            }
+            if program.repair_of:
+                normalized["repair_of"] = program.repair_of
+            return normalized, ""
         except ValueError as exc:
             return {}, str(exc)
     # Custom/third-task tools: generic spec validation is sufficient.
