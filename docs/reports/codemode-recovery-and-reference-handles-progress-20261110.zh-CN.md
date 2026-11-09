@@ -31,7 +31,7 @@
 - 测试结果：相关 CodeMode/runtime/kernel 测试 `93 passed`
 - 静态检查：`mypy`（修改的 schema/catalog）通过，`ruff` 通过，Node 语法检查通过
 - KoboldCpp gate：已确认 `http://127.0.0.1:5001/v1` 可用；专用模型行为 gate 待在 repair 批次完成后统一接入
-- commit：待提交
+- commit：`7d10270c feat: add schema-driven unwrap runtime`
 
 ## 运行记录
 
@@ -53,4 +53,4 @@
 - 测试结果：`tests/test_codemode_repair_replay.py` 7 passed；与 CodeMode 相关回归共 76 passed
 - 静态检查：ruff、mypy、`git diff --check` 通过
 - KoboldCpp gate：待专用 gate 脚本完成后执行
-- commit：待提交
+- commit：`c9c35a73 feat: replay settled CodeMode child receipts`
