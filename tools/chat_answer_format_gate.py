@@ -21,7 +21,7 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import kernel_prompt
 from codey.operations.task_session import TaskSession
-from codey.research.chat_web import ChatWebProvider
+from codey.research.web_sources import WebSourceProvider
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, decode_json_object, decode_json_value
 from codey.workspace.coding_context import CodingContext
@@ -97,7 +97,7 @@ def format_ok(case: str, summary: str) -> bool:
 
 @contextmanager
 def fixed_web() -> Generator[None, None, None]:
-    def search(provider: ChatWebProvider, query: str, *, limit: int = 8) -> list[JsonObject]:
+    def search(provider: WebSourceProvider, query: str, *, limit: int = 8) -> list[JsonObject]:
         results: list[JsonObject] = [{"title": "福州小吃记录", "url": SOURCE, "snippet": "三种传统小吃的食材与做法。"}]
         return results[:limit]
 
@@ -107,7 +107,7 @@ def fixed_web() -> Generator[None, None, None]:
         return {"status": "ok", "url": url, "title": "福州小吃记录", "content_kind": "html",
                 "text": "鱼丸用鱼肉制成丸皮，包入肉馅。肉燕以肉制燕皮包馅。锅边糊用米浆沿锅边烫熟，适合作早餐。"}
 
-    with patch.object(ChatWebProvider, "search", search), patch("codey.research.chat_web.fetch_http_document", fetch):
+    with patch.object(WebSourceProvider, "search", search), patch("codey.research.web_sources.fetch_http_document", fetch):
         yield
 
 

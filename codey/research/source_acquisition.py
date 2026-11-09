@@ -51,6 +51,16 @@ def with_attempt(page: dict[str, object], backend: str, url: str) -> dict[str, o
     return {**page, "acquisition": {"version": 1, "attempts": [attempt(backend, url, page)]}}
 
 
+def combine_acquisitions(*pages: dict[str, object]) -> dict[str, object]:
+    """Return the final capture with each preceding backend's actual trace."""
+    attempts: list[JsonValue] = []
+    for page in pages:
+        entries = acquisition_observation(page["acquisition"])["attempts"]
+        assert isinstance(entries, list)
+        attempts.extend(entries)
+    return {**pages[-1], "acquisition": {"version": 1, "attempts": attempts}}
+
+
 def acquisition_observation(value: object) -> JsonObject:
     """Validate the cold-start v1 contract on both live commit and recovery."""
     row = canonical_json_object(value)

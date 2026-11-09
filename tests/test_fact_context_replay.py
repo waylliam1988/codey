@@ -18,6 +18,7 @@ from codey.policies.task_policy import TaskPolicy
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolResult
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation
+from codey.research.passages import describe_captured_window
 from codey.research.tools import ResearchTools
 from codey.runtime.core.execution_receipt import ExecutionReceipt, execution_receipt
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -83,10 +84,12 @@ def test_cold_done_replays_legacy_receipts_and_optional_claims(
         if executions.count("open_url") == 2:
             ledger = ResearchLedger()
             ledger.record_open(URL, URL, "Readable", "observed body")
+            observation = ledger_observation(ledger, "open_url", url=URL)
             return ToolResult(call, "observed body", ok=True,
-                              canonical={"research_observation": ledger_observation(ledger, "open_url", url=URL)})
+                              canonical={"research_observation": observation,
+                                         "read_passages": describe_captured_window(observation, 0, 6000)})
         return ToolResult(call, "ERROR: page_blank", ok=False,
-                          canonical={"source_failure": {"url": URL, "detail": "page_blank"}})
+                          canonical={"source_failure": {"url": URL, "detail": "page_blank", "code": "page_not_loaded"}})
 
     armed = True
 
@@ -154,16 +157,16 @@ def test_context_queries_are_pure_and_use_receipt_state(
 ) -> None:
     from codey.operations import kernel_execution
     from codey.operations.tool_result_reader import read_tool_result
-    from codey.research.chat_web import ChatWebProvider
     from codey.research.source_document import SourceDocument
     from codey.research.source_gateway import ResearchSourceGateway
+    from codey.research.web_sources import WebSourceProvider
     from tests.test_execution_claims_and_output_recovery import Reader
 
     def forbidden(*args: object, **kwargs: object) -> None:
         pytest.fail("rendering must not execute or fetch")
 
     monkeypatch.setattr(kernel_execution, "execute_turn", forbidden)
-    monkeypatch.setattr(ChatWebProvider, "fetch", forbidden)
+    monkeypatch.setattr(WebSourceProvider, "fetch", forbidden)
     monkeypatch.setattr(ResearchSourceGateway, "open", forbidden)
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read"})), task_kind="chat",
                           required_source_urls=frozenset({URL}))

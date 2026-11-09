@@ -126,7 +126,7 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, c
     started = time.monotonic()
     target = select_target("gemma", timeout, "http://127.0.0.1:5001/v1")
     provider = (ResumableBrowserSearchProvider if candidate else BrowserSearchProvider)(
-        headless=not bool(cdp_port), isolated=False, cdp_port=cdp_port or 9262, http_fallback=False)
+        headless=not bool(cdp_port), isolated=False, cdp_port=cdp_port or 9262)
     browser = BrowserInteraction(provider) if isinstance(provider, ResumableBrowserSearchProvider) else None
     task = (f"查看 {URL} 中福州样本的鱼丸净重，说明页面实际显示的数值。"
             "只使用这个来源；如果材料不足，请如实说明。不要保存知识。")

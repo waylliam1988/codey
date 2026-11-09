@@ -14,7 +14,7 @@ from unittest.mock import patch
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser import CdpEndpoint
 from codey.env_names import NATIVE_TOOLS_ENV
-from codey.research.chat_web import ChatWebProvider
+from codey.research.web_sources import WebSourceProvider
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object
 from tools import local_model_gate_attempts as attempts
 from tools.browser_experiment_sources import ResumableBrowserSearchProvider
@@ -62,7 +62,7 @@ def run(directory: Path, timeout: float, repeats: int, *, user_cdp_port: int = 0
                     continue
                 case_dir.mkdir()
                 browser = ResumableBrowserSearchProvider(headless=not bool(user_cdp_port), isolated=False,
-                                                          cdp_port=user_cdp_port or 9262, http_fallback=False)
+                                                          cdp_port=user_cdp_port or 9262)
 
                 def endpoint(**kwargs: object) -> CdpEndpoint:
                     return CdpEndpoint(user_cdp_port, None)
@@ -70,7 +70,7 @@ def run(directory: Path, timeout: float, repeats: int, *, user_cdp_port: int = 0
                 def browser_factory(selected: ResumableBrowserSearchProvider = browser) -> ResumableBrowserSearchProvider:
                     return selected
 
-                source = browser if candidate else ChatWebProvider(browser_factory=browser_factory)
+                source = browser if candidate else WebSourceProvider(browser_factory=browser_factory)
                 events: list[JsonObject] = []
 
                 def observe(row: dict[str, object], *, sink: list[JsonObject] = events,
@@ -84,8 +84,8 @@ def run(directory: Path, timeout: float, repeats: int, *, user_cdp_port: int = 0
                         raise ValueError("real-site gate requires the selected local model")
                     return attempts.RecordingProvider(target, destination)
 
-                def source_factory(selected: ChatWebProvider | ResumableBrowserSearchProvider = source
-                                   ) -> ChatWebProvider | ResumableBrowserSearchProvider:
+                def source_factory(selected: WebSourceProvider | ResumableBrowserSearchProvider = source
+                                   ) -> WebSourceProvider | ResumableBrowserSearchProvider:
                     return selected
 
                 started = time.monotonic()

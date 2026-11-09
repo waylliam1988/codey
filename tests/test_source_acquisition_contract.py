@@ -11,9 +11,9 @@ from codey.app.event_payloads import machine_event_payload
 from codey.operations.kernel_facts import project_result_observation, record_facts_for_result
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.research.chat_web import ChatWebProvider
 from codey.research.ledger import ResearchLedger
-from codey.research.source_acquisition import acquisition_observation, attempt, failure_event
+from codey.research.source_acquisition import acquisition_observation, attempt, failure_event, with_attempt
+from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
 from codey.toolchain.runtime import ToolOutcome
@@ -21,6 +21,7 @@ from codey.toolchain.tool_spec import spec_for_tool
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tests.support.receipt_fixtures import inspect_receipt_facts
 from tests.support.session_projection import restore_task_session
+from tests.test_chat_web_provider import Browser
 from tests.test_committed_research_projection import runtime
 from tests.test_source_intake_shared import StaticSource
 from tests.test_source_version_reads import URL, turn
@@ -36,11 +37,14 @@ def test_failure_receipt_event_and_restart_preserve_reason_without_refetch(
     def http(url: str) -> dict[str, object]:
         calls.append(url)
         # Diagnostic deliberately contains a different category: UI must use the code.
-        return {"status": "error", "url": URL, "failure_code": code, "delivery": "confirmed",
-                "detail": "unrelated diagnostic mentions HTTP 403 and page_blank"}
+        return with_attempt({"status": "error", "url": URL, "failure_code": code, "delivery": "confirmed",
+                "detail": "unrelated diagnostic mentions HTTP 403 and page_blank"}, "http", url)
 
-    monkeypatch.setattr("codey.research.chat_web.fetch_http_document", http)
-    tools.search = ChatWebProvider()
+    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", http)
+    browser = Browser()
+    monkeypatch.setattr(browser, "fetch", lambda url: {"status": "error", "url": url, "failure_code": code,
+        "delivery": "confirmed", "detail": "unrelated diagnostic mentions HTTP 403 and page_blank"})
+    tools.search = WebSourceProvider(browser_factory=lambda: browser)
     try:
         result = turn(session, tools, managed, sink, 1, ToolCall("open_url", {"url": URL}))
         assert not result.ok and not session.opened_sources and not tools.ledger.read_passages

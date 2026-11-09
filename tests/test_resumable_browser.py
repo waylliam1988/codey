@@ -46,7 +46,6 @@ def test_research_provider_retains_challenge_page_and_resumes_in_place(
     _ChallengeHandler.requests = 0
     provider = ResumableBrowserSearchProvider(
         headless=True,
-        http_fallback=False,
         browser_path=chromium_executable(),
     )
     def allow_fetch(_url: str, *, use_cache: bool = False) -> str:
@@ -82,7 +81,7 @@ def test_research_provider_retains_challenge_page_and_resumes_in_place(
 
 
 def test_resumable_provider_reports_missing_page_after_close() -> None:
-    provider = ResumableBrowserSearchProvider(headless=True, http_fallback=False,
+    provider = ResumableBrowserSearchProvider(headless=True,
                                               browser_path=chromium_executable())
     try:
         provider.close()

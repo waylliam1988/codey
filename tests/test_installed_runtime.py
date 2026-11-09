@@ -53,6 +53,8 @@ from pathlib import Path
 import codey
 from codey.control.client import ControlClient, ensure_service
 from codey.launcher.runtime import read_runtime
+from codey.research.search_factory import default_research_search_provider
+from codey.research.web_sources import WebSourceProvider
 from codey.storage.file_lock import acquire_lease
 
 root=Path(codey.__file__).resolve().parent.parent
@@ -60,6 +62,11 @@ assert root.is_relative_to(Path(sys.prefix)), root
 assert not (root/'pyproject.toml').exists()
 assert not (root/'tools/publish_runtime.py').exists()
 assert read_runtime(root)['version']==codey.__version__
+assert not (root/'codey/research/chat_web.py').exists()
+provider=default_research_search_provider()
+assert isinstance(provider.base_provider,WebSourceProvider)
+assert provider.base_provider._browser is None
+provider.close()
 home=Path(sys.argv[1])
 client=ControlClient(home,operator=True)
 

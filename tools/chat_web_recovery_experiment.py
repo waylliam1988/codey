@@ -24,7 +24,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
-from codey.research.chat_web import ChatWebProvider
+from codey.research.web_sources import WebSourceProvider
 from codey.types.json_value import JsonObject, decode_json_object
 from tools import local_model_gate_attempts as attempts
 from tools.chat_web_experiment_candidates import INTERNAL_REFS, VARIANTS, Variant, candidate_variant
@@ -97,7 +97,7 @@ def fixed_sources(case: Case, directory: Path) -> Iterator[None]:
     The query rule is a declared network fixture, never production rewriting.
     Raw source data has no instruction to open, continue or finish the task.
     """
-    def search(provider: ChatWebProvider, query: str, *, limit: int = 8) -> list[JsonObject]:
+    def search(provider: WebSourceProvider, query: str, *, limit: int = 8) -> list[JsonObject]:
         compact = "".join(query.split())
         core = case.entity in compact and len(compact) <= len(case.entity) + 2
         results: list[JsonObject]
@@ -115,8 +115,8 @@ def fixed_sources(case: Case, directory: Path) -> Iterator[None]:
             return {"status": "ok", "url": url, "title": case.title, "text": case.body, "content_kind": "html"}
         return {"status": "error", "url": url, "error": "Fixture source unavailable"}
 
-    with (patch.object(ChatWebProvider, "search", search),
-          patch("codey.research.chat_web.fetch_http_document", fetch)):
+    with (patch.object(WebSourceProvider, "search", search),
+          patch("codey.research.web_sources.fetch_http_document", fetch)):
         yield
 
 

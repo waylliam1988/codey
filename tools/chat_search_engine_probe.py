@@ -11,7 +11,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from codey.research.browser_search import BrowserSearchProvider, SearchUnavailableError
-from codey.research.chat_web import BrowserSource
+from codey.research.web_sources import BrowserSource
 from codey.types.json_value import JsonObject
 
 QUERIES = ("福州美食 推荐 吃什么 福州小吃", "东百中心 福州 附近 景点 好玩 餐厅 商场",
@@ -32,7 +32,7 @@ def main() -> int:
     for number, query in enumerate(QUERIES):
         engines = ("bing", "duckduckgo") if number % 2 == 0 else ("duckduckgo", "bing")
         for engine in engines:
-            provider: BrowserSource = BrowserSearchProvider(engine=engine, headless=False, isolated=False, http_fallback=False)
+            provider: BrowserSource = BrowserSearchProvider(engine=engine, headless=False, isolated=False)
             started = time.monotonic()
             report: JsonObject = {"engine": engine, "query": query, "relevance_review_required": True}
             try:

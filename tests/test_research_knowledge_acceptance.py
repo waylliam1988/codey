@@ -37,13 +37,13 @@ def test_production_entry_acquire_restart_associate_revise_and_trace(tmp_path):
     def run(stage, question, actions):
         provider = _RouteProvider([json.dumps({"tool": tool, "args": args}) for tool, args in actions])
         events = []
-        with patch("codey.research.search_factory.default_research_search_provider", Search):
+        with patch("codey.research.web_sources.WebSourceProvider", Search):
             result = run_headless(HeadlessRequest(project=None, task=question, intent="hybrid", provider_id="qwen",
                 max_turns=len(actions) + 1, session_id=stage, state_home=tmp_path / "state",
                 research_store_root=root, requested_capabilities=("web.read", "knowledge.read", "knowledge.write")),
                 emit_jsonl=events.append, connect_provider=lambda *_a, **_kw: provider)
         assert result.exit_code == 0, (result, events[-3:], provider.prompts[-1])
-        assert all(row.get("ok") for row in events if row.get("type") == "tool")
+        assert all(row.get("ok") for row in events if row.get("type") == "tool"), events
         return provider
 
     run("first", "Investigate database commit concurrency", [

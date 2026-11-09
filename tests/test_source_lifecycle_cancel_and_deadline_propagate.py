@@ -11,6 +11,23 @@ from codey.research.source_gateway import ResearchSourceGateway
 from codey.runtime.core.cancellation import DeadlineExceeded, TaskCancelled
 
 
+@pytest.mark.parametrize("error", [TaskCancelled, DeadlineExceeded])
+def test_production_delegate_does_not_turn_task_stop_into_a_source_error(error):
+    from codey.operations.task_execution import ExecutionDelegate
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.research.tools import ResearchTools
+    from codey.runtime.core.models import ToolCall
+
+    source = SimpleNamespace(fetch=Mock(side_effect=error("stop acquisition")))
+    tools = ResearchTools(source, None, None)
+    session = TaskSession(TaskPolicy(frozenset({"web.read", "control"})), task_kind="chat")
+    with patch("codey.research.source_gateway.check_fetch_url", return_value=""), pytest.raises(error):
+        ExecutionDelegate(session=session, research_tools=tools).execute(
+            ToolCall("open_url", {"url": "https://example.com/article"}))
+    assert not tools.ledger.opened_sources and not tools.ledger.read_passages
+
+
 def test_gateway_open_preserves_deadline_exception_without_evidence():
     ledger = ResearchLedger()
     gateway = ResearchSourceGateway(SimpleNamespace(fetch=Mock(side_effect=DeadlineExceeded("budget"))), ledger)

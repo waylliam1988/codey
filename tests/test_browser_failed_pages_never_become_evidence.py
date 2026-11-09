@@ -56,7 +56,7 @@ def test_failed_acquisition_is_error_and_never_records_evidence(monkeypatch, tra
         assert result.status == "ok"
         assert "explained by this documentation" in result.document.text or "explains how" in result.document.text
         assert ledger.final_url_set() == {URL}
-    if transport == "http" or failure:
+    if transport == "http":
         assert response.closed
     if transport == "browser" and failure:
         page.close.assert_called_once_with()
@@ -93,6 +93,25 @@ def test_http_error_body_cannot_become_a_citable_source(monkeypatch, transport, 
     else:
         page.content.assert_not_called()
         page.close.assert_called_once_with()
+
+
+def test_denied_browser_redirect_preserves_policy_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    denied_url = "http://127.0.0.1/private"
+    page = mock.Mock(url=denied_url)
+    page.goto.return_value = SimpleNamespace(status=200, headers={"content-type": "text/html"})
+    provider = browser_search.BrowserSearchProvider()
+    provider._fetch_page = page
+    monkeypatch.setattr(provider, "_prepare_fetch_page_on_browser_thread", lambda url: page)
+    monkeypatch.setattr(browser_search, "check_fetch_url", lambda url: "private target denied" if url == denied_url else "")
+
+    result = provider._fetch_on_browser_thread(URL)
+
+    assert result["status"] == "error"
+    assert result["failure_code"] == "policy_denied"
+    assert result["delivery"] == "confirmed"
+    page.content.assert_not_called()
+    page.close.assert_called_once_with()
+    assert provider._fetch_page is None
 
 
 def test_navigation_text_waits_for_empty_application_main_to_hydrate(monkeypatch):

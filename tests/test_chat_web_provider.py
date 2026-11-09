@@ -7,7 +7,8 @@ import pytest
 
 from codey.operations.task_execution import build_research_tools
 from codey.research import browser_search, connector_search
-from codey.research.chat_web import ChatWebProvider
+from codey.research.source_acquisition import attempt, with_attempt
+from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject
 
@@ -17,6 +18,7 @@ class Browser:
         self.searches: list[tuple[str, int]] = []
         self.fetches: list[str] = []
         self.closed = 0
+        self.last_search_errors: list[dict[str, str]] = []
         self.hits: list[JsonObject] = [{"title": "福州小吃", "url": "https://example.com/food?a=1&b=2",
                                        "snippet": "鱼丸、肉燕与锅边糊"}]
 
@@ -37,10 +39,10 @@ def test_default_search_uses_persistent_headed_browser_and_preserves_query(
     monkeypatch: pytest.MonkeyPatch, query: str,
 ) -> None:
     browser = Browser()
-    configurations: list[tuple[bool, bool, bool]] = []
+    configurations: list[tuple[bool, bool]] = []
 
-    def create(*, headless: bool, isolated: bool, http_fallback: bool) -> Browser:
-        configurations.append((headless, isolated, http_fallback))
+    def create(*, headless: bool, isolated: bool) -> Browser:
+        configurations.append((headless, isolated))
         return browser
 
     def forbidden(url: str, *, timeout: float) -> str:
@@ -48,10 +50,10 @@ def test_default_search_uses_persistent_headed_browser_and_preserves_query(
 
     monkeypatch.setattr(browser_search, "BrowserSearchProvider", create)
     monkeypatch.setattr(connector_search, "_read_url_text", forbidden)
-    provider = ChatWebProvider()
+    provider = WebSourceProvider()
     assert configurations == []
     assert provider.search(query, limit=3) == browser.hits
-    assert configurations == [(False, False, False)]
+    assert configurations == [(False, False)]
     assert browser.searches == [(query, 3)]
     provider.close()
     assert browser.closed == 1
@@ -67,7 +69,7 @@ def test_search_failure_and_interruption_propagate_without_http_fallback(
         raise error
 
     monkeypatch.setattr(browser, "search", fail)
-    provider = ChatWebProvider(browser_factory=lambda: browser)
+    provider = WebSourceProvider(browser_factory=lambda: browser)
     with pytest.raises(type(error)):
         provider.search("福州美食")
     provider.close()
@@ -82,13 +84,13 @@ def test_search_and_render_share_browser_but_static_reads_do_not_start_it(monkey
         created.append(browser)
         return browser
 
-    provider = ChatWebProvider(browser_factory=create)
-    monkeypatch.setattr("codey.research.chat_web.fetch_http_document", lambda url: {"status": "ok", "text": "Static"})
+    provider = WebSourceProvider(browser_factory=create)
+    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", lambda url: {"status": "ok", "text": "Static"})
     assert provider.fetch("https://example.com/static")["text"] == "Static"
     assert created == []
     browser.hits = []
     assert provider.search("empty search") == []
-    monkeypatch.setattr("codey.research.chat_web.fetch_http_document", lambda url: {"status": "error", "render_required": True})
+    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", lambda url: with_attempt({"status": "error", "failure_code": "page_not_loaded"}, "http", url))
     assert provider.fetch("https://example.com/spa")["text"] == "Rendered page body"
     assert created == [browser]
     assert browser.fetches == ["https://example.com/spa"]
@@ -104,8 +106,8 @@ def test_chat_resources_select_chat_provider_lazily_and_keep_injected_provider(m
     monkeypatch.setattr("codey.research.search_factory.default_research_search_provider", research)
     resources = build_research_tools(SimpleNamespace(knowledge_store=None, search_factory=None),
                                      session_id="s", project="", browser_sources=False)
-    assert isinstance(resources.search, ChatWebProvider)
-    injected = ChatWebProvider()
+    assert isinstance(resources.search, WebSourceProvider)
+    injected = WebSourceProvider()
     resources = build_research_tools(SimpleNamespace(knowledge_store=None, search_factory=lambda: injected),
                                      session_id="s", project="", browser_sources=False)
     assert resources.search is injected
@@ -133,12 +135,12 @@ def test_explicit_factory_is_respected_for_both_chat_and_research(
 def test_http_fetch_preserves_failure_and_delegates_pdf(monkeypatch: pytest.MonkeyPatch) -> None:
     failure = {"status": "error", "url": "https://example.com/", "error": "page_blank"}
     monkeypatch.setattr("codey.research.source_download._download_text_fallback", lambda url: failure)
-    result = ChatWebProvider().fetch("https://example.com/")
+    result = WebSourceProvider().fetch("https://example.com/")
     assert {key: value for key, value in result.items() if key != "acquisition"} == failure
     assert result["acquisition"] == {"version": 1, "attempts": [
-        {"backend": "http", "requested_url": "https://example.com/", "final_url": "https://example.com/", "status": "error"},
+        attempt("http", "https://example.com/", failure),
     ]}
-    sentinel = {"content_kind": "pdf_download", "url": "https://example.com/a.pdf", "mime_type": "application/pdf"}
+    sentinel = {"status": "ok", "content_kind": "pdf_download", "url": "https://example.com/a.pdf", "mime_type": "application/pdf"}
     monkeypatch.setattr("codey.research.source_download._download_text_fallback", lambda url: sentinel)
     requests: list[tuple[str, str]] = []
 
@@ -147,5 +149,5 @@ def test_http_fetch_preserves_failure_and_delegates_pdf(monkeypatch: pytest.Monk
         return {"status": "ok", "text": "Extracted PDF"}
 
     monkeypatch.setattr("codey.research.source_download._download_pdf_streaming", pdf)
-    assert ChatWebProvider().fetch("https://example.com/")["text"] == "Extracted PDF"
+    assert WebSourceProvider().fetch("https://example.com/")["text"] == "Extracted PDF"
     assert requests == [("https://example.com/a.pdf", "application/pdf")]

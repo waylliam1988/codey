@@ -69,7 +69,7 @@ def test_real_headless_hybrid_executes_search_and_open_in_isolated_state(tmp_pat
     provider.bind_usage = lambda connection_id, sink: None
     rows = []
     with (
-        mock.patch("codey.research.chat_web.ChatWebProvider", side_effect=Search) as http_search,
+        mock.patch("codey.research.web_sources.WebSourceProvider", side_effect=Search) as http_search,
         mock.patch("codey.research.search_factory.default_research_search_provider",
                    side_effect=AssertionError("ordinary chat must not start a Research browser")),
         mock.patch("codey.research.source_gateway.check_fetch_url", return_value=None) as guard,

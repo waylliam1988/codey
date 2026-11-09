@@ -9,6 +9,8 @@ from playwright.sync_api import Page, Route, sync_playwright
 
 from codey.automation.browser import CdpEndpoint, Session
 from codey.research.browser_search import BrowserSearchProvider, _search_browser_call
+from codey.research.source_acquisition import with_attempt
+from codey.research.web_sources import WebSourceProvider
 from tests.support.real_cdp import cdp_browser
 from tools.browser_experiment_binding import BrowserTargetBindingError, assert_bound, bind_page
 from tools.browser_experiment_interaction import BrowserInteraction
@@ -37,10 +39,22 @@ def test_task_close_releases_task_pages_and_keeps_borrowed_browser(
             user_page = browser.contexts[0].pages[0]
             user_page.set_content("<article>User page must remain</article>")
             before = len(browser.contexts[0].pages)
-            provider = BrowserSearchProvider(headless=False, isolated=False, cdp_port=port)
+            browser_source = BrowserSearchProvider(headless=False, isolated=False, cdp_port=port)
+            provider = WebSourceProvider(browser_factory=lambda: browser_source)
+            monkeypatch.setattr("codey.research.web_sources.fetch_http_document", lambda url: with_attempt(
+                {"status": "error", "url": url, "failure_code": "access_restricted", "http_status": 403,
+                 "detail": "HTTP 403"}, "http", url))
             try:
                 fetched = provider.fetch(URL)
                 assert fetched["status"] == "ok", fetched
+                def assert_task_page_binding() -> None:
+                    session = browser_source._session
+                    page = browser_source._fetch_page
+                    assert session is not None and page is not None
+                    assert page is not session.page
+                    assert page.context is session.page.context
+
+                _search_browser_call(assert_task_page_binding)
             finally:
                 provider.close()
             observer_page = browser.contexts[0].new_page()

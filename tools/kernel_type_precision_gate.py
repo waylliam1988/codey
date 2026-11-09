@@ -40,18 +40,14 @@ SCOPED_TARGETS = {
     ),
     "codey/operations/context.py": ("RunFrame.entry_policy", "RunFrame.entry_session"),
     "codey/durable/checkpoint.py": ("mutate_checkpoint", "_unregistered_artifacts", "_effect_changes"),
-    "codey/operations/task_execution.py": (
-        "ExecutionDelegate._research_resources", "ExecutionDelegate._observation_tools",
-        "ExecutionDelegate._resolve_alias_url", "ExecutionDelegate._build_hit_mapping",
-        "ExecutionDelegate._execute_source_open", "ExecutionDelegate._opened_result",
-    ),
 }
 
 CONTRACT_TARGETS = (
+    "codey/operations/task_execution.py",
     "codey/runtime/core/execution_receipt.py", "codey/operations/kernel_receipts.py",
     "codey/operations/tool_result_reader.py", "codey/operations/execution_claims.py",
     "codey/operations/source_gaps.py", "codey/toolchain/runtime.py",
-    "codey/research/source_download.py", "codey/research/chat_web.py",
+    "codey/research/source_download.py", "codey/research/web_sources.py",
     "codey/operations/kernel_prompt.py", "codey/operations/task_guidance.py",
     "codey/app/history_routes.py",
     "codey/durable/entry_ownership.py",

@@ -37,7 +37,7 @@ def source(monkeypatch: pytest.MonkeyPatch, public_source_dns: None,
         route.fulfill(status=200, content_type="text/html; charset=utf-8", body=document)
 
     monkeypatch.setattr(BrowserSearchProvider, "_guard_request", route_document)
-    provider = BrowserSearchProvider(headless=True, http_fallback=False, browser_path=chromium_executable())
+    provider = BrowserSearchProvider(headless=True, browser_path=chromium_executable())
     try:
         yield provider, navigations
     finally:

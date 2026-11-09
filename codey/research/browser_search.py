@@ -29,7 +29,6 @@ from codey.research.extract import (
     extract_title,
 )
 from codey.research.source_acquisition import SourceFailureCode, http_failure_code, with_attempt
-from codey.research.source_acquisition import attempt as acquisition_attempt
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
@@ -157,7 +156,6 @@ class BrowserSearchProvider:
         isolated: bool = True,
         bring_to_front: bool = False,
         headless: bool = False,
-        http_fallback: bool = True,
     ) -> None:
         profiles = load_profiles()
         engine_profiles_value = profiles.get("engines", {})
@@ -189,7 +187,6 @@ class BrowserSearchProvider:
         self.isolated = isolated
         self.bring_to_front = bring_to_front
         self.headless = headless
-        self.http_fallback = http_fallback
         self._session: Session | None = None
         self._search_page: Page | None = None
         self._fetch_page: Page | None = None
@@ -471,38 +468,21 @@ class BrowserSearchProvider:
 
     def fetch(self, url: str) -> dict[str, object]:
         cancellation.check()
-        if source_download._is_pdf_url(url):
-            page = source_download._download_pdf_streaming(url)
-            cancellation.check()
-            return with_attempt(page, "http", url)
-        else:
-            try:
-                page = _search_browser_call(
-                    self._fetch_on_browser_thread,
-                    url,
-                    timeout=_FETCH_TOTAL_TIMEOUT_SECONDS,
-                    # If the caller gives up first, the abandoned job may
-                    # leave the shared fetch page mid-navigation. Discard
-                    # whatever page is current when the worker gets there;
-                    # the discard is idempotent with the job's own paths.
-                    on_abandoned=self._abandon_fetch_on_browser_thread,
-                )
-            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-                self._record_worker_health()
-                raise
-            except TimeoutError as exc:
-                self._record_worker_health()
-                return with_attempt(source_download._fetch_failure(url,
-                    f'could not load page within {_FETCH_TOTAL_TIMEOUT_SECONDS:.0f}s: {exc}'), "browser", url)
-            if page.get("content_kind") == "pdf_download":
-                cancellation.check()
-                downloaded = source_download._download_pdf_streaming(
-                    str(page.get("url") or url),
-                    mime_type=str(page.get("mime_type") or ""),
-                )
-                page = {**downloaded, "acquisition": {"version": 1,
-                    "attempts": [acquisition_attempt("browser", url, page),
-                                 acquisition_attempt("http", str(page.get("url") or url), downloaded)]}}
+        try:
+            page = _search_browser_call(
+                self._fetch_on_browser_thread,
+                url,
+                timeout=_FETCH_TOTAL_TIMEOUT_SECONDS,
+                # An abandoned navigation cannot supply a later caller's capture.
+                on_abandoned=self._abandon_fetch_on_browser_thread,
+            )
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            self._record_worker_health()
+            raise
+        except TimeoutError as exc:
+            self._record_worker_health()
+            return with_attempt(source_download._fetch_failure(url,
+                f'could not load page within {_FETCH_TOTAL_TIMEOUT_SECONDS:.0f}s: {exc}'), "browser", url)
         cancellation.check()
         return with_attempt(page, "browser", url)
 
@@ -510,8 +490,6 @@ class BrowserSearchProvider:
         reason = check_fetch_url(url)
         if reason:
             return source_download._fetch_failure(url, f'{reason}', code="policy_denied", delivery="not_attempted")
-        if source_download._is_pdf_url(url):
-            return source_download._pdf_download_sentinel(url)
         try:
             page: Page = self._prepare_fetch_page_on_browser_thread(url)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
@@ -538,7 +516,9 @@ class BrowserSearchProvider:
             if final_url != url:
                 reason = check_fetch_url(final_url)
                 if reason:
-                    return source_download._fetch_failure(final_url, f'{reason} (after redirect)')
+                    self._discard_fetch_page_on_browser_thread(page)
+                    return source_download._fetch_failure(final_url, f'{reason} (after redirect)',
+                                                         code="policy_denied", delivery="confirmed")
             if response is not None:
                 status = getattr(response, "status", None)
                 if isinstance(status, int) and status >= 400:
@@ -584,14 +564,6 @@ class BrowserSearchProvider:
         browser_failure = source_download._fetch_failure(url,
             "page had no usable visible content after navigation: " + detail, title=extract_title(html),
             code=code, delivery="confirmed")
-        if self.http_fallback:
-            fallback = source_download._download_text_fallback(url)
-            fallback = {**fallback, "acquisition": {"version": 1,
-                "attempts": [acquisition_attempt("browser", url, browser_failure), acquisition_attempt("http", url, fallback)]}}
-            if fallback.get("status") == "ok" and fallback.get("text"):
-                self._discard_fetch_page_on_browser_thread(page)
-                return fallback
-            browser_failure["acquisition"] = fallback["acquisition"]
         self._discard_fetch_page_on_browser_thread(page)
         return browser_failure
 

@@ -30,7 +30,7 @@ def targets(port: int) -> dict[str, str]:
 def run(directory: Path, port: int) -> JsonObject:
     initial = targets(port)
     provider = ResumableBrowserSearchProvider(cdp_port=port, isolated=False,
-                                              bring_to_front=False, http_fallback=False)
+                                              bring_to_front=False)
 
     def endpoint(**kwargs: object) -> CdpEndpoint:
         return CdpEndpoint(port, None)

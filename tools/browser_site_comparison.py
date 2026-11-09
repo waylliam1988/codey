@@ -6,9 +6,9 @@ import json
 import time
 from pathlib import Path
 
-from codey.research.chat_web import ChatWebProvider
 from codey.research.ledger import ResearchLedger
 from codey.research.source_gateway import ResearchSourceGateway
+from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, canonical_json_object
 from tools.browser_experiment_interaction import BrowserInteraction
@@ -31,12 +31,12 @@ def run(directory: Path, repeats: int) -> list[JsonObject]:
         for name, url in SITES:
             for candidate in ([False, True] if repeat % 2 else [True, False]):
                 arm = "browser_first" if candidate else "http_first"
-                browser = ResumableBrowserSearchProvider(headless=True, http_fallback=False)
+                browser = ResumableBrowserSearchProvider(headless=True)
 
                 def browser_factory(selected: ResumableBrowserSearchProvider = browser) -> ResumableBrowserSearchProvider:
                     return selected
 
-                provider = browser if candidate else ChatWebProvider(browser_factory=browser_factory)
+                provider = browser if candidate else WebSourceProvider(browser_factory=browser_factory)
                 started = time.monotonic()
                 observation: JsonObject = {}
                 row: JsonObject

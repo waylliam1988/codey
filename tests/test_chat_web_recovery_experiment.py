@@ -11,7 +11,7 @@ from codey.operations import task_guidance
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.research.chat_web import ChatWebProvider
+from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core.models import ToolCall, ToolResult
 from tools.chat_web_experiment_candidates import (
     READING_GUIDANCE,
@@ -113,7 +113,7 @@ def test_rejected_identity_candidate_exposes_italic_url_boundary_failure() -> No
 def test_fixed_search_has_no_answer_hint_and_both_variants_receive_same_source(tmp_path: Path) -> None:
     case = CASES["food_recovery"]
     with fixed_sources(case, tmp_path):
-        provider = ChatWebProvider()
+        provider = WebSourceProvider()
         assert "汉语文字" in str(provider.search("福州美食 推荐 吃什么 福州小吃")[0]["title"])
         hits = provider.search("福州美食")
         assert hits[0]["url"] == case.url

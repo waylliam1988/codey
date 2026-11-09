@@ -14,8 +14,9 @@ import pytest
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.task_session import TaskSession
 from codey.research import browser_search, source_download
-from codey.research.chat_web import ChatWebProvider
 from codey.research.extract import is_application_shell
+from codey.research.source_acquisition import with_attempt
+from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall
 from codey.types.json_value import JsonObject, decode_json_object
@@ -50,20 +51,20 @@ def test_http_reports_shell_even_when_navigation_is_long(monkeypatch: pytest.Mon
     monkeypatch.setattr(source_download, "check_fetch_url", lambda *a, **k: "")
     monkeypatch.setattr(source_download, "_open_url_no_redirect", lambda *a, **k: response)
     result = source_download.fetch_http_document(response.url)
-    assert result["status"] == "error" and result["render_required"] is True
+    assert result["status"] == "error" and result["failure_code"] == "page_not_loaded" and result["http_status"] == 200
     assert response.closed
 
 
 @pytest.mark.parametrize("page", [
-    {"status": "error", "detail": "page_blank"},
-    {"status": "error", "detail": "HTTP 403"},
+    {"status": "error", "failure_code": "policy_denied", "detail": "page_blank"},
+    {"status": "error", "http_status": 404, "failure_code": "page_unavailable", "detail": "HTTP 403"},
     {"status": "skipped", "content_kind": "pdf"},
     {"status": "ok", "text": BODY},
 ])
-def test_no_browser_for_non_shell_results(monkeypatch: pytest.MonkeyPatch, page: dict[str, object]) -> None:
+def test_no_browser_for_terminal_or_successful_results(monkeypatch: pytest.MonkeyPatch, page: dict[str, object]) -> None:
     factory = Mock(side_effect=AssertionError("unnecessary browser"))
-    monkeypatch.setattr("codey.research.chat_web.fetch_http_document", lambda _: page)
-    provider = ChatWebProvider(browser_factory=factory)
+    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", lambda _: page)
+    provider = WebSourceProvider(browser_factory=factory)
     provider.fetch("https://example.com/")
     provider.close()
     factory.assert_not_called()
@@ -74,10 +75,10 @@ def test_interruptions_never_trigger_rendering(monkeypatch: pytest.MonkeyPatch, 
     def interrupted(url: str) -> dict[str, object]:
         raise error()
 
-    monkeypatch.setattr("codey.research.chat_web.fetch_http_document", interrupted)
+    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", interrupted)
     factory = Mock(side_effect=AssertionError("rendered after interruption"))
     with pytest.raises(error):
-        ChatWebProvider(browser_factory=factory).fetch("https://example.com/")
+        WebSourceProvider(browser_factory=factory).fetch("https://example.com/")
 
 
 def test_http_and_rendering_share_earlier_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -85,9 +86,11 @@ def test_http_and_rendering_share_earlier_deadline(monkeypatch: pytest.MonkeyPat
 
     def http(url: str) -> dict[str, object]:
         deadlines.append(cancellation.current_deadline())
-        return {"status": "error", "render_required": True}
+        return with_attempt({"status": "error", "failure_code": "page_not_loaded"}, "http", url)
 
     class Renderer:
+        last_search_errors: list[dict[str, str]] = []
+
         def search(self, query: str, *, limit: int) -> list[JsonObject]:
             pytest.fail("page acquisition must not search")
 
@@ -98,10 +101,10 @@ def test_http_and_rendering_share_earlier_deadline(monkeypatch: pytest.MonkeyPat
         def close(self) -> None:
             pass
 
-    monkeypatch.setattr("codey.research.chat_web.fetch_http_document", http)
+    monkeypatch.setattr("codey.research.web_sources.fetch_http_document", http)
     deadline = time.monotonic() + 5
     with cancellation.deadline_scope(deadline):
-        ChatWebProvider(browser_factory=Renderer).fetch("https://example.com/")
+        WebSourceProvider(browser_factory=Renderer).fetch("https://example.com/")
     assert deadlines == [deadline, deadline]
 
 
@@ -134,7 +137,7 @@ def test_real_headless_spa_and_receipt_recovery_never_refetch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, spa_server: str,
 ) -> None:
     session, tools, managed, deps, sink = runtime(tmp_path, monkeypatch)
-    provider = ChatWebProvider(browser_factory=lambda: browser_search.BrowserSearchProvider(headless=True, http_fallback=False))
+    provider = WebSourceProvider(browser_factory=lambda: browser_search.BrowserSearchProvider(headless=True))
     tools.search = provider
     tools.direct_urls = frozenset({spa_server})
     monkeypatch.setattr(source_download, "check_fetch_url", lambda *a, **k: "")
@@ -169,7 +172,7 @@ def test_real_headless_spa_and_receipt_recovery_never_refetch(
 
 
 def test_render_only_failure_has_no_reverse_http(monkeypatch: pytest.MonkeyPatch) -> None:
-    provider = browser_search.BrowserSearchProvider(http_fallback=False)
+    provider = browser_search.BrowserSearchProvider()
     page = Mock(url="https://example.com/")
     page.goto.return_value = None
     page.evaluate.return_value = True
@@ -184,7 +187,7 @@ def test_render_only_failure_has_no_reverse_http(monkeypatch: pytest.MonkeyPatch
 def test_headless_guard_covers_context_including_popup_requests(monkeypatch: pytest.MonkeyPatch) -> None:
     session = Mock()
     monkeypatch.setattr(browser_search, "open_headless_page", lambda **kwargs: session)
-    provider = browser_search.BrowserSearchProvider(headless=True, http_fallback=False)
+    provider = browser_search.BrowserSearchProvider(headless=True)
     assert provider._ensure_session_on_browser_thread() is session
     session.page.context.route.assert_called_once_with("**/*", provider._guard_request)
     provider._prepare_page_on_browser_thread(session.page)
@@ -195,7 +198,7 @@ def test_headless_guard_covers_context_including_popup_requests(monkeypatch: pyt
 
 
 def test_abandoned_headless_fetch_closes_owned_browser(monkeypatch: pytest.MonkeyPatch) -> None:
-    provider = browser_search.BrowserSearchProvider(headless=True, http_fallback=False)
+    provider = browser_search.BrowserSearchProvider(headless=True)
     closed = Mock()
     monkeypatch.setattr(provider, "_close_on_browser_thread", closed)
     provider._abandon_fetch_on_browser_thread()
@@ -204,7 +207,7 @@ def test_abandoned_headless_fetch_closes_owned_browser(monkeypatch: pytest.Monke
 
 @pytest.mark.parametrize("text", ["Verify you are human", "Sign in to continue with your account"])
 def test_challenge_or_login_after_render_is_not_evidence(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
-    provider = browser_search.BrowserSearchProvider(http_fallback=False)
+    provider = browser_search.BrowserSearchProvider()
     page = Mock(url="https://example.com/")
     page.goto.return_value = None
     page.evaluate.return_value = False
@@ -231,7 +234,7 @@ def test_failed_render_reports_observed_script_or_request_error(
         handlers[event](SimpleNamespace(message="JavaScript failed", resource_type="fetch", failure="connection refused"))
 
     page.goto.side_effect = navigate
-    provider = browser_search.BrowserSearchProvider(http_fallback=False)
+    provider = browser_search.BrowserSearchProvider()
     monkeypatch.setattr(provider, "_prepare_fetch_page_on_browser_thread", lambda _: page)
     monkeypatch.setattr(browser_search, "check_fetch_url", lambda *a, **k: "")
     monkeypatch.setattr(browser_search, "_fetch_page_content_after_settle", lambda _: (SHELL, ""))

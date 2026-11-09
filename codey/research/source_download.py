@@ -33,7 +33,13 @@ from codey.research.http_redirects import (
     redirect_target as _redirect_target,
 )
 from codey.research.pdf_extract import PDF_MAX_BYTES
-from codey.research.source_acquisition import DeliveryState, SourceFailureCode, http_failure_code, with_attempt
+from codey.research.source_acquisition import (
+    DeliveryState,
+    SourceFailureCode,
+    combine_acquisitions,
+    http_failure_code,
+    with_attempt,
+)
 from codey.runtime.core import cancellation
 
 _FETCH_HTTP_TIMEOUT = 12
@@ -55,10 +61,19 @@ def _is_pdf_url(url: str) -> bool:
 
 def fetch_http_document(url: str) -> dict[str, object]:
     """Shared bounded HTTP/PDF acquisition for the selected HTTP provider."""
-    page = _download_text_fallback(url)
-    if page.get("content_kind") == "pdf_download":
-        page = _download_pdf_streaming(str(page.get("url") or url), mime_type=str(page.get("mime_type") or ""))
-    return with_attempt(page, "http", url)
+    if _is_pdf_url(url):
+        return with_attempt(_download_pdf_streaming(url), "http", url)
+    page = with_attempt(_download_text_fallback(url), "http", url)
+    return finish_pdf_download(page, url)
+
+
+def finish_pdf_download(page: dict[str, object], requested_url: str) -> dict[str, object]:
+    """Complete a discovered PDF using the one bounded streaming downloader."""
+    if page.get("content_kind") != "pdf_download":
+        return page
+    url = str(page.get("url") or requested_url)
+    downloaded = with_attempt(_download_pdf_streaming(url, mime_type=str(page.get("mime_type") or "")), "http", url)
+    return combine_acquisitions(page, downloaded)
 
 
 def _download_text_fallback(url: str) -> dict[str, object]:
@@ -83,7 +98,7 @@ def _download_text_fallback(url: str) -> dict[str, object]:
                 continue
             _close_response(exc)
             return _fetch_failure(current_url, f'HTTP fallback could not load page: HTTP {exc.code}',
-                                  code=http_failure_code(exc.code), delivery="confirmed")
+                                  code=http_failure_code(exc.code), delivery="confirmed", http_status=exc.code)
         except urllib.error.URLError as exc:
             return _fetch_failure(current_url, f'HTTP fallback could not load page: {exc}')
         except OSError as exc:
@@ -104,7 +119,7 @@ def _download_text_fallback(url: str) -> dict[str, object]:
             headers = response.headers
             if status >= 400:
                 return _fetch_failure(final_url, f'HTTP fallback could not load page: HTTP {status}',
-                                      code=http_failure_code(status), delivery="confirmed")
+                                      code=http_failure_code(status), delivery="confirmed", http_status=status)
             ctype = (headers.get("content-type") or "").lower()
             if _is_pdf_response(ctype, final_url):
                 return _pdf_download_sentinel(final_url, mime_type=ctype)
@@ -126,11 +141,9 @@ def _download_text_fallback(url: str) -> dict[str, object]:
                     "HTTP fallback had no usable visible content: " + _fetch_page_failure_kind(text),
                     title=extract_title(html),
                     code="page_not_loaded" if shell or _fetch_page_failure_kind(text) == "page_blank" else "page_unavailable",
-                    delivery="confirmed",
+                    delivery="confirmed", http_status=status,
                 )
                 failure["truncated"] = truncated
-                if shell:
-                    failure["render_required"] = True
                 return failure
             text_truncated = len(text) > _MAX_PAGE_CHARS
             if text_truncated:
@@ -172,7 +185,7 @@ def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict[str, objec
             _close_response(exc)
             return _pdf_skipped(
                 current_url, mime_type or "application/pdf", f"PDF could not be downloaded: HTTP {exc.code}",
-                code=http_failure_code(exc.code), delivery="confirmed",
+                code=http_failure_code(exc.code), delivery="confirmed", http_status=exc.code,
             )
         except urllib.error.URLError as exc:
             return _pdf_skipped(current_url, mime_type or "application/pdf", f"PDF could not be downloaded: {exc}")
@@ -195,7 +208,7 @@ def _download_pdf_streaming(url: str, *, mime_type: str = "") -> dict[str, objec
             ctype = (headers.get("content-type") or mime_type or "application/pdf").lower()
             if status >= 400:
                 return _pdf_skipped(final_url, ctype, f"PDF could not be downloaded: HTTP {status}",
-                                    code=http_failure_code(status), delivery="confirmed")
+                                    code=http_failure_code(status), delivery="confirmed", http_status=status)
             length = _content_length(headers)
             if length is not None and length > PDF_MAX_BYTES:
                 return _pdf_skipped(
@@ -282,7 +295,7 @@ def _checked_redirect(
 
 def _fetch_failure(url: str, detail: str, *, status: str = "error", title: str = "",
                    content_kind: str = "", mime_type: str = "", code: SourceFailureCode = "request_failed",
-                   delivery: DeliveryState = "unconfirmed") -> dict[str, object]:
+                   delivery: DeliveryState = "unconfirmed", http_status: int | None = None) -> dict[str, object]:
     prefix = "SKIPPED" if status == "skipped" else "ERROR"
     payload: dict[str, object] = {"status": status, "detail": detail, "url": url, "title": title,
                "text": f"{prefix}: {detail}", "truncated": False, "failure_code": code, "delivery": delivery}
@@ -290,12 +303,14 @@ def _fetch_failure(url: str, detail: str, *, status: str = "error", title: str =
         payload["content_kind"] = content_kind
     if mime_type:
         payload["mime_type"] = mime_type
+    if http_status is not None:
+        payload["http_status"] = http_status
     return payload
 
 def _pdf_skipped(url: str, mime_type: str, message: str, *, code: SourceFailureCode = "request_failed",
-                 delivery: DeliveryState = "unconfirmed") -> dict[str, object]:
+                 delivery: DeliveryState = "unconfirmed", http_status: int | None = None) -> dict[str, object]:
     return _fetch_failure(url, message, status="skipped", title=_title_from_url(url), content_kind="pdf",
-                          mime_type=mime_type or "application/pdf", code=code, delivery=delivery)
+                          mime_type=mime_type or "application/pdf", code=code, delivery=delivery, http_status=http_status)
 
 def _redirect_error(url: str, content_kind: str, message: str) -> dict[str, object]:
     if (content_kind or "").casefold() == "pdf":

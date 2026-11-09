@@ -24,9 +24,11 @@ from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, pars
 from codey.research.proof_quality import review_research_proof
 from codey.research.provenance import provenance_problem
 from codey.research.report_quality import review_report_quality
+from codey.research.source_acquisition import with_attempt
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.source_rendering import UNTRUSTED_SOURCE_END, UNTRUSTED_SOURCE_START
 from codey.research.tools import ResearchTools
+from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.events import RunEvent, run_event_ui_payload
@@ -977,12 +979,12 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         base_provider = mock.Mock()
         with mock.patch(
-            "codey.research.search_factory.BrowserSearchProvider",
+            "codey.research.search_factory.WebSourceProvider",
             return_value=base_provider,
         ) as browser_cls:
             provider = search_factory.default_research_search_provider()
 
-        browser_cls.assert_called_once_with(isolated=False)
+        browser_cls.assert_called_once_with()
         self.assertIs(provider.base_provider, base_provider)
 
     def test_browser_search_replaces_stuck_search_page_after_navigation_timeout(self) -> None:
@@ -1050,10 +1052,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         context = FakeContext()
         first_page = FakePage(context, fail=True)
-        session = SimpleNamespace(
-            page=first_page,
-            browser=SimpleNamespace(contexts=[context]),
-        )
+        session = browser_search.Session(mock.Mock(), SimpleNamespace(contexts=[context]), first_page, owns_page=True)
         provider = BrowserSearchProvider()
         provider._session = session
         provider._search_page = first_page
@@ -1248,10 +1247,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         context = FakeContext()
         page = FakePage()
-        session = SimpleNamespace(
-            page=page,
-            browser=SimpleNamespace(contexts=[context]),
-        )
+        session = browser_search.Session(mock.Mock(), SimpleNamespace(contexts=[context]), page, owns_page=True)
         provider = BrowserSearchProvider()
         provider._session = session
         provider._search_page = page
@@ -3947,7 +3943,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             "ERROR: page had no usable visible content after navigation: page_blank",
         )
 
-    def test_fetch_on_browser_thread_waits_through_cookie_wall_before_http_fallback(self) -> None:
+    def test_fetch_on_browser_thread_waits_through_cookie_wall_without_http_retry(self) -> None:
         class FakePage:
             url = "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
 
@@ -4123,7 +4119,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 return b"unexpected"
 
         response = StreamingResponse()
-        provider = BrowserSearchProvider()
+        provider = WebSourceProvider()
         provider._ensure_fetch_page_on_browser_thread = mock.Mock(
             side_effect=AssertionError("PDF should not open a browser page")
         )
@@ -4166,7 +4162,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 return b"x" * amount
 
         response = StreamingResponse()
-        provider = BrowserSearchProvider()
+        provider = WebSourceProvider()
 
         with (
             mock.patch("codey.research.source_download.check_fetch_url", return_value=None),
@@ -4206,7 +4202,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 return b""
 
         response = RedirectResponse()
-        provider = BrowserSearchProvider()
+        provider = WebSourceProvider()
 
         def policy(url: str, *, resolve: bool = True):
             del resolve
@@ -4254,7 +4250,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         try:
             with mock.patch("codey.research.source_download.check_fetch_url", side_effect=policy):
-                result = BrowserSearchProvider().fetch(url)
+                result = WebSourceProvider().fetch(url)
         finally:
             httpd.shutdown()
             httpd.server_close()
@@ -4265,7 +4261,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(checked_urls, [url, "http://127.0.0.1/private.pdf"])
 
     def test_browser_search_pdf_sentinel_download_runs_outside_browser_thread(self) -> None:
-        provider = BrowserSearchProvider()
+        provider = WebSourceProvider()
         sentinel = {"status": "ok",
             "url": "https://example.com/report.pdf",
             "title": "Report PDF",
@@ -4284,13 +4280,16 @@ class ResearchBoundaryTests(unittest.TestCase):
         }
 
         with (
+            mock.patch("codey.research.web_sources.fetch_http_document", return_value=with_attempt(
+                source_download._fetch_failure("https://example.com/report", "HTTP 403", code="access_restricted", http_status=403),
+                "http", "https://example.com/report")),
             mock.patch("codey.research.browser_search._search_browser_call", return_value=sentinel),
             mock.patch("codey.research.source_download._download_pdf_streaming", return_value=streamed) as download,
         ):
             result = provider.fetch("https://example.com/report")
 
         self.assertEqual({key: value for key, value in result.items() if key != "acquisition"}, streamed)
-        self.assertEqual([row["backend"] for row in result["acquisition"]["attempts"]], ["browser", "http"])
+        self.assertEqual([row["backend"] for row in result["acquisition"]["attempts"]], ["http", "browser", "http"])
         download.assert_called_once_with("https://example.com/report.pdf", mime_type="application/pdf")
 
     def test_browser_search_pdf_streaming_checks_cancellation_between_chunks(self) -> None:
@@ -4327,7 +4326,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             mock.patch("codey.research.source_download._open_url_no_redirect", return_value=response),
             cancellation.scope(cancel_event), self.assertRaises(cancellation.TaskCancelled)
         ):
-            BrowserSearchProvider().fetch("https://example.com/report.pdf")
+            WebSourceProvider().fetch("https://example.com/report.pdf")
 
         self.assertEqual(response.calls, 1)
 

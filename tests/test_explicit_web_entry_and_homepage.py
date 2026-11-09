@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 
 from codey.providers.token_accounting import ContextBudget
-from codey.research.chat_web import ChatWebProvider
 from codey.research.ledger import ResearchLedger
 from codey.research.source_gateway import ResearchSourceGateway
+from codey.research.web_sources import WebSourceProvider
 from codey.task.entry_auth import derive_entry_auth
 from codey.task.web_intent import explicit_web_intent, source_url_key
 from codey.types.json_value import JsonObject
@@ -19,7 +19,7 @@ from codey.types.json_value import JsonObject
 URL = "https://example.com/"
 
 
-class Sources(ChatWebProvider):
+class Sources(WebSourceProvider):
     def search(self, query: str, *, limit: int) -> list[JsonObject]:
         return []
 

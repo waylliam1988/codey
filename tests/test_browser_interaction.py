@@ -43,7 +43,7 @@ def browser_fixture(
     server = HTTPServer(("127.0.0.1", 0), _InteractionHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    provider = ResumableBrowserSearchProvider(headless=True, http_fallback=False,
+    provider = ResumableBrowserSearchProvider(headless=True,
                                               browser_path=chromium_executable())
 
     def allow_fetch(_url: str, *, use_cache: bool = False) -> str:

@@ -51,7 +51,7 @@ def run(repo: Path, directory: Path, case: str, timeout: float, *, acquisition_o
 
     from codey.app.headless_runner import HeadlessRequest, run_headless
     from codey.env_names import NATIVE_TOOLS_ENV
-    from codey.research.chat_web import ChatWebProvider
+    from codey.research.web_sources import WebSourceProvider
     from codey.types.json_value import JsonObject, decode_json_object
     from tools import local_model_gate_attempts as attempts
     from tools.shell_web_diagnostic_gate import select_target
@@ -79,7 +79,7 @@ def run(repo: Path, directory: Path, case: str, timeout: float, *, acquisition_o
         from codey.research.ledger import ResearchLedger
         from codey.research.source_gateway import ResearchSourceGateway
 
-        provider = ChatWebProvider()
+        provider = WebSourceProvider()
         url = FOOD if case == "food" else SITE
         try:
             with (patch("codey.research.source_download._open_url_no_redirect", http),
@@ -102,7 +102,7 @@ def run(repo: Path, directory: Path, case: str, timeout: float, *, acquisition_o
                 "limits": "One trial; source responses are controlled; answer accuracy requires review."}
     (directory / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def search(self: ChatWebProvider, query: str, *, limit: int = 8) -> list[JsonObject]:
+    def search(self: WebSourceProvider, query: str, *, limit: int = 8) -> list[JsonObject]:
         return [{"title": "福州小吃记录" if case == "food" else "Site fixture",
                  "url": FOOD if case == "food" else SITE, "snippet": "Open the page for its actual contents."}]
 
@@ -120,7 +120,7 @@ def run(repo: Path, directory: Path, case: str, timeout: float, *, acquisition_o
         stack.enter_context(attempts.isolate_gate_secondary_models(target))
         stack.enter_context(attempts.record_api_generations(directory / "provider.jsonl"))
         stack.enter_context(patch("codey.research.source_download._open_url_no_redirect", http))
-        stack.enter_context(patch.object(ChatWebProvider, "search", search))
+        stack.enter_context(patch.object(WebSourceProvider, "search", search))
         stack.enter_context(patch("codey.research.browser_search.BrowserSearchProvider._guard_request", browser_response))
         run_headless(HeadlessRequest(None, TASKS[case], intent="chat", provider_id="local", max_turns=8,
             state_home=directory / "state", model_selection={"model": target.model, "base_url": target.base_url},
