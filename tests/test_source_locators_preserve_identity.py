@@ -91,7 +91,7 @@ def test_collision_after_500_characters_is_still_a_conflict():
         snapshot = ledger_observation(ledger, "open", url=target)
         return ToolResult(call, "hit", ok=True, canonical={
             "hit_targets": {"h1": {"url": target, "offset": 0, "pages": "", "text_hash": snapshot["source"]["text_hash"]}},
-            "research_observation": {"source_search": {"source_url": target, "query": "q", "hits": [], "source_snapshot": snapshot}},
+            "research_observation": {"source_search": {"source_url": target, "query": "q", "hits": [{"offset": 0, "page": None, "snippet": "body"}], "source_snapshot": snapshot}},
         })
     record_facts_for_result(task, call, result(url + "one"), ok=True)
     with pytest.raises(ValueError, match="conflicting"):

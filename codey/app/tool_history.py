@@ -1,12 +1,15 @@
 """Persist bounded tool presentation as display-only conversation entries."""
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.app.event_payloads import browser_event_payload
 
+if TYPE_CHECKING:
+    from codey.app.context import AppContext
 
-def record_reasoning_display(ctx: Any, event: dict[str, Any]) -> None:
+
+def record_reasoning_display(ctx: AppContext, event: dict[str, object]) -> None:
     """Keep accepted reasoning visible after history refresh and restart."""
     if event.get("type") not in {"turn", "reasoning"}:
         return
@@ -24,7 +27,7 @@ def record_reasoning_display(ctx: Any, event: dict[str, Any]) -> None:
     ctx.durable.record_display_message(session, run_id=run, identity=f"reasoning:{turn}", payload=payload)
 
 
-def record_tool_display(ctx: Any, event: dict[str, Any]) -> None:
+def record_tool_display(ctx: AppContext, event: dict[str, object]) -> None:
     if event.get('type') not in {'tool_started', 'tool'} or not event.get('call_id'):
         return
     session, run = str(event.get('session_id') or ''), str(event.get('run_id') or '')
@@ -47,5 +50,6 @@ def record_tool_display(ctx: Any, event: dict[str, Any]) -> None:
         'outputTruncated': bounded.get('detail_truncated') is True or bounded.get('truncated') is True,
         **({'outputBytes': bounded['output_bytes']} if type(bounded.get('output_bytes')) is int else {}),
         **({'outputStoredBytes': bounded['output_stored_bytes']} if type(bounded.get('output_stored_bytes')) is int else {}),
+        **({'failure': bounded['failure']} if 'failure' in bounded else {}),
     }
     ctx.durable.record_display_message(session, run_id=run, identity=f'{call}:{"start" if pending else "final"}', payload=payload)

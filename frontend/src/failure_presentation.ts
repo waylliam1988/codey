@@ -38,6 +38,28 @@ export interface AuthoritativeFailureState {
   continuation?: string;
 }
 
+const SOURCE_FAILURE_SUMMARIES: Readonly<Record<string, string>> = {
+  'source.source_not_selected': 'Choose a specific article or document',
+  'source.document_unreadable': 'Document has no readable text; try another source',
+  'source.access_restricted': 'Access restricted; try another source',
+  'source.login_required': 'Sign-in required; check the page',
+  'source.page_not_loaded': 'Page not loaded; check the page',
+  'source.page_unavailable': 'Page unavailable; try another source',
+  'source.render_script_error': 'Page script failed; try another source',
+  'source.render_request_failed': 'Page resources failed to load',
+  'source.request_failed': 'Could not load the page',
+  'source.execution_failed': 'Could not read the page',
+  'source.unsupported_content': 'Unsupported content; try another source',
+  'source.policy_denied': 'Page access blocked by policy',
+  'source.invalid_response': 'Invalid page response',
+  'source.read_range_unavailable': 'Text range unavailable; check the source',
+  'source.snapshot_unavailable': 'Captured text unavailable; open the source again',
+};
+
+export function toolFailureSummary(failure: FailureInfo | undefined): string {
+  return failure?.schema_version === 1 && failure.scope === 'tool' ? SOURCE_FAILURE_SUMMARIES[failure.code] || '' : '';
+}
+
 const KNOWN_CODES = new Set([
   'provider.connection_failed',
   'provider.authentication_failed',

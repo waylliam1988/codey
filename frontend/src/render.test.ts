@@ -17,6 +17,39 @@ void renderTypeContract;
 describe('render boundaries', () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it.each([
+    ['access_restricted', 'Access restricted; try another source'],
+    ['page_not_loaded', 'Page not loaded; check the page'],
+    ['render_script_error', 'Page script failed; try another source'],
+  ])('uses structured source failure %s and preserves diagnostic details', (code, label) => {
+    const diagnostic = 'HTTP 403 page_blank; this text must not determine the category';
+    const host = document.createElement('div');
+    window.Render.appendOrFoldTool(host, {
+      toolName: 'open_url',
+      path: 'https://example.com/article',
+      error: true,
+      result: diagnostic,
+      failure: {
+        schema_version: 1,
+        code: `source.${code}`,
+        category: 'source',
+        scope: 'tool',
+        phase: 'acquisition',
+        effect: 'not_applicable',
+        incident_id: 'r:c1',
+      },
+    });
+    expect(host.querySelector('.tl-result')?.textContent).toBe(label);
+    expect(host.querySelector('.tl-path')?.textContent).toBe('https://example.com/article');
+    expect(host.querySelector('pre')?.textContent).toBe(diagnostic);
+    expect(host.querySelectorAll('details')).toHaveLength(1);
+  });
+
+  it('keeps unknown failures generic and never classifies diagnostic text', () => {
+    const row = window.Render.toolRowEl({ toolName: 'open_url', error: true, result: 'HTTP 403 page_blank' }, false);
+    expect(row.querySelector('.tl-result')?.textContent).toBe('Tool failed');
+  });
+
   it('labels successful tools that have neither a path nor a command', () => {
     for (const name of ['research_plan', 'knowledge_search', 'read_tool_result']) {
       const row = window.Render.toolRowEl({ kind: name, toolName: name, result: '{"questions":[]}' }, false);

@@ -18,10 +18,11 @@ from codey.research.ledger_receipts import (
     source_observation,
     source_search_observation,
 )
+from codey.research.receipt_types import SourceSearchObservation
 from codey.runtime.core.execution_record import ExecutionRecord, HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import canonical_tool_name
-from codey.types.json_value import ToolArgs, canonical_json_object, require_json_string
+from codey.types.json_value import ToolArgs, canonical_json_object, require_json_integer, require_json_string
 
 __all__ = [
     "record_facts_for_result",
@@ -34,6 +35,20 @@ def project_result_observation(
     exit_code: int | None = None, research_ledger: ResearchLedger | None = None,
 ) -> None:
     """The shared live/recovery projection, applied only to staged views."""
+    from codey.research.source_acquisition import acquisition_observation, failure_event
+
+    if "source_acquisition" in result.canonical:
+        acquisition_observation(result.canonical["source_acquisition"])
+    if "source_failure" in result.canonical:
+        failure_event(result.canonical["source_failure"], run_id="", session_id="", call_id="")
+        if ok:
+            raise ValueError("a successful source read cannot carry a source failure")
+    if not ok and {"research_observation", "read_passages"} & result.canonical.keys():
+        raise ValueError("an unsuccessful tool cannot establish source evidence")
+    if ok and call.name in {"open_url", "open_result", "reopen_source", "open_hit"}:
+        passages = result.canonical.get("read_passages")
+        if not isinstance(passages, list) or not passages:
+            raise ValueError("successful source reading requires actual read passages")
     observation = result.canonical.get("research_observation")
     if ok and research_ledger is not None and "research_reference_bindings" in result.canonical:
         from codey.research.references import restore_bindings
@@ -127,6 +142,22 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
     for hid, clean in pending.items():
         if hid not in session.hit_targets:
             session.hit_targets[hid] = clean
+
+
+def _validate_hit_observation(observation: SourceSearchObservation, mapping: object) -> None:
+    source, _text, _pages = source_observation(observation["source_snapshot"])
+    expected = {(source.final_url, source.text_hash, hit["offset"], str(hit["page"]) if hit["page"] else "")
+                for hit in observation["hits"]}
+    actual: set[tuple[str, str, int, str]] = set()
+    rows = canonical_json_object(mapping)
+    for raw in rows.values():
+        row = canonical_json_object(raw)
+        actual.add((require_json_string(row.get("url"), "hit URL"),
+                    require_json_string(row.get("text_hash"), "hit source hash"),
+                    require_json_integer(row.get("offset"), "hit offset"),
+                    require_json_string(row.get("pages"), "hit pages")))
+    if actual != expected or len(rows) != len(actual):
+        raise ValueError("hit targets differ from the captured source search observation")
 
 
 def _record_open_fact(session: TaskSession, result: ToolResult) -> None:
@@ -229,7 +260,8 @@ def record_facts_for_result(
             if text:
                 session.transcript_notes.append(f"{name}: {text[:500]}")
             return
-        source_search_observation(result.canonical.get("research_observation"))
+        search = source_search_observation(result.canonical.get("research_observation"))
+        _validate_hit_observation(search, result.canonical.get("hit_targets"))
         _apply_hit_targets(session, _canonical_mapping(result).get("hit_targets"))
         if text:
             session.transcript_notes.append(f"{name}: {text[:500]}")

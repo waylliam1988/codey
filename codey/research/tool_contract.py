@@ -93,7 +93,6 @@ TOOL_CONTRACTS = {
         }, 'query'),
         example='{"tool":"web_search","args":{"query":"..."}}',
         description="search the web for ranked results",
-        parallel_safe=True,
     ),
     "open_url": ToolContract(
         name="open_url",
@@ -105,7 +104,6 @@ TOOL_CONTRACTS = {
         }, 'url'),
         example='{"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000,"pages":"1-5"}}',
         description="read a page's text; for PDFs, pages selects bounded page ranges",
-        parallel_safe=True,
     ),
     "source_search": ToolContract(
         name="source_search",
@@ -116,7 +114,6 @@ TOOL_CONTRACTS = {
         }, 'query', 'url'),
         example='{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}',
         description="search within a source already opened with open_url; returns locators, offsets, and PDF pages",
-        parallel_safe=True,
     ),
     "knowledge_search": ToolContract(
         name="knowledge_search",

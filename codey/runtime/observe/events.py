@@ -251,6 +251,11 @@ def run_event_ui_payload(
     if event.outcome.exit_code is not None and type(event.outcome.exit_code) is int:
         payload["exit_code"] = event.outcome.exit_code
     managed = event.outcome.managed_output()
+    if "source_failure" in event.outcome.canonical:
+        from codey.research.source_acquisition import failure_event
+
+        payload["failure"] = failure_event(event.outcome.canonical["source_failure"], run_id=run_id,
+            session_id=session_id, call_id=event.call.call_id or f"{event.turn}:{tool_index}")
     if managed:
         payload["output_handle"] = str(managed.get("handle") or "")
         payload["output_bytes"] = _safe_byte_count(managed.get("original_bytes"))

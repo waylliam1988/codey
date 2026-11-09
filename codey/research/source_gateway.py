@@ -33,6 +33,7 @@ from codey.research.pdf_extract import (
     PdfSkipped,
     extract_pdf_document,
 )
+from codey.research.source_acquisition import SourceFailureCode, acquisition_observation, source_failure_code
 from codey.research.source_document import SourceDocument
 from codey.research.source_search import (
     SOURCE_SEARCH_DEFAULT_LIMIT,
@@ -45,7 +46,7 @@ from codey.research.source_snapshots import captured_source, document_snapshot
 from codey.research.url_selection import source_candidate_skip_reason
 from codey.runtime.core import cancellation
 from codey.task.web_intent import source_url_key
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject
 
 OPEN_DEFAULT_LIMIT = 6000
 OPEN_MAX_LIMIT = 12000
@@ -85,9 +86,9 @@ class OpenedSource:
     detail: str = ""
     document: SourceDocument | None = None
     read_urls: tuple[str, ...] = ()
-    acquisition_failed: bool = False
     acquisition: JsonObject = field(default_factory=dict)
     observation: JsonObject = field(default_factory=dict)
+    failure_code: SourceFailureCode = "request_failed"
 
 
 @dataclass(frozen=True)
@@ -140,7 +141,7 @@ class ResearchSourceGateway:
     ) -> OpenedSource:
         url = (url or "").strip()
         if not url:
-            return OpenedSource(status="error", detail="open_url needs a url")
+            return OpenedSource(status="error", detail="open_url needs a url", failure_code="invalid_response")
         direct = source_url_key(url) in self.direct_urls
         skip_reason = "" if direct else source_candidate_skip_reason(url)
         if skip_reason:
@@ -148,13 +149,14 @@ class ResearchSourceGateway:
             return OpenedSource(
                 status="skipped",
                 detail=f"{skip_reason}. Choose a specific article, document, or readable source page.",
+                failure_code="source_not_selected",
             )
         offset = max(0, _as_int(offset, 0))
         limit = min(OPEN_MAX_LIMIT, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
         reason = check_fetch_url(url, use_cache=True)
         if reason:
             self._fail("browser", "open", reason, url)
-            return OpenedSource(status="error", detail=reason)
+            return OpenedSource(status="error", detail=reason, failure_code="policy_denied")
         cancellation.check()
         try:
             page = self.search_provider.fetch(url)
@@ -162,13 +164,15 @@ class ResearchSourceGateway:
             raise
         except Exception as exc:
             self._fail("browser", "open", exc, url)
-            return OpenedSource(status="error", detail=f"open failed: {exc}", acquisition_failed=True)
+            return OpenedSource(status="error", detail=f"open failed: {exc}",
+                                failure_code="execution_failed")
         cancellation.check()
-        acquisition = decode_json_object(page.get("acquisition", {}))
+        acquisition = acquisition_observation(page["acquisition"]) if "acquisition" in page else {}
         page_url = str(page.get("url") or url)
         status = page.get("status")
         if type(status) is not str or status not in {"ok", "error", "skipped"}:
-            return OpenedSource(status="error", detail="fetch returned an invalid structured status", acquisition=acquisition)
+            return OpenedSource(status="error", detail="fetch returned an invalid structured status", acquisition=acquisition,
+                                failure_code="invalid_response")
         skip_reason = "" if direct else source_candidate_skip_reason(page_url)
         if skip_reason:
             self._fail("browser", "open", skip_reason + " after redirect", url)
@@ -176,28 +180,37 @@ class ResearchSourceGateway:
                 status="skipped",
                 detail=f"{skip_reason} after redirect. Choose a specific article, document, or readable source page.",
                 acquisition=acquisition,
+                failure_code="source_not_selected",
             )
         if status != "ok":
             message = page.get("detail")
             if type(message) is not str or not message:
-                return OpenedSource(status="error", detail="fetch returned an invalid failure detail", acquisition=acquisition)
+                return OpenedSource(status="error", detail="fetch returned an invalid failure detail", acquisition=acquisition,
+                                    failure_code="invalid_response")
             self._fail("browser", "open", message, url)
-            return OpenedSource(status=status, detail=message, acquisition_failed=True, acquisition=acquisition)
+            return OpenedSource(status=status, detail=message, acquisition=acquisition,
+                failure_code=source_failure_code(page.get("failure_code", "request_failed")))
         reason = check_fetch_url(page_url, use_cache=True)
         if reason:
             self._fail("browser", "open", f"{reason} (after redirect)", page_url or url)
-            return OpenedSource(status="error", detail=f"{reason} (after redirect)", acquisition=acquisition)
+            return OpenedSource(status="error", detail=f"{reason} (after redirect)", acquisition=acquisition,
+                                failure_code="policy_denied")
         try:
             document = self._source_document_from_fetch(url, page, pages=pages)
         except (ValueError, TypeError) as exc:
             self._fail("browser", "open", exc, url)
-            return OpenedSource(status="error", detail=f"invalid fetched document: {exc}", acquisition=acquisition)
+            return OpenedSource(status="error", detail=f"invalid fetched document: {exc}", acquisition=acquisition,
+                                failure_code="invalid_response")
         if isinstance(document, PdfSkipped):
             return OpenedSource(
                 status="skipped",
                 detail=f"{document.reason}. Choose an HTML source or another readable PDF.",
                 acquisition=acquisition,
+                failure_code="document_unreadable",
             )
+        if not document.text.strip():
+            return OpenedSource(status="error", detail="fetched document contains no readable text",
+                                acquisition=acquisition, failure_code="page_not_loaded")
         read_urls = (url,) if not page_url or page_url == url else (url, page_url)
         source = self.ledger.record_open_document(document)
         assert source is not None

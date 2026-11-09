@@ -28,6 +28,8 @@ from codey.research.extract import (
     extract_text,
     extract_title,
 )
+from codey.research.source_acquisition import SourceFailureCode, http_failure_code, with_attempt
+from codey.research.source_acquisition import attempt as acquisition_attempt
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
 
@@ -55,27 +57,28 @@ class _PageFailures:
 
     def __init__(self, page: Page) -> None:
         self.page = page
-        self.errors: list[str] = []
+        self.errors: list[tuple[SourceFailureCode, str]] = []
         page.on("pageerror", self.script_error)
         page.on("requestfailed", self.request_failed)
         page.on("response", self.response_failed)
 
     def script_error(self, error: BrowserError) -> None:
         if len(self.errors) < 8:
-            self.errors.append("render_script_error: " + error.message[:240])
+            self.errors.append(("render_script_error", "render_script_error: " + error.message[:240]))
 
     def request_failed(self, request: Request) -> None:
         if request.resource_type in {"script", "xhr", "fetch"} and len(self.errors) < 8:
-            self.errors.append("render_request_failed: " + (request.failure or "unknown")[:240])
+            self.errors.append(("render_request_failed", "render_request_failed: " + (request.failure or "unknown")[:240]))
 
     def response_failed(self, response: Response) -> None:
         if response.status >= 400 and response.request.resource_type in {"script", "xhr", "fetch"} and len(self.errors) < 8:
-            self.errors.append(f"render_request_failed: HTTP {response.status}")
+            self.errors.append(("render_request_failed", f"render_request_failed: HTTP {response.status}"))
 
-    def detail(self, text: str) -> str:
+    def failure(self, text: str) -> tuple[SourceFailureCode, str]:
         if self.errors:
-            return "; ".join(self.errors)
-        return "render_timeout" if _application_content_pending(self.page) else _fetch_page_failure_kind(text)
+            return self.errors[0][0], "; ".join(detail for _code, detail in self.errors)
+        detail = "render_timeout" if _application_content_pending(self.page) else _fetch_page_failure_kind(text)
+        return ("access_restricted" if detail == "page_unavailable" else "page_not_loaded"), detail
 
     def close(self) -> None:
         self.page.remove_listener("pageerror", self.script_error)
@@ -460,6 +463,8 @@ class BrowserSearchProvider:
         cancellation.check()
         if source_download._is_pdf_url(url):
             page = source_download._download_pdf_streaming(url)
+            cancellation.check()
+            return with_attempt(page, "http", url)
         else:
             try:
                 page = _search_browser_call(
@@ -477,20 +482,24 @@ class BrowserSearchProvider:
                 raise
             except TimeoutError as exc:
                 self._record_worker_health()
-                return source_download._fetch_failure(url, f'could not load page within {_FETCH_TOTAL_TIMEOUT_SECONDS:.0f}s: {exc}')
+                return with_attempt(source_download._fetch_failure(url,
+                    f'could not load page within {_FETCH_TOTAL_TIMEOUT_SECONDS:.0f}s: {exc}'), "browser", url)
             if page.get("content_kind") == "pdf_download":
                 cancellation.check()
-                page = source_download._download_pdf_streaming(
+                downloaded = source_download._download_pdf_streaming(
                     str(page.get("url") or url),
                     mime_type=str(page.get("mime_type") or ""),
                 )
+                page = {**downloaded, "acquisition": {"version": 1,
+                    "attempts": [acquisition_attempt("browser", url, page),
+                                 acquisition_attempt("http", str(page.get("url") or url), downloaded)]}}
         cancellation.check()
-        return page
+        return with_attempt(page, "browser", url)
 
     def _fetch_on_browser_thread(self, url: str) -> dict[str, object]:
         reason = check_fetch_url(url)
         if reason:
-            return source_download._fetch_failure(url, f'{reason}')
+            return source_download._fetch_failure(url, f'{reason}', code="policy_denied", delivery="not_attempted")
         if source_download._is_pdf_url(url):
             return source_download._pdf_download_sentinel(url)
         try:
@@ -498,7 +507,7 @@ class BrowserSearchProvider:
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
-            return source_download._fetch_failure(url, f'could not prepare page: {exc}')
+            return source_download._fetch_failure(url, f'could not prepare page: {exc}', code="execution_failed", delivery="not_attempted")
         failures = _PageFailures(page)
         try:
             cancellation.check()
@@ -524,12 +533,14 @@ class BrowserSearchProvider:
                 status = getattr(response, "status", None)
                 if isinstance(status, int) and status >= 400:
                     self._discard_fetch_page_on_browser_thread(page)
-                    return source_download._fetch_failure(final_url, f'could not load page: HTTP {status}')
+                    return source_download._fetch_failure(final_url, f'could not load page: HTTP {status}',
+                        code=http_failure_code(status), delivery="confirmed")
                 ctype = (response.headers.get("content-type") or "").lower()
                 if source_download._is_pdf_response(ctype, final_url):
                     return source_download._pdf_download_sentinel(final_url, mime_type=ctype)
                 if ctype and not any(t in ctype for t in ("html", "text", "xml", "json")):
-                    return source_download._fetch_failure(final_url, f'unsupported content type: {ctype}', status="skipped")
+                    return source_download._fetch_failure(final_url, f'unsupported content type: {ctype}', status="skipped",
+                                                         code="unsupported_content", delivery="confirmed")
             cancellation.check()
             try:
                 html, text = _fetch_page_content_after_settle(page)
@@ -537,11 +548,13 @@ class BrowserSearchProvider:
                 raise
             except Exception as exc:
                 self._discard_fetch_page_on_browser_thread(page)
-                return source_download._fetch_failure(final_url, f'could not read page content: {exc}')
+                return source_download._fetch_failure(final_url, f'could not read page content: {exc}',
+                                                     code="execution_failed", delivery="confirmed")
             cancellation.check()
             if _requires_login(page, text):
                 self._discard_fetch_page_on_browser_thread(page)
-                return source_download._fetch_failure(final_url, "login_required: page requires authentication")
+                return source_download._fetch_failure(final_url, "login_required: page requires authentication",
+                                                     code="login_required", delivery="confirmed")
             if not _usable_fetch_page_text(text):
                 return self._unreadable_page_on_browser_thread(page, final_url, html, text, failures)
             truncated = len(text) > _MAX_PAGE_CHARS
@@ -557,15 +570,20 @@ class BrowserSearchProvider:
     def _unreadable_page_on_browser_thread(
         self, page: Page, url: str, html: str, text: str, failures: _PageFailures,
     ) -> dict[str, object]:
+        code, detail = failures.failure(text)
+        browser_failure = source_download._fetch_failure(url,
+            "page had no usable visible content after navigation: " + detail, title=extract_title(html),
+            code=code, delivery="confirmed")
         if self.http_fallback:
             fallback = source_download._download_text_fallback(url)
+            fallback = {**fallback, "acquisition": {"version": 1,
+                "attempts": [acquisition_attempt("browser", url, browser_failure), acquisition_attempt("http", url, fallback)]}}
             if fallback.get("status") == "ok" and fallback.get("text"):
                 self._discard_fetch_page_on_browser_thread(page)
                 return fallback
-        detail = failures.detail(text)
+            browser_failure["acquisition"] = fallback["acquisition"]
         self._discard_fetch_page_on_browser_thread(page)
-        return source_download._fetch_failure(url,
-            "page had no usable visible content after navigation: " + detail, title=extract_title(html))
+        return browser_failure
 
     def _abandon_fetch_on_browser_thread(self) -> None:
         if self.headless:

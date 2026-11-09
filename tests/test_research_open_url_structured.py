@@ -120,7 +120,7 @@ def test_research_tool_output_contains_only_receipts_and_observed_search_status(
 
     names = {field.name for field in dataclasses.fields(ResearchToolOutput)}
     assert names == {"model_text", "receipt_text", "read_passages", "read_observation", "ok",
-                     "knowledge_search_empty", "acquisition_failed", "acquisition"}
+                     "knowledge_search_empty", "failure_code", "acquisition"}
     # This is the program's observed zero-hit status, not a semantic judgment
     # about an answer. Ordinary source reads keep the conservative default.
     search_status = next(field for field in dataclasses.fields(ResearchToolOutput)

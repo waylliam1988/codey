@@ -85,6 +85,7 @@ def test_strict_research_keeps_its_existing_evidence_contract() -> None:
 
 @pytest.mark.parametrize("failure", ["policy", "offset", "fetch"])
 def test_only_actual_fetch_failure_can_be_used_for_source_gaps(monkeypatch, failure: str) -> None:
+    from codey.operations.source_gaps import evaluate_source_coverage, validate_source_gaps
     from codey.operations.task_execution import ExecutionDelegate
     from codey.research.ledger import ResearchLedger
     from codey.research.tools import ResearchTools
@@ -107,7 +108,17 @@ def test_only_actual_fetch_failure_can_be_used_for_source_gaps(monkeypatch, fail
     delegate = ExecutionDelegate(session=source_session(), research_tools=tools)
     result, _, _ = delegate._opened_result(ToolCall("open_url", {"url": url}), opened, url,
                                            ledger=ResearchLedger(), turn=1, tool_index=0)
-    assert ("source_failure" in result.canonical) == (failure == "fetch")
+    expected_code = {"fetch": "request_failed", "policy": "policy_denied", "offset": "read_range_unavailable"}[failure]
+    assert result.canonical["source_failure"]["code"] == expected_code
+    coverage = evaluate_source_coverage(required_urls=[url], results={REF: result})
+    assert coverage.unavailable == (failure == "fetch")
+    session = source_session()
+    session._memory_results[REF] = result
+    if failure == "fetch":
+        validate_source_gaps(session)
+    else:
+        with pytest.raises(ValueError, match="failed acquisition"):
+            validate_source_gaps(session)
 
 
 class FailureProvider(PageProvider):

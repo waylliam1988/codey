@@ -11,6 +11,10 @@ from codey.research.source_document import SourceDocument, SourcePage
 from codey.types.json_value import JsonObject
 
 
+class SourceSnapshotUnavailable(ValueError):
+    """The requested captured version or PDF page is absent; reacquisition is explicit."""
+
+
 def captured_source(ledger: ResearchLedger, url: str, text_hash: str = "") -> JsonObject:
     """Resolve captured bytes; a missing version never falls back to the live URL."""
     current = ledger.source_record_for_url(url)
@@ -24,7 +28,7 @@ def captured_source(ledger: ResearchLedger, url: str, text_hash: str = "") -> Js
         source, _text, _pages = source_observation(snapshot)
         if source.final_url == url and source.text_hash == text_hash:
             return snapshot
-    raise ValueError("the captured source version is unavailable; open_url explicitly to acquire a new version")
+    raise SourceSnapshotUnavailable("the captured source version is unavailable; open_url explicitly to acquire a new version")
 
 
 def snapshot_document(observation: JsonObject, *, pages: str = "") -> SourceDocument:
@@ -32,7 +36,7 @@ def snapshot_document(observation: JsonObject, *, pages: str = "") -> SourceDocu
     selected = parse_pages(pages) if pages else source.pages_read
     if pages:
         if source.content_kind != "pdf" or any(number not in page_map for number in selected):
-            raise ValueError("requested pages are not in the captured source; use open_url to acquire them")
+            raise SourceSnapshotUnavailable("requested pages are not in the captured source; use open_url to acquire them")
         text = "\n\n".join(f"[page {number}]\n{page_map[number]}" for number in selected)
         page_map = {number: page_map[number] for number in selected}
     return SourceDocument(requested_url=source.requested_url, final_url=source.final_url,

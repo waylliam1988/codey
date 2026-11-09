@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 from typing import Protocol
 
+from codey.research.source_acquisition import acquisition_observation, attempt
 from codey.research.source_download import fetch_http_document
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, JsonValue
@@ -20,14 +21,6 @@ def _background_browser() -> BrowserSource:
     from codey.research.browser_search import BrowserSearchProvider
 
     return BrowserSearchProvider(headless=False, isolated=False, http_fallback=False)
-
-
-def _attempt(backend: str, url: str, page: dict[str, object]) -> JsonObject:
-    attempt: JsonObject = {"backend": backend, "requested_url": url,
-                           "final_url": str(page.get("url") or url), "status": str(page.get("status") or "error")}
-    if page.get("detail"):
-        attempt["detail"] = str(page["detail"])
-    return attempt
 
 
 class ChatWebProvider:
@@ -52,11 +45,13 @@ class ChatWebProvider:
         with cancellation.deadline_scope(time.monotonic() + 30.0):
             page = fetch_http_document(url)
             cancellation.check()
-            attempts: list[JsonValue] = [_attempt("http", url, page)]
+            attempts: list[JsonValue] = [attempt("http", url, page)]
             if page.get("render_required") is True:
                 page = self._browser_source().fetch(url)
                 cancellation.check()
-                attempts.append(_attempt("browser", url, page))
+                trace = acquisition_observation(page["acquisition"]) if "acquisition" in page else None
+                attempts.extend(trace["attempts"] if trace is not None and isinstance(trace["attempts"], list)
+                                else [attempt("browser", url, page)])
             return {**page, "acquisition": {"version": 1, "attempts": attempts}}
 
     def close(self) -> None:

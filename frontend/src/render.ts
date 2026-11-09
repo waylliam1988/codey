@@ -1,6 +1,7 @@
 import { markdownHtml, renderMarkdownContent } from './markdown';
 import { runtime } from './runtime';
 import { createIconSvg } from './icon_button';
+import { toolFailureSummary } from './failure_presentation';
 export interface ToolPreview {
   additions?: number;
   deletions?: number;
@@ -297,9 +298,8 @@ const renderApi = (function () {
     result.textContent = m.pending
       ? m.activity || m.result || 'Working'
       : m.error
-        ? ['run', 'shell'].includes(m.toolName || m.kind || '')
-          ? 'Command blocked or failed'
-          : 'Tool failed'
+        ? toolFailureSummary(m.failure) ||
+          (['run', 'shell'].includes(m.toolName || m.kind || '') ? 'Command blocked or failed' : 'Tool failed')
         : '';
     if (!m.pending && !m.error && m.preview) {
       const p = m.preview;

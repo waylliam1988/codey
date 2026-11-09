@@ -160,6 +160,9 @@ def source_search_observation(observation: object) -> SourceSearchObservation:
                 or type(hit["snippet"]) is not str
                 or hit["page"] is not None and (type(hit["page"]) is not int or hit["page"] < 1)):
             raise ValueError("invalid source search locator observation")
+        text = _text if hit["page"] is None else _pages.get(hit["page"], "")
+        if not 0 <= hit["offset"] < len(text):
+            raise ValueError("source search locator is outside the captured source")
     return SourceSearchObservation(source_url=row["source_url"],
         source_snapshot=canonical_json_object(row["source_snapshot"]), query=row["query"],
         hits=[SourceSearchLocator(offset=hit["offset"], page=hit["page"], snippet=hit["snippet"])

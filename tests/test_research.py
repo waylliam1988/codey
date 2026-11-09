@@ -3849,7 +3849,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         with mock.patch("codey.research.browser_search._search_browser_call", return_value=payload) as call:
             result = provider.fetch("https://example.com/article")
 
-        self.assertEqual(result, payload)
+        self.assertEqual({key: value for key, value in result.items() if key != "acquisition"}, payload)
+        self.assertEqual(result["acquisition"]["attempts"][0]["backend"], "browser")
         call.assert_called_once_with(
             provider._fetch_on_browser_thread,
             "https://example.com/article",
@@ -4288,7 +4289,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         ):
             result = provider.fetch("https://example.com/report")
 
-        self.assertEqual(result, streamed)
+        self.assertEqual({key: value for key, value in result.items() if key != "acquisition"}, streamed)
+        self.assertEqual([row["backend"] for row in result["acquisition"]["attempts"]], ["browser", "http"])
         download.assert_called_once_with("https://example.com/report.pdf", mime_type="application/pdf")
 
     def test_browser_search_pdf_streaming_checks_cancellation_between_chunks(self) -> None:

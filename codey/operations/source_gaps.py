@@ -11,6 +11,9 @@ from codey.runtime.core.models import ToolResult
 from codey.task.web_intent import source_url_key
 from codey.types.json_value import JsonObject, decode_json_object
 
+_NON_ACQUISITION_FAILURES = frozenset({"read_range_unavailable", "snapshot_unavailable", "policy_denied",
+                                     "invalid_response", "source_not_selected", "document_unreadable"})
+
 
 @dataclass(frozen=True)
 class SourceFailure:
@@ -70,7 +73,8 @@ def evaluate_source_coverage(*, required_urls: Collection[str], results: Mapping
             if result.call.name == "open_url" and isinstance(url, str):
                 opened.add(source_url_key(url))
         failure = result.canonical.get("source_failure")
-        if not result.ok and isinstance(failure, dict):
+        if (not result.ok and isinstance(failure, dict)
+                and failure.get("code") not in _NON_ACQUISITION_FAILURES):
             url, detail = failure.get("url"), failure.get("detail")
             if isinstance(url, str) and isinstance(detail, str):
                 key = source_url_key(url)
@@ -132,7 +136,8 @@ def validate_source_gaps(session: TaskSession) -> None:
         ref = gap["result_ref"]
         result = session._memory_results.get(ref) if isinstance(ref, str) else None
         failure = result.canonical.get("source_failure") if result is not None else None
-        if result is None or result.ok or not isinstance(failure, dict) or ref in selected:
+        if (result is None or result.ok or not isinstance(failure, dict) or ref in selected
+                or failure.get("code") in _NON_ACQUISITION_FAILURES):
             raise ValueError("source_gaps must select distinct failed acquisition receipts from this task")
         if not isinstance(failure.get("url"), str) or not failure["url"]:
             raise ValueError("source_gaps receipt lacks its requested URL")

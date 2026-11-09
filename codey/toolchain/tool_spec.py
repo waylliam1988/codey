@@ -165,7 +165,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             json_examples=(contract.example,),
             description=contract.description,
             executor="source" if grant == "web.read" else "knowledge",
-            replay_class="safe" if grant in {"web.read", "knowledge.read"} or name in {"knowledge_commit", "save_finding", "save_inference", "submit_research_answer"} else "unsafe",
+            replay_class="safe" if grant == "knowledge.read" or name in {"knowledge_commit", "save_finding", "save_inference", "submit_research_answer"} else "unsafe",
             parallel_safe=contract.parallel_safe,
         )
     for alias, (_canonical, id_arg) in _CONTROLLER_ALIAS_ID_ARG.items():
@@ -186,7 +186,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             json_examples=(f'{{"tool":"{alias}","args":{{"{id_arg}":"..."}}}}',),
             description=reference_help[alias],
             executor="source",
-            replay_class="safe",
+            replay_class="unsafe" if alias == "open_result" else "safe",
         )
     return specs
 

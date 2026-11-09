@@ -405,7 +405,7 @@ class ExecutionDelegate:
         if not opened.ok:
             from codey.types.json_value import JsonObject
 
-            canonical: JsonObject = {"source_failure": {"url": url, "detail": model_text}} if opened.acquisition_failed else {}
+            canonical: JsonObject = {"source_failure": {"url": url, "detail": model_text, "code": opened.failure_code}}
             if opened.acquisition:
                 canonical["source_acquisition"] = opened.acquisition
             return ToolResult(ok=False, call=call, model_text=model_text,
@@ -588,6 +588,7 @@ class ExecutionDelegate:
     def _execute_source_open(self, call: ToolCall, tools: ResearchTools, *, turn: int,
                              tool_index: int) -> tuple[ToolResult, bool, int | None]:
         from codey.operations.source_execution import open_source
+        from codey.research.source_snapshots import SourceSnapshotUnavailable
 
         if call.name == "open_url":
             url = str(call.args.get("url") or "")
@@ -599,7 +600,10 @@ class ExecutionDelegate:
                 detail += "A tool result_ref or out_ artifact handle is not a source locator."
                 return ToolResult(ok=False, call=call, model_text=detail), False, None
         target = self.session.hit_targets.get(str(call.args.get("hit_id") or "").lower()) if call.name == "open_hit" else None
-        opened = open_source(call, tools, self.research_tools.ledger, url, target)
+        try:
+            opened = open_source(call, tools, self.research_tools.ledger, url, target)
+        except SourceSnapshotUnavailable as exc:
+            opened = ResearchToolOutput(f"ERROR: {exc}", ok=False, failure_code="snapshot_unavailable")
         return self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
 
     def _commit_research_knowledge(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:

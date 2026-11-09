@@ -455,6 +455,14 @@ Running copy is `Working · <current action>` or `Working · Waiting for reply`;
 
 **Tool lines:** compact text summaries without a resting container. Read shows the file and observed line range; search shows the query and retained match count (`+` means more results); edit shows the actual file and measured `+n −n`. Expand a tool to inspect its retained content or bounded edit diff. Counts and diffs come from the content actually written, never model claims. Missing before-content or a preview budget limit means `Changed · preview unavailable`, never fabricated statistics. Failed tools use a short actionable explanation; keep the complete retained error inside Details. Use `--err-text` only for the failure text.
 
+Source-reading failures use English explanations derived from the structured
+failure code: distinguish access restrictions, sign-in, an unloaded page, page
+script/resource failures, and an unavailable captured text range. Keep the URL
+in its existing path position and the complete retained error inside the tool
+disclosure. Do not classify errors by parsing diagnostic text or add status
+cards, automatic retries, or another failure panel. A completed navigation is
+not a completed source read; only captured passages establish that reading.
+
 **Stable tool order:** reserve a call's position when it is first observed within
 its run and parent scope. Completion, failure and repeated observations update
 that position; they never append the call again or sort by completion time.

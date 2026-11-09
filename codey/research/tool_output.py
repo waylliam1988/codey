@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 from codey.research.ledger import ResearchLedger
 from codey.research.passages import PassageDescriptor
+from codey.research.source_acquisition import SourceFailureCode
 from codey.types.json_value import JsonObject, canonical_json_object
 
 
@@ -18,8 +19,8 @@ class ResearchToolOutput:
     read_observation: JsonObject = field(default_factory=dict)
     ok: bool = field(kw_only=True)
     knowledge_search_empty: bool = field(default=False, kw_only=True)
-    acquisition_failed: bool = field(default=False, kw_only=True)
     acquisition: JsonObject = field(default_factory=dict, kw_only=True)
+    failure_code: SourceFailureCode = field(default="request_failed", kw_only=True)
 
     def __post_init__(self) -> None:
         if type(self.ok) is not bool:

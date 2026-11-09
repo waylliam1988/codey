@@ -33,6 +33,7 @@ from codey.research.http_redirects import (
 from codey.research.http_redirects import (
     redirect_target as _redirect_target,
 )
+from codey.research.source_acquisition import acquisition_observation, attempt, with_attempt
 from codey.research.source_connectors import (
     CONNECTOR_AVAILABLE_STATUSES,
     MAX_CONNECTOR_HITS,
@@ -49,8 +50,10 @@ from codey.research.source_connectors import (
     parse_pubmed_fixture,
     safe_connector_query,
 )
+from codey.research.source_gateway import _SearchProvider
 from codey.research.urls import canonical_key, full_key, host_key, parsed_url
 from codey.runtime.core import cancellation
+from codey.types.json_value import JsonValue
 from codey.utils.refs import clip, coerce_float
 
 CONNECTOR_SEARCH_IDS = ("pubmed", "arxiv")
@@ -71,7 +74,7 @@ class ConnectorAwareSearchProvider:
 
     def __init__(
         self,
-        base_provider: Any,
+        base_provider: _SearchProvider,
         *,
         registry: SourceConnectorRegistry | None = None,
         connector_ids: tuple[str, ...] = CONNECTOR_SEARCH_IDS,
@@ -124,8 +127,9 @@ class ConnectorAwareSearchProvider:
             base_results = list[dict[str, Any]]()  # Real connector hits survive a browser failure.
         return _merge_results(connector_results, base_results, limit=result_limit)
 
-    def fetch(self, url: str) -> dict[str, Any]:
+    def fetch(self, url: str) -> dict[str, object]:
         target = (url or "").strip()
+        attempts: list[JsonValue] = []
         hit = self._hits_by_url.get(canonical_key(target))
         if hit is None:
             try:
@@ -137,12 +141,18 @@ class ConnectorAwareSearchProvider:
                 hit = None
         if hit is not None:
             try:
-                return _page_from_fetched(fetch_recorded_hit(hit))
+                return with_attempt(_page_from_fetched(fetch_recorded_hit(hit)), "connector", target)
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 raise
             except Exception as exc:
                 self._record_error(hit.connector_id, "fetch", exc)
-        return cast(dict[str, Any], self.base_provider.fetch(target))
+                attempts.append(attempt("connector", target, {"status": "error", "detail": str(exc),
+                    "failure_code": "request_failed", "delivery": "unconfirmed"}))
+        page = with_attempt(self.base_provider.fetch(target), "browser", target)
+        trace = acquisition_observation(page["acquisition"])
+        entries = trace["attempts"]
+        assert isinstance(entries, list)
+        return {**page, "acquisition": {"version": 1, "attempts": attempts + entries}}
 
     def close(self) -> None:
         close = getattr(self.base_provider, "close", None)
@@ -417,7 +427,7 @@ def _result_from_hit(hit: SourceHit) -> dict[str, Any]:
     }
 
 
-def _page_from_fetched(fetched: FetchedSource) -> dict[str, Any]:
+def _page_from_fetched(fetched: FetchedSource) -> dict[str, object]:
     document = fetched.to_source_document()
     return {"status": "ok",
         "url": document.final_url,

@@ -11,10 +11,12 @@ def render_source_read(outcome: OpenedSource, ledger: ResearchLedger, *, offset:
                        coherent: bool = False) -> ResearchToolOutput:
     if outcome.status == "error":
         return ResearchToolOutput(f"ERROR: {outcome.detail}", ok=False,
-                                  acquisition_failed=outcome.acquisition_failed, acquisition=outcome.acquisition)
+                                  acquisition=outcome.acquisition,
+                                  failure_code=outcome.failure_code)
     if outcome.status == "skipped":
         return ResearchToolOutput(f"SKIPPED: {outcome.detail}", ok=False,
-                                  acquisition_failed=outcome.acquisition_failed, acquisition=outcome.acquisition)
+                                  acquisition=outcome.acquisition,
+                                  failure_code=outcome.failure_code)
     document = outcome.document
     assert document is not None
     offset = max(0, _as_int(offset, 0))
@@ -23,7 +25,7 @@ def render_source_read(outcome: OpenedSource, ledger: ResearchLedger, *, offset:
             f"ERROR: source offset={offset} is at or beyond the end of available extracted text "
             f"(length={len(document.text)} characters). No passage was read. "
             "Do not advance the offset; use source_search on an earlier section or investigate another source.",
-            ok=False, acquisition=outcome.acquisition)
+            ok=False, acquisition=outcome.acquisition, failure_code="read_range_unavailable")
     # Leave room for exact passage labels, metadata and source boundaries.
     limit = min(OPEN_MAX_LIMIT - 2500, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
     from codey.research.passages import describe_captured_window, render_passage_window, restore_passages
@@ -32,7 +34,7 @@ def render_source_read(outcome: OpenedSource, ledger: ResearchLedger, *, offset:
     passages = describe_captured_window(observation, offset, limit, coherent=coherent)
     if not passages:
         return ResearchToolOutput("ERROR: the requested source window contains no readable text; no passage was read.",
-                                  ok=False, acquisition=outcome.acquisition)
+                                  ok=False, acquisition=outcome.acquisition, failure_code="read_range_unavailable")
     window = render_passage_window(document, passages)
     next_offset = passages[-1]["end"]
     more = next_offset < len(document.text)
@@ -52,7 +54,7 @@ def render_source_read(outcome: OpenedSource, ledger: ResearchLedger, *, offset:
                 read_window=(passages[0]["start"], passages[-1]["end"]))
         if len(body) > OPEN_MAX_LIMIT:
             return ResearchToolOutput("ERROR: source metadata exceeds the readable window budget; no passage was read.",
-                                      ok=False, acquisition=outcome.acquisition)
+                                      ok=False, acquisition=outcome.acquisition, failure_code="read_range_unavailable")
     restore_passages(ledger, observation, passages)
     full = render_opened_source(document, document.text)
     return ResearchToolOutput(model_text=body, receipt_text=full, read_passages=tuple(passages),

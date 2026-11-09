@@ -85,7 +85,7 @@ def test_source_search_canonical_replays_to_same_facts():
             self.ledger.record_open(url, url, "Captured", "matched text\n" * 100)
             self.ledger.record_source_search(url, query, [
                 {"offset": 120, "page": None, "snippet": "matched text"},
-                {"offset": 7, "page": 3, "snippet": "other"},
+                {"offset": 7, "page": None, "snippet": "other"},
             ])
             return ResearchToolOutput("1. offset 120: matched text\n2. p.3: other", ok=True)
 
@@ -138,13 +138,13 @@ def test_open_hit_resolves_from_hit_targets_fact():
     session = _session()
     search_call = ToolCall("source_search", {"url": "https://example.com/a", "query": "q"})
     ledger = ResearchLedger()
-    ledger.record_open("https://example.com/a", "https://example.com/a", "A", "body")
+    ledger.record_open("https://example.com/a", "https://example.com/a", "A", "body" * 100)
     snapshot = ledger_observation(ledger, "open", url="https://example.com/a")
     search_result = ToolResult(
         ok=True, call=search_call, model_text="h1: 1. offset 120: matched text",
         canonical={"hit_targets": {"h1": {"url": "https://example.com/a", "offset": 120, "pages": "", "text_hash": snapshot["source"]["text_hash"]}},
                    "research_observation": {"source_search": {"source_url": "https://example.com/a",
-                                                              "query": "q", "hits": [], "source_snapshot": snapshot}}},
+                                                              "query": "q", "hits": [{"offset": 120, "page": None, "snippet": "matched text"}], "source_snapshot": snapshot}}},
     )
     record_facts_for_result(session, search_call, search_result, ok=True)
     open_call = ToolCall("open_hit", {"hit_id": "h1"})

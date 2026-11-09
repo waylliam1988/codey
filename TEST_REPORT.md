@@ -2,6 +2,23 @@
 
 This file records the current verification state, not an append-only experiment diary.
 
+## Captured source convergence and English failures (2026-11-09)
+
+The first three batches pin source versions, share source intake and passages,
+and preserve structured acquisition failures through live events and cold history.
+Related Python groups passed 82 tests, 39 tests, and 54 tests / 15 subtests;
+15 selected browser/PDF acquisition cases and one production Chromium history,
+disclosure, reload and responsive-layout case passed. Related frontend tests
+passed 41 cases. TypeScript, formatting, production frontend build and published
+asset verification passed. Scoped Ruff, mypy (662 files), Pyrefly (0 errors,
+35 existing suppressions / 133 warnings), ty and kernel precision gate passed.
+
+Each batch used real KoboldCpp through the production kernel: Chat version
+binding, Research citation publication, and three distinct acquisition failures
+plus a readable source. These controlled-source checks prove contracts, not
+answer quality improvements. No full pytest, coverage or installer build was run.
+See the [batch progress and evidence](docs/reports/browser-research-convergence-progress-20261109.zh-CN.md).
+
 ## Windows Python 3.12 CI failures and scheduler claim cleanup (2026-11-08)
 
 The old CI's complete set of 55 failing cases now passes: **55 passed,

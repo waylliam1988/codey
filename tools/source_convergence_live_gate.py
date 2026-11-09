@@ -24,6 +24,8 @@ from tools.shell_web_food_gate import opened_bodies
 from tools.spa_acquisition_comparison_gate import FixtureResponse
 
 URL = "https://example.com/versioned-field-record"
+FAILURE_URLS = ["https://example.com/restricted", "https://example.com/blank",
+                "https://example.com/script"]
 ORIGINAL = ("Original field record.\n\n" + "Background paragraph about the field study.\n\n" * 165
             + "Saffron quantity is exactly 17 grams in the original record.\n\n" * 12)
 UPDATED = "Updated record. The revised ingredient quantity is 99 grams.\n\n" * 90
@@ -48,20 +50,39 @@ def run(directory: Path, batch: int, timeout: float) -> JsonObject:
                 "to inspect the original finding. Use only this URL. Submit a short research answer "
                 "with its original eN citation. Do not save knowledge updates. This diagnostic requires "
                 "both the initial read and a subsequent locator read, even if the first read fits in context.")
+    if batch == 3:
+        task = ("Run this page acquisition diagnostic. Open each URL once in this order: "
+                + ", ".join([*FAILURE_URLS, URL])
+                + ". The first three may fail; continue to the next URL after each failure and do not retry. "
+                "Finally report the observed limitations and the saffron quantity from the readable page. "
+                "Do not search, save knowledge, or claim to have read failed pages.")
     acquisitions: list[JsonObject] = []
 
     def http(request: Request, *, timeout: float) -> FixtureResponse:
-        body = ORIGINAL if not acquisitions else UPDATED
+        body = "Field record: saffron quantity is exactly 17 grams." if batch == 3 else ORIGINAL if not acquisitions else UPDATED
         acquisitions.append({"url": request.full_url, "version": len(acquisitions) + 1})
         (directory / "acquisitions.json").write_text(json.dumps(acquisitions), encoding="utf-8")
-        return FixtureResponse(request.full_url, "<html><title>Field record</title><body><article>"
-                               + body + "</article></body></html>")
+        html = "<html><title>Field record</title><body><article>" + body + "</article></body></html>"
+        if request.full_url == FAILURE_URLS[0]:
+            html = "<html><body>Access restricted</body></html>"
+        elif request.full_url == FAILURE_URLS[1]:
+            html = "<html><body></body></html>"
+        elif request.full_url == FAILURE_URLS[2]:
+            html = "<html><body><div id='root'></div><script src='/bootstrap.js'></script></body></html>"
+        response = FixtureResponse(request.full_url, html)
+        if request.full_url == FAILURE_URLS[0]:
+            response.status = 403
+        return response
 
     def browser_response(self: object, route: Route) -> None:
+        if route.request.resource_type == "script":
+            route.fulfill(status=200, content_type="text/javascript", body="throw new Error('Observed script failure');")
+            return
         acquisitions.append({"url": route.request.url, "backend": "browser", "version": 1})
         (directory / "acquisitions.json").write_text(json.dumps(acquisitions), encoding="utf-8")
-        route.fulfill(status=200, content_type="text/html; charset=utf-8",
-                      body="<html><title>Field record</title><body><article>" + ORIGINAL + "</article></body></html>")
+        html = ("<html><body><div id='root'></div><script src='/bootstrap.js'></script></body></html>"
+                if batch == 3 else "<html><title>Field record</title><body><article>" + ORIGINAL + "</article></body></html>")
+        route.fulfill(status=200, content_type="text/html; charset=utf-8", body=html)
 
     def observe(row: dict[str, object]) -> None:
         with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:
@@ -110,6 +131,12 @@ def analyze(directory: Path, manifest: JsonObject, acquisitions: list[JsonObject
                   and any(row.get("tool_name") == "source_search" for row in tool_rows)
                   and all(row.get("ok") is True for row in tool_rows)
                   and any("17 grams" in body and "[e1]" in body for body in delivered))
+    if manifest["batch"] == 3:
+        failures = [row for row in tool_rows if row.get("ok") is False]
+        codes = {decode_json_object(row["failure"])["code"] for row in failures if "failure" in row}
+        passed = (stop_reason in {"done", "blocked"} and len(failures) == 3 and len(tool_rows) == 4
+                  and codes == {"source.access_restricted", "source.page_not_loaded", "source.render_script_error"}
+                  and len(acquisitions) == 5 and any(row.get("ok") is True for row in tool_rows))
     report: JsonObject = {**manifest, "passed": passed, "stop_reason": stop_reason,
         "acquisitions": acquisitions, "tools": tool_rows, "delivered_bodies": bodies,
         "limits": "Diagnostic tool instructions and controlled HTTP responses; no answer quality claim."}
