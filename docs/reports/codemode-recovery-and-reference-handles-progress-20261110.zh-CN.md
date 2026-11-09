@@ -9,8 +9,8 @@
 | 批次 | 内容 | 状态 |
 | --- | --- | --- |
 | 1 | `unwrap` 合同测试 | 已完成 |
-| 2 | schema 驱动 `unwrap` runtime | 未开始 |
-| 3 | receipt-only repair 测试 | 红测试已提交，生产实现进行中 |
+| 2 | schema 驱动 `unwrap` runtime | 已完成 |
+| 3 | receipt-only repair 测试 | 已完成 |
 | 4 | repair token 与精确回放 | 未开始 |
 | 5 | receipt/source/evidence 短句柄测试 | 未开始 |
 | 6 | 句柄 resolver | 未开始 |
@@ -37,11 +37,20 @@
 
 每批完成后记录相关测试命令、失败根因、修复、ruff/type 检查、KoboldCpp 实机结果和 commit。测试失败必须区分测试合同过时与生产实现错误，不以迁就旧测试为默认修复方式。
 
+## 第二批记录
+
+- `guest_runner.js` 提供 `unwrap`，catalog 使用 `ToolSpec.output_schema` 生成 `Result<T>` 声明和示例
+- 相关 CodeMode/runtime/kernel 测试已通过；没有增加第二套 runtime 或工具类型表
+- commit：`7d10270c feat: add schema-driven unwrap runtime`
+
 ## 第三批记录
 
 - 测试文件：`tests/test_codemode_repair_replay.py`
 - 红测试结果：`4 failed, 2 passed`；失败对应 `repair_of` 尚未进入协议、失败父回执尚未生成 token、repair 尚未走 receipt-only host
 - 测试使用真实 `build_execute_turn_executor`、`execute_turn` 和 `ResearchTools`；source provider 是确定性的脚本源，只用于控制版本和调用次数
-- 生产修改：尚未开始
-- KoboldCpp gate：待生产实现完成后执行
+- 生产修改：`repair_of` token 解析、原始 settled child receipt 精确回放、能力指纹绑定、一次性 token 使用保护；repair 路径不调用 `execute_turn`
+- catalog 校验只绑定实际回放工具的完整能力描述，避免打开来源后新增 `reopen_source` 等无关工具造成误拒绝；工具撤权、参数或输出 schema 改变仍 fail closed
+- 测试结果：`tests/test_codemode_repair_replay.py` 7 passed；与 CodeMode 相关回归共 76 passed
+- 静态检查：ruff、mypy、`git diff --check` 通过
+- KoboldCpp gate：待专用 gate 脚本完成后执行
 - commit：待提交

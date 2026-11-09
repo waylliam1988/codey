@@ -230,6 +230,8 @@ def _all_specs() -> dict[str, ToolSpec]:
             ("inputs", {"type": "object", "additionalProperties": True,
                         "description": "Named JSON data fields exposed as read-only inputs in JavaScript."}),
             ("language", {"type": "string", "enum": ["javascript", "js"]}),
+            ("repair_of", {"type": "string", "pattern": "^cmr_[A-Za-z0-9_-]{6,64}$",
+                           "description": "Optional kernel-issued token for a return-only receipt replay."}),
         ),
         required=("code",),
         json_examples=(json.dumps({"tool": "codemode", "args": {"code": codemode_example,

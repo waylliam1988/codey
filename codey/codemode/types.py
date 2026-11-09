@@ -52,9 +52,11 @@ class CodeModeProgram:
     code: str
     language: str = "javascript"
     inputs: Mapping[str, object] = field(default_factory=dict)
+    repair_of: str = ""
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "inputs", _freeze_value(self.inputs))
+        object.__setattr__(self, "repair_of", str(self.repair_of or "").strip())
 
 
 @dataclass(frozen=True)

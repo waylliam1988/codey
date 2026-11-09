@@ -7,7 +7,7 @@ from codey.codemode.identity import rpc_child_index
 from codey.codemode.types import ToolCatalogEntry
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.result_schema import validate_output
-from codey.types.json_value import decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object
 
 
 class CodeModeHostProtocol(Protocol):
@@ -25,6 +25,7 @@ class CodeModeHost:
         catalog: Sequence[ToolCatalogEntry],
         execute: Callable[[ToolCall], ToolResult],
         allow_writes: bool = False,
+        replay: Callable[[int, str, JsonObject], ToolResult] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -36,6 +37,7 @@ class CodeModeHost:
         self._allow_writes = bool(allow_writes)
         self._catalog = {entry.name: entry for entry in catalog}
         self._execute = execute
+        self._replay = replay
         self._next_child = 0
 
     def invoke(self, name: str, args: dict[str, object]) -> object:
@@ -50,8 +52,12 @@ class CodeModeHost:
         if index is None:
             index = self._next_child
             self._next_child += 1
-        call = ToolCall(tool_name, decode_json_object(args), call_id=f"{self.execution_id}:child:{index}")
-        raw = self._execute(call)
+        decoded_args = decode_json_object(args)
+        if self._replay is not None:
+            raw = self._replay(index, tool_name, decoded_args)
+        else:
+            call = ToolCall(tool_name, decoded_args, call_id=f"{self.execution_id}:child:{index}")
+            raw = self._execute(call)
         if not isinstance(raw, ToolResult):
             raise TypeError("host executor must return a ToolResult")
         if not raw.ok:

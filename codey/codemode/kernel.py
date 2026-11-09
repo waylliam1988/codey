@@ -14,6 +14,7 @@ from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.types.json_value import JsonObject
 
 
 class CodeModeKernelExecutor:
@@ -34,6 +35,7 @@ class CodeModeKernelExecutor:
         allow_writes: bool = False,
         state_store: Any = None,
         replay: Any = None,
+        replay_child: Callable[[int, str, JsonObject], ToolResult] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -53,6 +55,7 @@ class CodeModeKernelExecutor:
         self.allow_writes = bool(allow_writes)
         self.state_store = state_store
         self.replay = replay
+        self.replay_child = replay_child
 
     def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -68,6 +71,7 @@ class CodeModeKernelExecutor:
             catalog=self.catalog.entries,
             execute=self.execute_child,
             allow_writes=self.allow_writes,
+            replay=self.replay_child,
         )
         try:
             result = self.runtime.execute(
@@ -107,7 +111,7 @@ class CodeModeKernelExecutor:
         return ToolResult(ok=True, call=call, model_text=text, audit=audit, canonical={"value": value})
 
 
-def build_execute_turn_executor(
+def build_execute_turn_executor(  # noqa: PLR0915
     *,
     session: Any,
     snapshot: Any,
@@ -153,6 +157,21 @@ def build_execute_turn_executor(
         child_effect_ids: list[str] = []
         parent_id = parent_execution_id(run_id, turn, call)
         child_scope = f"{effect_scope}:codemode:{parent_id}"
+        repair_context = None
+        repair_token_value = call.args.get("repair_of")
+        if isinstance(repair_token_value, str) and repair_token_value:
+            from codey.codemode.replay import CodeModeReplayError, resolve_repair_context
+
+            try:
+                repair_context = resolve_repair_context(
+                    session, repair_token_value, run_id=str(run_id or ""), catalog=catalog,
+                )
+            except CodeModeReplayError as exc:
+                return ToolResult(
+                    ok=False, call=call, model_text=str(exc),
+                    audit={"error_code": "repair_rejected"}, canonical={"child_effect_ids": []},
+                )
+            child_effect_ids.extend(child.effect_id for child in repair_context.children)
         from codey.operations.task_effects import KernelEffectSink
 
         child_sink = intent_sink.for_child(call, turn=turn) if isinstance(intent_sink, KernelEffectSink) else intent_sink
@@ -243,12 +262,28 @@ def build_execute_turn_executor(
             allow_writes=allow_writes,
             state_store=state_store,
             replay=replay,
+            replay_child=repair_context.replay_child if repair_context is not None else None,
             artifact_store=managed_outputs,
             session_id=session_id,
             run_id=str(run_id or ""),
         ).execute(call)
+        if repair_context is not None:
+            try:
+                repair_context.assert_complete()
+            except ValueError as exc:
+                return ToolResult(
+                    ok=False, call=call, model_text=str(exc),
+                    audit={**result.audit, "error_code": "repair_rejected"},
+                    canonical={"child_effect_ids": child_effect_ids},
+                )
+            result = replace(
+                result,
+                audit={**result.audit, "recovery_disposition": "receipt_replay",
+                       "repaired_from": repair_context.parent_effect_id},
+                canonical={**result.canonical, "repaired_from": repair_context.parent_effect_id},
+            )
         # References only: child facts stay in their original committed receipts.
-        result = replace(result, canonical={**result.canonical, "child_effect_ids": sorted(child_effect_ids)})
+        result = replace(result, canonical={**result.canonical, "child_effect_ids": list(child_effect_ids)})
         if not result.ok:
             from codey.toolchain.result_schema import schema_typescript
             from codey.toolchain.tool_prompt import tool_repair_text
@@ -259,7 +294,15 @@ def build_execute_turn_executor(
                 detail += "\nInvoked tool return types (Result<T> success data is result.value):\n" + "\n".join(
                     f"tools.{name}: Result<{schema_typescript(specs[name].output_schema)}>" for name in names)
                 detail += "\nCommitted child receipts (effects already executed): " + ", ".join(child_effect_ids)
-                detail += ". Use read_tool_result to inspect their original results. Correct the returned expression."
+                from codey.codemode.replay import repair_catalog_digest, repair_metadata
+                child_names = [session.executed[ref]["name"] for ref in child_effect_ids]
+                metadata = repair_metadata(
+                    parent_id, str(result.audit["error_code"]), child_effect_ids,
+                    repair_catalog_digest(catalog, child_names),
+                )
+                result = replace(result, canonical={**result.canonical, "repair": metadata})
+                detail += ". Correct only the return expression. Use repair_of=" + str(metadata["token"])
+                detail += " to replay these settled child receipts; do not repeat the child calls."
             result = replace(result, model_text=tool_repair_text(detail, specs["codemode"]))
         return result
 

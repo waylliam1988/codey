@@ -10,15 +10,47 @@ import hashlib
 import json
 import secrets
 import time
-from collections.abc import Generator, Mapping
+from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass, replace
 from threading import RLock
 from typing import TypedDict, cast
 
 from codey.codemode.state import DurableCodeModeState
+from codey.codemode.types import ToolCatalogSnapshot
 from codey.durable.model import TaskCheckpoint, thaw_json
 from codey.durable.session import DurableSession
-from codey.runtime.core.models import ToolCall
+from codey.runtime.core.models import ToolCall, ToolResult
+from codey.types.json_value import JsonObject, canonical_json_object
+
+
+def repair_catalog_digest(catalog: ToolCatalogSnapshot, tool_names: Sequence[str]) -> str:
+    """Fingerprint only the frozen capabilities used by a repair.
+
+    The full research catalog may gain safe helper tools after a source is
+    opened (for example ``reopen_source``).  That state change does not alter
+    the already committed child calls.  A repair still binds every capability
+    it can replay: name, arguments, output schema, namespace, grant and
+    execution flags.  Missing or changed entries therefore fail closed while
+    unrelated catalog additions do not invalidate a return-only repair.
+    """
+    by_name = {entry.name: entry for entry in catalog.entries}
+    payload: list[dict[str, object]] = []
+    for name in tool_names:
+        entry = by_name.get(name)
+        if entry is None:
+            raise CodeModeReplayError(f"repair tool is no longer authorized: {name}")
+        payload.append({
+            "name": entry.name,
+            "description": entry.description,
+            "parameters": canonical_json_object(entry.parameters),
+            "output_schema": canonical_json_object(entry.output_schema),
+            "namespace": entry.namespace,
+            "grant": entry.grant,
+            "read_only": entry.read_only,
+            "parallel_safe": entry.parallel_safe,
+        })
+    return "sha256:" + digest(payload)
 
 
 def digest(value: object) -> str:
@@ -44,6 +76,141 @@ class ReplayRecord(TypedDict):
 
 class CodeModeReplayError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class ReplayChildView:
+    """Read-only identity derived from one already-settled child receipt."""
+
+    position: int
+    effect_id: str
+    tool_name: str
+    call_id: str
+    args_digest: str
+    result_ref: str
+
+
+@dataclass
+class CodeModeRepairContext:
+    """One authorized, bounded receipt-only repair attempt."""
+
+    token: str
+    parent_effect_id: str
+    failure_code: str
+    catalog_digest: str
+    children: tuple[ReplayChildView, ...]
+    receipts: Mapping[str, ToolResult]
+    _used_positions: set[int]
+
+    def replay_child(self, position: int, tool_name: str, args: JsonObject) -> ToolResult:
+        if position < 0 or position >= len(self.children):
+            raise CodeModeReplayError("repair issued a child call outside the original sequence")
+        expected = self.children[position]
+        if tool_name != expected.tool_name:
+            raise CodeModeReplayError("repair changed the child tool")
+        from codey.runtime.effects.effect_records import compute_args_digest
+
+        if compute_args_digest(args) != expected.args_digest:
+            raise CodeModeReplayError("repair changed child arguments")
+        result = self.receipts.get(expected.effect_id)
+        if result is None or result.call.call_id != expected.call_id:
+            raise CodeModeReplayError("repair child receipt identity is unavailable")
+        self._used_positions.add(position)
+        return replace(result, audit={
+            **result.audit,
+            "result_ref": expected.result_ref,
+            "recovery_disposition": "receipt_replay",
+        })
+
+    def assert_complete(self) -> None:
+        if self._used_positions != set(range(len(self.children))):
+            raise CodeModeReplayError("repair did not consume the original child sequence")
+
+
+def repair_token(parent_effect_id: str, failure_code: str, child_effect_ids: Sequence[str], catalog_digest: str) -> str:
+    return "cmr_" + digest({
+        "parent_effect_id": parent_effect_id,
+        "failure_code": failure_code,
+        "child_effect_ids": list(child_effect_ids),
+        "catalog_digest": catalog_digest,
+    })[:16]
+
+
+def repair_metadata(
+    parent_effect_id: str,
+    failure_code: str,
+    child_effect_ids: Sequence[str],
+    catalog_digest: str,
+) -> dict[str, object]:
+    return {
+        "token": repair_token(parent_effect_id, failure_code, child_effect_ids, catalog_digest),
+        "parent_effect_id": parent_effect_id,
+        "failure_code": failure_code,
+        "catalog_digest": catalog_digest,
+    }
+
+
+def resolve_repair_context(
+    session: object,
+    token: str,
+    *,
+    run_id: str,
+    catalog: ToolCatalogSnapshot,
+) -> CodeModeRepairContext:
+    """Resolve a token through the existing in-memory receipt projection."""
+    raw_results = getattr(session, "_memory_results", None)
+    if not isinstance(raw_results, Mapping):
+        raise CodeModeReplayError("repair receipt projection is unavailable")
+    receipts = {
+        key: value for key, value in raw_results.items()
+        if isinstance(key, str) and isinstance(value, ToolResult)
+    }
+    metadata: Mapping[str, object] | None = None
+    parent_effect_id = ""
+    parent_result: ToolResult | None = None
+    for result in receipts.values():
+        repair = result.canonical.get("repair")
+        if isinstance(repair, Mapping) and repair.get("token") == token:
+            metadata = repair
+            parent_effect_id = str(repair.get("parent_effect_id", ""))
+            parent_result = result
+            break
+    if metadata is None or parent_result is None or not parent_effect_id:
+        raise CodeModeReplayError("repair token is unknown or expired")
+    if not parent_effect_id.startswith(f"{run_id}:"):
+        raise CodeModeReplayError("repair token belongs to a different run")
+    failure_code = str(metadata.get("failure_code", ""))
+    if failure_code not in {"missing_return", "result_encoding"}:
+        raise CodeModeReplayError("repair is not authorized for this failure")
+    for result in receipts.values():
+        if result.canonical.get("repaired_from") == parent_effect_id:
+            raise CodeModeReplayError("repair token has already been used")
+    raw_children = parent_result.canonical.get("child_effect_ids")
+    if not isinstance(raw_children, list) or not raw_children or not all(isinstance(item, str) for item in raw_children):
+        raise CodeModeReplayError("repair child receipts are unavailable")
+    children: list[ReplayChildView] = []
+    from codey.runtime.effects.effect_records import compute_args_digest
+
+    for position, effect_id in enumerate(raw_children):
+        child = receipts.get(effect_id)
+        if child is None:
+            raise CodeModeReplayError("repair child receipt is missing or unsettled")
+        result_ref = child.audit.get("result_ref")
+        if not isinstance(result_ref, str) or not result_ref:
+            result_ref = effect_id
+        children.append(ReplayChildView(
+            position=position, effect_id=effect_id, tool_name=child.call.name,
+            call_id=child.call.call_id, args_digest=compute_args_digest(child.call.args),
+            result_ref=result_ref,
+        ))
+    current_catalog_digest = repair_catalog_digest(catalog, [child.tool_name for child in children])
+    if metadata.get("catalog_digest") != current_catalog_digest:
+        raise CodeModeReplayError("repair capability changed; refusing receipt replay")
+    return CodeModeRepairContext(
+        token=token, parent_effect_id=parent_effect_id, failure_code=failure_code,
+        catalog_digest=current_catalog_digest, children=tuple(children), receipts=receipts,
+        _used_positions=set(),
+    )
 
 
 class DurableCodeModeReplay:

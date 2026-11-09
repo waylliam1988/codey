@@ -14,6 +14,7 @@ _DENIED_SOURCE = re.compile(
     r"tools\s*(?:\.\s*codemode|\[\s*['\"]codemode['\"]\s*\])\b)",
     re.IGNORECASE,
 )
+_REPAIR_TOKEN = re.compile(r"cmr_[A-Za-z0-9_-]{6,64}\Z")
 
 
 class CodeModeInputError(ValueError):
@@ -60,7 +61,12 @@ def parse_codemode_args(args: Mapping[str, Any], *, limits: CodeModeLimits | Non
         raise CodeModeInputError(
             f"codemode rejected before execution: {access} is denied.", code="sandbox_denied"
         )
-    return CodeModeProgram(code=code, language="javascript", inputs=inputs)
+    repair_of = args.get("repair_of", "")
+    if repair_of is None:
+        repair_of = ""
+    if not isinstance(repair_of, str) or (repair_of and not _REPAIR_TOKEN.fullmatch(repair_of)):
+        raise CodeModeInputError("codemode repair_of must be a valid repair token", code="invalid_repair")
+    return CodeModeProgram(code=code, language=language, inputs=inputs, repair_of=repair_of)
 
 
 def parse_codemode_text(text: str, *, limits: CodeModeLimits | None = None) -> CodeModeProgram:

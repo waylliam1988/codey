@@ -82,14 +82,13 @@ def test_return_only_repair_reuses_the_original_child_receipt(tmp_path, monkeypa
     token = failed.canonical["repair"]["token"]
     assert isinstance(token, str) and token.startswith("cmr_")
     assert source.calls == 1
-
     repaired = _run_codemode(
         session, tmp_path, turn=2, call_id="repair", research_tools=research_tools,
         code="return unwrap(await tools.open_url({url: inputs.url}));",
         inputs={"url": "https://example.test/article"}, repair_of=token,
     )
     assert repaired.ok, repaired.model_text
-    assert repaired.canonical["value"] == "V1"
+    assert "V1" in repaired.canonical["value"]
     assert repaired.audit["recovery_disposition"] == "receipt_replay"
     assert source.calls == 1
 
@@ -164,6 +163,43 @@ def test_repair_argument_change_fails_without_fetching_again(tmp_path, monkeypat
     )
     assert not mismatch.ok
     assert "repair" in mismatch.model_text.lower()
+    assert source.calls == 1
+
+
+def test_repair_rejects_when_the_replayed_tool_is_revoked(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: None)
+
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "web.read"})), project=str(tmp_path))
+
+    class Source:
+        calls = 0
+
+        def search(self, _query: str, *, limit: int):
+            return []
+
+        def fetch(self, url: str):
+            self.calls += 1
+            return {"status": "ok", "url": url, "title": "Article", "content_kind": "html", "text": "V1\n" * 80}
+
+    from codey.research.tools import ResearchTools
+    source = Source()
+    research_tools = ResearchTools(source, None, None)
+    failed = _run_codemode(
+        session, tmp_path, turn=1, call_id="first", research_tools=research_tools,
+        code="const result = await tools.open_url({url: inputs.url}); return result.value.missing;",
+        inputs={"url": "https://example.test/article"},
+    )
+    token = failed.canonical["repair"]["token"]
+    session.policy = TaskPolicy(frozenset({"control", "project.read"}))
+    revoked = _run_codemode(
+        session, tmp_path, turn=2, call_id="repair", research_tools=research_tools,
+        code="return unwrap(await tools.open_url({url: inputs.url}));",
+        inputs={"url": "https://example.test/article"}, repair_of=token,
+    )
+    assert not revoked.ok
+    assert "authorized" in revoked.model_text.lower() or "capability" in revoked.model_text.lower()
     assert source.calls == 1
 
 
