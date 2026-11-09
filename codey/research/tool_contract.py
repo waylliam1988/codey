@@ -115,6 +115,41 @@ TOOL_CONTRACTS = {
         example='{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}',
         description="search within a source already opened with open_url; returns locators, offsets, and PDF pages",
     ),
+    "browser_snapshot": ToolContract(
+        name="browser_snapshot", input_schema=object_schema({
+            "max_elements": {"type": "integer", "minimum": 1, "maximum": 80},
+            "max_text": {"type": "integer", "minimum": 500, "maximum": 12000},
+        }),
+        example='{"tool":"browser_snapshot","args":{}}',
+        description="observe the retained source page as bounded text with semantic element refs; take a fresh snapshot after navigation or actions",
+    ),
+    "browser_click": ToolContract(
+        name="browser_click", input_schema=object_schema({"ref": {"type": "string"}}, "ref"),
+        example='{"tool":"browser_click","args":{"ref":"g1e1"}}',
+        description="click an element ref from the latest browser_snapshot once, then observe the resulting page state",
+    ),
+    "browser_fill": ToolContract(
+        name="browser_fill", input_schema=object_schema({"ref": {"type": "string"}, "value": {"type": "string"}}, "ref", "value"),
+        example='{"tool":"browser_fill","args":{"ref":"g1e1","value":"福州小吃"}}',
+        description="fill a textbox ref from the latest browser_snapshot and verify its value; stale refs are rejected",
+    ),
+    "browser_scroll": ToolContract(
+        name="browser_scroll", input_schema=object_schema({
+            "direction": {"type": "string", "enum": ["up", "down", "left", "right"]},
+            "amount": {"type": "integer", "minimum": 1, "maximum": 20000},
+        }, "direction", "amount"),
+        example='{"tool":"browser_scroll","args":{"direction":"down","amount":700}}',
+        description="scroll the retained page by a bounded amount; take a fresh browser_snapshot afterward",
+    ),
+    "browser_wait": ToolContract(
+        name="browser_wait", input_schema=object_schema({
+            "condition": {"type": "string", "enum": ["text", "selector", "url_contains"]},
+            "value": {"type": "string"},
+            "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 30000},
+        }, "condition", "value", "timeout_ms"),
+        example='{"tool":"browser_wait","args":{"condition":"text","value":"全文","timeout_ms":5000}}',
+        description="wait for one explicit page condition with a bounded timeout; timeout is a truthful failure",
+    ),
     "knowledge_search": ToolContract(
         name="knowledge_search",
         input_schema=object_schema({

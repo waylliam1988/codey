@@ -91,3 +91,22 @@
 - KoboldCpp/Gemma4 Research 生产入口：`.e2e-artifacts/browser-research-next/batch6-research-default/summary.json` `passed=true`、`stop_reason=done`；版本／命中／引用合同没有回退。普通批次与 CodeMode 回归分别在 `batch6-resume`、`batch6-resume-codemode` 留有记录。
 - `batch6-resume-codemode` 首次返回 `no_progress`。事件显示模型连续四次生成 `return result.value.text` 以外的错误 CodeMode 形态，生产返回的是明确的 `CodeMode returned undefined`，重复工具结果保护正常；这是模型遵循 CodeMode 返回契约的边界，不是浏览器保留页或资源收尾缺陷。此前相同生产入口的正确 CodeMode 对照仍通过，未改生产代码迁就模型。
 - 相关来源、搜索工厂、SPA、失败页和会话绑定回归共 `71 passed`；新模块 Ruff、Mypy、Pyrefly 通过。`runtime.json` 补入 `resumable_browser.py`，同时收录近期已存在但遗漏的 `operations/chat_citations.py`，发布清单与实际源码一致。
+
+### 批次 7：语义交互底层与隔离实机入口
+
+- 新增 `BrowserInteraction`，复用原 BrowserWorker 和保留的 page，不启动浏览器或模型的第二套运行时。绑定持有第一次观察的 browser/context/page 身份；引用带观察代次，不在后续快照复用。导航、同 URL 文档替换、节点替换与动作后拒绝旧引用；不按同名控件自动重定位。
+- 快照明确主 frame、可见正文和命名控件的观察范围，报告文字与控件裁剪；提供当前字段值、disabled/checked 状态，隐藏密码值。等待检查可见条件，支持取消和有限超时。点击投递与页面观察分开记录；观察不证明目标效果成立；回执丢失后返回 uncertain，不重发。
+- 候选工具定义只进入合同源；实验脚本通过现有 ToolSpec/custom executor 在本进程注册并走原 headless/provider/kernel。尚未加入普通 Chat 或 Research 的默认工具集。撤回未验证的默认分发接线，避免实验前扩大默认工具面；不把交互动作授予成只读 CodeMode 工具。
+- 新增真实 Chromium 测试 8 项和 Research 工作视图测试 1 项，覆盖失效引用、同 URL 导航、文档/节点替换、裁剪、字段读回、隐藏条件、取消和点击已发生后的确认丢失。故障注入仍执行真实 DOM 点击，计数保持 1，不能据此承诺外部系统 exactly-once。
+- KoboldCpp 首轮 `batch7-semantic-a` 暴露真实接线缺口：Research 每轮重建工作视图没有浏览器动作历史，快照也未显示字段当前值，模型重复填写/快照至 max_turns。现从原 settled receipts 派生最近 8 条动作元数据，不增加账本；清除 `answer_context.py` 全部显式 `Any`。
+- `batch7-semantic-b` 已顺序完成全部交互并 done。实验汇总器误查 UI 的 200 字摘要而漏掉后面的 173 克，改为核对实际模型请求中的完整观察；`batch7-semantic-c/summary.json` 为 `passed=true / done`，单次导航、全部动作成功。原失败样本保留，不混作答案质量收益。
+- 默认 Research 生产回归 `batch7-research-regression/summary.json` 为 `passed=true / done`，原正文版本、命中续读和 eN 提交合同不变。
+- 相关浏览器、来源分发、SPA、Research 上下文、答案与引用回归 `148 passed, 2 subtests passed`。Ruff、Mypy（直接目标，旧实验记录器导入静默）、Pyrefly、ty 和 kernel precision gate 通过；本批所有修改文件无显式 `Any`，没有新增类型豁免。最初普通 Mypy 跟踪到旧 tools 记录器的既有注解问题；未扩散修改旧实验器，生产模块及本批脚本均单独检查。
+
+## 下一阶段验收清单（未完成，不可视为已通过）
+
+1. 同页 `browser_read` 通过共享来源接收、正文版本、passage、引用和重启恢复；点击、登录提示和快照本身不能成为来源证据。
+2. 补全真实 CDP 断连/同端口新实例、借用页与所有权收尾、等待中取消，以及跨 context/多页的操作贯穿；已有少量 Session 测试不等于完整矩阵通过。
+3. 真实网站：头条、知乎、搜狐、官方资料和 PDF，记录访问会话、限制及人工协助，不替换失败样本。
+4. 自然研究对照：12 题 × 基线/候选 × 3 次，中文动态、资料研究与控制各 4 题；记录关键材料、结论支持、例外和交付，成本仅记录。
+5. 默认工具集、browser-first、compact/delta/等待策略和研究指导分别实验。当前仍没有证据授权把这些全部设为默认；不把第 7 批顺序诊断当成自然任务质量证明。

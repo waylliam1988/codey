@@ -473,6 +473,7 @@
     "codey/research/audit_projection.py",
     "codey/research/audit_result.py",
     "codey/research/brief_projection.py",
+    "codey/research/browser_interaction.py",
     "codey/research/browser_search.py",
     "codey/research/chat_web.py",
     "codey/research/completion_gate.py",
