@@ -6,6 +6,8 @@
 
 - Restore the desktop titlebar and taskbar icons by passing the shipped Codey
   icon to the native window startup, including launches outside the project directory.
+  Set a dedicated Windows application identity before creating the window so
+  Explorer groups Codey separately from Python and displays its own taskbar icon.
 
 - Remove the `Attach files` button and collapse the empty attachment area to
   restore the compact composer. Keep file drop, image paste, previews, removal,

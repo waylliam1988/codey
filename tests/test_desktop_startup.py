@@ -244,9 +244,10 @@ def test_service_preparation_starts_without_document_loaded(tmp_path, monkeypatc
         assert window.navigated.wait(5)
     monkeypatch.setitem(sys.modules, "webview", SimpleNamespace(create_window=create, start=start))
     monkeypatch.setattr(desktop_startup, "ensure_service", ensure)
+    monkeypatch.setattr(desktop, '_set_taskbar_identity', lambda: order.append('identity'))
     monkeypatch.chdir(tmp_path)
     desktop.open_desktop(tmp_path, port=0)
-    assert order == ["window", "event-loop", "service"]
+    assert order == ["identity", "window", "event-loop", "service"]
     assert len(window.urls) == 1
 
 

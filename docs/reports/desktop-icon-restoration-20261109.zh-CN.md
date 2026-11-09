@@ -1,5 +1,29 @@
 # 桌面图标恢复工作记录（2026-11-09）
 
+## 补充排查：Explorer 仍显示 Python 图标
+
+用户确认上一轮修复后，标题栏已正确，任务栏分组仍显示 Python。
+上一轮 `WM_GETICON` 验证只覆盖窗口大、小图标，不能证明 Explorer 的应用分组图标；
+此前将窗口大图标称为任务栏图标，结论范围过大，以下历史验证需按此限制理解。
+
+- 直接读取真实 Explorer 任务栏 UI Automation：分组名为 `Python 3.12 (64-bit)`，
+  `AutomationId` 为 `Appid: {6D809377-6AF0-444B-8957-A3773F02200E}\\Python312\\python.exe`。
+- 当前桌面入口没有显式 Windows AppUserModelID，窗口被归入 Python 可执行文件的应用身份。
+- 已在创建窗口、导入 WebView 前调用 Windows `SetCurrentProcessExplicitAppUserModelID("Codey.Desktop")`；非 Windows 不加载 Windows 库。
+- 使用 `ctypes.OleDLL` 保留 HRESULT 的错误传播，不添加静默回退、额外依赖或打包配置。
+- 已增加身份值与参数类型、非 Windows 隔离、调用失败传播的回归测试，并加强现有启动测试，确认身份设置先于窗口创建。
+- 改前 5 个补充用例失败，原因是缺少身份设置入口；改后全部通过。
+
+补充验证结果：
+
+- `python -m pytest tests/test_desktop_taskbar.py tests/test_desktop_startup.py tests/test_desktop_http_listener_lifecycle.py tests/test_server.py::UiLaunchTests::test_window_attaches_to_shared_service -q`：27 通过。
+- 改动 Python 文件 Ruff 通过；生产入口 Mypy、Pyrefly、ty 均通过，无新增显式 `Any`。
+- 真实 WinForms/WebView2 隔离窗口：读取进程显式应用身份得到 `Codey.Desktop`；Explorer UI Automation 同时保留用户旧 Python 分组，并为隔离窗口创建 `AutomationId: Appid: Codey.Desktop` 的新分组。
+- 已截取并人工检查实际 Explorer 任务栏按钮，显示 Codey 图标；这次验证覆盖任务栏本身，不仅检查 `WM_GETICON`。
+- 证据目录为 `.e2e-artifacts/desktop-taskbar-native-20261109/`，包含 `result.json`、`explorer-groups.json`、`explorer-taskbar-icon.png` 与可复现的 `probe.py`。
+- 验证只创建隔离窗口，不启动共享服务或模型，不修改用户旧窗口与任务；检查完自动关闭隔离窗口。
+- 未运行完整 pytest、覆盖率或安装包测试。本次补充修复随提交交付，用户需要重新打开桌面窗口以应用新的进程身份。
+
 ## 目标与根因
 
 - 恢复 Codey 原生窗口标题栏及任务栏图标，沿用现有 `codey/web/icon.ico`。
@@ -42,7 +66,7 @@
 只替换服务启动回调为图标检查，不启动共享服务、不接入用户任务、不调用模型。
 检查后自动关闭该窗口。
 
-- 在窗口与启动文档就绪后，用 `WM_GETICON` 取得标题栏小图标与任务栏大图标，均为有效句柄。
+- 在窗口与启动文档就绪后，用 `WM_GETICON` 取得窗口小图标与大图标，均为有效句柄；此检查不覆盖 Explorer 应用分组图标。
 - 使用 `LoadImageW` 从包内 `icon.ico` 加载参考图标，以 `DrawIconEx` 将三个句柄绘制到相同 16×16 位图；两个窗口图标均与参考图标逐像素一致。
 - 原生窗口 `ShowIcon` 与 `ShowInTaskbar` 均为 `True`。
 - 结果保存于 `.e2e-artifacts/desktop-icon-native-20261109/result.json`，复现脚本为同目录 `probe.py`。
