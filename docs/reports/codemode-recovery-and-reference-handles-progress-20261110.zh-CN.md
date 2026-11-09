@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 1 | `unwrap` 合同测试 | 已完成 |
 | 2 | schema 驱动 `unwrap` runtime | 未开始 |
-| 3 | receipt-only repair 测试 | 未开始 |
+| 3 | receipt-only repair 测试 | 红测试已提交，生产实现进行中 |
 | 4 | repair token 与精确回放 | 未开始 |
 | 5 | receipt/source/evidence 短句柄测试 | 未开始 |
 | 6 | 句柄 resolver | 未开始 |
@@ -36,3 +36,12 @@
 ## 运行记录
 
 每批完成后记录相关测试命令、失败根因、修复、ruff/type 检查、KoboldCpp 实机结果和 commit。测试失败必须区分测试合同过时与生产实现错误，不以迁就旧测试为默认修复方式。
+
+## 第三批记录
+
+- 测试文件：`tests/test_codemode_repair_replay.py`
+- 红测试结果：`4 failed, 2 passed`；失败对应 `repair_of` 尚未进入协议、失败父回执尚未生成 token、repair 尚未走 receipt-only host
+- 测试使用真实 `build_execute_turn_executor`、`execute_turn` 和 `ResearchTools`；source provider 是确定性的脚本源，只用于控制版本和调用次数
+- 生产修改：尚未开始
+- KoboldCpp gate：待生产实现完成后执行
+- commit：待提交
