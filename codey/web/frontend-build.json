@@ -60,7 +60,7 @@
     "assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff": "e14fed02b1aba7ce9f5afd5844b5d0321b22351febc720e0de8b8723527609f7",
     "assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2": "71d517d67827787cfabdf186914cc3358eda539e37931941f2b2fd4a21f68c0b",
     "assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf": "f01f3e87d9c6a61c0c081ceb577abd864eb00a612f7ac1620dd6915fad2ef5aa",
-    "assets/app.css": "1c218ffb0ea64dc3a9c54a786287d75733cfb4d5e485b0c4b5b201c02465247c",
+    "assets/app.css": "e53764ff5135ab7c826631b6eb9de99c18d8c24f6665b66baa0db90070c85d5b",
     "assets/arrow-down.svg": "e481d38a1e5da8ce9fd671572d8548d6db0d12055ed79cc530980c04cb947367",
     "assets/chevron-down.svg": "709001d9dea74131c781b43fb16b943fa8c45ddb103e126fc2707468f849fc92",
     "assets/codey-8GkYkns6.js": "1878c23aeb78802127e705fae9577f78516fe88d594826b76c6c6aa77873c821",
@@ -127,5 +127,5 @@
     "index.html": "4f48b36f7169356d8599c7e8cbb0023913bdc90bcc2b374f08ce9a8fd0fd242e"
   },
   "schema": 1,
-  "source_sha256": "6ef9db07be7757ff1871f21b12eff1d98c7745da5004eaf15f3e25063a33bca1"
+  "source_sha256": "c343795cea18b356c83dc9a4e269160ea8284792b8c3c4b8a58f8b6cc404a703"
 }

@@ -429,6 +429,9 @@
   .process-summary:hover::after, .thinking > summary:hover::after { background: var(--text); color: var(--text); }
   .process-approval-status { display: flex; align-items: center; min-height: 26px; color: var(--text-dim); font: calc(12px * var(--font-scale))/1.7 var(--font-mono); }
   .process-body { padding-top: 10px; }
+  /* Chromium otherwise copies collapsed details as empty rich-text structure. */
+  .process-group:not([open]) > .process-body,
+  .thinking:not([open]) > .thinking-body { display: none; }
   .process-diagnostic { margin-top: 8px; color: var(--text-dim); font-size: calc(12px * var(--font-scale)); }
   .thinking-section + .thinking-section { margin-top: 12px; }
   .process-body .msg:is(.tool, .command-card) { margin-bottom: 6px; }
