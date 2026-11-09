@@ -10,11 +10,12 @@ are denied, never passed as ``control``.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import Any, cast
+from typing import Protocol, cast
 
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE
 from codey.toolchain.result_schema import text_output_schema
 from codey.toolchain.tool_prompt import json_contract_text as json_contract_text
@@ -22,6 +23,13 @@ from codey.toolchain.tool_prompt import model_tool_description
 from codey.types.json_value import ToolArgs
 
 _TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
+
+
+class ToolPolicy(Protocol):
+    def allows(self, grant: str) -> bool: ...
+
+
+CustomExecutor = Callable[[ToolCall], ToolResult]
 
 
 def is_text_batch_tool(name: str) -> bool:
@@ -81,7 +89,7 @@ def _freeze_schema_value(value: object) -> object:
     return value
 
 
-def thaw_schema_value(value: Any) -> Any:
+def thaw_schema_value(value: object) -> object:
     """Create an independent JSON-compatible transport value."""
     if isinstance(value, Mapping):
         return {key: thaw_schema_value(item) for key, item in value.items()}
@@ -307,7 +315,7 @@ def _allowed_schema_keys(kind: str) -> set[str]:
     return {"type"}
 
 
-def _valid_schema_bounds(kind: str, schema: Mapping[Any, Any]) -> bool:
+def _valid_schema_bounds(kind: str, schema: Mapping[str, object]) -> bool:
     for bound_key in ("minimum", "maximum"):
         if bound_key not in schema:
             continue
@@ -324,14 +332,18 @@ def _valid_schema_bounds(kind: str, schema: Mapping[Any, Any]) -> bool:
             return False
     if "minimum" in schema and "maximum" in schema:
         try:
-            if float(schema["minimum"]) > float(schema["maximum"]):
+            minimum = schema["minimum"]
+            maximum = schema["maximum"]
+            if not isinstance(minimum, (int, float)) or not isinstance(maximum, (int, float)):
+                return False
+            if float(minimum) > float(maximum):
                 return False
         except Exception:
             return False
     return True
 
 
-def _valid_schema_nested(kind: str, schema: Mapping[Any, Any]) -> bool:
+def _valid_schema_nested(kind: str, schema: Mapping[str, object]) -> bool:
     if kind == "array" and "items" in schema:
         return _valid_custom_schema(schema["items"])
     if kind != "object":
@@ -460,17 +472,14 @@ def tool_requires_trusted_recovery(name: object) -> bool:
     return str(getattr(spec, "replay_class", "unsafe") or "unsafe").strip().lower() != "safe"
 
 
-def _policy_allows(policy: Any, grant: str) -> bool:
-    allows = getattr(policy, "allows", None)
-    if not callable(allows):
-        return False
+def _policy_allows(policy: ToolPolicy, grant: str) -> bool:
     try:
-        return bool(allows(grant))
+        return policy.allows(grant)
     except Exception:
         return False
 
 
-def visible_tool_names(policy: Any) -> tuple[str, ...]:
+def visible_tool_names(policy: ToolPolicy) -> tuple[str, ...]:
     return visible_tool_names_for_snapshot(policy, None)
 
 
@@ -482,7 +491,9 @@ def _is_research_tool(name: str) -> bool:
     return spec is not None and spec.executor in {"source", "knowledge"}
 
 
-def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None, *, native: bool = False) -> tuple[str, ...]:
+def visible_tool_names_for_snapshot(
+    policy: ToolPolicy, controller_allowed: Collection[str] | None = None, *, native: bool = False,
+) -> tuple[str, ...]:
     """Per-turn snapshot: policy ∩ current controller facts.
 
     The controller may only narrow research tools; it never removes project
@@ -546,11 +557,13 @@ def _schema_for_spec(spec: ToolSpec) -> dict[str, object]:
     }
 
 
-def native_tools_for_policy(policy: Any) -> list[dict[str, object]]:
+def native_tools_for_policy(policy: ToolPolicy) -> list[dict[str, object]]:
     return native_tools_for_snapshot(policy, None)
 
 
-def native_tools_for_snapshot(policy: Any, controller_allowed: Any = None) -> list[dict[str, object]]:
+def native_tools_for_snapshot(
+    policy: ToolPolicy, controller_allowed: Collection[str] | None = None,
+) -> list[dict[str, object]]:
     """Native schemas for one turn's snapshot; same source as JSON contract."""
     tools: list[dict[str, object]] = []
     for name in visible_tool_names_for_snapshot(policy, controller_allowed, native=True):
@@ -605,14 +618,14 @@ def _spec_want_and_bounds(schema: object) -> tuple[str, int | float | None, int 
     return want, minimum, maximum
 
 
-def _check_string_value(spec_name: str, key: str, value: Any) -> str:
+def _check_string_value(spec_name: str, key: str, value: object) -> str:
     if not isinstance(value, str):
         return _spec_type_error(spec_name, key, "string", value)
     return ""
 
 
 def _check_integer_value(
-    spec_name: str, key: str, value: Any, minimum: int | float | None,
+    spec_name: str, key: str, value: object, minimum: int | float | None,
     maximum: int | float | None = None, *, strict: bool = False,
 ) -> str:
     if isinstance(value, bool):
@@ -656,7 +669,7 @@ def _check_integer_value(
 
 
 def _check_number_value(
-    spec_name: str, key: str, value: Any, schema: object = None, *, strict: bool = False,
+    spec_name: str, key: str, value: object, schema: object = None, *, strict: bool = False,
 ) -> str:
     import math
 
@@ -678,13 +691,13 @@ def _check_number_value(
     return ""
 
 
-def _check_boolean_value(spec_name: str, key: str, value: Any) -> str:
+def _check_boolean_value(spec_name: str, key: str, value: object) -> str:
     if not isinstance(value, bool):
         return _spec_type_error(spec_name, key, "boolean", value)
     return ""
 
 
-def _check_array_value(spec_name: str, key: str, schema: object, value: Any, *, strict: bool = False) -> str:
+def _check_array_value(spec_name: str, key: str, schema: object, value: object, *, strict: bool = False) -> str:
     if not isinstance(value, list):
         return _spec_type_error(spec_name, key, "array", value)
     if not isinstance(schema, Mapping) or schema.get("items") is None:
@@ -702,7 +715,7 @@ def _check_array_value(spec_name: str, key: str, schema: object, value: Any, *, 
     return ""
 
 
-def _check_object_value(spec_name: str, key: str, schema: object, value: Any, *, strict: bool = False) -> str:
+def _check_object_value(spec_name: str, key: str, schema: object, value: object, *, strict: bool = False) -> str:
     if not isinstance(value, dict):
         return _spec_type_error(spec_name, key, "object", value)
     if isinstance(schema, Mapping):
@@ -729,7 +742,7 @@ def _check_object_value(spec_name: str, key: str, schema: object, value: Any, *,
     return ""
 
 
-def _json_value_equal(left: Any, right: Any) -> bool:
+def _json_value_equal(left: object, right: object) -> bool:
     """JSON numbers compare numerically; booleans never compare as numbers."""
     if isinstance(left, bool) or isinstance(right, bool):
         return type(left) is type(right) and left == right
@@ -738,13 +751,17 @@ def _json_value_equal(left: Any, right: Any) -> bool:
     if type(left) is not type(right):
         return False
     if isinstance(left, dict):
-        return left.keys() == right.keys() and all(_json_value_equal(value, right[key]) for key, value in left.items())
+        if not isinstance(right, dict) or left.keys() != right.keys():
+            return False
+        return all(_json_value_equal(value, right[key]) for key, value in left.items())
     if isinstance(left, list):
-        return len(left) == len(right) and all(_json_value_equal(a, b) for a, b in zip(left, right, strict=True))
-    return cast(bool, left == right)
+        if not isinstance(right, list) or len(left) != len(right):
+            return False
+        return all(_json_value_equal(a, b) for a, b in zip(left, right, strict=True))
+    return left == right
 
 
-def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, value: Any, *, strict: bool = False) -> str:
+def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, value: object, *, strict: bool = False) -> str:
     """声明 schema 子集的类型检查（非 Full JSON-schema）。"""
     want, minimum, maximum = _spec_want_and_bounds(schema)
     if not want:
@@ -755,14 +772,17 @@ def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, v
             return f"{spec_name} arg '{key}' must be one of {enum!r}"
     if want == "string":
         error = _check_string_value(spec_name, key, value)
-        if error or not isinstance(schema, Mapping):
+        if error or not isinstance(schema, Mapping) or not isinstance(value, str):
             return error
         if len(value) < int(schema.get("minLength", 0)) or len(value) > int(schema.get("maxLength", len(value))):
             return f"{spec_name} arg '{key}' violates declared string length bounds"
         if "pattern" in schema:
             import re
 
-            if re.search(schema["pattern"], value) is None:
+            pattern = schema["pattern"]
+            if not isinstance(pattern, str):
+                return f"{spec_name} arg '{key}' has an invalid string pattern"
+            if re.search(pattern, value) is None:
                 return f"{spec_name} arg '{key}' must match {schema['pattern']}"
         return ""
     if want == "integer":
@@ -798,7 +818,7 @@ def _builtin_alias_allowed_keys(tool: str) -> set[str] | None:
     return None
 
 
-def _builtin_required_satisfied(tool: str, required: tuple[str, ...], args: dict[str, Any]) -> str:
+def _builtin_required_satisfied(tool: str, required: tuple[str, ...], args: dict[str, object]) -> str:
     """Alias-aware required check for built-ins; "" when satisfied else missing key."""
     name = (tool or "").strip().lower()
     # Groups where any member satisfies the canonical requirement.
@@ -829,7 +849,7 @@ def _builtin_required_satisfied(tool: str, required: tuple[str, ...], args: dict
     return ""
 
 
-def _declared_map(spec: Any) -> tuple[dict[str, object], str, bool]:
+def _declared_map(spec: ToolSpec) -> tuple[dict[str, object], str, bool]:
     declared: dict[str, object] = {}
     try:
         for param_name, schema in (spec.parameters or ()):
@@ -843,7 +863,7 @@ def _declared_map(spec: Any) -> tuple[dict[str, object], str, bool]:
     return declared, executor, executor in {"project", "source", "knowledge"}
 
 
-def _validate_required_presence(spec: Any, declared: dict[str, object], is_builtin: bool, args: dict[str, Any]) -> str:
+def _validate_required_presence(spec: ToolSpec, declared: dict[str, object], is_builtin: bool, args: dict[str, object]) -> str:
     if is_builtin:
         missing_key = _builtin_required_satisfied(spec.name, tuple(spec.required or ()), args)
         if missing_key:
@@ -894,7 +914,7 @@ def _validate_no_extra(spec: ToolSpec, declared: dict[str, object], is_builtin: 
     return ""
 
 
-def _validate_types(spec: Any, declared: dict[str, object], is_builtin: bool, args: dict[str, Any]) -> str:
+def _validate_types(spec: ToolSpec, declared: dict[str, object], is_builtin: bool, args: dict[str, object]) -> str:
     if not is_builtin:
         for key, value in args.items():
             skey = key
@@ -935,12 +955,12 @@ def _parameter_error(error: str, schema: object) -> str:
     return error + ". " + description if isinstance(description, str) and description else error
 
 
-def validate_args_with_spec(spec: Any, args: object) -> str:
+def validate_args_with_spec(spec: ToolSpec | None, args: object) -> str:
     """用给定冻结 spec 校验（快照本轮定义，不读 live 注册表）。"""
     if spec is None:
         return "unknown tool"
     if not isinstance(args, dict):
-        return f"{getattr(spec, 'name', '?')} args must be an object"
+        return f"{spec.name} args must be an object"
     declared, _, is_builtin = _declared_map(spec)
     if "args" not in declared and isinstance(args.get("args"), dict):
         return (
@@ -958,10 +978,10 @@ def validate_args_with_spec(spec: Any, args: object) -> str:
     return _validate_types(spec, declared, is_builtin, args)
 
 
-_CUSTOM_EXECUTORS: dict[str, Any] = {}
+_CUSTOM_EXECUTORS: dict[str, CustomExecutor] = {}
 
 
-def register_custom_executor(name: object, fn: Any) -> bool:
+def register_custom_executor(name: object, fn: CustomExecutor) -> bool:
     """Register a production executor for a third-task tool (generic path)."""
     canonical = str(name or "").strip().lower()
     if not canonical or not callable(fn):
@@ -976,7 +996,7 @@ def register_custom_executor(name: object, fn: Any) -> bool:
     return True
 
 
-def custom_executor_for(name: object) -> Any | None:
+def custom_executor_for(name: object) -> CustomExecutor | None:
     canonical = str(name or "").strip().lower()
     if not canonical:
         return None

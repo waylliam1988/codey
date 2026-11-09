@@ -170,7 +170,7 @@ def test_documented_codemode_example_executes_with_real_child_tools(tmp_path, na
     assert observed == {"ok": True, "value": "OBSERVED-CODEMODE-729\n"}
     # Both surfaces teach the very same program, not independently escaped copies.
     assert example["args"]["code"] in spec.description
-    assert "Calls return {ok:true, value}" in spec.description
+    assert "Calls return Result<T>" in spec.description
 
 
 @pytest.mark.parametrize("native", [False, True])

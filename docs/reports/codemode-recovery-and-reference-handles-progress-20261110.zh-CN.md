@@ -88,3 +88,11 @@
 - 测试覆盖已有会话接入、借用页面生命周期、浏览器重启/页面替换和跨 context 隔离；没有引入 cookie 复制或 HTTP 绕过。
 - 知乎全新会话仍返回 403 属于站点访问策略；可行路径是使用用户已登录、可见的 Codey Edge 会话并保持其 context/page 身份，若会话失效则要求用户重新观察或重新连接。
 - commits：`d46a7149 test: define existing browser session acquisition`、`74eeba66 feat: support explicit existing browser sessions`。
+
+## 类型边界收敛记录
+
+- 对本批修改过的生产文件做了显式 `Any` 审计；`codey/codemode/kernel.py`、`codey/codemode/protocol.py`、`codey/toolchain/tool_spec.py` 已移除全部 `Any`。
+- `kernel` 现在使用现有的 `TaskSession`、`TurnSnapshot`、`ToolExecutor`、`KernelEffectSink`、`ManagedOutputStore` 和 durable session 类型；CodeMode replay 只通过只读 Protocol 接入，不新增运行时或账本。
+- `tool_spec` 的策略能力使用 `ToolPolicy.allows` Protocol，自定义执行器使用现有 `ToolCall -> ToolResult` 合同；schema 动态值统一为明确的 `object`/`Mapping[str, object]` 边界。
+- 旧测试对废弃的 `{ok:true, value}` 提示文本的断言已更新为当前 `Result<T>` 合同；没有恢复旧 prompt。
+- 验证：直接相关 CodeMode、回放、句柄、浏览器会话测试 `50 passed`；工具注册表、快照和合同回归 `36 passed`；上述三个生产文件 Ruff 与严格 Mypy 通过。

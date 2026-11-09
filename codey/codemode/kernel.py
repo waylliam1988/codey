@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import asdict, replace
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
 
 from codey.codemode.catalog import build_catalog_snapshot, build_codemode_catalog
 from codey.codemode.host import CodeModeHost
@@ -15,6 +17,31 @@ from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSn
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject
+
+if TYPE_CHECKING:
+    from codey.agents.request import ChangeTracker
+    from codey.agents.tools import AgentToolFns
+    from codey.codemode.state import CodeModeStateStore
+    from codey.durable import DurableStore
+    from codey.durable.session import DurableSession
+    from codey.operations.kernel_contracts import StopSignal, ToolExecutor
+    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.task_effects import KernelEffectSink
+    from codey.operations.task_session import TaskSession
+    from codey.research.tools import ResearchTools
+    from codey.runtime.observe.events import RunEvent
+    from codey.runtime.observe.execution_evidence import ExecutionEvidence
+    from codey.storage.managed_outputs import ManagedOutputStore
+    from codey.workspace.revision import WorkspaceRevisionStore
+
+
+class CodeModeReplay(Protocol):
+    @property
+    def context(self) -> Mapping[str, object]: ...
+
+    def assert_valid(self) -> None: ...
+
+    def admission(self) -> AbstractContextManager[None]: ...
 
 
 class CodeModeKernelExecutor:
@@ -28,13 +55,13 @@ class CodeModeKernelExecutor:
         execute_child: Callable[[ToolCall], ToolResult],
         runtime: CodeModeRuntime | None = None,
         limits: CodeModeLimits | None = None,
-        artifact_store: Any = None,
+        artifact_store: ManagedOutputStore | None = None,
         session_id: str = "",
         run_id: str = "",
         max_inline_bytes: int = 200_000,
         allow_writes: bool = False,
-        state_store: Any = None,
-        replay: Any = None,
+        state_store: CodeModeStateStore | None = None,
+        replay: CodeModeReplay | None = None,
         replay_child: Callable[[int, str, JsonObject], ToolResult] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
@@ -113,31 +140,31 @@ class CodeModeKernelExecutor:
 
 def build_execute_turn_executor(  # noqa: PLR0915
     *,
-    session: Any,
-    snapshot: Any,
+    session: TaskSession,
+    snapshot: TurnSnapshot,
     run_id: str,
     effect_scope: str,
     turn: int,
-    project_path: Any = None,
-    tool_fns: Any = None,
-    research_tools: Any = None,
-    change_tracker: Any = None,
-    managed_outputs: Any = None,
+    project_path: Path | None = None,
+    tool_fns: AgentToolFns | None = None,
+    research_tools: ResearchTools | None = None,
+    change_tracker: ChangeTracker | None = None,
+    managed_outputs: ManagedOutputStore | None = None,
     session_id: str = "",
     permission_profile: str = "coding_writer",
     delivered: Mapping[str, ToolResult] | None = None,
-    intent_sink: Any = None,
-    controller_allowed: Any = None,
-    execution_evidence: Any = None,
-    workspace_ignored_paths: Any = (),
-    workspace_revision_store: Any = None,
-    stop_flag: Any = None,
-    executors: Mapping[str, Callable[[ToolCall], Any]] | None = None,
+    intent_sink: KernelEffectSink | None = None,
+    controller_allowed: Collection[str] | None = None,
+    execution_evidence: ExecutionEvidence | None = None,
+    workspace_ignored_paths: tuple[str, ...] = (),
+    workspace_revision_store: WorkspaceRevisionStore | None = None,
+    stop_flag: StopSignal | None = None,
+    executors: Mapping[str, ToolExecutor] | None = None,
     limits: CodeModeLimits | None = None,
-    durable: Any = None,
+    durable: DurableStore | DurableSession | None = None,
     allow_writes: bool = False,
-    state_store: Any = None,
-    on_event: Callable[[Any], None] | None = None,
+    state_store: CodeModeStateStore | None = None,
+    on_event: Callable[[RunEvent], None] | None = None,
     runtime_factory: Callable[[], CodeModeRuntime] | None = None,
 ) -> Callable[[ToolCall], ToolResult]:
     """Build the production parent executor; every child re-enters execute_turn."""
@@ -155,7 +182,7 @@ def build_execute_turn_executor(  # noqa: PLR0915
     if not effective_session_id and isinstance(intent_sink, KernelEffectSink):
         effective_session_id = intent_sink.session_id
 
-    def run_parent(call: ToolCall) -> ToolResult:
+    def run_parent(call: ToolCall) -> ToolResult:  # noqa: PLR0915
         from codey.operations.task_session import turn_effect_id
 
         child_effect_ids: list[str] = []
@@ -181,6 +208,10 @@ def build_execute_turn_executor(  # noqa: PLR0915
         runtime = (runtime_factory or NodeWorkerRuntime)()
         replay = None
         if durable is not None:
+            from codey.durable.session import DurableSession
+
+            if not isinstance(durable, DurableSession):
+                raise TypeError("durable CodeMode requires a DurableSession")
             if not isinstance(child_sink, KernelEffectSink):
                 raise ValueError("durable CodeMode requires the original effect sink")
             from codey.codemode.replay import DurableCodeModeReplay, digest

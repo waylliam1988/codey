@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from typing import Any
 
 from codey.codemode.types import CodeModeLimits, CodeModeProgram
 from codey.runtime.core.models import canonical_json_mapping
@@ -34,7 +33,7 @@ def _check_input_numbers(value: object) -> None:
             _check_input_numbers(item)
 
 
-def parse_codemode_args(args: Mapping[str, Any], *, limits: CodeModeLimits | None = None) -> CodeModeProgram:
+def parse_codemode_args(args: Mapping[str, object], *, limits: CodeModeLimits | None = None) -> CodeModeProgram:
     if not isinstance(args, Mapping):
         raise CodeModeInputError("codemode args must be an object")
     active_limits = limits or CodeModeLimits()
