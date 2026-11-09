@@ -14,23 +14,21 @@ from codey.knowledge.note import NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_sa
 from codey.knowledge.recall import KnowledgeAccess, KnowledgeHit, render_recall
 from codey.knowledge.store import KnowledgeStore
 from codey.research.ledger import EvidencePreparation, ResearchLedger
-from codey.research.passages import PassageDescriptor
 from codey.research.source_gateway import (
     OPEN_DEFAULT_LIMIT,
-    OPEN_MAX_LIMIT,
-    OPEN_MIN_LIMIT,
     SEARCH_LIMIT,
     OpenedSource,
     ResearchSourceGateway,
     _SearchProvider,
 )
-from codey.research.source_rendering import render_opened_source
+from codey.research.source_reading import render_source_read
 from codey.research.source_search import (
     SOURCE_SEARCH_DEFAULT_LIMIT,
     render_results,
 )
 from codey.research.staging import StagedKnowledgeChanges, StagedKnowledgeStore
 from codey.research.tool_args import KnowledgeCommitRequest, decode_conditions
+from codey.research.tool_output import ResearchToolOutput as ResearchToolOutput
 from codey.research.url_selection import source_candidate_skip_reason
 from codey.types.json_value import JsonObject, ToolArgs, canonical_json_object, decode_json_object
 
@@ -42,31 +40,6 @@ def _base_changes(changes: KnowledgeChanges | StagedKnowledgeChanges | None) -> 
     return changes if isinstance(changes, KnowledgeChanges) else None
 
 
-@dataclass(frozen=True)
-class ResearchToolOutput:
-    """Model-visible text plus the full text reserved for durable receipts."""
-
-    model_text: str
-    receipt_text: str = ""
-    read_passages: tuple[PassageDescriptor, ...] = ()
-    read_observation: JsonObject = field(default_factory=dict)
-    ok: bool = field(kw_only=True)
-    knowledge_search_empty: bool = field(default=False, kw_only=True)
-    acquisition_failed: bool = field(default=False, kw_only=True)
-    acquisition: JsonObject = field(default_factory=dict, kw_only=True)
-
-    def __post_init__(self) -> None:
-        if type(self.ok) is not bool:
-            raise TypeError("research output ok must be an exact boolean")
-        observation = canonical_json_object(self.read_observation)
-        object.__setattr__(self, "read_observation", observation)
-        object.__setattr__(self, "acquisition", canonical_json_object(self.acquisition))
-        if self.read_passages:
-            from codey.research.passages import restore_passages
-
-            ledger = ResearchLedger()
-            restore_passages(ledger, observation, self.read_passages)
-            object.__setattr__(self, "read_passages", tuple(row.descriptor() for row in ledger.read_passages.values()))
 
 
 @dataclass
@@ -194,77 +167,23 @@ class ResearchTools:
         self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = ""
     ) -> ResearchToolOutput:
         outcome = self.gateway.open(url, offset=offset, limit=limit, pages=pages)
-        return self._render_source(outcome, offset=offset, limit=limit)
+        self.sources_read.update(outcome.read_urls)
+        return render_source_read(outcome, self.ledger, offset=offset, limit=limit, coherent=self.coherent_passages)
 
     def read_source(self, observation: JsonObject, *, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT,
                     pages: str = "") -> ResearchToolOutput:
         """Read an exact captured version without executing another acquisition."""
         from codey.research.ledger_receipts import restore_ledger_observation, source_observation
-        from codey.research.source_snapshots import document_snapshot, snapshot_document
+        from codey.research.source_snapshots import select_source_pages, snapshot_document
 
-        document = snapshot_document(observation, pages=pages)
+        selected = select_source_pages(observation, pages) if pages else observation
+        document = snapshot_document(selected)
         source, _text, _page_map = source_observation(observation)
-        selected = document_snapshot(document, retrieved_at=source.retrieved_at) if pages else observation
         restore_ledger_observation(self.ledger, selected)
-        outcome = OpenedSource(status="ok", document=document,
+        outcome = OpenedSource(status="ok", document=document, observation=selected,
             read_urls=tuple(dict.fromkeys((source.requested_url, source.final_url))))
-        return self._render_source(outcome, offset=offset, limit=limit, observation=selected)
-
-    def _render_source(self, outcome: OpenedSource, *, offset: int, limit: int,
-                       observation: JsonObject | None = None) -> ResearchToolOutput:
-        if outcome.status == "error":
-            return ResearchToolOutput(f"ERROR: {outcome.detail}", ok=False,
-                                      acquisition_failed=outcome.acquisition_failed, acquisition=outcome.acquisition)
-        if outcome.status == "skipped":
-            return ResearchToolOutput(f"SKIPPED: {outcome.detail}", ok=False,
-                                      acquisition_failed=outcome.acquisition_failed, acquisition=outcome.acquisition)
-        document = outcome.document
-        assert document is not None
         self.sources_read.update(outcome.read_urls)
-        offset = max(0, _as_int(offset, 0))
-        if offset >= len(document.text):
-            return ResearchToolOutput(
-                f"ERROR: source offset={offset} is at or beyond the end of available extracted text "
-                f"(length={len(document.text)} characters). No passage was read. "
-                "Do not advance the offset; use source_search on an earlier section or investigate another source.",
-                ok=False, acquisition=outcome.acquisition)
-        # Leave room for exact passage labels, metadata and source boundaries.
-        limit = min(OPEN_MAX_LIMIT - 2500, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
-        from codey.research.ledger_receipts import source_observation
-        from codey.research.passages import describe_document_window, render_passage_window, restore_passages
-        from codey.research.source_snapshots import document_snapshot
-
-        if observation is None:
-            observation = document_snapshot(document)
-        source, _text, _pages = source_observation(observation)
-        passages = describe_document_window(document, source.text_hash, offset, limit, coherent=self.coherent_passages)
-        if not passages:
-            return ResearchToolOutput("ERROR: the requested source window contains no readable text; no passage was read.",
-                                      ok=False, acquisition=outcome.acquisition)
-        window = render_passage_window(document, passages)
-        next_offset = passages[-1]["end"]
-        more = next_offset < len(document.text)
-        body = render_opened_source(
-            document,
-            window,
-            more_offset=next_offset if more else None,
-            read_window=(passages[0]["start"], passages[-1]["end"]),
-        )
-        if len(body) > OPEN_MAX_LIMIT:
-            # A clipped body must not authorize a partly unseen passage. Drop
-            # whole trailing passages and rerender their accurate next offset.
-            while len(passages) > 1 and len(body) > OPEN_MAX_LIMIT:
-                next_offset = passages.pop()["start"]
-                window = render_passage_window(document, passages)
-                body = render_opened_source(document, window, more_offset=next_offset,
-                    read_window=(passages[0]["start"], passages[-1]["end"]))
-            if len(body) > OPEN_MAX_LIMIT:
-                return ResearchToolOutput("ERROR: source metadata exceeds the readable window budget; no passage was read.",
-                                          ok=False, acquisition=outcome.acquisition)
-        restore_passages(self.ledger, observation, passages)
-        full = render_opened_source(document, document.text)
-        return ResearchToolOutput(model_text=body, receipt_text=full, read_passages=tuple(passages),
-                                  read_observation=observation, ok=True, acquisition=outcome.acquisition)
+        return render_source_read(outcome, self.ledger, offset=offset, limit=limit, coherent=self.coherent_passages)
 
     def source_search(self, url: str, query: str, limit: object = SOURCE_SEARCH_DEFAULT_LIMIT) -> ResearchToolOutput:
         outcome = self.gateway.search_inside(url, query, limit)

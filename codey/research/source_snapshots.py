@@ -1,13 +1,14 @@
 """Versioned source captures reconstructed from the original read/search receipts."""
 from __future__ import annotations
 
-from dataclasses import asdict, replace
+import hashlib
+from dataclasses import replace
 
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import ledger_observation, source_observation
+from codey.research.ledger_receipts import ledger_observation, source_observation, source_snapshot
 from codey.research.pdf_extract import parse_pages
 from codey.research.source_document import SourceDocument, SourcePage
-from codey.types.json_value import JsonObject, canonical_json_object
+from codey.types.json_value import JsonObject
 
 
 def captured_source(ledger: ResearchLedger, url: str, text_hash: str = "") -> JsonObject:
@@ -17,8 +18,7 @@ def captured_source(ledger: ResearchLedger, url: str, text_hash: str = "") -> Js
         return ledger_observation(ledger, "open", url=url)
     for passage in ledger.read_passages.values():
         if passage.source.final_url == url and passage.source.text_hash == text_hash:
-            return canonical_json_object({"source": asdict(passage.source), "text": passage.source_text,
-                "pages": [{"number": number, "text": text} for number, text in passage.pages]})
+            return source_snapshot(passage.source, passage.source_text, dict(passage.pages))
     for search in reversed(ledger.source_searches):
         snapshot = search["source_snapshot"]
         source, _text, _pages = source_observation(snapshot)
@@ -41,11 +41,17 @@ def snapshot_document(observation: JsonObject, *, pages: str = "") -> SourceDocu
         page_texts=tuple(SourcePage(number=number, text=body) for number, body in page_map.items()))
 
 
-def document_snapshot(document: SourceDocument, *, retrieved_at: str = "") -> JsonObject:
+def document_snapshot(document: SourceDocument) -> JsonObject:
     ledger = ResearchLedger()
-    ledger.record_open_document(document)
-    observation = ledger_observation(ledger, "open", url=document.final_url)
-    if retrieved_at:
-        source, _text, _pages = source_observation(observation)
-        observation["source"] = canonical_json_object(asdict(replace(source, retrieved_at=retrieved_at)))
-    return observation
+    source = ledger.record_open_document(document)
+    assert source is not None
+    return source_snapshot(source, document.text, {page.number: page.text for page in document.page_texts})
+
+
+def select_source_pages(observation: JsonObject, pages: str) -> JsonObject:
+    """Select captured PDF pages while preserving acquisition time and metadata."""
+    source, _text, _page_map = source_observation(observation)
+    document = snapshot_document(observation, pages=pages)
+    selected = replace(source, text_hash=hashlib.sha256(document.text.encode("utf-8", errors="replace")).hexdigest()[:16],
+                       pages_read=document.pages_read)
+    return source_snapshot(selected, document.text, {page.number: page.text for page in document.page_texts})

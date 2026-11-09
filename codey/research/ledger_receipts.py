@@ -166,6 +166,14 @@ def source_search_observation(observation: object) -> SourceSearchObservation:
               for hit in row["hits"]])
 
 
+def source_snapshot(source: OpenedSource, text: str, pages: dict[int, str]) -> JsonObject:
+    """Encode and validate the same source capture for acquisition and recovery."""
+    observation = canonical_json_object({"source": asdict(source), "text": text,
+        "pages": [{"number": number, "text": body} for number, body in pages.items()]})
+    source_observation(observation)
+    return observation
+
+
 def ledger_observation(ledger: ResearchLedger, kind: str, *, url: str = "", evidence_start: int = 0) -> JsonObject:
     observation: JsonObject
     if kind == "web_search" and ledger.searches:
@@ -180,11 +188,7 @@ def ledger_observation(ledger: ResearchLedger, kind: str, *, url: str = "", evid
         return canonical_json_object({"evidence": [asdict(item) for item in ledger.evidence_items[evidence_start:]]})
     source = ledger.source_record_for_url(url) if url else None
     if source is not None:
-        observation = canonical_json_object({"source": asdict(source), "text": ledger.source_text_for_url(url),
-                       "pages": [{"number": number, "text": text}
-                                 for number, text in ledger.source_pages_for_url(url).items()]})
-        source_observation(observation)
-        return canonical_json_object(observation)
+        return source_snapshot(source, ledger.source_text_for_url(url), ledger.source_pages_for_url(url))
     raise ValueError(f"missing research observation for {kind}")
 
 

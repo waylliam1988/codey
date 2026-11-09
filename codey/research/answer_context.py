@@ -16,12 +16,13 @@ from codey.research.questions import INVESTIGATION_TOOLS
 from codey.utils.text_budget import estimate_tokens
 
 if TYPE_CHECKING:
+    from codey.operations.task_session import TaskSession
     from codey.research.ledger import ResearchLedger
     from codey.research.tools import ResearchToolOutput
     from codey.runtime.core.models import ToolCall
 
 
-def work_view_limits(provider: Any) -> tuple[Callable[[str], int], int]:
+def work_view_limits(provider: object) -> tuple[Callable[[str], int], int]:
     """Use the same tokenizer and half-window limit for acquisition and display."""
     from codey.providers.token_accounting import ContextBudget
 
@@ -46,14 +47,14 @@ def work_view_limits(provider: Any) -> tuple[Callable[[str], int], int]:
     return count, min(budget.window_tokens // 2, budget.input_limit)
 
 
-def fitting_full_read(session: Any, ledger: ResearchLedger, call: ToolCall,
-                      opened: ResearchToolOutput, *, provider: Any = None) -> ResearchToolOutput:
+def fitting_full_read(session: TaskSession, ledger: ResearchLedger, call: ToolCall,
+                      opened: ResearchToolOutput, *, provider: object = None) -> ResearchToolOutput:
     """Preview the actual work view; extend a default HTML read only if all fits."""
     from codey.research.answer_contract import answer_scope
     from codey.research.ledger_receipts import source_observation
     from codey.research.passages import (
         MAX_READ_PASSAGES,
-        describe_document_window,
+        describe_captured_window,
         render_passage_window,
         restore_passages,
     )
@@ -68,7 +69,7 @@ def fitting_full_read(session: Any, ledger: ResearchLedger, call: ToolCall,
         return opened
     document = SourceDocument.html(requested_url=source.requested_url, final_url=source.final_url,
                                    title=source.title, text=text, mime_type=source.mime_type, truncated=source.truncated)
-    rows = describe_document_window(document, source.text_hash, opened.read_passages[0]["start"], len(text), coherent=True)
+    rows = describe_captured_window(opened.read_observation, opened.read_passages[0]["start"], len(text), coherent=True)
     if len(rows) > MAX_READ_PASSAGES:
         return opened
     with session.projection_lock:

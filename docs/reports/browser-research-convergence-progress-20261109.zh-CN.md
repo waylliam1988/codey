@@ -16,8 +16,8 @@
 
 | 批次 | 内容 | 状态 | 提交 |
 |---|---|---|---|
-| 1 | 正文版本、文内命中与续读绑定；恢复不重新获取 | 完成 | 本文所在首批提交 |
-| 2 | 来源接收、正文窗口、回执与 passage 共用 | 未开始 | 待提交 |
+| 1 | 正文版本、文内命中与续读绑定；恢复不重新获取 | 完成 | `7751e6a1` |
+| 2 | 来源接收、正文窗口、回执与 passage 共用 | 完成 | 本文所在第二批提交 |
 | 3 | 结构化获取/执行/阅读状态、恢复与重放合同；UI失败说明 | 未开始 | 待提交 |
 | 4 | 保持行为的工具定义、执行与事实投影去重 | 未开始 | 待提交 |
 
@@ -39,7 +39,12 @@
 
 ### 批次 2
 
-尚未开始。
+- 获取边界生成一次经过校验的来源捕获，并与结果一同交给共享阅读实现；不再在渲染时另造获取时间或重新分类质量。PDF 本次读取回执保留本次页范围，正式投影仍按原合同合并独立页读取。
+- 抽出 `tool_output.py` 与 `source_reading.py`，Chat/Research、新获取/捕获重读共用正文窗口、预算、回执和 passage；网页、Research 适配完整读取与已保存 source 也共用 `describe_captured_window`。知识材料原有固定版本、访问范围、证据精确区间与答案发布合同保留。
+- source_snapshot 是唯一来源编码校验入口，供原获取、ledger 恢复与知识材料使用。PDF 子集保留原获取时间和元数据，不重新获取。
+- 相关 61 个用例通过，包括 HTML/abstract/PDF 三种输入的新读/重读/恢复完全一致、单次获取时间、独立 PDF 页回执、知识历史版本和答案上下文。两个既有测试陈旧：字段列表未包含已存在 acquisition 字段，定位测试把“保留前文”误限定为恰好从段首开始；按真实合同修正后通过。
+- Ruff、Mypy、Pyrefly、ty、kernel precision gate 通过；移除适配完整阅读两个函数签名中的动态类型，未新增 Any 或豁免。
+- KoboldCpp/Gemma4 真实 Research 入口：`.e2e-artifacts/browser-research-convergence-20261109/batch2-a/summary.json`，passed=true / done。浏览器一次获取，随后 source_search → open_hit 读取原捕获，submit_research_answer 以 [e2] 发布原文 17 grams。实验器最初只把 open_url 计入后续阅读，漏掉合法 open_hit；修正汇总条件后用原始记录重算，无需重跑生产。
 
 ### 批次 3
 

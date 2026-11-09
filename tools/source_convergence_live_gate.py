@@ -13,6 +13,8 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.request import Request
 
+from playwright.sync_api import Route
+
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.types.json_value import JsonObject, decode_json_object
@@ -39,6 +41,13 @@ def run(directory: Path, batch: int, timeout: float) -> JsonObject:
         "Finally report the quantities seen in step 3 and step 4. Do not search the web, skip steps, "
         "or read stored knowledge. This is a diagnostic of captured source versions."
     )
+    research = batch == 2
+    if research:
+        task = (f"Research the measured saffron quantity in this field record: {URL}. "
+                "Read the URL, then use source_search for saffron and open_url with the returned offset "
+                "to inspect the original finding. Use only this URL. Submit a short research answer "
+                "with its original eN citation. Do not save knowledge updates. This diagnostic requires "
+                "both the initial read and a subsequent locator read, even if the first read fits in context.")
     acquisitions: list[JsonObject] = []
 
     def http(request: Request, *, timeout: float) -> FixtureResponse:
@@ -47,6 +56,12 @@ def run(directory: Path, batch: int, timeout: float) -> JsonObject:
         (directory / "acquisitions.json").write_text(json.dumps(acquisitions), encoding="utf-8")
         return FixtureResponse(request.full_url, "<html><title>Field record</title><body><article>"
                                + body + "</article></body></html>")
+
+    def browser_response(self: object, route: Route) -> None:
+        acquisitions.append({"url": route.request.url, "backend": "browser", "version": 1})
+        (directory / "acquisitions.json").write_text(json.dumps(acquisitions), encoding="utf-8")
+        route.fulfill(status=200, content_type="text/html; charset=utf-8",
+                      body="<html><title>Field record</title><body><article>" + ORIGINAL + "</article></body></html>")
 
     def observe(row: dict[str, object]) -> None:
         with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:
@@ -66,20 +81,36 @@ def run(directory: Path, batch: int, timeout: float) -> JsonObject:
         attempts.isolate_gate_secondary_models(target),
         attempts.record_api_generations(directory / "provider.jsonl"),
         patch("codey.research.source_download._open_url_no_redirect", http),
+        patch("codey.research.browser_search.BrowserSearchProvider._guard_request", browser_response),
     ):
-        result = run_headless(HeadlessRequest(None, task, intent="chat", provider_id="local", max_turns=10,
+        result = run_headless(HeadlessRequest(None, task, intent="research" if research else "chat", provider_id="local", max_turns=10,
             state_home=directory / "state", model_selection={"model": target.model, "base_url": target.base_url},
+            research_store_root=directory / "knowledge" if research else None,
             requested_capabilities=(), project_changes_required=False), emit_jsonl=observe, connect_provider=connect)
+    return analyze(directory, manifest, acquisitions, result.stop_reason, research=research)
+
+
+def analyze(directory: Path, manifest: JsonObject, acquisitions: list[JsonObject], stop_reason: str, *,
+            research: bool) -> JsonObject:
     events = [decode_json_object(json.loads(line)) for line in
               (directory / "events.jsonl").read_text(encoding="utf-8").splitlines()]
     tool_rows = [row for row in events if row.get("type") == "tool"]
     bodies = opened_bodies(directory)
     required = {"source_search", "open_hit", "reopen_source", "open_url"}
-    passed = (result.stop_reason == "done" and len(acquisitions) == 2
+    passed = (stop_reason == "done" and len(acquisitions) == 2
               and required <= {str(row.get("tool_name")) for row in tool_rows}
               and all(row.get("ok") is True for row in tool_rows)
               and len(bodies) >= 3 and "99 grams" in bodies[1] and "17 grams" in bodies[2])
-    report: JsonObject = {**manifest, "passed": passed, "stop_reason": result.stop_reason,
+    if research:
+        requests = [decode_json_object(json.loads(line)) for line in
+                    (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
+        delivered = [json.dumps(row["payload"], ensure_ascii=False) for row in requests if row.get("type") == "request"]
+        passed = (stop_reason == "done" and len(acquisitions) == 1
+                  and sum(row.get("tool_name") in {"open_url", "open_hit", "reopen_source"} for row in tool_rows) >= 2
+                  and any(row.get("tool_name") == "source_search" for row in tool_rows)
+                  and all(row.get("ok") is True for row in tool_rows)
+                  and any("17 grams" in body and "[e1]" in body for body in delivered))
+    report: JsonObject = {**manifest, "passed": passed, "stop_reason": stop_reason,
         "acquisitions": acquisitions, "tools": tool_rows, "delivered_bodies": bodies,
         "limits": "Diagnostic tool instructions and controlled HTTP responses; no answer quality claim."}
     (directory / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")

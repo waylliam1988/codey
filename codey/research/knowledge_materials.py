@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING
 from codey.knowledge.model import KnowledgeVersion
 from codey.knowledge.recall import KnowledgeAccess
 from codey.research.ledger import OpenedSource, SourceQuality
-from codey.research.passages import PassageDescriptor, describe_section_window, passage_ref, restore_passages
-from codey.types.json_value import canonical_json_object
+from codey.research.ledger_receipts import source_snapshot
+from codey.research.passages import PassageDescriptor, describe_captured_window, passage_ref, restore_passages
+from codey.types.json_value import require_json_integer, require_json_string
 
 if TYPE_CHECKING:
     from codey.research.tools import ResearchToolOutput, ResearchTools
@@ -63,14 +64,18 @@ def read_material(tools: ResearchTools, version: KnowledgeVersion, *, offset: in
     else:
         if type(offset) is not int or type(limit) is not int or not 0 <= offset < len(text) or not 500 <= limit <= 12000:
             raise ValueError("source read needs offset within the stored text and limit between 500 and 12000")
-        rows = describe_section_window(source.final_url, source.text_hash, text, offset, limit)
+        rows = []
+    observation = source_snapshot(source, text,
+        {require_json_integer(page["number"], "page number"): require_json_string(page["text"], "page text")
+         for page in pages})
+    if evidence is None:
+        rows = describe_captured_window(observation, offset, limit, coherent=True)
     if not rows:
         raise ValueError("stored source window contains no readable text")
     for row in rows:
         row["source_version"] = (source_value.id, version.revision)
         row["ref"] = passage_ref(source.final_url, source.text_hash, row["start"], row["end"],
             source_version=row["source_version"], evidence_version=row.get("evidence_version"))
-    observation = canonical_json_object({"source": asdict(source), "text": text, "pages": pages})
     restore_passages(tools.ledger, observation, rows)
     body = {"id": value.id, "revision": evidence.revision if evidence else version.revision,
             "kind": value.kind, "source_version": [source_value.id, version.revision],

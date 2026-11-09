@@ -191,11 +191,11 @@ class ResearchLedger:
             text=text,
         ))
 
-    def record_open_document(self, document: SourceDocument) -> None:
+    def record_open_document(self, document: SourceDocument) -> OpenedSource | None:
         requested_url = (document.requested_url or "").strip()
         final_url = (document.final_url or requested_url).strip()
         if not final_url:
-            return
+            return None
         text = (document.text or "")
         pages_read = tuple(
             page for page in (_safe_page_number(raw) for raw in document.pages_read)
@@ -230,6 +230,7 @@ class ResearchLedger:
             truncated=(document.truncated or (existing.truncated if existing is not None else False)),
         )
         self.merge_opened_source(opened, text, page_map)
+        return opened
 
     def merge_opened_source(self, source: OpenedSource, text: str, pages: dict[int, str]) -> None:
         """One acquisition/replay merge. Page versions derive only from observations.

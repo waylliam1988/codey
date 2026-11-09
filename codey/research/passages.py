@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NotRequired, TypedDict
 
-from codey.types.json_value import require_json_string
+from codey.types.json_value import JsonObject, require_json_string
 
 if TYPE_CHECKING:
     from codey.research.ledger import OpenedSource, ResearchLedger
@@ -154,6 +154,16 @@ def describe_document_window(document: SourceDocument, text_hash: str, offset: i
             rows.extend(describe(document.final_url, text_hash, document.text,
                                  visible_start, visible_end - visible_start))
     return rows
+
+
+def describe_captured_window(observation: JsonObject, offset: int, limit: int, *,
+                             coherent: bool = False) -> list[PassageDescriptor]:
+    """Generate web, restored and stored-source windows from the same receipt."""
+    from codey.research.ledger_receipts import source_observation
+    from codey.research.source_snapshots import snapshot_document
+
+    source, _text, _pages = source_observation(observation)
+    return describe_document_window(snapshot_document(observation), source.text_hash, offset, limit, coherent=coherent)
 
 
 def describe_section_window(url: str, text_hash: str, text: str, offset: int, limit: int) -> list[PassageDescriptor]:

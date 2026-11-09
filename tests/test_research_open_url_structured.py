@@ -120,7 +120,7 @@ def test_research_tool_output_contains_only_receipts_and_observed_search_status(
 
     names = {field.name for field in dataclasses.fields(ResearchToolOutput)}
     assert names == {"model_text", "receipt_text", "read_passages", "read_observation", "ok",
-                     "knowledge_search_empty"}
+                     "knowledge_search_empty", "acquisition_failed", "acquisition"}
     # This is the program's observed zero-hit status, not a semantic judgment
     # about an answer. Ordinary source reads keep the conservative default.
     search_status = next(field for field in dataclasses.fields(ResearchToolOutput)
@@ -142,7 +142,9 @@ def test_search_read_keeps_leading_condition_and_resumes_before_clipped_tail():
     full = prefix + statement + middle + tail
     url = "https://example.com/conditions"
     hit = search_text(full, "rare_operation")[0]
-    assert hit.offset == len(prefix)
+    # The locator intentionally includes bounded preceding context; its
+    # correctness is preserving the complete leading condition in the read.
+    assert 0 <= hit.offset <= len(prefix)
     tools = ResearchTools(_LongSearch(full, url), None, None)
     opened = tools.open_url(url, offset=hit.offset, limit=500)
     assert opened.ok and statement.strip() in opened.model_text

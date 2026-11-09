@@ -26,6 +26,7 @@ from typing import Protocol, runtime_checkable
 
 from codey.policies.network import check_fetch_url
 from codey.research.ledger import ResearchLedger
+from codey.research.ledger_receipts import source_snapshot
 from codey.research.pdf_extract import (
     PDF_DEFAULT_PAGES,
     PDF_MAX_PAGES_PER_OPEN,
@@ -86,6 +87,7 @@ class OpenedSource:
     read_urls: tuple[str, ...] = ()
     acquisition_failed: bool = False
     acquisition: JsonObject = field(default_factory=dict)
+    observation: JsonObject = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -197,8 +199,11 @@ class ResearchSourceGateway:
                 acquisition=acquisition,
             )
         read_urls = (url,) if not page_url or page_url == url else (url, page_url)
-        self.ledger.record_open_document(document)
-        return OpenedSource(status="ok", document=document, read_urls=read_urls, acquisition=acquisition)
+        source = self.ledger.record_open_document(document)
+        assert source is not None
+        observation = source_snapshot(source, document.text, {page.number: page.text for page in document.page_texts})
+        return OpenedSource(status="ok", document=document, read_urls=read_urls, acquisition=acquisition,
+                            observation=observation)
 
     def _source_document_from_fetch(
         self, requested_url: str, page: dict[str, object], *, pages: str = ""
