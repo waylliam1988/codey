@@ -27,6 +27,7 @@ from codey.research.questions import INVESTIGATION_TOOLS
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import ToolArgs, canonical_json_object, decode_json_object, require_json_string
+from codey.utils.citation_scanner import mask_markdown_code
 
 ANSWER_SCOPE_VERSION = 4
 ANSWER_CONTRACT_VERSION = 1
@@ -164,9 +165,7 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
 
 def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
     """Record explicit prose citations; code examples do not select evidence."""
-    masked = re.sub(r"(?ms)^([ \t]*)(`{3,}|~{3,})[^\n]*\n.*?^\1\2[^\n]*(?:\n|$)",
-                    lambda match: " " * len(match[0]), markdown)
-    masked = re.sub(r"(`+)([^`\n]*?)\1", lambda match: " " * len(match[0]), masked)
+    masked = mask_markdown_code(markdown)
     rows: list[CitationOccurrence] = []
     for match in re.finditer(r"(?<!\\)\[(e[0-9][^\]\n]*)\](?!\()", masked):
         labels = re.split(r"\s*[,，]\s*", match[1])

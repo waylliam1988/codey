@@ -63,6 +63,39 @@ class SourceIdRef:
     bracketed: bool = False
 
 
+def mask_markdown_code(text: str) -> str:
+    """Keep prose offsets while excluding fenced, indented and inline code."""
+    lines: list[str] = []
+    fence = ""
+    list_columns: list[int] = []
+    for line in text.splitlines(keepends=True):
+        content = re.sub(r"^ {0,3}(?:> ?)+", "", line.expandtabs(4))
+        indent = len(content) - len(content.lstrip(" "))
+        if not fence and content.strip():
+            while list_columns and indent < list_columns[-1]:
+                list_columns.pop()
+            item = re.match(r" *([-+*]|[0-9]+[.)]) +", content)
+            if item is not None and indent < (list_columns[-1] if list_columns else 0) + 4:
+                list_columns.append(item.end())
+                content = content[item.end():]
+        marker = re.match(r"^ *(`{3,}|~{3,})([^\r\n]*)", content)
+        if fence:
+            lines.append(" " * len(line))
+            if (marker is not None and marker[1][0] == fence[0]
+                    and len(marker[1]) >= len(fence) and not marker[2].strip()):
+                fence = ""
+        elif (marker is not None and indent < (list_columns[-1] if list_columns else 0) + 4
+              and not (marker[1][0] == "`" and "`" in marker[2])):
+            fence = marker[1]
+            lines.append(" " * len(line))
+        elif content.strip() and indent >= (list_columns[-1] if list_columns else 0) + 4:
+            lines.append(" " * len(line))
+        else:
+            lines.append(line)
+    return re.sub(r"(?<![`\\])(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)",
+                  lambda match: " " * len(match[0]), "".join(lines))
+
+
 def citation_refs(text: str) -> set[int]:
     return {item.number for item in citation_ref_items(text)}
 

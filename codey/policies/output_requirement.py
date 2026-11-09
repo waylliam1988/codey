@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from collections.abc import Mapping
+from typing import NoReturn
+
+from codey.types.json_value import JsonObject, JsonValue
 
 PREFIX = "output_json"
 JSON_ANSWER_GUIDANCE = (
@@ -11,8 +14,8 @@ JSON_ANSWER_GUIDANCE = (
 )
 
 
-def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
+def _unique(pairs: list[tuple[str, JsonValue]]) -> JsonObject:
+    result: JsonObject = {}
     for key, value in pairs:
         if key in result:
             raise ValueError("duplicate JSON property")
@@ -20,7 +23,7 @@ def _unique(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _constant(value: str) -> None:
+def _constant(value: str) -> NoReturn:
     raise ValueError(f"invalid JSON constant: {value}")
 
 
@@ -33,7 +36,7 @@ def declaration(format: str, schema_json: str = "") -> str:
         return PREFIX if format == "json" else ""
     from codey.toolchain.tool_spec import _valid_custom_schema
 
-    schema = json.loads(schema_json, object_pairs_hook=_unique, parse_constant=_constant)
+    schema: JsonValue = json.loads(schema_json, object_pairs_hook=_unique, parse_constant=_constant)
     if not _valid_custom_schema(schema):
         raise ValueError("unsupported output JSON schema")
     encoded = json.dumps(schema, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -55,12 +58,13 @@ def evaluate(check: str, text: str) -> tuple[bool, str, str]:
     if declaration("json", schema) != check:
         raise ValueError("noncanonical output requirement")
     try:
-        value = json.loads(text, object_pairs_hook=_unique, parse_constant=_constant)
+        value: JsonValue = json.loads(text, object_pairs_hook=_unique, parse_constant=_constant)
         json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
         if schema:
             from codey.toolchain.result_schema import validate_output
 
-            validate_output("final_answer", json.loads(schema), value)
+            required_schema: JsonObject = json.loads(schema)
+            validate_output("final_answer", required_schema, value)
     except (ValueError, TypeError, RecursionError) as exc:
         return False, "output_format_invalid", (
             "Repair only the final answer. " + JSON_ANSWER_GUIDANCE + " "
@@ -78,7 +82,7 @@ def guidance(checks: tuple[str, ...]) -> str:
         "\nRequired JSON schema: " + row[len(PREFIX) + 1:] for row in rows if row != PREFIX)
 
 
-def submission_fields(body: dict[str, Any]) -> dict[str, str]:
+def submission_fields(body: Mapping[str, object]) -> dict[str, str]:
     format, schema = body.get("output_format", "text"), body.get("output_schema", "")
     if not isinstance(format, str) or not isinstance(schema, str):
         raise ValueError("output_format and output_schema must be strings")

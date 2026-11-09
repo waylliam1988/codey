@@ -28,7 +28,8 @@ def test_web_file_guidance_belongs_only_to_ordinary_web_chat(kind: str, web: boo
                         denied_capabilities=frozenset() if web else frozenset({"web.read"}))
     guidance = task_guidance_for_policy(policy, task_kind=kind)
     assert ("do not create local files" in guidance) == (kind == "chat" and web and not strict)
-    assert ("Copy acquired source URLs exactly" in guidance) == (kind == "chat" and web and not strict)
+    assert ("The application generates URLs" in guidance) == (kind == "chat" and web and not strict)
+    assert "Copy acquired source URLs exactly" not in guidance
 
 
 @pytest.mark.parametrize("native", [False, True])

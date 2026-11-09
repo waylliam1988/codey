@@ -391,6 +391,12 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
         return GateVerdict(False, "", None, final_text=text, blocked=True)
     try:
         text, report = prepare_research_completion(session, text, context)
+        if session.task_kind == "chat" and not session.policy.strict_research and session.policy.allows("web.read"):
+            from codey.operations.chat_citations import render_source_citations
+            from codey.policies.output_requirement import is_output_check
+
+            text = render_source_citations(text, sources=session.source_ids, searches=session.search_results,
+                literal=any(is_output_check(check) for check in session.policy.required_checks))
     except ValueError as exc:
         # Field paths, allowed references and acquisition guidance belong to
         # the domain preparation error; the generic exception handler hides them.

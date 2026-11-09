@@ -67,8 +67,9 @@ def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
          "for actual workspace files relevant to the user's task. Search titles and snippets are discovery "
          "evidence: they may suffice to find an "
          "official link, but verify details beyond them in relevant page text before recommending or reporting them. "
-         "Use only acquired facts for specific addresses, prices, opening hours and rankings. Copy acquired source URLs exactly "
-         "in the requested answer format, distinguish inference from observation, and state what remains unverified. "
+         "Use only acquired facts for specific addresses, prices, opening hours and rankings. In prose, cite read "
+         "sources as [sN]; use [rN] only for search-result links. The application generates URLs. "
+         "Distinguish inference from observation, and state what remains unverified. "
          "A failed optional lookup need not prevent answering the supported parts; never describe it as verified."
          if task_kind == "chat" and policy.allows("web.read") and not policy.strict_research else ""),
         ("Knowledge actions: when the user requests saving or revising knowledge, execute save_finding, knowledge_write or "

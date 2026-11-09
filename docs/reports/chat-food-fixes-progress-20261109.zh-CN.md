@@ -78,13 +78,11 @@
 - 四个修改/新增 Python 文件：Ruff 通过；mypy `--explicit-package-bases --follow-imports=silent --python-version 3.11`、Pyrefly、ty 通过，Pyrefly 0 error / 2 warning（未展开）；`kernel_type_precision_gate` 通过。未新增动态类型、类型忽略或强制转换。新代码的 JSON 容器不变性、联合类型收窄与模块导出检查问题均在其所属代码中修正。
 - 本批未发现另一个确定性生产执行器或解码缺陷；实机暴露的漏读正文、URL 拼写与超出来源细节分别按模型行为记录。保留所有失败产物，不用重跑成功覆盖失败结论。未扩大到完整 pytest、覆盖率或安装包测试。
 
-## 后续建议：Chat 引用由程序生成
+## 后续实施：Chat 引用由程序生成
 
 用户提出 URL 可由程序生成以减少模型负担。代码核对确认：`kernel_facts.bind_source_identity` / `_record_open_fact` 将已读来源的 `sN → final_url` 放入 receipt 和 session；`kernel_prompt._result_context` 已向模型提供来源编号。Research 的 `answer_report.render_answer` 已按模型选择的 `[eN]` 与冻结来源绑定生成引用来源列表；普通 Chat 尚未接入同类交付机制。
 
-建议 Chat 复用现有来源身份：模型仅选择来源编号，后端从本任务真实来源绑定中解析 URL、校验未知编号、生成引用链接，并将结构化引用随最终答案持久化，UI/复制/导出/历史回放共用。应区分搜索线索与成功读取的正文；只渲染模型选择的来源，避免把所有浏览记录都冒充答案依据。显式 JSON/代码输出需保留用户格式，不能在原文末尾无条件附 Markdown。程序保证链接身份和拼写；来源是否支持具体结论仍属于模型取证和判断。
-
-这一建议属于后续交付协议改造，本轮三批未实施；当前“原样复制 URL”是已验证的提示改进，不宣称提供程序级确定性。
+以上为第三批完成时的历史状态。后续用户授权的程序化引用已实施，详见[程序化引用实施进度](chat-programmatic-citations-progress-20261109.zh-CN.md)。最终方案复用既有来源绑定和完成结果，只持久化一份已生成链接的答案，不另存结构化引用，不增加运行时或双写；第三批“原样复制 URL”提示已由简短的编号协议替换。实现、验证、限制以该文档为准。
 
 ## 证据
 
