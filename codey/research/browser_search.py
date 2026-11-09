@@ -32,7 +32,7 @@ from codey.research.source_acquisition import SourceFailureCode, http_failure_co
 from codey.research.source_acquisition import attempt as acquisition_attempt
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 
 _PROFILES_PATH = Path(__file__).with_name("search_profiles.json")
 RESEARCH_PROFILE = DEFAULT_STATE_HOME / "research-edge-profile"
@@ -43,7 +43,7 @@ _SEARCH_NAV_ATTEMPTS = 2
 _SEARCH_TOTAL_TIMEOUT_SECONDS = 24.0
 _FETCH_NAV_TIMEOUT_MS = 10_000
 _FETCH_TOTAL_TIMEOUT_SECONDS = 16.0
-_FETCH_SETTLE_TIMEOUT_SECONDS = 4.0
+_FETCH_SETTLE_TIMEOUT_SECONDS = 8.0
 _FETCH_SETTLE_TICK = 0.5
 _CLOSE_TIMEOUT_SECONDS = 3.0
 _CONTENT_RETRY_TIMEOUT = 3.0
@@ -160,9 +160,10 @@ class BrowserSearchProvider:
         http_fallback: bool = True,
     ) -> None:
         profiles = load_profiles()
-        engine_profiles = profiles.get("engines", {})
-        if not isinstance(engine_profiles, dict):
-            engine_profiles = {}
+        engine_profiles_value = profiles.get("engines", {})
+        engine_profiles: dict[str, JsonValue] = (
+            engine_profiles_value if isinstance(engine_profiles_value, dict) else {}
+        )
         self.engine = engine or str(profiles.get("default_engine", "bing"))
         self._profiles: dict[str, JsonObject] = {
             str(name): value

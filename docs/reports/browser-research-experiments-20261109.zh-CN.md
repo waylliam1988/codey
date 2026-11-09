@@ -1,6 +1,6 @@
 # 浏览器与 Research 实机实验记录
 
-## 本次接续已完成：只运行实验，生产未修改
+## 实验阶段已完成：候选策略仍与生产分离
 
 2026-11-09用户明确授权完成剩余实验，并再次要求实验代码不得写入生产。本节优先于下文的历史暂停说明。生产冻结在 `03971de4`，所有候选仍在 `tools/`，测试在 `tests/`。
 
@@ -14,6 +14,17 @@
 | `remaining-20261109-phase-probes/` | 12 | followup6、ranking6，控制起始阶段的机制对照 |
 
 实机任务全部执行结束，负面答案与未触发分支也计入完成数量，不能将207解释为207次质量通过。最终直接相关pytest为12 passed；修改/新增的8个Python文件通过Ruff、严格Mypy、Pyrefly、ty，无显式Any或类型豁免。没有运行全量pytest、覆盖率、安装包测试；没有修改生产、runtime清单、默认配置或既有确定性修复。
+
+### 后续生产批次：8秒等待已合入
+
+根据本报告的 settle-v1 结果，本批已把既有生产 `_FETCH_SETTLE_TIMEOUT_SECONDS` 从 4 秒调整为 8 秒。实现只修改 `codey/research/browser_search.py` 的单一等待常量；没有把实验 projection、第二套 provider 或模型循环带入生产。为保持类型边界，初始化搜索 profile 的空字典同时改为明确的 `dict[str, JsonValue]`，行为不变。
+
+- 直接相关回归：53 passed，覆盖失败页不成证据、SPA hydration、生产浏览器 CDP 生命周期；生产文件 Ruff、严格 Mypy、Pyrefly、ty 通过。
+- KoboldCpp 默认生产入口：`.e2e-artifacts/browser-research-next/batch-settle-production-20261109/summary.json`，`passed=true / done`。单次导航等待受控页面 5.5 秒 hydration，交付 e1 原文“冬季样本去皮净重327克，不含包装”，模型答案正确引用该 passage。
+- 未发现生产确定性 bug；实验汇总中的 `observed_quantity_delivered=false` 是该 gate 对正文交付字段的识别限制，实际 `natural_success=true`、`quantity_in_original_passage=true`，因此没有修改生产代码迁就汇总器。
+- 静态页/PDF 和点击展开页的原有边界保持不变；8 秒等待不能替代交互，也没有改变 PDF 字节读取路径。
+
+本批的生产修改与实验候选分离：8 秒是已证明的局部等待参数调整；query、browser-first、delta、compact、正文窗口和其他指导策略仍按上文结果处理，没有随本批进入生产。
 
 实验预检v1保留在 `remaining-20261109-v1/`，仅执行部分固定步骤诊断，没有开始自然任务矩阵。预检发现两处实验器问题并仅修脚本：(1)查询/补搜等原设置会在两侧开放未采用的候选浏览器工具；现改为生产来源工具集+生产BrowserSearchProvider，两侧只改变目标策略；delta仍在候选工具环境。(2)原固定步骤筛查只验证工具集合，会将少做一次新快照算作通过；现要求完整有序步骤，并补测试。修改脚本后指纹保护停止旧冻结轮，原结果保留；v2单独重跑，避免混用输入。生产代码与runtime指纹未变化。
 
