@@ -17,11 +17,11 @@
 
 ### 后续生产批次：8秒等待已合入
 
-根据本报告的 settle-v1 结果，本批已把既有生产 `_FETCH_SETTLE_TIMEOUT_SECONDS` 从 4 秒调整为 8 秒。实现只修改 `codey/research/browser_search.py` 的单一等待常量；没有把实验 projection、第二套 provider 或模型循环带入生产。为保持类型边界，初始化搜索 profile 的空字典同时改为明确的 `dict[str, JsonValue]`，行为不变。
+根据本报告的 settle-v1 结果，本批已把既有生产 `_FETCH_SETTLE_TIMEOUT_SECONDS` 从 4 秒调整为 8 秒。行为调整只涉及 `codey/research/browser_search.py` 的单一等待常量；正文可用即返回，既有16秒获取预算及更早调用期限仍然生效。没有把实验 projection、第二套 provider 或模型循环带入生产。为保持类型边界，初始化搜索 profile 的空字典同时改为明确的 `dict[str, JsonValue]`，行为不变。
 
-- 直接相关回归：53 passed，覆盖失败页不成证据、SPA hydration、生产浏览器 CDP 生命周期；生产文件 Ruff、严格 Mypy、Pyrefly、ty 通过。
+- 验证：新真实Chromium测试5项单独通过，覆盖5.5秒加载、正文及时返回、持续加载不成证据、deadline与取消；与原失败页/SPA/CDP测试联合57 passed，另两个直接Research获取用例2 passed / 151 deselected，合计59项。生产文件与新测试通过 Ruff、严格 Mypy、Pyrefly、ty。初版模拟时钟测试不能准确表达等待起点，已撤销；旧失败页测试文件恢复原状。
 - KoboldCpp 默认生产入口：`.e2e-artifacts/browser-research-next/batch-settle-production-20261109/summary.json`，`passed=true / done`。单次导航等待受控页面 5.5 秒 hydration，交付 e1 原文“冬季样本去皮净重327克，不含包装”，模型答案正确引用该 passage。
-- 未发现生产确定性 bug；实验汇总中的 `observed_quantity_delivered=false` 是该 gate 对正文交付字段的识别限制，实际 `natural_success=true`、`quantity_in_original_passage=true`，因此没有修改生产代码迁就汇总器。
+- 未发现生产确定性 bug；实验汇总中的 `observed_quantity_delivered` 仅用于固定173克交互诊断，与本次327克题无关。实际 `natural_success=true`、`quantity_in_original_passage=true`，原文及最终引用已核对。真实浏览器测试首轮在pytest隔离环境的Edge临时profile启动阶段失败，改用仓库已有Chromium选择夹具；没有修改生产迁就测试。
 - 静态页/PDF 和点击展开页的原有边界保持不变；8 秒等待不能替代交互，也没有改变 PDF 字节读取路径。
 
 本批的生产修改与实验候选分离：8 秒是已证明的局部等待参数调整；query、browser-first、delta、compact、正文窗口和其他指导策略仍按上文结果处理，没有随本批进入生产。
@@ -138,13 +138,13 @@ v2已完成105次：9次诊断、delta/bounded/settle/query各24次。核对版�
 
 ### 最终边界、审计与复现
 
-本轮有明确局部收益的是8秒等待及版本检索指导；后者仍有研究完整性缺口，且保留探索轮候选错误断言，不能概括为全局无回退。此前真实网站/用户Edge的browser-first收益保留；compact、固定窗口和默认语义工具的已知质量问题不会被其他收益抵消。delta、补搜、排序、完成提示没有证明各自可采用的新增收益。所有候选继续只在实验脚本中，本轮没有生产合入。
+实验阶段有明确局部收益的是8秒等待及版本检索指导；后者仍有研究完整性缺口，且保留探索轮候选错误断言，不能概括为全局无回退。此前真实网站/用户Edge的browser-first收益保留；compact、固定窗口和默认语义工具的已知质量问题不会被其他收益抵消。delta、补搜、排序、完成提示没有证明各自可采用的新增收益。实验阶段收尾时所有候选仅在实验脚本中；后续仅8秒等待经用户授权进入生产，见本文顶部生产批次。
 
 离线审阅产物为v2的 `delta-review.json`、`bounded-review.json`、`settle-review.json`，v3的 `query-review.json`、`followup-review.json`、`ranking-review.json`、`completion-review.json`，以及probe根目录的两个 `*-review.json`；它们提取实际请求分支与原文供人工核对，不自动认证语义质量。
 
 - 四个目录共212份带provider记录的任务summary；207份正式结果均有终止结果，原失败与未完成的历史目录继续保留。
 - v3的90个任务、414份API请求均含同一固定时钟，模型与temperature一致；版本题9份基线初始payload哈希一致。probe另12次保持同一设置。
-- 生产Python SHA256：`e1bf44a8e7c519b1d4e8bb661bfe89d5cf9a828b2fdfc59053b4a42aeb73cde5`；runtime SHA256：`b6f6c197d22eea0d983843e415ff41f971114e3c347265b462a414d8cb85207b`。当前字节与各轮manifest相符，生产diff为空。
+- 实验阶段收尾时的生产Python SHA256：`e1bf44a8e7c519b1d4e8bb661bfe89d5cf9a828b2fdfc59053b4a42aeb73cde5`；runtime SHA256：`b6f6c197d22eea0d983843e415ff41f971114e3c347265b462a414d8cb85207b`。当时字节与各轮manifest相符，生产diff为空；后续8秒等待生产批次未改写这些历史manifest。
 - 总体产物核对保存为 `.e2e-artifacts/browser-research-next/remaining-20261109-audit.json`。212次任务耗时累计3513.768秒，记录prompt 1773816 token、completion 31856 token；这是任务耗时之和及API用量，不是整轮墙钟时间或独立上下文长度。时间/token均不作为淘汰依据。
 
 重新运行必须使用新目录，原结果不可覆盖。以下命令分别启动主计划、阶段probe和离线审阅；主计划固定时钟运行会重新执行171次，不能误当作只读取本轮结果：

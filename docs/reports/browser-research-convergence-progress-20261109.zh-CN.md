@@ -4,15 +4,18 @@
 
 本次用户要求把已证明收益的 8 秒等待上限合入生产，再次明确实验代码不得进入生产。本批只把单一生产等待常量及其直接合同测试合入；实验脚本仍留在 `tools/`，不进入生产运行时。下文“实验仍暂停”属于清理批次的历史状态，本节为最新状态。
 
-- 生产基线：`03971de4`。本轮共完成207份正式任务结果及5份预检结果，共212份；没有正在运行或等待执行的本轮模型任务。
+- 本批基线：`90e22d60`。将既有浏览器正文settle预算从4秒提升至8秒；正文可用即返回，既有16秒获取预算和更早调用期限继续生效。无需模型决定等待方式或新增prompt。
+- 前序实验生产基线：`03971de4`。实验阶段共完成207份正式任务结果及5份预检结果，共212份；原始产物保留。
 - 目录均在 `.e2e-artifacts/browser-research-next/` 下：`remaining-20261109-v2/` 完成9次诊断及delta/bounded/settle/query各24次，共105次；活动query矩阵正常收尾后停止父调度器，v2未生成整轮 `completed.json`。
 - `remaining-20261109-v3-fixed-clock/` 完成query24、followup24、ranking18、completion24，共90次，已有 `completed.json`。发现请求时钟变化后，仅在实验脚本固定模型看到的UTC 2026-11-09 10:00，复用生产clock renderer；真实计时、期限和浏览器未替换。90个任务的414份API请求均含相同的固定时钟，模型与temperature一致；版本题基线的初始payload哈希也一致。v2/query作为探索结果保留，包含候选不受原文支持的默认期断言，不与v3混作同一冻结轮。
 - `remaining-20261109-phase-probes/` 完成补搜6次、排序6次：控制起始阶段，分别核对是否继续补搜、是否选择匹配版本。它们补机制覆盖，不能替代自然任务、抵消原失败或把重叠收益重复计数。
-- 本批直接相关pytest：53 passed（浏览器失败页、SPA获取、生产CDP生命周期）；生产 `browser_search.py` 的Ruff、严格Mypy、Pyrefly、ty全部通过。原文件的空字典隐式动态类型已改为明确 `dict[str, JsonValue]`，没有新增显式Any或类型豁免。
+- 本批测试：新增 `tests/test_browser_settle_window.py`，真实Chromium及生产provider验证5.5秒hydration、正文及时返回、加载超时无证据、较短deadline、取消。撤销初版不可靠的模拟时钟测试，原失败页测试文件恢复原状。新测试与生产文件Ruff、严格Mypy、Pyrefly、ty全部通过；原生产文件的空字典隐式动态类型改为明确 `dict[str, JsonValue]`，无显式Any或新增类型豁免。最终联合回归结果见下条。
+- 最终联合回归57 passed（新真实浏览器5项及失败页/SPA/CDP测试）；`test_research.py`两个直接获取用例2 passed / 151 deselected，合计59项通过。新测试单独运行也为5 passed。
 - 实验调度脚本：`tools/browser_remaining_experiments.py`，只串行调用现有实机gate；模型循环、浏览器执行、来源与提交仍复用原headless/provider/kernel。
 - 每轮固定生产Python/runtime及实验脚本指纹；发生变化停止混用结果。保留delta-v1的14份有效结果及未完成目录，因清理后源码指纹变化，delta在新目录做完整24次对照，不覆盖、不合并为同一冻结轮。
 - 原始输出、失败、未触发分支均保留；逐份核对真正交付的passage与引用支持。时间/token仅记录；不因耗时或成本否决候选。
 - 不运行全量pytest、覆盖率或安装包测试；没有修改打包配置。既有确定性bug修复保留。KoboldCpp/Gemma4 默认生产入口回归 `.e2e-artifacts/browser-research-next/batch-settle-production-20261109/summary.json` 为 `passed=true / done`：单次导航在 5.5 秒 hydration 后交付 e1，答案引用 327 克和不含包装。该回归没有发现生产确定性bug。
+- 新真实浏览器测试首轮因pytest隔离环境中的Edge临时profile启动失败，尚未导航；改为复用 `tests.support.real_cdp.chromium_executable()` 选取已安装Chromium。浏览器、DOM、等待、来源接收与取消均为真实生产实现，没有放宽生产逻辑。
 
 | 变量 | 实机结论 | 生产状态 |
 | --- | --- | --- |

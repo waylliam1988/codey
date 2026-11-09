@@ -107,30 +107,6 @@ def test_navigation_text_waits_for_empty_application_main_to_hydrate(monkeypatch
     assert page.content.call_count == 2
 
 
-def test_navigation_text_accepts_hydration_within_production_settle_window(monkeypatch: pytest.MonkeyPatch) -> None:
-    shell = "<html><body><header>Navigation links and footer details.</header><app-root></app-root></body></html>"
-    loaded = ("<html><body><app-root><main>Hydrated article body at 5.5 seconds. "
-              + "The measured result remains available after the application finishes loading. " * 20
-              + "</main></app-root></body></html>")
-    page = mock.Mock()
-    page.content.side_effect = [shell, loaded]
-    page.evaluate.side_effect = [True, False]
-    clock_calls = 0
-
-    def monotonic() -> float:
-        nonlocal clock_calls
-        clock_calls += 1
-        return 0.0 if clock_calls == 1 else 5.5
-
-    monkeypatch.setattr(browser_search.time, "monotonic", monotonic)
-    monkeypatch.setattr(browser_search.cancellation, "wait", lambda _: None)
-
-    _, text = browser_search._fetch_page_content_after_settle(page)
-
-    assert browser_search._FETCH_SETTLE_TIMEOUT_SECONDS == 8.0
-    assert "Hydrated article body" in text
-
-
 def test_persistently_empty_application_main_cannot_become_navigation_evidence(monkeypatch):
     page = mock.Mock()
     page.content.return_value = "<header>Navigation has plenty of words.</header><app-root><main></main></app-root>"
