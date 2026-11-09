@@ -12,6 +12,7 @@ from typing import Any
 
 from codey.operations.task_session import TaskSession, turn_effect_id
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES
 from codey.utils.refs import strict_exit_code
 
 __all__: list[str] = []
@@ -128,7 +129,7 @@ def _emit_tool_results(
         else:
             audit["exit_code"] = exit_code
         display = (result.model_text or "")
-        if result.call.name in {"open_url", "open_result", "open_hit", "reopen_source"}:
+        if result.call.name in SOURCE_READ_TOOL_NAMES:
             display = next(
                 (line.removeprefix("Title: ") for line in display.splitlines() if line.startswith("Title: ")),
                 display.splitlines()[0] if display else "",

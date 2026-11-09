@@ -3,33 +3,25 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
-from typing import Any, cast
 
 from codey.codemode.types import ToolCatalogEntry, ToolCatalogSnapshot
 from codey.toolchain.result_schema import schema_typescript
-from codey.toolchain.tool_spec import is_text_batch_tool
+from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
+from codey.types.json_value import canonical_json_object
 
 
-def _json_value(value: object) -> object:
-    if isinstance(value, Mapping):
-        return {str(key): _json_value(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_value(item) for item in value]
-    return value
-
-
-def build_catalog_snapshot(rows: Iterable[Mapping[str, Any] | ToolCatalogEntry]) -> ToolCatalogSnapshot:
+def build_catalog_snapshot(rows: Iterable[Mapping[str, object] | ToolCatalogEntry]) -> ToolCatalogSnapshot:
     entries: list[ToolCatalogEntry] = []
     for row in rows:
         entry = row if isinstance(row, ToolCatalogEntry) else ToolCatalogEntry(
             name=str(row.get("name", "")),
             description=str(row.get("description", "")),
-            parameters=row.get("parameters", {}) if isinstance(row.get("parameters", {}), Mapping) else {},
+            parameters=canonical_json_object(row.get("parameters", {})),
             namespace=str(row.get("namespace", "") or ""),
             grant=str(row.get("grant", "") or ""),
             read_only=bool(row.get("read_only", True)),
             parallel_safe=bool(row.get("parallel_safe", False)),
-            output_schema=row["output_schema"],
+            output_schema=canonical_json_object(row["output_schema"]),
         )
         if entry.name in {"codemode", "done", "ask_user"}:
             continue
@@ -46,8 +38,8 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, Any] | ToolCatalogEntry])
         {
             "name": entry.name,
             "description": entry.description,
-            "parameters": _json_value(entry.parameters),
-            "output_schema": _json_value(entry.output_schema),
+            "parameters": canonical_json_object(entry.parameters),
+            "output_schema": canonical_json_object(entry.output_schema),
             "namespace": entry.namespace,
             "grant": entry.grant,
             "read_only": entry.read_only,
@@ -60,29 +52,29 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, Any] | ToolCatalogEntry])
     return ToolCatalogSnapshot(tuple(unique), digest)
 
 
-def build_catalog_from_specs(specs: Mapping[str, Any] | Iterable[Any]) -> ToolCatalogSnapshot:
+def build_catalog_from_specs(specs: Mapping[str, ToolSpec] | Iterable[ToolSpec]) -> ToolCatalogSnapshot:
     rows: list[dict[str, object]] = []
-    values: Iterable[Any] = specs.values() if isinstance(specs, Mapping) else specs
+    values = specs.values() if isinstance(specs, Mapping) else specs
     for spec in values:
-        name = str(getattr(spec, "name", "") or "").strip()
+        name = spec.name.strip()
         if not name:
             continue
-        executor = str(getattr(spec, "executor", "") or "")
+        executor = spec.executor
         rows.append({
             "name": name,
-            "description": str(getattr(spec, "description", "") or ""),
+            "description": spec.description,
             "parameters": {
                 "type": "object",
                 "properties": {
                     key: dict(schema) if isinstance(schema, Mapping) else {"type": "string"}
-                    for key, schema in (getattr(spec, "parameters", ()) or ())
+                    for key, schema in spec.parameters
                 },
                 "required": list(spec.required),
                 "additionalProperties": False,
             },
             "namespace": executor,
-            "grant": str(getattr(spec, "grant", "") or ""),
-            "read_only": str(getattr(spec, "replay_class", "unsafe")) == "safe",
+            "grant": spec.grant,
+            "read_only": spec.read_only,
             "parallel_safe": spec.parallel_safe,
             "output_schema": spec.output_schema,
         })
@@ -90,7 +82,7 @@ def build_catalog_from_specs(specs: Mapping[str, Any] | Iterable[Any]) -> ToolCa
 
 
 def build_codemode_catalog(
-    specs: Mapping[str, Any] | Iterable[Any], *, allow_writes: bool = False,
+    specs: Mapping[str, ToolSpec] | Iterable[ToolSpec], *, allow_writes: bool = False,
 ) -> ToolCatalogSnapshot:
     """Build the frozen CodeMode catalog for one permission snapshot.
 
@@ -124,10 +116,11 @@ def render_declarations(snapshot: ToolCatalogSnapshot) -> str:
         "declare const tools: {",
     ]
     for entry in snapshot.entries:
-        properties = cast(Mapping[str, Any], entry.parameters.get("properties", {}))
+        properties = canonical_json_object(entry.parameters.get("properties", {}))
         for name, schema in properties.items():
-            if schema.get("description"):
-                lines.append(f"  // {entry.name}.{name}: {schema['description']}")
+            description = canonical_json_object(schema).get("description")
+            if description:
+                lines.append(f"  // {entry.name}.{name}: {description}")
         value = schema_typescript(entry.output_schema)
         lines.append(f"  {entry.name}(args: {schema_typescript(entry.parameters)}): Result<{value}>;")
     lines.extend(("};", f"// catalog_digest={snapshot.digest}"))

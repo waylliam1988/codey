@@ -18,8 +18,8 @@
 |---|---|---|---|
 | 1 | 正文版本、文内命中与续读绑定；恢复不重新获取 | 完成 | `7751e6a1` |
 | 2 | 来源接收、正文窗口、回执与 passage 共用 | 完成 | `315c8899` |
-| 3 | 结构化获取/执行/阅读状态、恢复与重放合同；UI失败说明 | 完成，提交中 | 本文所在第三批提交 |
-| 4 | 保持行为的工具定义、执行与事实投影去重 | 未开始 | 待提交 |
+| 3 | 结构化获取/执行/阅读状态、恢复与重放合同；UI失败说明 | 完成 | `e7768ed5` |
+| 4 | 保持行为的工具定义、执行与事实投影去重 | 完成 | 本文所在第四批提交 |
 
 ## 验证与恢复工作说明
 
@@ -59,4 +59,16 @@
 
 ### 批次 4
 
-尚未开始。
+- `source_locators.py` 是唯一命中坐标身份与编解码入口：执行端分配/复用 hN，提交与恢复端用同一 URL/hash/offset/pages 规则校验，整批验证后才更新状态；移除此前两次解码及重复 tuple 生成。长 URL 不裁剪，重复查询、已有 ID 冲突、正文版本和 PDF 页内偏移保持原合同。
+- 来源读取工具集合从现有 ToolSpec 别名定义派生，协议、执行、提示、事件、绑定和完成检查共用；来源 ID 参数也从同一定义读取。删除仅覆盖三个字段的 ResearchToolsLike，执行边界使用现有 ResearchTools 具体类型；工具观察视图移除 hasattr/getattr 防御式重复判断。
+- 清除来源别名解析、观察视图、命中序列化、CodeMode catalog 中的显式动态类型。新增零动态类型保护覆盖来源捕获/读取/定位模块与执行方法；未宣称其他遗留模块或全仓库已清零。
+- 新增文本/原生协议的真实 kernel 对照：web_search → open_result → source_search(source_id) → open_hit → reopen_source → source_search(URL)，只获取一次；相同引用、passage 和恢复事实一致，撤销 web.read 后不能继续读取。相关来源/恢复/协议测试 140 passed；CodeMode/目录/结果合同/类型配置相关 93 passed。
+- 扩大验证的原因是串行与重放属性会影响 CodeMode 目录。发现并修复其确定性耦合：目录把 replay_class 当作 read_only；现有 ToolSpec 现明确区分“只读来源获取”和“允许自动重放”。CodeMode 仍调用原 kernel，沿用同一 ToolDispatch 独占获取，不新增锁、运行时或恢复路径。旧逆序并发获取夹具改为并发请求经串行获取后检查原回执恢复；手工恢复夹具明确标记已提交结果重发并带实际 passage，不把未执行请求伪装成旧成功结果。
+- KoboldCpp/Gemma4：`batch4-a/summary.json` passed=true / done，六步版本/命中/续读流程、两次在线获取；`batch4-codemode/summary.json` passed=true / done，真实 CodeMode → open_url 子调用，仅一次 HTTP，模型最终报告原文 17 grams。两轮都经过生产 headless/provider/kernel；诊断不证明回答质量收益。
+- Ruff、Mypy（663 files）、Pyrefly（0 errors，35 existing suppressions / 134 warnings）、ty、kernel precision gate 通过。第四批没有前端源码改动，不重新构建资源或安装包。四批均未主动运行完整 pytest、覆盖率或安装包测试。
+
+## 完成后的边界
+
+- 冷启动新合同保持 v1；原来源账本、immutable passage、intent/settlement 和已提交回执仍是唯一事实与恢复依据。
+- 默认获取策略保持原样：普通 Chat HTTP-first，仅既有 app shell 升级浏览器；Research 保留原 connector/browser 路径。本轮没有引入新的浏览器交互工具、browser-first 默认或第二套 agent loop。
+- 实机中不能归因于确定性实现的模型输出问题均保留原始证据，不以放宽生产校验掩盖。

@@ -16,6 +16,7 @@ from codey.completion.contract import (
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
 from codey.research.finding_report import ResearchReport, compile_finding_report
+from codey.toolchain.tool_spec import SOURCE_TOOL_NAMES
 
 
 def prepare_research_completion(session: TaskSession, text: str, context: object) -> tuple[str, ResearchReport | None]:
@@ -94,7 +95,7 @@ def investigation_attempt_checks(session: TaskSession) -> list[CompletionCheck]:
     if (session.task_kind != "evidence_followup"
             or session.research_acquisition_limits is None):
         return []
-    acquisition = {"web_search", "open_url", "open_result", "open_hit", "reopen_source", "source_search"}
+    acquisition = SOURCE_TOOL_NAMES
     attempted = any(result.call.name in acquisition
                     or (result.call.name in {"knowledge_write", "save_finding"} and result.ok)
                     for result in session._memory_results.values())

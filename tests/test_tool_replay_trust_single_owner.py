@@ -29,7 +29,9 @@ def test_trust_query_is_fail_closed() -> None:
     assert tool_requires_trusted_recovery("no_such_tool_xyz") is True
     assert tool_requires_trusted_recovery("read_file") is False
     assert tool_requires_trusted_recovery("list_dir") is False
-    assert tool_requires_trusted_recovery("web_search") is False
+    assert tool_requires_trusted_recovery("web_search") is True
+    assert tool_requires_trusted_recovery("open_url") is True
+    assert tool_requires_trusted_recovery("open_hit") is False
     assert tool_requires_trusted_recovery("") is True
 
 

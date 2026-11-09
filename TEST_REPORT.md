@@ -4,18 +4,25 @@ This file records the current verification state, not an append-only experiment 
 
 ## Captured source convergence and English failures (2026-11-09)
 
-The first three batches pin source versions, share source intake and passages,
-and preserve structured acquisition failures through live events and cold history.
+The four batches pin source versions, share source intake and passages,
+preserve structured acquisition failures through live events and cold history,
+and share locator/tool identity rules between execution and recovery.
 Related Python groups passed 82 tests, 39 tests, and 54 tests / 15 subtests;
 15 selected browser/PDF acquisition cases and one production Chromium history,
 disclosure, reload and responsive-layout case passed. Related frontend tests
 passed 41 cases. TypeScript, formatting, production frontend build and published
 asset verification passed. Scoped Ruff, mypy (662 files), Pyrefly (0 errors,
-35 existing suppressions / 133 warnings), ty and kernel precision gate passed.
+35 existing suppressions / 134 warnings), ty and kernel precision gate passed.
+The final source/protocol/recovery group passed 140 cases; CodeMode/catalog,
+result-contract and typing-configuration checks passed 93. Mypy checked 663
+production files after the final locator codec was added.
 
 Each batch used real KoboldCpp through the production kernel: Chat version
 binding, Research citation publication, and three distinct acquisition failures
-plus a readable source. These controlled-source checks prove contracts, not
+plus a readable source. The final batch also passed the version sequence and a
+real CodeMode source child, acquiring once and returning 17 grams. The catalog
+now distinguishes read-only source acquisition from automatic replay safety.
+These controlled-source checks prove contracts, not
 answer quality improvements. No full pytest, coverage or installer build was run.
 See the [batch progress and evidence](docs/reports/browser-research-convergence-progress-20261109.zh-CN.md).
 

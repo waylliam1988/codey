@@ -1,5 +1,4 @@
-"""Concurrent acquisition must survive the real receipt/recovery boundary."""
-from threading import Event
+"""Source children share serial admission and the original receipt/recovery boundary."""
 from types import SimpleNamespace
 
 import pytest
@@ -10,7 +9,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
 from codey.research.source_document import SourceDocument, SourcePage
-from codey.research.tools import ResearchToolOutput
+from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from tests.support.receipt_fixtures import inspect_receipt_facts
 from tests.support.session_projection import restore_task_session
@@ -18,13 +17,13 @@ from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open
 
 
 @pytest.mark.parametrize("pdf", [False, True])
-def test_reverse_completion_survives_receipt_restart(tmp_path, pdf):
+def test_serial_source_children_survive_receipt_restart(tmp_path, pdf):
     project, state, logdir = _dirs(tmp_path)
     _, _, managed, _, deps, sink = _open_runtime(logdir, state, "s", "r", project, task_kind="research")
     policy = TaskPolicy(grants=frozenset({"control", "web.read"}))
     session = TaskSession(policy=policy, task_kind="research")
     ledger = ResearchLedger()
-    first_acquired, release_first = Event(), Event()
+    completed: list[str] = []
     a, b = "https://example.com/a", "https://example.com/b"
 
     class Tools:
@@ -41,17 +40,14 @@ def test_reverse_completion_survives_receipt_restart(tmp_path, pdf):
                     False, 2, (page,), (SourcePage(page, f"page {page}"),)))
             else:
                 self.ledger.record_open(url, url, "Page", url)
-            if url == a and page == 1:
-                first_acquired.set()
-                assert release_first.wait(15)
-            return ResearchToolOutput("Title: Report\nobserved", ok=True)
+            from codey.research.ledger_receipts import ledger_observation
+            completed.append(url)
+            return ResearchTools(None, None, None, ledger=self.ledger).read_source(
+                ledger_observation(self.ledger, "open", url=url), pages=str(page) if pdf else "")
 
     tools = Tools()
 
-    # Concurrent children belong to one CodeMode parent and delivery batch.
-    # Two unrelated top-level batches cannot own the same execution position.
-    from threading import Thread
-
+    # Concurrent requests share one parent, batch and exclusive source admission.
     from codey.codemode.kernel import build_execute_turn_executor
 
     session.policy = TaskPolicy(grants=frozenset({"control", "web.read", "project.read"}))
@@ -62,30 +58,16 @@ def test_reverse_completion_survives_receipt_restart(tmp_path, pdf):
     calls = [{"url": a if pdf or index == 0 else b, "pages": str(index + 1) if pdf else ""} for index in range(2)]
     call = ToolCall("codemode", {"code": "return await Promise.all(inputs.calls.map(args => tools.open_url(args)));",
                                  "inputs": {"calls": calls}}, call_id="parent")
-    def release():
-        assert first_acquired.wait(15)
-        # The second acquisition is committed before the first is released.
-        import time
-        deadline = time.monotonic() + 15
-        while not any(e.intent.get("tool_index") == 1 and e.settlement is not None for e in deps.state.durable.effects("r")):
-            assert time.monotonic() < deadline
-            time.sleep(0.01)
-        release_first.set()
-    releaser = Thread(target=release)
-    releaser.start()
-    try:
-        result = execute_turn(session, [call], executors={"codemode": parent}, run_id="r", turn=1,
-            effect_scope="parallel", managed_outputs=managed, session_id="s", intent_sink=sink,
-            snapshot=snapshot, project_path=project, durable=deps.state.durable)[0]
-        assert result.ok, result.model_text
-    finally:
-        release_first.set()
-        releaser.join(20)
+    result = execute_turn(session, [call], executors={"codemode": parent}, run_id="r", turn=1,
+        effect_scope="parallel", managed_outputs=managed, session_id="s", intent_sink=sink,
+        snapshot=snapshot, project_path=project, durable=deps.state.durable)[0]
+    assert result.ok, result.model_text
+    assert sorted(completed) == sorted([a, a if pdf else b])
     if pdf:
         assert ledger.pages_read_for_url(a) == {1, 2}
         assert ledger.source_pages_for_url(a) == {1: "page 1", 2: "page 2"}
     else:
-        assert session.source_ids == {"s1": b, "s2": a}
+        assert session.source_ids == {"s1": completed[0], "s2": completed[1]}
 
     # Close and reopen the durable owner, then use the production restoration.
     deps.state.durable.store.close()
@@ -112,7 +94,7 @@ def test_reverse_completion_survives_receipt_restart(tmp_path, pdf):
             from codey.operations.task_execution import ExecutionDelegate
 
             assert ExecutionDelegate(session=restored)._resolve_alias_url(
-                "reopen_source", {"source_id": "s1"}) == b
+                "reopen_source", {"source_id": "s1"}) == completed[0]
         assert restored_ledger.source_pages_for_url(a) == ledger.source_pages_for_url(a)
         assert restored_ledger.source_text_for_url(a) == ledger.source_text_for_url(a)
         assert restored_ledger.opened_sources == ledger.opened_sources
@@ -203,11 +185,13 @@ def test_source_binding_conflict_and_missing_binding_fail_without_mutation():
     assert session.opened_sources == {"https://example.com/b"}
     assert session.source_id_for(url) == "s3"
     from codey.agents.request import RecoveredToolOutcome
+    from codey.research.passages import describe_captured_window
     from codey.toolchain.runtime import ToolOutcome
 
     frame = SimpleNamespace(run_id="r", recovered_tool_outcomes=(), settled_tool_outcomes=(
-        RecoveredToolOutcome(call, ToolOutcome("body", True, canonical={"research_observation": observation}),
-                             1, 0, effect_id="unbound"),))
+        RecoveredToolOutcome(call, ToolOutcome("body", True, canonical={"research_observation": observation,
+            "read_passages": list(describe_captured_window(observation, 0, 6000))}),
+                             1, 0, effect_id="unbound", redelivered=True),))
     with pytest.raises(RecoveryFailed, match="committed source_id"):
         restore_task_session(frame, session)
     assert session.opened_sources == {"https://example.com/b"}

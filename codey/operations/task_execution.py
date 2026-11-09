@@ -17,9 +17,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import ledger_observation, source_observation, source_search_observation
+from codey.research.ledger_receipts import ledger_observation, source_search_observation
 from codey.runtime.core.execution_record import HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG, SOURCE_READ_TOOL_NAMES
+from codey.types.json_value import ToolArgs, require_json_integer
 
 if TYPE_CHECKING:
     from codey.agents.tools import AgentToolFns
@@ -109,7 +111,7 @@ class ExecutionDelegate:
         session: Any = None,
         project_path: Any = None,
         tool_fns: AgentToolFns | None = None,
-        research_tools: Any = None,
+        research_tools: ResearchTools | None = None,
         permission_profile: str = "coding_writer",
         approval_available: bool = False,
         change_tracker: Any = None,
@@ -142,6 +144,11 @@ class ExecutionDelegate:
             self.tool_fns = build_project_tool_fns(
                 state_home=managed_outputs.root.parent if managed_outputs is not None else None,
             )
+
+    def _research_resources(self) -> ResearchTools:
+        if self.research_tools is None:
+            raise ValueError("research tools unavailable")
+        return self.research_tools
 
     def _resolve_spec(self, name: str) -> Any:
         lowered = (name or "").strip().lower()
@@ -417,8 +424,9 @@ class ExecutionDelegate:
         if isinstance(self._research_scope, AnswerScope):
             from codey.research.answer_context import fitting_full_read
 
-            opened = fitting_full_read(self.session, self.research_tools.ledger,
-                                       call, opened, provider=getattr(self.research_tools, "context_provider", None))
+            resources = self._research_resources()
+            opened = fitting_full_read(self.session, resources.ledger,
+                                       call, opened, provider=resources.context_provider)
             model_text = opened.model_text
         observation = opened.read_observation or ledger_observation(ledger, "open", url=url)
         from codey.research.output_receipts import maybe_externalize_output
@@ -447,42 +455,30 @@ class ExecutionDelegate:
         )
         return result, True, None
 
-    def _observation_tools(self, *, source_read: bool = False) -> Any:
+    def _observation_tools(self, *, source_read: bool = False) -> ResearchTools:
         # Acquisition mutates a temporary ledger. Only the committed result
         # receipt may publish it into the run's formal projection.
-        tools = copy.copy(self.research_tools)
+        tools = copy.copy(self._research_resources())
         from codey.research.answer_contract import AnswerScope
 
-        if hasattr(tools, "coherent_passages"):
-            tools.coherent_passages = isinstance(self._research_scope, AnswerScope)
-        if hasattr(tools, "evidence_only"):
-            # This is a per-call presentation setting. The shared facade and
-            # stored knowledge must not inherit a child phase's output contract.
-            tools.evidence_only = self.session is not None and self.session.task_kind == "evidence_followup"
-        if hasattr(tools, "finding_report"):
-            tools.finding_report = (self.session is not None and self.session.task_kind == "research"
-                                           and self.session.policy.strict_research)
-        if hasattr(tools, "answer_submission"):
-            # Presentation follows the admitted request, including replay. Do
-            # not infer a new contract from the mutable current plan here.
-            tools.answer_submission = self._research_scope is not None
-        ledger = getattr(tools, "ledger", None)
-        if isinstance(ledger, ResearchLedger):
-            # A read receipt contains this acquisition alone, not stale pages
-            # inherited from the pre-call projection. Other tools need context.
-            with self.session.projection_lock if self.session is not None else contextlib.nullcontext():
-                tools.ledger = ResearchLedger() if source_read else ledger.clone()
-            if hasattr(tools, "sources_read"):
-                tools.sources_read = {url for source in ledger.opened_sources
-                                      for url in (source.requested_url, source.final_url)}
-            if hasattr(tools, "search_result_urls"):
-                tools.search_result_urls = {hit.url for search in ledger.searches for hit in search.results}
+        tools.coherent_passages = isinstance(self._research_scope, AnswerScope)
+        # Per-call presentation follows the admitted request, including replay.
+        tools.evidence_only = self.session is not None and self.session.task_kind == "evidence_followup"
+        tools.finding_report = (self.session is not None and self.session.task_kind == "research"
+                                and self.session.policy.strict_research)
+        tools.answer_submission = self._research_scope is not None
+        ledger = tools.ledger
+        # A read receipt contains only this acquisition, without stale pages.
+        with self.session.projection_lock if self.session is not None else contextlib.nullcontext():
+            tools.ledger = ResearchLedger() if source_read else ledger.clone()
+        tools.sources_read = {url for source in ledger.opened_sources
+                              for url in (source.requested_url, source.final_url)}
+        tools.search_result_urls = {hit.url for search in ledger.searches for hit in search.results}
         return tools
 
     def _reserve_research_acquisition(self, name: str, turn: int, tool_index: int) -> bool:
         if self.session is not None and self.session.research_acquisition_limits is not None:
-            category = "search" if name == "web_search" else "open" if name in {
-                "open_url", "open_result", "reopen_source", "open_hit"} else ""
+            category = "search" if name == "web_search" else "open" if name in SOURCE_READ_TOOL_NAMES else ""
             if category:
                 with self.session.projection_lock:
                     slots = self.session.research_acquisition_slots
@@ -520,7 +516,7 @@ class ExecutionDelegate:
     def _execute_research(self, call: ToolCall, *, turn: int = 0,
                           tool_index: int = 0) -> tuple[ToolResult, bool, int | None]:
         name = (call.name or "").strip().lower()
-        tools = self._observation_tools(source_read=name in {"open_url", "open_result", "reopen_source", "open_hit"})
+        tools = self._observation_tools(source_read=name in SOURCE_READ_TOOL_NAMES)
         args = dict(call.args or {})
         try:
             denied = self._research_call_denial(call)
@@ -541,7 +537,7 @@ class ExecutionDelegate:
                         raise ValueError("successful search requires a research ledger observation")
                     canonical["research_observation"] = ledger_observation(ledger, name)
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
-            if name in {"open_url", "open_result", "reopen_source", "open_hit"}:
+            if name in SOURCE_READ_TOOL_NAMES:
                 return self._execute_source_open(call, tools, turn=turn, tool_index=tool_index)
             if name == "source_search":
                 query = str(args.get("query") or "")
@@ -564,7 +560,8 @@ class ExecutionDelegate:
             if name == "knowledge_search":
                 from codey.research.text_args import first_text_arg
 
-                outcome = tools.knowledge_search(first_text_arg(args, "query"), depth=args.get("depth", 1))
+                outcome = tools.knowledge_search(first_text_arg(args, "query"),
+                                                 depth=require_json_integer(args.get("depth", 1), "depth"))
                 search_canonical = ({"knowledge_search_empty": True}
                     if outcome.ok and getattr(outcome, "knowledge_search_empty", False) is True else {})
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text,
@@ -595,13 +592,13 @@ class ExecutionDelegate:
         else:
             url = self._resolve_alias_url(call.name, dict(call.args))
             if not url:
-                field = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}[call.name]
+                field = _CONTROLLER_ALIAS_ID_ARG[call.name][1]
                 detail = f"ERROR: unknown {call.name} id. Use {field} from the observed references. "
                 detail += "A tool result_ref or out_ artifact handle is not a source locator."
                 return ToolResult(ok=False, call=call, model_text=detail), False, None
         target = self.session.hit_targets.get(str(call.args.get("hit_id") or "").lower()) if call.name == "open_hit" else None
         try:
-            opened = open_source(call, tools, self.research_tools.ledger, url, target)
+            opened = open_source(call, tools, self._research_resources().ledger, url, target)
         except SourceSnapshotUnavailable as exc:
             opened = ResearchToolOutput(f"ERROR: {exc}", ok=False, failure_code="snapshot_unavailable")
         return self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
@@ -752,54 +749,15 @@ class ExecutionDelegate:
             return {}, "source_ref must be an exact opened source reference: " + ", ".join(sources)
         return {**args, "source_ref": sources[reference]}, ""
 
-    def _resolve_alias_url(self, alias: str, args: dict[str, Any]) -> str:
-        session = self.session
-        key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}.get(alias, "")
-        rid = str(args.get(key, "") or "").strip().lower() if key else ""
-        if not rid or session is None:
-            return ""
-        results = dict(getattr(session, "search_results", {}) or {})
-        sources = dict(getattr(session, "source_ids", {}) or {})
-        if alias == "open_hit":
-            return str((getattr(session, "hit_targets", {}) or {}).get(rid, {}).get("url", "") or "")
-        return str(results.get(rid, "") or sources.get(rid, "") or "")
+    def _resolve_alias_url(self, alias: str, args: ToolArgs) -> str:
+        from codey.operations.source_execution import resolve_alias_url
+
+        return resolve_alias_url(self.session, alias, args)
 
     def _build_hit_mapping(self, observation: SourceSearchObservation) -> tuple[str, dict[str, HitTarget]]:
-        """Build hit text plus its mapping without touching the session.
+        from codey.research.source_locators import build_hit_mapping
 
-        IDs consider both the live session mapping and the current batch so
-        repeated IDs never collide. The caller persists the mapping in the
-        receipt canonical; the single fact entry applies it to the session.
-        """
-        from codey.research.source_search import SourceSearchHit, render_results
-
-        existing = dict(getattr(self.session, "hit_targets", {}) or {}) if self.session is not None else {}
-        batch: dict[str, HitTarget] = {}
-        by_target: dict[tuple[str, str, int, str], str] = {}
-        source, _text, _pages = source_observation(observation["source_snapshot"])
-        for key, value in list(existing.items()):
-            if isinstance(value, dict):
-                by_target[(value["url"], value["text_hash"], value["offset"], value["pages"])] = key
-        hit_ids = []
-        counter = len(existing) + 1
-        for hit in observation["hits"]:
-            page = hit["page"]
-            target = (observation["source_url"], source.text_hash, hit["offset"],
-                      str(page) if page is not None else "")
-            hit_id = by_target.get(target, "")
-            if not hit_id:
-                while f"h{counter}" in existing or f"h{counter}" in batch:
-                    counter += 1
-                hit_id = f"h{counter}"
-                counter += 1
-                by_target[target] = hit_id
-            # The receipt describes this query's targets, including reused ids.
-            # Otherwise the display cannot distinguish an empty result from a
-            # repeat query that legitimately found the same passages.
-            batch[hit_id] = HitTarget(url=target[0], text_hash=target[1], offset=target[2], pages=target[3])
-            hit_ids.append(hit_id)
-        hits = [SourceSearchHit(**hit) for hit in observation["hits"]]
-        return render_results(hits, hit_ids=tuple(hit_ids)), batch
+        return build_hit_mapping(observation, self.session.hit_targets if self.session is not None else {})
 
     def _ledger_evidence(self, before: int, ledger: ResearchLedger) -> list[dict[str, str]]:
         items = list(getattr(ledger, "evidence_items", ()) or [])

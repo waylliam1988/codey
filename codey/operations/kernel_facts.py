@@ -6,7 +6,6 @@ import re
 from dataclasses import replace
 
 from codey.operations.kernel_errors import EffectSettlementFailed
-from codey.operations.kernel_protocol import _CONTROLLER_ALIASES
 from codey.operations.kernel_provenance import _kernel_workspace_identity_of, _session_workspace_identity
 from codey.operations.kernel_result import _call_args_digest, denied_before_execution, strict_exit_code_or_none
 from codey.operations.task_session import TaskSession
@@ -19,10 +18,10 @@ from codey.research.ledger_receipts import (
     source_search_observation,
 )
 from codey.research.receipt_types import SourceSearchObservation
-from codey.runtime.core.execution_record import ExecutionRecord, HitTarget
+from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.tool_spec import canonical_tool_name
-from codey.types.json_value import ToolArgs, canonical_json_object, require_json_integer, require_json_string
+from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES, canonical_tool_name
+from codey.types.json_value import ToolArgs, canonical_json_object, require_json_string
 
 __all__ = [
     "record_facts_for_result",
@@ -45,7 +44,7 @@ def project_result_observation(
             raise ValueError("a successful source read cannot carry a source failure")
     if not ok and {"research_observation", "read_passages"} & result.canonical.keys():
         raise ValueError("an unsuccessful tool cannot establish source evidence")
-    if ok and call.name in {"open_url", "open_result", "reopen_source", "open_hit"}:
+    if ok and call.name in SOURCE_READ_TOOL_NAMES:
         passages = result.canonical.get("read_passages")
         if not isinstance(passages, list) or not passages:
             raise ValueError("successful source reading requires actual read passages")
@@ -100,64 +99,12 @@ def _canonical_mapping(result: ToolResult) -> ToolArgs:
     return canonical_json_object(result.canonical)
 
 
-def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
-    if mapping is None:
-        return
-    if not isinstance(mapping, dict):
-        raise ValueError("hit_targets must be a mapping")
-    # Two-phase: validate raw types/content and all conflicts into a local
-    # pending set first; only commit once the whole batch passes. Never wash
-    # illegal types via str() and never leave partial state behind.
-    pending: dict[str, HitTarget] = {}
-    for hid, target in mapping.items():
-        if type(hid) is not str or not hid:
-            raise ValueError("hit id must be a non-empty string")
-        if not isinstance(target, dict):
-            raise ValueError("hit target must be a mapping")
-        raw_url = target.get("url", "")
-        if type(raw_url) is not str:
-            raise ValueError("hit target url must be a string")
-        text_hash = target.get("text_hash")
-        if type(text_hash) is not str or re.fullmatch(r"[0-9a-f]{16}", text_hash) is None:
-            raise ValueError("hit target requires a captured source text hash")
-        raw_offset = target.get("offset", 0)
-        if type(raw_offset) is not int or raw_offset < 0:
-            raise ValueError("hit target offset must be a nonnegative integer")
-        raw_pages = target.get("pages", "")
-        if type(raw_pages) is not str:
-            raise ValueError("hit target pages must be a string")
-        url = raw_url.strip()
-        pages = raw_pages
-        if not url:
-            raise ValueError("hit target is malformed")
-        clean = HitTarget(url=url, text_hash=text_hash, offset=raw_offset, pages=pages)
-        if hid in pending and pending[hid] != clean:
-            raise ValueError(f"conflicting hit target for {hid}")
-        pending[hid] = clean
-    existing_all = dict(getattr(session, "hit_targets", {}) or {})
-    for hid, clean in pending.items():
-        existing = existing_all.get(hid)
-        if existing is not None and existing != clean:
-            raise ValueError(f"conflicting hit target for {hid}")
-    for hid, clean in pending.items():
-        if hid not in session.hit_targets:
-            session.hit_targets[hid] = clean
+def _apply_hit_targets(session: TaskSession, mapping: object, *,
+                       observation: SourceSearchObservation | None = None) -> None:
+    from codey.research.source_locators import checked_hit_targets
 
-
-def _validate_hit_observation(observation: SourceSearchObservation, mapping: object) -> None:
-    source, _text, _pages = source_observation(observation["source_snapshot"])
-    expected = {(source.final_url, source.text_hash, hit["offset"], str(hit["page"]) if hit["page"] else "")
-                for hit in observation["hits"]}
-    actual: set[tuple[str, str, int, str]] = set()
-    rows = canonical_json_object(mapping)
-    for raw in rows.values():
-        row = canonical_json_object(raw)
-        actual.add((require_json_string(row.get("url"), "hit URL"),
-                    require_json_string(row.get("text_hash"), "hit source hash"),
-                    require_json_integer(row.get("offset"), "hit offset"),
-                    require_json_string(row.get("pages"), "hit pages")))
-    if actual != expected or len(rows) != len(actual):
-        raise ValueError("hit targets differ from the captured source search observation")
+    pending = checked_hit_targets(mapping, session.hit_targets, observation=observation)
+    session.hit_targets.update(pending)
 
 
 def _record_open_fact(session: TaskSession, result: ToolResult) -> None:
@@ -170,7 +117,7 @@ def _record_open_fact(session: TaskSession, result: ToolResult) -> None:
 
 def bind_source_identity(session: TaskSession, call: ToolCall, result: ToolResult, *, ok: bool) -> ToolResult:
     """Allocate under the commit lock; persist the binding in the same receipt."""
-    if not ok or canonical_tool_name(call.name) not in {"open_url", *_CONTROLLER_ALIASES}:
+    if not ok or canonical_tool_name(call.name) not in SOURCE_READ_TOOL_NAMES:
         return result
     source, _, _ = source_observation(result.canonical.get("research_observation"))
     if "source_id" in result.canonical:
@@ -261,8 +208,7 @@ def record_facts_for_result(
                 session.transcript_notes.append(f"{name}: {text[:500]}")
             return
         search = source_search_observation(result.canonical.get("research_observation"))
-        _validate_hit_observation(search, result.canonical.get("hit_targets"))
-        _apply_hit_targets(session, _canonical_mapping(result).get("hit_targets"))
+        _apply_hit_targets(session, result.canonical.get("hit_targets"), observation=search)
         if text:
             session.transcript_notes.append(f"{name}: {text[:500]}")
         return
@@ -278,7 +224,7 @@ def record_facts_for_result(
         session.research_questions = question_plan(list(planned), session.research_questions)
     elif name == "web_search":
         _record_search_results(session, result)
-    elif name == "open_url" or name in _CONTROLLER_ALIASES:
+    elif name in SOURCE_READ_TOOL_NAMES:
         _record_open_fact(session, result)
     elif (name in {"knowledge_write", "save_finding", "save_inference"}
           or name == "submit_research_answer" and "knowledge_notes" in result.canonical):

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import re
-from dataclasses import asdict, dataclass
-from typing import Any
+from dataclasses import dataclass
 
 from codey.research.passages import preceding_context_offset
+from codey.types.json_value import JsonObject
 from codey.utils.refs import coerce_int
 
 SOURCE_SEARCH_DEFAULT_LIMIT = 6
@@ -25,8 +25,8 @@ class SourceSearchHit:
     page: int | None = None
     score: int = 0
 
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+    def to_dict(self) -> JsonObject:
+        return {"offset": self.offset, "snippet": self.snippet, "page": self.page, "score": self.score}
 
 
 def bounded_limit(value: object, default: int = SOURCE_SEARCH_DEFAULT_LIMIT) -> int:

@@ -47,6 +47,9 @@ _CONTROLLER_ALIAS_ID_ARG = {
     "open_hit": ("open_url", "hit_id"),
 }
 
+SOURCE_READ_TOOL_NAMES = frozenset({"open_url", *_CONTROLLER_ALIAS_ID_ARG})
+SOURCE_TOOL_NAMES = SOURCE_READ_TOOL_NAMES | {"web_search", "source_search"}
+
 
 @dataclass(frozen=True)
 class ToolSpec:
@@ -62,6 +65,11 @@ class ToolSpec:
     parallel_safe: bool = False
     output_schema: Mapping[str, object] = field(default_factory=text_output_schema)
     declarations: str = ""
+
+    @property
+    def read_only(self) -> bool:
+        """Acquiring source data can be read-only without being safe to replay."""
+        return self.replay_class == "safe" or self.executor == "source" and self.grant == "web.read"
 
 
 def _freeze_schema_value(value: object) -> object:
@@ -506,7 +514,7 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None,
                 continue
         names.append(name)
     # Controller aliases are model-visible names; expose them when allowed.
-    for alias in ("open_result", "reopen_source", "open_hit"):
+    for alias in _CONTROLLER_ALIAS_ID_ARG:
         spec = tool_specs().get(alias)
         if spec is None or alias in names:
             continue
@@ -515,7 +523,7 @@ def visible_tool_names_for_snapshot(policy: Any, controller_allowed: Any = None,
     # Registered third-task tools advertise alongside built-ins; unregistered
     # names stay denied.
     for name in sorted(tool_specs()):
-        if name in names or name in order or name in {"open_result", "reopen_source", "open_hit"}:
+        if name in names or name in order or name in _CONTROLLER_ALIAS_ID_ARG:
             continue
         spec = tool_specs()[name]
         if spec.grant and _policy_allows(policy, spec.grant):
@@ -995,6 +1003,8 @@ def unregister_custom_tool(name: object) -> bool:
 
 
 __all__ = [
+    "SOURCE_READ_TOOL_NAMES",
+    "SOURCE_TOOL_NAMES",
     "ToolSpec",
     "canonical_tool_name",
     "custom_executor_for",

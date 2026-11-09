@@ -1,12 +1,38 @@
 """Read-source calls select captured versions before the common result renderer."""
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Protocol
+
 from codey.research.ledger import ResearchLedger
 from codey.research.source_snapshots import captured_source
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core.execution_record import HitTarget
 from codey.runtime.core.models import ToolCall
-from codey.types.json_value import require_json_integer, require_json_string
+from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG
+from codey.types.json_value import ToolArgs, require_json_integer, require_json_string
+
+
+class SourceReferenceView(Protocol):
+    @property
+    def search_results(self) -> Mapping[str, str]: ...
+
+    @property
+    def source_ids(self) -> Mapping[str, str]: ...
+
+    @property
+    def hit_targets(self) -> Mapping[str, HitTarget]: ...
+
+
+def resolve_alias_url(session: SourceReferenceView | None, alias: str, args: ToolArgs) -> str:
+    definition = _CONTROLLER_ALIAS_ID_ARG.get(alias)
+    rid = str(args.get(definition[1]) or "").strip().lower() if definition is not None else ""
+    if not rid or session is None:
+        return ""
+    if alias == "open_hit":
+        target = session.hit_targets.get(rid)
+        return target["url"] if target is not None else ""
+    return session.search_results.get(rid, "") or session.source_ids.get(rid, "")
 
 
 def open_source(call: ToolCall, tools: ResearchTools, ledger: ResearchLedger, url: str,

@@ -47,6 +47,11 @@ the writer and adapter share `RuntimeCheckpointPort`. Keep annotations complete;
 do not replace a callback signature with `Callable[..., object]`. The existing
 provider compatibility adapters retain their deliberately open call signatures.
 
+Source acquisition, snapshot reading, locator codecs, tool history and the
+CodeMode catalog are protected at zero explicit dynamic types. The source
+methods in `task_execution.py` have named protected scopes; the rest of that
+legacy module is not claimed to be fully migrated.
+
 Mypy uses the strict settings in `pyproject.toml`. Pyrefly has an explicit
 `legacy` preset and error severities in that file. Warnings, existing suppression
 directives and active errors are separate facts: a successful error gate is not

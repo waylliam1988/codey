@@ -43,7 +43,6 @@ from codey.operations.kernel_result import (
     strict_exit_code_or_none,
 )
 from codey.operations.task_session import TaskSession, effect_coordinates, turn_effect_id
-from codey.research.ledger import ResearchLedger
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
@@ -56,6 +55,7 @@ if TYPE_CHECKING:
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
     from codey.research.answer_contract import AnswerScope
+    from codey.research.tools import ResearchTools
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.toolchain.tool_spec import ToolSpec
     from codey.workspace.revision import WorkspaceRevisionStore
@@ -93,12 +93,6 @@ class ReconcileToolResult(Protocol):
     def __call__(self, identity: str, ok: bool, result: ToolResult) -> None: ...
 
 
-class ResearchToolsLike(Protocol):
-    ledger: ResearchLedger
-    sources_read: set[str]
-    search_result_urls: set[str]
-
-
 @dataclass(frozen=True)
 class ToolExecutionContext:
     session: TaskSession
@@ -128,7 +122,7 @@ def _build_delegate(
     session: TaskSession,
     project_path: Path | None,
     tool_fns: AgentToolFns | None,
-    research_tools: ResearchToolsLike | None,
+    research_tools: ResearchTools | None,
     change_tracker: ChangeTracker | None = None,
     managed_outputs: ManagedOutputStore | None = None,
     session_id: str = "",
@@ -286,7 +280,7 @@ def execute_turn(
     tool_index_base: int = 0,
     project_path: Path | None = None,
     tool_fns: AgentToolFns | None = None,
-    research_tools: ResearchToolsLike | None = None,
+    research_tools: ResearchTools | None = None,
     change_tracker: ChangeTracker | None = None,
     managed_outputs: ManagedOutputStore | None = None,
     session_id: str = "",

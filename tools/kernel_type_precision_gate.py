@@ -40,6 +40,11 @@ SCOPED_TARGETS = {
     ),
     "codey/operations/context.py": ("RunFrame.entry_policy", "RunFrame.entry_session"),
     "codey/durable/checkpoint.py": ("mutate_checkpoint", "_unregistered_artifacts", "_effect_changes"),
+    "codey/operations/task_execution.py": (
+        "ExecutionDelegate._research_resources", "ExecutionDelegate._observation_tools",
+        "ExecutionDelegate._resolve_alias_url", "ExecutionDelegate._build_hit_mapping",
+        "ExecutionDelegate._execute_source_open", "ExecutionDelegate._opened_result",
+    ),
 }
 
 CONTRACT_TARGETS = (
@@ -67,6 +72,10 @@ CONTRACT_TARGETS = (
     "codey/research/answer_archive.py", "codey/research/knowledge_updates.py",
     "codey/research/knowledge_update_types.py", "codey/research/tool_args.py",
     "codey/research/tool_contract.py", "codey/research/knowledge_schema.py",
+    "codey/operations/source_execution.py", "codey/research/source_locators.py",
+    "codey/research/source_search.py", "codey/research/source_snapshots.py",
+    "codey/research/source_reading.py", "codey/research/source_acquisition.py", "codey/research/tool_output.py",
+    "codey/app/tool_history.py", "codey/codemode/catalog.py",
     "codey/research/questions.py", "codey/research/findings.py", "codey/research/references.py",
     "codey/research/audit_projection.py",
     "codey/toolchain/tool_args_repair.py",

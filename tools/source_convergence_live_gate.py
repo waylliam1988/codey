@@ -31,7 +31,7 @@ ORIGINAL = ("Original field record.\n\n" + "Background paragraph about the field
 UPDATED = "Updated record. The revised ingredient quantity is 99 grams.\n\n" * 90
 
 
-def run(directory: Path, batch: int, timeout: float) -> JsonObject:
+def run(directory: Path, batch: int, timeout: float, *, codemode: bool = False) -> JsonObject:
     target = select_target("gemma", timeout, "http://127.0.0.1:5001/v1")
     task = (
         f"Run this source-reading diagnostic using real tools, in this exact order, one step per turn: "
@@ -56,10 +56,19 @@ def run(directory: Path, batch: int, timeout: float) -> JsonObject:
                 + ". The first three may fail; continue to the next URL after each failure and do not retry. "
                 "Finally report the observed limitations and the saffron quantity from the readable page. "
                 "Do not search, save knowledge, or claim to have read failed pages.")
+    project: Path | None = None
+    if codemode:
+        project = directory / "project"
+        project.mkdir()
+        task = ("Run this CodeMode source diagnostic. Call codemode exactly once with code "
+                "`return await tools.open_url({url:inputs.url});` and inputs "
+                + json.dumps({"url": URL})
+                + ". Report the saffron quantity from its returned original text, then finish. "
+                "Do not call open_url outside CodeMode, search, or change files.")
     acquisitions: list[JsonObject] = []
 
     def http(request: Request, *, timeout: float) -> FixtureResponse:
-        body = "Field record: saffron quantity is exactly 17 grams." if batch == 3 else ORIGINAL if not acquisitions else UPDATED
+        body = "Field record: saffron quantity is exactly 17 grams." if batch == 3 or codemode else ORIGINAL if not acquisitions else UPDATED
         acquisitions.append({"url": request.full_url, "version": len(acquisitions) + 1})
         (directory / "acquisitions.json").write_text(json.dumps(acquisitions), encoding="utf-8")
         html = "<html><title>Field record</title><body><article>" + body + "</article></body></html>"
@@ -96,6 +105,8 @@ def run(directory: Path, batch: int, timeout: float) -> JsonObject:
     manifest = {"batch": batch, "scope": "controlled_sources_real_model_production_headless_kernel",
                 "model": target.model, "temperature": target.temperature, "task": task,
                 "git_head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()}
+    if codemode:
+        manifest["codemode"] = True
     (directory / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     with (
         patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}),
@@ -104,10 +115,11 @@ def run(directory: Path, batch: int, timeout: float) -> JsonObject:
         patch("codey.research.source_download._open_url_no_redirect", http),
         patch("codey.research.browser_search.BrowserSearchProvider._guard_request", browser_response),
     ):
-        result = run_headless(HeadlessRequest(None, task, intent="research" if research else "chat", provider_id="local", max_turns=10,
+        result = run_headless(HeadlessRequest(project, task, intent="research" if research else "chat", provider_id="local", max_turns=10,
             state_home=directory / "state", model_selection={"model": target.model, "base_url": target.base_url},
             research_store_root=directory / "knowledge" if research else None,
-            requested_capabilities=(), project_changes_required=False), emit_jsonl=observe, connect_provider=connect)
+            requested_capabilities=("project.read", "web.read") if codemode else (),
+            project_changes_required=False), emit_jsonl=observe, connect_provider=connect)
     return analyze(directory, manifest, acquisitions, result.stop_reason, research=research)
 
 
@@ -137,6 +149,11 @@ def analyze(directory: Path, manifest: JsonObject, acquisitions: list[JsonObject
         passed = (stop_reason in {"done", "blocked"} and len(failures) == 3 and len(tool_rows) == 4
                   and codes == {"source.access_restricted", "source.page_not_loaded", "source.render_script_error"}
                   and len(acquisitions) == 5 and any(row.get("ok") is True for row in tool_rows))
+    if manifest.get("codemode") is True:
+        passed = (stop_reason == "done" and len(acquisitions) == 1 and acquisitions[0]["url"] == URL
+                  and any(row.get("tool_name") == "codemode" and row.get("ok") is True for row in tool_rows)
+                  and any(row.get("tool_name") == "open_url" and row.get("ok") is True for row in tool_rows)
+                  and all(row.get("ok") is True for row in tool_rows))
     report: JsonObject = {**manifest, "passed": passed, "stop_reason": stop_reason,
         "acquisitions": acquisitions, "tools": tool_rows, "delivered_bodies": bodies,
         "limits": "Diagnostic tool instructions and controlled HTTP responses; no answer quality claim."}
@@ -149,10 +166,11 @@ def main() -> int:
     parser.add_argument("--batch", type=int, choices=(1, 2, 3, 4), required=True)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=180)
+    parser.add_argument("--codemode", action="store_true", help="Exercise source acquisition inside the existing CodeMode parent")
     args = parser.parse_args()
     directory = args.run_dir.resolve()
     directory.mkdir(parents=True, exist_ok=False)
-    report = run(directory, args.batch, args.timeout)
+    report = run(directory, args.batch, args.timeout, codemode=args.codemode)
     print(json.dumps({"passed": report["passed"], "stop_reason": report["stop_reason"]}), flush=True)
     return 0 if report["passed"] is True else 1
 

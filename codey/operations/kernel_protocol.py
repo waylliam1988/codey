@@ -18,7 +18,7 @@ from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
-from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
+from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES, ToolSpec, is_text_batch_tool
 from codey.types.json_value import JsonValue, ToolArgs, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
@@ -317,7 +317,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     )
 
 
-_CONTROLLER_ALIASES = frozenset(_ALIAS_ARGS or {})
+_CONTROLLER_ALIASES = frozenset(_ALIAS_ARGS)
 
 
 def _grant_for_tool(tool: str) -> str:
@@ -369,7 +369,7 @@ def _controller_allows(tool: str, allowed: set[str] | None) -> bool:
     if _is_coding_only_tool(name):
         return True
     if name == "open_url":
-        return bool({"open_url", *_CONTROLLER_ALIASES} & allowed)
+        return bool(SOURCE_READ_TOOL_NAMES & allowed)
     return name in allowed
 
 
@@ -453,7 +453,7 @@ def _validate_coding_args(tool: str, args: ToolArgs) -> tuple[ToolArgs, str]:
 
 def _validate_research_args(tool: str, args: ToolArgs) -> tuple[ToolArgs, str]:
     if tool in _CONTROLLER_ALIASES:
-        id_key = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}[tool]
+        id_key = _ALIAS_ARGS[tool][1]
         value = str(args.get(id_key, "") or "").strip()
         if not value:
             return {}, f"{tool} missing required arg '{id_key}'"
@@ -556,7 +556,7 @@ def _validate_tool_args(
     # They run via injected executors; no legacy coding/research repair.
     if executor not in {"project", "source", "knowledge"}:
         # Controller aliases always lower via research validation.
-        is_alias = name in set(_ALIAS_ARGS or {})
+        is_alias = name in _CONTROLLER_ALIASES
         if is_alias or (name == "source_search" and isinstance(args, dict) and "source_id" in args):
             return _validate_research_args(name, args if isinstance(args, dict) else {})
         return dict(args) if isinstance(args, dict) else {}, ""
