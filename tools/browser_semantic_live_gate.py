@@ -13,6 +13,7 @@ import re
 import subprocess
 import time
 from contextlib import ExitStack
+from datetime import UTC, datetime
 from email.message import Message
 from pathlib import Path
 from unittest.mock import patch
@@ -25,7 +26,9 @@ from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser import CdpEndpoint
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations.task_execution import ExecutionDelegate
+from codey.providers.request_context import clock_context
 from codey.research import answer_contract
+from codey.research.browser_search import BrowserSearchProvider
 from codey.research.knowledge_schema import schema_object, schema_strings
 from codey.research.ledger import ResearchLedger
 from codey.research.source_reading import render_source_read
@@ -45,6 +48,9 @@ from tools.browser_research_cases import BrowserResearchCase, Document, cases
 from tools.shell_web_diagnostic_gate import select_target
 
 BROWSER_TOOLS = ("browser_snapshot", "browser_click", "browser_fill", "browser_scroll", "browser_wait", "browser_read")
+DIAGNOSTIC_SEQUENCE = ("open_url", "browser_snapshot", "browser_fill", "browser_snapshot",
+                       "browser_click", "browser_wait", "browser_scroll", "browser_snapshot",
+                       "browser_read", "submit_research_answer")
 URL = "https://example.com/interactive-field-record"
 HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Interactive record</title></head>
 <body><article>Interactive field record. Enter the requested locality, then press Load.
@@ -54,6 +60,29 @@ The initial page does not contain the measured quantity.</article>
 document.querySelector('#query').value === '福州' ? '福州样本：鱼丸净重为 173 克。' : 'Unknown locality';">Load</button>
 <p id="result">Awaiting locality</p><div style="height:2000px"></div>
 <script>window.clicks=0;</script></body></html>"""
+
+
+class _FixedRequestClock:
+    @staticmethod
+    def now() -> datetime:
+        return datetime(2026, 11, 9, 10, 0, tzinfo=UTC)
+
+
+def fixed_request_clock() -> str:
+    """Keep the production clock renderer, fixing only its experimental input."""
+    with patch("codey.providers.request_context.datetime", _FixedRequestClock):
+        return clock_context()
+
+
+def diagnostic_steps_complete(tools: list[JsonObject]) -> bool:
+    expected = iter(DIAGNOSTIC_SEQUENCE)
+    current = next(expected)
+    for row in tools:
+        if row.get("tool_name") == current and row.get("ok") is True:
+            current = next(expected, "")
+            if not current:
+                return True
+    return False
 
 
 def execute_browser(call: ToolCall, browser: BrowserInteraction) -> ToolResult:
@@ -92,12 +121,13 @@ def execute_browser(call: ToolCall, browser: BrowserInteraction) -> ToolResult:
 
 
 def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, cdp_port: int = 0,
-        case: BrowserResearchCase | None = None, guidance: str = "", projection: str = "") -> JsonObject:
+        case: BrowserResearchCase | None = None, guidance: str = "", projection: str = "",
+        fixed_clock: bool = False) -> JsonObject:
     started = time.monotonic()
     target = select_target("gemma", timeout, "http://127.0.0.1:5001/v1")
-    provider = ResumableBrowserSearchProvider(headless=not bool(cdp_port), isolated=False,
-                                              cdp_port=cdp_port or 9262, http_fallback=False)
-    browser = BrowserInteraction(provider)
+    provider = (ResumableBrowserSearchProvider if candidate else BrowserSearchProvider)(
+        headless=not bool(cdp_port), isolated=False, cdp_port=cdp_port or 9262, http_fallback=False)
+    browser = BrowserInteraction(provider) if isinstance(provider, ResumableBrowserSearchProvider) else None
     task = (f"查看 {URL} 中福州样本的鱼丸净重，说明页面实际显示的数值。"
             "只使用这个来源；如果材料不足，请如实说明。不要保存知识。")
     documents = case.documents if case is not None else {URL: Document(HTML.encode("utf-8"))}
@@ -144,13 +174,14 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, c
             raise ValueError("diagnostic requires the selected local model")
         return attempts.RecordingProvider(target, directory)
 
-    def source_factory() -> ResumableBrowserSearchProvider:
+    def source_factory() -> BrowserSearchProvider:
         return provider
 
     def endpoint(**kwargs: object) -> CdpEndpoint:
         return CdpEndpoint(cdp_port, None)
 
     def executor(call: ToolCall) -> ToolResult:
+        assert browser is not None
         return execute_browser(call, browser)
 
     def fixture_search(query: str, limit: int = 8) -> list[JsonObject]:
@@ -166,6 +197,9 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, c
         "connection": "cdp" if cdp_port else "headless_owned",
         "git_head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "scope": "real_model_production_kernel_real_browser_controlled_document"}
+    clock = fixed_request_clock() if fixed_clock else ""
+    if clock:
+        manifest["fixed_request_clock"] = clock
     (directory / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     try:
         if candidate:
@@ -182,6 +216,8 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, c
             stack.enter_context(patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}))
             stack.enter_context(attempts.isolate_gate_secondary_models(target))
             stack.enter_context(attempts.record_api_generations(directory / "provider.jsonl"))
+            if clock:
+                stack.enter_context(patch("codey.providers.request_context.clock_context", return_value=clock))
             stack.enter_context(patch("codey.research.browser_search.BrowserSearchProvider._guard_request", route_document))
             stack.enter_context(patch("codey.research.source_download._open_url_no_redirect", http_document))
             stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", source_factory))
@@ -220,6 +256,7 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, c
             natural_success = (result.stop_reason == "done" and not original_passages
                                and bool(re.search(r"无法|受限|未能|限制|不可|不足|unavailable|restricted", answer_body, re.I)))
         passed = (result.stop_reason == "done" and len(navigations) == 1 and delivered
+                  and diagnostic_steps_complete(tools)
                   and {"browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_scroll"} <= seen
                   and "browser_read" in seen and quantity_in_original
                   and all(row.get("ok") is True for row in tools)) if diagnostic else natural_success
@@ -227,6 +264,7 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, c
             "navigations": navigations, "tools": tools, "observed_quantity_delivered": delivered,
             "answer": answer, "natural_success": natural_success,
             "quantity_in_original_passage": quantity_in_original, "original_passages": original_passages,
+            "diagnostic_sequence_complete": diagnostic_steps_complete(tools) if diagnostic else None,
             "seconds": round(time.monotonic() - started, 3), "usage": model_usage(requests),
             "manual_review": case.review if case is not None else "Check conclusion and citation support.",
             "limits": "Mechanical checks plus original artifacts; conditions, exceptions and citation support require manual review."})
@@ -285,6 +323,7 @@ def main() -> int:
     parser.add_argument("--case", choices=[case.name for case in available])
     parser.add_argument("--guidance", choices=tuple(GUIDANCE), default="")
     parser.add_argument("--projection", choices=PROJECTIONS, default="")
+    parser.add_argument("--fixed-clock", action="store_true")
     args = parser.parse_args()
     directory = args.run_dir.resolve()
     directory.mkdir(parents=True, exist_ok=False)
@@ -292,10 +331,12 @@ def main() -> int:
     if args.cdp:
         with cdp_browser(directory / "browser-profile") as port:
             report = run(directory, args.timeout, candidate=args.candidate, diagnostic=args.diagnostic,
-                         cdp_port=port, case=selected_case, guidance=args.guidance, projection=args.projection)
+                         cdp_port=port, case=selected_case, guidance=args.guidance, projection=args.projection,
+                         fixed_clock=args.fixed_clock)
     else:
         report = run(directory, args.timeout, candidate=args.candidate, diagnostic=args.diagnostic,
-                     case=selected_case, guidance=args.guidance, projection=args.projection)
+                     case=selected_case, guidance=args.guidance, projection=args.projection,
+                     fixed_clock=args.fixed_clock)
     print(json.dumps({"passed": report["passed"], "stop_reason": report["stop_reason"]}), flush=True)
     return 0 if report["passed"] is True else 1
 

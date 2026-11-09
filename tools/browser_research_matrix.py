@@ -16,7 +16,8 @@ from tools.browser_research_cases import cases
 
 
 def run(directory: Path, *, repeats: int, timeout: float, policy: str = "", projection: str = "",
-        selected_names: tuple[str, ...] = (), baseline_guidance: str = "") -> JsonObject:
+        selected_names: tuple[str, ...] = (), baseline_guidance: str = "",
+        source_tools_only: bool = False, fixed_clock: bool = False) -> JsonObject:
     available = (*cases(), *policy_cases())
     selected = tuple(case for case in available if case.name in selected_names) if selected_names else cases()
     case_path = Path(__file__).with_name("browser_research_cases.py")
@@ -27,6 +28,10 @@ def run(directory: Path, *, repeats: int, timeout: float, policy: str = "", proj
     if policy:
         manifest.update(policy=policy, policy_sha256=hashlib.sha256(
             Path(__file__).with_name("browser_policy_options.py").read_bytes()).hexdigest())
+    if source_tools_only:
+        manifest["toolset"] = "production_source_tools_only"
+    if fixed_clock:
+        manifest["fixed_request_clock"] = True
     if projection or selected_names or baseline_guidance:
         manifest.update(canonical_json_object({"projection": projection, "selected_names": list(selected_names),
             "baseline_guidance": baseline_guidance,
@@ -49,7 +54,9 @@ def run(directory: Path, *, repeats: int, timeout: float, policy: str = "", proj
                 else:
                     command = [sys.executable, "-m", "tools.browser_semantic_live_gate", "--case", case.name,
                                "--run-dir", str(case_dir), "--timeout", str(timeout)]
-                    if candidate or policy or projection or baseline_guidance:
+                    if fixed_clock:
+                        command.append("--fixed-clock")
+                    if not source_tools_only and (candidate or policy or projection or baseline_guidance):
                         command.append("--candidate")
                     if candidate and policy:
                         command.extend(("--guidance", policy))
@@ -87,12 +94,15 @@ def main() -> int:
     parser.add_argument("--policy", choices=tuple(GUIDANCE), default="")
     parser.add_argument("--projection", choices=PROJECTIONS, default="")
     parser.add_argument("--baseline-guidance", choices=tuple(GUIDANCE), default="")
+    parser.add_argument("--source-tools-only", action="store_true")
+    parser.add_argument("--fixed-clock", action="store_true")
     parser.add_argument("--cases", nargs="+", choices=[case.name for case in (*cases(), *policy_cases())], default=[])
     args = parser.parse_args()
     directory = args.run_dir.resolve()
     directory.mkdir(parents=True, exist_ok=True)
     run(directory, repeats=args.repeats, timeout=args.timeout, policy=args.policy, projection=args.projection,
-        selected_names=tuple(args.cases), baseline_guidance=args.baseline_guidance)
+        selected_names=tuple(args.cases), baseline_guidance=args.baseline_guidance,
+        source_tools_only=args.source_tools_only, fixed_clock=args.fixed_clock)
     return 0
 
 
