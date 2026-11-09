@@ -9,7 +9,7 @@ from html.parser import HTMLParser
 _SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "head"}
 _BLOCK_TAGS = {
     "p", "div", "section", "article", "header", "footer", "li", "ul", "ol",
-    "table", "tr", "br", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre",
+    "table", "tr", "td", "th", "br", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre",
 }
 _HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 _DELETED_TAGS = {"s", "del", "strike"}

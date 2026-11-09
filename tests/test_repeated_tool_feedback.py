@@ -46,7 +46,10 @@ def test_repeat_feedback_is_delivered_without_disabling_loop_guard(monkeypatch, 
         return ToolResult(call, 'The plan is recorded. Investigate the questions.', ok=True,
                           canonical={"research_observation": {"questions": call.args["questions"]}})
 
-    session = TaskSession(TaskPolicy(frozenset({"knowledge.read", "control"})), max_turns=8)
+    # Plans belong to question-bound investigations; ordinary project/chat
+    # tasks no longer expose research_plan in their frozen tool contract.
+    session = TaskSession(TaskPolicy(frozenset({"knowledge.read", "control"})),
+                          task_kind="evidence_followup", max_turns=8)
     result = run_task_kernel(session, request=KernelRunRequest(
         transport=KernelTransportDeps(Provider(), user_task="Record a plan and explain the remaining work."),
         execution=KernelExecutionDeps(executors={"research_plan": execute})))
