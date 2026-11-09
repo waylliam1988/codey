@@ -1,14 +1,35 @@
 """The next desktop launch must keep the committed runtime after an upgrade."""
 
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from codey.control.client import ControlClient, _activate_current_release, ensure_service
+from codey.control.client import ControlClient, _activate_current_release, _materialize_current_release, ensure_service
 from codey.control.protocol import ControlError
 from codey.launcher.releases import snapshot
+
+
+def test_source_materialization_does_not_require_tools_on_import_path(tmp_path, monkeypatch):
+    source = tmp_path / "checkout"
+    (source / "tools").mkdir(parents=True)
+    (source / "pyproject.toml").write_text("[project]\nrequires-python = '>=3.11'\n", encoding="utf-8")
+    (source / "tools" / "publish_runtime.py").write_text(
+        "def publish_runtime(root, project_file):\n    root.joinpath('published').write_text('ok')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("codey.control.client._current_source", lambda: source)
+    monkeypatch.setattr("codey.control.client.ensure_frontend", lambda root: None)
+    monkeypatch.setattr("codey.control.client.snapshot", lambda home, root: {"release_id": "release_test"})
+    monkeypatch.setitem(sys.modules, "tools", None)
+    monkeypatch.setitem(sys.modules, "tools.publish_runtime", None)
+
+    result = _materialize_current_release(tmp_path / "state")
+
+    assert result["release_id"] == "release_test"
+    assert (source / "published").read_text(encoding="utf-8") == "ok"
 
 
 def test_desktop_relaunch_uses_the_committed_immutable_runtime(tmp_path, monkeypatch):

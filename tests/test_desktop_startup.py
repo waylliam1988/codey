@@ -118,6 +118,23 @@ def test_service_ready_before_shown_and_old_window_deadline_cannot_fail_navigati
     assert len(window.urls) == 1 and not window.evaluations
 
 
+def test_failure_before_window_shown_is_rendered_after_startup_document_loads(tmp_path, monkeypatch):
+    startup, window = controller(tmp_path, shown=False)
+    monkeypatch.setattr(desktop_startup, "ensure_service", lambda *args, **kwargs: (_ for _ in ()).throw(
+        ControlError("STARTUP_FAILED", "The service could not be started")
+    ))
+
+    startup.start()
+    startup.shown()
+    # The native host may ignore this first update while the initial document
+    # is still loading; loaded() must replay it for that host.
+    window.scripts.clear()
+    assert window.scripts == []
+
+    startup.loaded()
+    assert window.scripts[-1]["error"] == "The service could not be started"
+
+
 def test_missing_window_event_has_a_deadline_without_blocking_service(tmp_path, monkeypatch, deadlines):
     startup, window = controller(tmp_path, shown=False)
     calls = []

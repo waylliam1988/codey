@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -96,11 +97,23 @@ def _current_source() -> Path:
 def _materialize_current_release(home: Path) -> dict[str, Any]:
     source = _current_source()
     with acquire_lease(home / "release-preparation"):
-        if (source / "tools/publish_runtime.py").is_file() and (source / "pyproject.toml").is_file():
+        publisher = source / "tools" / "publish_runtime.py"
+        if publisher.is_file() and (source / "pyproject.toml").is_file():
             # Development publication only; wheels already carry this artifact.
-            from tools.publish_runtime import publish_runtime
             with startup_stage("frontend.check"):
                 ensure_frontend(source)
+            # The desktop launcher can start from a shortcut or an IDE with a
+            # working directory outside the checkout. Load the publisher by
+            # its file path so source launches do not depend on ``tools`` being
+            # importable from the process working directory.
+            spec = importlib.util.spec_from_file_location("_codey_publish_runtime", publisher)
+            if spec is None or spec.loader is None:
+                raise ControlError("RUNTIME_PUBLICATION_FAILED", "Runtime publisher could not be loaded")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            publish_runtime = getattr(module, "publish_runtime", None)
+            if not callable(publish_runtime):
+                raise ControlError("RUNTIME_PUBLICATION_FAILED", "Runtime publisher is incomplete")
             publish_runtime(source, source / "pyproject.toml")
         with startup_stage("release.snapshot"):
             return snapshot(home, source)

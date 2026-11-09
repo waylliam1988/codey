@@ -36,6 +36,7 @@ class DesktopStartup:
         self._lock = threading.RLock()
         self._closed = threading.Event()
         self._shown = False
+        self._failure_waiting_for_startup_document = False
         self._started = False
         self._navigating = False
         self._failed = False
@@ -58,7 +59,16 @@ class DesktopStartup:
 
     def loaded(self) -> None:
         # Observation only. Service preparation never waits for document/JS readiness.
-        self._trace.record("desktop.document_loaded" if self._navigating else "desktop.startup_document_loaded")
+        with self._lock:
+            navigating = self._navigating
+        self._trace.record("desktop.document_loaded" if navigating else "desktop.startup_document_loaded")
+        # pywebview can invoke the startup worker before the initial HTML has
+        # finished loading. Defer a failed startup page until that document is
+        # ready; load_html during the initial navigation is ignored by WebView.
+        if not navigating and self._failure_waiting_for_startup_document:
+            with self._lock:
+                self._failure_waiting_for_startup_document = False
+            self._deliver()
 
     def close(self) -> None:
         with self._lock:
@@ -96,6 +106,7 @@ class DesktopStartup:
         self._url = None
         self._failed = True
         self._failure_message = message[:2000]
+        self._failure_waiting_for_startup_document = not self._shown
         self._trace.record("desktop.startup_failed", outcome="failed")
 
     def _deliver(self) -> None:
@@ -143,6 +154,7 @@ class DesktopStartup:
                 self._trace = StartupTrace(self._home)
             self._failed = False
             self._failure_message = ""
+            self._failure_waiting_for_startup_document = False
             self._url = None
             self._navigating = False
             if not self._shown:
