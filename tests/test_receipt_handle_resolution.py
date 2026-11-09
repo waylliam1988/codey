@@ -51,7 +51,7 @@ def test_receipt_handles_are_derived_from_existing_results_and_stable(tmp_path) 
 
 
 def test_source_and_evidence_handles_bind_to_existing_ledger_versions(tmp_path) -> None:
-    from codey.operations.reference_handles import ReferenceHandleResolver
+    from codey.operations.reference_handles import ReferenceHandleError, ReferenceHandleResolver
     from codey.research.ledger import EvidenceItem, ResearchLedger
 
     session = _session(tmp_path)
@@ -64,16 +64,24 @@ def test_source_and_evidence_handles_bind_to_existing_ledger_versions(tmp_path) 
     ))
     resolver = ReferenceHandleResolver(session, ledger=ledger)
 
-    source = resolver.resolve("s1")
-    evidence = resolver.resolve("e1")
+    source_handle = resolver.handle_for("s1")
+    evidence_handle = resolver.handle_for("e1")
+    source = resolver.resolve(source_handle)
+    evidence = resolver.resolve(evidence_handle)
     assert source.kind == "source" and source.version
     assert evidence.kind == "evidence"
     assert evidence.source_ref == "s1"
     assert evidence.version == source.version
 
+    ledger.record_open(url, url, "Article", "a new passage")
+    with pytest.raises(ReferenceHandleError, match="different source version"):
+        resolver.resolve(source_handle)
+    with pytest.raises(ReferenceHandleError, match="different source version"):
+        resolver.resolve(evidence_handle)
+
 
 def test_namespaces_do_not_allow_receipt_or_source_alias_confusion(tmp_path) -> None:
-    from codey.operations.reference_handles import ReferenceHandleResolver, ReferenceHandleError
+    from codey.operations.reference_handles import ReferenceHandleError, ReferenceHandleResolver
 
     session = _session(tmp_path)
     _receipt(session, "task_turn_effect:run:1:0")
@@ -84,3 +92,33 @@ def test_namespaces_do_not_allow_receipt_or_source_alias_confusion(tmp_path) -> 
     assert resolver.resolve("r1").kind == "search_result"
     with pytest.raises(ReferenceHandleError):
         resolver.resolve("r2")
+
+
+def test_read_tool_result_accepts_a_receipt_handle_without_copying_the_full_id(tmp_path) -> None:
+    from codey.operations.tool_result_reader import read_tool_result
+    from codey.runtime.core.models import ToolCall
+
+    session = _session(tmp_path)
+    _receipt(session, "task_turn_effect:run:1:0")
+
+    class Context:
+        managed_outputs = None
+        session_id = "session"
+        run_id = "run"
+
+        def __init__(self, current):
+            self.session = current
+
+    result = read_tool_result(Context(session), ToolCall("read_tool_result", {"result_ref": "rc1"}))
+    assert result.ok
+    assert result.canonical["receipt_page"]["result_ref"] == "task_turn_effect:run:1:0"
+
+
+def test_result_prompt_exposes_the_short_receipt_handle(tmp_path) -> None:
+    from codey.operations.kernel_prompt import _result_context
+
+    session = _session(tmp_path)
+    _receipt(session, "task_turn_effect:run:1:0")
+    result = session._memory_results["task_turn_effect:run:1:0"]
+    prompt = _result_context(result, session)
+    assert "Receipt display handle: rc1" in prompt

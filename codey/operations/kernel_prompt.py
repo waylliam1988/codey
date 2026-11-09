@@ -284,6 +284,15 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
             if result.truncated else "If more detail is needed, use read_tool_result."
         )
         text += f"\n\n{render_result_metadata(result_ref, tool=result.call.name, ok=result.ok)}\n"
+        from codey.operations.reference_handles import ReferenceHandleError, ReferenceHandleResolver
+
+        try:
+            receipt_handle = ReferenceHandleResolver(session).handle_for(result_ref)
+        except ReferenceHandleError:
+            receipt_handle = ""
+        if receipt_handle:
+            text += (f"Receipt display handle: {receipt_handle}. You may pass this short handle to "
+                     "read_tool_result; the program resolves it to this task's committed receipt.\n")
         if source_result and receipt_recovery:
             text += ("result_ref identifies this tool receipt only; it is not a source URL, source offset or hit id. "
                      "Use read_tool_result only to recover an omitted receipt, copying the complete result_ref.")

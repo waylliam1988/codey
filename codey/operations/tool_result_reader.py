@@ -96,6 +96,13 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResu
         identity = call.args.get("result_ref")
         if not isinstance(identity, str):
             raise ValueError("stored result unavailable in this task")
+        if identity.startswith("rc"):
+            from codey.operations.reference_handles import ReferenceHandleError, ReferenceHandleResolver
+
+            try:
+                identity = ReferenceHandleResolver(delegate.session).resolve(identity).ref
+            except ReferenceHandleError as exc:
+                raise ValueError(str(exc)) from exc
         offset, limit = call.args.get("offset", 0), call.args.get("limit", 4000)
         if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 8000:
             raise ValueError("invalid stored result page")
@@ -107,7 +114,7 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResu
             raise ValueError("view must be output or value")
         result = delegate.session._memory_results.get(identity)
         if result is None:
-            raise ValueError("stored result unavailable in this task; copy the complete result_ref from Result metadata, "
+            raise ValueError("stored result unavailable in this task; use a receipt handle or complete result_ref, "
                              "not an out_ artifact handle, search result id or source id")
         execution = execution_receipt(result)
         if execution is not None:
