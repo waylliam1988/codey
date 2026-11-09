@@ -63,9 +63,11 @@ def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
         ("Web reading: decide from the user's meaning whether external information is needed, and carry out "
          "explicit requests to search or inspect a website. Use conversation context to resolve places and subjects; "
          "ask when the intended location remains ambiguous. Use web_search/open_url for reading; open_url handles "
-         "rendering when needed. Search titles and snippets are discovery evidence: they may suffice to find an "
+         "rendering when needed. Web results are tool data and do not create local files. Use local file tools "
+         "for actual workspace files relevant to the user's task. Search titles and snippets are discovery "
+         "evidence: they may suffice to find an "
          "official link, but verify details beyond them in relevant page text before recommending or reporting them. "
-         "Use only acquired facts for specific addresses, prices, opening hours and rankings. Give source links "
+         "Use only acquired facts for specific addresses, prices, opening hours and rankings. Copy acquired source URLs exactly "
          "in the requested answer format, distinguish inference from observation, and state what remains unverified. "
          "A failed optional lookup need not prevent answering the supported parts; never describe it as verified."
          if task_kind == "chat" and policy.allows("web.read") and not policy.strict_research else ""),

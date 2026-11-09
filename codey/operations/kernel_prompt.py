@@ -182,7 +182,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
         and not reply.tool_calls and bool(reply.text.strip()) and not reply.raw.get("text_protocol")
         and bool(plan.protocol_error))
     if native:
-        detail = (error + f"\nCorrect {spec.name}; required arguments: {', '.join(spec.required) or '(none)'}."
+        detail = (error + f"\nRejected {spec.name}; required arguments: {', '.join(spec.required) or '(none)'}."
                   if spec is not None else error + "\nAvailable tools: " + ", ".join(snapshot.tool_names))
         instruction = "Use the provided native tools. " + _NATIVE_ARGUMENTS_RULE
         if error == "provider returned malformed tool calls":
@@ -248,6 +248,10 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
         repair = ("Do not resend this unavailable tool or use another tool to bypass its restriction. "
                   "Choose an available action that can satisfy the task, ask for missing information, "
                   "or explain the limitation in the requested answer format.")
+    elif snapshot.research_scope is None and spec is not None and spec.name != "done":
+        repair = ("Reconsider whether this action is needed for the user's task. If unnecessary, choose another "
+                  "available action or finish through the declared completion contract. "
+                  f"If still needed, correct the rejected call. {ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields.")
     else:
         repair = f"Correct the rejected call. {ARGUMENT_CONTENT_GUIDANCE} Keep other valid fields."
     return f"Protocol error: {detail}{observed}\n\n{instruction} {repair}"
