@@ -10,7 +10,7 @@
 - 新增和改动边界使用明确类型，消除所触及路径的动态类型；不添加 `Any`、类型豁免或防御性冗余分支。
 - 优先直接相关测试；不主动运行完整 pytest、覆盖率或安装包构建。必要扩大范围时先说明原因。
 - 测试失败按契约定位根因，区分测试陈旧与生产缺陷；不以放宽生产验证迁就测试。
-- 基线 HEAD：`3d889439`。开始时已有 `codey/runtime.json` 修改和三份未跟踪的分析报告，均不纳入实现提交。
+- 本批开始 HEAD：`ad7d0c1e`。`runtime.json` 与参考报告已经作为 `aef756dd` 单独提交；本批只修改浏览器会话身份和相关测试。
 
 ## 四批交付
 
@@ -72,3 +72,13 @@
 - 冷启动新合同保持 v1；原来源账本、immutable passage、intent/settlement 和已提交回执仍是唯一事实与恢复依据。
 - 默认获取策略保持原样：普通 Chat HTTP-first，仅既有 app shell 升级浏览器；Research 保留原 connector/browser 路径。本轮没有引入新的浏览器交互工具、browser-first 默认或第二套 agent loop。
 - 实机中不能归因于确定性实现的模型输出问题均保留原始证据，不以放宽生产校验掩盖。
+
+### 批次 5：浏览器目标绑定与所有权
+
+- `Session` 增加明确的 browser/context/page 进程内绑定。绑定包含三个对象身份；动作调用方必须先用同一绑定校验页面，跨 context、同 context 的其他 page、已关闭 page 和替代 page 都不能复用旧绑定。
+- 会话现在区分浏览器、context 和 page 的所有权。任务创建的页面在收尾时关闭；借用的用户页面不因会话收尾而关闭；自有 headless 浏览器仍完整关闭其 context 和页面。
+- `open_chat_page` 不再在多个 context 存在时静默选择第一个 context 创建未绑定页面；没有明确可用 context 时报错。既有匹配页仍保持借用语义。
+- 新增真实 Chromium 用例 `tests/test_browser_session_binding.py`，覆盖跨页／跨 context、页面丢失后不能被替代页满足、以及自有浏览器资源释放。相关浏览器与来源回归共 `65 passed`。
+- KoboldCpp/Gemma4 生产 headless/kernel 实机：`.e2e-artifacts/browser-research-next/batch5-binding/summary.json` 与 `batch5-binding-codemode/summary.json` 均 `passed=true`、`stop_reason=done`；版本命中、续读和 CodeMode 来源读取保持原合同。该批不改变模型可用工具，收益是目标身份与资源收尾的确定性安全边界，不把模型回答质量诊断冒充收益证明。
+- 直接执行 `python tools/source_convergence_live_gate.py` 首次只暴露了测试入口的 `ModuleNotFoundError: tools`；按模块入口 `python -m tools.source_convergence_live_gate` 重跑通过，未修改生产代码迁就测试工具。
+- 改动文件 Ruff、Mypy、Pyrefly 均通过；`codey/automation/browser.py` 本批去除了原有 `Any` 返回类型，未新增动态类型、豁免或第二套运行时。

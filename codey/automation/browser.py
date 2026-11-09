@@ -18,7 +18,6 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -27,6 +26,7 @@ from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 from codey.env_names import BROWSER_PATH_ENV
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, decode_json_value
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 QWEN_URL = "https://chat.qwen.ai/"
@@ -39,9 +39,9 @@ CDP_PORT_WAIT_TIMEOUT = 20.0
 WARMUP_CDP_CONNECT_TIMEOUT_MS = 8_000
 WARMUP_NAVIGATION_TIMEOUT_MS = 10_000
 WARMUP_PORT_TIMEOUT = 10.0
-EDGE_PROFILE = DEFAULT_STATE_HOME / "edge-profile"
-CHROME_PROFILE = DEFAULT_STATE_HOME / "chrome-profile"
-DEFAULT_PROFILE = EDGE_PROFILE
+EDGE_PROFILE: Path = DEFAULT_STATE_HOME / "edge-profile"
+CHROME_PROFILE: Path = DEFAULT_STATE_HOME / "chrome-profile"
+DEFAULT_PROFILE: Path = EDGE_PROFILE
 CDP_PORT_CANDIDATES = tuple(range(DEFAULT_PORT, DEFAULT_PORT + 17))
 CDP_STATE_FILE = DEFAULT_STATE_HOME / "cdp-port.json"
 ISOLATED_CDP_LAUNCH_ATTEMPTS = 3
@@ -233,7 +233,7 @@ def _candidate_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
     return tuple(ports)
 
 
-def _read_cdp_json(port: int, path: str, timeout: float = 1.0) -> Any:
+def _read_cdp_json(port: int, path: str, timeout: float = 1.0) -> JsonValue | None:
     if not _port_open(port):
         return None
     try:
@@ -241,7 +241,7 @@ def _read_cdp_json(port: int, path: str, timeout: float = 1.0) -> Any:
             raw = response.read(CDP_JSON_MAX_BYTES + 1)
         if len(raw) > CDP_JSON_MAX_BYTES:
             return None
-        return json.loads(raw.decode("utf-8", errors="replace"))
+        return decode_json_value(json.loads(raw.decode("utf-8", errors="replace")))
     except Exception:
         return None
 
@@ -251,12 +251,12 @@ def _cdp_available(port: int = DEFAULT_PORT) -> bool:
     return isinstance(data, dict) and bool(data.get("webSocketDebuggerUrl") or data.get("Browser"))
 
 
-def list_cdp_targets(port: int = DEFAULT_PORT, timeout: float = 1.0) -> list[dict[str, Any]]:
+def list_cdp_targets(port: int = DEFAULT_PORT, timeout: float = 1.0) -> list[JsonObject]:
     """Read Chromium CDP targets without starting Playwright or opening pages."""
     data = _read_cdp_json(port, "/json/list", timeout=timeout)
     if not isinstance(data, list):
         return []
-    return [item for item in data if isinstance(item, dict)]
+    return [decode_json_object(item) for item in data if isinstance(item, dict)]
 
 
 def detect_open_provider_tabs(port: int = DEFAULT_PORT) -> dict[str, bool]:
@@ -521,6 +521,19 @@ def warm_provider_tabs(
     return detect_open_provider_tabs(endpoint.port)
 
 
+class BrowserTargetBindingError(RuntimeError):
+    """The requested page is outside the session's bound browser target."""
+
+
+@dataclass(frozen=True)
+class BrowserTargetBinding:
+    """In-process identity for one browser, context and page target."""
+
+    browser_token: int
+    context_token: int
+    page_token: int
+
+
 @dataclass
 class Session:
     pw: Playwright
@@ -530,6 +543,32 @@ class Session:
     close_page_on_close: bool = False
     cdp_port: int = 0
     owns_browser: bool = False
+    owns_context: bool = False
+    owns_page: bool = False
+
+    def bind_page(self, page: Page | None = None) -> BrowserTargetBinding:
+        """Capture an exact page target owned or borrowed by this session."""
+        target = self.page if page is None else page
+        contexts = tuple(self.browser.contexts)
+        context = target.context
+        if context not in contexts or target not in tuple(context.pages):
+            raise BrowserTargetBindingError("page is not attached to this browser session")
+        return BrowserTargetBinding(id(self.browser), id(context), id(target))
+
+    def assert_bound(self, binding: BrowserTargetBinding, page: Page | None = None) -> Page:
+        """Reject a closed, replaced, or cross-context page before an action."""
+        target = self.page if page is None else page
+        actual = self.bind_page(target)
+        if actual != binding:
+            raise BrowserTargetBindingError("browser target binding does not match the requested page")
+        try:
+            if target.is_closed():
+                raise BrowserTargetBindingError("bound browser page is closed")
+        except BrowserTargetBindingError:
+            raise
+        except Exception as exc:
+            raise BrowserTargetBindingError(f"bound browser page cannot be observed: {exc}") from exc
+        return target
 
     def close(self) -> None:
         try:
@@ -542,7 +581,13 @@ class Session:
                         context.close()
                 if self.owns_browser:
                     self.browser.close()
-            elif self.close_page_on_close:
+            elif self.owns_context:
+                for context in self.browser.contexts:
+                    if context is self.page.context:
+                        with contextlib.suppress(Exception):
+                            context.close()
+                        break
+            elif self.close_page_on_close or self.owns_page:
                 with contextlib.suppress(Exception):
                     self.page.close()
         finally:
@@ -598,7 +643,7 @@ def open_headless_page(*, browser_path: str | None = None) -> Session:
             context = browser.new_context(service_workers="block", accept_downloads=False)
             page = context.new_page()
             cancellation.check()
-            return Session(pw, browser, page, owns_browser=True)
+            return Session(pw, browser, page, owns_browser=True, owns_context=True, owns_page=True)
         except BaseException:
             browser.close()
             raise
@@ -649,6 +694,7 @@ def open_chat_page(
         _check_cancelled_connection(pw)
 
         page: Page | None = None
+        owns_page = False
         if not fresh_tab:
             for ctx in browser.contexts:
                 for p in ctx.pages:
@@ -665,8 +711,11 @@ def open_chat_page(
         if page is None:
             if not open_if_missing:
                 raise RuntimeError(f"no existing provider tab matched {url_contains}")
+            if len(browser.contexts) > 1:
+                raise RuntimeError("cannot create an unbound page when multiple browser contexts exist")
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.new_page()
+            owns_page = True
             _check_cancelled_connection(pw)
             page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
 
@@ -679,8 +728,9 @@ def open_chat_page(
             browser=browser,
             page=page,
             process=endpoint.process,
-            close_page_on_close=fresh_tab,
+            close_page_on_close=owns_page or fresh_tab,
             cdp_port=endpoint.port,
+            owns_page=owns_page or fresh_tab,
         )
     except Exception:
         if pw is not None:
