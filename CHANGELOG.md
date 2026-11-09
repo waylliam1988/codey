@@ -4,6 +4,9 @@
 
 ## Unreleased
 
+- Restore the desktop titlebar and taskbar icons by passing the shipped Codey
+  icon to the native window startup, including launches outside the project directory.
+
 - Remove the `Attach files` button and collapse the empty attachment area to
   restore the compact composer. Keep file drop, image paste, previews, removal,
   upload retry, saved drafts and model image capability checks. Clear stale drag

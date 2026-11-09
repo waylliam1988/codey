@@ -1,6 +1,8 @@
 import json
 import sys
 import threading
+from collections.abc import Callable
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -230,14 +232,19 @@ def test_service_preparation_starts_without_document_loaded(tmp_path, monkeypatc
     def ensure(*args, **kwargs):
         order.append("service")
         return client()
-    def start(**kwargs):
+    def start(*, func: Callable[[], None], private_mode: bool, storage_path: str, icon: str) -> None:
         order.append("event-loop")
+        assert icon == str(Path(desktop.__file__).resolve().parents[1] / "web" / "icon.ico")
+        assert Path(icon).is_file()
+        assert not private_mode
+        assert storage_path == str(tmp_path / "webview")
         window.events.shown.fire()
-        kwargs["func"]()
+        func()
         window.events.loaded.fire()
         assert window.navigated.wait(5)
     monkeypatch.setitem(sys.modules, "webview", SimpleNamespace(create_window=create, start=start))
     monkeypatch.setattr(desktop_startup, "ensure_service", ensure)
+    monkeypatch.chdir(tmp_path)
     desktop.open_desktop(tmp_path, port=0)
     assert order == ["window", "event-loop", "service"]
     assert len(window.urls) == 1

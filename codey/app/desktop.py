@@ -21,4 +21,5 @@ def open_desktop(home: Path, *, port: int = 5173) -> None:
         window.events.shown += startup.shown
         window.events.loaded += startup.loaded
         window.events.closed += startup.close
-    webview.start(func=startup.start, private_mode=False, storage_path=str(home / "webview"))
+    icon = Path(__file__).resolve().parents[1] / "web" / "icon.ico"
+    webview.start(func=startup.start, private_mode=False, storage_path=str(home / "webview"), icon=str(icon))
