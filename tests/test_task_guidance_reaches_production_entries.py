@@ -35,6 +35,7 @@ def test_project_adapter_supplies_guidance_only_when_policy_requires_it(tmp_path
 def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, strict):
     from codey.app.context import AppContext
     from codey.operations.task_entry import run_entry_kernel
+    from codey.runtime.observe.execution_evidence import ExecutionEvidence
     from codey.task.model import TaskSubmission
     from tests.support.workspace_conversation import admit_entry_frame
 
@@ -44,7 +45,7 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
     frame = SimpleNamespace(request=submission, task_kind="project", run_id="r", provider=provider,
                             provider_id="deepseek", project_text=str(tmp_path), handoff="",
                             recovered_tool_outcomes=(), settled_tool_outcomes=(), recovered_tool_result_batch_id="",
-                            entry_initial_turn=None, window_action=None)
+                            entry_initial_turn=None, window_action=None, entry_policy=None, entry_session=None)
     hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
     state = AppContext(tmp_path / "state")
     admit_entry_frame(frame, state)
@@ -53,7 +54,7 @@ def test_formal_task_entry_supplies_guidance_from_original_policy(tmp_path, stri
     deps = SimpleNamespace(knowledge_store=None, runtime_mutations=state.runtime_mutations,
                            managed_outputs=state.managed_outputs, state=state)
     try:
-        outcome = run_entry_kernel(frame, SimpleNamespace(evidence=None, analysis_run_payloads=[]), hooks, deps)
+        outcome = run_entry_kernel(frame, SimpleNamespace(evidence=ExecutionEvidence(), analysis_run_payloads=[]), hooks, deps)
     finally:
         state.close()
     assert len(provider.sent) == 1

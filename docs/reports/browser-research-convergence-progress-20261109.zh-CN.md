@@ -6,6 +6,7 @@
 
 - 本批基线：`90e22d60`。将既有浏览器正文settle预算从4秒提升至8秒；正文可用即返回，既有16秒获取预算和更早调用期限继续生效。无需模型决定等待方式或新增prompt。
 - 本批新增：Research `ANSWER_GUIDANCE` 保留完整三句 query guidance；补充只保留第三句的12次实机对照为4/6，而完整三句此前两道查询题各3/3。该提示改善检索和原文核验，不保证补齐默认期限等研究缺口。
+- 后续合同回归修正仅涉及测试：正式入口夹具补齐 `entry_policy`、`entry_session` 与 `ExecutionEvidence`；`open_hit` 夹具改为提供捕获快照和真实 passage；网络读取 replay 分类断言更新为当前 `unsafe` 合同。生产代码未因测试失败增加兼容分支；相关两组扩展回归最终 `109 passed`。
 - 前序实验生产基线：`03971de4`。实验阶段共完成207份正式任务结果及5份预检结果，共212份；原始产物保留。
 - 目录均在 `.e2e-artifacts/browser-research-next/` 下：`remaining-20261109-v2/` 完成9次诊断及delta/bounded/settle/query各24次，共105次；活动query矩阵正常收尾后停止父调度器，v2未生成整轮 `completed.json`。
 - `remaining-20261109-v3-fixed-clock/` 完成query24、followup24、ranking18、completion24，共90次，已有 `completed.json`。发现请求时钟变化后，仅在实验脚本固定模型看到的UTC 2026-11-09 10:00，复用生产clock renderer；真实计时、期限和浏览器未替换。90个任务的414份API请求均含相同的固定时钟，模型与temperature一致；版本题基线的初始payload哈希也一致。v2/query作为探索结果保留，包含候选不受原文支持的默认期断言，不与v3混作同一冻结轮。

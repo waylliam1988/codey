@@ -344,6 +344,8 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.research.ledger import ResearchLedger
+    from codey.research.ledger_receipts import source_observation
+    from codey.research.passages import describe_window
     from codey.research.tools import ResearchToolOutput
     from codey.runtime.core.models import ToolCall
 
@@ -354,9 +356,10 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
     opened: list[tuple[str, int]] = []
 
     class Tools:
-        ledger = ResearchLedger()
-        sources_read: set[str] = set()
-        search_result_urls: set[str] = set()
+        def __init__(self) -> None:
+            self.ledger = ResearchLedger()
+            self.sources_read: set[str] = set()
+            self.search_result_urls: set[str] = set()
 
         def source_search(self, target, _query, _limit):
             assert target == url
@@ -364,12 +367,17 @@ def test_open_hit_uses_source_locator_in_shared_research_kernel() -> None:
                                                               "snippet": "relevant excerpt"}])
             return ResearchToolOutput("source_search results\n1. offset 123: relevant excerpt", ok=True)
 
-        def open_url(self, target, offset=0, limit=6000, pages=""):
-            opened.append((target, offset))
-            self.ledger.record_open(target, target, "Long", "relevant excerpt")
-            return ResearchToolOutput(model_text="Title: Long\nrelevant excerpt", ok=True)
+        def read_source(self, observation, *, offset=0, limit=6000, pages=""):
+            opened.append((url, offset))
+            source, text, _pages = source_observation(observation)
+            return ResearchToolOutput(model_text="Title: Long\nrelevant excerpt",
+                                      read_observation=observation,
+                                      read_passages=tuple(describe_window(source.final_url, source.text_hash,
+                                                                          text, offset, limit)), ok=True)
 
     tools = Tools()
+    source_text = "x" * 123 + "relevant excerpt"
+    tools.ledger.record_open(url, url, "Long", source_text)
     search = execute_turn(session, [ToolCall("source_search", {"url": url, "query": "relevant"})],
                           research_tools=tools, run_id="r", turn=1)[0]
     assert "h1" in search.model_text
@@ -1002,8 +1010,8 @@ def test_shared_effect_replay_class_matches_tool_contract(tmp_path) -> None:
     sink.begin_turn([(f"effect-{i}", call, i) for i, call in enumerate(calls)], turn=1)
     rows = {row.intent.tool_name: row.intent.replay_class
             for row in RuntimeEffectStore(durable=durable).load_effects("s", "r")}
-    assert rows["web_search"] == "safe"
-    assert rows["open_url"] == "safe"
+    assert rows["web_search"] == "unsafe"
+    assert rows["open_url"] == "unsafe"
     assert rows["knowledge_write"] == "unsafe"
     durable.close()
 
