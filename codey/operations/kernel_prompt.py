@@ -47,9 +47,8 @@ def _native_final_rule(*, structured_report: bool) -> str:
         return ("Call done with report_sections.coverage containing one answer per question. "
                 "The application generates the report from those answers and their selected findings. "
                 "Do not add summary or independent evidence/counter prose.")
-    return ("For the final answer, use done with a summary string if declared. summary contains the complete response "
-            "in the user's requested final format. Requested JSON is a bare document without Markdown fences "
-            "inside summary, not the outer tool-call object.")
+    return ("For the final answer, use done with a summary string if declared. summary contains the complete "
+            "user-facing answer in the user's requested final format, not the outer tool-call object.")
 
 
 def _native_done_guidance(spec: ToolSpec | None) -> str:
@@ -136,7 +135,8 @@ def kernel_prompt_for_session(
             r'For example: "content":"first line\nsecond line\n".'
         )
     parts.append(
-        "Preserve the user's requested final format, including JSON if requested. "
+        "Follow the user's requested final format. Otherwise, answer naturally in the user's language, "
+        "using Markdown when helpful. "
         "If the task cannot be completed within authorized capabilities, report it as blocked with the reason; "
         "never claim a fix or passing verification that did not happen. For completed changes, required checks "
         "must pass on the current workspace before completion. Tool availability alone does not require edits or tests. "

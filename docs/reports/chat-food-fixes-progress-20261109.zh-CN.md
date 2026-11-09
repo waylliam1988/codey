@@ -5,10 +5,10 @@
 ## 当前接续点
 
 - 基线：`aef756dd`。初始工作树只有上一轮新增、尚未提交的诊断报告。
-- 第 1 批已完成，待本批提交：折叠 Thinking 的富文本复制修复。
-- 第 2 批待办：完成提示默认自然回答，保留用户显式格式。
+- 第 1 批已提交：`fcc5fe7c`，折叠 Thinking 的富文本复制修复。
+- 第 2 批已完成，待本批提交：完成提示默认自然回答，保留用户显式格式；86 条定向测试与 20 次本地模型配对通过。
 - 第 3 批待办：网页/本地文件语义与放弃无关错误调用的纠错指引。
-- 尚未创建本轮提交；不部署服务、不修改用户配置和原始会话。
+- 不部署服务、不修改用户配置和原始会话。
 
 ## 验证边界
 
@@ -39,7 +39,17 @@
 
 用户补充：Solar mini4 额度耗尽，实机改用本地模型。本轮各批均只用本地 KoboldCpp，不调用云端模型；原涉事 Solar/Nemotron 的跨模型收益不在本轮已验证范围内。
 
-结果：待填。
+结果：`kernel_prompt.py` 移除 native 完成规则中的“裸 JSON”示例说明；通用完成提示明确用户格式优先、默认使用用户语言自然回答及适当 Markdown。原生工具参数编码、文本工具调用 JSON、显式 JSON 输出检查与结构化 Research 合同均保留。
+
+- 新增 `tools/chat_answer_format_gate.py`：每个独立 worker 使用生产 headless/kernel/provider，旧提示只在基线 worker 临时还原两个已审阅片段；不更改源响应或模型回复。网页获取统一使用明确标记的受控来源，真实模型温度 0，第二轮反转两版本顺序。
+- 五类任务各两轮配对：自然介绍、显式 JSON、Markdown 表格、多行 Python 代码、原始网页问题；旧/新各 10/10 格式条件通过。总轮数 18 / 17，总 prompt tokens 100,299 / 94,229，单任务耗时中位数 7.429 / 7.5465 秒；小样本不证明稳定提速或 Nemotron 故障已消失。
+- 另跑未经实验 patch 的真实联网原问题：3 轮 done，1 搜索 + 1 正文读取，带实际链接，结构条件通过，54.469 秒。产物 `.e2e-artifacts/chat-food-fixes-20261109/batch2-live/`。
+- 定向 pytest：`test_chat_final_format_guidance`、`test_native_final_answer_protocol_repair`、`test_kernel_runtime_guidance_for_verified_and_blocked_tasks`、`test_kernel_prompt_task_guidance_ownership`、`test_answer_observation_requirements`、`test_contract_rendering_and_scoped_repair`、`test_native_tool_prompts_use_wire_schemas_without_text_wrappers`，共 86 通过。实验工具的表格顺序判断改为允许任意菜品顺序后，新文件 7 条重跑通过。
+- 本批三个 Python 文件的 Ruff、mypy / Pyrefly / ty（Python 3.11）和受保护类型精度门禁通过，未新增动态类型。mypy 首次将 tools 同时识别为裸模块与命名空间模块，修正为 `--explicit-package-bases`；实验搜索夹具的切片推断为 `list[dict[str,str]]`，通过声明真实 `list[JsonObject]` 在其所有者修复，未放宽类型。Pyrefly 报 0 error、2 条未展开的 warning；不宣称无 warning。
+
+人工审阅：自然介绍任务有时只读搜索摘要，旧/新表格都曾把肉燕解释为普通肉馅或加入牛肉。此为模型内容准确性与来源使用不足，不是本批格式规则或网页抽取的确定性错误；不把机械格式通过宣传为事实准确。前期非 web 任务 manifest 的 `source_mode:none` 描述不精确，实际网络工具也使用同一受控夹具；工具已改为 `controlled_if_called`，原始产物保留，分析以事件和 provider 请求为准。
+
+配对产物：`.e2e-artifacts/chat-food-fixes-20261109/batch2-format/`，含计划、20 次完整 provider/事件、逐项答案、`usage-review.json`。用户要求改用本地模型，因此未运行 Solar/Nemotron 云端配对。
 
 ## 第 3 批：工具选择与纠错
 
