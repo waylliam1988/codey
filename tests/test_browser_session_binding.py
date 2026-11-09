@@ -2,26 +2,17 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import pytest
 
 from codey.automation.browser import (
     BrowserTargetBindingError,
     open_headless_page,
 )
-
-
-def _chromium_executable() -> str:
-    root = Path(os.environ["LOCALAPPDATA"]) / "ms-playwright"
-    candidates = sorted(root.glob("chromium-*/chrome-win64/chrome.exe"))
-    assert candidates, "Playwright Chromium is not installed"
-    return str(candidates[-1])
+from tests.support.real_cdp import chromium_executable
 
 
 def test_headless_session_binding_rejects_other_page_and_context() -> None:
-    session = open_headless_page(browser_path=_chromium_executable())
+    session = open_headless_page(browser_path=chromium_executable())
     other_context = session.browser.new_context()
     other_page = other_context.new_page()
     same_context_page = session.page.context.new_page()
@@ -41,7 +32,7 @@ def test_headless_session_binding_rejects_other_page_and_context() -> None:
 
 
 def test_headless_session_binding_reports_lost_page_without_replacement() -> None:
-    session = open_headless_page(browser_path=_chromium_executable())
+    session = open_headless_page(browser_path=chromium_executable())
     replacement = session.page.context.new_page()
     try:
         binding = session.bind_page(session.page)
@@ -55,7 +46,7 @@ def test_headless_session_binding_reports_lost_page_without_replacement() -> Non
 
 
 def test_owned_headless_session_closes_its_browser_resources() -> None:
-    session = open_headless_page(browser_path=_chromium_executable())
+    session = open_headless_page(browser_path=chromium_executable())
     extra_page = session.page.context.new_page()
     browser = session.browser
     session.close()

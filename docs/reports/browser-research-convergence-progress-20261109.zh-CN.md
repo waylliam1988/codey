@@ -120,3 +120,13 @@
 - KoboldCpp `batch8-read-diagnostic/summary.json` 为 `passed=true / done`：单次导航，真实填写/点击/等待/滚动，browser_read 捕获展开正文，模型以 `[e2]` 发布“鱼丸净重 173 克”；原 `[e1]` 仍绑定初始正文。`batch8-research-regression` 同样通过。
 - 自然任务 `batch8-natural-a` 未得到收益：模型只做 source_search 就停止，答案还把没有命中的搜索误述为找到了记录。这是模型选择/复述边界，原始失败保留；不据此扩大默认工具面，不用步骤诊断替代自然任务。
 - Ruff、Mypy、Pyrefly、ty 通过；修改文件没有显式 `Any` 或类型豁免。本批无新增打包模块，不运行安装包或全量 pytest。
+
+### 批次 9：真实 CDP 所有权与收尾缺陷
+
+- 新增专用临时 profile 的真实 Chromium/CDP 生命周期测试，仅固定 endpoint 发现边界，CDP 连接、导航、DOM、页面/进程退出和生产 Session/provider 收尾均真实执行，不连接或关闭用户实际浏览器。
+- 测试确认了生产缺陷：连接借用浏览器时，provider 另外创建的文章页在任务收尾后泄漏。`ResumableBrowserSearchProvider` 现先关闭任务创建的非 Session 页面，再交原 Session 按所有权释放；借用的原页面只释放路由，不因搜索失败而被关闭。没有另建所有权表、双写或第二套 session。
+- 真实 CDP 断开并在同端口启动新浏览器，旧 binding 不能匹配；多 context 同名按钮只影响目标页；页面关闭后同名替代页不能满足绑定；借用用户页保持内容且浏览器连接仍在。等待中取消测试确认原 BrowserWorker 丢弃迟到结果，可继续正确观察。
+- 初始 CDP 夹具只有17字，按既有最小24字可读合同正确返回 page_blank；修正夹具正文后，测试才进入真正的资源释放断言并暴露泄漏。没有降低生产正文判定来迁就夹具。
+- 共用一个 Chromium 路径/临时 CDP 启动测试 helper，删除三个测试文件里的重复查找。正文截断上限引用 `extract.py` 原常量，移除适配层重复字面量。
+- 相关真实浏览器、会话、恢复和失败页回归 `57 passed`。KoboldCpp `batch9-cdp-diagnostic/summary.json` `passed=true / done`，经过借用 CDP 浏览器的生产 provider/kernel，交互、同页 capture 与 eN 答案正确完成。
+- Ruff、Mypy、Pyrefly、ty 和 kernel precision gate 通过，改动文件无显式 `Any` 或新豁免。首个 Mypy 提示截断常量的隐式转导出，已改为从真正 owner `extract.py` 导入。

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import os
 import threading
+import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -22,13 +21,7 @@ from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.source_reading import render_source_read
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
-
-
-def _chromium_executable() -> str:
-    root = Path(os.environ["LOCALAPPDATA"]) / "ms-playwright"
-    candidates = sorted(root.glob("chromium-*/chrome-win64/chrome.exe"))
-    assert candidates, "Playwright Chromium is not installed"
-    return str(candidates[-1])
+from tests.support.real_cdp import chromium_executable
 
 
 class _InteractionHandler(BaseHTTPRequestHandler):
@@ -52,7 +45,7 @@ def browser_fixture(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     provider = ResumableBrowserSearchProvider(headless=True, http_fallback=False,
-                                              browser_path=_chromium_executable())
+                                              browser_path=chromium_executable())
 
     def allow_fetch(_url: str, *, use_cache: bool = False) -> str:
         return ""
@@ -166,6 +159,23 @@ def test_wait_requires_visible_condition_and_propagates_cancel(
     event.set()
     with cancellation.scope(event), pytest.raises(cancellation.TaskCancelled):
         interaction.wait("text", "Never", 1000)
+
+
+def test_cancel_during_wait_stops_browser_job(
+    browser_fixture: tuple[ResumableBrowserSearchProvider, BrowserInteraction],
+) -> None:
+    _, interaction = browser_fixture
+    event = threading.Event()
+    timer = threading.Timer(0.2, event.set)
+    timer.start()
+    started = time.monotonic()
+    try:
+        with cancellation.scope(event), pytest.raises(cancellation.TaskCancelled):
+            interaction.wait("text", "Never appearing condition", 10000)
+        assert time.monotonic() - started < 2
+        assert interaction.snapshot().ok
+    finally:
+        timer.join(timeout=1)
 
 
 def test_lost_click_acknowledgement_is_not_replayed(

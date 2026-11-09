@@ -14,7 +14,7 @@ from codey.research.browser_search import (
     _requires_login,
     _search_browser_call,
 )
-from codey.research.extract import _usable_fetch_page_text, extract_title
+from codey.research.extract import _MAX_PAGE_CHARS, _usable_fetch_page_text, extract_title
 from codey.research.source_acquisition import with_attempt
 
 
@@ -25,6 +25,28 @@ class ResumableBrowserSearchProvider(BrowserSearchProvider):
         """Retain the bound page; task cancellation still closes the session."""
         if page is not self._fetch_page:
             super()._discard_fetch_page_on_browser_thread(page)
+
+    def _discard_search_page_on_browser_thread(self, page: Page) -> None:
+        session = self._session
+        if (session is not None and page is session.page and not session.owns_page
+                and not session.owns_browser and session.process is None):
+            self._release_page_guard_on_browser_thread(page)
+            self._search_page = None
+            return
+        super()._discard_search_page_on_browser_thread(page)
+
+    def _close_on_browser_thread(self) -> None:
+        session = self._session
+        if (session is not None and session.process is None and not session.owns_browser
+                and not session.owns_context):
+            pages = {id(page): page for page in (cast(Page | None, self._fetch_page), cast(Page | None, self._search_page))
+                     if page is not None and page is not session.page}
+            for page in pages.values():
+                self._discard_page_on_browser_thread(page)
+            self._fetch_page = None
+            if self._search_page is not session.page:
+                self._search_page = None
+        super()._close_on_browser_thread()
 
     def resume_fetch(self) -> dict[str, object]:
         """Read the current bound page without navigating or acquiring a URL again."""
@@ -59,9 +81,9 @@ class ResumableBrowserSearchProvider(BrowserSearchProvider):
                 code="page_not_loaded",
                 delivery="confirmed",
             )
-        truncated = len(text) > 200_000
+        truncated = len(text) > _MAX_PAGE_CHARS
         if truncated:
-            text = text[:200_000]
+            text = text[:_MAX_PAGE_CHARS]
         return {
             "status": "ok",
             "url": url,

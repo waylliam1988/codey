@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -13,13 +11,7 @@ from playwright.sync_api import Page
 
 from codey.research import browser_search
 from codey.research.resumable_browser import ResumableBrowserSearchProvider
-
-
-def _chromium_executable() -> str:
-    root = Path(os.environ["LOCALAPPDATA"]) / "ms-playwright"
-    candidates = sorted(root.glob("chromium-*/chrome-win64/chrome.exe"))
-    assert candidates, "Playwright Chromium is not installed"
-    return str(candidates[-1])
+from tests.support.real_cdp import chromium_executable
 
 
 class _ChallengeHandler(BaseHTTPRequestHandler):
@@ -48,7 +40,7 @@ def test_research_provider_retains_challenge_page_and_resumes_in_place(
     provider = ResumableBrowserSearchProvider(
         headless=True,
         http_fallback=False,
-        browser_path=_chromium_executable(),
+        browser_path=chromium_executable(),
     )
     def allow_fetch(_url: str, *, use_cache: bool = False) -> str:
         return ""
@@ -81,7 +73,7 @@ def test_research_provider_retains_challenge_page_and_resumes_in_place(
 
 def test_resumable_provider_reports_missing_page_after_close() -> None:
     provider = ResumableBrowserSearchProvider(headless=True, http_fallback=False,
-                                              browser_path=_chromium_executable())
+                                              browser_path=chromium_executable())
     try:
         provider.close()
         result = provider.resume_fetch()

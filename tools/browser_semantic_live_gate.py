@@ -17,6 +17,7 @@ from unittest.mock import patch
 from playwright.sync_api import Route
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
+from codey.automation.browser import CdpEndpoint
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations.task_execution import ExecutionDelegate
 from codey.research import answer_contract
@@ -31,6 +32,7 @@ from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import register_custom_executor, register_custom_tool, unregister_custom_tool
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, require_json_integer
+from tests.support.real_cdp import cdp_browser
 from tools import local_model_gate_attempts as attempts
 from tools.shell_web_diagnostic_gate import select_target
 
@@ -81,9 +83,10 @@ def execute_browser(call: ToolCall, browser: BrowserInteraction) -> ToolResult:
                       canonical={"browser_observation": output.observation})
 
 
-def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool) -> JsonObject:
+def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, cdp_port: int = 0) -> JsonObject:
     target = select_target("gemma", timeout, "http://127.0.0.1:5001/v1")
-    provider = ResumableBrowserSearchProvider(headless=True, http_fallback=False)
+    provider = ResumableBrowserSearchProvider(headless=not bool(cdp_port), isolated=False,
+                                              cdp_port=cdp_port or 9262, http_fallback=False)
     browser = BrowserInteraction(provider)
     task = (f"查看 {URL} 中福州样本的鱼丸净重，说明页面实际显示的数值。"
             "只使用这个来源；如果材料不足，请如实说明。不要保存知识。")
@@ -116,11 +119,15 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool) -
     def source_factory() -> ResumableBrowserSearchProvider:
         return provider
 
+    def endpoint(**kwargs: object) -> CdpEndpoint:
+        return CdpEndpoint(cdp_port, None)
+
     def executor(call: ToolCall) -> ToolResult:
         return execute_browser(call, browser)
 
     manifest: JsonObject = {"candidate": candidate, "diagnostic": diagnostic, "task": task,
         "model": target.model, "temperature": target.temperature,
+        "connection": "cdp" if cdp_port else "headless_owned",
         "git_head": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
         "scope": "real_model_production_kernel_real_browser_controlled_document"}
     (directory / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -142,6 +149,8 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool) -
             stack.enter_context(patch("codey.research.browser_search.BrowserSearchProvider._guard_request", route_document))
             stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", source_factory))
             stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory))
+            if cdp_port:
+                stack.enter_context(patch("codey.automation.browser._ensure_cdp_endpoint", endpoint))
             if candidate:
                 stack.enter_context(patch.object(answer_contract, "ANSWER_TOOLS", (*answer_contract.ANSWER_TOOLS, *BROWSER_TOOLS)))
             result = run_headless(HeadlessRequest(None, task, intent="research", provider_id="local", max_turns=14,
@@ -205,10 +214,15 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--candidate", action="store_true")
     parser.add_argument("--diagnostic", action="store_true")
+    parser.add_argument("--cdp", action="store_true", help="Use an owned test browser via real CDP")
     args = parser.parse_args()
     directory = args.run_dir.resolve()
     directory.mkdir(parents=True, exist_ok=False)
-    report = run(directory, args.timeout, candidate=args.candidate, diagnostic=args.diagnostic)
+    if args.cdp:
+        with cdp_browser(directory / "browser-profile") as port:
+            report = run(directory, args.timeout, candidate=args.candidate, diagnostic=args.diagnostic, cdp_port=port)
+    else:
+        report = run(directory, args.timeout, candidate=args.candidate, diagnostic=args.diagnostic)
     print(json.dumps({"passed": report["passed"], "stop_reason": report["stop_reason"]}), flush=True)
     return 0 if report["passed"] is True else 1
 
