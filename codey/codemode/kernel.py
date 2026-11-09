@@ -142,6 +142,7 @@ def build_execute_turn_executor(  # noqa: PLR0915
 ) -> Callable[[ToolCall], ToolResult]:
     """Build the production parent executor; every child re-enters execute_turn."""
     from codey.operations.kernel_execution import execute_turn
+    from codey.operations.task_effects import KernelEffectSink
 
     frozen_specs = getattr(snapshot, "frozen_specs", ()) or ()
     specs = {str(getattr(spec, "name", "")): spec for spec in frozen_specs}
@@ -150,6 +151,9 @@ def build_execute_turn_executor(  # noqa: PLR0915
         allow_writes=allow_writes,
     )
     child_executors = {key: value for key, value in dict(executors or {}).items() if key != "codemode"}
+    effective_session_id = session_id
+    if not effective_session_id and isinstance(intent_sink, KernelEffectSink):
+        effective_session_id = intent_sink.session_id
 
     def run_parent(call: ToolCall) -> ToolResult:
         from codey.operations.task_session import turn_effect_id
@@ -164,7 +168,8 @@ def build_execute_turn_executor(  # noqa: PLR0915
 
             try:
                 repair_context = resolve_repair_context(
-                    session, repair_token_value, run_id=str(run_id or ""), catalog=catalog,
+                    session, repair_token_value, session_id=effective_session_id,
+                    run_id=str(run_id or ""), catalog=catalog,
                 )
             except CodeModeReplayError as exc:
                 return ToolResult(
@@ -172,8 +177,6 @@ def build_execute_turn_executor(  # noqa: PLR0915
                     audit={"error_code": "repair_rejected"}, canonical={"child_effect_ids": []},
                 )
             child_effect_ids.extend(child.effect_id for child in repair_context.children)
-        from codey.operations.task_effects import KernelEffectSink
-
         child_sink = intent_sink.for_child(call, turn=turn) if isinstance(intent_sink, KernelEffectSink) else intent_sink
         runtime = (runtime_factory or NodeWorkerRuntime)()
         replay = None
@@ -297,7 +300,7 @@ def build_execute_turn_executor(  # noqa: PLR0915
                 from codey.codemode.replay import repair_catalog_digest, repair_metadata
                 child_names = [session.executed[ref]["name"] for ref in child_effect_ids]
                 metadata = repair_metadata(
-                    parent_id, str(result.audit["error_code"]), child_effect_ids,
+                    effective_session_id, parent_id, str(result.audit["error_code"]), child_effect_ids,
                     repair_catalog_digest(catalog, child_names),
                 )
                 result = replace(result, canonical={**result.canonical, "repair": metadata})

@@ -14,6 +14,7 @@ def _run_codemode(
     executor: object = None,
     repair_of: str | None = None,
     research_tools: object = None,
+    session_id: str = "",
 ):
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.operations.kernel_execution import execute_turn
@@ -23,7 +24,7 @@ def _run_codemode(
     snapshot = build_turn_snapshot(session)
     builder_args = {
         "session": session, "snapshot": snapshot, "run_id": "repair-run", "effect_scope": "task",
-        "turn": turn, "project_path": project,
+        "turn": turn, "project_path": project, "session_id": session_id,
     }
     if executor is not None:
         builder_args["executors"] = {"open_url": executor}
@@ -101,6 +102,50 @@ def test_return_only_repair_reuses_the_original_child_receipt(tmp_path, monkeypa
     assert repaired.ok, repaired.model_text
     assert "V1" in repaired.canonical["value"]
     assert repaired.audit["recovery_disposition"] == "receipt_replay"
+    assert source.calls == 1
+
+
+def test_repair_token_is_bound_to_the_original_session(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.research.tools import ResearchTools
+
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: None)
+    policy = TaskPolicy(frozenset({"control", "project.read", "web.read"}))
+
+    class Source:
+        calls = 0
+
+        def search(self, _query: str, *, limit: int):
+            return []
+
+        def fetch(self, url: str):
+            self.calls += 1
+            return {"status": "ok", "url": url, "title": "Article", "content_kind": "html",
+                    "text": "V1\n" * 80}
+
+    source = Source()
+    research_tools = ResearchTools(source, None, None)
+    original = TaskSession(policy, project=str(tmp_path))
+    failed = _run_codemode(
+        original, tmp_path, turn=1, call_id="first", research_tools=research_tools,
+        session_id="session-a",
+        code="const result = await tools.open_url({url: inputs.url}); return result.value.missing;",
+        inputs={"url": "https://example.test/article"},
+    )
+    token = failed.canonical["repair"]["token"]
+
+    foreign = TaskSession(policy, project=str(tmp_path))
+    foreign._memory_results.update(original._memory_results)
+    foreign.executed.update(original.executed)
+    rejected = _run_codemode(
+        foreign, tmp_path, turn=2, call_id="repair", research_tools=research_tools,
+        session_id="session-b",
+        code="return unwrap(await tools.open_url({url: inputs.url}));",
+        inputs={"url": "https://example.test/article"}, repair_of=token,
+    )
+    assert not rejected.ok
+    assert "session" in rejected.model_text.lower()
     assert source.calls == 1
 
 

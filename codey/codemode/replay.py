@@ -127,8 +127,15 @@ class CodeModeRepairContext:
             raise CodeModeReplayError("repair did not consume the original child sequence")
 
 
-def repair_token(parent_effect_id: str, failure_code: str, child_effect_ids: Sequence[str], catalog_digest: str) -> str:
+def repair_token(
+    session_id: str,
+    parent_effect_id: str,
+    failure_code: str,
+    child_effect_ids: Sequence[str],
+    catalog_digest: str,
+) -> str:
     return "cmr_" + digest({
+        "session_id": session_id,
         "parent_effect_id": parent_effect_id,
         "failure_code": failure_code,
         "child_effect_ids": list(child_effect_ids),
@@ -137,13 +144,15 @@ def repair_token(parent_effect_id: str, failure_code: str, child_effect_ids: Seq
 
 
 def repair_metadata(
+    session_id: str,
     parent_effect_id: str,
     failure_code: str,
     child_effect_ids: Sequence[str],
     catalog_digest: str,
 ) -> dict[str, object]:
     return {
-        "token": repair_token(parent_effect_id, failure_code, child_effect_ids, catalog_digest),
+        "token": repair_token(session_id, parent_effect_id, failure_code, child_effect_ids, catalog_digest),
+        "session_id": session_id,
         "parent_effect_id": parent_effect_id,
         "failure_code": failure_code,
         "catalog_digest": catalog_digest,
@@ -154,6 +163,7 @@ def resolve_repair_context(
     session: object,
     token: str,
     *,
+    session_id: str,
     run_id: str,
     catalog: ToolCatalogSnapshot,
 ) -> CodeModeRepairContext:
@@ -177,6 +187,8 @@ def resolve_repair_context(
             break
     if metadata is None or parent_result is None or not parent_effect_id:
         raise CodeModeReplayError("repair token is unknown or expired")
+    if metadata.get("session_id") != session_id:
+        raise CodeModeReplayError("repair token belongs to a different session")
     if not parent_effect_id.startswith(f"{run_id}:"):
         raise CodeModeReplayError("repair token belongs to a different run")
     failure_code = str(metadata.get("failure_code", ""))

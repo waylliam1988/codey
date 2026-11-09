@@ -29,7 +29,7 @@
 - `ToolSpec.output_schema` 是唯一工具结果类型来源；catalog、TypeScript 声明和示例都从它生成。
 - `NodeWorkerRuntime` 是唯一 CodeMode 执行 runtime；`unwrap` 只解包已有的 `Result<T>`，失败仍抛错。
 - kernel effect/receipt durable ledger 是唯一事实账本；repair 只保存 token、工具名、参数摘要和原始 `result_ref`，不复制正文。
-- repair 通过 `repair_of` 精确匹配原 child sequence、能力摘要和 settled receipt；参数或工具变化、未确定结果、能力变化都会 fail closed。省略 `repair_of` 就是 fresh execution。
+- repair 通过 `repair_of` 精确匹配原 session/run、child sequence、能力摘要和 settled receipt；参数或工具变化、未确定结果、能力变化都会 fail closed。省略 `repair_of` 就是 fresh execution。
 - `rc1`、`r1`、`s1@version`、`e1@version` 是已有 task/ledger 投影的展示别名；resolver 负责权限、任务范围、来源版本和证据正文绑定，不维护第二张映射表。
 - 知乎等受会话保护的页面只通过用户明确提供的既有 Edge/CDP 会话读取。全新会话的 403 是站点会话/风控事实，不能通过复制 cookie、伪造请求头或无限重试解决。
 
@@ -68,10 +68,11 @@
 
 - 生产修复：kernel 参数规范化保留 `repair_of`；此前真实 task kernel 会丢弃该字段，使 repair 请求退化成 fresh execution 并重新获取来源。
 - 新增 durable restart 测试：第一次失败父 CodeMode 先通过现有 provider delivery 路径合法 settle，关闭并重开 SQLite durable store，修改源文件为 V2 后以 `repair_of` 修复，结果仍为 V1 且没有第二次获取。
-- 测试结果：`tests/test_codemode_repair_replay.py` 9 passed；CodeMode/runtime/catalog 回归 63 passed。
+- 测试结果：`tests/test_codemode_repair_replay.py` 10 passed；CodeMode/runtime/catalog 回归 64 passed。
 - 专用 gate：脚本模式和 KoboldCpp 均完成，`source_fetches=1`、`codemode_open_url_children=1`、`repair_replayed=true`。
 - 静态检查：相关 Python 文件 ruff 通过；修改生产模块的 mypy strict 检查通过。
-- commit：待提交 `repair_of` 规范化回归与 gate 脚本。
+- 追加确定性修复：repair token 的摘要和 metadata 显式绑定 `session_id`；跨 session 复制原始内存回执后提交同一 token 会被拒绝。真实运行中若 sink 已提供 session ID，kernel 自动使用该身份；不新增回执存储。
+- commit：`6d06d9bc fix: preserve CodeMode repair token during normalization`；session 绑定修复待提交。
 
 ## 第五至第六批记录
 
