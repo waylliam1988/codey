@@ -521,19 +521,6 @@ def warm_provider_tabs(
     return detect_open_provider_tabs(endpoint.port)
 
 
-class BrowserTargetBindingError(RuntimeError):
-    """The requested page is outside the session's bound browser target."""
-
-
-@dataclass(frozen=True)
-class BrowserTargetBinding:
-    """In-process identity for one browser, context and page target."""
-
-    browser_token: int
-    context_token: int
-    page_token: int
-
-
 @dataclass
 class Session:
     pw: Playwright
@@ -545,30 +532,6 @@ class Session:
     owns_browser: bool = False
     owns_context: bool = False
     owns_page: bool = False
-
-    def bind_page(self, page: Page | None = None) -> BrowserTargetBinding:
-        """Capture an exact page target owned or borrowed by this session."""
-        target = self.page if page is None else page
-        contexts = tuple(self.browser.contexts)
-        context = target.context
-        if context not in contexts or target not in tuple(context.pages):
-            raise BrowserTargetBindingError("page is not attached to this browser session")
-        return BrowserTargetBinding(id(self.browser), id(context), id(target))
-
-    def assert_bound(self, binding: BrowserTargetBinding, page: Page | None = None) -> Page:
-        """Reject a closed, replaced, or cross-context page before an action."""
-        target = self.page if page is None else page
-        actual = self.bind_page(target)
-        if actual != binding:
-            raise BrowserTargetBindingError("browser target binding does not match the requested page")
-        try:
-            if target.is_closed():
-                raise BrowserTargetBindingError("bound browser page is closed")
-        except BrowserTargetBindingError:
-            raise
-        except Exception as exc:
-            raise BrowserTargetBindingError(f"bound browser page cannot be observed: {exc}") from exc
-        return target
 
     def close(self) -> None:
         try:

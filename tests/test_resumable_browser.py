@@ -10,8 +10,8 @@ import pytest
 from playwright.sync_api import Page
 
 from codey.research import browser_search
-from codey.research.resumable_browser import ResumableBrowserSearchProvider
 from tests.support.real_cdp import chromium_executable
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider
 
 
 class _ChallengeHandler(BaseHTTPRequestHandler):
@@ -63,7 +63,7 @@ def test_research_provider_retains_challenge_page_and_resumes_in_place(
         page_id = id(cast(Page, provider._fetch_page))
 
         def user_resolves_challenge() -> int:
-            page = cast(Page | None, provider._fetch_page)
+            page = provider._fetch_page
             assert page is not None
             page.set_content("<html><body><article>Visible article after verification.</article></body></html>")
             return id(page)

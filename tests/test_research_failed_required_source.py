@@ -27,12 +27,17 @@ def test_ideographic_list_separator_does_not_become_part_of_required_url() -> No
     assert explicit_web_intent(f"依次 open_url {URL}、browser_snapshot、browser_read。").urls == frozenset({URL})
 
 
-class _UnusedSearch:
+class _StaticSource:
+    def __init__(self) -> None:
+        self.fetches = 0
+
     def search(self, query: str, *, limit: int) -> list[JsonObject]:
         raise AssertionError("completion must not search")
 
     def fetch(self, url: str) -> dict[str, object]:
-        raise AssertionError("completion must not fetch")
+        self.fetches += 1
+        return {"status": "ok", "url": url, "title": "Independent record",
+                "text": "An independent sample has a measured weight of 37 grams."}
 
 
 @pytest.mark.parametrize("state,missing,failure_code,has_original,accepted", [
@@ -56,9 +61,8 @@ def test_whole_answer_checks_actual_attempts_without_claiming_failed_sources_wer
         canonical={"source_failure": {"url": URL, "detail": "HTTP 403", "code": failure_code}})
     if has_original:
         other = "https://example.com/independent-record"
-        gateway = ResearchSourceGateway(_UnusedSearch(), ledger)
-        outcome = gateway.accept_capture(other, {"status": "ok", "url": other, "title": "Independent record",
-                                                "text": "An independent sample has a measured weight of 37 grams."})
+        source = _StaticSource()
+        outcome = ResearchSourceGateway(source, ledger).open(other)
         opened = render_source_read(outcome, ledger, offset=0, limit=6000)
         session._memory_results["original"] = ToolResult(ToolCall("open_url", {"url": other}), opened.model_text,
             ok=opened.ok, canonical=canonical_json_object({"research_observation": opened.read_observation,
@@ -89,3 +93,5 @@ def test_whole_answer_checks_actual_attempts_without_claiming_failed_sources_wer
             assert "research_source_not_opened" in verdict.followup
     finally:
         store.close()
+    if has_original:
+        assert source.fetches == 1

@@ -222,15 +222,6 @@ def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: 
         "previously_read_snapshots": retained,
         "investigation_attempts": investigation_history(session),
         "latest_error": [result.model_text[:1600] for result in latest if not result.ok]}))
-    browser_history = [
-        {"result_ref": identity, "tool": result.call.name, "args": result.call.args, "ok": result.ok,
-         "observation": {key: value for key, value in observation.items() if key not in {"text", "elements"}}}
-        for identity, result in session._memory_results.items()
-        if isinstance((observation := result.canonical.get("browser_observation")), dict)
-    ][-8:]
-    if browser_history:
-        lines.append("Browser action history (settled receipts, not source evidence; old element refs are invalid):\n"
-                     + canonical_json(browser_history))
     lines.append("Use the exact [eN] labels shown in original excerpts or previously_read_snapshots. "
                  "All these passages were actually read in this task and their exact original snapshots remain available "
                  "for citation; repeating the full text in this turn is not required. Unread or invented evidence is not allowed. "

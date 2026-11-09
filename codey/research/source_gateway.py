@@ -155,15 +155,6 @@ class ResearchSourceGateway:
         cancellation.check()
         return self._receive_capture(url, page, pages=pages)
 
-    def accept_capture(self, url: str, page: dict[str, object], *, pages: str = "") -> OpenedSource:
-        """Receive an already observed page through the same source admission path."""
-        url = url.strip()
-        denied = self._admit_source_url(url)
-        if denied is not None:
-            return denied
-        cancellation.check()
-        return self._receive_capture(url, page, pages=pages)
-
     def _admit_source_url(self, url: str) -> OpenedSource | None:
         if not url:
             return OpenedSource(status="error", detail="open_url needs a url", failure_code="invalid_response")

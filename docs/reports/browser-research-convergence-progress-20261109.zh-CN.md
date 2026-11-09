@@ -1,5 +1,53 @@
 # 浏览器与 Research 确定性收敛实施进度
 
+## 当前状态：生产实验边界已清理；广泛实验仍暂停
+
+用户要求找出未证明收益、没有实际生产入口的实验并从生产移除。本次已完成代码清理；不恢复此前暂停的模型矩阵。用户随后要求先提交、不要运行安装包测试，本次不再追加验证。
+
+**生产代码只保留已证明有收益且实际可用的实现。所有候选实现和策略放在测试/实验脚本，不以默认关闭、未来开放或底层能力为由保留实验死代码。**
+
+### 本次从生产移除
+
+| 原生产位置 | 清理结果及原因 |
+| --- | --- |
+| `browser_interaction.py` 与六个 `browser_*` 工具合同 | 移至 `tools/browser_experiment_interaction.py`、`browser_experiment_contracts.py`。自然任务存在引用与条件错误，不能默认采用；原本也无生产执行入口。 |
+| `Session.bind_page/assert_bound`、绑定类型 | 移至 `tools/browser_experiment_binding.py`。调用链核对只有实验使用；纠正暂停记录中“Session绑定已有实际生产调用”的不准确表述。 |
+| `resumable_browser.py`、`resume_fetch` | 移至 `tools/browser_experiment_sources.py`。默认Research虽实例化该provider，但没有可用接续入口；生产工厂恢复使用 `BrowserSearchProvider(isolated=False)`。 |
+| `ResearchSourceGateway.accept_capture` | 移到实验gateway子类；复用生产 `_receive_capture`，没有复制接收/证据实现。 |
+| `answer_context.py` 浏览器动作历史 | 移到实验进程的上下文作用域，普通生产提示不再含实验分支。 |
+| `runtime.json` | 删除两个迁出生产模块；实验脚本不进入生产清单。 |
+
+保留有实际生产用途的确定性修复：任务自建页释放、借用用户页不误关闭、Session资源所有权、JSON错误正文识别、失败来源如实完成、URL边界、原正文版本/定位/恢复与共享证据接收。原resumable provider中的资源释放修复迁入现有 `BrowserSearchProvider`，不随实验删除。browser-first尚未默认采用；compact/delta与工作流策略均仅在 `tools/`。
+
+### 本次验证与未完成项
+
+- 首轮直接相关测试：96 passed / 1 failed。失败原因是旧恢复测试用不含所有权字段的 `SimpleNamespace` 冒充Session；改为真实Session数据结构及明确所有权，没有给生产增加兼容分支。
+- 修正后恢复/工厂/边界回归：17 passed / 152 deselected。真实Chromium/CDP的资源收尾及用户页保护已在首轮通过；实验交互、接续、捕获、来源合同等测试仍能从迁出后的实验模块运行。
+- Mypy：6个修改的生产模块及4个候选模块通过（10 files）；Ruff检查已通过。更广的最终类型检查已发起，但提交前未取回输出，不标记通过；尚未补做最终Pyrefly/ty检查。
+- KoboldCpp/Gemma4生产Research回归：`.e2e-artifacts/browser-research-next/cleanup-production-research/summary.json`，passed=true / done。真实headless/provider/kernel与默认provider，控制网页正文；一次浏览器获取，随后source_search → open_hit → submit_research_answer，交付e1/e2。该检查验证清理后的读取/定位/交付合同，不宣称模型质量收益。
+- 运行时清单与wheel冷启动测试曾发起；用户随后明确要求不要运行安装包测试、先commit。当前无相关运行进程，最终输出未取回，不能记为通过，也不继续重跑。
+- 本次不运行全量pytest、覆盖率或安装包构建矩阵；实验矩阵继续暂停。
+
+### 暂停时的实验记录（历史，不自动恢复）
+
+停止时的准确进度（不含前面各生产批次的单独诊断）：
+
+| 实验 | 已完成 | 状态/结论 |
+| --- | --- | --- |
+| 原12题自然矩阵 | 72份有效模型结果 | 保留一个原准入失败及独立复核；工具默认开放有已知质量回退。 |
+| 工作流指导 | 72/72 | 简单展开有收益，但冬季误答仍在；不能将该实验实现留在生产等待开放。 |
+| 真实网站获取 | 42/42 | 头条动态页有收益，冷会话知乎仍受限。 |
+| 真实网站+模型 | 24/24 | 头条3次正文/答案收益；控制来源未发现可归因回退。 |
+| 用户Edge知乎+模型 | 12/12 | 浏览器6/6有正文；HTTP6/6受限；原用户页与URL保留。 |
+| compact | 24/24 | 存在新条件引用旧e1的问题，不采用。 |
+| delta | 14/24 | 用户叫停，不能作完整验收；`policy_multistep-2-candidate`未完成目录保留。 |
+| bounded/settle/query/followup/ranking/completion | 0 | 未开始，队列已停止。 |
+| 快照固定步骤补充诊断 | 0/9 | 未开始，队列已停止。 |
+
+停止回执：`.e2e-artifacts/browser-research-next/user-pause-20261109.json`。所有完成结果、失败及未完成目录保留，不覆盖、不把主动停止计作模型质量失败。详见 [实验结果记录](browser-research-experiments-20261109.zh-CN.md)。
+
+暂停时HEAD为 `9a844da7`，实验脚本与报告当时尚未提交。本次清理将这些实验脚本与迁出的候选一并保存，原始实验结果和失败保留；历史批次说明不代表候选仍在生产。
+
 日期：2026-11-09（Asia/Taipei）。用户授权四批实施并逐批提交；每批补相关测试、运行 KoboldCpp 实机检查、Ruff 与类型检查，再更新文档和 commit。
 
 ## 范围与约束
@@ -151,3 +199,13 @@
 - 真实浏览器/获取相关73项通过；因实机暴露完成合同冲突，扩大到 whole-answer 发布/冷恢复、来源要求与失败闭环67项通过；新增顿号及入口回归29项通过。新测试曾误用 SourceVersion.final_url，类型检查和测试共同指出其正确字段为 url，已修测试，未向生产添加别名字段。
 - KoboldCpp `batch10-failure-contracts-d/summary.json` `passed=true`：新 ref 的填/点/等待/滚动/同页读取完整通过；JSON403经 snapshot、browser_read 后仍失败，没有任何原文 passage，最终合法 unresolved 交付。a/b/c 原始失败保留，其中分别暴露完成冲突、模型步骤遗漏和顿号解析问题，未覆写失败记录。
 - Ruff、Mypy、Pyrefly、ty、kernel precision gate 通过；本批生产与新增测试无显式 Any 或新增类型豁免。默认工具、获取策略、快照和研究指导未改。没有运行完整pytest、覆盖率或安装包测试。
+
+### 实验接续：真实网站、用户 Edge 与策略分解（进行中）
+
+- 明确用户手动可读窗口是 Codey 使用的 Edge（CDP 9262）。`user-edge-v3`、`user-edge-repeat2`、`user-edge-repeat3` 三次均读取知乎 `399217412` 5665字符、`22937491675` 5203字符；同页捕获绑定不变，原用户页保留。冷会话403与用户会话可读是两种不同条件，不能混作站点不可读结论。
+- 真实网站+KoboldCpp 24次对照完成，已核对24份答案与原始passage。头条候选3/3有正文及支持，基线3/3无正文（其中2次是合法无法读取报告）；搜狐/官方文档/PDF未发现可归因策略回退。PDF答案用途推断等两侧已有局限单独记录，不将 `done` 视为完美质量。
+- 工作流指导72次对照正在冻结生产HEAD `9a844da7`下运行；简单展开已出现新正文e2的收益，但填写后漏点加载、季节选择和例外遗漏尚未解决。没有据此默认开放工具。
+- 用户Edge+模型的12次对照安排在上述矩阵后串行执行，避免争用KoboldCpp。compact/delta/正文窗口/等待、query/followup/ranking/completion仍需各自对照，未宣称全部通过。
+- 新实验器及5项夹具/证据/观察测试已通过针对性pytest、Ruff、Mypy和Pyrefly；实验进程沿用生产入口与唯一kernel，没有新模型循环、回执双写或生产默认策略修改。完整结果与限制持续记录于 `browser-research-experiments-20261109.zh-CN.md`。
+- 后续接续：workflow72/72完成，简单展开候选3/3修正旧证据引用，但冬季仍一次误用83克，因此组合默认不通过。用户Edge模型12/12完成，浏览器6/6有正文及受支持答案，HTTP6/6如实403；原用户页和URL均保持。compact/delta等8组186次单变量对照已排入串行队列，期间仍冻结生产HEAD，不提交或改生产输入；各目录的results是进度依据，不把计划次数当完成次数。
+- workflow冻结结束后，筛查器复用生产组合引用解析器（重算旧结果没有变更），delta增加scope证明与完整当前快照回退；6项针对性测试及Ruff/Mypy/Pyrefly通过。测试中只读canonical的类型错误已修夹具构造；生产类型没有放宽。后续实验记录新的脚本hash，旧manifest/失败不覆写。

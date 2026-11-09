@@ -7,11 +7,12 @@ from typing import cast
 import pytest
 from playwright.sync_api import Page, Route, sync_playwright
 
-from codey.automation.browser import BrowserTargetBindingError, CdpEndpoint, Session
-from codey.research.browser_interaction import BrowserInteraction
-from codey.research.browser_search import _search_browser_call
-from codey.research.resumable_browser import ResumableBrowserSearchProvider
+from codey.automation.browser import CdpEndpoint, Session
+from codey.research.browser_search import BrowserSearchProvider, _search_browser_call
 from tests.support.real_cdp import cdp_browser
+from tools.browser_experiment_binding import BrowserTargetBindingError, assert_bound, bind_page
+from tools.browser_experiment_interaction import BrowserInteraction
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider
 
 URL = "https://example.com/article"
 pytestmark = pytest.mark.usefixtures("public_source_dns")
@@ -36,7 +37,7 @@ def test_task_close_releases_task_pages_and_keeps_borrowed_browser(
             user_page = browser.contexts[0].pages[0]
             user_page.set_content("<article>User page must remain</article>")
             before = len(browser.contexts[0].pages)
-            provider = ResumableBrowserSearchProvider(headless=False, isolated=False, cdp_port=port)
+            provider = BrowserSearchProvider(headless=False, isolated=False, cdp_port=port)
             try:
                 fetched = provider.fetch(URL)
                 assert fetched["status"] == "ok", fetched
@@ -54,12 +55,12 @@ def test_new_browser_on_same_port_cannot_satisfy_old_binding(tmp_path: Path) -> 
         with cdp_browser(tmp_path / "first") as port:
             browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
             old_session = Session(pw, browser, browser.contexts[0].pages[0])
-            old_binding = old_session.bind_page()
+            old_binding = bind_page(old_session)
         with cdp_browser(tmp_path / "second", port=port):
             replacement = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
             new_session = Session(pw, replacement, replacement.contexts[0].pages[0])
             with pytest.raises(BrowserTargetBindingError):
-                new_session.assert_bound(old_binding)
+                assert_bound(new_session, old_binding)
 
 
 def test_failed_search_keeps_borrowed_user_page(tmp_path: Path) -> None:
@@ -68,7 +69,7 @@ def test_failed_search_keeps_borrowed_user_page(tmp_path: Path) -> None:
             pw = sync_playwright().start()
             browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
             page = browser.contexts[0].pages[0]
-            provider = ResumableBrowserSearchProvider(headless=False, isolated=False)
+            provider = BrowserSearchProvider(headless=False, isolated=False)
             provider._session = Session(pw, browser, page)
             provider._search_page = page
             try:

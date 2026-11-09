@@ -4,9 +4,9 @@ from __future__ import annotations
 import pytest
 
 from codey.research.ledger import ResearchLedger
-from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.source_reading import render_source_read
 from codey.types.json_value import JsonObject
+from tools.browser_experiment_sources import BrowserCaptureGateway
 
 URL = "https://example.com/article"
 
@@ -28,8 +28,8 @@ class CaptureProvider:
 def test_capture_and_fetch_use_identical_receiving_and_rendering() -> None:
     provider = CaptureProvider({"status": "ok", "url": URL, "title": "Source", "text": "Original measured text."})
     fetched_ledger, captured_ledger = ResearchLedger(), ResearchLedger()
-    fetched = ResearchSourceGateway(provider, fetched_ledger).open(URL)
-    captured = ResearchSourceGateway(provider, captured_ledger).accept_capture(URL, provider.capture)
+    fetched = BrowserCaptureGateway(provider, fetched_ledger).open(URL)
+    captured = BrowserCaptureGateway(provider, captured_ledger).accept_capture(URL, provider.capture)
     fetched_read = render_source_read(fetched, fetched_ledger, offset=0, limit=6000)
     captured_read = render_source_read(captured, captured_ledger, offset=0, limit=6000)
     assert fetched_read.model_text == captured_read.model_text
@@ -46,7 +46,7 @@ def test_capture_and_fetch_use_identical_receiving_and_rendering() -> None:
 def test_capture_failures_do_not_establish_reading(capture: dict[str, object], expected: str) -> None:
     provider = CaptureProvider(capture)
     ledger = ResearchLedger()
-    output = render_source_read(ResearchSourceGateway(provider, ledger).accept_capture(URL, capture), ledger,
+    output = render_source_read(BrowserCaptureGateway(provider, ledger).accept_capture(URL, capture), ledger,
                                 offset=0, limit=6000)
     assert not output.ok
     assert output.failure_code == expected

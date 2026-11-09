@@ -1,15 +1,19 @@
 """Search recovery covers page creation as well as navigation failures."""
 from types import SimpleNamespace
+from typing import cast
 from unittest import mock
 
 import pytest
+from playwright.sync_api import Page
 
+from codey.automation.browser import Session
 from codey.research import browser_search
 from codey.research.browser_search import BrowserSearchProvider
 from codey.runtime.core import cancellation
+from codey.types.json_value import JsonObject
 
 
-def test_next_search_replaces_closed_session_seed_page():
+def test_next_search_replaces_closed_session_seed_page() -> None:
     closed = mock.Mock()
     closed.is_closed.return_value = True
     replacement = mock.Mock()
@@ -17,14 +21,14 @@ def test_next_search_replaces_closed_session_seed_page():
     context = SimpleNamespace(new_page=mock.Mock(return_value=replacement))
     closed.context = context
     provider = BrowserSearchProvider()
-    provider._session = SimpleNamespace(page=closed, browser=SimpleNamespace())
+    provider._session = Session(mock.Mock(), mock.Mock(), cast(Page, closed), owns_page=True)
 
     assert provider._ensure_search_page_on_browser_thread() is replacement
     context.new_page.assert_called_once_with()
     replacement.route.assert_called_once()
 
 
-def test_closed_context_during_page_preparation_reconnects_and_retries():
+def test_closed_context_during_page_preparation_reconnects_and_retries() -> None:
     provider = BrowserSearchProvider()
     provider._ensure_search_page_on_browser_thread = mock.Mock(
         side_effect=RuntimeError("Page.route: Target page, context or browser has been closed")
@@ -32,7 +36,7 @@ def test_closed_context_during_page_preparation_reconnects_and_retries():
     provider._replace_search_page_on_browser_thread = mock.Mock(return_value=object())
     provider._close_on_browser_thread = mock.Mock()
     provider._discard_search_page_on_browser_thread = mock.Mock()
-    hits = [{"title": "Recovered", "url": "https://example.com/report"}]
+    hits: list[JsonObject] = [{"title": "Recovered", "url": "https://example.com/report"}]
     provider._search_page_results_on_browser_thread = mock.Mock(return_value=hits)
 
     assert provider._search_on_browser_thread("helium", 3) == hits
@@ -40,7 +44,7 @@ def test_closed_context_during_page_preparation_reconnects_and_retries():
     assert len(provider.last_search_errors) == 1
 
 
-def test_closed_fetch_context_reconnects_before_navigation():
+def test_closed_fetch_context_reconnects_before_navigation() -> None:
     provider = BrowserSearchProvider()
     replacement = object()
     provider._ensure_fetch_page_on_browser_thread = mock.Mock(side_effect=[
@@ -57,7 +61,7 @@ def test_closed_fetch_context_reconnects_before_navigation():
     cancellation.TaskCancelled("stop"), cancellation.DeadlineExceeded("expired"),
     RuntimeError("permission denied"),
 ])
-def test_fetch_preparation_does_not_retry_cancellation_or_other_errors(error):
+def test_fetch_preparation_does_not_retry_cancellation_or_other_errors(error: Exception) -> None:
     provider = BrowserSearchProvider()
     provider._ensure_fetch_page_on_browser_thread = mock.Mock(side_effect=error)
     provider._close_on_browser_thread = mock.Mock()
@@ -67,7 +71,7 @@ def test_fetch_preparation_does_not_retry_cancellation_or_other_errors(error):
     assert provider._ensure_fetch_page_on_browser_thread.call_count == 1
 
 
-def test_fetch_preparation_reconnect_is_bounded():
+def test_fetch_preparation_reconnect_is_bounded() -> None:
     provider = BrowserSearchProvider()
     provider._ensure_fetch_page_on_browser_thread = mock.Mock(
         side_effect=RuntimeError("Target page, context or browser has been closed"))
@@ -78,7 +82,7 @@ def test_fetch_preparation_reconnect_is_bounded():
     provider._close_on_browser_thread.assert_called_once_with()
 
 
-def test_disconnected_browser_is_reopened():
+def test_disconnected_browser_is_reopened() -> None:
     provider = BrowserSearchProvider()
     old = mock.Mock()
     old.browser.is_connected.return_value = False
@@ -89,17 +93,17 @@ def test_disconnected_browser_is_reopened():
     old.close.assert_called_once_with()
 
 
-def test_first_engine_timeout_reserves_time_for_browser_fallback():
+def test_first_engine_timeout_reserves_time_for_browser_fallback() -> None:
     provider = BrowserSearchProvider()
     provider._engine_order = ("bing", "duckduckgo")
     provider._ensure_search_page_on_browser_thread = mock.Mock(return_value=object())
     provider._replace_search_page_on_browser_thread = mock.Mock(return_value=object())
     provider._discard_search_page_on_browser_thread = mock.Mock()
     now = [0.0]
-    engines = []
-    hits = [{"title": "Recovered", "url": "https://example.com/report"}]
+    engines: list[str] = []
+    hits: list[JsonObject] = [{"title": "Recovered", "url": "https://example.com/report"}]
 
-    def search_page(*_args, engine, deadline, **_kwargs):
+    def search_page(*_args: object, engine: str, deadline: float, **_kwargs: object) -> list[JsonObject]:
         engines.append(engine)
         if engine == "bing":
             assert 0 < deadline < browser_search._SEARCH_TOTAL_TIMEOUT_SECONDS
@@ -116,7 +120,7 @@ def test_first_engine_timeout_reserves_time_for_browser_fallback():
 
 
 @pytest.mark.parametrize("error", [cancellation.TaskCancelled("stop"), cancellation.DeadlineExceeded("expired")])
-def test_cancellation_during_page_creation_does_not_retry(error):
+def test_cancellation_during_page_creation_does_not_retry(error: Exception) -> None:
     provider = BrowserSearchProvider()
     provider._ensure_search_page_on_browser_thread = mock.Mock(side_effect=error)
     provider._replace_search_page_on_browser_thread = mock.Mock()
@@ -125,15 +129,15 @@ def test_cancellation_during_page_creation_does_not_retry(error):
     provider._replace_search_page_on_browser_thread.assert_not_called()
 
 
-def test_failed_query_does_not_poison_the_next_query_on_the_same_provider():
+def test_failed_query_does_not_poison_the_next_query_on_the_same_provider() -> None:
     context = SimpleNamespace()
 
-    def new_page():
+    def new_page() -> mock.Mock:
         page = mock.Mock(context=context, _codey_research_guarded=False)
         page.is_closed.return_value = False
         page.close.side_effect = lambda: setattr(page.is_closed, "return_value", True)
 
-        def route(*_args):
+        def route(*_args: object) -> None:
             if page.is_closed():
                 raise RuntimeError("Page.route: Target page, context or browser has been closed")
 
@@ -143,10 +147,10 @@ def test_failed_query_does_not_poison_the_next_query_on_the_same_provider():
     context.new_page = mock.Mock(side_effect=new_page)
     seed = new_page()
     provider = BrowserSearchProvider(engine="bing")
-    provider._session = SimpleNamespace(page=seed, browser=SimpleNamespace())
-    hits = [{"title": "Recovered", "url": "https://example.com/report"}]
+    provider._session = Session(mock.Mock(), mock.Mock(), cast(Page, seed), owns_page=True)
+    hits: list[JsonObject] = [{"title": "Recovered", "url": "https://example.com/report"}]
 
-    def search_page(_page, query, *_args, **_kwargs):
+    def search_page(_page: mock.Mock, query: str, *_args: object, **_kwargs: object) -> list[JsonObject]:
         if query == "first query":
             raise TimeoutError("navigation timed out")
         assert not _page.is_closed()
@@ -159,7 +163,7 @@ def test_failed_query_does_not_poison_the_next_query_on_the_same_provider():
         assert provider._search_on_browser_thread("next query", 3) == hits
 
 
-def test_persistent_page_creation_failure_stops_with_a_classified_error():
+def test_persistent_page_creation_failure_stops_with_a_classified_error() -> None:
     provider = BrowserSearchProvider()
     failure = RuntimeError("Page.route: Target page, context or browser has been closed")
     provider._ensure_search_page_on_browser_thread = mock.Mock(side_effect=failure)
@@ -174,7 +178,7 @@ def test_persistent_page_creation_failure_stops_with_a_classified_error():
     assert len(provider.last_search_errors) == attempts
 
 
-def test_result_blocks_can_arrive_after_navigation_without_a_false_empty_result():
+def test_result_blocks_can_arrive_after_navigation_without_a_false_empty_result() -> None:
     provider = BrowserSearchProvider(engine="bing")
     page = mock.Mock(url="https://www.bing.com/search?q=database")
     link = mock.Mock()
@@ -182,11 +186,12 @@ def test_result_blocks_can_arrive_after_navigation_without_a_false_empty_result(
     link.inner_text.return_value = "SQLite WAL"
     block = mock.Mock()
     block.query_selector.return_value = link
-    blocks = []
+    blocks: list[mock.Mock] = []
 
-    def appeared(*_args, **kwargs):
+    def appeared(*_args: object, **kwargs: object) -> None:
         assert kwargs["state"] == "attached"
-        assert 0 < kwargs["timeout"] <= 2500
+        timeout = kwargs["timeout"]
+        assert isinstance(timeout, int) and 0 < timeout <= 2500
         blocks.append(block)
 
     page.wait_for_selector.side_effect = appeared

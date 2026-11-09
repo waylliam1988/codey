@@ -9,13 +9,13 @@ from uuid import uuid4
 
 from playwright.sync_api import ElementHandle, Error, Page
 
-from codey.automation.browser import BrowserTargetBinding
 from codey.research.browser_search import _search_browser_call
 from codey.research.connector_search import ConnectorAwareSearchProvider
-from codey.research.resumable_browser import ResumableBrowserSearchProvider
 from codey.research.source_acquisition import with_attempt
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from tools.browser_experiment_binding import BrowserTargetBinding, assert_bound, bind_page
+from tools.browser_experiment_sources import ResumableBrowserSearchProvider
 
 MAX_SNAPSHOT_ELEMENTS = 80
 MAX_SNAPSHOT_TEXT = 12_000
@@ -80,13 +80,13 @@ class BrowserInteraction:
 
     def _page_on_browser_thread(self) -> Page:
         session = self.provider._session
-        page = cast(Page | None, self.provider._fetch_page)
+        page = self.provider._fetch_page
         if session is None or page is None:
             raise RuntimeError("no retained browser page; open a source first")
         if self._binding is None:
-            self._binding = session.bind_page(page)
+            self._binding = bind_page(session, page)
         else:
-            session.assert_bound(self._binding, page)
+            assert_bound(session, self._binding, page)
         return page
 
     def _snapshot_on_browser_thread(self, max_elements: int, max_text: int) -> BrowserToolOutput:

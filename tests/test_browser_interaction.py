@@ -12,16 +12,15 @@ import pytest
 from playwright.sync_api import ElementHandle, Error, Page
 
 from codey.research import browser_search
-from codey.research.browser_interaction import BrowserInteraction
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import restore_ledger_observation
 from codey.research.passages import restore_passages
-from codey.research.resumable_browser import ResumableBrowserSearchProvider
-from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.source_reading import render_source_read
 from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
 from tests.support.real_cdp import chromium_executable
+from tools.browser_experiment_interaction import BrowserInteraction
+from tools.browser_experiment_sources import BrowserCaptureGateway, ResumableBrowserSearchProvider
 
 
 class _InteractionHandler(BaseHTTPRequestHandler):
@@ -64,7 +63,7 @@ def browser_fixture(
 
 def _install_page(provider: ResumableBrowserSearchProvider, html: str) -> None:
     def install() -> None:
-        page = cast(Page | None, provider._fetch_page)
+        page = provider._fetch_page
         assert page is not None
         page.set_content(html)
 
@@ -235,7 +234,7 @@ def test_same_page_capture_preserves_old_version_and_restores_without_fetch(
 
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", allow_fixture_url)
     ledger = ResearchLedger()
-    gateway = ResearchSourceGateway(provider, ledger)
+    gateway = BrowserCaptureGateway(provider, ledger)
     _install_page(provider, "<article>Original locality quantity is exactly 17 grams.</article>")
     first_capture = interaction.capture()
     url = str(first_capture["url"])

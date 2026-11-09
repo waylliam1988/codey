@@ -10,11 +10,11 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, TypeVar, cast
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from typing import TypeVar, cast
+from urllib.parse import ParseResult, parse_qs, quote_plus, unquote, urlparse
 
+from playwright.sync_api import BrowserContext, ElementHandle, Page, Request, Response, Route
 from playwright.sync_api import Error as BrowserError
-from playwright.sync_api import Page, Request, Response
 
 from codey.automation import browser_worker
 from codey.automation.browser import DEFAULT_PORT, Session, open_chat_page, open_headless_page
@@ -32,6 +32,7 @@ from codey.research.source_acquisition import SourceFailureCode, http_failure_co
 from codey.research.source_acquisition import attempt as acquisition_attempt
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
+from codey.types.json_value import JsonObject, decode_json_object
 
 _PROFILES_PATH = Path(__file__).with_name("search_profiles.json")
 RESEARCH_PROFILE = DEFAULT_STATE_HOME / "research-edge-profile"
@@ -47,6 +48,7 @@ _FETCH_SETTLE_TICK = 0.5
 _CLOSE_TIMEOUT_SECONDS = 3.0
 _CONTENT_RETRY_TIMEOUT = 3.0
 _CONTENT_RETRY_TICK = 0.2
+_PAGE_GUARD_ATTRIBUTE = "_codey_research_guarded"
 T = TypeVar("T")
 _SEARCH_WORKER_LOCK = threading.Lock()
 _SEARCH_WORKER: browser_worker.BrowserWorker | None = None
@@ -114,15 +116,22 @@ class SearchUnavailableError(RuntimeError):
         super().__init__(message)
 
 
-def load_profiles() -> dict[str, Any]:
+def load_profiles() -> JsonObject:
     try:
-        return cast(dict[str, Any], json.loads(_PROFILES_PATH.read_text(encoding="utf-8")))
+        return decode_json_object(json.loads(_PROFILES_PATH.read_text(encoding="utf-8")))
     except (OSError, json.JSONDecodeError):
         return {"default_engine": "bing", "engines": {}}
 
 
-def _search_browser_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
-    return _search_browser_worker().call(fn, *args, **kwargs)
+def _search_browser_call(
+    fn: Callable[..., T], *args: object,
+    timeout: float | None = None,
+    on_abandoned: Callable[[], None] | None = None,
+    **kwargs: object,
+) -> T:
+    return _search_browser_worker().call(
+        fn, *args, timeout=timeout, on_abandoned=on_abandoned, **kwargs,
+    )
 
 
 def _search_browser_worker() -> browser_worker.BrowserWorker:
@@ -153,9 +162,9 @@ class BrowserSearchProvider:
         profiles = load_profiles()
         engine_profiles = profiles.get("engines", {})
         if not isinstance(engine_profiles, dict):
-            engine_profiles = dict[str, object]()
-        self.engine = engine or profiles.get("default_engine", "bing")
-        self._profiles = {
+            engine_profiles = {}
+        self.engine = engine or str(profiles.get("default_engine", "bing"))
+        self._profiles: dict[str, JsonObject] = {
             str(name): value
             for name, value in engine_profiles.items()
             if isinstance(value, dict)
@@ -181,8 +190,8 @@ class BrowserSearchProvider:
         self.headless = headless
         self.http_fallback = http_fallback
         self._session: Session | None = None
-        self._search_page: Any | None = None
-        self._fetch_page: Any | None = None
+        self._search_page: Page | None = None
+        self._fetch_page: Page | None = None
         self._last_worker_health: dict[str, object] = {}
         self.last_search_errors: list[dict[str, str]] = []
         self.last_search_failure: dict[str, str] = {}
@@ -214,15 +223,15 @@ class BrowserSearchProvider:
         )
         return self._session
 
-    def _prepare_page_on_browser_thread(self, page: Any) -> Any:
+    def _prepare_page_on_browser_thread(self, page: Page) -> Page:
         page.set_default_navigation_timeout(_NAV_TIMEOUT_MS)
-        if not self.headless and not getattr(page, "_codey_research_guarded", False):
+        if not self.headless and not getattr(page, _PAGE_GUARD_ATTRIBUTE, False):
             page.route("**/*", self._guard_request)
             with contextlib.suppress(Exception):
-                page._codey_research_guarded = True
+                setattr(page, _PAGE_GUARD_ATTRIBUTE, True)
         return page
 
-    def _ensure_search_page_on_browser_thread(self) -> Any:
+    def _ensure_search_page_on_browser_thread(self) -> Page:
         session = self._ensure_session_on_browser_thread(reuse_url_contains=self._reuse_url_contains)
         if self._page_closed_on_browser_thread(self._search_page):
             self._search_page = session.page
@@ -230,9 +239,9 @@ class BrowserSearchProvider:
                 self._search_page = self._page_context_on_browser_thread(session.page).new_page()
             if self.bring_to_front:
                 self._bring_to_front_on_browser_thread(self._search_page)
-        return self._prepare_page_on_browser_thread(self._search_page)
+        return self._prepare_page_on_browser_thread(cast(Page, self._search_page))
 
-    def _replace_search_page_on_browser_thread(self) -> Any:
+    def _replace_search_page_on_browser_thread(self) -> Page:
         session = self._ensure_session_on_browser_thread(reuse_url_contains=self._reuse_url_contains)
         context = self._page_context_on_browser_thread(self._search_page or session.page)
         page = context.new_page()
@@ -241,16 +250,16 @@ class BrowserSearchProvider:
             self._bring_to_front_on_browser_thread(page)
         return self._prepare_page_on_browser_thread(page)
 
-    def _ensure_fetch_page_on_browser_thread(self, url: str) -> Any:
+    def _ensure_fetch_page_on_browser_thread(self, url: str) -> Page:
         session = self._ensure_session_on_browser_thread()
         if self._page_closed_on_browser_thread(self._fetch_page):
             context = self._page_context_on_browser_thread(self._search_page or session.page)
             self._fetch_page = context.new_page()
             if self.bring_to_front:
                 self._bring_to_front_on_browser_thread(self._fetch_page)
-        return self._prepare_page_on_browser_thread(self._fetch_page)
+        return self._prepare_page_on_browser_thread(cast(Page, self._fetch_page))
 
-    def _prepare_fetch_page_on_browser_thread(self, url: str) -> Any:
+    def _prepare_fetch_page_on_browser_thread(self, url: str) -> Page:
         cancellation.check()
         try:
             return self._ensure_fetch_page_on_browser_thread(url)
@@ -266,14 +275,14 @@ class BrowserSearchProvider:
             cancellation.check()
             return self._ensure_fetch_page_on_browser_thread(url)
 
-    def _page_context_on_browser_thread(self, page: Any) -> Any:
+    def _page_context_on_browser_thread(self, page: Page) -> BrowserContext:
         try:
             return page.context
         except Exception:
             session = self._ensure_session_on_browser_thread()
             return session.browser.contexts[0] if session.browser.contexts else session.browser.new_context()
 
-    def _page_closed_on_browser_thread(self, page: Any) -> bool:
+    def _page_closed_on_browser_thread(self, page: Page | None) -> bool:
         if page is None:
             return True
         try:
@@ -281,11 +290,11 @@ class BrowserSearchProvider:
         except Exception:
             return True
 
-    def _bring_to_front_on_browser_thread(self, page: Any) -> None:
+    def _bring_to_front_on_browser_thread(self, page: Page) -> None:
         with contextlib.suppress(Exception):
             page.bring_to_front()
 
-    def _guard_request(self, route: Any) -> None:
+    def _guard_request(self, route: Route) -> None:
         try:
             blocked = bool(check_fetch_url(route.request.url, use_cache=True))
         except Exception:
@@ -293,7 +302,7 @@ class BrowserSearchProvider:
         with contextlib.suppress(Exception):
             route.abort() if blocked else route.continue_()
 
-    def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
+    def search(self, query: str, limit: int = 8) -> list[JsonObject]:
         cancellation.check()
         self.last_search_errors = []
         self.last_search_failure = {}
@@ -305,7 +314,7 @@ class BrowserSearchProvider:
         cancellation.check()
         return results
 
-    def _search_on_browser_thread(self, query: str, limit: int) -> list[dict[str, Any]]:
+    def _search_on_browser_thread(self, query: str, limit: int) -> list[JsonObject]:
         last_error: Exception | None = None
         deadline = time.monotonic() + _SEARCH_TOTAL_TIMEOUT_SECONDS
         for engine_index, engine in enumerate(self._engine_order):
@@ -366,14 +375,14 @@ class BrowserSearchProvider:
 
     def _search_page_results_on_browser_thread(
         self,
-        page: Any,
+        page: Page,
         query: str,
         limit: int,
         *,
-        profile: dict[str, Any] | None = None,
+        profile: JsonObject | None = None,
         engine: str = "",
         deadline: float | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[JsonObject]:
         active_engine = engine or self.engine
         active_profile = profile if isinstance(profile, dict) else self._profile
         if not isinstance(active_profile, dict):
@@ -383,7 +392,7 @@ class BrowserSearchProvider:
         remaining_ms = int(max(250.0, (deadline - time.monotonic()) * 1000))
         with contextlib.suppress(Exception):
             page.set_default_navigation_timeout(min(_SEARCH_NAV_TIMEOUT_MS, remaining_ms))
-        url = active_profile["search_url"].format(query=quote_plus(query))
+        url = str(active_profile["search_url"]).format(query=quote_plus(query))
         cancellation.check()
         page.goto(url, wait_until="domcontentloaded")
         cancellation.check()
@@ -402,15 +411,15 @@ class BrowserSearchProvider:
         remaining_ms = int(max(0.0, deadline - time.monotonic()) * 1000)
         if callable(wait) and remaining_ms:
             try:
-                wait(active_profile["result_selector"], state="attached", timeout=min(2500, remaining_ms))
+                wait(str(active_profile["result_selector"]), state="attached", timeout=min(2500, remaining_ms))
             except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 raise
             except Exception:
                 pass  # Inspect the page below, including explicit no-result/challenge text.
-        results: list[dict[str, Any]] = []
-        for block in page.query_selector_all(active_profile["result_selector"])[: limit * 2]:
+        results: list[JsonObject] = []
+        for block in page.query_selector_all(str(active_profile["result_selector"]))[: limit * 2]:
             cancellation.check()
-            link = block.query_selector(active_profile["link_selector"])
+            link = block.query_selector(str(active_profile["link_selector"]))
             if link is None:
                 continue
             href = _normalize_result_url(link.get_attribute("href") or "")
@@ -419,7 +428,7 @@ class BrowserSearchProvider:
             title = _best_result_title(block, link, active_profile)
             if not title:
                 title = source_download._title_from_url(href)
-            snippet_el = block.query_selector(active_profile["snippet_selector"])
+            snippet_el = block.query_selector(str(active_profile["snippet_selector"]))
             snippet = _element_text(snippet_el) if snippet_el else _snippet_from_block(block, title)
             results.append({"title": title, "url": href, "snippet": snippet})
             if len(results) >= limit:
@@ -440,8 +449,8 @@ class BrowserSearchProvider:
         cancellation.check()
         return []
 
-    def _anchor_scan_results(self, page: Any, limit: int) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
+    def _anchor_scan_results(self, page: Page, limit: int) -> list[JsonObject]:
+        results: list[JsonObject] = []
         seen: set[str] = set()
         for link in page.query_selector_all("a[href]"):
             cancellation.check()
@@ -627,7 +636,17 @@ class BrowserSearchProvider:
         self.last_search_failure = dict(payload)
 
     def _close_on_browser_thread(self) -> None:
+        session = self._session
         try:
+            if (session is not None and session.process is None and not session.owns_browser
+                    and not session.owns_context):
+                pages = {id(page): page for page in (self._fetch_page, self._search_page)
+                         if page is not None and page is not session.page}
+                for owned_page in pages.values():
+                    self._discard_page_on_browser_thread(owned_page)
+                self._fetch_page = None
+                if self._search_page is not session.page:
+                    self._search_page = None
             seen_pages: set[int] = set()
             for page in (self._fetch_page, self._search_page):
                 if page is None or id(page) in seen_pages:
@@ -643,33 +662,41 @@ class BrowserSearchProvider:
             self._search_page = None
             self._session = None
 
-    def _release_page_guard_on_browser_thread(self, page: Any) -> None:
+    def _release_page_guard_on_browser_thread(self, page: Page | None) -> None:
+        if page is None:
+            return
         try:
             # Drain handlers before pw.stop() disconnects their interception updates.
             page.unroute_all(behavior="wait")
-            page._codey_research_guarded = False
+            setattr(page, _PAGE_GUARD_ATTRIBUTE, False)
         except Exception:
             pass
 
-    def _discard_page_on_browser_thread(self, page: Any) -> None:
+    def _discard_page_on_browser_thread(self, page: Page | None) -> None:
         if page is None:
             return
         self._release_page_guard_on_browser_thread(page)
         with contextlib.suppress(Exception):
             page.close()
 
-    def _discard_fetch_page_on_browser_thread(self, page: Any) -> None:
+    def _discard_fetch_page_on_browser_thread(self, page: Page | None) -> None:
         self._discard_page_on_browser_thread(page)
         if page is self._fetch_page:
             self._fetch_page = None
 
-    def _discard_search_page_on_browser_thread(self, page: Any) -> None:
+    def _discard_search_page_on_browser_thread(self, page: Page | None) -> None:
+        session = self._session
+        if (session is not None and page is session.page and not session.owns_page
+                and not session.owns_browser and session.process is None):
+            self._release_page_guard_on_browser_thread(page)
+            self._search_page = None
+            return
         self._discard_page_on_browser_thread(page)
         if page is self._search_page:
             self._search_page = None
 
 
-def _page_content_after_navigation(page: Any) -> str:
+def _page_content_after_navigation(page: Page) -> str:
     stop_at = time.monotonic() + _CONTENT_RETRY_TIMEOUT
     while True:
         cancellation.check()
@@ -683,7 +710,7 @@ def _page_content_after_navigation(page: Any) -> str:
             cancellation.wait(_CONTENT_RETRY_TICK)
 
 
-def _fetch_page_content_after_settle(page: Any) -> tuple[str, str]:
+def _fetch_page_content_after_settle(page: Page) -> tuple[str, str]:
     html = _page_content_after_navigation(page)
     text = extract_text(html)
     if _usable_fetch_page_text(text) and not _application_content_pending(page):
@@ -708,7 +735,7 @@ def _fetch_page_content_after_settle(page: Any) -> tuple[str, str]:
     return best_html, best_text
 
 
-def _application_content_pending(page: Any) -> bool:
+def _application_content_pending(page: Page) -> bool:
     """Recognize an empty app/main region while the SPA is still hydrating."""
     try:
         pending: object = page.evaluate("""() => {
@@ -733,14 +760,14 @@ def _content_retryable(exc: Exception) -> bool:
     )
 
 
-def _search_host(profile: dict[str, Any]) -> str:
+def _search_host(profile: JsonObject) -> str:
     try:
         return (urlparse(str(profile.get("search_url") or "")).hostname or "").lower()
     except Exception:
         return ""
 
 
-def _page_url(page: Any) -> str:
+def _page_url(page: Page) -> str:
     try:
         value = page.url
     except Exception:
@@ -748,7 +775,7 @@ def _page_url(page: Any) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _search_engine_host(profile: dict[str, Any]) -> str:
+def _search_engine_host(profile: JsonObject) -> str:
     try:
         return (urlparse(str(profile.get("search_url") or "")).hostname or "").lower().removeprefix("www.")
     except Exception:
@@ -771,7 +798,7 @@ def _same_host(url: str, expected_host: str) -> bool:
     return bool(actual and expected and (actual == expected or actual.endswith("." + expected)))
 
 
-def _search_page_body_text(page: Any) -> str:
+def _search_page_body_text(page: Page) -> str:
     try:
         body = page.query_selector("body")
     except Exception:
@@ -814,7 +841,7 @@ def _search_page_failure_kind(text: str) -> str:
     return "search_page_blank"
 
 
-def _set_navigation_timeout(page: Any, timeout_ms: int) -> None:
+def _set_navigation_timeout(page: Page, timeout_ms: int) -> None:
     with contextlib.suppress(Exception):
         page.set_default_navigation_timeout(timeout_ms)
 
@@ -840,11 +867,11 @@ def _search_failure_detail(exc: Exception) -> str:
     }.get(failure_kind, type(exc).__name__)
 
 
-def _element_text(element: Any) -> str:
+def _element_text(element: ElementHandle | None) -> str:
     return _clean_space(_element_raw_text(element))
 
 
-def _element_raw_text(element: Any) -> str:
+def _element_raw_text(element: ElementHandle | None) -> str:
     if element is None:
         return ""
     for getter in ("inner_text", "text_content"):
@@ -865,7 +892,7 @@ def _element_raw_text(element: Any) -> str:
     return ""
 
 
-def _best_result_title(block: Any, link: Any, profile: dict[str, Any]) -> str:
+def _best_result_title(block: ElementHandle, link: ElementHandle, profile: JsonObject) -> str:
     selectors = [
         profile.get("title_selector"),
         profile.get("link_selector"),
@@ -879,7 +906,7 @@ def _best_result_title(block: Any, link: Any, profile: dict[str, Any]) -> str:
         if not selector:
             continue
         try:
-            text = _element_text(block.query_selector(selector))
+            text = _element_text(block.query_selector(str(selector)))
         except Exception:
             text = ""
         if text:
@@ -891,7 +918,7 @@ def _best_result_title(block: Any, link: Any, profile: dict[str, Any]) -> str:
     return ""
 
 
-def _snippet_from_block(block: Any, title: str) -> str:
+def _snippet_from_block(block: ElementHandle, title: str) -> str:
     lines = []
     for line in _element_raw_text(block).splitlines():
         line = line.strip()
@@ -932,7 +959,7 @@ def _normalize_result_url(href: str) -> str:
     return target or raw
 
 
-def _is_search_redirect(parsed: Any) -> bool:
+def _is_search_redirect(parsed: ParseResult) -> bool:
     host = (parsed.hostname or "").lower()
     path = (parsed.path or "").lower()
     params = parse_qs(parsed.query or "")
@@ -943,7 +970,7 @@ def _is_search_redirect(parsed: Any) -> bool:
         and any(key in params for key in ("uddg", "u")))
 
 
-def _search_redirect_target(parsed: Any) -> str:
+def _search_redirect_target(parsed: ParseResult) -> str:
     host = (parsed.hostname or "").lower()
     path = (parsed.path or "").lower()
     params = parse_qs(parsed.query or "")

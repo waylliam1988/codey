@@ -8,12 +8,12 @@ unified kernel.
 
 from __future__ import annotations
 
+from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
-from codey.research.resumable_browser import ResumableBrowserSearchProvider
 
 
 def default_research_search_provider() -> ConnectorAwareSearchProvider:
-    return ConnectorAwareSearchProvider(ResumableBrowserSearchProvider(isolated=False))
+    return ConnectorAwareSearchProvider(BrowserSearchProvider(isolated=False))
 
 
 __all__ = ["default_research_search_provider"]

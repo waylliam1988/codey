@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from playwright.sync_api import Page
 
 from codey.research import source_download
@@ -16,37 +14,17 @@ from codey.research.browser_search import (
 )
 from codey.research.extract import _MAX_PAGE_CHARS, _fetch_page_failure_kind, _usable_fetch_page_text, extract_title
 from codey.research.source_acquisition import with_attempt
+from codey.research.source_gateway import OpenedSource, ResearchSourceGateway
+from codey.runtime.core import cancellation
 
 
 class ResumableBrowserSearchProvider(BrowserSearchProvider):
     """Keep the task page after a bounded failure and read it again in place."""
 
-    def _discard_fetch_page_on_browser_thread(self, page: Page) -> None:
+    def _discard_fetch_page_on_browser_thread(self, page: Page | None) -> None:
         """Retain the bound page; task cancellation still closes the session."""
         if page is not self._fetch_page:
             super()._discard_fetch_page_on_browser_thread(page)
-
-    def _discard_search_page_on_browser_thread(self, page: Page) -> None:
-        session = self._session
-        if (session is not None and page is session.page and not session.owns_page
-                and not session.owns_browser and session.process is None):
-            self._release_page_guard_on_browser_thread(page)
-            self._search_page = None
-            return
-        super()._discard_search_page_on_browser_thread(page)
-
-    def _close_on_browser_thread(self) -> None:
-        session = self._session
-        if (session is not None and session.process is None and not session.owns_browser
-                and not session.owns_context):
-            pages = {id(page): page for page in (cast(Page | None, self._fetch_page), cast(Page | None, self._search_page))
-                     if page is not None and page is not session.page}
-            for page in pages.values():
-                self._discard_page_on_browser_thread(page)
-            self._fetch_page = None
-            if self._search_page is not session.page:
-                self._search_page = None
-        super()._close_on_browser_thread()
 
     def resume_fetch(self) -> dict[str, object]:
         """Read the current bound page without navigating or acquiring a URL again."""
@@ -57,7 +35,7 @@ class ResumableBrowserSearchProvider(BrowserSearchProvider):
         return with_attempt(result, "browser", str(result.get("url") or ""))
 
     def _resume_fetch_on_browser_thread(self) -> dict[str, object]:
-        page = cast(Page | None, self._fetch_page)
+        page = self._fetch_page
         if page is None or page.is_closed():
             return source_download._fetch_failure(
                 "",
@@ -95,4 +73,14 @@ class ResumableBrowserSearchProvider(BrowserSearchProvider):
         }
 
 
-__all__ = ["ResumableBrowserSearchProvider"]
+class BrowserCaptureGateway(ResearchSourceGateway):
+    """Experimental current-page admission reuses the production source receiver."""
+
+    def accept_capture(self, url: str, page: dict[str, object], *, pages: str = "") -> OpenedSource:
+        """Receive an already observed page through the same source admission path."""
+        url = url.strip()
+        denied = self._admit_source_url(url)
+        if denied is not None:
+            return denied
+        cancellation.check()
+        return self._receive_capture(url, page, pages=pages)

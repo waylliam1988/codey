@@ -7,6 +7,7 @@ from codey.research.answer_context import answer_context
 from codey.research.answer_contract import answer_scope
 from codey.research.ledger import ResearchLedger
 from codey.runtime.core.models import ToolCall, ToolResult
+from tools.browser_experiment_contracts import browser_action_context
 
 
 def test_settled_browser_actions_survive_research_view_without_becoming_passages() -> None:
@@ -19,7 +20,11 @@ def test_settled_browser_actions_survive_research_view_without_becoming_passages
         model_text="Current page", canonical={"browser_observation": {
             "generation": 3, "text": "uncitable DOM text", "elements": [], "complete": True}})
     scope = answer_scope(session)
-    rendered = answer_context(session, ResearchLedger(), scope)
+    baseline = answer_context(session, ResearchLedger(), scope)
+    assert "Browser action history" not in baseline
+    with browser_action_context():
+        rendered = answer_context(session, ResearchLedger(), scope)
+    assert answer_context(session, ResearchLedger(), scope) == baseline
     assert '"action":"fill"' in rendered
     assert "Browser action history" in rendered
     assert "uncitable DOM text" not in rendered
