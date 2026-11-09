@@ -29,7 +29,9 @@ each checker against them. Those 24 checker subprocess tests were removed to
 avoid repeated analysis of imported production modules. Normal production-tree
 checks above and the lightweight kernel precision checks remain required.
 Run local checks serially; package installation and upgrade smoke tests belong
-to release validation and are not required for every ordinary code change.
+to explicit release validation, outside default pytest collection. See the
+[manual installed-release check](installed-release-check.zh-CN.md); ordinary
+changes run its small boundary tests without building or installing packages.
 
 The lightweight precision gate also protects task entry policy/session fields,
 policy recovery, and runtime checkpoint callbacks:

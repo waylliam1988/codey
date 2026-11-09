@@ -40,6 +40,12 @@ Get-ChildItem codey/web/assets -Filter *.js | ForEach-Object { node --check $_.F
 python -m pytest -q -o faulthandler_timeout=120
 ```
 
+真实安装包构建/安装/升级已移出默认 pytest，由发布时显式选择的
+[`tools.release_package_check`](installed-release-check.zh-CN.md) 保留验证。
+日常 pytest 只包含该工具的轻量边界测试，不运行真实 pip、构建器或安装服务。
+发布需要安装包验收时，按链接中的独立目录流程构建一次产物并检查；
+未执行不能记为安装包验证通过。
+
 - 通过标准：`0 failed`；逐项记录平台、权限和 opt-in 导致的 skip，不用固定跳过数量作为判定。
 - 不允许用“重跑一遍就绿了”掩盖 flake：flake 必须记入 `TEST_REPORT.md`，说明路径、重跑结果、是否触及本次改动。
 - UI 连续性须先锁定行为再修改，覆盖持久草稿/确认竞争/冲突退出、明确阅读意图、

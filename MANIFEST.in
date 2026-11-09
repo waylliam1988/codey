@@ -15,3 +15,4 @@ prune frontend/node_modules
 prune frontend/dist
 include codey/runtime.json
 include tools/__init__.py tools/build_runtime.py tools/publish_runtime.py
+include tools/release_package_check.py tools/installed_runtime_probe.py

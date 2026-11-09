@@ -6,6 +6,12 @@ Run the full deterministic suite with:
 pytest -q
 ```
 
+Real package build/install/upgrade checks are manual release commands, outside
+pytest collection. The former `test_installed_runtime.py` checks are preserved
+in `tools.release_package_check`; see [manual instructions](../docs/installed-release-check.zh-CN.md).
+`test_release_package_check.py` only uses tiny archives and mocked command
+execution, without pip, real builds or service startup.
+
 ## External control and shared-service ownership
 
 `test_external_control.py`, `test_control_runtime_ownership.py`,
