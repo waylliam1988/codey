@@ -14,7 +14,13 @@ from playwright.sync_api import ElementHandle, Error, Page
 
 from codey.research import browser_search
 from codey.research.browser_interaction import BrowserInteraction
+from codey.research.ledger import ResearchLedger
+from codey.research.ledger_receipts import restore_ledger_observation
+from codey.research.passages import restore_passages
 from codey.research.resumable_browser import ResumableBrowserSearchProvider
+from codey.research.source_gateway import ResearchSourceGateway
+from codey.research.source_reading import render_source_read
+from codey.research.tools import ResearchTools
 from codey.runtime.core import cancellation
 
 
@@ -195,3 +201,38 @@ def test_snapshot_exposes_current_field_value_and_hides_password(
     snapshot = interaction.snapshot()
     assert "Fuzhou" in snapshot.model_text
     assert "private-secret" not in str(snapshot)
+
+
+def test_same_page_capture_preserves_old_version_and_restores_without_fetch(
+    browser_fixture: tuple[ResumableBrowserSearchProvider, BrowserInteraction],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider, interaction = browser_fixture
+    def allow_fixture_url(_url: str, *, use_cache: bool = False) -> str:
+        return ""
+
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", allow_fixture_url)
+    ledger = ResearchLedger()
+    gateway = ResearchSourceGateway(provider, ledger)
+    _install_page(provider, "<article>Original locality quantity is exactly 17 grams.</article>")
+    first_capture = interaction.capture()
+    url = str(first_capture["url"])
+    first = render_source_read(gateway.accept_capture(url, first_capture), ledger, offset=0, limit=6000)
+    assert first.ok
+    _install_page(provider, "<article>Expanded locality quantity is exactly 99 grams.</article>")
+    second_capture = interaction.capture()
+    second = render_source_read(gateway.accept_capture(url, second_capture), ledger, offset=0, limit=6000)
+    assert second.ok
+    assert first.read_passages[0]["ref"] != second.read_passages[0]["ref"]
+    tools = ResearchTools(search=provider, store=None, changes=None, ledger=ledger)
+    reread = tools.read_source(first.read_observation)
+    assert "17 grams" in reread.model_text
+    assert "99 grams" not in reread.model_text
+    provider.close()
+    restored = ResearchLedger()
+    for result in (first, second):
+        restore_ledger_observation(restored, result.read_observation)
+        restore_passages(restored, result.read_observation, result.read_passages)
+    assert set(restored.read_passages) == set(ledger.read_passages)
+    assert {row.source.text_hash for row in restored.read_passages.values()} == {
+        row.source.text_hash for row in ledger.read_passages.values()}

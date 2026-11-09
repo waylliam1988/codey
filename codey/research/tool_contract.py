@@ -123,6 +123,14 @@ TOOL_CONTRACTS = {
         example='{"tool":"browser_snapshot","args":{}}',
         description="observe the retained source page as bounded text with semantic element refs; take a fresh snapshot after navigation or actions",
     ),
+    "browser_read": ToolContract(
+        name="browser_read", input_schema=object_schema({
+            "offset": {"type": "integer", "minimum": 0},
+            "limit": {"type": "integer", "minimum": 500, "maximum": 12000},
+        }),
+        example='{"tool":"browser_read","args":{}}',
+        description="capture and read the currently bound browser page without navigating; use after revealing content to obtain citable source passages",
+    ),
     "browser_click": ToolContract(
         name="browser_click", input_schema=object_schema({"ref": {"type": "string"}}, "ref"),
         example='{"tool":"browser_click","args":{"ref":"g1e1"}}',

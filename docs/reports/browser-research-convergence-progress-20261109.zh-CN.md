@@ -110,3 +110,13 @@
 3. 真实网站：头条、知乎、搜狐、官方资料和 PDF，记录访问会话、限制及人工协助，不替换失败样本。
 4. 自然研究对照：12 题 × 基线/候选 × 3 次，中文动态、资料研究与控制各 4 题；记录关键材料、结论支持、例外和交付，成本仅记录。
 5. 默认工具集、browser-first、compact/delta/等待策略和研究指导分别实验。当前仍没有证据授权把这些全部设为默认；不把第 7 批顺序诊断当成自然任务质量证明。
+
+### 批次 8：同页捕获共用来源接收与 passage
+
+- `ResearchSourceGateway.open` 与新的 `accept_capture` 共用唯一 `_receive_capture`，沿用原 URL/重定向策略、PDF/HTML 构造、版本 hash、正文回执与来源记录。接收当前 DOM 不再伪装成第二次 URL fetch，也不复制证据生成实现。
+- `BrowserInteraction.capture` 在原浏览器线程上先校验同一 page 绑定，再调用已有当前页读取。实验 `browser_read` 通过原 `render_source_read` 和 `ExecutionDelegate._opened_result` 交付正文与 passage，进入原 kernel settle、Research eN 和完整答案发布。它仍仅在实验进程注册，默认工具集未变。
+- 新增接收等价性、受限/空白/私有重定向不形成 passage 的测试；真实 Chromium 贯穿验证 V1=17 → 同页 V2=99，旧捕获仍读 V1，浏览器关闭后按原正文回执重建两版 passage。
+- 初次新测试误把 `source_hash` 当成 passage descriptor 字段；按现有合同改为比较 passage ref 与来源 hash，未向生产回执添加重复字段。相关来源、浏览器、SPA、引用与分发回归 `112 passed`。
+- KoboldCpp `batch8-read-diagnostic/summary.json` 为 `passed=true / done`：单次导航，真实填写/点击/等待/滚动，browser_read 捕获展开正文，模型以 `[e2]` 发布“鱼丸净重 173 克”；原 `[e1]` 仍绑定初始正文。`batch8-research-regression` 同样通过。
+- 自然任务 `batch8-natural-a` 未得到收益：模型只做 source_search 就停止，答案还把没有命中的搜索误述为找到了记录。这是模型选择/复述边界，原始失败保留；不据此扩大默认工具面，不用步骤诊断替代自然任务。
+- Ruff、Mypy、Pyrefly、ty 通过；修改文件没有显式 `Any` 或类型豁免。本批无新增打包模块，不运行安装包或全量 pytest。

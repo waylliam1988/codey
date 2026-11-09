@@ -12,6 +12,7 @@ from codey.automation.browser import BrowserTargetBinding
 from codey.research.browser_search import _search_browser_call
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.resumable_browser import ResumableBrowserSearchProvider
+from codey.research.source_acquisition import with_attempt
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 
@@ -64,6 +65,16 @@ class BrowserInteraction:
 
     def wait(self, condition: str, value: str, timeout_ms: int) -> BrowserToolOutput:
         return _search_browser_call(self._wait_on_browser_thread, condition, value, timeout_ms)
+
+    def capture(self) -> dict[str, object]:
+        """Capture this bound page; source admission and passages remain gateway-owned."""
+        return _search_browser_call(self._capture_on_browser_thread)
+
+    def _capture_on_browser_thread(self) -> dict[str, object]:
+        cancellation.check()
+        page = self._page_on_browser_thread()
+        result = self.provider._resume_fetch_on_browser_thread()
+        return with_attempt(result, "browser", page.url)
 
     def _page_on_browser_thread(self) -> Page:
         session = self.provider._session

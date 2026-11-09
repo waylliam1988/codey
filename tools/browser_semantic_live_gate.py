@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 from contextlib import ExitStack
 from pathlib import Path
@@ -17,18 +18,23 @@ from playwright.sync_api import Route
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.env_names import NATIVE_TOOLS_ENV
+from codey.operations.task_execution import ExecutionDelegate
 from codey.research import answer_contract
 from codey.research.browser_interaction import BrowserInteraction
 from codey.research.knowledge_schema import schema_object, schema_strings
+from codey.research.ledger import ResearchLedger
 from codey.research.resumable_browser import ResumableBrowserSearchProvider
+from codey.research.source_gateway import ResearchSourceGateway
+from codey.research.source_reading import render_source_read
 from codey.research.tool_contract import TOOL_CONTRACTS
+from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import register_custom_executor, register_custom_tool, unregister_custom_tool
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, require_json_integer
 from tools import local_model_gate_attempts as attempts
 from tools.shell_web_diagnostic_gate import select_target
 
-BROWSER_TOOLS = ("browser_snapshot", "browser_click", "browser_fill", "browser_scroll", "browser_wait")
+BROWSER_TOOLS = ("browser_snapshot", "browser_click", "browser_fill", "browser_scroll", "browser_wait", "browser_read")
 URL = "https://example.com/interactive-field-record"
 HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Interactive record</title></head>
 <body><article>Interactive field record. Enter the requested locality, then press Load.
@@ -44,6 +50,18 @@ def execute_browser(call: ToolCall, browser: BrowserInteraction) -> ToolResult:
     """Candidate tools use the same ordinary ToolDispatch as built-in tools."""
     args = call.args
     try:
+        if call.name == "browser_read":
+            capture = browser.capture()
+            url = str(capture.get("url") or "")
+            ledger = ResearchLedger()
+            outcome = ResearchSourceGateway(browser.provider, ledger).accept_capture(url, capture)
+            opened = render_source_read(outcome, ledger,
+                offset=require_json_integer(args.get("offset", 0), "offset"),
+                limit=require_json_integer(args.get("limit", 6000), "limit"), coherent=True)
+            delegate = ExecutionDelegate(research_tools=ResearchTools(search=browser.provider,
+                                                                     store=None, changes=None, ledger=ledger))
+            result, _, _ = delegate._opened_result(call, opened, url, ledger=ledger, turn=0, tool_index=0)
+            return result
         if call.name == "browser_snapshot":
             output = browser.snapshot(max_elements=require_json_integer(args.get("max_elements", 80), "max_elements"),
                                       max_text=require_json_integer(args.get("max_text", 12000), "max_text"))
@@ -73,10 +91,11 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool) -
         task = (f"Browser contract diagnostic. First open_url {URL}. Then browser_snapshot, "
                 "browser_fill the Locality textbox with 福州, take a NEW browser_snapshot, "
                 "browser_click Load using its NEW ref, browser_wait for visible text 鱼丸, "
-                "then browser_scroll down 500 pixels and browser_snapshot. One action per turn. "
-                "Finish with submit_research_answer state=unresolved and quote the observed value as an "
-                "uncitable diagnostic observation. DOM observations are not source passages. Do not "
-                "invent evidence labels, search the web, reacquire the URL, or save knowledge.")
+                "then browser_scroll down 500 pixels and browser_snapshot. Finally browser_read "
+                "to capture the expanded record without navigating. One action per turn. "
+                "Finish with submit_research_answer state=answered and cite the ORIGINAL eN passage "
+                "from that captured record beside its value. DOM observations alone are not source passages. "
+                "Do not invent evidence labels, search the web, reacquire the URL, or save knowledge.")
     events: list[JsonObject] = []
     navigations: list[str] = []
 
@@ -135,11 +154,20 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool) -
                     (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
         delivered = any("福州样本：鱼丸净重为 173 克" in json.dumps(row.get("payload"), ensure_ascii=False)
                         for row in requests if row.get("type") == "request")
+        terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), None)
+        answer = str(terminal.get("summary") or "") if terminal is not None else ""
+        original_passages = delivered_originals(requests)
+        quantity_in_original = any("173" in body for body in original_passages.values())
+        natural_success = (result.stop_reason == "done" and "173" in answer
+                           and quantity_in_original)
         passed = (result.stop_reason == "done" and len(navigations) == 1 and delivered
                   and {"browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_scroll"} <= seen
-                  and all(row.get("ok") is True for row in tools)) if diagnostic else False
+                  and "browser_read" in seen and quantity_in_original
+                  and all(row.get("ok") is True for row in tools)) if diagnostic else natural_success
         report = canonical_json_object({**manifest, "passed": passed, "stop_reason": result.stop_reason,
             "navigations": navigations, "tools": tools, "observed_quantity_delivered": delivered,
+            "answer": answer, "natural_success": natural_success,
+            "quantity_in_original_passage": quantity_in_original, "original_passages": original_passages,
             "limits": "Interaction contract only. Natural-task answer quality requires passage integration and review."})
         (directory / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         return report
@@ -148,6 +176,27 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool) -
             for name in BROWSER_TOOLS:
                 unregister_custom_tool(name)
         provider.close()
+
+
+def delivered_originals(requests: list[JsonObject]) -> dict[str, str]:
+    """Inspect actual work views; snapshot observations never count as passages."""
+    passages: dict[str, str] = {}
+    for row in requests:
+        payload = row.get("payload")
+        if row.get("type") != "request" or not isinstance(payload, dict):
+            continue
+        messages = payload.get("messages")
+        if not isinstance(messages, list):
+            continue
+        for message in messages:
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, str) or "Original evidence available for this answer" not in content:
+                continue
+            markers = list(re.finditer(r"(?m)^\[(e[1-9][0-9]*)\] [^\n]+\n", content))
+            for index, marker in enumerate(markers):
+                end = markers[index + 1].start() if index + 1 < len(markers) else len(content)
+                passages[marker[1]] = content[marker.end():end].split("\n\n{", 1)[0].split("\n\nComplete user task", 1)[0]
+    return passages
 
 
 def main() -> int:

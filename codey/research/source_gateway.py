@@ -140,6 +140,31 @@ class ResearchSourceGateway:
         pages: str = "",
     ) -> OpenedSource:
         url = (url or "").strip()
+        denied = self._admit_source_url(url)
+        if denied is not None:
+            return denied
+        cancellation.check()
+        try:
+            page = self.search_provider.fetch(url)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception as exc:
+            self._fail("browser", "open", exc, url)
+            return OpenedSource(status="error", detail=f"open failed: {exc}",
+                                failure_code="execution_failed")
+        cancellation.check()
+        return self._receive_capture(url, page, pages=pages)
+
+    def accept_capture(self, url: str, page: dict[str, object], *, pages: str = "") -> OpenedSource:
+        """Receive an already observed page through the same source admission path."""
+        url = url.strip()
+        denied = self._admit_source_url(url)
+        if denied is not None:
+            return denied
+        cancellation.check()
+        return self._receive_capture(url, page, pages=pages)
+
+    def _admit_source_url(self, url: str) -> OpenedSource | None:
         if not url:
             return OpenedSource(status="error", detail="open_url needs a url", failure_code="invalid_response")
         direct = source_url_key(url) in self.direct_urls
@@ -151,22 +176,14 @@ class ResearchSourceGateway:
                 detail=f"{skip_reason}. Choose a specific article, document, or readable source page.",
                 failure_code="source_not_selected",
             )
-        offset = max(0, _as_int(offset, 0))
-        limit = min(OPEN_MAX_LIMIT, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
         reason = check_fetch_url(url, use_cache=True)
         if reason:
             self._fail("browser", "open", reason, url)
             return OpenedSource(status="error", detail=reason, failure_code="policy_denied")
-        cancellation.check()
-        try:
-            page = self.search_provider.fetch(url)
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception as exc:
-            self._fail("browser", "open", exc, url)
-            return OpenedSource(status="error", detail=f"open failed: {exc}",
-                                failure_code="execution_failed")
-        cancellation.check()
+        return None
+
+    def _receive_capture(self, url: str, page: dict[str, object], *, pages: str) -> OpenedSource:
+        direct = source_url_key(url) in self.direct_urls
         acquisition = acquisition_observation(page["acquisition"]) if "acquisition" in page else {}
         page_url = str(page.get("url") or url)
         status = page.get("status")
