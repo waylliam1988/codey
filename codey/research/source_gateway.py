@@ -40,6 +40,7 @@ from codey.research.source_search import (
     search_pages,
     search_text,
 )
+from codey.research.source_snapshots import captured_source, document_snapshot
 from codey.research.url_selection import source_candidate_skip_reason
 from codey.runtime.core import cancellation
 from codey.task.web_intent import source_url_key
@@ -252,16 +253,20 @@ class ResearchSourceGateway:
             )
         hit_limit = bounded_limit(limit)
         cancellation.check()
+        snapshot = captured_source(self.ledger, final_url)
         if source.content_kind == "pdf":
             hits = search_pages(self.ledger.source_pages_for_url(final_url), query, hit_limit)
             if self._pdf_scan_needed(source.final_url):
-                hits = _merge_source_hits(
-                    [*hits, *self._pdf_search_hits(source.final_url, query, hit_limit)],
-                    hit_limit,
-                )
+                scanned = self._pdf_search_snapshot(source.final_url)
+                if scanned is not None:
+                    from codey.research.ledger_receipts import source_observation
+
+                    _source, _text, page_map = source_observation(scanned)
+                    snapshot = scanned
+                    hits = search_pages(page_map, query, hit_limit)
         else:
             hits = search_text(self.ledger.source_text_for_url(final_url), query, hit_limit)
-        self.ledger.record_source_search(final_url, query, [hit.to_dict() for hit in hits])
+        self.ledger.record_source_search(final_url, query, [hit.to_dict() for hit in hits], source_snapshot=snapshot)
         return SearchedInside(status="ok", final_url=final_url, hits=tuple(hits))
 
     def _pdf_scan_needed(self, final_url: str) -> bool:
@@ -275,36 +280,39 @@ class ResearchSourceGateway:
         pages_read = self.ledger.pages_read_for_url(final_url)
         return any(page not in pages_read for page in range(1, scan_end + 1))
 
-    def _pdf_search_hits(self, final_url: str, query: str, limit: int) -> list[SourceSearchHit]:
+    def _pdf_search_snapshot(self, final_url: str) -> JsonObject | None:
         source = self.ledger.source_record_for_url(final_url)
         if source is None or source.content_kind != "pdf":
-            return []
+            return None
         page_count = max(0, (source.page_count or 0))
         if page_count <= 0:
-            return []
+            return None
         scan_end = min(page_count, PDF_SOURCE_SEARCH_MAX_PAGES)
         try:
             page = self.search_provider.fetch(source.final_url)
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
             self._fail("browser", "source_search", exc, source.final_url)
-            return []
+            return None
         cancellation.check()
+        if page.get("status") != "ok":
+            return None
         page_url = str(page.get("url") or source.final_url)
         reason = check_fetch_url(page_url)
         if reason:
             self._fail("browser", "source_search", reason, source.final_url)
-            return []
+            return None
         if page_url != source.final_url and self.ledger.canonical_opened_url(page_url) != source.final_url:
             self._fail(
                 "browser", "source_search", "redirect changed opened source", source.final_url
             )
-            return []
+            return None
         data = _fetch_bytes(page.get("bytes"))
         if not data:
-            return []
+            return None
         page_texts: dict[int, str] = {}
+        documents: list[SourceDocument] = []
         for start in range(1, scan_end + 1, PDF_MAX_PAGES_PER_OPEN):
             end = min(scan_end, start + PDF_MAX_PAGES_PER_OPEN - 1)
             document = extract_pdf_document(
@@ -317,8 +325,16 @@ class ResearchSourceGateway:
             )
             if isinstance(document, PdfSkipped):
                 continue
+            documents.append(document)
             page_texts.update({page.number: page.text for page in document.page_texts})
-        return search_pages(page_texts, query, limit)
+        if not documents:
+            return None
+        from dataclasses import replace
+
+        combined = replace(documents[0], text="\n\n".join(document.text for document in documents),
+            pages_read=tuple(page_texts), page_texts=tuple(page for document in documents for page in document.page_texts),
+            truncated=any(document.truncated for document in documents))
+        return document_snapshot(combined)
 
     def _fail(self, area: str, action: str, error: object, url: str = "") -> None:
         if self.on_failure is None:
@@ -334,20 +350,6 @@ def _fetch_bytes(value: object) -> bytes:
     if not isinstance(value, (bytes, bytearray, memoryview)):
         raise ValueError("fetch bytes must be binary data")
     return bytes(value)
-
-
-def _merge_source_hits(hits: list[SourceSearchHit], limit: int) -> list[SourceSearchHit]:
-    seen: set[tuple[int | None, int]] = set()
-    unique: list[SourceSearchHit] = []
-    for hit in sorted(hits, key=lambda item: (-item.score, item.page or 0, item.offset)):
-        key = (hit.page, hit.offset)
-        if key in seen:
-            continue
-        seen.add(key)
-        unique.append(hit)
-        if len(unique) >= limit:
-            break
-    return unique
 
 
 def _as_int(value: object, default: int) -> int:

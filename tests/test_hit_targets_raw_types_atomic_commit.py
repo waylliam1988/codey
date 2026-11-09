@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import pytest
+
 
 def _session():
     from codey.operations.task_session import TaskSession
@@ -36,7 +38,7 @@ def test_non_string_pages_rejected():
 
     s = _session()
     try:
-        _apply_hit_targets(s, {"h1": {"url": "https://example.com/a", "offset": 0, "pages": False}})
+        _apply_hit_targets(s, {"h1": {"url": "https://example.com/a", "text_hash": "a" * 16, "offset": 0, "pages": False}})
     except ValueError:
         pass
     else:
@@ -50,7 +52,7 @@ def test_bool_float_offset_rejected():
     for bad in (True, False, 1.0, "0"):
         s = _session()
         try:
-            _apply_hit_targets(s, {"h1": {"url": "https://example.com/a", "offset": bad, "pages": ""}})
+            _apply_hit_targets(s, {"h1": {"url": "https://example.com/a", "text_hash": "a" * 16, "offset": bad, "pages": ""}})
         except ValueError:
             pass
         else:
@@ -63,7 +65,7 @@ def test_illegal_second_row_leaves_no_partial_state():
 
     s = _session()
     mapping = {
-        "h1": {"url": "https://example.com/a", "offset": 0, "pages": ""},
+        "h1": {"url": "https://example.com/a", "text_hash": "a" * 16, "offset": 0, "pages": ""},
         "h2": {"url": 123, "offset": 0, "pages": ""},
     }
     try:
@@ -79,11 +81,11 @@ def test_conflicting_second_row_leaves_no_partial_state():
     from codey.operations.kernel_facts import _apply_hit_targets
 
     s = _session()
-    s.hit_targets = {"h1": {"url": "https://example.com/a", "offset": 0, "pages": ""}}
+    s.hit_targets = {"h1": {"url": "https://example.com/a", "text_hash": "a" * 16, "offset": 0, "pages": ""}}
     before = dict(s.hit_targets)
     mapping = {
-        "h2": {"url": "https://example.com/b", "offset": 0, "pages": ""},
-        "h1": {"url": "https://example.com/other", "offset": 0, "pages": ""},
+        "h2": {"url": "https://example.com/b", "text_hash": "a" * 16, "offset": 0, "pages": ""},
+        "h1": {"url": "https://example.com/other", "text_hash": "a" * 16, "offset": 0, "pages": ""},
     }
     try:
         _apply_hit_targets(s, mapping)
@@ -99,7 +101,20 @@ def test_same_target_recovery_stays_idempotent():
     from codey.operations.kernel_facts import _apply_hit_targets
 
     s = _session()
-    target = {"url": "https://example.com/a", "offset": 2, "pages": "3"}
+    target = {"url": "https://example.com/a", "text_hash": "a" * 16, "offset": 2, "pages": "3"}
     _apply_hit_targets(s, {"h1": dict(target)})
     _apply_hit_targets(s, {"h1": dict(target)})
     assert s.hit_targets == {"h1": target}
+
+
+@pytest.mark.parametrize("text_hash", [None, True, 12, "", "a" * 15, "A" * 16, "z" * 16])
+def test_missing_or_invalid_source_hash_rejects_entire_mapping(text_hash: object) -> None:
+    from codey.operations.kernel_facts import _apply_hit_targets
+
+    session = _session()
+    with pytest.raises(ValueError, match="captured source text hash"):
+        _apply_hit_targets(session, {
+            "h1": {"url": "https://example.com/a", "text_hash": "a" * 16, "offset": 0, "pages": ""},
+            "h2": {"url": "https://example.com/b", "text_hash": text_hash, "offset": 0, "pages": ""},
+        })
+    assert session.hit_targets == {}

@@ -354,11 +354,16 @@ class ResearchLedger:
                 continue
             self.evidence_items.append(replace(item, note_id=note_id or item.note_id))
 
-    def record_source_search(self, source_url: str, query: str, hits: list[object]) -> None:
+    def record_source_search(self, source_url: str, query: str, hits: list[object], *,
+                             source_snapshot: JsonObject | None = None) -> None:
         final_url = opened_url(self, source_url)
         query = " ".join((query or "").split())
         if not final_url or not query:
             return
+        if source_snapshot is None:
+            from codey.research.ledger_receipts import ledger_observation
+
+            source_snapshot = ledger_observation(self, "open", url=final_url)
         bounded_hits: list[SourceSearchLocator] = []
         for hit in hits[:MAX_PAYLOAD_SOURCE_SEARCHES]:
             if not isinstance(hit, dict):
@@ -370,6 +375,7 @@ class ResearchLedger:
             })
         self.source_searches.append({
             "source_url": final_url,
+            "source_snapshot": source_snapshot,
             "query": query,
             "hits": bounded_hits[:12],
         })
@@ -552,7 +558,8 @@ class ResearchLedger:
             "investigations": {k: dict(v) for k, v in self.investigations.items()},
             "queries": [item.query for item in self.searches[:MAX_PAYLOAD_SEARCHES]],
             "searches": [item.to_dict() for item in self.searches[:MAX_PAYLOAD_SEARCHES]],
-            "source_searches": list(self.source_searches[:MAX_PAYLOAD_SOURCE_SEARCHES]),
+            "source_searches": [{key: value for key, value in search.items() if key != "source_snapshot"}
+                                for search in self.source_searches[:MAX_PAYLOAD_SOURCE_SEARCHES]],
             "opened_count": len(self.opened_sources),
             "skipped_results": skipped,
         })

@@ -7,7 +7,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation
-from codey.research.tools import ResearchToolOutput
+from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 
 
@@ -36,20 +36,17 @@ def test_long_hit_is_opened_and_replayed_with_exact_target():
     seen = []
     ledger = ResearchLedger()
 
-    class Tools:
-        def __init__(self):
-            self.ledger = ledger
-
-        def open_url(self, actual, **kw):
-            seen.append((actual, kw))
-            self.ledger.record_open(actual, actual, "Test", "body")
-            return ResearchToolOutput("Title: Test\nbody", ok=True)
+    class Tools(ResearchTools):
+        def read_source(self, observation, **kw):
+            seen.append((observation["source"]["final_url"], kw))
+            return super().read_source(observation, **kw)
 
         def source_search(self, actual, query, limit):
             self.ledger.record_source_search(actual, query, [{"offset": 120, "page": None, "snippet": "observed"}])
             return ResearchToolOutput("1. offset 999: unrelated display", ok=True)
 
-    tools = Tools()
+    ledger.record_open(url, url, "Test", "observed text\n" * 100)
+    tools = Tools(search=None, store=None, changes=None, ledger=ledger)
     delegate = ExecutionDelegate(session=task, research_tools=tools)
     call = ToolCall("source_search", {"url": url, "query": "q"})
     result, ok, _ = delegate._execute_research(call)
@@ -62,7 +59,7 @@ def test_long_hit_is_opened_and_replayed_with_exact_target():
         ToolCall("open_hit", {"hit_id": "h1"}),
     )
     assert ok is True
-    assert seen == [(url, {"offset": 120, "pages": ""})]
+    assert seen == [(url, {"offset": 120, "limit": 6000, "pages": ""})]
     assert opened.canonical["research_observation"]["source"]["final_url"] == url
     assert opened.canonical["research_observation"]["source"]["requested_url"] == url
     opened = bind_source_identity(fresh, opened.call, opened, ok=True)
@@ -89,9 +86,12 @@ def test_collision_after_500_characters_is_still_a_conflict():
     url = "https://example.com/" + "x" * 600
     call = ToolCall("source_search", {"url": url, "query": "q"})
     def result(target):
+        ledger = ResearchLedger()
+        ledger.record_open(target, target, "Captured", "body")
+        snapshot = ledger_observation(ledger, "open", url=target)
         return ToolResult(call, "hit", ok=True, canonical={
-            "hit_targets": {"h1": {"url": target, "offset": 0, "pages": ""}},
-            "research_observation": {"source_search": {"source_url": target, "query": "q", "hits": []}},
+            "hit_targets": {"h1": {"url": target, "offset": 0, "pages": "", "text_hash": snapshot["source"]["text_hash"]}},
+            "research_observation": {"source_search": {"source_url": target, "query": "q", "hits": [], "source_snapshot": snapshot}},
         })
     record_facts_for_result(task, call, result(url + "one"), ok=True)
     with pytest.raises(ValueError, match="conflicting"):

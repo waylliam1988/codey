@@ -13,6 +13,7 @@ class SourceSearchLocator(TypedDict):
 
 class SourceSearchObservation(TypedDict):
     source_url: str
+    source_snapshot: JsonObject
     query: str
     hits: list[SourceSearchLocator]
 

@@ -2708,7 +2708,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         self.assertGreaterEqual(len(provider.sent), 2)
-        self.assertIn("Resend the intended call", provider.sent[4])
+        self.assertIn("Correct the rejected call", provider.sent[4])
         self.assertIn("source_search missing required arg 'query'", provider.sent[4])
         self.assertNotIn("Codey", provider.sent[4])
 
@@ -3885,6 +3885,15 @@ class ResearchBoundaryTests(unittest.TestCase):
         class FakePage:
             url = "https://www.sciencedirect.com/science/article/pii/S2352396424000239"
 
+            def on(self, event: str, callback: object) -> None:
+                pass
+
+            def remove_listener(self, event: str, callback: object) -> None:
+                pass
+
+            def query_selector(self, selector: str) -> None:
+                return None
+
             def __init__(self) -> None:
                 self.closed = False
                 self.default_timeout = None
@@ -3940,6 +3949,15 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_fetch_on_browser_thread_waits_through_cookie_wall_before_http_fallback(self) -> None:
         class FakePage:
             url = "https://pmc.ncbi.nlm.nih.gov/articles/PMC12064251/"
+
+            def on(self, event: str, callback: object) -> None:
+                pass
+
+            def remove_listener(self, event: str, callback: object) -> None:
+                pass
+
+            def query_selector(self, selector: str) -> None:
+                return None
 
             def __init__(self) -> None:
                 self.closed = False
@@ -4296,17 +4314,16 @@ class ResearchBoundaryTests(unittest.TestCase):
 
             def read(self, size=-1) -> bytes:
                 self.calls += 1
+                cancel_event.set()
                 return b"x" * min(size if size > 0 else 8, 8)
 
         response = StreamingResponse()
+        cancel_event = threading.Event()
 
         with (
             mock.patch("codey.research.source_download.check_fetch_url", return_value=None),
             mock.patch("codey.research.source_download._open_url_no_redirect", return_value=response),
-            mock.patch(
-                "codey.research.browser_search.cancellation.check",
-                side_effect=[None, None, None, cancellation.TaskCancelled("stop")],
-            ),self.assertRaises(cancellation.TaskCancelled)
+            cancellation.scope(cancel_event), self.assertRaises(cancellation.TaskCancelled)
         ):
             BrowserSearchProvider().fetch("https://example.com/report.pdf")
 
@@ -4461,6 +4478,15 @@ class NetworkPolicyTests(unittest.TestCase):
         from codey.runtime.core import cancellation
 
         class FakeCloseablePage:
+            def on(self, event: str, callback: object) -> None:
+                pass
+
+            def remove_listener(self, event: str, callback: object) -> None:
+                pass
+
+            def query_selector(self, selector: str) -> None:
+                return None
+
             def __init__(self) -> None:
                 self.url = "https://example.com/item"
                 self.closed = False

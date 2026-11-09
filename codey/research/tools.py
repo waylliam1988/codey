@@ -20,6 +20,7 @@ from codey.research.source_gateway import (
     OPEN_MAX_LIMIT,
     OPEN_MIN_LIMIT,
     SEARCH_LIMIT,
+    OpenedSource,
     ResearchSourceGateway,
     _SearchProvider,
 )
@@ -193,6 +194,24 @@ class ResearchTools:
         self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = ""
     ) -> ResearchToolOutput:
         outcome = self.gateway.open(url, offset=offset, limit=limit, pages=pages)
+        return self._render_source(outcome, offset=offset, limit=limit)
+
+    def read_source(self, observation: JsonObject, *, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT,
+                    pages: str = "") -> ResearchToolOutput:
+        """Read an exact captured version without executing another acquisition."""
+        from codey.research.ledger_receipts import restore_ledger_observation, source_observation
+        from codey.research.source_snapshots import document_snapshot, snapshot_document
+
+        document = snapshot_document(observation, pages=pages)
+        source, _text, _page_map = source_observation(observation)
+        selected = document_snapshot(document, retrieved_at=source.retrieved_at) if pages else observation
+        restore_ledger_observation(self.ledger, selected)
+        outcome = OpenedSource(status="ok", document=document,
+            read_urls=tuple(dict.fromkeys((source.requested_url, source.final_url))))
+        return self._render_source(outcome, offset=offset, limit=limit, observation=selected)
+
+    def _render_source(self, outcome: OpenedSource, *, offset: int, limit: int,
+                       observation: JsonObject | None = None) -> ResearchToolOutput:
         if outcome.status == "error":
             return ResearchToolOutput(f"ERROR: {outcome.detail}", ok=False,
                                       acquisition_failed=outcome.acquisition_failed, acquisition=outcome.acquisition)
@@ -211,14 +230,13 @@ class ResearchTools:
                 ok=False, acquisition=outcome.acquisition)
         # Leave room for exact passage labels, metadata and source boundaries.
         limit = min(OPEN_MAX_LIMIT - 2500, max(OPEN_MIN_LIMIT, _as_int(limit, OPEN_DEFAULT_LIMIT)))
-        from codey.research.ledger_receipts import ledger_observation
+        from codey.research.ledger_receipts import source_observation
         from codey.research.passages import describe_document_window, render_passage_window, restore_passages
+        from codey.research.source_snapshots import document_snapshot
 
-        snapshot = ResearchLedger()
-        snapshot.record_open_document(document)
-        observation = ledger_observation(snapshot, "open", url=document.final_url)
-        source = snapshot.source_record_for_url(document.final_url)
-        assert source is not None
+        if observation is None:
+            observation = document_snapshot(document)
+        source, _text, _pages = source_observation(observation)
         passages = describe_document_window(document, source.text_hash, offset, limit, coherent=self.coherent_passages)
         if not passages:
             return ResearchToolOutput("ERROR: the requested source window contains no readable text; no passage was read.",

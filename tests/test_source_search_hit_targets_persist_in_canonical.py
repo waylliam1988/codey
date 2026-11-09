@@ -28,12 +28,13 @@ def test_source_locator_guidance_uses_current_query_and_preserves_reused_ids():
     from codey.runtime.core.models import ToolCall, ToolResult
 
     session = _session()
-    session.hit_targets["h1"] = {"url": "https://example.com/old", "offset": 10, "pages": ""}
+    session.hit_targets["h1"] = {"url": "https://example.com/old", "offset": 10, "pages": "", "text_hash": "a" * 16}
 
     class Tools:
         ledger = ResearchLedger()
 
         def source_search(self, url, query, limit=6):
+            self.ledger.record_open(url, url, "Captured", "matched text\n" * 100)
             self.ledger.record_source_search(url, query, [{"offset": 200, "page": None, "snippet": "new passage"}])
             return ResearchToolOutput("new passage", ok=True)
 
@@ -81,6 +82,7 @@ def test_source_search_canonical_replays_to_same_facts():
 
         def source_search(self, url, query, limit=6):
             from codey.research.tools import ResearchToolOutput
+            self.ledger.record_open(url, url, "Captured", "matched text\n" * 100)
             self.ledger.record_source_search(url, query, [
                 {"offset": 120, "page": None, "snippet": "matched text"},
                 {"offset": 7, "page": 3, "snippet": "other"},
@@ -135,11 +137,14 @@ def test_open_hit_resolves_from_hit_targets_fact():
 
     session = _session()
     search_call = ToolCall("source_search", {"url": "https://example.com/a", "query": "q"})
+    ledger = ResearchLedger()
+    ledger.record_open("https://example.com/a", "https://example.com/a", "A", "body")
+    snapshot = ledger_observation(ledger, "open", url="https://example.com/a")
     search_result = ToolResult(
         ok=True, call=search_call, model_text="h1: 1. offset 120: matched text",
-        canonical={"hit_targets": {"h1": {"url": "https://example.com/a", "offset": 120, "pages": ""}},
+        canonical={"hit_targets": {"h1": {"url": "https://example.com/a", "offset": 120, "pages": "", "text_hash": snapshot["source"]["text_hash"]}},
                    "research_observation": {"source_search": {"source_url": "https://example.com/a",
-                                                              "query": "q", "hits": []}}},
+                                                              "query": "q", "hits": [], "source_snapshot": snapshot}}},
     )
     record_facts_for_result(session, search_call, search_result, ok=True)
     open_call = ToolCall("open_hit", {"hit_id": "h1"})

@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from codey.research.ledger import ResearchLedger
-from codey.research.ledger_receipts import ledger_observation, source_search_observation
+from codey.research.ledger_receipts import ledger_observation, source_observation, source_search_observation
+from codey.runtime.core.execution_record import HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
 
 if TYPE_CHECKING:
@@ -540,30 +541,8 @@ class ExecutionDelegate:
                         raise ValueError("successful search requires a research ledger observation")
                     canonical["research_observation"] = ledger_observation(ledger, name)
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text, canonical=canonical), outcome.ok, None
-            if name == "open_url":
-                opened = tools.open_url(str(args.get("url") or ""), offset=args.get("offset", 0),
-                                        limit=args.get("limit", 6000), pages=str(args.get("pages") or ""))
-                return self._opened_result(call, opened, str(args.get("url") or ""), ledger=tools.ledger,
-                                           turn=turn, tool_index=tool_index)
-            if name in {"open_result", "reopen_source", "open_hit"}:
-                url = self._resolve_alias_url(name, args)
-                if not url:
-                    field, available = {
-                        "open_result": ("result_id", self.session.search_results),
-                        "reopen_source": ("source_id", self.session.source_ids),
-                        "open_hit": ("hit_id", self.session.hit_targets),
-                    }[name]
-                    detail = (f"ERROR: unknown {name} id. Use {field} from these observed ids: "
-                              + ", ".join(list(available)[-12:])
-                              + ". A tool result_ref or out_ artifact handle is not a source locator.")
-                    return ToolResult(ok=False, call=call, model_text=detail), False, None
-                target = (getattr(self.session, "hit_targets", {}) or {}).get(
-                    str(args.get("hit_id") or "").lower(), {}
-                ) if name == "open_hit" else dict[str, Any]()
-                opened = (tools.open_url(url, offset=target.get("offset", 0),
-                                         pages=target.get("pages", ""))
-                          if target else tools.open_url(url))
-                return self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
+            if name in {"open_url", "open_result", "reopen_source", "open_hit"}:
+                return self._execute_source_open(call, tools, turn=turn, tool_index=tool_index)
             if name == "source_search":
                 query = str(args.get("query") or "")
                 url = str(args.get("url") or "")
@@ -605,6 +584,23 @@ class ExecutionDelegate:
         except Exception as exc:
             return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
         return ToolResult(ok=False, call=call, model_text=f"ERROR: unknown research tool {name}"), False, None
+
+    def _execute_source_open(self, call: ToolCall, tools: ResearchTools, *, turn: int,
+                             tool_index: int) -> tuple[ToolResult, bool, int | None]:
+        from codey.operations.source_execution import open_source
+
+        if call.name == "open_url":
+            url = str(call.args.get("url") or "")
+        else:
+            url = self._resolve_alias_url(call.name, dict(call.args))
+            if not url:
+                field = {"open_result": "result_id", "reopen_source": "source_id", "open_hit": "hit_id"}[call.name]
+                detail = f"ERROR: unknown {call.name} id. Use {field} from the observed references. "
+                detail += "A tool result_ref or out_ artifact handle is not a source locator."
+                return ToolResult(ok=False, call=call, model_text=detail), False, None
+        target = self.session.hit_targets.get(str(call.args.get("hit_id") or "").lower()) if call.name == "open_hit" else None
+        opened = open_source(call, tools, self.research_tools.ledger, url, target)
+        return self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
 
     def _commit_research_knowledge(self, call: ToolCall, tools: Any) -> tuple[ToolResult, bool, int | None]:
         outcome = tools.knowledge_commit(call.args)
@@ -764,7 +760,7 @@ class ExecutionDelegate:
             return str((getattr(session, "hit_targets", {}) or {}).get(rid, {}).get("url", "") or "")
         return str(results.get(rid, "") or sources.get(rid, "") or "")
 
-    def _build_hit_mapping(self, observation: SourceSearchObservation) -> tuple[str, dict[str, dict[str, object]]]:
+    def _build_hit_mapping(self, observation: SourceSearchObservation) -> tuple[str, dict[str, HitTarget]]:
         """Build hit text plus its mapping without touching the session.
 
         IDs consider both the live session mapping and the current batch so
@@ -774,16 +770,17 @@ class ExecutionDelegate:
         from codey.research.source_search import SourceSearchHit, render_results
 
         existing = dict(getattr(self.session, "hit_targets", {}) or {}) if self.session is not None else {}
-        batch: dict[str, dict[str, object]] = {}
-        by_target: dict[tuple[str, int, str], str] = {}
+        batch: dict[str, HitTarget] = {}
+        by_target: dict[tuple[str, str, int, str], str] = {}
+        source, _text, _pages = source_observation(observation["source_snapshot"])
         for key, value in list(existing.items()):
             if isinstance(value, dict):
-                by_target[(str(value.get("url", "")), int(value.get("offset", 0) or 0), str(value.get("pages", "")))] = key
+                by_target[(value["url"], value["text_hash"], value["offset"], value["pages"])] = key
         hit_ids = []
         counter = len(existing) + 1
         for hit in observation["hits"]:
             page = hit["page"]
-            target = (observation["source_url"], 0 if page is not None else hit["offset"],
+            target = (observation["source_url"], source.text_hash, hit["offset"],
                       str(page) if page is not None else "")
             hit_id = by_target.get(target, "")
             if not hit_id:
@@ -795,7 +792,7 @@ class ExecutionDelegate:
             # The receipt describes this query's targets, including reused ids.
             # Otherwise the display cannot distinguish an empty result from a
             # repeat query that legitimately found the same passages.
-            batch[hit_id] = {"url": target[0], "offset": target[1], "pages": target[2]}
+            batch[hit_id] = HitTarget(url=target[0], text_hash=target[1], offset=target[2], pages=target[3])
             hit_ids.append(hit_id)
         hits = [SourceSearchHit(**hit) for hit in observation["hits"]]
         return render_results(hits, hit_ids=tuple(hit_ids)), batch

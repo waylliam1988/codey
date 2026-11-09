@@ -29,6 +29,7 @@ class ExecutionRecord(TypedDict):
 
 class HitTarget(TypedDict):
     url: str
+    text_hash: str
     offset: int
     pages: str
 

@@ -102,6 +102,9 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
         raw_url = target.get("url", "")
         if type(raw_url) is not str:
             raise ValueError("hit target url must be a string")
+        text_hash = target.get("text_hash")
+        if type(text_hash) is not str or re.fullmatch(r"[0-9a-f]{16}", text_hash) is None:
+            raise ValueError("hit target requires a captured source text hash")
         raw_offset = target.get("offset", 0)
         if type(raw_offset) is not int or raw_offset < 0:
             raise ValueError("hit target offset must be a nonnegative integer")
@@ -112,7 +115,7 @@ def _apply_hit_targets(session: TaskSession, mapping: object) -> None:
         pages = raw_pages
         if not url:
             raise ValueError("hit target is malformed")
-        clean = HitTarget(url=url, offset=raw_offset, pages=pages)
+        clean = HitTarget(url=url, text_hash=text_hash, offset=raw_offset, pages=pages)
         if hid in pending and pending[hid] != clean:
             raise ValueError(f"conflicting hit target for {hid}")
         pending[hid] = clean

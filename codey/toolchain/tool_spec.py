@@ -172,8 +172,10 @@ def _research_specs() -> dict[str, ToolSpec]:
         reference_help = {
             "open_result": "Open a web_search hit. result_id is r1, r2, etc. from Search result references; "
                            "never pass a tool result_ref or URL. For a URL use open_url(url).",
-            "reopen_source": "Read an opened source again. source_id is s1, s2, etc. from Opened source references.",
-            "open_hit": "Read a located passage. hit_id is the exact id returned by source_search.",
+            "reopen_source": "Read the captured source without fetching again. source_id is s1, s2, etc. "
+                             "from Opened source references. Use open_url at offset 0 to acquire a fresh version.",
+            "open_hit": "Read the exact captured source version located by source_search without fetching again. "
+                        "hit_id is the exact id returned by source_search.",
         }
         specs[alias] = ToolSpec(
             name=alias,

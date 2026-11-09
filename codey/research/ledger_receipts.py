@@ -146,9 +146,12 @@ def source_search_observation(observation: object) -> SourceSearchObservation:
     if not isinstance(observation, dict) or set(observation) != {"source_search"}:
         raise ValueError("missing or invalid source search observation")
     row = observation["source_search"]
-    if not isinstance(row, dict) or set(row) != {"source_url", "query", "hits"}:
+    if not isinstance(row, dict) or set(row) != {"source_url", "source_snapshot", "query", "hits"}:
         raise ValueError("invalid source search observation fields")
     _source_url(row["source_url"])
+    source, _text, _pages = source_observation(row["source_snapshot"])
+    if source.final_url != row["source_url"]:
+        raise ValueError("source search snapshot differs from its locator URL")
     if type(row["query"]) is not str or not row["query"].strip() or not isinstance(row["hits"], (list, tuple)):
         raise ValueError("invalid source search observation query or hits")
     for hit in row["hits"]:
@@ -157,7 +160,8 @@ def source_search_observation(observation: object) -> SourceSearchObservation:
                 or type(hit["snippet"]) is not str
                 or hit["page"] is not None and (type(hit["page"]) is not int or hit["page"] < 1)):
             raise ValueError("invalid source search locator observation")
-    return SourceSearchObservation(source_url=row["source_url"], query=row["query"],
+    return SourceSearchObservation(source_url=row["source_url"],
+        source_snapshot=canonical_json_object(row["source_snapshot"]), query=row["query"],
         hits=[SourceSearchLocator(offset=hit["offset"], page=hit["page"], snippet=hit["snippet"])
               for hit in row["hits"]])
 
