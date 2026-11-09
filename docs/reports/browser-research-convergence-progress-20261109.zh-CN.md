@@ -82,3 +82,12 @@
 - KoboldCpp/Gemma4 生产 headless/kernel 实机：`.e2e-artifacts/browser-research-next/batch5-binding/summary.json` 与 `batch5-binding-codemode/summary.json` 均 `passed=true`、`stop_reason=done`；版本命中、续读和 CodeMode 来源读取保持原合同。该批不改变模型可用工具，收益是目标身份与资源收尾的确定性安全边界，不把模型回答质量诊断冒充收益证明。
 - 直接执行 `python tools/source_convergence_live_gate.py` 首次只暴露了测试入口的 `ModuleNotFoundError: tools`；按模块入口 `python -m tools.source_convergence_live_gate` 重跑通过，未修改生产代码迁就测试工具。
 - 改动文件 Ruff、Mypy、Pyrefly 均通过；`codey/automation/browser.py` 本批去除了原有 `Any` 返回类型，未新增动态类型、豁免或第二套运行时。
+
+### 批次 6：保留受限页并在同页接续
+
+- 新增 `ResumableBrowserSearchProvider` 作为默认 Research browser provider 的薄适配层。它复用原 `BrowserSearchProvider`、BrowserWorker 和 acquisition gateway；受限、登录或不可读结果保留当前绑定 page，`resume_fetch()` 在该 page 上读取当前 DOM，不重新导航、不重新发起 URL 请求。
+- 页面仍不可读时只返回结构化失败，不能形成正文 passage；用户在同页完成验证后，只有新的成功当前页观察才进入来源读取合同。任务取消仍由原有 session 收尾释放资源。
+- 新增真实 Chromium 用例 `tests/test_resumable_browser.py`：本地 HTTP 服务器第一次返回 403，确认 page 保留；在同一 page 模拟用户完成验证后读取正文；HTTP 请求计数保持 1；关闭后继续观察明确返回 `snapshot_unavailable`。两项用例通过。
+- KoboldCpp/Gemma4 Research 生产入口：`.e2e-artifacts/browser-research-next/batch6-research-default/summary.json` `passed=true`、`stop_reason=done`；版本／命中／引用合同没有回退。普通批次与 CodeMode 回归分别在 `batch6-resume`、`batch6-resume-codemode` 留有记录。
+- `batch6-resume-codemode` 首次返回 `no_progress`。事件显示模型连续四次生成 `return result.value.text` 以外的错误 CodeMode 形态，生产返回的是明确的 `CodeMode returned undefined`，重复工具结果保护正常；这是模型遵循 CodeMode 返回契约的边界，不是浏览器保留页或资源收尾缺陷。此前相同生产入口的正确 CodeMode 对照仍通过，未改生产代码迁就模型。
+- 相关来源、搜索工厂、SPA、失败页和会话绑定回归共 `71 passed`；新模块 Ruff、Mypy、Pyrefly 通过。`runtime.json` 补入 `resumable_browser.py`，同时收录近期已存在但遗漏的 `operations/chat_citations.py`，发布清单与实际源码一致。
