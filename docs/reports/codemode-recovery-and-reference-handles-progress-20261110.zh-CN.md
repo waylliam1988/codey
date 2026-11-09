@@ -8,7 +8,7 @@
 
 | 批次 | 内容 | 状态 |
 | --- | --- | --- |
-| 1 | `unwrap` 合同测试 | 红测试已提交，生产实现进行中 |
+| 1 | `unwrap` 合同测试 | 已完成 |
 | 2 | schema 驱动 `unwrap` runtime | 未开始 |
 | 3 | receipt-only repair 测试 | 未开始 |
 | 4 | repair token 与精确回放 | 未开始 |
@@ -27,9 +27,10 @@
 ## 第一批记录
 
 - 测试文件：`tests/test_codemode_unwrap_contract.py`、`tests/test_codemode_catalog_result_guidance.py`
-- 生产修改：尚未开始
-- 测试结果：`5 failed, 2 passed`；失败均对应尚未实现的 `unwrap` runtime、catalog 声明和硬编码 prompt 缺口
-- KoboldCpp gate：待执行
+- 生产修改：`guest_runner.js` 提供 `unwrap`；catalog 生成 `ToolResult<T>`、`Result<T>` 和 `unwrap` 声明；CodeMode 示例改用 `unwrap`；schema 类型渲染移除 `Any`
+- 测试结果：相关 CodeMode/runtime/kernel 测试 `93 passed`
+- 静态检查：`mypy`（修改的 schema/catalog）通过，`ruff` 通过，Node 语法检查通过
+- KoboldCpp gate：已确认 `http://127.0.0.1:5001/v1` 可用；专用模型行为 gate 待在 repair 批次完成后统一接入
 - commit：待提交
 
 ## 运行记录

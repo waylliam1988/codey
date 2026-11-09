@@ -48,6 +48,19 @@ function rejectConsole() {
   throw error;
 }
 
+function unwrap(result) {
+  if (result === null || typeof result !== "object" || typeof result.ok !== "boolean") {
+    throw new Error("unwrap expected a tool result");
+  }
+  if (result.ok === false) {
+    throw new Error(String(result.error ?? "tool call failed"));
+  }
+  if (result.ok !== true || !Object.prototype.hasOwnProperty.call(result, "value")) {
+    throw new Error("malformed successful tool result");
+  }
+  return result.value;
+}
+
 function toolsProxy(path = []) {
   const callable = (args = {}) => {
     const name = path.join(".");
@@ -149,6 +162,7 @@ async function execute(request) {
   };
   Object.assign(globalThis, {
     tools: toolsProxy(),
+    unwrap,
     store: (key, value) => stateCall("store", String(key), value),
     load: (key) => stateCall("load", String(key)),
     console: Object.freeze({ log: rejectConsole, error: rejectConsole }),

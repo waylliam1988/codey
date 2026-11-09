@@ -203,7 +203,7 @@ def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
     codemode_example = (
         "const result = await tools.read_file({path:inputs.path}); "
-        "if (!result.ok) throw new Error(result.error); return result.value.text;"
+        "const file = unwrap(result); return file.text;"
     )
     codemode_inputs = {"path": "app.py"}
     data_example = {"code": "return inputs.text;", "inputs": {"text": "first\nsecond\n"}}
@@ -215,9 +215,8 @@ def _all_specs() -> dict[str, ToolSpec]:
         description=(
             "Write an async JavaScript function body using tools.* and return its JSON result explicitly. "
             "Use return null for an intentional empty result. Normal authorization applies. "
-            "Calls return {ok:true, value} or {ok:false, error}; check ok. "
-            "For const result = await tools.NAME(...), use result.value.text for read_file "
-            "and result.value.matches for grep (possibly an empty array). "
+            "Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. "
+            "Access only fields declared for that tool's output schema. "
             "Await all tool/store/load calls. console.log/error fail; only return delivers data. "
             "No direct filesystem, process, network, shell or recursive CodeMode access. "
             f"{ARGUMENT_CONTENT_GUIDANCE} "

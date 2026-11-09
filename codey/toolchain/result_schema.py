@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import cast
 
 
 def text_output_schema() -> dict[str, object]:
@@ -68,38 +68,51 @@ def validate_output(name: str, schema: Mapping[str, object], value: object) -> N
         raise ValueError(f"invalid structured result: {error}")
 
 
-def read_page_line(value: Any, line: int) -> str | None:
+def read_page_line(value: object, line: int) -> str | None:
     """Select an absolute file line; None means this page did not observe it."""
     validate_output("read_file", read_file_output_schema(), value)
-    if value["end_line"] > value["total_lines"]:
+    observed = cast(Mapping[str, object], value)
+    end_line = cast(int, observed["end_line"])
+    total_lines = cast(int, observed["total_lines"])
+    text_complete = cast(bool, observed["text_complete"])
+    start_line = cast(int, observed["start_line"])
+    if end_line > total_lines:
         raise ValueError("observed page exceeds total lines")
-    if not value["text_complete"] or not value["start_line"] <= line <= value["end_line"]:
+    if not text_complete or not start_line <= line <= end_line:
         return None
-    lines = value["text"].split("\n")
-    if value["text"].endswith("\n"):
+    text = cast(str, observed["text"])
+    lines = text.split("\n")
+    if text.endswith("\n"):
         lines.pop()
-    if len(lines) != value["end_line"] - value["start_line"] + 1:
+    if len(lines) != end_line - start_line + 1:
         raise ValueError("observed page coordinates differ from text")
-    return str(lines[line - value["start_line"]])
+    return lines[line - start_line]
 
 
-def schema_typescript(schema: Mapping[str, Any]) -> str:
+def schema_typescript(schema: Mapping[str, object]) -> str:
     """Render types and constraints from the same frozen schema the host validates."""
     values = schema.get("enum")
-    if values is not None:
+    if isinstance(values, (list, tuple)):
         return " | ".join(json.dumps(value, ensure_ascii=False) for value in values)
     kind = schema.get("type")
     if kind == "object":
         properties = schema.get("properties", {})
         required = schema.get("required", ())
-        fields = [f"{json.dumps(key)}{'' if key in required else '?'}: {schema_typescript(value)}"
-                  for key, value in properties.items()]
+        if not isinstance(properties, Mapping):
+            return "{ [key: string]: unknown }"
+        required_keys = required if isinstance(required, (list, tuple)) else ()
+        fields = [
+            f"{json.dumps(key)}{'' if key in required_keys else '?'}: "
+            f"{schema_typescript(value) if isinstance(value, Mapping) else 'unknown'}"
+            for key, value in properties.items()
+        ]
         additional = schema.get("additionalProperties")
         if isinstance(additional, Mapping):
             fields.append(f"[key: string]: {schema_typescript(additional)}")
         return "{ " + "; ".join(fields) + " }"
     if kind == "array":
-        result = f"Array<{schema_typescript(schema['items']) if 'items' in schema else 'unknown'}>"
+        items = schema.get("items")
+        result = f"Array<{schema_typescript(items) if isinstance(items, Mapping) else 'unknown'}>"
     else:
         result = {"string": "string", "integer": "number", "number": "number",
                   "boolean": "boolean"}.get(str(kind), "unknown")

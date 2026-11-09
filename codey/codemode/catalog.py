@@ -112,7 +112,11 @@ def build_codemode_catalog(
 def render_declarations(snapshot: ToolCatalogSnapshot) -> str:
     lines = [
         "// tools.NAME uses NAME's declared arguments; returns Result<T>.",
-        "type Result<T> = Promise<{ok:true;value:T;result_ref?:string}|{ok:false;error:string}>;",
+        "type ToolResult<T> =",
+        "  | {ok: true; value: T; result_ref?: string}",
+        "  | {ok: false; error: string};",
+        "type Result<T> = Promise<ToolResult<T>>;",
+        "declare function unwrap<T>(result: ToolResult<T>): T;",
         "declare const tools: {",
     ]
     for entry in snapshot.entries:
