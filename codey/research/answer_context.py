@@ -216,12 +216,21 @@ def _render_context(session: TaskSession, ledger: ResearchLedger | None, scope: 
                          "start": passage.start, "end": passage.end,
                          **({"knowledge_source": list(passage.source_version)} if passage.source_version else {})})
     latest = list(session._memory_results.values())[-1:]
+    from codey.operations.kernel_prompt import operation_receipts
+
+    operations = operation_receipts(session)
     lines.append(canonical_json({"source_locators": [
         {key: value for key, value in row.items() if key not in {"unread_intervals", "first_unread_interval"}}
         for row in projection["locators"]],
         "previously_read_snapshots": retained,
         "investigation_attempts": investigation_history(session),
-        "latest_error": [result.model_text[:1600] for result in latest if not result.ok]}))
+        "latest_error": [result.model_text[:1600] for result in latest if not result.ok],
+        **({"operation_receipts": operations} if operations else {})}))
+    if operations:
+        lines.append("Operation receipts record actions already attempted in this task, including CodeMode children. "
+                     "They are execution status, not citation evidence. Reuse completed steps; inspect and reconcile "
+                     "uncertain delivery before retrying. Submit the answer from the original excerpts once the "
+                     "requested operations and evidence are available.")
     lines.append("Use the exact [eN] labels shown in original excerpts or previously_read_snapshots. "
                  "All these passages were actually read in this task and their exact original snapshots remain available "
                  "for citation; repeating the full text in this turn is not required. Unread or invented evidence is not allowed. "

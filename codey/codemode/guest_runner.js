@@ -234,11 +234,19 @@ async function execute(request) {
     }
     send({ type: "done", ok: true, value: JSON.parse(encoded), childCalls: active.calls, unawaitedCalls: unawaitedCallCount() });
   } catch (error) {
+    const stack = String(error?.stack ?? "").replace(/<input>:(\d+)/g,
+      (_match, line) => "codemode-program.js:" + Math.max(1, Number(line) - 1));
+    const location = stack.match(/codemode-program\.js:(\d+)/);
+    const sourceLines = code.split(/\r\n|\r|\n|\u2028|\u2029/);
+    const sourceLine = location ? Math.min(sourceLines.length, Math.max(1, Number(location[1]))) : 1;
+    const firstLine = Math.max(0, sourceLine - 2);
+    const excerpt = sourceLines.slice(firstLine, firstLine + 3)
+      .map((line, index) => `${firstLine + index + 1}: ${JSON.stringify(line.slice(0, 240))}`).join("\n");
     const diagnostic = compiling
       ? "JavaScript compilation failed after successful outer JSON decoding. No child tool was executed.\n"
-        + String(error?.stack ?? error).replace(/<input>:(\d+)/g,
-            (_match, line) => "codemode-program.js:" + Math.max(1, Number(line) - 1))
-            .split("\n").slice(0, 4).map(line => line.slice(0, 200)).join("\n")
+        + String(error?.name ?? "Error") + ": " + String(error?.message ?? error).slice(0, 400) + "\n"
+        + stack.split("\n").slice(0, 4).map(line => line.slice(0, 200)).join("\n")
+        + "\nSource excerpt (JSON-escaped lines):\n" + excerpt
         + "\nPut multiline or quoted task text in inputs and reference inputs.<field> in code. Raw line breaks inside JS single/double-quoted literals are invalid."
       : String(error?.message ?? error);
     send({ type: "done", ok: false, errorCode: compiling ? "syntax_error" : String(error?.code ?? "execution_error"), error: diagnostic, childCalls: active.calls, unawaitedCalls: unawaitedCallCount() });

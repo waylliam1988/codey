@@ -122,6 +122,9 @@ def render_declarations(snapshot: ToolCatalogSnapshot) -> str:
         "declare const tools: {",
     ]
     for entry in snapshot.entries:
+        # Aggregated leaves no longer have standalone model definitions.
+        # Keep their semantics as well as their argument/return shapes.
+        lines.extend(f"  // {line}" for line in entry.description.splitlines())
         properties = canonical_json_object(entry.parameters.get("properties", {}))
         for name, schema in properties.items():
             description = canonical_json_object(schema).get("description")

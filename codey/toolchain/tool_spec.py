@@ -363,6 +363,7 @@ def _all_specs() -> dict[str, ToolSpec]:
         description=(
             "Write an async JavaScript function body using tools.* and return its JSON result explicitly. "
             "Use return null for an intentional empty result. Normal authorization applies. "
+            "Returning modified data does not persist it; invoke the declared action tool to change external state. "
             "Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. "
             "Access only fields declared for that tool's output schema. "
             "Await all tool/store/load calls. console.log/error fail; only return delivers data. "

@@ -20,24 +20,8 @@ from codey.protocols.protocol_errors import (
 from codey.runtime.core.models import ToolCall, ToolPlan
 from codey.toolchain.runtime import safe_join
 
-VERIFICATION_REQUEST_RE = re.compile(
-    r"\b("
-    r"run|test|tests|unittest|pytest|verify|verification|check|build|lint|typecheck"
-    r")\b|跑测试|运行测试|测试通过|验证|检查",
-    re.IGNORECASE,
-)
-VERIFICATION_NEGATION_PREFIX_RE = re.compile(
-    r"(?:"
-    r"\b(?:do\s+not|don't|dont|never)\s+(?:(?:run|execute|perform|do)\s+)?(?:any\s+|the\s+)?"
-    r"|\b(?:without|skip|avoid)\s+(?:running\s+|run\s+|testing\s+|checking\s+)?"
-    r"|\bno\s+need\s+(?:to\s+|for\s+)?"
-    r"|\bneed(?:n't| not)\s+(?:to\s+)?"
-    r"|(?:不要|不用|无需|不需要|别|不必)(?:运行|跑|执行|做|进行)?(?:任何)?"
-    r")$",
-    re.IGNORECASE,
-)
 VERIFICATION_NEGATION_CANCEL_RE = re.compile(
-    r"\b(?:do\s+not|don't|dont|never)\s+(?:skip|avoid)\s+(?:[\w'-]+\s+){0,5}$",
+    r"\b(?:do\s+not|don't|dont|never)\s+$",
     re.IGNORECASE,
 )
 VERIFICATION_FORBID_RE = re.compile(
@@ -65,24 +49,17 @@ def canonical_project_path(root: Path, rel: str) -> str:
     return path.relative_to(root.resolve()).as_posix()
 
 
-def verification_match_is_negated(task: str, start: int) -> bool:
-    prefix = re.split(r"[\n.;!?。！？；]", task[:start])[-1]
-    if VERIFICATION_NEGATION_CANCEL_RE.search(prefix):
-        return False
-    return bool(VERIFICATION_NEGATION_PREFIX_RE.search(prefix))
-
-
-def task_requests_verification(task: str) -> bool:
-    text = (task or "")
-    return any(
-        not verification_match_is_negated(text, match.start())
-        for match in VERIFICATION_REQUEST_RE.finditer(text)
-    )
-
-
 def task_forbids_verification(task: str) -> bool:
-    text = (task or "")
-    return bool(VERIFICATION_FORBID_RE.search(text)) and not task_requests_verification(text)
+    """Explicit execution denials are not revoked by unrelated 'check' text."""
+    text = task or ""
+    for match in VERIFICATION_FORBID_RE.finditer(text):
+        # "Don't skip tests" asks for tests; it is not the denial "skip tests".
+        if match.group().lower().startswith(("skip ", "avoid ")):
+            prefix = re.split(r"[\n.;!?。！？；]", text[:match.start()])[-1]
+            if VERIFICATION_NEGATION_CANCEL_RE.search(prefix):
+                continue
+        return True
+    return False
 
 
 def protocol_repair_prompt(

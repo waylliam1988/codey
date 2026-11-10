@@ -210,3 +210,28 @@ def test_codemode_browser_children_use_kernel_receipts_and_original_answer_scope
     assert scope.aliases and scope.attempt_refs
     assert len(result.canonical["child_effect_ids"]) == 7
     assert "read_passages" not in result.canonical  # The parent references, never rewrites, child evidence.
+
+    from codey.operations.kernel_prompt import operation_receipts, working_context
+    from codey.research.answer_context import answer_context
+
+    receipts = operation_receipts(session)
+    assert [row["tool"] for row in receipts] == [
+        "browser_navigate", "browser_snapshot", "browser_fill", "browser_snapshot",
+        "browser_click", "browser_wait", "browser_read",
+    ]
+    assert all(row["result_ref"] in session.executed for row in receipts)
+    assert all(row["ok"] is True for row in receipts)
+    assert receipts[2]["delivery"] == "verified"
+    assert receipts[4]["effect_verified"] is False  # Delivered does not certify a click's effect.
+    assert "Fuzhou" not in str(receipts) and "37 grams" not in str(receipts)
+    assert "operation_receipts" in working_context(session)
+    if kind == "research":
+        view = answer_context(session, tools.ledger, scope)
+        assert "operation_receipts" in view and "browser_fill" in view
+        assert "not citation evidence" in view
+    # Reconstruction uses settled receipts, not a separate browser checkpoint.
+    assert operation_receipts(session.clone_projection()) == receipts
+    staged = ToolResult(ok=True, model_text="not yet settled", call=ToolCall("browser_fill", {"value": "secret"}),
+                        canonical={"value": {"delivery": "verified"}})
+    session._memory_results["uncommitted"] = staged
+    assert operation_receipts(session) == receipts

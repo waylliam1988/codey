@@ -35,3 +35,25 @@ def test_codemode_description_does_not_teach_global_value_field_shapes() -> None
     assert "result.value.matches" not in description
     assert "unwrap" in description
 
+
+def test_aggregated_leaf_keeps_its_original_semantics_in_the_frozen_model_contract() -> None:
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+
+    session = TaskSession(task_kind="hybrid", policy=TaskPolicy(grants=frozenset({
+        "control", "project.read", "project.write", "browser.observe", "browser.interact",
+    })))
+    snapshot = build_turn_snapshot(session)
+    specs = {spec.name: spec for spec in snapshot.frozen_specs}
+    assert "edit" in snapshot.tool_names
+    assert "edit" not in snapshot.nested_tool_names
+    declarations = specs["codemode"].declarations
+    for name in ("read_file", "browser_read", "browser_fill"):
+        assert specs[name].description
+        for line in specs[name].description.splitlines():
+            assert f"// {line}" in declarations
+    assert "Returning modified data does not persist it" in specs["codemode"].description
+    assert specs["edit"].description in snapshot.contract_text
+    assert "edit(args:" not in declarations
+

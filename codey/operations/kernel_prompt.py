@@ -399,6 +399,30 @@ def _pending_execution_guidance(session: TaskSession) -> str:
     return "\n".join(pending)
 
 
+def operation_receipts(session: TaskSession) -> list[JsonObject]:
+    """Bounded action status from settled receipts, never another state store.
+
+    Page observations are task progress, not research evidence. In particular,
+    omit DOM text, script output and filled values from this operational view.
+    """
+    from codey.toolchain.tool_spec import spec_for_tool
+
+    rows: list[JsonObject] = []
+    for identity, result in session._memory_results.items():
+        spec = spec_for_tool(result.call.name)
+        if identity not in session.executed or spec is None or spec.executor != "browser":
+            continue
+        value = result.canonical.get("value")
+        status = value if isinstance(value, dict) else {}
+        row: JsonObject = {"result_ref": identity, "tool": result.call.name, "ok": result.ok}
+        for key in ("action", "delivery", "page_id", "page_url", "generation", "reason",
+                    "matched", "effect_verified", "value_length"):
+            if key in status:
+                row[key] = status[key]
+        rows.append(row)
+    return rows[-12:]
+
+
 def working_context(session: TaskSession) -> str:
     """Fresh execution facts; narrative checkpoints cannot amend these observations."""
     import json
@@ -449,10 +473,12 @@ def working_context(session: TaskSession) -> str:
     if pending:
         finish_guidance = ("Outstanding declared executions (runtime receipts, not assistant narrative):\n" + pending
                            + "\nExecute the outstanding requirements before delivering the final answer. ")
+    operations = operation_receipts(session)
     return ("Current work observations (runtime records):\n" + json.dumps({"user_task": session.task_text,
         "project": session.project, "workspace_revision": session.workspace_revision,
         "workspace_fingerprint": session.workspace_fingerprint, "changed_files": list(session.edited_files),
         "read_files": sorted(session.read_files),
-        "executions": executions, "verifications": list(verifications.values()), "can_modify_project": can_modify}, ensure_ascii=False)
+        "executions": executions, "verifications": list(verifications.values()), "can_modify_project": can_modify,
+        **({"operation_receipts": operations} if operations else {})}, ensure_ascii=False)
         + "\n" + finish_guidance + "Read stored results only when more detail is needed. "
           "Do not repeat an execution merely to recover its output. Stale results cannot prove current correctness.")

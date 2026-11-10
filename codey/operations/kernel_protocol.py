@@ -299,13 +299,21 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
 
-        catalog = build_codemode_catalog(frozen, allow_writes=session.policy.allows("project.write"))
+        aggregate_browser = exposure is None and any(spec.executor == "browser" for spec in frozen)
+        # Browser aggregation must not move project writes out of their
+        # established action surface. Keep one explicit persistent-write entry,
+        # rather than making a JS return look like a successful project edit.
+        catalog = build_codemode_catalog(frozen,
+            allow_writes=session.policy.allows("project.write") and not aggregate_browser)
         nested = tuple(entry.name for entry in catalog.entries)
-        if exposure is None and any(spec.executor == "browser" for spec in frozen):
+        if aggregate_browser:
             # One declaration per leaf: browser-enabled tasks use the existing
             # CodeMode entry for composable operations, keeping controls and
             # answer submission on the outer surface. Inventory stays frozen.
-            names = tuple(name for name in names if name not in nested)
+            # Text batches lower to the project read leaves. Once those leaves
+            # are nested-only, their old outer wrappers would advertise calls
+            # that fail this same snapshot's parser/execution checks.
+            names = tuple(name for name in names if name not in nested and not is_text_batch_tool(name))
         declarations = render_declarations(catalog)
         frozen = tuple(replace(spec, declarations=declarations)
                        if spec.name == "codemode" else spec for spec in frozen)

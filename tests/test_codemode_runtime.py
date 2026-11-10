@@ -82,6 +82,21 @@ def test_inputs_share_source_budget_and_invalid_source_is_not_repaired():
     assert result.error_code == "syntax_error"
     assert "successful outer JSON decoding" in result.error
     assert "codemode-program.js:1" in result.error and "inputs.<field>" in result.error
+    assert "SyntaxError:" in result.error and "Source excerpt" in result.error
+
+
+def test_compile_error_keeps_quickjs_message_and_exact_bounded_source_for_repair():
+    from codey.codemode.runtime import NodeWorkerRuntime
+
+    # JSON's \r escape can turn a mistyped \return into a new line plus "eturn".
+    code = "const observed = 1;\n// fresh snapshot\return observed;"
+    result = NodeWorkerRuntime().execute(code, catalog=(),
+        invoke=lambda *_: pytest.fail("compilation must finish before tool effects"))
+    assert not result.ok and result.error_code == "syntax_error" and result.child_calls == 0
+    assert "SyntaxError:" in result.error
+    assert '3: "eturn observed;"' in result.error
+    assert "No child tool was executed" in result.error
+    assert len(result.error) < 1500
 
 
 @pytest.mark.parametrize("code", ["return 1n;", "return () => 1;", "return {x:undefined};",

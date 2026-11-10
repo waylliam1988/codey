@@ -61,3 +61,70 @@ def test_outer_protocol_rejects_hidden_browser_leaf_and_keeps_one_frozen_catalog
     codemode = next(spec for spec in snapshot.frozen_specs if spec.name == "codemode")
     assert codemode.declarations.count("browser_snapshot(args:") == 1
     assert {spec.name for spec in snapshot.frozen_specs} == set(snapshot.inventory_names)
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_aggregated_project_surface_does_not_advertise_unexecutable_text_wrappers(native: bool) -> None:
+    from codey.protocols.text_turn import decode_text_turn
+
+    session = TaskSession(task_kind="hybrid", policy=TaskPolicy(grants=frozenset({
+        "control", "project.read", "project.write", "browser.observe", "browser.interact",
+    })))
+    snapshot = build_turn_snapshot(session, native=native)
+    assert "read_file" in snapshot.nested_tool_names
+    assert not {"read_file", "read_files", "parallel"} & set(snapshot.tool_names)
+    plan = normalize_turn(decode_text_turn('{"tool":"read_files","args":{"paths":["result.json"]}}'),
+                          snapshot=snapshot)
+    assert plan.protocol_error
+    plan = normalize_turn(decode_text_turn('{"tool":"codemode","args":{'
+        '"code":"return unwrap(await tools.read_file({path:inputs.path}));",'
+        '"inputs":{"path":"result.json"}}}'), snapshot=snapshot)
+    assert not plan.protocol_error
+    assert "edit" in snapshot.tool_names and "edit" not in snapshot.nested_tool_names
+    plan = normalize_turn(decode_text_turn('{"tool":"edit","args":{'
+        '"path":"result.json","replacements":[{"old_string":"unknown","new_string":"measured"}]}}'),
+        snapshot=snapshot)
+    assert not plan.protocol_error
+
+
+def test_mixed_task_requires_real_project_write_after_a_successful_codemode_return(tmp_path) -> None:
+    import json
+
+    from codey.codemode.kernel import build_execute_turn_executor
+    from codey.operations.completion_gate import evaluate
+    from codey.operations.kernel_execution import execute_turn
+    from codey.runtime.core.models import ToolCall
+    from codey.workspace.revision import WorkspaceRevisionStore
+
+    original = '{"amount":0,"code":"unknown"}'
+    project = tmp_path / "project"
+    project.mkdir()
+    target = project / "result.json"
+    target.write_text(original, encoding="utf-8")
+    revisions = WorkspaceRevisionStore(tmp_path / "state")
+    current = revisions.current_state(project)
+    session = TaskSession(task_kind="hybrid", project=str(project),
+        project_changes_required=True, verification_forbidden=True,
+        policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.write", "browser.observe"}),
+                          required_checks=("project_changes_required",)))
+    session.set_workspace_state(current.revision, current.fingerprint)
+    snapshot = build_turn_snapshot(session)
+    code = ("const file = unwrap(await tools.read_file({path:inputs.path})); "
+            "const data = JSON.parse(file.text); data.amount=173; data.code='QUARTZ_851'; return data;")
+    parent = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="mixed", turn=1, effect_scope="task",
+                                         project_path=project, workspace_revision_store=revisions)
+    result, = execute_turn(session, [ToolCall("codemode", {"code": code, "inputs": {"path": "result.json"}})],
+        snapshot=snapshot, run_id="mixed", turn=1, effect_scope="task", project_path=project,
+        workspace_revision_store=revisions, executors={"codemode": parent})
+    assert result.ok and result.canonical["value"] == {"amount": 173, "code": "QUARTZ_851"}
+    assert target.read_text(encoding="utf-8") == original
+    assert not evaluate(session, "Already saved").complete
+
+    written, = execute_turn(session, [ToolCall("edit", {"path": "result.json", "replacements": [
+        {"old_string": original, "new_string": '{"amount":173,"code":"QUARTZ_851"}'},
+    ]})], snapshot=build_turn_snapshot(session), run_id="mixed", turn=2, effect_scope="task", project_path=project,
+        workspace_revision_store=revisions)
+    assert written.ok, written.model_text
+    assert json.loads(target.read_text(encoding="utf-8")) == {"amount": 173, "code": "QUARTZ_851"}
+    assert any(record["name"] == "edit" for record in session.executed.values())
+    assert evaluate(session, "Saved the measured result").complete
