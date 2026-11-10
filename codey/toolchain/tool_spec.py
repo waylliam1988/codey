@@ -283,7 +283,8 @@ def _browser_specs() -> dict[str, ToolSpec]:
         "browser_eval": ToolSpec(
             name="browser_eval", grant="browser.effect", executor="browser",
             namespace="browser.effect", effect="page_mutation",
-            parameters=(("code", {"type": "string", "minLength": 1}),), required=("code",),
+            parameters=(("code", {"type": "string", "minLength": 1,
+                                  "description": "Page JavaScript expression or function, e.g. document.title or () => document.title; not a function body with a bare return."}),), required=("code",),
             description="Evaluate page JavaScript only when the browser effect capability is authorized.",
             json_examples=('{"tool":"browser_eval","args":{"code":"document.title"}}',),
             preconditions=("browser_bound",),
@@ -291,7 +292,7 @@ def _browser_specs() -> dict[str, ToolSpec]:
         "browser_tab_list": ToolSpec(
             name="browser_tab_list", grant="browser.interact", executor="browser",
             namespace="browser.interact", effect="read",
-            description="List pages in the current browser session.",
+            description="List pages in tabs; page_url identifies the currently bound browser page.",
             json_examples=('{"tool":"browser_tab_list","args":{}}',),
         ),
         "browser_tab_new": ToolSpec(
@@ -327,24 +328,9 @@ def _browser_specs() -> dict[str, ToolSpec]:
             preconditions=("browser_bound", "fresh_snapshot", "explicit_file_authorization"),
         ),
     }
-    action_schema: dict[str, object] = {
-        "type": "object", "additionalProperties": True,
-        "required": ["text"],
-        "properties": {"action": {"type": "string"}, "delivery": {"type": "string"},
-                       "page_url": {"type": "string"}, "generation": {"type": "integer"},
-                       "text": {"type": "string"}},
-    }
-    snapshot_schema: dict[str, object] = {
-        "type": "object", "additionalProperties": True,
-        "required": ["page_id", "page_url", "generation", "text", "elements"],
-        "properties": {"page_id": {"type": "string"}, "page_url": {"type": "string"},
-            "generation": {"type": "integer"}, "text": {"type": "string"},
-            "elements": {"type": "array", "items": {
-                "type": "object", "additionalProperties": True, "required": ["ref", "role", "name"],
-                "properties": {"ref": {"type": "string"}, "role": {"type": "string"}, "name": {"type": "string"}}}}},
-    }
-    return {name: replace(spec, output_schema=snapshot_schema if name == "browser_snapshot" else action_schema)
-            if name != "browser_read" else spec for name, spec in specs.items()}
+    from codey.toolchain.result_schema import browser_output_schema
+
+    return {name: replace(spec, output_schema=browser_output_schema(name)) for name, spec in specs.items()}
 
 
 def _all_specs() -> dict[str, ToolSpec]:
@@ -506,8 +492,14 @@ def _valid_schema_nested(kind: str, schema: Mapping[str, object]) -> bool:
 def _valid_custom_schema(schema: object) -> bool:
     if not isinstance(schema, Mapping):
         return False
+    if not schema:
+        return True
+    if "anyOf" in schema:
+        alternatives = schema["anyOf"]
+        return (set(schema) == {"anyOf"} and isinstance(alternatives, (list, tuple)) and bool(alternatives)
+                and all(_valid_custom_schema(item) for item in alternatives))
     kind = schema.get("type")
-    if kind not in {"string", "integer", "number", "boolean", "object", "array"}:
+    if kind not in {"string", "integer", "number", "boolean", "object", "array", "null"}:
         return False
     if any(key not in _allowed_schema_keys(str(kind)) for key in schema):
         return False
@@ -915,6 +907,12 @@ def _json_value_equal(left: object, right: object) -> bool:
 
 def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, value: object, *, strict: bool = False) -> str:
     """声明 schema 子集的类型检查（非 Full JSON-schema）。"""
+    if isinstance(schema, Mapping) and isinstance(schema.get("anyOf"), (list, tuple)):
+        alternatives = schema["anyOf"]
+        assert isinstance(alternatives, (list, tuple))
+        if any(not _check_spec_value_against_schema(spec_name, key, item, value, strict=strict) for item in alternatives):
+            return ""
+        return f"{spec_name} arg '{key}' does not match any declared alternative"
     want, minimum, maximum = _spec_want_and_bounds(schema)
     if not want:
         return ""
@@ -943,6 +941,8 @@ def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, v
         return _check_number_value(spec_name, key, value, schema, strict=strict)
     if want == "boolean":
         return _check_boolean_value(spec_name, key, value)
+    if want == "null":
+        return "" if value is None else _spec_type_error(spec_name, key, "null", value)
     if want == "array":
         return _check_array_value(spec_name, key, schema, value, strict=strict)
     if want == "object":

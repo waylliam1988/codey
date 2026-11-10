@@ -9,7 +9,7 @@
 | 1 | 完整恢复工具元数据；验证恢复后的执行与 catalog/replay 身份 | 完成 |
 | 2 | 同时间采集版本排序、旧 handle 与乱序 replay；对齐 CodeMode 授权 fixture | 完成 |
 | 3 | 子调用失败的原回执反馈与 Hybrid 修复验收，保留显式错误处理 | 完成 |
-| 4 | 浏览器各工具实际输出的 schema 与 CodeMode 声明 | 待开始 |
+| 4 | 浏览器各工具实际输出的 schema 与 CodeMode 声明 | 完成 |
 | 5 | 上传的项目/附件文件授权与真实文件回执 | 待开始 |
 | 6 | 下载启用、持久化存储、摘要与回执 | 待开始 |
 | 7 | 完整能力 gate 迁移到生产合同；Chat/Research/Hybrid 集成验收 | 待开始 |
@@ -36,3 +36,11 @@
 - 实机发现 JS 参数中的 undefined 被 JSON.stringify 静默删掉。统一严格 JSON 编码用于参数和返回值，参数发出前拒绝 undefined/非有限数/函数等，并从冻结 schema 取字段说明。没有添加 Hybrid 专用提示词。
 - 首两次实机分别停在漏传、错误读取 result_ref；保留失败记录。最终 `.e2e-artifacts/browser-seven-b3-receipts` 通过：首次读取后外部修改文件，1 次 edit 失败，随后真实写入 173 / QUARTZ_851 并 done。受控实验不代表任意模型均能稳定修复。
 - 验证：子失败反馈、版本化 edit、repair/replay 共 35 passed；扩大检查 guest 编码涉及的 runtime/rejection 用例也通过；Ruff 与 kernel_prompt.py 的 mypy 通过。
+
+## 批次 4
+
+- 各动作、snapshot 可空字段、tabs、eval.value 与下载字段有完整输出 schema；宿主严格校验 JSON，CodeMode 声明直接从冻结 ToolSpec 生成。任意 eval JSON 以 unknown 表达，不引入 Any。
+- 实机暴露浏览器预留 about:blank 是 tabs 第一项；原列表没有当前绑定页，增加 active 后模型仍猜第一项。最终直接从原绑定派生顶层 page_url，避免要求模型自行查表。
+- 补明 browser_eval 的参数语法：表达式或函数，不是 CodeMode 函数体。模型曾连续传入裸 return；这是必要的工具语法合同，未加任务专用 prompt，也未对失败脚本自动改写重执行。
+- 相关 schema/恢复/unwrap 共 21 passed；通用 schema/递归校验/合同漂移另 10 passed（扩大原因：共享 schema 增加 anyOf/null 支持）。Ruff、三份生产文件 mypy 通过。
+- 最终实机 `.e2e-artifacts/browser-seven-b4-eval-contract` 通过；所有要求的工具均有成功原回执，脚本 token、当前页 URL、正文结果都正确。此前失败记录保留，不将 marker 命中误当成完整通过。

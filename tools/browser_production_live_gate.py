@@ -38,7 +38,8 @@ HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Production bro
 <button onclick="if(document.querySelector('#city').value==='福州') {
 document.querySelector('article').textContent='福州样本：鱼丸净重为 173 克。记录校验码 QUARTZ_851。';
 } else { document.querySelector('article').textContent='请先填写福州'; }">Load record</button>
-<article>尚未加载记录。请填写 Locality 并点击 Load record。</article></body></html>"""
+<article>尚未加载记录。请填写 Locality 并点击 Load record。</article>
+<script>window.__contractToken='SCHEMA_TOKEN_74';</script></body></html>"""
 
 
 class ProductionRecordingProvider(attempts.RecordingProvider):
@@ -49,7 +50,7 @@ class ProductionRecordingProvider(attempts.RecordingProvider):
 
 
 def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore_snapshots: bool = False,
-             reread: bool = False, stale_edit: bool = False) -> dict[str, object]:
+             reread: bool = False, stale_edit: bool = False, structured: bool = False) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     events: list[dict[str, object]] = []
@@ -106,6 +107,12 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
         task += "最后用 done 报告，不修改文件。"
     if reread:
         task += "另一个验收要求：导航后、填写之前先 browser_read 读取未加载状态；加载后再次 browser_read，以后一次正文为准。"
+    if structured:
+        task += ("另外用 browser_eval 读取 window.__contractToken，取得返回对象的 value；"
+                 "用 browser_tab_list 获取当前绑定标签页的 URL。最终报告脚本 token 和当前标签页 URL；脚本 token 是动作结果，不要作为来源引用。")
+    required = {"browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read"}
+    if structured:
+        required.update({"browser_eval", "browser_tab_list"})
     try:
         with tempfile.TemporaryDirectory(prefix="codey-browser-live-project-") as temporary, ExitStack() as stack:
             project = Path(temporary)
@@ -124,8 +131,9 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
             result = run_headless(HeadlessRequest(
                 project if mode == "hybrid" else None, task, intent=mode, provider_id="local", max_turns=12,
                 state_home=directory / "state", research_store_root=directory / "knowledge",
-                requested_capabilities=("web.read", "browser.observe", "browser.interact"),
-                project_changes_required=mode == "hybrid", required_tools=("browser_read",),
+                requested_capabilities=("web.read", "browser.observe", "browser.interact", *(
+                    ("browser.effect",) if structured else ())),
+                project_changes_required=mode == "hybrid", required_tools=tuple(sorted(required)),
                 model_selection={"model": target.model, "base_url": target.base_url},
             ), emit_jsonl=observe, connect_provider=connect)
             artifact = json.loads(result_file.read_text(encoding="utf-8"))
@@ -133,7 +141,6 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
         terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), {})
         answer = str(terminal.get("summary") or "")
         successful = {str(row.get("tool_name")) for row in events if row.get("type") == "tool" and row.get("ok") is True}
-        required = {"browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read"}
         reads = sum(row.get("type") == "tool" and row.get("tool_name") == "browser_read" and row.get("ok") is True
                     for row in events)
         failed_edits = sum(row.get("type") == "tool" and row.get("tool_name") == "edit" and row.get("ok") is False
@@ -141,6 +148,7 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
         passed = (result.stop_reason == "done" and required <= successful and "173" in answer and "QUARTZ_851" in answer
                   and (not reread or reads >= 2)
                   and (not stale_edit or changed_after_read and failed_edits >= 1)
+                  and (not structured or "SCHEMA_TOKEN_74" in answer and URL in answer)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
                   and (mode != "hybrid" or artifact == {"amount": 173, "code": "QUARTZ_851"}))
         summary: dict[str, object] = {"mode": mode, "passed": passed, "stop_reason": result.stop_reason,
@@ -164,6 +172,7 @@ def main() -> int:
     parser.add_argument("--restore-snapshots", action="store_true", help="Execute serialized/restored production contracts.")
     parser.add_argument("--reread", action="store_true", help="Read changed source twice with a fixed acquisition clock.")
     parser.add_argument("--stale-edit", action="store_true", help="Change the file after its first read; require edit recovery.")
+    parser.add_argument("--structured", action="store_true", help="Exercise eval.value and tab_list.tabs declarations.")
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
     args = parser.parse_args()
     root = args.run_dir.resolve()
@@ -174,7 +183,7 @@ def main() -> int:
     for mode in modes:
         print(json.dumps({"starting": mode}), flush=True)
         row = run_case(root / mode, mode, target, restore_snapshots=args.restore_snapshots, reread=args.reread,
-                       stale_edit=args.stale_edit)
+                       stale_edit=args.stale_edit, structured=args.structured)
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
     summary = {"passed": sum(row["passed"] is True for row in rows), "runs": len(rows), "results": rows}

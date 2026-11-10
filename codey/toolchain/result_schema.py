@@ -6,6 +6,47 @@ from collections.abc import Mapping
 from typing import cast
 
 
+def browser_output_schema(name: str) -> dict[str, object]:
+    """Browser success values, including the delegate's text projection."""
+    string: dict[str, object] = {"type": "string"}
+    integer: dict[str, object] = {"type": "integer"}
+    boolean: dict[str, object] = {"type": "boolean"}
+
+    def record(properties: dict[str, object]) -> dict[str, object]:
+        return {"type": "object", "additionalProperties": False, "properties": properties,
+                "required": list(properties)}
+
+    action: dict[str, object] = {"action": string, "delivery": string, "text": string}
+    page = {"url": string, "page_id": string, "generation": integer}
+    observed = {**action, "ref": string, "observation": string, "effect_verified": boolean, "page_url": string}
+    schemas = {
+        "browser_snapshot": record({
+            "page_id": string, "page_url": string, "generation": integer, "text": string,
+            "complete": boolean, "scope": string, "text_truncated": boolean, "elements_truncated": boolean,
+            "elements": {"type": "array", "items": record({
+                "ref": string, "role": string, "name": string, "disabled": boolean,
+                "value": {"anyOf": [string, {"type": "null"}]},
+                "checked": {"anyOf": [boolean, {"type": "null"}]},
+            })},
+        }),
+        "browser_click": record(observed),
+        "browser_scroll": record(observed),
+        "browser_fill": record({**action, "ref": string, "value_length": integer}),
+        "browser_wait": record({"action": string, "condition": string, "matched": boolean,
+                                "page_url": string, "text": string}),
+        "browser_navigate": record({**action, **page, "previous_url": string}),
+        "browser_eval": record({**action, "value": {}, "truncated": boolean}),
+        "browser_tab_list": record({"text": string, "page_url": string, "tabs": {"type": "array", "items": record({
+            "index": integer, "page_id": string, "url": string, "title": string})}}),
+        "browser_tab_new": record({**action, **page}),
+        "browser_tab_switch": record({**action, "index": integer, "url": string}),
+        "browser_upload": record(observed),
+        "browser_download": record({**action, "ref": string, "path": string, "suggested_filename": string}),
+        "browser_read": text_output_schema(),
+    }
+    return schemas[name]
+
+
 def text_output_schema() -> dict[str, object]:
     """Text tools explicitly return their model_text, without probing canonical."""
     return {"type": "string"}
@@ -60,7 +101,9 @@ def search_output_schema() -> dict[str, object]:
 def validate_output(name: str, schema: Mapping[str, object], value: object) -> None:
     """Use the existing tool schema validator for successful result values."""
     from codey.toolchain.tool_spec import _check_spec_value_against_schema, _valid_custom_schema, thaw_schema_value
+    from codey.types.json_value import decode_json_value
 
+    decode_json_value(value)
     if not _valid_custom_schema(thaw_schema_value(schema)):
         raise ValueError(f"invalid output schema for {name}")
     error = _check_spec_value_against_schema(name, "result", schema, value, strict=True)
@@ -91,6 +134,9 @@ def read_page_line(value: object, line: int) -> str | None:
 
 def schema_typescript(schema: Mapping[str, object]) -> str:
     """Render types and constraints from the same frozen schema the host validates."""
+    alternatives = schema.get("anyOf")
+    if isinstance(alternatives, (list, tuple)):
+        return " | ".join(schema_typescript(item) for item in alternatives if isinstance(item, Mapping))
     values = schema.get("enum")
     if isinstance(values, (list, tuple)):
         return " | ".join(json.dumps(value, ensure_ascii=False) for value in values)
@@ -115,7 +161,7 @@ def schema_typescript(schema: Mapping[str, object]) -> str:
         result = f"Array<{schema_typescript(items) if isinstance(items, Mapping) else 'unknown'}>"
     else:
         result = {"string": "string", "integer": "number", "number": "number",
-                  "boolean": "boolean"}.get(str(kind), "unknown")
+                  "boolean": "boolean", "null": "null"}.get(str(kind), "unknown")
     constraints = []
     for label, low, high in (("length", "minLength", "maxLength"), ("items", "minItems", "maxItems"),
                              ("range", "minimum", "maximum")):

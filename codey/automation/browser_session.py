@@ -297,13 +297,15 @@ class BrowserSession:
         if session is None:
             raise RuntimeError("no browser session")
         pages: list[JsonValue] = []
+        current = self.provider._fetch_page
+        observation: JsonObject = {"tabs": pages, "page_url": current.url if current is not None else ""}
         context = session.browser.contexts[0] if session.browser.contexts else None
         if context is None:
-            return BrowserToolOutput("No browser tabs", True, {"tabs": pages})
+            return BrowserToolOutput("No browser tabs", True, observation)
         for index, page in enumerate(context.pages):
             pages.append({"index": index, "page_id": self._page_id(page),
                           "url": page.url, "title": str(page.title() or "")[:240]})
-        return BrowserToolOutput("Current browser tabs: " + json.dumps(pages, ensure_ascii=False), True, {"tabs": pages})
+        return BrowserToolOutput("Current browser tabs: " + json.dumps(observation, ensure_ascii=False), True, observation)
 
     def _tab_new_on_browser_thread(self, url: str) -> BrowserToolOutput:
         cancellation.check()
