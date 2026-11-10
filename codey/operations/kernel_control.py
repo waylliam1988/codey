@@ -108,7 +108,8 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         error_source = "completion_check"
         error_type = type(exc).__name__
     if blocked:
-        context.close(state, KernelResult(False, final_text, context.session.turn, "blocked"))
+        context.close(state, KernelResult(False, final_text, context.session.turn,
+                                         "error" if error_source == "completion_contract" else "blocked"))
         return
     if complete:
         result = KernelResult(True, final_text, context.session.turn, "done", proof=proof,

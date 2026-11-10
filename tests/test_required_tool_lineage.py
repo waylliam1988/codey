@@ -199,10 +199,40 @@ def test_proof_identifiers_do_not_clip_or_expose_argument_selectors(runtime):
     assert verdict.complete
     requirement = parse_tool_success_check(runtime.state.policy.required_checks[0])
     proof = verdict.proof.to_payload()
-    assert any(row["check_id"] == requirement.check_id for row in proof["checks"])
+    group = next(row for row in proof["checks"] if row["check_id"] == "required_tools_satisfied")
+    assert group["reason_code"].startswith("tool_requirements:")
     assert len(requirement.check_id) <= 80
     assert "x" * 100 not in json.dumps(proof)
-    assert evaluate(_restart(runtime), "Completed").complete
+    restored = evaluate(_restart(runtime), "Completed")
+    assert restored.complete and restored.proof == verdict.proof
+
+
+@pytest.mark.parametrize("runtime", [tuple(require_tool_success("read_file", via="codemode", arguments={"path": f"{i}.txt"})
+                                           for i in range(16))], indirect=True)
+def test_all_sixteen_requirements_bind_receipts_and_recover_one_proof(runtime):
+    from dataclasses import replace
+
+    for i in range(16):
+        (runtime.project / f"{i}.txt").write_text(f"Observed {i}\n", encoding="utf-8")
+    _execute(runtime, [_code("for (let i=0;i<16;i++) unwrap(await tools.read_file({path:i+'.txt'})); return 16;")], True)
+    verdict = evaluate(runtime.state, "Read all sixteen files")
+    assert verdict.complete, verdict.followup
+    assert len(verdict.proof.checks) == 2
+    before = runtime.mutations.durable.task_facts("r")
+    fresh = _restart(runtime)
+    assert evaluate(fresh, "Read all sixteen files").proof == verdict.proof
+    assert runtime.mutations.durable.task_facts("r") == before
+    fresh.policy = replace(fresh.policy, required_checks=tuple(reversed(fresh.policy.required_checks)))
+    assert evaluate(fresh, "Read all sixteen files").proof == verdict.proof
+    # Changing a real receipt changes the binding, even if it still passes.
+    key, receipt = next((key, receipt) for key, receipt in fresh._memory_results.items()
+                        if receipt.call.name == "read_file" and receipt.call.args["path"] == "15.txt")
+    fresh._memory_results[key] = replace(receipt, model_text=receipt.model_text + "\nchanged")
+    assert evaluate(fresh, "Read all sixteen files").proof != verdict.proof
+    # The final predicate must still block when only the other fifteen match.
+    del fresh.executed[key]
+    missing = evaluate(fresh, "Read all sixteen files")
+    assert not missing.complete and "tool_execution_missing" in missing.followup
 
 
 def test_malformed_tool_requirement_cannot_fall_back_to_an_observation():

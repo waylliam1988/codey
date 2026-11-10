@@ -1,6 +1,12 @@
 """ResearchRecord delivery projection from the accepted compilation only."""
 
-from codey.completion.contract import CompletionProof, build_completion_contract, project_completion_proof
+from codey.completion.contract import (
+    CHECK_PASS,
+    CompletionCheck,
+    CompletionProof,
+    build_completion_contract,
+    project_completion_proof,
+)
 from codey.research.answer_report import AnswerReport
 from codey.research.finding_report import FindingReport, ResearchReport
 from codey.research.identity import project_ref, sanitize_research_url_ref
@@ -17,12 +23,12 @@ from codey.research.run_result import ResearchRunResult
 from codey.types.json_value import require_json_string
 from codey.utils.refs import digest_json, digest_text, stable_ref
 
+PUBLICATION_CHECK = CompletionCheck("research_publication", CHECK_PASS, "settled_publication")
+
 
 def published_completion(proof: CompletionProof, compiled: ResearchReport, *,
                          synthesis_id: str, result_ref: str, answer_version: tuple[str, int] | None = None) -> CompletionProof:
     """Bind deterministic writer checks to its settled publication, never a model verdict."""
-    from codey.completion.contract import CHECK_PASS, CompletionCheck
-
     if not isinstance(proof, CompletionProof) or not proof.satisfied or not synthesis_id or not result_ref:
         raise ValueError("research publication requires its completed writer and original result")
     from codey.research.answer_report import AnswerReport
@@ -31,7 +37,7 @@ def published_completion(proof: CompletionProof, compiled: ResearchReport, *,
         raise ValueError("whole-answer publication requires its settled knowledge version")
     answer_refs = (stable_ref("knowledge_answer", *answer_version),) if answer_version else ()
     contract = build_completion_contract(domain=proof.domain, subject_ref=proof.subject_ref,
-        checks=(*proof.checks, CompletionCheck("research_publication", CHECK_PASS, "settled_publication")),
+        checks=(*proof.checks, PUBLICATION_CHECK),
         evidence_refs=(stable_ref("research_publication", synthesis_id), *answer_refs, *proof.evidence_refs),
         artifact_refs=("research-report:" + require_json_string(compiled.to_payload()["compilation_digest"], "compilation_digest"), result_ref, *proof.artifact_refs),
         limitation_refs=proof.limitation_refs, finding_refs=proof.finding_refs,

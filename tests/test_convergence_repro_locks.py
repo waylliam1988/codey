@@ -304,22 +304,40 @@ def test_native_recovery_without_original_ids_cannot_fall_back_to_text():
 
 class RequiredChecksHygieneTests(unittest.TestCase):
     def test_over_limit_required_checks_is_explicit_error(self) -> None:
-        from codey.operations.completion_gate import evaluate
+        from codey.completion.contract import CHECK_PASS, CompletionCheck
+        from codey.operations.completion_gate import (
+            evaluate,
+            register_completion_check_provider,
+            unregister_completion_check_provider,
+        )
+        from codey.operations.completion_inputs import CompletionCheckInput
         from codey.operations.task_session import TaskSession
         from codey.policies.task_policy import TaskPolicy
 
         checks = tuple(f"check_{i}" for i in range(13))
+
+        def provider(_inputs: CompletionCheckInput) -> list[CompletionCheck]:
+            return [CompletionCheck(check_id, CHECK_PASS) for check_id in checks]
+
         policy = TaskPolicy(grants=frozenset({"control"}), required_checks=checks)
         session = TaskSession(policy=policy, task_kind="project", project="", max_turns=2)
-        verdict = evaluate(session, "done")
+        register_completion_check_provider("overflow", provider, profile="project")
+        try:
+            verdict = evaluate(session, "done")
+        finally:
+            unregister_completion_check_provider("overflow")
         self.assertFalse(verdict.complete)
-        self.assertIn("too many", verdict.followup.lower())
+        self.assertTrue(verdict.blocked)
+        self.assertEqual(verdict.error_source, "completion_contract")
+        self.assertIn("capacity exceeded", verdict.followup)
+        for check_id in checks:
+            self.assertIn(check_id, verdict.followup)
 
     def test_policy_recovery_does_not_silently_truncate(self) -> None:
         from codey.policies.task_policy import TaskPolicy
         payload = TaskPolicy(frozenset({"control"}), required_checks=tuple(f"c{i}" for i in range(20)), source="t").to_payload()
         revived = TaskPolicy.from_payload(payload)
-        # Must not silently truncate to 16; keep all so the gate can report over-limit.
+        # Keep every declaration so the gate can evaluate and budget the proof.
         self.assertEqual(len(revived.required_checks), 20)
 
 

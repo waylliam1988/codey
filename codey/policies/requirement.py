@@ -6,6 +6,7 @@ from dataclasses import dataclass
 class RequirementEvaluation:
     reason_code: str = ""
     feedback: str = ""
+    evidence_refs: tuple[str, ...] = ()
 
     @property
     def passed(self) -> bool:

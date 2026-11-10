@@ -5,21 +5,31 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, replace
+from typing import NoReturn
 
 from codey.policies.output_requirement import JSON_ANSWER_GUIDANCE
 from codey.policies.requirement import RequirementEvaluation
+from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
+from codey.types.json_value import (
+    JsonObject,
+    JsonValue,
+    decode_json_object,
+    decode_json_value,
+    require_json_integer,
+    require_json_string,
+)
 
 PREFIX = "tool_succeeded:"
+MAX_REQUIRED_TOOLS = 16
 _NAME = re.compile(r"[a-z][a-z0-9_.]{0,63}\Z")
 
 
 def required_tool_names(raw: object) -> tuple[str, ...]:
     """Explicit completion requirements, never an authorization grant."""
-    if not isinstance(raw, (tuple, list)) or len(raw) > 16:
-        raise ValueError("required_tools must be a list of at most 16 canonical tool names")
+    if not isinstance(raw, (tuple, list)) or len(raw) > MAX_REQUIRED_TOOLS:
+        raise ValueError(f"required_tools must be a list of at most {MAX_REQUIRED_TOOLS} canonical tool names")
     if any(not isinstance(name, str) or _NAME.fullmatch(name) is None for name in raw):
         raise ValueError("required_tools must contain canonical tool names")
     return tuple(dict.fromkeys(raw))
@@ -46,9 +56,7 @@ class ToolSuccessRequirement:
     def __post_init__(self) -> None:
         if not _NAME.fullmatch(self.tool) or (self.via and not _NAME.fullmatch(self.via)):
             raise ValueError("tool requirement names must be canonical tool names")
-        args = json.loads(self.arguments_json)
-        if not isinstance(args, dict):
-            raise ValueError("tool requirement arguments must be an object")
+        args = decode_json_object(json.loads(self.arguments_json))
         object.__setattr__(self, "arguments_json", _json(args))
         if self.answer_pointer is not None:
             _validate_pointer(self.answer_pointer)
@@ -65,7 +73,8 @@ class ToolSuccessRequirement:
     def declaration(self) -> str:
         if not self.via and self.arguments_json == "{}" and self.answer_pointer is None:
             return PREFIX + self.tool
-        data = {"tool": self.tool, "via": self.via, "args": json.loads(self.arguments_json)}
+        data: JsonObject = {"tool": self.tool, "via": self.via,
+                            "args": decode_json_object(json.loads(self.arguments_json))}
         if self.answer_pointer is not None:
             data["answer"] = {"pointer": self.answer_pointer, "result_pointer": self.result_pointer,
                               "line": self.result_line}
@@ -99,10 +108,12 @@ class ToolSuccessRequirement:
                 "Conflicting observations cannot establish this answer requirement.")
 
     def evaluate(
-        self, records: Mapping[str, Any], *, final_text: str = "", results: Mapping[str, ToolResult] | None = None,
+        self, records: Mapping[str, ExecutionRecord], *, final_text: str = "", results: Mapping[str, ToolResult] | None = None,
     ) -> RequirementEvaluation:
-        expected = {key: argument_digest(value) for key, value in json.loads(self.arguments_json).items()}
-        eligible = []
+        expected = {key: argument_digest(value)
+                    for key, value in decode_json_object(json.loads(self.arguments_json)).items()}
+        eligible: list[tuple[str, ExecutionRecord]] = []
+        witnesses: set[str] = set()
         matching_execution = False
         for identity, row in records.items():
             if not _succeeded(row, self.tool):
@@ -111,27 +122,27 @@ class ToolSuccessRequirement:
             if not isinstance(digests, dict) or any(digests.get(key) != value for key, value in expected.items()):
                 continue
             matching_execution = True
-            if not self.via or any(
-                _succeeded(parent, self.via) and identity in parent.get("child_effect_ids", ())
-                for parent in records.values()
-            ):
+            parents = [ref for ref, parent in records.items() if self.via and _succeeded(parent, self.via)
+                       and identity in parent.get("child_effect_ids", ())]
+            if not self.via or parents:
                 eligible.append((identity, row))
+                witnesses.update((identity, *parents))
         if not eligible:
             if matching_execution:
                 return RequirementEvaluation("tool_parent_missing",
                     "The child execution succeeded, but no successful required parent committed it. " + self.guidance)
             return RequirementEvaluation("tool_execution_missing", self.guidance)
-        if self.answer_pointer is None:
-            return RequirementEvaluation()
-        return self._evaluate_answer(eligible, final_text, results)
+        outcome = (RequirementEvaluation() if self.answer_pointer is None
+                   else self._evaluate_answer(eligible, final_text, results))
+        return replace(outcome, evidence_refs=tuple(sorted(witnesses)))
 
     def _evaluate_answer(
-        self, eligible: list[tuple[str, Any]], final_text: str, results: Mapping[str, ToolResult] | None,
+        self, eligible: list[tuple[str, ExecutionRecord]], final_text: str, results: Mapping[str, ToolResult] | None,
     ) -> RequirementEvaluation:
         from codey.toolchain.tool_spec import canonical_tool_name
 
         assert self.answer_pointer is not None
-        observed: list[tuple[str, Any, str]] = []
+        observed: list[tuple[str, JsonValue, str]] = []
         for identity, row in eligible:
             try:
                 if results is None:
@@ -142,7 +153,7 @@ class ToolSuccessRequirement:
                         or {key: argument_digest(value) for key, value in receipt.call.args.items()}
                         != row.get("argument_digests")):
                     raise ValueError("receipt differs from committed execution")
-                value = receipt.canonical["value"]
+                value = decode_json_value(receipt.canonical["value"])
             except (KeyError, ValueError, TypeError):
                 return RequirementEvaluation("observation_receipt_invalid",
                     "The required execution committed, but its full receipt is unavailable or inconsistent. "
@@ -151,7 +162,7 @@ class ToolSuccessRequirement:
                 if self.result_line is not None:
                     from codey.toolchain.result_schema import read_page_line
 
-                    selected: object = read_page_line(value, self.result_line)
+                    selected: JsonValue = read_page_line(value, self.result_line)
                     if selected is None:
                         continue
                 else:
@@ -170,7 +181,8 @@ class ToolSuccessRequirement:
         expected = observed[0][1]
         refs = [item[0] for item in observed]
         try:
-            answer = json.loads(final_text, object_pairs_hook=_unique_object, parse_constant=_reject_constant)
+            answer = decode_json_value(json.loads(final_text, object_pairs_hook=_unique_object,
+                                                  parse_constant=_reject_constant))
             _json(answer)  # Reject non-finite numbers produced by exponent overflow too.
         except (ValueError, TypeError):
             return self._answer_failure("answer_json_invalid", expected, refs)
@@ -185,7 +197,7 @@ class ToolSuccessRequirement:
         return RequirementEvaluation(result.reason_code,
             result.feedback + "\nActual answer value (JSON): " + _value_preview(actual))
 
-    def _answer_failure(self, reason: str, expected: Any, refs: list[str]) -> RequirementEvaluation:
+    def _answer_failure(self, reason: str, expected: JsonValue, refs: list[str]) -> RequirementEvaluation:
         return RequirementEvaluation(reason,
             "Execution and observation are already satisfied. Do not repeat the tool execution. "
             + JSON_ANSWER_GUIDANCE + f" Repair only the answer at pointer {self.answer_pointer!r} "
@@ -195,15 +207,15 @@ class ToolSuccessRequirement:
             "Committed result references: " + _json(refs[:8]) + f" (total {len(refs)})")
 
 
-def _value_preview(value: Any) -> str:
+def _value_preview(value: JsonValue) -> str:
     encoded = _json(value)
     if len(encoded) <= 1024:
         return encoded
     return _json({"json_prefix": encoded[:1024], "truncated": True, "json_chars": len(encoded)})
 
 
-def _succeeded(row: Any, name: str) -> bool:
-    return (isinstance(row, dict) and row.get("name") == name and row.get("ok") is True
+def _succeeded(row: ExecutionRecord, name: str) -> bool:
+    return (row.get("name") == name and row.get("ok") is True
             and row.get("execution_disposition") != "denied_before_execution")
 
 
@@ -222,16 +234,18 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
     expression = check_id.removeprefix(PREFIX)
     if _NAME.fullmatch(expression):
         return ToolSuccessRequirement(expression)
-    data = json.loads(expression)
-    if (not isinstance(data, dict) or set(data) not in ({"tool", "via", "args"}, {"tool", "via", "args", "answer"})
-            or not isinstance(data["tool"], str) or not isinstance(data["via"], str)):
+    data = decode_json_object(json.loads(expression))
+    if set(data) not in ({"tool", "via", "args"}, {"tool", "via", "args", "answer"}):
         raise ValueError("invalid structured tool requirement")
     binding = data.get("answer")
     if "answer" in data and (not isinstance(binding, dict) or set(binding) != {"pointer", "result_pointer", "line"}):
         raise ValueError("invalid answer observation binding")
-    requirement = ToolSuccessRequirement(data["tool"], data["via"], _json(data["args"]),
-        binding["pointer"] if binding is not None else None,
-        binding["result_pointer"] if binding is not None else "", binding["line"] if binding is not None else None)
+    requirement = ToolSuccessRequirement(require_json_string(data["tool"], "tool"),
+        require_json_string(data["via"], "via"), _json(data["args"]),
+        require_json_string(binding["pointer"], "pointer") if isinstance(binding, dict) else None,
+        require_json_string(binding["result_pointer"], "result_pointer") if isinstance(binding, dict) else "",
+        require_json_integer(binding["line"], "line")
+        if isinstance(binding, dict) and binding["line"] is not None else None)
     if requirement.declaration != check_id:
         raise ValueError("tool requirement must use its canonical check id")
     return requirement
@@ -243,7 +257,7 @@ def _validate_pointer(pointer: str) -> None:
         raise ValueError("answer selectors must be bounded JSON pointers")
 
 
-def _pointer(value: Any, pointer: str) -> Any:
+def _pointer(value: JsonValue, pointer: str) -> JsonValue:
     _validate_pointer(pointer)
     if not pointer:
         return value
@@ -260,8 +274,8 @@ def _pointer(value: Any, pointer: str) -> Any:
     return value
 
 
-def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result = {}
+def _unique_object(pairs: list[tuple[str, JsonValue]]) -> JsonObject:
+    result: JsonObject = {}
     for key, value in pairs:
         if key in result:
             raise ValueError("duplicate answer JSON property")
@@ -269,5 +283,5 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _reject_constant(value: str) -> Any:
+def _reject_constant(value: str) -> NoReturn:
     raise ValueError(f"invalid JSON constant: {value}")

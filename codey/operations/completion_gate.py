@@ -4,7 +4,7 @@ The model's ``done`` only proposes completion; local facts decide. Checks are
 scoped per task profile (no global provider leaks across kinds). Coding reuses
 the production completion engine over real execution evidence when a kernel
 context is supplied; strict Research reuses the evidence ledger, the report
-finalizer, and the research contract. Any import failure, check exception, or
+finalizer, and the research contract. Import failures, check exceptions and
 over-cap proof fails closed to blocked, never complete.
 """
 
@@ -38,6 +38,7 @@ from codey.operations.research_completion_checks import (
 )
 from codey.operations.task_session import TaskSession
 from codey.policies.requirement import RequirementEvaluation
+from codey.policies.tool_requirement import MAX_REQUIRED_TOOLS
 from codey.research.finding_report import ResearchReport
 from codey.research.issues import ResearchIssuePayload
 from codey.utils.refs import stable_ref
@@ -171,6 +172,11 @@ class GateVerdict:
     blocked: bool = False
 
 
+def _contract_error(message: str) -> GateVerdict:
+    return GateVerdict(False, message, None, final_text=message,
+                       error_source="completion_contract", error_type="InvalidCompletionContract", blocked=True)
+
+
 def evaluate(session: TaskSession, done_text: object, *, context: object = None) -> GateVerdict:
     try:
         normalized = CompletionContext.from_value(context)
@@ -192,7 +198,7 @@ def _required_checks_verdict(
     """Enforce the task's own required_checks: missing/unrun/conflict blocks.
 
     Each required id must be produced exactly once with pass. Missing provider,
-    not_run/fail/not_applicable, duplicate conflicting statuses, and over-limit
+    not_run/fail/not_applicable and duplicate conflicting statuses
     all fail closed with an explicit message (never silent truncation).
     Reading the policy's required checks never means "no requirements".
     """
@@ -209,16 +215,6 @@ def _required_checks_verdict(
             proof=None,
         )
     required = tuple(str(r or "").strip() for r in required if str(r or "").strip())
-    if len(required) > int(MAX_COMPLETION_CHECKS):
-        return GateVerdict(
-            complete=False,
-            followup=(
-                f"Not done yet (too many required checks: {len(required)} > {MAX_COMPLETION_CHECKS}). "
-                "Reduce the task's required checks to at most "
-                f"{MAX_COMPLETION_CHECKS}, then propose done again."
-            ),
-            proof=None,
-        )
     if not required:
         return None
     by_id: dict[str, list[CompletionCheck]] = {}
@@ -336,9 +332,25 @@ def _contract_subject(session: TaskSession, profile: str, context: CompletionCon
     return f"task:{profile or 'task'}"
 
 
+@dataclass(frozen=True)
+class _RequiredChecks:
+    rows: list[CompletionCheck]
+    evaluations: dict[str, RequirementEvaluation]
+    tool_bindings: dict[str, str]
+
+    def proof_checks(self, checks: list[CompletionCheck]) -> list[CompletionCheck]:
+        if not self.tool_bindings:
+            return checks
+        # Individual requirements have already passed the same gate. Bind the
+        # entire evaluated group, including its receipt witnesses, into one row.
+        binding = stable_ref("tool_requirements", sorted(self.tool_bindings.items()))
+        return [*(row for row in checks if row.check_id not in self.tool_bindings),
+                CompletionCheck("required_tools_satisfied", CHECK_PASS, binding)]
+
+
 def _required_tool_checks(
     session: TaskSession, final_text: str, context: CompletionContext,
-) -> tuple[list[CompletionCheck], dict[str, RequirementEvaluation]]:
+) -> _RequiredChecks:
     """Explicit entry requirements consume the committed execution projection.
 
     These are tool observations, not model assertions or inferred workflows.
@@ -351,6 +363,7 @@ def _required_tool_checks(
 
     rows: list[CompletionCheck] = []
     evaluations: dict[str, RequirementEvaluation] = {}
+    tool_bindings: dict[str, str] = {}
     parent = context.research_prerequisites if _session_profile(session) == "research" else None
     records = {**(parent.executed if parent is not None else {}), **session.executed}
     results = {**(parent.results if parent is not None else {}), **session._memory_results}
@@ -370,9 +383,29 @@ def _required_tool_checks(
             continue
         outcome = requirement.evaluate(records, final_text=final_text, results=results)
         evaluations[requirement.check_id] = outcome
-        rows.append(CompletionCheck(requirement.check_id, CHECK_PASS if outcome.passed else CHECK_FAIL,
-                                    outcome.reason_code))
-    return rows, evaluations
+        row = CompletionCheck(requirement.check_id, CHECK_PASS if outcome.passed else CHECK_FAIL, outcome.reason_code)
+        rows.append(row)
+        witnesses: list[str] = []
+        for ref in outcome.evidence_refs:
+            result = results.get(ref)
+            receipt = (result.call.name, result.call.args, result.ok, result.canonical, result.audit,
+                       result.model_text, result.truncated) if result is not None else None
+            witnesses.append(stable_ref("tool_witness", ref, records[ref], receipt))
+        tool_bindings[requirement.check_id] = stable_ref(
+            "tool_requirement", requirement.declaration, row.to_payload(), witnesses)
+    return _RequiredChecks(rows, evaluations, tool_bindings)
+
+
+def _proof_capacity_verdict(checks: list[CompletionCheck], *, publication: bool) -> GateVerdict | None:
+    from codey.research.report_projection import PUBLICATION_CHECK
+
+    final_checks = _dedupe_checks([*checks, *((PUBLICATION_CHECK,) if publication else ())])
+    if len(final_checks) <= MAX_COMPLETION_CHECKS:
+        return None
+    ids = ", ".join(row.check_id for row in final_checks)
+    return _contract_error(
+        f"Completion contract capacity exceeded: {len(final_checks)} > {MAX_COMPLETION_CHECKS} "
+        f"(including publication when required). Checks: {ids}. This requires a local contract fix.")
 
 
 def _evaluate_inner(session: TaskSession, done_text: object, *, context: CompletionContext) -> GateVerdict:
@@ -422,17 +455,24 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     checks.extend(investigation_attempt_checks(session))
     checks.extend(citation_checks)
     checks.extend(strict_research_checks(session, text, context, report=report))
-    tool_checks, tool_evaluations = _required_tool_checks(session, text, context)
-    checks.extend(tool_checks)
+    required_checks = _required_tool_checks(session, text, context)
+    if len(required_checks.tool_bindings) > MAX_REQUIRED_TOOLS:
+        return _contract_error(f"Too many required tool predicates: {len(required_checks.tool_bindings)} "
+                               f"> {MAX_REQUIRED_TOOLS}.")
+    checks.extend(required_checks.rows)
     profile = _session_profile(session)
     _collect_provider_checks(session, profile, checks)
     deduped = _dedupe_checks(checks)
     # Task-declared required checks gate before the contract: the task entry
     # must prove its own checks ran, not just any globally registered check.
-    required_block = _required_checks_verdict(session, deduped, tool_evaluations)
+    required_block = _required_checks_verdict(session, deduped, required_checks.evaluations)
     if required_block is not None:
         feedback = research_completion_feedback(session, text, context, deduped)
         return replace(required_block, followup=required_block.followup + ("\n\n" + feedback if feedback else ""))
+    deduped = required_checks.proof_checks(deduped)
+    capacity_block = _proof_capacity_verdict(deduped, publication=profile == "research" and report is not None)
+    if capacity_block is not None:
+        return capacity_block
     domain = _domain_for_session(session)
     subject = _contract_subject(session, profile, context)
     evidence_refs = _proof_evidence_refs(session, context, report)
@@ -457,14 +497,8 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
             proof=None,
         )
     if contract is None:
-        if len(deduped) == 0:
-            followup = "No completion checks were produced; cannot complete yet. Continue the task."
-        else:
-            followup = (
-                "Completion contract invalid (too many checks or unknown domain); "
-                "cannot complete yet. Continue with the most important evidence or verification."
-            )
-        return GateVerdict(complete=False, followup=followup, proof=None)
+        return _contract_error(f"Invalid completion contract: domain={domain}, subject={subject}, "
+                               f"checks={[row.check_id for row in deduped]}.")
     try:
         proof = project_completion_proof(contract)
     except Exception as exc:
