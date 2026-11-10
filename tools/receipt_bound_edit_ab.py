@@ -39,13 +39,22 @@ from tools.shell_web_diagnostic_gate import select_target
 HELPER = """return await (async (hostTools) => {
 let helperCalls = 0;
 let helperCompleted = 0;
+const readPaths = new WeakMap();
 const tools = new Proxy(hostTools, {
   get(target, property) {
+    if (property === "read_file") return async (args) => {
+      const path = args.path;
+      const read = await hostTools.read_file(args);
+      readPaths.set(read, path);
+      Object.freeze(read);
+      return read;
+    };
     if (property !== "edit") return Reflect.get(target, property);
-    return async ({path, transform}) => {
+    return async ({read, content}) => {
       helperCalls += 1;
-      const read = await hostTools.read_file({path});
-      const content = transform(unwrap(read).text);
+      const path = readPaths.get(read);
+      if (path === undefined) throw Error("edit.read must be the original tools.read_file result from this program; do not unwrap, clone or reconstruct it.");
+      unwrap(read);
       const edited = await hostTools.edit({path, content, base_result_ref: read.result_ref});
       unwrap(edited);
       helperCompleted += 1;
@@ -58,13 +67,14 @@ return {probe_value: await (async () => {
 HELPER_SUFFIX = "\n})(), probe_helper_calls: helperCalls, probe_helper_completed: helperCompleted};\n})(tools);\n"
 HELPER_DIGEST = hashlib.sha256((HELPER + HELPER_SUFFIX).encode("utf-8")).hexdigest()
 DECLARATION = (
-    "  // Guest composition: reads this path, transforms its text, edits using that exact receipt. Errors propagate.\n"
-    "  // Callback stays in the guest. No content/base_result_ref/replacements arguments on this interface.\n"
-    "  edit(args: {path: string; transform: (text: string) => string}): Result<string>;\n"
-    "  // Example: return unwrap(await tools.edit({path: inputs.path, transform: text => text.replace('old', 'new')}));\n"
+    "  // read is the original result object returned by tools.read_file in this program, not unwrap(read).\n"
+    "  // Uses that object's path and receipt; never rereads or retries. Errors propagate.\n"
+    "  edit(args: {read: Awaited<ReturnType<typeof tools.read_file>>; content: string}): Result<string>;\n"
+    "  // Example: const r=await tools.read_file({path:inputs.path}); "
+    "return unwrap(await tools.edit({read:r,content:unwrap(r).text.replace('old','new')}));\n"
 )
 ROOT = Path(__file__).resolve().parents[1]
-INTERFACE_VERSION = "guest-tools-edit-transform-v3"
+INTERFACE_VERSION = "guest-tools-edit-read-object-v4"
 
 
 @dataclass(frozen=True)
@@ -174,7 +184,7 @@ def prototype_helper(directory: Path, *, enabled: bool) -> Iterator[None]:
 
     def bound_contract_digest(runtime: NodeWorkerRuntime) -> str:
         original = contract_digest(runtime)
-        return hashlib.sha256((original + ":guest-tools-edit-transform:" + HELPER_DIGEST).encode("utf-8")).hexdigest()
+        return hashlib.sha256((original + ":" + INTERFACE_VERSION + ":" + HELPER_DIGEST).encode("utf-8")).hexdigest()
 
     with ExitStack() as stack:
         stack.enter_context(patch.object(NodeWorkerRuntime, "execute", recorded_execute))
@@ -185,12 +195,14 @@ def prototype_helper(directory: Path, *, enabled: bool) -> Iterator[None]:
         yield
 
 
-def provider_metrics(path: Path) -> JsonObject:
+def provider_metrics(path: Path, *, through_bytes: int | None = None) -> JsonObject:
     """Count each recorded exchange once; missing usage remains unknown."""
     requests: set[tuple[str, int]] = set()
     responses: dict[tuple[str, int], JsonObject] = {}
     if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
+        with path.open("rb") as stream:
+            transcript = stream.read(-1 if through_bytes is None else through_bytes).decode("utf-8")
+        for line in transcript.splitlines():
             row = decode_json_object(json.loads(line))
             identity = (str(row["recorder_id"]), require_json_integer(row["exchange"], "exchange"))
             if row["type"] == "request":
@@ -228,12 +240,18 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
     write_json(project / "result-backup.json", case.initial)
     before = {path.name: path.read_bytes() for path in project.iterdir()}
     events: list[JsonObject] = []
+    first_edit_bytes: int | None = None
+    provider_path = directory / "provider.jsonl"
     source_before = production_source_digest()
     started = time.monotonic()
 
     def observe(payload: dict[str, object]) -> None:
+        nonlocal first_edit_bytes
         event = decode_json_object(payload)
         events.append(event)
+        if (first_edit_bytes is None and event.get("type") == "tool"
+                and event.get("tool_name") == "edit" and event.get("ok") is True):
+            first_edit_bytes = provider_path.stat().st_size
         with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(event, ensure_ascii=False) + "\n")
 
@@ -250,9 +268,11 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
                  "示例：const r=await tools.read_file({path:inputs.path}); "
                  "return unwrap(await tools.edit({path:inputs.path,content:unwrap(r).text.replace('old','new'),"
                  "base_result_ref:r.result_ref}));") if arm == "A" else (
-                     "本实验 tools.edit 的唯一签名是 tools.edit({path, transform})，返回 Result<string>。"
-                     "transform 收到读取正文并返回新正文；读取回执由程序绑定，读取不完整或版本变动仍拒绝写入。"
-                     "示例：return unwrap(await tools.edit({path:inputs.path,transform:text=>text.replace('old','new')}));")
+                     "本实验 tools.edit 的唯一签名是 tools.edit({read, content})，返回 Result<string>。"
+                     "先 tools.read_file 读取，在同一 codemode 程序中将原始回执对象传给 read；程序提取该对象的路径和凭证，"
+                     "不重新读取。正文在 unwrap(readResult).text；读取不完整或版本变动仍拒绝写入。"
+                     "示例：const r=await tools.read_file({path:inputs.path}); "
+                     "return unwrap(await tools.edit({read:r,content:unwrap(r).text.replace('old','new')}));")
     summary: JsonObject = {"case": case.name, "arm": arm, "passed": False}
     try:
         with (prototype_helper(directory, enabled=arm == "B"),
@@ -284,6 +304,9 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
     helper_programs = sum(mentions_helper_call(str(
         decode_json_object(json.loads(line))["model_code"])) for line in programs.read_text(encoding="utf-8").splitlines()
     ) if programs.exists() else 0
+    edit_phase = provider_metrics(provider_path, through_bytes=first_edit_bytes) if first_edit_bytes is not None else None
+    edit_phase_metrics = {"edit_phase_" + key: edit_phase[key] if edit_phase is not None else None
+                          for key in ("model_calls", "prompt_tokens", "completion_tokens")}
     summary.update(
         seconds=round(time.monotonic() - started, 3),
         source_before=source_before, source_after=production_source_digest(),
@@ -294,8 +317,10 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
         failed_edits=sum(row.get("tool_name") == "edit" and row.get("ok") is False for row in tools),
         failed_codemode_calls=sum(row.get("tool_name") == "codemode" and row.get("ok") is False for row in tools),
         edit_call_programs=helper_programs,
+        first_edit_provider_bytes=first_edit_bytes,
+        **edit_phase_metrics,
         **helper_metrics(directory),
-        **provider_metrics(directory / "provider.jsonl"),
+        **provider_metrics(provider_path),
     )
     write_json(directory / "summary.json", summary)
     return summary
@@ -324,6 +349,9 @@ def run_worker(directory: Path, case: EditCase, arm: str, *, base_url: str, time
                            "error": error, "seconds": timeout, "failed_edits": None,
                            "failed_codemode_calls": None, "confirmed_helper_calls": None,
                            "confirmed_helper_edits": None, "untraced_failed_programs": None,
+                           "read_calls": None, "edit_calls": None,
+                           "edit_phase_model_calls": None, "edit_phase_prompt_tokens": None,
+                           "edit_phase_completion_tokens": None,
                            **provider_metrics(directory / "provider.jsonl")}
     write_json(summary_path, summary)
     return summary
@@ -336,7 +364,8 @@ def aggregate(rows: list[JsonObject], arm: str) -> JsonObject:
                            "runs_mentioning_edit": sum(isinstance(row.get("edit_call_programs"), int)
                                                       and bool(row["edit_call_programs"]) for row in selected)}
     for key in ("model_calls", "prompt_tokens", "completion_tokens", "failed_edits", "failed_codemode_calls",
-                "confirmed_helper_calls", "confirmed_helper_edits", "untraced_failed_programs"):
+                "confirmed_helper_calls", "confirmed_helper_edits", "untraced_failed_programs",
+                "read_calls", "edit_calls", "edit_phase_model_calls", "edit_phase_prompt_tokens", "edit_phase_completion_tokens"):
         values = [row[key] for row in selected]
         summary[key] = sum(require_json_integer(value, key) for value in values) if all(
             type(value) is int for value in values) else None
@@ -352,7 +381,7 @@ def audit_run(root: Path) -> JsonObject:
     summary = decode_json_object(json.loads((root / "summary.json").read_text(encoding="utf-8")))
     manifest = decode_json_object(json.loads((root / "manifest.json").read_text(encoding="utf-8")))
     if manifest.get("interface_version") != INTERFACE_VERSION:
-        raise ValueError("This auditor requires guest-tools-edit-transform-v3 artifacts; preserve earlier audits.")
+        raise ValueError(f"This auditor requires {INTERFACE_VERSION} artifacts; preserve earlier audits.")
     audited: list[JsonValue] = []
     pairs: dict[str, dict[str, tuple[JsonObject, int]]] = {}
     for programs in sorted(root.glob("??-*/*/programs.jsonl")):
@@ -423,6 +452,7 @@ def main() -> int:
         "helper_declaration": DECLARATION,
         "interface_version": INTERFACE_VERSION,
         "first_pass_definition": "task completed correctly without any failed tool receipt",
+        "edit_phase_definition": "Provider transcript prefix ending at the first successful real edit receipt; no copied log.",
         "limitations": "Small pilot; prompt caching and model variation affect wall time. No browser work is included.",
     })
     rows: list[JsonObject] = []
