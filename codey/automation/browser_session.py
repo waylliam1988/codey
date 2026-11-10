@@ -10,8 +10,9 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import cast
+from typing import TypeVar, cast
 from uuid import uuid4
 
 from playwright.sync_api import ElementHandle, Error, FilePayload, Page
@@ -35,6 +36,7 @@ from codey.types.json_value import JsonObject, JsonValue, canonical_json_object,
 MAX_SNAPSHOT_ELEMENTS = 80
 MAX_SNAPSHOT_TEXT = 12_000
 MAX_ACTION_TEXT = 2_000
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,15 @@ class _ElementRef:
     page_token: int
     generation: int
     url: str
+
+
+def _browser_call(fn: Callable[..., T], *args: object) -> T:
+    """Keep the browser worker boundary typed when its runtime is imported lazily."""
+    return cast(T, _search_browser_call(fn, *args))
+
+
+def _browser_attempt(page: dict[str, object], url: str) -> dict[str, object]:
+    return cast(dict[str, object], with_attempt(page, "browser", url))
 
 
 def _base_provider(provider: object) -> BrowserSearchProvider:
@@ -82,43 +93,43 @@ class BrowserSession:
 
     def snapshot(self, *, max_elements: int = MAX_SNAPSHOT_ELEMENTS,
                  max_text: int = MAX_SNAPSHOT_TEXT) -> BrowserToolOutput:
-        return _search_browser_call(self._snapshot_on_browser_thread, max_elements, max_text)
+        return _browser_call(self._snapshot_on_browser_thread, max_elements, max_text)
 
     def click(self, ref: str) -> BrowserToolOutput:
-        return _search_browser_call(self._click_on_browser_thread, ref)
+        return _browser_call(self._click_on_browser_thread, ref)
 
     def fill(self, ref: str, value: str) -> BrowserToolOutput:
-        return _search_browser_call(self._fill_on_browser_thread, ref, value)
+        return _browser_call(self._fill_on_browser_thread, ref, value)
 
     def scroll(self, direction: str, amount: int) -> BrowserToolOutput:
-        return _search_browser_call(self._scroll_on_browser_thread, direction, amount)
+        return _browser_call(self._scroll_on_browser_thread, direction, amount)
 
     def wait(self, condition: str, value: str, timeout_ms: int) -> BrowserToolOutput:
-        return _search_browser_call(self._wait_on_browser_thread, condition, value, timeout_ms)
+        return _browser_call(self._wait_on_browser_thread, condition, value, timeout_ms)
 
     def navigate(self, url: str) -> BrowserToolOutput:
-        return _search_browser_call(self._navigate_on_browser_thread, url)
+        return _browser_call(self._navigate_on_browser_thread, url)
 
     def evaluate(self, code: str) -> BrowserToolOutput:
-        return _search_browser_call(self._evaluate_on_browser_thread, code)
+        return _browser_call(self._evaluate_on_browser_thread, code)
 
     def tab_list(self) -> BrowserToolOutput:
-        return _search_browser_call(self._tab_list_on_browser_thread)
+        return _browser_call(self._tab_list_on_browser_thread)
 
     def tab_new(self, url: str) -> BrowserToolOutput:
-        return _search_browser_call(self._tab_new_on_browser_thread, url)
+        return _browser_call(self._tab_new_on_browser_thread, url)
 
     def tab_switch(self, index: int) -> BrowserToolOutput:
-        return _search_browser_call(self._tab_switch_on_browser_thread, index)
+        return _browser_call(self._tab_switch_on_browser_thread, index)
 
     def upload(self, ref: str, file: FilePayload) -> BrowserToolOutput:
-        return _search_browser_call(self._upload_on_browser_thread, ref, file)
+        return _browser_call(self._upload_on_browser_thread, ref, file)
 
     def download(self, ref: str) -> BrowserToolOutput:
-        return _search_browser_call(self._download_on_browser_thread, ref)
+        return _browser_call(self._download_on_browser_thread, ref)
 
     def capture(self) -> dict[str, object]:
-        return _search_browser_call(self._capture_on_browser_thread)
+        return _browser_call(self._capture_on_browser_thread)
 
     def _page_on_browser_thread(self) -> Page:
         page = self.provider._fetch_page
@@ -425,17 +436,17 @@ class BrowserSession:
         invalid = (_validate_page_status(page.url, response_status)
                    or _validate_page_content_type(page.url, content_type))
         if invalid is not None:
-            return with_attempt(invalid, "browser", page.url)
+            return _browser_attempt(invalid, page.url)
         html, text = _fetch_page_content_after_settle(page)
         invalid = _validate_page_observation(page, page.url, html, text)
         if invalid is not None:
-            return with_attempt(invalid, "browser", page.url)
+            return _browser_attempt(invalid, page.url)
         truncated = len(text) > _MAX_PAGE_CHARS
         if truncated:
             text = text[:_MAX_PAGE_CHARS]
         result: dict[str, object] = {"status": "ok", "url": page.url, "title": extract_title(html),
                                      "text": text, "truncated": truncated, "observation": "current_page"}
-        return with_attempt(result, "browser", page.url)
+        return _browser_attempt(result, page.url)
 
     def _resolve_ref(self, ref: str) -> tuple[Page, ElementHandle]:
         page = self._page_on_browser_thread()
