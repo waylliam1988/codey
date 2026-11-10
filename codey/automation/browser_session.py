@@ -278,10 +278,9 @@ class BrowserSession:
             return BrowserToolOutput(f"ERROR: navigation denied after redirect: {final_policy_reason}", False,
                                      {"action": "navigate", "url": final_url,
                                       "delivery": "confirmed", "reason": "policy_denied"})
-        status = getattr(response, "status", None) if response is not None else None
-        headers = getattr(response, "headers", {}) if response is not None else {}
-        content_type = str(headers.get("content-type", "")) if isinstance(headers, dict) else ""
-        self._navigation_facts[id(page)] = (status if isinstance(status, int) else None, content_type)
+        status = response.status if response is not None else None
+        content_type = response.headers.get("content-type", "") if response is not None else ""
+        self._navigation_facts[id(page)] = (status, content_type)
         self._invalidate_refs()
         return BrowserToolOutput(f"Navigated to {final_url}", True,
                                  {"action": "navigate", "url": final_url, "previous_url": previous_url,
@@ -342,10 +341,9 @@ class BrowserSession:
         self.provider._fetch_page = page
         self._invalidate_refs()
         response = page.goto(target, wait_until="domcontentloaded", timeout=20_000)
-        status = getattr(response, "status", None) if response is not None else None
-        headers = getattr(response, "headers", {}) if response is not None else {}
-        content_type = str(headers.get("content-type", "")) if isinstance(headers, dict) else ""
-        self._navigation_facts[id(page)] = (status if isinstance(status, int) else None, content_type)
+        status = response.status if response is not None else None
+        content_type = response.headers.get("content-type", "") if response is not None else ""
+        self._navigation_facts[id(page)] = (status, content_type)
         return BrowserToolOutput(f"Opened tab at {page.url}", True,
                                  {"action": "tab_new", "url": page.url, "page_id": self._page_id(page),
                                   "generation": self._generation, "delivery": "delivered",

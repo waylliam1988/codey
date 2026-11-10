@@ -43,6 +43,7 @@ SCOPED_TARGETS = {
 }
 
 CONTRACT_TARGETS = (
+    "codey/operations/completion_output.py", "codey/policies/task_policy.py", "codey/automation/browser_session.py",
     "codey/policies/tool_requirement.py", "codey/policies/requirement.py",
     "codey/operations/kernel_control.py", "codey/research/report_projection.py",
     "codey/operations/task_execution.py",

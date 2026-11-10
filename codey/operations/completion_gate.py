@@ -10,7 +10,7 @@ over-cap proof fails closed to blocked, never complete.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 
 from codey.completion.contract import (
@@ -28,6 +28,7 @@ from codey.completion.contract import (
 )
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import CompletionCheckInput, ProjectCompletionFacts
+from codey.operations.completion_output import tool_facts
 from codey.operations.project_completion_checks import collect_completion_workspace, evaluate_project_completion
 from codey.operations.research_completion_checks import (
     citation_requirement_checks,
@@ -38,7 +39,7 @@ from codey.operations.research_completion_checks import (
 )
 from codey.operations.task_session import TaskSession
 from codey.policies.requirement import RequirementEvaluation
-from codey.policies.tool_requirement import MAX_REQUIRED_TOOLS
+from codey.policies.tool_requirement import MAX_REQUIRED_TOOLS, ToolObservation
 from codey.research.finding_report import ResearchReport
 from codey.research.issues import ResearchIssuePayload
 from codey.utils.refs import stable_ref
@@ -177,11 +178,12 @@ def _contract_error(message: str) -> GateVerdict:
                        error_source="completion_contract", error_type="InvalidCompletionContract", blocked=True)
 
 
-def evaluate(session: TaskSession, done_text: object, *, context: object = None) -> GateVerdict:
+def evaluate(session: TaskSession, done_text: object, *, context: object = None,
+             observations: Mapping[str, ToolObservation] | None = None) -> GateVerdict:
     try:
         normalized = CompletionContext.from_value(context)
         collect_completion_workspace(session, normalized)
-        return _evaluate_inner(session, done_text, context=normalized)
+        return _evaluate_inner(session, done_text, context=normalized, observations=observations)
     except Exception as exc:
         return GateVerdict(
             complete=False,
@@ -350,6 +352,7 @@ class _RequiredChecks:
 
 def _required_tool_checks(
     session: TaskSession, final_text: str, context: CompletionContext,
+    observations: Mapping[str, ToolObservation] | None,
 ) -> _RequiredChecks:
     """Explicit entry requirements consume the committed execution projection.
 
@@ -364,9 +367,7 @@ def _required_tool_checks(
     rows: list[CompletionCheck] = []
     evaluations: dict[str, RequirementEvaluation] = {}
     tool_bindings: dict[str, str] = {}
-    parent = context.research_prerequisites if _session_profile(session) == "research" else None
-    records = {**(parent.executed if parent is not None else {}), **session.executed}
-    results = {**(parent.results if parent is not None else {}), **session._memory_results}
+    records, results = tool_facts(session, context)
     for check_id in session.policy.required_checks:
         if is_output_check(check_id):
             passed, reason, feedback = evaluate_output(check_id, final_text)
@@ -381,7 +382,9 @@ def _required_tool_checks(
             continue
         if requirement is None:
             continue
-        outcome = requirement.evaluate(records, final_text=final_text, results=results)
+        observation = (requirement.observe(records, results=results) if observations is None
+                       else observations[requirement.check_id])
+        outcome = requirement.evaluate_observation(observation, final_text)
         evaluations[requirement.check_id] = outcome
         row = CompletionCheck(requirement.check_id, CHECK_PASS if outcome.passed else CHECK_FAIL, outcome.reason_code)
         rows.append(row)
@@ -408,7 +411,8 @@ def _proof_capacity_verdict(checks: list[CompletionCheck], *, publication: bool)
         f"(including publication when required). Checks: {ids}. This requires a local contract fix.")
 
 
-def _evaluate_inner(session: TaskSession, done_text: object, *, context: CompletionContext) -> GateVerdict:
+def _evaluate_inner(session: TaskSession, done_text: object, *, context: CompletionContext,
+                    observations: Mapping[str, ToolObservation] | None) -> GateVerdict:
     text = str(done_text or "").strip()
     from codey.operations.execution_claims import validate_execution_claims
     from codey.operations.source_gaps import source_read_required, task_source_coverage, validate_source_gaps
@@ -455,7 +459,7 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     checks.extend(investigation_attempt_checks(session))
     checks.extend(citation_checks)
     checks.extend(strict_research_checks(session, text, context, report=report))
-    required_checks = _required_tool_checks(session, text, context)
+    required_checks = _required_tool_checks(session, text, context, observations)
     if len(required_checks.tool_bindings) > MAX_REQUIRED_TOOLS:
         return _contract_error(f"Too many required tool predicates: {len(required_checks.tool_bindings)} "
                                f"> {MAX_REQUIRED_TOOLS}.")

@@ -27,12 +27,22 @@ _NAME = re.compile(r"[a-z][a-z0-9_.]{0,63}\Z")
 
 
 def required_tool_names(raw: object) -> tuple[str, ...]:
-    """Explicit completion requirements, never an authorization grant."""
+    """Admit tool names or canonical predicates, never authorization grants."""
     if not isinstance(raw, (tuple, list)) or len(raw) > MAX_REQUIRED_TOOLS:
         raise ValueError(f"required_tools must be a list of at most {MAX_REQUIRED_TOOLS} canonical tool names")
-    if any(not isinstance(name, str) or _NAME.fullmatch(name) is None for name in raw):
-        raise ValueError("required_tools must contain canonical tool names")
-    return tuple(dict.fromkeys(raw))
+    declarations: list[str] = []
+    for name in raw:
+        if not isinstance(name, str):
+            raise ValueError("required_tools must contain canonical tool names or predicates")
+        if _NAME.fullmatch(name) is None:
+            try:
+                requirement = parse_tool_success_check(name)
+            except (ValueError, TypeError) as exc:
+                raise ValueError("required_tools contains an invalid tool predicate") from exc
+            if requirement is None:
+                raise ValueError("required_tools must contain canonical tool names or predicates")
+        declarations.append(name)
+    return tuple(dict.fromkeys(declarations))
 
 
 def _json(value: object) -> str:
@@ -42,6 +52,14 @@ def _json(value: object) -> str:
 def argument_digest(value: object) -> str:
     """Type-preserving selectors; do not retain file bodies in the projection."""
     return hashlib.sha256(_json(value).encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class ToolObservation:
+    """One ephemeral selection from the original committed receipts."""
+    evaluation: RequirementEvaluation
+    value: JsonValue = None
+    result_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -102,14 +120,19 @@ class ToolSuccessRequirement:
         selected = f"value{self.result_pointer}"
         if self.result_line is not None:
             selected += f", absolute file line {self.result_line}"
-        return (execution + " " + JSON_ANSWER_GUIDANCE + f" At pointer {self.answer_pointer!r}, return exactly "
-                f"the observed {selected} from this committed result. Do not shorten or invent it. "
-                "Use the stored result rather than repeating execution to restate it. "
+        return (execution + " " + JSON_ANSWER_GUIDANCE + f" The application fills pointer {self.answer_pointer!r} "
+                f"from the committed {selected}, preserving its JSON type and complete value. "
+                "In done.summary, supply only unbound JSON fields, or {} when none are needed. "
                 "Conflicting observations cannot establish this answer requirement.")
 
     def evaluate(
         self, records: Mapping[str, ExecutionRecord], *, final_text: str = "", results: Mapping[str, ToolResult] | None = None,
     ) -> RequirementEvaluation:
+        return self.evaluate_observation(self.observe(records, results=results), final_text)
+
+    def observe(
+        self, records: Mapping[str, ExecutionRecord], *, results: Mapping[str, ToolResult] | None = None,
+    ) -> ToolObservation:
         expected = {key: argument_digest(value)
                     for key, value in decode_json_object(json.loads(self.arguments_json)).items()}
         eligible: list[tuple[str, ExecutionRecord]] = []
@@ -129,16 +152,16 @@ class ToolSuccessRequirement:
                 witnesses.update((identity, *parents))
         if not eligible:
             if matching_execution:
-                return RequirementEvaluation("tool_parent_missing",
-                    "The child execution succeeded, but no successful required parent committed it. " + self.guidance)
-            return RequirementEvaluation("tool_execution_missing", self.guidance)
-        outcome = (RequirementEvaluation() if self.answer_pointer is None
-                   else self._evaluate_answer(eligible, final_text, results))
-        return replace(outcome, evidence_refs=tuple(sorted(witnesses)))
+                return ToolObservation(RequirementEvaluation("tool_parent_missing",
+                    "The child execution succeeded, but no successful required parent committed it. " + self.guidance))
+            return ToolObservation(RequirementEvaluation("tool_execution_missing", self.guidance))
+        outcome = (ToolObservation(RequirementEvaluation()) if self.answer_pointer is None
+                   else self._observe_value(eligible, results))
+        return replace(outcome, evaluation=replace(outcome.evaluation, evidence_refs=tuple(sorted(witnesses))))
 
-    def _evaluate_answer(
-        self, eligible: list[tuple[str, ExecutionRecord]], final_text: str, results: Mapping[str, ToolResult] | None,
-    ) -> RequirementEvaluation:
+    def _observe_value(
+        self, eligible: list[tuple[str, ExecutionRecord]], results: Mapping[str, ToolResult] | None,
+    ) -> ToolObservation:
         from codey.toolchain.tool_spec import canonical_tool_name
 
         assert self.answer_pointer is not None
@@ -155,9 +178,9 @@ class ToolSuccessRequirement:
                     raise ValueError("receipt differs from committed execution")
                 value = decode_json_value(receipt.canonical["value"])
             except (KeyError, ValueError, TypeError):
-                return RequirementEvaluation("observation_receipt_invalid",
+                return ToolObservation(RequirementEvaluation("observation_receipt_invalid",
                     "The required execution committed, but its full receipt is unavailable or inconsistent. "
-                    "Restore the original verified receipt before proposing done; display text cannot prove the answer.")
+                    "Restore the original verified receipt before proposing done; display text cannot prove the answer."))
             try:
                 if self.result_line is not None:
                     from codey.toolchain.result_schema import read_page_line
@@ -166,31 +189,39 @@ class ToolSuccessRequirement:
                     if selected is None:
                         continue
                 else:
-                    selected = _pointer(value, self.result_pointer)
+                    selected = json_pointer(value, self.result_pointer)
                 observed.append((identity, selected, _json(selected)))
             except (KeyError, ValueError, TypeError, IndexError):
-                return RequirementEvaluation("observation_selector_unavailable",
-                    "The committed result does not contain the required result selector. " + self.guidance)
+                return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
+                    "The committed result does not contain the required result selector. " + self.guidance))
         if not observed:
-            return RequirementEvaluation("observation_selector_unavailable",
-                "No committed page contains the required absolute line. " + self.guidance)
+            return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
+                "No committed page contains the required absolute line. " + self.guidance))
         if any(item[2] != observed[0][2] for item in observed):
-            return RequirementEvaluation("conflicting_observations",
+            return ToolObservation(RequirementEvaluation("conflicting_observations",
                 "Committed observations disagree at the required selector. An answer edit cannot resolve this. "
-                "Report the conflict; do not choose an arbitrary result or repeat execution merely to restate it.")
-        expected = observed[0][1]
-        refs = [item[0] for item in observed]
+                "Report the conflict; do not choose an arbitrary result or repeat execution merely to restate it."))
+        return ToolObservation(RequirementEvaluation(), observed[0][1], tuple(item[0] for item in observed))
+
+    def evaluate_observation(self, observation: ToolObservation, final_text: str) -> RequirementEvaluation:
+        if not observation.evaluation.passed or self.answer_pointer is None:
+            return observation.evaluation
+        outcome = self._evaluate_answer(observation, final_text)
+        return replace(outcome, evidence_refs=observation.evaluation.evidence_refs)
+
+    def _evaluate_answer(self, observation: ToolObservation, final_text: str) -> RequirementEvaluation:
+        assert self.answer_pointer is not None
+        expected = observation.value
+        refs = list(observation.result_refs)
         try:
-            answer = decode_json_value(json.loads(final_text, object_pairs_hook=_unique_object,
-                                                  parse_constant=_reject_constant))
-            _json(answer)  # Reject non-finite numbers produced by exponent overflow too.
+            answer = decode_answer(final_text)
         except (ValueError, TypeError):
             return self._answer_failure("answer_json_invalid", expected, refs)
         try:
-            actual = _pointer(answer, self.answer_pointer)
+            actual = json_pointer(answer, self.answer_pointer)
         except (KeyError, ValueError, TypeError, IndexError):
             return self._answer_failure("answer_pointer_missing", expected, refs)
-        if _json(actual) == observed[0][2]:
+        if _json(actual) == _json(expected):
             return RequirementEvaluation()
         reason = "answer_type_mismatch" if type(actual) is not type(expected) else "answer_value_mismatch"
         result = self._answer_failure(reason, expected, refs)
@@ -257,7 +288,7 @@ def _validate_pointer(pointer: str) -> None:
         raise ValueError("answer selectors must be bounded JSON pointers")
 
 
-def _pointer(value: JsonValue, pointer: str) -> JsonValue:
+def json_pointer(value: JsonValue, pointer: str) -> JsonValue:
     _validate_pointer(pointer)
     if not pointer:
         return value
@@ -272,6 +303,12 @@ def _pointer(value: JsonValue, pointer: str) -> JsonValue:
         else:
             raise ValueError("JSON pointer does not select a value")
     return value
+
+
+def decode_answer(text: str) -> JsonValue:
+    answer = decode_json_value(json.loads(text, object_pairs_hook=_unique_object, parse_constant=_reject_constant))
+    _json(answer)
+    return answer
 
 
 def _unique_object(pairs: list[tuple[str, JsonValue]]) -> JsonObject:

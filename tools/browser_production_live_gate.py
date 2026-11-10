@@ -30,6 +30,7 @@ from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.policies.tool_requirement import require_tool_success
 from codey.research.browser_search import BrowserSearchProvider
 from codey.storage.input_attachments import InputAttachmentStore
 from tools import local_model_gate_attempts as attempts
@@ -40,7 +41,8 @@ DOWNLOAD_BYTES = b"DOWNLOAD_BYTES_93\n"
 HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Production browser fixture</title></head><body>
 <label>Locality<input id="city"></label>
 <button onclick="if(document.querySelector('#city').value==='福州') {
-document.querySelector('article').textContent='福州样本：鱼丸净重为 173 克。记录校验码 QUARTZ_851。';
+window.__record={amount:173,code:'QUARTZ_851'};
+document.querySelector('article').textContent='福州样本：鱼丸净重为 '+window.__record.amount+' 克。记录校验码 '+window.__record.code+'。';
 } else { document.querySelector('article').textContent='请先填写福州'; }">Load record</button>
 <article>尚未加载记录。请填写 Locality 并点击 Load record。</article>
 <label>Attachment<input type="file" onchange="this.files[0].text().then(t => document.querySelector('#uploaded').textContent=this.files[0].name+':'+t)"></label>
@@ -59,7 +61,7 @@ class ProductionRecordingProvider(attempts.RecordingProvider):
 
 def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore_snapshots: bool = False,
              reread: bool = False, stale_edit: bool = False, structured: bool = False,
-             upload_file: bool = False, download_file: bool = False) -> dict[str, object]:
+             upload_file: bool = False, download_file: bool = False, bound_output: bool = False) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     events: list[dict[str, object]] = []
@@ -122,6 +124,13 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
     required = {"browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read"}
     if structured:
         required.update({"browser_eval", "browser_tab_list"})
+    bindings: tuple[str, ...] = ()
+    if bound_output:
+        task += ("完成 browser_read 后，用 browser_eval 的 code=window.__record 读取该页面同一记录的结构化对象。"
+                 "这两个字段由应用从该回执组装最终 JSON；调用 done 时 summary 只填字符串 {}，无需抄写字段值。")
+        required.add("browser_eval")
+        bindings = tuple(require_tool_success("browser_eval", via="codemode", answer_pointer=f"/{key}",
+                                             result_pointer=f"/value/{key}") for key in ("amount", "code"))
     session_id = "browser-file-fixture" if upload_file else ""
     if upload_file:
         attachment = InputAttachmentStore(directory / "state", session_id).put(
@@ -157,8 +166,12 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
                 session_id=session_id,
                 state_home=directory / "state", research_store_root=directory / "knowledge",
                 requested_capabilities=("web.read", "browser.observe", "browser.interact", *(
-                    ("browser.effect",) if structured or upload_file or download_file else ())),
-                project_changes_required=mode == "hybrid", required_tools=tuple(sorted(required)),
+                    ("browser.effect",) if structured or upload_file or download_file or bound_output else ())),
+                project_changes_required=mode == "hybrid", required_tools=(*sorted(required), *bindings),
+                output_format="json" if bound_output else "text",
+                output_schema=json.dumps({"type": "object", "properties": {
+                    "amount": {"type": "integer"}, "code": {"type": "string"}},
+                    "required": ["amount", "code"], "additionalProperties": False}) if bound_output else "",
                 model_selection={"model": target.model, "base_url": target.base_url},
             ), emit_jsonl=observe, connect_provider=connect)
             artifact = json.loads(result_file.read_text(encoding="utf-8"))
@@ -208,8 +221,11 @@ def main() -> int:
     parser.add_argument("--structured", action="store_true", help="Exercise eval.value and tab_list.tabs declarations.")
     parser.add_argument("--upload-file", action="store_true", help="Upload an explicitly imported task attachment.")
     parser.add_argument("--download-file", action="store_true", help="Download and verify a persistent binary artifact.")
+    parser.add_argument("--bound-output", action="store_true", help="Assemble exact JSON fields from committed eval results.")
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
     args = parser.parse_args()
+    if args.bound_output and args.mode not in {"chat", "hybrid"}:
+        parser.error("--bound-output requires --mode chat or hybrid (Research delivers its submitted Markdown).")
     root = args.run_dir.resolve()
     root.mkdir(parents=True, exist_ok=False)
     target = select_target("gemma", args.timeout, args.kobold_base_url)
@@ -219,7 +235,7 @@ def main() -> int:
         print(json.dumps({"starting": mode}), flush=True)
         row = run_case(root / mode, mode, target, restore_snapshots=args.restore_snapshots, reread=args.reread,
                        stale_edit=args.stale_edit, structured=args.structured, upload_file=args.upload_file,
-                       download_file=args.download_file)
+                       download_file=args.download_file, bound_output=args.bound_output)
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
     summary = {"passed": sum(row["passed"] is True for row in rows), "runs": len(rows), "results": rows}

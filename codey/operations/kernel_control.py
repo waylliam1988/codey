@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from codey.durable.model import thaw_json
 from codey.operations import kernel_prompt
+from codey.operations.completion_output import OutputBindingError, prepare_completion_output
 from codey.operations.kernel_contracts import (
     ClosingDecision,
     DoneDecision,
@@ -92,7 +93,8 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     blocked = False
     try:
         refresh_verification_candidates(context.session)
-        verdict = evaluate(context.session, context.session.last_done_text, context=context.completion_context)
+        output = prepare_completion_output(context.session, context.session.last_done_text, context.completion_context)
+        verdict = evaluate(context.session, output.text, context=context.completion_context, observations=output.observations)
         if type(verdict.complete) is not bool:
             raise ValueError("completion gate returned an invalid verdict")
         complete, followup, proof = verdict.complete, verdict.followup, verdict.proof
@@ -102,6 +104,9 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         error_source = getattr(verdict, "error_source", "")
         error_type = getattr(verdict, "error_type", "")
         final_text = verdict.final_text or context.session.last_done_text
+    except OutputBindingError as exc:
+        context.close(state, KernelResult(False, str(exc), context.session.turn, "error"))
+        return
     except Exception as exc:
         complete, proof, final_text = False, None, context.session.last_done_text
         followup = f"Completion check failed ({exc}); cannot complete yet. Continue the task."

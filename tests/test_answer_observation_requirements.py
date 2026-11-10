@@ -136,7 +136,7 @@ def test_invalid_answer_binding_is_rejected_at_declaration(kwargs):
 @pytest.mark.parametrize("runtime", [BINDINGS], indirect=True)
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("mistake", ["first_characters", "extra_quotes", "missing_content_quotes", "markdown_fence"])
-def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(runtime, native, mistake):
+def test_bound_answer_is_assembled_without_model_repair_or_repeating_tools(runtime, native, mistake):
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from tests.support.kernel_runtime import (
         KernelExecutionDeps,
@@ -177,16 +177,7 @@ def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(
                         json.dumps({"ok": True, "value": first}, separators=(",", ":"))) in feedback
                 name, args = "done", {"summary": wrong}
             else:
-                assert index == 2
-                assert "Final answer must be JSON" in feedback
-                assert "Execution and observation are already satisfied" in feedback
-                assert "Required execution:" not in feedback
-                if native:
-                    assert "done" in feedback and "summary string" in feedback
-                    assert "not the outer tool-call object" in feedback
-                assert len(runtime.state.executed) == 3
-                assert not evaluate(runtime.state, wrong).complete
-                name, args = "done", {"summary": correct}
+                pytest.fail("Bound fields must not require another model turn")
             return (AssistantTurn(tool_calls=(ProviderToolCall(f"call-{index}", name, args),)) if native
                     else json.dumps({"tool": name, "args": args}))
 
@@ -214,6 +205,7 @@ def test_wrong_answer_is_repaired_by_original_task_loop_without_repeating_tools(
         observation=KernelObservationDeps(intent_sink=runtime.sink),
     ))
     assert result.completed and result.summary == correct
-    assert provider.step == 3
+    assert provider.step == 2
+    assert runtime.state.last_done_text == wrong
     assert len(runtime.state.executed) == 3
     assert evaluate(_restart(runtime), correct).complete
