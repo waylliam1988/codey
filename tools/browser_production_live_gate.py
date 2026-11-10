@@ -25,6 +25,9 @@ if __package__ in (None, ""):
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.env_names import NATIVE_TOOLS_ENV
+from codey.operations import kernel_protocol
+from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
+from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.research.browser_search import BrowserSearchProvider
 from tools import local_model_gate_attempts as attempts
 from tools.shell_web_diagnostic_gate import select_target
@@ -45,12 +48,23 @@ class ProductionRecordingProvider(attempts.RecordingProvider):
         super()._record(row)
 
 
-def run_case(directory: Path, mode: str, target: attempts.GateTarget) -> dict[str, object]:
+def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore_snapshots: bool = False) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     events: list[dict[str, object]] = []
     navigations: list[str] = []
     started = time.monotonic()
+    snapshot_count = 0
+    build_snapshot = kernel_protocol.build_turn_snapshot
+
+    def restored_snapshot(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
+        nonlocal snapshot_count
+        original = build_snapshot(session, native=native)
+        restored = restore_snapshot(snapshot_description(original))
+        if restored != original:
+            raise AssertionError("snapshot serialization changed the frozen contract")
+        snapshot_count += 1
+        return restored
 
     def observe(row: dict[str, object]) -> None:
         events.append(row)
@@ -90,6 +104,8 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget) -> dict[st
             stack.enter_context(patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}))
             stack.enter_context(attempts.isolate_gate_secondary_models(target))
             stack.enter_context(attempts.record_api_generations(directory / "provider.jsonl"))
+            if restore_snapshots:
+                stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", restored_snapshot))
             stack.enter_context(patch.object(provider, "_guard_request", route_document))
             stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", source_factory))
             stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory))
@@ -115,7 +131,7 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget) -> dict[st
         summary = {"mode": mode, "passed": False, "error": f"{type(exc).__name__}: {exc}"}
     finally:
         provider.close()
-    summary.update(seconds=round(time.monotonic() - started, 3), model=target.model,
+    summary.update(seconds=round(time.monotonic() - started, 3), model=target.model, restored_snapshots=snapshot_count,
                    scope="controlled_fixture_production_entry_and_kernel")
     (directory / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     return summary
@@ -126,6 +142,7 @@ def main() -> int:
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--mode", choices=("chat", "research", "hybrid", "all"), default="all")
     parser.add_argument("--timeout", type=float, default=180)
+    parser.add_argument("--restore-snapshots", action="store_true", help="Execute serialized/restored production contracts.")
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
     args = parser.parse_args()
     root = args.run_dir.resolve()
@@ -135,7 +152,7 @@ def main() -> int:
     rows = []
     for mode in modes:
         print(json.dumps({"starting": mode}), flush=True)
-        row = run_case(root / mode, mode, target)
+        row = run_case(root / mode, mode, target, restore_snapshots=args.restore_snapshots)
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
     summary = {"passed": sum(row["passed"] is True for row in rows), "runs": len(rows), "results": rows}

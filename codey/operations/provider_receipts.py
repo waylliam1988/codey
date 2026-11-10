@@ -154,7 +154,11 @@ def _restore_spec(value: object) -> ToolSpec:
         replay_class=require_json_string(row["replay_class"], "replay_class"),
         parallel_safe=require_json_boolean(row["parallel_safe"], "parallel_safe"),
         output_schema=decode_json_object(row["output_schema"]),
-        declarations=require_json_string(row["declarations"], "declarations")))
+        declarations=require_json_string(row["declarations"], "declarations"),
+        namespace=require_json_string(row["namespace"], "namespace"),
+        effect=require_json_string(row["effect"], "effect"),
+        evidence_route=require_json_string(row["evidence_route"], "evidence_route"),
+        preconditions=tuple(require_json_strings(row["preconditions"], "preconditions"))))
 
 
 def restore_snapshot(payload: object) -> TurnSnapshot:
