@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+from unittest import mock
+
 import pytest
+
+from codey.automation.browser import Session
 
 
 def test_existing_session_mode_connects_existing_cdp_and_can_create_task_page(monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.research.browser_search import BrowserSearchProvider
 
     captured: dict[str, object] = {}
+    session = Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=True)
 
-    def open_page(*args: object, **kwargs: object) -> object:
+    def open_page(*args: object, **kwargs: object) -> Session:
         captured.update(kwargs)
-        return object()
+        return session
 
     monkeypatch.setattr("codey.research.browser_search.open_chat_page", open_page)
     provider = BrowserSearchProvider(
@@ -19,7 +24,8 @@ def test_existing_session_mode_connects_existing_cdp_and_can_create_task_page(mo
         launch=False,
         require_existing_session=True,
     )
-    assert provider._ensure_session_on_browser_thread() is not None
+    assert provider._ensure_session_on_browser_thread() is session
+    assert provider._page_owned_by_provider_on_browser_thread(session.page)
     assert captured["open_if_missing"] is False
     assert captured["allow_new_page"] is True
 

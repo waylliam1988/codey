@@ -932,7 +932,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
 
     def test_browser_search_defaults_to_isolated_browser(self) -> None:
-        session = SimpleNamespace(page=mock.Mock(), browser=mock.Mock())
+        session = browser_search.Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=True)
         provider = BrowserSearchProvider()
 
         with mock.patch("codey.research.browser_search.open_chat_page", return_value=session) as opened:
@@ -944,14 +944,16 @@ class ResearchBoundaryTests(unittest.TestCase):
             port=RESEARCH_CDP_PORT,
             profile=RESEARCH_PROFILE,
             open_if_missing=True,
+            require_exact_port=False,
             bring_to_front=False,
             isolated=True,
             fresh_tab=False,
             browser_path=None,
+            allow_new_page=True,
         )
 
     def test_browser_search_shared_mode_preserves_old_reuse_contract(self) -> None:
-        session = SimpleNamespace(page=mock.Mock(), browser=mock.Mock())
+        session = browser_search.Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=False)
         provider = BrowserSearchProvider(
             profile_dir=Path("shared-profile"),
             cdp_port=9333,
@@ -968,10 +970,12 @@ class ResearchBoundaryTests(unittest.TestCase):
             port=9333,
             profile=Path("shared-profile"),
             open_if_missing=True,
+            require_exact_port=False,
             bring_to_front=False,
             isolated=False,
             fresh_tab=False,
             browser_path=None,
+            allow_new_page=True,
         )
 
     def test_research_flow_default_explicitly_reuses_research_browser(self) -> None:
@@ -1056,6 +1060,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = BrowserSearchProvider()
         provider._session = session
         provider._search_page = first_page
+        provider._register_owned_page_on_browser_thread(first_page)
 
         results = provider._search_on_browser_thread("alpha", 3)
 
@@ -1251,6 +1256,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = BrowserSearchProvider()
         provider._session = session
         provider._search_page = page
+        provider._register_owned_page_on_browser_thread(page)
 
         with self.assertRaises(cancellation.TaskCancelled):
             provider._search_on_browser_thread("alpha", 3)
@@ -3902,7 +3908,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             def goto(self, _url, wait_until="domcontentloaded", timeout=None):
                 del wait_until
                 self.goto_timeout = timeout
-                return SimpleNamespace(headers={"content-type": "text/html"})
+                return SimpleNamespace(status=200, headers={"content-type": "text/html"})
 
             def content(self) -> str:
                 return "<html><title>Blank</title><body></body></html>"
@@ -3917,6 +3923,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = BrowserSearchProvider()
         page = FakePage()
         provider._fetch_page = page
+        provider._register_owned_page_on_browser_thread(page)
 
         with (
             mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
@@ -3965,7 +3972,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
             def goto(self, _url, wait_until="domcontentloaded", timeout=None):
                 del wait_until, timeout
-                return SimpleNamespace(headers={"content-type": "text/html"})
+                return SimpleNamespace(status=200, headers={"content-type": "text/html"})
 
             def wait_for_load_state(self, _state: str, timeout: int) -> None:
                 del _state, timeout
@@ -3994,6 +4001,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         provider = BrowserSearchProvider()
         page = FakePage()
         provider._fetch_page = page
+        provider._register_owned_page_on_browser_thread(page)
 
         with (
             mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page),
@@ -4516,6 +4524,7 @@ class NetworkPolicyTests(unittest.TestCase):
         provider = BrowserSearchProvider()
         page = FakeCloseablePage()
         provider._fetch_page = page
+        provider._register_owned_page_on_browser_thread(page)
         cancel_event = threading.Event()
 
         with cancellation.scope(cancel_event), unittest.mock.patch.object(provider, "_ensure_fetch_page_on_browser_thread", return_value=page), unittest.mock.patch("codey.research.browser_search.check_fetch_url", return_value=None):

@@ -87,7 +87,7 @@ def test_disconnected_browser_is_reopened() -> None:
     old = mock.Mock()
     old.browser.is_connected.return_value = False
     provider._session = old
-    reopened = object()
+    reopened = Session(mock.Mock(), mock.Mock(), mock.Mock(), owns_page=True)
     with mock.patch.object(browser_search, "open_chat_page", return_value=reopened):
         assert provider._ensure_session_on_browser_thread() is reopened
     old.close.assert_called_once_with()
@@ -148,6 +148,7 @@ def test_failed_query_does_not_poison_the_next_query_on_the_same_provider() -> N
     seed = new_page()
     provider = BrowserSearchProvider(engine="bing")
     provider._session = Session(mock.Mock(), mock.Mock(), cast(Page, seed), owns_page=True)
+    provider._register_owned_page_on_browser_thread(seed)
     hits: list[JsonObject] = [{"title": "Recovered", "url": "https://example.com/report"}]
 
     def search_page(_page: mock.Mock, query: str, *_args: object, **_kwargs: object) -> list[JsonObject]:

@@ -6,7 +6,7 @@ import time
 from collections.abc import Iterator
 
 import pytest
-from playwright.sync_api import Route
+from playwright.sync_api import Page, Route
 
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.ledger import ResearchLedger
@@ -21,6 +21,7 @@ DOCUMENTS = {
     URL + "slow": SHELL.format("<script>setTimeout(() => document.querySelector('main').textContent = "
                                f"'{BODY}', 5500)</script>"),
     URL + "pending": SHELL.format(""),
+    URL + "http-error": SHELL.format(""),
     URL + "ready": f"<html><body><article>{BODY}</article></body></html>",
 }
 
@@ -34,7 +35,8 @@ def source(monkeypatch: pytest.MonkeyPatch, public_source_dns: None,
         if route.request.is_navigation_request():
             navigations.append(route.request.url)
         document = DOCUMENTS[route.request.url]
-        route.fulfill(status=200, content_type="text/html; charset=utf-8", body=document)
+        status = 503 if route.request.url == URL + "http-error" else 200
+        route.fulfill(status=status, content_type="text/html; charset=utf-8", body=document)
 
     monkeypatch.setattr(BrowserSearchProvider, "_guard_request", route_document)
     provider = BrowserSearchProvider(headless=True, browser_path=chromium_executable())
@@ -76,6 +78,20 @@ def test_persistently_loading_page_expires_without_source_evidence(
     assert "render_timeout" in opened.detail
     assert opened.document is None and not ledger.final_url_set()
     assert navigations == [URL + "pending"]
+
+
+def test_http_error_rejects_loading_shell_before_dom_read(
+    source: tuple[BrowserSearchProvider, list[str]], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider, navigations = source
+    ledger = ResearchLedger()
+    monkeypatch.setattr(Page, "content", lambda _: pytest.fail("HTTP error must be rejected before reading the DOM"))
+
+    opened = ResearchSourceGateway(provider, ledger).open(URL + "http-error")
+
+    assert opened.status == "error" and "HTTP 503" in opened.detail
+    assert opened.document is None and not ledger.final_url_set()
+    assert navigations == [URL + "http-error"]
 
 
 def test_caller_deadline_interrupts_loading_before_settle_limit(

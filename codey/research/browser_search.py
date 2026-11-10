@@ -92,28 +92,35 @@ def _requires_login(page: Page, text: str) -> bool:
             and page.query_selector('input[type="password"]') is not None)
 
 
-def _validate_page_observation(
-    page: Page,
-    url: str,
-    html: str,
-    text: str,
-    *,
-    response_status: int | None = None,
-    content_type: str = "",
-    failures: _PageFailures | None = None,
-) -> dict[str, object] | None:
-    """Apply the same response and visible-content checks to every page read."""
+def _validate_page_status(url: str, response_status: int | None) -> dict[str, object] | None:
+    """Reject failed responses before reading the DOM or selecting a PDF download."""
     if response_status is not None and response_status >= 400:
         return source_download._fetch_failure(
             url, f"could not load page: HTTP {response_status}",
             code=http_failure_code(response_status), delivery="confirmed", http_status=response_status,
         )
+    return None
+
+
+def _validate_page_content_type(url: str, content_type: str) -> dict[str, object] | None:
     normalized_type = content_type.lower()
     if normalized_type and not any(kind in normalized_type for kind in ("html", "text", "xml", "json")):
         return source_download._fetch_failure(
             url, f"unsupported content type: {normalized_type}", status="skipped",
             code="unsupported_content", delivery="confirmed",
         )
+    return None
+
+
+def _validate_page_observation(
+    page: Page,
+    url: str,
+    html: str,
+    text: str,
+    *,
+    failures: _PageFailures | None = None,
+) -> dict[str, object] | None:
+    """Validate visible content after response checks and DOM settling."""
     if _requires_login(page, text):
         return source_download._fetch_failure(
             url, "login_required: page requires authentication",
@@ -588,14 +595,21 @@ class BrowserSearchProvider:
                     return source_download._fetch_failure(final_url, f'{reason} (after redirect)',
                                                          code="policy_denied", delivery="confirmed")
             if response is not None:
-                status = getattr(response, "status", None)
+                response_status = response.status
                 ctype = (response.headers.get("content-type") or "").lower()
-                if source_download._is_pdf_response(ctype, final_url):
-                    return source_download._pdf_download_sentinel(final_url, mime_type=ctype)
-                response_status = status if isinstance(status, int) else None
             else:
                 ctype = ""
                 response_status = None
+            invalid = _validate_page_status(final_url, response_status)
+            if invalid is not None:
+                self._discard_fetch_page_on_browser_thread(page)
+                return invalid
+            if source_download._is_pdf_response(ctype, final_url):
+                return source_download._pdf_download_sentinel(final_url, mime_type=ctype)
+            invalid = _validate_page_content_type(final_url, ctype)
+            if invalid is not None:
+                self._discard_fetch_page_on_browser_thread(page)
+                return invalid
             cancellation.check()
             try:
                 html, text = _fetch_page_content_after_settle(page)
@@ -606,10 +620,7 @@ class BrowserSearchProvider:
                 return source_download._fetch_failure(final_url, f'could not read page content: {exc}',
                                                      code="execution_failed", delivery="confirmed")
             cancellation.check()
-            invalid = _validate_page_observation(
-                page, final_url, html, text,
-                response_status=response_status, content_type=ctype, failures=failures,
-            )
+            invalid = _validate_page_observation(page, final_url, html, text, failures=failures)
             if invalid is not None:
                 self._discard_fetch_page_on_browser_thread(page)
                 return invalid

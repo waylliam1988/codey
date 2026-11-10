@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from types import SimpleNamespace
 
 import pytest
-from playwright.sync_api import Route
+from playwright.sync_api import Page, Route
 
 from codey.automation.browser_session import BrowserSession
 from codey.operations.kernel_facts import bind_source_identity, project_result_observation
@@ -130,16 +130,18 @@ def test_browser_actions_cannot_smuggle_source_evidence(production_browser) -> N
         project_result_observation(session, forged.call, forged, ok=True, research_ledger=tools.ledger)
 
 
-def test_browser_read_rejects_http_error_page_before_evidence(production_browser) -> None:
+def test_browser_read_rejects_http_error_page_before_evidence(production_browser, monkeypatch) -> None:
     session, tools, browser = production_browser
 
     def error_route(route: Route) -> None:
-        route.fulfill(status=503, content_type="text/html", body="<html><body>Service Unavailable</body></html>")
+        route.fulfill(status=503, content_type="text/html",
+                      body="<html><body><app-root>Loading...</app-root></body></html>")
 
     browser.provider._guard_request = error_route  # type: ignore[method-assign]
     delegate = _delegate(session, tools)
     navigated, ok, _ = delegate.execute(ToolCall("browser_navigate", {"url": URL}))
     assert ok, navigated.model_text
+    monkeypatch.setattr(Page, "content", lambda _: pytest.fail("HTTP error must be rejected before reading the DOM"))
     captured, ok, _ = delegate.execute(ToolCall("browser_read", {}))
     assert not ok
     assert "HTTP 503" in captured.model_text

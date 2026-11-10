@@ -15,7 +15,15 @@ from codey.research.source_gateway import ResearchSourceGateway
 URL = "https://example.com/article"
 
 
-@pytest.mark.parametrize("transport", ["http", "browser"])
+def _retain_fetch_page(provider: browser_search.BrowserSearchProvider, page: mock.Mock, *, owned: bool) -> None:
+    provider._fetch_page = page
+    if owned:
+        provider._register_owned_page_on_browser_thread(page)
+    else:
+        provider._register_borrowed_page_on_browser_thread(page)
+
+
+@pytest.mark.parametrize("transport", ["http", "browser", "borrowed_browser"])
 @pytest.mark.parametrize("html,failure", [
     ("<html><title>Blank</title><body></body></html>", "page_blank"),
     ("<html><title>pmc.ncbi.nlm.nih.gov</title><body><footer>HHS Vulnerability Disclosure</footer></body></html>",
@@ -37,9 +45,9 @@ def test_failed_acquisition_is_error_and_never_records_evidence(monkeypatch, tra
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: "")
     provider = browser_search.BrowserSearchProvider()
     page = mock.Mock(url=URL)
-    page.goto.return_value = SimpleNamespace(headers={"content-type": "text/html"})
-    if transport == "browser":
-        provider._fetch_page = page
+    page.goto.return_value = SimpleNamespace(status=200, headers={"content-type": "text/html"})
+    if transport != "http":
+        _retain_fetch_page(provider, page, owned=transport == "browser")
         monkeypatch.setattr(provider, "_ensure_fetch_page_on_browser_thread", lambda _: page)
         monkeypatch.setattr(browser_search, "_fetch_page_content_after_settle", lambda _: (html, browser_search.extract_text(html)))
     fetch = (source_download._download_text_fallback if transport == "http"
@@ -58,15 +66,20 @@ def test_failed_acquisition_is_error_and_never_records_evidence(monkeypatch, tra
         assert ledger.final_url_set() == {URL}
     if transport == "http":
         assert response.closed
-    if transport == "browser" and failure:
-        page.close.assert_called_once_with()
+    if transport != "http" and failure:
+        if transport == "browser":
+            page.close.assert_called_once_with()
+        else:
+            page.close.assert_not_called()
+        page.unroute_all.assert_called_once_with(behavior="wait")
         assert provider._fetch_page is None
-    elif transport == "browser":
+        assert not provider._owned_pages and not provider._borrowed_pages
+    elif transport != "http":
         page.close.assert_not_called()
         assert provider._fetch_page is page
 
 
-@pytest.mark.parametrize("transport", ["http", "browser"])
+@pytest.mark.parametrize("transport", ["http", "browser", "borrowed_browser"])
 @pytest.mark.parametrize("status", [404, 403, 429, 500, 503])
 def test_http_error_body_cannot_become_a_citable_source(monkeypatch, transport, status):
     html = "<html><title>Error</title><body>A detailed error response with links and text</body></html>"
@@ -80,6 +93,7 @@ def test_http_error_body_cannot_become_a_citable_source(monkeypatch, transport, 
     provider = browser_search.BrowserSearchProvider()
     page = mock.Mock(url=URL)
     page.goto.return_value = SimpleNamespace(status=status, headers=response.headers)
+    _retain_fetch_page(provider, page, owned=transport == "browser")
     monkeypatch.setattr(provider, "_ensure_fetch_page_on_browser_thread", lambda _: page)
     fetch = source_download._download_text_fallback if transport == "http" else provider._fetch_on_browser_thread
     ledger = ResearchLedger()
@@ -92,15 +106,23 @@ def test_http_error_body_cannot_become_a_citable_source(monkeypatch, transport, 
         assert response.closed
     else:
         page.content.assert_not_called()
-        page.close.assert_called_once_with()
+        if transport == "browser":
+            page.close.assert_called_once_with()
+        else:
+            page.close.assert_not_called()
+        page.unroute_all.assert_called_once_with(behavior="wait")
+        assert provider._fetch_page is None
+        assert not provider._owned_pages and not provider._borrowed_pages
+        assert page.remove_listener.call_count == 3
 
 
-def test_denied_browser_redirect_preserves_policy_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("owned", [True, False])
+def test_denied_browser_redirect_preserves_policy_failure(monkeypatch: pytest.MonkeyPatch, owned: bool) -> None:
     denied_url = "http://127.0.0.1/private"
     page = mock.Mock(url=denied_url)
     page.goto.return_value = SimpleNamespace(status=200, headers={"content-type": "text/html"})
     provider = browser_search.BrowserSearchProvider()
-    provider._fetch_page = page
+    _retain_fetch_page(provider, page, owned=owned)
     monkeypatch.setattr(provider, "_prepare_fetch_page_on_browser_thread", lambda url: page)
     monkeypatch.setattr(browser_search, "check_fetch_url", lambda url: "private target denied" if url == denied_url else "")
 
@@ -110,8 +132,51 @@ def test_denied_browser_redirect_preserves_policy_failure(monkeypatch: pytest.Mo
     assert result["failure_code"] == "policy_denied"
     assert result["delivery"] == "confirmed"
     page.content.assert_not_called()
-    page.close.assert_called_once_with()
+    if owned:
+        page.close.assert_called_once_with()
+    else:
+        page.close.assert_not_called()
+    page.unroute_all.assert_called_once_with(behavior="wait")
     assert provider._fetch_page is None
+    assert not provider._owned_pages and not provider._borrowed_pages
+
+
+@pytest.mark.parametrize("url,content_type,status,expected", [
+    (URL, "application/pdf", 503, "error"),
+    (URL + ".pdf", "text/html", 404, "error"),
+    (URL, "application/octet-stream", 200, "skipped"),
+    (URL, "application/pdf", 200, "ok"),
+    (URL + ".pdf", "application/octet-stream", 200, "ok"),
+])
+def test_response_headers_decide_failure_or_pdf_before_reading_dom(
+    monkeypatch: pytest.MonkeyPatch, url: str, content_type: str, status: int, expected: str,
+) -> None:
+    provider = browser_search.BrowserSearchProvider()
+    page = mock.Mock(url=url)
+    page.goto.return_value = SimpleNamespace(status=status, headers={"content-type": content_type})
+    _retain_fetch_page(provider, page, owned=True)
+    monkeypatch.setattr(provider, "_prepare_fetch_page_on_browser_thread", lambda _: page)
+    monkeypatch.setattr(browser_search, "check_fetch_url", lambda _: "")
+
+    result = provider._fetch_on_browser_thread(url)
+
+    assert result["status"] == expected
+    page.content.assert_not_called()
+    page.evaluate.assert_not_called()
+    assert page.remove_listener.call_count == 3
+    if status >= 400:
+        assert result["http_status"] == status
+        assert "content_kind" not in result
+    elif expected == "ok":
+        assert result["content_kind"] == "pdf_download"
+    else:
+        assert result["failure_code"] == "unsupported_content"
+    if expected == "ok":
+        page.close.assert_not_called()
+        assert provider._fetch_page is page
+    else:
+        page.close.assert_called_once_with()
+        assert provider._fetch_page is None
 
 
 def test_navigation_text_waits_for_empty_application_main_to_hydrate(monkeypatch):

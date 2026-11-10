@@ -21,7 +21,9 @@ from codey.research.browser_search import (
     BrowserSearchProvider,
     _fetch_page_content_after_settle,
     _search_browser_call,
+    _validate_page_content_type,
     _validate_page_observation,
+    _validate_page_status,
 )
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.extract import _MAX_PAGE_CHARS, extract_title
@@ -416,11 +418,13 @@ class BrowserSession:
 
     def _capture_on_browser_thread(self) -> dict[str, object]:
         page = self._page_on_browser_thread()
-        html, text = _fetch_page_content_after_settle(page)
         response_status, content_type = self._navigation_facts.get(id(page), (None, ""))
-        invalid = _validate_page_observation(page, page.url, html, text,
-                                             response_status=response_status,
-                                             content_type=content_type)
+        invalid = (_validate_page_status(page.url, response_status)
+                   or _validate_page_content_type(page.url, content_type))
+        if invalid is not None:
+            return with_attempt(invalid, "browser", page.url)
+        html, text = _fetch_page_content_after_settle(page)
+        invalid = _validate_page_observation(page, page.url, html, text)
         if invalid is not None:
             return with_attempt(invalid, "browser", page.url)
         truncated = len(text) > _MAX_PAGE_CHARS

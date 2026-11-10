@@ -141,7 +141,8 @@ def test_actions_do_not_touch_other_contexts_or_replacement_page(
                 provider._fetch_page.set_content("<button>Same name</button>")
 
             _search_browser_call(inspect_and_replace)
-            with pytest.raises(BrowserTargetBindingError):
-                interaction.snapshot()
+            stale = interaction.click(str(elements[0]["ref"]))
+            assert not stale.ok and stale.observation["reason"] == "stale_ref"
+            assert interaction.snapshot().ok
         finally:
             provider.close()
