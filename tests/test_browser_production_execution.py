@@ -56,7 +56,7 @@ def _delegate(session: TaskSession, tools: ResearchTools) -> ExecutionDelegate:
 def _ref(delegate: ExecutionDelegate, role: str) -> str:
     result, ok, _ = delegate.execute(ToolCall("browser_snapshot", {}))
     assert ok
-    observation = result.canonical["browser_observation"]
+    observation = result.canonical["value"]
     assert isinstance(observation, dict)
     elements = observation["elements"]
     assert isinstance(elements, list)
@@ -91,7 +91,7 @@ def test_actions_and_reads_share_worker_but_only_committed_reads_establish_evide
     assert not tools.ledger.opened_sources
     stale, ok, _ = delegate.execute(ToolCall("browser_click", {"ref": ref}))
     assert not ok
-    assert stale.canonical["browser_observation"]["reason"] == "stale_ref"
+    assert stale.canonical["value"]["reason"] == "stale_ref"
 
     read, ok, _ = delegate.execute(ToolCall("browser_read", {}))
     assert ok, read.model_text
@@ -171,3 +171,42 @@ def test_default_provider_wrapper_shares_one_browser_without_starting_chromium()
         assert resources.create_staged().browser_session is resources.browser_session
     finally:
         provider.close()
+
+
+@pytest.mark.parametrize("kind", ["chat", "research", "hybrid"])
+def test_codemode_browser_children_use_kernel_receipts_and_original_answer_scope(production_browser, kind: str) -> None:
+    from codey.codemode.kernel import build_execute_turn_executor
+    from codey.operations.kernel_execution import execute_turn
+    from codey.research.answer_contract import answer_scope
+
+    previous, tools, _ = production_browser
+    session = TaskSession(policy=TaskPolicy(grants=previous.policy.grants, strict_research=kind == "research"),
+                          task_kind=kind, task_text="Report the verified Fuzhou quantity")
+    snapshot = build_turn_snapshot(session)
+    assert "codemode" in snapshot.tool_names
+    assert "browser_click" in snapshot.nested_tool_names
+    assert "browser_click" not in snapshot.tool_names
+    parent = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="browser-run",
+                                         effect_scope="task", turn=1, research_tools=tools)
+    code = """
+    unwrap(await tools.browser_navigate({url: inputs.url}));
+    let observation = unwrap(await tools.browser_snapshot({}));
+    let ref = observation.elements.find(item => item.role === 'textbox').ref;
+    unwrap(await tools.browser_fill({ref, value: 'Fuzhou'}));
+    observation = unwrap(await tools.browser_snapshot({}));
+    ref = observation.elements.find(item => item.name === 'Load').ref;
+    unwrap(await tools.browser_click({ref}));
+    unwrap(await tools.browser_wait({condition: 'text', value: '37 grams', timeout_ms: 1000}));
+    return unwrap(await tools.browser_read({}));
+    """
+    result = execute_turn(session, [ToolCall("codemode", {"code": code, "inputs": {"url": URL}}, call_id="parent")],
+                          snapshot=snapshot, run_id="browser-run", turn=1, effect_scope="task",
+                          research_tools=tools, executors={"codemode": parent})[0]
+    assert result.ok, result.model_text
+    assert "37 grams" in result.model_text
+    assert tools.ledger.read_passages
+    assert session.source_ids == {"s1": URL}
+    scope = answer_scope(session)
+    assert scope.aliases and scope.attempt_refs
+    assert len(result.canonical["child_effect_ids"]) == 7
+    assert "read_passages" not in result.canonical  # The parent references, never rewrites, child evidence.

@@ -176,8 +176,11 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
     specs = {str(getattr(spec, "name", "")): spec for spec in frozen_specs}
     catalog = build_codemode_catalog(
         {name: spec for name, spec in specs.items() if name in snapshot.nested_tool_names},
-        allow_writes=allow_writes,
+        allow_writes=allow_writes and session.policy.allows("project.write"),
     )
+    # The catalog has already selected project writes and browser capabilities
+    # independently. Host mutation support is not a project permission grant.
+    allow_mutations = any(not entry.read_only for entry in catalog.entries)
     child_executors = {key: value for key, value in dict(executors or {}).items() if key != "codemode"}
     effective_session_id = session_id
     if not effective_session_id and isinstance(intent_sink, KernelEffectSink):
@@ -226,7 +229,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                 digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
                         "limits": asdict(limits or CodeModeLimits()),
                         "runtime": runtime.contract_digest()}),
-                parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_writes)
+                parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_mutations)
             child_sink.admission_guard = replay.admission
 
         def execute_child(child: ToolCall) -> ToolResult:
@@ -307,7 +310,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             execute_child=execute_child,
             runtime=runtime,
             limits=limits,
-            allow_writes=allow_writes,
+            allow_writes=allow_mutations,
             state_store=repair_state_store if repair_context is not None else state_store,
             replay=replay,
             replay_child=repair_context.replay_child if repair_context is not None else None,

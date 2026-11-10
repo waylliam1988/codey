@@ -23,7 +23,7 @@ from codey.research.answer_values import (
 )
 from codey.research.knowledge_updates import normalize_updates, updates_schema
 from codey.research.passages import read_passage_refs
-from codey.research.questions import INVESTIGATION_TOOLS
+from codey.research.questions import is_investigation_tool
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import ToolArgs, canonical_json_object, decode_json_object, require_json_string
@@ -157,7 +157,7 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
     attempts = []
     results = session._memory_results
     for identity, result in results.items():
-        if result.call.name in INVESTIGATION_TOOLS:
+        if is_investigation_tool(result.call.name):
             attempts.append(identity)
         if not result.ok:
             continue

@@ -13,7 +13,7 @@ from codey.providers.compat_transport import optional_callable, provider_attribu
 from codey.research.answer_contract import ANSWER_GUIDANCE, AnswerScope
 from codey.research.context_view import read_evidence_projection
 from codey.research.passages import read_passage_refs
-from codey.research.questions import INVESTIGATION_TOOLS
+from codey.research.questions import is_investigation_tool
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object
 from codey.utils.text_budget import estimate_tokens
 
@@ -143,9 +143,9 @@ def investigation_history(session: TaskSession) -> list[JsonObject]:
     for identity, result in session._memory_results.items():
         # Errors, repeats, editing and receipt recovery retain the original view
         # for the remaining settled task history, including after a later success.
-        if not result.ok or result.call.name not in INVESTIGATION_TOOLS:
+        if not result.ok or not is_investigation_tool(result.call.name):
             compact = False
-        if result.call.name not in INVESTIGATION_TOOLS:
+        if not is_investigation_tool(result.call.name):
             continue
         key = canonical_json([result.call.name, result.call.args, result.ok, result.model_text])
         counts[key] = counts.get(key, 0) + 1

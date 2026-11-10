@@ -50,6 +50,14 @@ def close_research_tools(tools: ResearchTools | None) -> None:
             close()
 
 
+def bind_browser_session(resources: ResearchTools) -> None:
+    """Attach the shared page resource once, for every production kernel entry."""
+    if resources.browser_session is None:
+        from codey.automation.browser_session import BrowserSession
+
+        resources.browser_session = BrowserSession.from_provider(resources.search)
+
+
 def build_research_tools(deps: object, *, session_id: str, project: str, browser_sources: bool = True,
                          browser_actions: bool = False) -> ResearchTools:
     """Build the execution resources; configuration errors propagate to entry."""
@@ -62,7 +70,7 @@ def build_research_tools(deps: object, *, session_id: str, project: str, browser
         from codey.research.search_factory import default_research_search_provider
         from codey.research.web_sources import WebSourceProvider
 
-        search_factory = default_research_search_provider if browser_sources else WebSourceProvider
+        search_factory = default_research_search_provider if browser_sources or browser_actions else WebSourceProvider
     search = search_factory()
     try:
         resources = ResearchTools(
@@ -71,9 +79,7 @@ def build_research_tools(deps: object, *, session_id: str, project: str, browser
             diagnostics=None, session_id=session_id, project=project,
         )
         if browser_actions:
-            from codey.automation.browser_session import BrowserSession
-
-            resources.browser_session = BrowserSession.from_provider(search)
+            bind_browser_session(resources)
         return resources
     except BaseException:
         close = getattr(search, "close", None)
@@ -284,8 +290,9 @@ class ExecutionDelegate:
                 )
                 return self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
             output = self._browser_action(browser, call)
+            value = {**output.observation, "text": output.observation.get("text", output.model_text)}
             result = ToolResult(ok=output.ok, call=call, model_text=output.model_text,
-                                canonical={"browser_observation": output.observation})
+                                canonical={"value": value})
             return result, result.ok, None
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise

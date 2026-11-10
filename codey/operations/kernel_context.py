@@ -93,6 +93,12 @@ class KernelContext:
             self.observation.completion_context, self.execution.workspace_ignored_paths)
         if self.execution.research_tools is not None:
             tools = self.execution.research_tools
+            from codey.operations.task_execution import bind_browser_session
+            from codey.toolchain.tool_spec import tool_specs
+
+            if any(spec.executor == "browser" and session.policy.allows(spec.grant) for spec in tool_specs().values()):
+                bind_browser_session(tools)
+            tools.direct_urls = session.required_source_urls
             self.completion_context = replace(
                 self.completion_context,
                 research_ledger=tools.ledger,
@@ -293,8 +299,9 @@ class KernelContext:
             staged._memory_results[identity] = result
             staged.restored_effect_ids.add(identity)
             if staged.research_acquisition_limits is not None:
-                category = "search" if result.call.name == "web_search" else "open" if result.call.name in {
-                    "open_url", "open_result", "reopen_source", "open_hit"} else ""
+                from codey.toolchain.tool_spec import is_source_read_tool
+
+                category = "search" if result.call.name == "web_search" else "open" if is_source_read_tool(result.call.name) else ""
                 if category:
                     staged.research_acquisition_slots[(effect.intent.turn, effect.intent.tool_index)] = category
             if ledger is not None:

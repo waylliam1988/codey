@@ -66,9 +66,9 @@ def project_result_observation(
             from codey.research.passages import restore_passages
 
             restore_passages(research_ledger, observation, result.canonical["read_passages"])
-    from codey.research.questions import INVESTIGATION_TOOLS
+    from codey.research.questions import is_investigation_tool
 
-    if research_ledger is not None and call.name in INVESTIGATION_TOOLS and not denied_before_execution(result):
+    if research_ledger is not None and is_investigation_tool(call.name) and not denied_before_execution(result):
         # Called exactly once for each settled effect by live and restart projection.
         ref = f"a{len(research_ledger.investigations) + 1}"
         passages = result.canonical.get("read_passages", [])

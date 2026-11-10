@@ -32,8 +32,11 @@ class CodeModeHost:
             raise ValueError("execution_id must be non-empty")
         if any(not entry.read_only for entry in catalog) and not allow_writes:
             raise ValueError("CodeMode read-only host requires allow_writes=True for write tools")
-        if any(not entry.read_only and entry.grant != "project.write" for entry in catalog):
-            raise ValueError("CodeMode only permits project.write tools")
+        if any(not entry.read_only and not (
+            entry.grant == "project.write" or entry.namespace == "browser"
+            and entry.grant in {"browser.interact", "browser.effect"}
+        ) for entry in catalog):
+            raise ValueError("CodeMode only permits project.write tools or authorized browser actions")
         self._allow_writes = bool(allow_writes)
         self._catalog = {entry.name: entry for entry in catalog}
         self._execute = execute

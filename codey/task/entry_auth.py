@@ -5,6 +5,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from codey.policies.capabilities import KNOWN_TASK_GRANTS
 from codey.task.model import derive_project_changes_required
 
 
@@ -24,12 +25,6 @@ _READONLY_MUST_NOT_CHANGE_MARKERS = (
     "read-only", "readonly", "do not modify", "don't modify", "do not change", "don't change",
     "do not edit", "don't edit", "must not modify", "must not change", "must not edit",
 )
-
-_KNOWN_ENTRY_GRANTS = frozenset({
-    "project.read", "project.write", "project.verify", "shell.approval",
-    "web.read", "knowledge.read", "knowledge.write", "knowledge.link", "control",
-})
-
 
 def _explicit_readonly_task(task: str) -> bool:
     lowered = (task or "").lower()
@@ -69,7 +64,7 @@ def derive_entry_auth(body: Mapping[str, object] | None, *, project: str | None 
     requested: set[str] = set()
     for item in items:
         text = str(item or "").strip().lower()
-        if text in _KNOWN_ENTRY_GRANTS:
+        if text in KNOWN_TASK_GRANTS:
             requested.add(text)
     allow_web = data.get("allow_web")
     if allow_web is True or allow_web is None and intent in {"chat", "auto"}:
@@ -83,7 +78,7 @@ def derive_entry_auth(body: Mapping[str, object] | None, *, project: str | None 
     sources_required = data.get("sources_open_required") is True
     denied: set[str] = set()
     if allow_web is False:
-        denied.add("web.read")
+        denied.update({"web.read", "browser.observe", "browser.interact", "browser.effect"})
         sources_required = False
     if intent in {"project", "hybrid", "auto", "chat"} and _explicit_readonly_task(task):
         # 明确只读：取消“必须修改”，同时落实“禁止修改”。project_changes_required

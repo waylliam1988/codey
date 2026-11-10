@@ -218,7 +218,7 @@ class ReferenceHandleResolver:
         )
 
     def _web_allowed(self) -> bool:
-        return self._session.policy.allows("web.read")
+        return self._session.policy.allows("web.read") or self._session.policy.allows("browser.observe")
 
     @staticmethod
     def _number(handle: str, prefix: str) -> int:

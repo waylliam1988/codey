@@ -17,6 +17,12 @@ INVESTIGATION_TOOLS = frozenset({"web_search", "open_url", "open_result", "reope
 QUESTION_BOUND_TOOLS = INVESTIGATION_TOOLS | {"save_finding", "save_inference"}
 
 
+def is_investigation_tool(name: str) -> bool:
+    from codey.toolchain.tool_spec import is_source_read_tool
+
+    return name in INVESTIGATION_TOOLS or is_source_read_tool(name)
+
+
 class QuestionSessionView(Protocol):
     @property
     def task_kind(self) -> str: ...

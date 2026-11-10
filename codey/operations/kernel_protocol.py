@@ -139,7 +139,14 @@ def controller_allowed_for_session(session: KernelSessionView) -> tuple[str, ...
         from codey.research.answer_contract import ANSWER_TOOLS, whole_research
 
         if whole_research(session):
-            return tuple(name for name in ANSWER_TOOLS if name not in denied and (
+            from codey.toolchain.tool_spec import tool_specs
+
+            # The answer contract stays unchanged. Explicitly authorized
+            # operation resources compose with it in this one turn planner.
+            browser = tuple(spec.name for spec in tool_specs().values()
+                            if spec.executor == "browser" and policy.allows(spec.grant))
+            tools = (*ANSWER_TOOLS, *browser, *(("codemode", "read_tool_result") if browser else ()))
+            return tuple(name for name in tools if name not in denied and (
                 name not in {"open_result", "reopen_source", "open_hit"} or getattr(session,
                 {"open_result": "search_results", "reopen_source": "source_ids", "open_hit": "hit_targets"}[name], None)))
         # Other strict callers retain their scoped acquisition contract.
@@ -294,6 +301,11 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
 
         catalog = build_codemode_catalog(frozen, allow_writes=session.policy.allows("project.write"))
         nested = tuple(entry.name for entry in catalog.entries)
+        if exposure is None and any(spec.executor == "browser" for spec in frozen):
+            # One declaration per leaf: browser-enabled tasks use the existing
+            # CodeMode entry for composable operations, keeping controls and
+            # answer submission on the outer surface. Inventory stays frozen.
+            names = tuple(name for name in names if name not in nested)
         declarations = render_declarations(catalog)
         frozen = tuple(replace(spec, declarations=declarations)
                        if spec.name == "codemode" else spec for spec in frozen)

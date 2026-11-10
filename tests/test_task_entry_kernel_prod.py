@@ -64,7 +64,7 @@ class EntryAuthTests(unittest.TestCase):
             self.assertTrue(policy.allows("project.verify"))
             self.assertFalse(policy.allows("project.write"))
 
-    def test_http_programming_web_markers_grant_web_read(self) -> None:
+    def test_http_project_words_do_not_override_explicit_entry_authorization(self) -> None:
         import tempfile
 
         from codey.app.api import run_submit_response
@@ -85,7 +85,7 @@ class EntryAuthTests(unittest.TestCase):
                 fake_submit,
             )
             self.assertEqual(status, 200)
-            self.assertIn("web.read", seen.get("requested", ()))
+            self.assertNotIn("web.read", seen.get("requested", ()))
 
     def test_strict_project_never_defaults_write(self) -> None:
         from codey.policies.task_policy import build_task_policy

@@ -81,7 +81,8 @@ class ToolSpec:
     @property
     def read_only(self) -> bool:
         """Acquiring source data can be read-only without being safe to replay."""
-        return self.replay_class == "safe" or self.executor == "source" and self.grant == "web.read"
+        return (self.replay_class == "safe" or self.executor == "source" and self.grant == "web.read"
+                or self.executor == "browser" and self.effect == "read")
 
 
 def _freeze_schema_value(value: object) -> object:
@@ -215,7 +216,7 @@ def _research_specs() -> dict[str, ToolSpec]:
 
 def _browser_specs() -> dict[str, ToolSpec]:
     """Canonical browser contracts; execution is supplied by the task runtime."""
-    return {
+    specs = {
         "browser_snapshot": ToolSpec(
             name="browser_snapshot", grant="browser.observe", executor="browser",
             namespace="browser.observe", effect="read",
@@ -284,7 +285,7 @@ def _browser_specs() -> dict[str, ToolSpec]:
             namespace="browser.effect", effect="page_mutation",
             parameters=(("code", {"type": "string", "minLength": 1}),), required=("code",),
             description="Evaluate page JavaScript only when the browser effect capability is authorized.",
-            json_examples=('{"tool":"browser_eval","args":{"code":"return document.title"}}',),
+            json_examples=('{"tool":"browser_eval","args":{"code":"document.title"}}',),
             preconditions=("browser_bound",),
         ),
         "browser_tab_list": ToolSpec(
@@ -326,6 +327,24 @@ def _browser_specs() -> dict[str, ToolSpec]:
             preconditions=("browser_bound", "fresh_snapshot", "explicit_file_authorization"),
         ),
     }
+    action_schema: dict[str, object] = {
+        "type": "object", "additionalProperties": True,
+        "required": ["text"],
+        "properties": {"action": {"type": "string"}, "delivery": {"type": "string"},
+                       "page_url": {"type": "string"}, "generation": {"type": "integer"},
+                       "text": {"type": "string"}},
+    }
+    snapshot_schema: dict[str, object] = {
+        "type": "object", "additionalProperties": True,
+        "required": ["page_id", "page_url", "generation", "text", "elements"],
+        "properties": {"page_id": {"type": "string"}, "page_url": {"type": "string"},
+            "generation": {"type": "integer"}, "text": {"type": "string"},
+            "elements": {"type": "array", "items": {
+                "type": "object", "additionalProperties": True, "required": ["ref", "role", "name"],
+                "properties": {"ref": {"type": "string"}, "role": {"type": "string"}, "name": {"type": "string"}}}}},
+    }
+    return {name: replace(spec, output_schema=snapshot_schema if name == "browser_snapshot" else action_schema)
+            if name != "browser_read" else spec for name, spec in specs.items()}
 
 
 def _all_specs() -> dict[str, ToolSpec]:
@@ -338,7 +357,7 @@ def _all_specs() -> dict[str, ToolSpec]:
     data_example = {"code": "return inputs.text;", "inputs": {"text": "first\nsecond\n"}}
     specs["codemode"] = ToolSpec(
         name="codemode",
-        grant="project.read",
+        grant="control",
         executor="codemode",
         replay_class="safe",
         description=(
@@ -644,6 +663,10 @@ def visible_tool_names_for_snapshot(
         if spec is None or not spec.grant:
             continue
         if not _policy_allows(policy, spec.grant):
+            continue
+        if name == "codemode" and not any(_policy_allows(policy, grant) for grant in (
+            "project.read", "browser.observe", "browser.interact", "browser.effect",
+        )):
             continue
         if allowed is not None and name != "done" and _is_research_tool(name) and name not in allowed:
             # Controller aliases lower to open_url; keep open_url visible when

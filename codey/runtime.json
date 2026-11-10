@@ -91,6 +91,7 @@
     "codey/app/workspace_leases.py",
     "codey/automation/__init__.py",
     "codey/automation/browser.py",
+    "codey/automation/browser_session.py",
     "codey/automation/browser_worker.py",
     "codey/automation/web_clipboard.py",
     "codey/codemode/__init__.py",

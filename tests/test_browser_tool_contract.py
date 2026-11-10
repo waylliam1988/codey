@@ -32,7 +32,9 @@ def test_browser_surface_uses_the_same_frozen_snapshot() -> None:
     grants = frozenset({"control", "browser.observe", "browser.interact", "browser.effect"})
     session = TaskSession(policy=TaskPolicy(grants=grants), task_kind="chat")
     snapshot = build_turn_snapshot(session)
-    names = set(snapshot.tool_names)
+    names = set(snapshot.inventory_names)
     assert {"browser_snapshot", "browser_read", "browser_click", "browser_fill"} <= names
     assert {spec.name for spec in snapshot.frozen_specs} == set(snapshot.inventory_names)
     assert snapshot.frozen_specs[snapshot.inventory_names.index("browser_read")].evidence_route == "source_read"
+    assert "codemode" in snapshot.tool_names
+    assert not set(snapshot.tool_names) & set(snapshot.nested_tool_names)

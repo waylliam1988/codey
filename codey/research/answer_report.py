@@ -190,11 +190,11 @@ def compile_answer_report(session: TaskSession, ledger: ResearchLedger, store: K
         raise ValueError("settled submission differs from the original tool arguments")
     scope = submission["scope"]
     # A receipt may never invent investigations just by carrying a matching digest.
-    from codey.research.questions import INVESTIGATION_TOOLS
+    from codey.research.questions import is_investigation_tool
 
     for ref in scope["attempt_refs"]:
         attempt = session._memory_results.get(ref)
-        if attempt is None or attempt.call.name not in INVESTIGATION_TOOLS:
+        if attempt is None or not is_investigation_tool(attempt.call.name):
             raise ValueError("submission has no original investigation receipt")
     mutations, sources, evidence = prepare_evidence(submission, ledger, store, project=project, session_id=session_id)
     batch: KnowledgeBatch | None = None

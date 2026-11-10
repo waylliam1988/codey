@@ -259,7 +259,7 @@ TOOL_CONTRACTS = {
 
 def question_bound_spec(spec: ToolSpec, *, question_refs: tuple[str, ...]) -> ToolSpec:
     """Bind this turn's research actions to its registered questions."""
-    if spec.name not in QUESTION_BOUND_TOOLS:
+    if spec.name not in QUESTION_BOUND_TOOLS and spec.evidence_route != "source_read":
         return spec
     from codey.toolchain.tool_spec import freeze_spec_parameters
 

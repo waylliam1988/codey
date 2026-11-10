@@ -1,0 +1,147 @@
+"""KoboldCpp + real Chromium through production entry, policy, CodeMode and receipts.
+
+Only the provider connection and source fixtures are injected. This gate never
+registers tools, patches authorization/ANSWER_TOOLS, or implements an executor.
+It exercises a controlled page, not general autonomous website reliability.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import tempfile
+import time
+import traceback
+from contextlib import ExitStack
+from pathlib import Path
+from unittest.mock import patch
+
+from playwright.sync_api import Route
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from codey.app.headless_runner import HeadlessRequest, run_headless
+from codey.env_names import NATIVE_TOOLS_ENV
+from codey.research.browser_search import BrowserSearchProvider
+from tools import local_model_gate_attempts as attempts
+from tools.shell_web_diagnostic_gate import select_target
+
+URL = "https://example.com/production-browser-record"
+HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Production browser fixture</title></head><body>
+<label>Locality<input id="city"></label>
+<button onclick="if(document.querySelector('#city').value==='福州') {
+document.querySelector('article').textContent='福州样本：鱼丸净重为 173 克。记录校验码 QUARTZ_851。';
+} else { document.querySelector('article').textContent='请先填写福州'; }">Load record</button>
+<article>尚未加载记录。请填写 Locality 并点击 Load record。</article></body></html>"""
+
+
+class ProductionRecordingProvider(attempts.RecordingProvider):
+    def _record(self, row: dict[str, object]) -> None:
+        if row.get("type") == "error":
+            row = {**row, "traceback": traceback.format_exc()}
+        super()._record(row)
+
+
+def run_case(directory: Path, mode: str, target: attempts.GateTarget) -> dict[str, object]:
+    directory.mkdir(parents=True, exist_ok=False)
+    provider = BrowserSearchProvider(headless=True)
+    events: list[dict[str, object]] = []
+    navigations: list[str] = []
+    started = time.monotonic()
+
+    def observe(row: dict[str, object]) -> None:
+        events.append(row)
+        with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    def route_document(route: Route) -> None:
+        navigations.append(route.request.url)
+        route.fulfill(status=200 if route.request.url == URL else 404, content_type="text/html",
+                      body=HTML if route.request.url == URL else "Fixture URL unavailable")
+
+    def source_factory() -> BrowserSearchProvider:
+        return provider
+
+    def connect(provider_id: str, **_kwargs: object) -> attempts.RecordingProvider:
+        if provider_id != "local":
+            raise ValueError("gate only authorizes the selected KoboldCpp model")
+        return ProductionRecordingProvider(target, directory)
+
+    task = (f"这是用户授权的浏览器操作任务。用生产工具打开 {URL}。"
+            "通过 codemode 的 tools.browser_navigate、browser_snapshot、browser_fill、browser_click、browser_wait、browser_read 完成操作。"
+            "先观察页面，把 Locality 填为福州；填写后旧 ref 失效，需要重新 snapshot，再点击 Load record，等待出现鱼丸，最后 browser_read 当前页。"
+            "每一步检查工具结果，不要猜 ref；用 unwrap 获得结构化 snapshot.elements，每项有 ref/role/name。"
+            "browser_read 返回字符串，直接 return unwrap(await tools.browser_read({}))，不要再取 .text。"
+            "最后报告实际净重和校验码，不要用 snapshot 或点击结果替代 browser_read 正文。不要运行测试或命令。")
+    if mode == "research":
+        task += "用 submit_research_answer 提交完整答案，引用实际读到的 [eN] 原文。"
+    elif mode == "hybrid":
+        task += "然后读取项目的 result.json，将 amount 改为实测克数，code 改为实测校验码，再用 done 报告。"
+    else:
+        task += "最后用 done 报告，不修改文件。"
+    try:
+        with tempfile.TemporaryDirectory(prefix="codey-browser-live-project-") as temporary, ExitStack() as stack:
+            project = Path(temporary)
+            result_file = project / "result.json"
+            result_file.write_text('{"amount": 0, "code": "unknown"}\n', encoding="utf-8")
+            stack.enter_context(patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}))
+            stack.enter_context(attempts.isolate_gate_secondary_models(target))
+            stack.enter_context(attempts.record_api_generations(directory / "provider.jsonl"))
+            stack.enter_context(patch.object(provider, "_guard_request", route_document))
+            stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", source_factory))
+            stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory))
+            result = run_headless(HeadlessRequest(
+                project if mode == "hybrid" else None, task, intent=mode, provider_id="local", max_turns=12,
+                state_home=directory / "state", research_store_root=directory / "knowledge",
+                requested_capabilities=("web.read", "browser.observe", "browser.interact"),
+                project_changes_required=mode == "hybrid", required_tools=("browser_read",),
+                model_selection={"model": target.model, "base_url": target.base_url},
+            ), emit_jsonl=observe, connect_provider=connect)
+            artifact = json.loads(result_file.read_text(encoding="utf-8"))
+            (directory / "project-result.json").write_text(json.dumps(artifact), encoding="utf-8")
+        terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), {})
+        answer = str(terminal.get("summary") or "")
+        successful = {str(row.get("tool_name")) for row in events if row.get("type") == "tool" and row.get("ok") is True}
+        required = {"browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read"}
+        passed = (result.stop_reason == "done" and required <= successful and "173" in answer and "QUARTZ_851" in answer
+                  and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
+                  and (mode != "hybrid" or artifact == {"amount": 173, "code": "QUARTZ_851"}))
+        summary: dict[str, object] = {"mode": mode, "passed": passed, "stop_reason": result.stop_reason,
+            "successful_tools": sorted(successful), "answer": answer, "project_result": artifact, "navigations": navigations}
+    except Exception as exc:
+        summary = {"mode": mode, "passed": False, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        provider.close()
+    summary.update(seconds=round(time.monotonic() - started, 3), model=target.model,
+                   scope="controlled_fixture_production_entry_and_kernel")
+    (directory / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    return summary
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--run-dir", required=True, type=Path)
+    parser.add_argument("--mode", choices=("chat", "research", "hybrid", "all"), default="all")
+    parser.add_argument("--timeout", type=float, default=180)
+    parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
+    args = parser.parse_args()
+    root = args.run_dir.resolve()
+    root.mkdir(parents=True, exist_ok=False)
+    target = select_target("gemma", args.timeout, args.kobold_base_url)
+    modes = ("chat", "research", "hybrid") if args.mode == "all" else (args.mode,)
+    rows = []
+    for mode in modes:
+        print(json.dumps({"starting": mode}), flush=True)
+        row = run_case(root / mode, mode, target)
+        rows.append(row)
+        print(json.dumps(row, ensure_ascii=False), flush=True)
+    summary = {"passed": sum(row["passed"] is True for row in rows), "runs": len(rows), "results": rows}
+    (root / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    return 0 if summary["passed"] == len(rows) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -23,7 +23,7 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, object] | ToolCatalogEntr
             parallel_safe=bool(row.get("parallel_safe", False)),
             output_schema=canonical_json_object(row["output_schema"]),
         )
-        if entry.name in {"codemode", "done", "ask_user"}:
+        if entry.name in {"codemode", "done", "ask_user", "submit_research_answer"}:
             continue
         entries.append(entry)
     entries.sort(key=lambda item: item.name)
@@ -97,7 +97,9 @@ def build_codemode_catalog(
         if is_text_batch_tool(entry.name):
             continue
         if (
-            (entry.read_only and entry.namespace in {"project", "source", "knowledge"})
+            (entry.read_only and entry.namespace in {"project", "source", "knowledge"}
+             and entry.grant in {"project.read", "web.read", "knowledge.read"})
+            or entry.namespace == "browser"
             or (
                 allow_writes
                 and entry.name in {"edit", "run"}

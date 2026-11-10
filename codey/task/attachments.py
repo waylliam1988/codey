@@ -82,7 +82,7 @@ def image_estimate_view(value: object) -> tuple[object, int]:
     provider-reported usage and declared tokenizer counts remain authoritative.
     """
     if isinstance(value, dict):
-        if value.get("type") in {"image_url", "input_image"}:
+        if isinstance(value.get("type"), str) and value.get("type") in {"image_url", "input_image"}:
             return {"type": "image"}, 16_384
         result = {}
         total = 0
