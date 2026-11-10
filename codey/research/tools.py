@@ -6,6 +6,10 @@ import contextlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codey.automation.browser_session import BrowserSession
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import ConceptRelation, clean_relations, normalize_concept
@@ -64,6 +68,7 @@ class ResearchTools:
     answer_submission: bool = False
     coherent_passages: bool = False
     context_provider: object | None = field(default=None, repr=False, compare=False)
+    browser_session: BrowserSession | None = field(default=None, repr=False, compare=False)
 
     def create_staged(self) -> ResearchTools:
         if self.store is None:
@@ -100,6 +105,7 @@ class ResearchTools:
             answer_submission=self.answer_submission,
             coherent_passages=self.coherent_passages,
             context_provider=self.context_provider,
+            browser_session=self.browser_session,
         )
 
     def commit_staged(self, staged: ResearchTools) -> None:

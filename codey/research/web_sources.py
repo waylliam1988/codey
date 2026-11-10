@@ -86,6 +86,11 @@ class WebSourceProvider:
                 self._browser = self._browser_factory()
         return self._browser
 
+    @property
+    def browser_source(self) -> BrowserSource:
+        """Share the acquisition browser with task-owned interaction resources."""
+        return self._browser_source()
+
     def search(self, query: str, *, limit: int = 8) -> list[JsonObject]:
         cancellation.check()
         results = self._browser_source().search(query, limit=max(1, min(limit, 8)))

@@ -15,7 +15,6 @@ from codey.research.browser_search import (
 from codey.research.extract import _MAX_PAGE_CHARS, _fetch_page_failure_kind, _usable_fetch_page_text, extract_title
 from codey.research.source_acquisition import with_attempt
 from codey.research.source_gateway import OpenedSource, ResearchSourceGateway
-from codey.runtime.core import cancellation
 
 
 class ResumableBrowserSearchProvider(BrowserSearchProvider):
@@ -78,9 +77,4 @@ class BrowserCaptureGateway(ResearchSourceGateway):
 
     def accept_capture(self, url: str, page: dict[str, object], *, pages: str = "") -> OpenedSource:
         """Receive an already observed page through the same source admission path."""
-        url = url.strip()
-        denied = self._admit_source_url(url)
-        if denied is not None:
-            return denied
-        cancellation.check()
-        return self._receive_capture(url, page, pages=pages)
+        return self.capture(url, page, pages=pages)

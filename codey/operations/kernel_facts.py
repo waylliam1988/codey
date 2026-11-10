@@ -20,7 +20,7 @@ from codey.research.ledger_receipts import (
 from codey.research.receipt_types import SourceSearchObservation
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES, canonical_tool_name
+from codey.toolchain.tool_spec import canonical_tool_name, is_source_read_tool, spec_for_tool
 from codey.types.json_value import ToolArgs, canonical_json_object, require_json_string
 
 __all__ = [
@@ -44,7 +44,12 @@ def project_result_observation(
             raise ValueError("a successful source read cannot carry a source failure")
     if not ok and {"research_observation", "read_passages"} & result.canonical.keys():
         raise ValueError("an unsuccessful tool cannot establish source evidence")
-    if ok and call.name in SOURCE_READ_TOOL_NAMES:
+    spec = spec_for_tool(call.name)
+    if spec is not None and spec.executor == "browser" and spec.evidence_route == "none" and (
+        {"research_observation", "read_passages", "research_reference_bindings", "evidence_items"} & result.canonical.keys()
+    ):
+        raise ValueError("browser actions cannot establish source evidence")
+    if ok and is_source_read_tool(call.name):
         passages = result.canonical.get("read_passages")
         if not isinstance(passages, list) or not passages:
             raise ValueError("successful source reading requires actual read passages")
@@ -117,7 +122,7 @@ def _record_open_fact(session: TaskSession, result: ToolResult) -> None:
 
 def bind_source_identity(session: TaskSession, call: ToolCall, result: ToolResult, *, ok: bool) -> ToolResult:
     """Allocate under the commit lock; persist the binding in the same receipt."""
-    if not ok or canonical_tool_name(call.name) not in SOURCE_READ_TOOL_NAMES:
+    if not ok or not is_source_read_tool(call.name):
         return result
     source, _, _ = source_observation(result.canonical.get("research_observation"))
     if "source_id" in result.canonical:
@@ -224,7 +229,7 @@ def record_facts_for_result(
         session.research_questions = question_plan(list(planned), session.research_questions)
     elif name == "web_search":
         _record_search_results(session, result)
-    elif name in SOURCE_READ_TOOL_NAMES:
+    elif is_source_read_tool(name):
         _record_open_fact(session, result)
     elif (name in {"knowledge_write", "save_finding", "save_inference"}
           or name == "submit_research_answer" and "knowledge_notes" in result.canonical):

@@ -19,7 +19,7 @@ from codey.providers.base import AssistantTurn, render_result_metadata
 from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core.execution_receipt import execution_receipt
 from codey.runtime.core.models import ToolPlan, ToolResult
-from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES, SOURCE_TOOL_NAMES
+from codey.toolchain.tool_spec import SOURCE_TOOL_NAMES, is_source_read_tool
 from codey.types.json_value import JsonObject
 from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context
@@ -343,7 +343,7 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
                 f'Open the passage with open_hit({{"hit_id":"{example}"}}), or open_url with the source URL and its offset. '
                 + ("These offsets refer to source text, not tool receipts; do not pass them to read_tool_result. "
                    "Use read_tool_result only to inspect omitted locator-list output." if receipt_recovery else ""))
-    if result.call.name in SOURCE_READ_TOOL_NAMES and session.source_ids:
+    if is_source_read_tool(result.call.name) and session.source_ids:
         refs = "\n".join(f"{key}: {url}" for key, url in list(session.source_ids.items())[-12:])
         return (f"{text}\n\nOpened source references for citations:\n{refs}\n"
                 "For another passage, use source_search with the opened URL, then open_hit, "

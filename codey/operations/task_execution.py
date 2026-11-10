@@ -21,12 +21,13 @@ from codey.research.ledger_receipts import ledger_observation, source_search_obs
 from codey.runtime.core import cancellation
 from codey.runtime.core.execution_record import HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG, SOURCE_READ_TOOL_NAMES
+from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG, SOURCE_READ_TOOL_NAMES, is_source_read_tool
 from codey.types.json_value import JsonObject, JsonValue, ToolArgs, require_json_integer
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
+    from codey.automation.browser_session import BrowserSession, BrowserToolOutput
     from codey.knowledge.store import KnowledgeStore
     from codey.operations.kernel_contracts import ToolExecutor
     from codey.operations.task_session import TaskSession
@@ -49,7 +50,8 @@ def close_research_tools(tools: ResearchTools | None) -> None:
             close()
 
 
-def build_research_tools(deps: object, *, session_id: str, project: str, browser_sources: bool = True) -> ResearchTools:
+def build_research_tools(deps: object, *, session_id: str, project: str, browser_sources: bool = True,
+                         browser_actions: bool = False) -> ResearchTools:
     """Build the execution resources; configuration errors propagate to entry."""
     from codey.knowledge.changes import KnowledgeChanges
     from codey.research.tools import ResearchTools
@@ -63,11 +65,16 @@ def build_research_tools(deps: object, *, session_id: str, project: str, browser
         search_factory = default_research_search_provider if browser_sources else WebSourceProvider
     search = search_factory()
     try:
-        return ResearchTools(
+        resources = ResearchTools(
             search=search, store=knowledge_store,
             changes=KnowledgeChanges(root=knowledge_store.root) if knowledge_store is not None else None,
             diagnostics=None, session_id=session_id, project=project,
         )
+        if browser_actions:
+            from codey.automation.browser_session import BrowserSession
+
+            resources.browser_session = BrowserSession.from_provider(search)
+        return resources
     except BaseException:
         close = getattr(search, "close", None)
         if callable(close):
@@ -121,6 +128,7 @@ class ExecutionDelegate:
         project_path: Path | str | None = None,
         tool_fns: AgentToolFns | None = None,
         research_tools: ResearchTools | None = None,
+        browser_session: BrowserSession | None = None,
         permission_profile: str = "coding_writer",
         approval_available: bool = False,
         change_tracker: ChangeTracker | None = None,
@@ -137,6 +145,7 @@ class ExecutionDelegate:
             self.project_path = None
         self.tool_fns: AgentToolFns | None = tool_fns
         self.research_tools = research_tools
+        self.browser_session = browser_session or (research_tools.browser_session if research_tools is not None else None)
         self.permission_profile = (permission_profile or "coding_writer")
         self.approval_available = approval_available
         self.change_tracker = change_tracker
@@ -195,6 +204,10 @@ class ExecutionDelegate:
             return self.project_path is not None and self.tool_fns is not None
         if spec.executor in {"source", "knowledge"}:
             return bool(self.research_tools is not None)
+        if spec.executor == "browser":
+            # Route unavailable resources to a deterministic production error;
+            # never fall through to a custom executor for a built-in tool.
+            return True
         try:
             if self._resolve_custom_executor(name or "") is not None:
                 return True
@@ -217,6 +230,8 @@ class ExecutionDelegate:
             return result, result.ok, None
         if executor == "project":
             return self._execute_project(call)
+        if executor == "browser":
+            return self._execute_browser(call, turn=turn, tool_index=tool_index)
         if executor in {"source", "knowledge"}:
             if not self._reserve_research_acquisition(name, turn, tool_index):
                 return ToolResult(ok=False, call=call, model_text="ERROR: research acquisition budget exhausted"), False, None
@@ -239,6 +254,75 @@ class ExecutionDelegate:
             return produced, produced.ok, None
         result = ToolResult(ok=False, call=call, model_text=f"ERROR: no production executor for {name or '?'}")
         return result, False, None
+
+    def _execute_browser(self, call: ToolCall, *, turn: int,
+                         tool_index: int) -> tuple[ToolResult, bool, int | None]:
+        check = self._policy_check(call)
+        if check.denied:
+            from codey.operations.kernel_result import policy_denial_result
+
+            return policy_denial_result(call, check.message, reason_code=check.reason_code), False, None
+        browser = self.browser_session
+        if browser is None:
+            return ToolResult(ok=False, call=call, model_text="ERROR: browser session unavailable"), False, None
+        try:
+            if call.name == "browser_read":
+                if not self._reserve_research_acquisition(call.name, turn, tool_index):
+                    return ToolResult(ok=False, call=call,
+                                      model_text="ERROR: research acquisition budget exhausted"), False, None
+                from codey.research.source_reading import render_source_read
+
+                tools = self._observation_tools(source_read=True)
+                page = browser.capture()
+                url = str(page.get("url") or "")
+                outcome = tools.gateway.capture(url, page)
+                opened = render_source_read(
+                    outcome, tools.ledger,
+                    offset=require_json_integer(call.args.get("offset", 0), "offset"),
+                    limit=require_json_integer(call.args.get("limit", 6000), "limit"),
+                    coherent=tools.coherent_passages,
+                )
+                return self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
+            output = self._browser_action(browser, call)
+            result = ToolResult(ok=output.ok, call=call, model_text=output.model_text,
+                                canonical={"browser_observation": output.observation})
+            return result, result.ok, None
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception as exc:
+            return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
+
+    @staticmethod
+    def _browser_action(browser: BrowserSession, call: ToolCall) -> BrowserToolOutput:
+        args = call.args
+        ref = str(args.get("ref") or "")
+        if call.name == "browser_snapshot":
+            return browser.snapshot(max_elements=require_json_integer(args.get("max_elements", 80), "max_elements"),
+                                    max_text=require_json_integer(args.get("max_text", 12000), "max_text"))
+        if call.name == "browser_click":
+            return browser.click(ref)
+        if call.name == "browser_fill":
+            return browser.fill(ref, str(args.get("value") or ""))
+        if call.name == "browser_scroll":
+            return browser.scroll(str(args.get("direction") or ""), require_json_integer(args.get("amount"), "amount"))
+        if call.name == "browser_wait":
+            return browser.wait(str(args.get("condition") or ""), str(args.get("value") or ""),
+                                require_json_integer(args.get("timeout_ms"), "timeout_ms"))
+        if call.name == "browser_navigate":
+            return browser.navigate(str(args.get("url") or ""))
+        if call.name == "browser_eval":
+            return browser.evaluate(str(args.get("code") or ""))
+        if call.name == "browser_tab_list":
+            return browser.tab_list()
+        if call.name == "browser_tab_new":
+            return browser.tab_new(str(args.get("url") or ""))
+        if call.name == "browser_tab_switch":
+            return browser.tab_switch(require_json_integer(args.get("index"), "index"))
+        if call.name == "browser_upload":
+            return browser.upload(ref, str(args.get("path") or ""))
+        if call.name == "browser_download":
+            return browser.download(ref)
+        raise ValueError(f"unsupported browser tool {call.name}")
 
     def _policy_check(self, call: ToolCall) -> ProjectPolicyCheck:
         """Keep machine-readable denial separate from its explanation."""
@@ -486,7 +570,7 @@ class ExecutionDelegate:
 
     def _reserve_research_acquisition(self, name: str, turn: int, tool_index: int) -> bool:
         if self.session is not None and self.session.research_acquisition_limits is not None:
-            category = "search" if name == "web_search" else "open" if name in SOURCE_READ_TOOL_NAMES else ""
+            category = "search" if name == "web_search" else "open" if is_source_read_tool(name) else ""
             if category:
                 with self.session.projection_lock:
                     slots = self.session.research_acquisition_slots

@@ -172,11 +172,13 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
             state_home=managed_outputs.root.parent if managed_outputs is not None else None,
         )
     research_tools = None
-    if any(policy.allows(grant) for grant in ("web.read", "knowledge.read", "knowledge.write", "knowledge.link")):
+    browser_actions = any(policy.allows(grant) for grant in ("browser.observe", "browser.interact", "browser.effect"))
+    if browser_actions or any(policy.allows(grant) for grant in ("web.read", "knowledge.read", "knowledge.write", "knowledge.link")):
         from codey.operations.task_execution import build_research_tools
 
         research_tools = build_research_tools(
-            deps, session_id=request.session_id, project=frame.project_text, browser_sources=policy.strict_research)
+            deps, session_id=request.session_id, project=frame.project_text,
+            browser_sources=policy.strict_research, browser_actions=browser_actions)
         if policy.allows("web.read"):
             assert frame.entry_session is not None
             research_tools.direct_urls = frame.entry_session.required_source_urls

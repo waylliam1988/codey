@@ -187,6 +187,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             executor="source" if grant == "web.read" else "knowledge",
             replay_class="safe" if grant == "knowledge.read" or name in {"knowledge_commit", "save_finding", "save_inference", "submit_research_answer"} else "unsafe",
             parallel_safe=contract.parallel_safe,
+            evidence_route="source_read" if name in SOURCE_READ_TOOL_NAMES else "none",
         )
     for alias, (_canonical, id_arg) in _CONTROLLER_ALIAS_ID_ARG.items():
         reference_help = {
@@ -207,6 +208,7 @@ def _research_specs() -> dict[str, ToolSpec]:
             description=reference_help[alias],
             executor="source",
             replay_class="unsafe" if alias == "open_result" else "safe",
+            evidence_route="source_read",
         )
     return specs
 
@@ -574,6 +576,12 @@ def spec_for_tool(name: object) -> ToolSpec | None:
     if not canonical:
         return None
     return tool_specs().get(canonical)
+
+
+def is_source_read_tool(name: object) -> bool:
+    """Evidence semantics belong to the registry, independently of transport."""
+    spec = spec_for_tool(name)
+    return spec is not None and spec.evidence_route == "source_read"
 
 
 def tool_requires_trusted_recovery(name: object) -> bool:

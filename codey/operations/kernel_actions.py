@@ -258,7 +258,7 @@ def _call_execute_turn(
     """Run one execution turn; faults fail closed as provider_failure."""
     try:
         effective_runnable: dict[str, ToolExecutor] = dict(runnable or {})
-        if "codemode" not in effective_runnable:
+        if snapshot is not None and "codemode" in snapshot.tool_names and "codemode" not in effective_runnable:
             from codey.codemode.kernel import build_execute_turn_executor
 
             effective_runnable["codemode"] = build_execute_turn_executor(
