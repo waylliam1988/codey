@@ -73,6 +73,10 @@ class ToolSpec:
     parallel_safe: bool = False
     output_schema: Mapping[str, object] = field(default_factory=text_output_schema)
     declarations: str = ""
+    namespace: str = "core"
+    effect: str = "read"
+    evidence_route: str = "none"
+    preconditions: tuple[str, ...] = ()
 
     @property
     def read_only(self) -> bool:
@@ -207,6 +211,121 @@ def _research_specs() -> dict[str, ToolSpec]:
     return specs
 
 
+def _browser_specs() -> dict[str, ToolSpec]:
+    """Canonical browser contracts; execution is supplied by the task runtime."""
+    return {
+        "browser_snapshot": ToolSpec(
+            name="browser_snapshot", grant="browser.observe", executor="browser",
+            namespace="browser.observe", effect="read",
+            parameters=(("max_elements", {"type": "integer", "minimum": 1, "maximum": 80}),
+                        ("max_text", {"type": "integer", "minimum": 500, "maximum": 12000})),
+            description="Observe the bound page as bounded text and named interactive element refs.",
+            json_examples=('{"tool":"browser_snapshot","args":{}}',),
+            preconditions=("browser_bound",),
+        ),
+        "browser_read": ToolSpec(
+            name="browser_read", grant="browser.observe", executor="browser",
+            namespace="browser.read", effect="read", evidence_route="source_read",
+            parameters=(("offset", {"type": "integer", "minimum": 0}),
+                        ("limit", {"type": "integer", "minimum": 500, "maximum": 12000})),
+            description="Capture the currently bound page through the Research source and passage pipeline.",
+            json_examples=('{"tool":"browser_read","args":{}}',),
+            preconditions=("browser_bound",),
+        ),
+        "browser_click": ToolSpec(
+            name="browser_click", grant="browser.interact", executor="browser",
+            namespace="browser.interact", effect="page_mutation",
+            parameters=(("ref", {"type": "string"}),), required=("ref",),
+            description="Click a ref from the latest browser snapshot; stale refs are rejected.",
+            json_examples=('{"tool":"browser_click","args":{"ref":"<snapshot ref>"}}',),
+            preconditions=("browser_bound", "fresh_snapshot"),
+        ),
+        "browser_fill": ToolSpec(
+            name="browser_fill", grant="browser.interact", executor="browser",
+            namespace="browser.interact", effect="page_mutation",
+            parameters=(("ref", {"type": "string"}), ("value", {"type": "string"})),
+            required=("ref", "value"),
+            description="Fill and verify a textbox ref from the latest browser snapshot.",
+            json_examples=('{"tool":"browser_fill","args":{"ref":"<snapshot ref>","value":"..."}}',),
+            preconditions=("browser_bound", "fresh_snapshot"),
+        ),
+        "browser_scroll": ToolSpec(
+            name="browser_scroll", grant="browser.interact", executor="browser",
+            namespace="browser.interact", effect="page_mutation",
+            parameters=(("direction", {"type": "string", "enum": ["up", "down", "left", "right"]}),
+                        ("amount", {"type": "integer", "minimum": 1, "maximum": 20000})),
+            required=("direction", "amount"),
+            description="Scroll the bound page by a bounded amount.",
+            json_examples=('{"tool":"browser_scroll","args":{"direction":"down","amount":500}}',),
+            preconditions=("browser_bound",),
+        ),
+        "browser_wait": ToolSpec(
+            name="browser_wait", grant="browser.observe", executor="browser",
+            namespace="browser.observe", effect="read",
+            parameters=(("condition", {"type": "string", "enum": ["text", "selector", "url_contains"]}),
+                        ("value", {"type": "string"}),
+                        ("timeout_ms", {"type": "integer", "minimum": 100, "maximum": 30000})),
+            required=("condition", "value", "timeout_ms"),
+            description="Wait for one explicit bounded condition on the bound page.",
+            json_examples=('{"tool":"browser_wait","args":{"condition":"text","value":"...","timeout_ms":5000}}',),
+            preconditions=("browser_bound",),
+        ),
+        "browser_navigate": ToolSpec(
+            name="browser_navigate", grant="browser.interact", executor="browser",
+            namespace="browser.interact", effect="navigation",
+            parameters=(("url", {"type": "string", "minLength": 1}),), required=("url",),
+            description="Navigate the current browser page to a user-authorized URL.",
+            json_examples=('{"tool":"browser_navigate","args":{"url":"https://example.com"}}',),
+        ),
+        "browser_eval": ToolSpec(
+            name="browser_eval", grant="browser.effect", executor="browser",
+            namespace="browser.effect", effect="page_mutation",
+            parameters=(("code", {"type": "string", "minLength": 1}),), required=("code",),
+            description="Evaluate page JavaScript only when the browser effect capability is authorized.",
+            json_examples=('{"tool":"browser_eval","args":{"code":"return document.title"}}',),
+            preconditions=("browser_bound",),
+        ),
+        "browser_tab_list": ToolSpec(
+            name="browser_tab_list", grant="browser.interact", executor="browser",
+            namespace="browser.interact", effect="read",
+            description="List pages in the current browser session.",
+            json_examples=('{"tool":"browser_tab_list","args":{}}',),
+        ),
+        "browser_tab_new": ToolSpec(
+            name="browser_tab_new", grant="browser.interact", executor="browser",
+            namespace="browser.interact", effect="navigation",
+            parameters=(("url", {"type": "string", "minLength": 1}),), required=("url",),
+            description="Open a new tab at a user-authorized URL.",
+            json_examples=('{"tool":"browser_tab_new","args":{"url":"https://example.com"}}',),
+        ),
+        "browser_tab_switch": ToolSpec(
+            name="browser_tab_switch", grant="browser.interact", executor="browser",
+            namespace="browser.interact", effect="navigation",
+            parameters=(("index", {"type": "integer", "minimum": 0}),), required=("index",),
+            description="Switch to a tab index from the latest tab list.",
+            json_examples=('{"tool":"browser_tab_switch","args":{"index":0}}',),
+            preconditions=("browser_bound",),
+        ),
+        "browser_upload": ToolSpec(
+            name="browser_upload", grant="browser.effect", executor="browser",
+            namespace="browser.effect", effect="external_effect",
+            parameters=(("ref", {"type": "string"}), ("path", {"type": "string", "minLength": 1})),
+            required=("ref", "path"),
+            description="Upload an authorized local file through a file input ref.",
+            json_examples=('{"tool":"browser_upload","args":{"ref":"<snapshot ref>","path":"file.txt"}}',),
+            preconditions=("browser_bound", "fresh_snapshot", "explicit_file_authorization"),
+        ),
+        "browser_download": ToolSpec(
+            name="browser_download", grant="browser.effect", executor="browser",
+            namespace="browser.effect", effect="external_effect",
+            parameters=(("ref", {"type": "string"}),), required=("ref",),
+            description="Download through an authorized link ref and return a file receipt.",
+            json_examples=('{"tool":"browser_download","args":{"ref":"<snapshot ref>"}}',),
+            preconditions=("browser_bound", "fresh_snapshot", "explicit_file_authorization"),
+        ),
+    }
+
+
 def _all_specs() -> dict[str, ToolSpec]:
     specs = _coding_specs()
     codemode_example = (
@@ -281,6 +400,7 @@ def _all_specs() -> dict[str, ToolSpec]:
                 ))
             continue
         specs[name] = spec
+    specs.update(_browser_specs())
     if "done" not in specs:
         specs["done"] = _coding_specs().get("done", ToolSpec(name="done", grant="control"))
     done = specs["done"]
