@@ -80,7 +80,10 @@ def test_real_runtime_type_error_retains_the_frozen_contract_and_cannot_complete
         "const a = await tools.read_file({path:'a.txt'}); return a.split('\\n')[0];"
     )}, call_id="bad-value")], snapshot=snapshot, project_path=tmp_path,
         executors={"codemode": executor}, run_id="r", turn=1)[0]
-    assert not result.ok and "not a function" in result.model_text
+    assert not result.ok
+    assert "tools.read_file returned Result<T>, not its data" in result.model_text
+    assert 'Undeclared result field "split"' in result.model_text
+    assert "result.value.split" in result.model_text
     assert spec.description in result.model_text
     assert "UNSENT-CONTRACT" not in result.model_text
     assert spec.declarations not in result.model_text
@@ -174,16 +177,22 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
                 if failure == "host":
                     assert "before execution" in feedback and not state.executed
                 elif failure == "value":
-                    assert "not a function" in feedback
+                    assert "tools.read_file returned Result<T>, not its data" in feedback
+                    assert 'Undeclared result field "split"' in feedback
+                    assert "result.value.split" in feedback
                 elif failure == "console":
                     assert "Console output is unavailable" in feedback
                 elif failure == "missing_return":
                     assert "CodeMode returned undefined" in feedback
                 elif failure == "missing_property":
-                    assert "returning a nonexistent property" in feedback and "result.value" in feedback
+                    assert "tools.read_file returned Result<T>, not its data" in feedback
+                    assert 'Undeclared result field "text"' in feedback
+                    assert "result.value.text" in feedback
                 elif failure == "nested_property":
-                    assert '$["payload"]' in feedback and "undefined" in feedback
-                    assert "tools.read_file: Result<" in feedback and "tools.grep:" not in feedback
+                    assert "tools.read_file returned Result<T>, not its data" in feedback
+                    assert 'Undeclared result field "text"' in feedback
+                    assert "result.value.text" in feedback
+                    assert "tools.grep:" not in feedback
                 elif failure == "uncalled_main":
                     assert "No child tool was executed" in feedback and "return await main()" in feedback
                 name, args = "codemode", example
