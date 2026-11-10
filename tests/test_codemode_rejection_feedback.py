@@ -171,6 +171,8 @@ def test_rejected_then_corrected_program_uses_real_kernel_and_recovers(tmp_path,
                 if failure == "syntax":
                     assert "JavaScript compilation failed" in feedback
                     assert "No child tool was executed" in feedback and "inputs.<field>" in feedback
+                    assert "submit one new syntactically valid CodeMode program" in feedback
+                    assert "do not repeat the rejected source" in feedback
                 assert not evaluate(state, "premature success").complete
                 assert not any(row.get("name") == "codemode" and row.get("ok") is True
                                for row in state.executed.values())

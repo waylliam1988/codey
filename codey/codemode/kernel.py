@@ -346,6 +346,11 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             from codey.toolchain.tool_prompt import tool_repair_text
 
             detail = result.model_text
+            if result.audit.get("error_code") == "syntax_error":
+                detail += (
+                    "\nSyntax repair required: submit one new syntactically valid CodeMode program; "
+                    "do not repeat the rejected source."
+                )
             if result.audit.get("error_code") in {"missing_return", "result_encoding"} and ordered_child_effect_ids:
                 names = sorted({session.executed[ref]["name"] for ref in ordered_child_effect_ids})
                 detail += "\nInvoked tool return types (Result<T> success data is result.value):\n" + "\n".join(
