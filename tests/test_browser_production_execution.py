@@ -130,6 +130,33 @@ def test_browser_actions_cannot_smuggle_source_evidence(production_browser) -> N
         project_result_observation(session, forged.call, forged, ok=True, research_ledger=tools.ledger)
 
 
+def test_browser_read_rejects_http_error_page_before_evidence(production_browser) -> None:
+    session, tools, browser = production_browser
+
+    def error_route(route: Route) -> None:
+        route.fulfill(status=503, content_type="text/html", body="<html><body>Service Unavailable</body></html>")
+
+    browser.provider._guard_request = error_route  # type: ignore[method-assign]
+    delegate = _delegate(session, tools)
+    navigated, ok, _ = delegate.execute(ToolCall("browser_navigate", {"url": URL}))
+    assert ok, navigated.model_text
+    captured, ok, _ = delegate.execute(ToolCall("browser_read", {}))
+    assert not ok
+    assert "HTTP 503" in captured.model_text
+    assert tools.ledger.opened_sources == []
+    assert tools.ledger.read_passages == {}
+
+
+def test_browser_navigation_rejects_javascript_before_page_goto(production_browser) -> None:
+    session, tools, _ = production_browser
+    delegate = _delegate(session, tools)
+    result, ok, _ = delegate.execute(ToolCall("browser_navigate", {
+        "url": "javascript:document.body.textContent='MUTATED'",
+    }))
+    assert not ok
+    assert "navigation denied" in result.model_text
+
+
 def test_successful_browser_read_requires_passages() -> None:
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"browser.observe"})), task_kind="chat")
     result = ToolResult(ok=True, call=ToolCall("browser_read", {}), model_text="fake")

@@ -17,7 +17,8 @@ def browser_output_schema(name: str) -> dict[str, object]:
                 "required": list(properties)}
 
     action: dict[str, object] = {"action": string, "delivery": string, "text": string}
-    page = {"url": string, "page_id": string, "generation": integer}
+    page = {"url": string, "page_id": string, "generation": integer,
+            "http_status": {"anyOf": [integer, {"type": "null"}]}, "content_type": string}
     observed = {**action, "ref": string, "observation": string, "effect_verified": boolean, "page_url": string}
     schemas = {
         "browser_snapshot": record({

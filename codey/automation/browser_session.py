@@ -16,16 +16,16 @@ from uuid import uuid4
 
 from playwright.sync_api import ElementHandle, Error, FilePayload, Page
 
+from codey.policies.network import check_fetch_url
 from codey.research.browser_search import (
     BrowserSearchProvider,
     _fetch_page_content_after_settle,
-    _requires_login,
     _search_browser_call,
+    _validate_page_observation,
 )
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.extract import _MAX_PAGE_CHARS, extract_title
 from codey.research.source_acquisition import with_attempt
-from codey.research.source_download import _fetch_failure
 from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_value
@@ -68,6 +68,7 @@ class BrowserSession:
         self._generation = 0
         self._refs: dict[str, _ElementRef] = {}
         self._page_ids: dict[Page, str] = {}
+        self._navigation_facts: dict[int, tuple[int | None, str]] = {}
 
     @classmethod
     def from_provider(cls, provider: object) -> BrowserSession:
@@ -256,19 +257,37 @@ class BrowserSession:
         if not target:
             return BrowserToolOutput("ERROR: browser_navigate needs a URL", False,
                                      {"action": "navigate", "delivery": "not_delivered"})
+        policy_reason = check_fetch_url(target, resolve=False)
+        if policy_reason:
+            return BrowserToolOutput(f"ERROR: navigation denied: {policy_reason}", False,
+                                     {"action": "navigate", "url": target,
+                                      "delivery": "not_delivered", "reason": "policy_denied"})
         page = self.provider._ensure_fetch_page_on_browser_thread(target)
         previous_url = page.url
         try:
-            page.goto(target, wait_until="domcontentloaded", timeout=20_000)
+            response = page.goto(target, wait_until="domcontentloaded", timeout=20_000)
         except Exception as exc:
             self._invalidate_refs()
             return BrowserToolOutput(f"ERROR: navigation failed: {exc}", False,
                                      {"action": "navigate", "url": target, "delivery": "uncertain"})
+        final_url = page.url or target
+        final_policy_reason = check_fetch_url(final_url, resolve=False)
+        if final_policy_reason:
+            self._navigation_facts[id(page)] = (None, "")
+            self._invalidate_refs()
+            return BrowserToolOutput(f"ERROR: navigation denied after redirect: {final_policy_reason}", False,
+                                     {"action": "navigate", "url": final_url,
+                                      "delivery": "confirmed", "reason": "policy_denied"})
+        status = getattr(response, "status", None) if response is not None else None
+        headers = getattr(response, "headers", {}) if response is not None else {}
+        content_type = str(headers.get("content-type", "")) if isinstance(headers, dict) else ""
+        self._navigation_facts[id(page)] = (status if isinstance(status, int) else None, content_type)
         self._invalidate_refs()
-        return BrowserToolOutput(f"Navigated to {page.url}", True,
-                                 {"action": "navigate", "url": page.url, "previous_url": previous_url,
+        return BrowserToolOutput(f"Navigated to {final_url}", True,
+                                 {"action": "navigate", "url": final_url, "previous_url": previous_url,
                                   "page_id": self._page_id(page), "generation": self._generation,
-                                  "delivery": "delivered"})
+                                  "delivery": "delivered", "http_status": status,
+                                  "content_type": content_type})
 
     def _evaluate_on_browser_thread(self, code: str) -> BrowserToolOutput:
         page = self._page_on_browser_thread()
@@ -310,16 +329,27 @@ class BrowserSession:
 
     def _tab_new_on_browser_thread(self, url: str) -> BrowserToolOutput:
         cancellation.check()
+        target = url.strip()
+        policy_reason = check_fetch_url(target, resolve=False)
+        if policy_reason:
+            return BrowserToolOutput(f"ERROR: tab URL denied: {policy_reason}", False,
+                                     {"action": "tab_new", "url": target,
+                                      "delivery": "not_delivered", "reason": "policy_denied"})
         session = self.provider._ensure_session_on_browser_thread()
         context = session.browser.contexts[0] if session.browser.contexts else session.page.context
         page = self.provider._prepare_page_on_browser_thread(context.new_page())
         self.provider._register_owned_page_on_browser_thread(page)
         self.provider._fetch_page = page
         self._invalidate_refs()
-        page.goto(url.strip(), wait_until="domcontentloaded", timeout=20_000)
+        response = page.goto(target, wait_until="domcontentloaded", timeout=20_000)
+        status = getattr(response, "status", None) if response is not None else None
+        headers = getattr(response, "headers", {}) if response is not None else {}
+        content_type = str(headers.get("content-type", "")) if isinstance(headers, dict) else ""
+        self._navigation_facts[id(page)] = (status if isinstance(status, int) else None, content_type)
         return BrowserToolOutput(f"Opened tab at {page.url}", True,
                                  {"action": "tab_new", "url": page.url, "page_id": self._page_id(page),
-                                  "generation": self._generation, "delivery": "delivered"})
+                                  "generation": self._generation, "delivery": "delivered",
+                                  "http_status": status, "content_type": content_type})
 
     def _tab_switch_on_browser_thread(self, index: int) -> BrowserToolOutput:
         session = self.provider._session
@@ -389,9 +419,12 @@ class BrowserSession:
     def _capture_on_browser_thread(self) -> dict[str, object]:
         page = self._page_on_browser_thread()
         html, text = _fetch_page_content_after_settle(page)
-        if _requires_login(page, text):
-            return with_attempt(_fetch_failure(page.url, "login_required: page requires authentication",
-                                               code="login_required", delivery="confirmed"), "browser", page.url)
+        response_status, content_type = self._navigation_facts.get(id(page), (None, ""))
+        invalid = _validate_page_observation(page, page.url, html, text,
+                                             response_status=response_status,
+                                             content_type=content_type)
+        if invalid is not None:
+            return with_attempt(invalid, "browser", page.url)
         truncated = len(text) > _MAX_PAGE_CHARS
         if truncated:
             text = text[:_MAX_PAGE_CHARS]

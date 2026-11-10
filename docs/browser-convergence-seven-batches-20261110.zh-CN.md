@@ -77,3 +77,11 @@
 - `browser_upload`、`browser_download` 与 click/fill 使用相同的 stale 元素回执，旧引用返回 `reason=stale_ref`，不会进入文件操作。
 - 相关 Chromium 生产测试 29 passed；Ruff、browser_search.py 和 browser_session.py 的 mypy 通过。
 - KoboldCpp + Chromium：`.e2e-artifacts/browser-followup-a` 的 structured full-surface gate 通过。
+
+### 批次 B：页面响应事实、错误页和导航 URL 策略
+
+- 浏览器获取与 `browser_read` 共用页面响应/正文验收：HTTP 4xx/5xx、非文本内容、登录页和无可用正文均在证据投影前失败；响应状态与 content type 保留在导航回执和当前页事实中。
+- `browser_navigate`、`browser_tab_new` 在 `page.goto` 前执行统一 http(s) URL 策略，拒绝 `javascript:`；重定向后的目标再次校验。
+- 新增 HTTP 503 不进入 ledger 的生产回归，以及 javascript 导航不执行的回归。
+- 验证：浏览器 schema/生产执行 18 passed，新增错误页与导航回归通过；Ruff、三份生产文件 mypy 通过。
+- KoboldCpp + Chromium：`.e2e-artifacts/browser-followup-b` 的 basic full-surface gate 通过。

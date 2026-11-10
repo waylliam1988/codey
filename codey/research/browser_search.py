@@ -92,6 +92,46 @@ def _requires_login(page: Page, text: str) -> bool:
             and page.query_selector('input[type="password"]') is not None)
 
 
+def _validate_page_observation(
+    page: Page,
+    url: str,
+    html: str,
+    text: str,
+    *,
+    response_status: int | None = None,
+    content_type: str = "",
+    failures: _PageFailures | None = None,
+) -> dict[str, object] | None:
+    """Apply the same response and visible-content checks to every page read."""
+    if response_status is not None and response_status >= 400:
+        return source_download._fetch_failure(
+            url, f"could not load page: HTTP {response_status}",
+            code=http_failure_code(response_status), delivery="confirmed", http_status=response_status,
+        )
+    normalized_type = content_type.lower()
+    if normalized_type and not any(kind in normalized_type for kind in ("html", "text", "xml", "json")):
+        return source_download._fetch_failure(
+            url, f"unsupported content type: {normalized_type}", status="skipped",
+            code="unsupported_content", delivery="confirmed",
+        )
+    if _requires_login(page, text):
+        return source_download._fetch_failure(
+            url, "login_required: page requires authentication",
+            code="login_required", delivery="confirmed",
+        )
+    if not _usable_fetch_page_text(text):
+        if failures is None:
+            detail = _fetch_page_failure_kind(text)
+            code: SourceFailureCode = "access_restricted" if detail == "page_unavailable" else "page_not_loaded"
+        else:
+            code, detail = failures.failure(text)
+        return source_download._fetch_failure(
+            url, "page had no usable visible content after navigation: " + detail,
+            title=extract_title(html), code=code, delivery="confirmed",
+        )
+    return None
+
+
 class SearchUnavailableError(RuntimeError):
     """A bounded, classified failure from the browser search surface."""
 
@@ -549,16 +589,13 @@ class BrowserSearchProvider:
                                                          code="policy_denied", delivery="confirmed")
             if response is not None:
                 status = getattr(response, "status", None)
-                if isinstance(status, int) and status >= 400:
-                    self._discard_fetch_page_on_browser_thread(page)
-                    return source_download._fetch_failure(final_url, f'could not load page: HTTP {status}',
-                        code=http_failure_code(status), delivery="confirmed")
                 ctype = (response.headers.get("content-type") or "").lower()
                 if source_download._is_pdf_response(ctype, final_url):
                     return source_download._pdf_download_sentinel(final_url, mime_type=ctype)
-                if ctype and not any(t in ctype for t in ("html", "text", "xml", "json")):
-                    return source_download._fetch_failure(final_url, f'unsupported content type: {ctype}', status="skipped",
-                                                         code="unsupported_content", delivery="confirmed")
+                response_status = status if isinstance(status, int) else None
+            else:
+                ctype = ""
+                response_status = None
             cancellation.check()
             try:
                 html, text = _fetch_page_content_after_settle(page)
@@ -569,12 +606,13 @@ class BrowserSearchProvider:
                 return source_download._fetch_failure(final_url, f'could not read page content: {exc}',
                                                      code="execution_failed", delivery="confirmed")
             cancellation.check()
-            if _requires_login(page, text):
+            invalid = _validate_page_observation(
+                page, final_url, html, text,
+                response_status=response_status, content_type=ctype, failures=failures,
+            )
+            if invalid is not None:
                 self._discard_fetch_page_on_browser_thread(page)
-                return source_download._fetch_failure(final_url, "login_required: page requires authentication",
-                                                     code="login_required", delivery="confirmed")
-            if not _usable_fetch_page_text(text):
-                return self._unreadable_page_on_browser_thread(page, final_url, html, text, failures)
+                return invalid
             truncated = len(text) > _MAX_PAGE_CHARS
             if truncated:
                 text = text[:_MAX_PAGE_CHARS]
