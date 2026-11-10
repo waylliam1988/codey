@@ -49,13 +49,15 @@ class ProductionRecordingProvider(attempts.RecordingProvider):
 
 
 def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore_snapshots: bool = False,
-             reread: bool = False) -> dict[str, object]:
+             reread: bool = False, stale_edit: bool = False) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     events: list[dict[str, object]] = []
     navigations: list[str] = []
     started = time.monotonic()
     snapshot_count = 0
+    changed_after_read = False
+    result_file: Path | None = None
     build_snapshot = kernel_protocol.build_turn_snapshot
 
     def restored_snapshot(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
@@ -68,9 +70,14 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
         return restored
 
     def observe(row: dict[str, object]) -> None:
+        nonlocal changed_after_read
         events.append(row)
         with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
+        if (stale_edit and not changed_after_read and result_file is not None
+                and row.get("type") == "tool" and row.get("tool_name") == "read_file" and row.get("ok") is True):
+            result_file.write_text('{"amount": -1, "code": "externally_changed"}\n', encoding="utf-8")
+            changed_after_read = True
 
     def route_document(route: Route) -> None:
         navigations.append(route.request.url)
@@ -129,13 +136,16 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
         required = {"browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read"}
         reads = sum(row.get("type") == "tool" and row.get("tool_name") == "browser_read" and row.get("ok") is True
                     for row in events)
+        failed_edits = sum(row.get("type") == "tool" and row.get("tool_name") == "edit" and row.get("ok") is False
+                           for row in events)
         passed = (result.stop_reason == "done" and required <= successful and "173" in answer and "QUARTZ_851" in answer
                   and (not reread or reads >= 2)
+                  and (not stale_edit or changed_after_read and failed_edits >= 1)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
                   and (mode != "hybrid" or artifact == {"amount": 173, "code": "QUARTZ_851"}))
         summary: dict[str, object] = {"mode": mode, "passed": passed, "stop_reason": result.stop_reason,
             "successful_tools": sorted(successful), "answer": answer, "project_result": artifact, "navigations": navigations,
-            "source_reads": reads}
+            "source_reads": reads, "failed_edits": failed_edits, "changed_after_read": changed_after_read}
     except Exception as exc:
         summary = {"mode": mode, "passed": False, "error": f"{type(exc).__name__}: {exc}"}
     finally:
@@ -153,6 +163,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--restore-snapshots", action="store_true", help="Execute serialized/restored production contracts.")
     parser.add_argument("--reread", action="store_true", help="Read changed source twice with a fixed acquisition clock.")
+    parser.add_argument("--stale-edit", action="store_true", help="Change the file after its first read; require edit recovery.")
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
     args = parser.parse_args()
     root = args.run_dir.resolve()
@@ -162,7 +173,8 @@ def main() -> int:
     rows = []
     for mode in modes:
         print(json.dumps({"starting": mode}), flush=True)
-        row = run_case(root / mode, mode, target, restore_snapshots=args.restore_snapshots, reread=args.reread)
+        row = run_case(root / mode, mode, target, restore_snapshots=args.restore_snapshots, reread=args.reread,
+                       stale_edit=args.stale_edit)
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
     summary = {"passed": sum(row["passed"] is True for row in rows), "runs": len(rows), "results": rows}

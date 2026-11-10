@@ -272,10 +272,29 @@ def _completion_followup(feedback: str, *, native: bool, structured_report: bool
     return feedback + "\n\n" + rule
 
 
+def _child_failure_context(result: ToolResult, session: TaskSession) -> str:
+    references = result.canonical.get("child_effect_ids")
+    failures: list[JsonObject] = []
+    reads: list[JsonObject] = []
+    if isinstance(references, list):
+        for reference in references:
+            child = session._memory_results.get(reference) if isinstance(reference, str) else None
+            if child is not None and not child.ok:
+                failures.append({"result_ref": reference, "tool": child.call.name,
+                                 "ok": False, "error": child.model_text[:2_000]})
+            elif child is not None and child.call.name == "read_file":
+                reads.append({"result_ref": reference, "tool": child.call.name,
+                              "path": child.call.args.get("path"), "ok": True})
+    return ("\n\nChild failure receipts (parent status is the program outcome):\n"
+            + json.dumps({"failed": failures[-12:], "file_reads": reads[-12:]}, ensure_ascii=False)) if failures else ""
+
+
 def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
     text = (result.model_text or "")
-    if result.call.name == "codemode" and result.ok:
-        text = f"Result data (JSON):\n{text}"
+    if result.call.name == "codemode":
+        if result.ok:
+            text = f"Result data (JSON):\n{text}"
+        text += _child_failure_context(result, session)
     result_ref = next((key for key, value in session._memory_results.items() if value is result), "")
     if result_ref:
         source_result = result.call.name in SOURCE_TOOL_NAMES

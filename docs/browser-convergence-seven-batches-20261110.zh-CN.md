@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 1 | 完整恢复工具元数据；验证恢复后的执行与 catalog/replay 身份 | 完成 |
 | 2 | 同时间采集版本排序、旧 handle 与乱序 replay；对齐 CodeMode 授权 fixture | 完成 |
-| 3 | 子调用失败的原回执反馈与 Hybrid 修复验收，保留显式错误处理 | 待开始 |
+| 3 | 子调用失败的原回执反馈与 Hybrid 修复验收，保留显式错误处理 | 完成 |
 | 4 | 浏览器各工具实际输出的 schema 与 CodeMode 声明 | 待开始 |
 | 5 | 上传的项目/附件文件授权与真实文件回执 | 待开始 |
 | 6 | 下载启用、持久化存储、摘要与回执 | 待开始 |
@@ -29,3 +29,10 @@
 - 五项 CodeMode 写入失败是 fixture 没有 control 授权；只对齐两个构造点，不更改生产权限 guard。
 - 验证：来源时钟排序、handle、共享 intake、版本化 edit 和 ledger 共 61 passed；Ruff、ledger.py 的 mypy 通过。
 - 实机：`.e2e-artifacts/browser-seven-b2-reread`，KoboldCpp Research 通过；固定采集时钟，操作前后共四次 browser_read，最终引用新正文 173 / QUARTZ_851。没有修改 prompt。
+
+## 批次 3
+
+- 从父回执引用的原始子回执派生失败摘要，同时显示该父调用真实的文件读取引用；不另存错误账本，不改变程序主动处理错误时的父调用结论。
+- 实机发现 JS 参数中的 undefined 被 JSON.stringify 静默删掉。统一严格 JSON 编码用于参数和返回值，参数发出前拒绝 undefined/非有限数/函数等，并从冻结 schema 取字段说明。没有添加 Hybrid 专用提示词。
+- 首两次实机分别停在漏传、错误读取 result_ref；保留失败记录。最终 `.e2e-artifacts/browser-seven-b3-receipts` 通过：首次读取后外部修改文件，1 次 edit 失败，随后真实写入 173 / QUARTZ_851 并 done。受控实验不代表任意模型均能稳定修复。
+- 验证：子失败反馈、版本化 edit、repair/replay 共 35 passed；扩大检查 guest 编码涉及的 runtime/rejection 用例也通过；Ruff 与 kernel_prompt.py 的 mypy 通过。

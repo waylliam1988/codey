@@ -61,10 +61,31 @@ function unwrap(result) {
   return result.value;
 }
 
+function encodeJson(value, label, errorCode, properties = {}) {
+  const locations = new WeakMap();
+  return JSON.stringify(value, function (key, item) {
+    const location = locations.has(this) ? locations.get(this) + "[" + JSON.stringify(key) + "]" : "$";
+    if (item !== null && typeof item === "object") locations.set(item, location);
+    if (item === undefined || ["function", "symbol", "bigint"].includes(typeof item)
+        || (typeof item === "number" && !Number.isFinite(item))) {
+      const kind = typeof item === "number" ? "non-finite number" : typeof item;
+      const detail = item === undefined
+        ? " A nonexistent property produces undefined. Follow each tool's declared value type; correct the expression."
+        : "";
+      const error = new Error(label + " must contain only JSON data: " + kind + " at " + location + "." + detail
+        + " Use explicit null only for intentional empty values."
+        + (properties[key]?.description ? " Field contract: " + properties[key].description : ""));
+      error.code = errorCode;
+      throw error;
+    }
+    return item;
+  });
+}
+
 function toolsProxy(path = []) {
   const callable = (args = {}) => {
     const name = path.join(".");
-    if (!active.allowed.has(name)) {
+    if (!active.catalog.has(name)) {
       throw new Error(`tool is not in the frozen catalog: ${name}`);
     }
     if (active.calls >= active.limits.maxChildCalls) {
@@ -73,11 +94,13 @@ function toolsProxy(path = []) {
     if (active.pending >= active.limits.maxPendingPromises) {
       throw new Error("codemode pending promise limit exceeded");
     }
+    const encodedArgs = encodeJson(args, "Arguments for tools." + name, "argument_encoding",
+      active.catalog.get(name)?.parameters?.properties);
     const callId = `call-${++nextCall}`;
     active.calls += 1;
     active.pending += 1;
     const result = trackedCall(callId);
-    send({ type: "call", callId, name, args });
+    send({ type: "call", callId, name, args: JSON.parse(encodedArgs) });
     return result;
   };
   return new Proxy(callable, {
@@ -148,7 +171,7 @@ async function execute(request) {
   const catalog = Array.isArray(request.catalog) ? request.catalog : [];
   const limits = request.limits ?? {};
   active = {
-    allowed: new Set(catalog.map((item) => String(item.name))),
+    catalog: new Map(catalog.map((item) => [String(item.name), item])),
     limits: {
       maxChildCalls: Number(limits.maxChildCalls ?? 64),
       maxConcurrentCalls: Number(limits.maxConcurrentCalls ?? 8),
@@ -212,22 +235,7 @@ async function execute(request) {
       error.code = "missing_return";
       throw error;
     }
-    const locations = new WeakMap();
-    const encoded = JSON.stringify(value, function (key, item) {
-      const location = locations.has(this) ? locations.get(this) + "[" + JSON.stringify(key) + "]" : "$";
-      if (item !== null && typeof item === "object") locations.set(item, location);
-      if (item === undefined || ["function", "symbol", "bigint"].includes(typeof item)
-          || (typeof item === "number" && !Number.isFinite(item))) {
-        const kind = typeof item === "number" ? "non-finite number" : typeof item;
-        const detail = item === undefined
-          ? " A nonexistent property produces undefined. Follow each tool's declared value type; correct the returned expression."
-          : "";
-        const error = new Error("CodeMode result must contain only JSON data: " + kind + " at " + location + "." + detail + " Use explicit null only for intentional empty values.");
-        error.code = "result_encoding";
-        throw error;
-      }
-      return item;
-    });
+    const encoded = encodeJson(value, "CodeMode result", "result_encoding");
     if (unescape(encodeURIComponent(encoded ?? "null")).length > active.limits.maxOutputBytes) {
       send({ type: "done", ok: false, errorCode: "output_limit", error: "codemode output exceeds output byte limit", childCalls: active.calls, unawaitedCalls: unawaitedCallCount() });
       return;
