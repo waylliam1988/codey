@@ -123,7 +123,10 @@ class BrowserSession:
     def _page_on_browser_thread(self) -> Page:
         page = self.provider._fetch_page
         if page is None or page.is_closed():
-            raise RuntimeError("no retained browser page; open a source first")
+            raise RuntimeError(
+                "no retained browser page; call browser_navigate with the source URL "
+                "to take over an HTTP-first source before browser actions"
+            )
         return page
 
     def _page_id(self, page: Page) -> str:

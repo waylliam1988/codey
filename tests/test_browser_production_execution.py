@@ -69,6 +69,14 @@ def _settle(session: TaskSession, tools: ResearchTools, result: ToolResult) -> T
     return committed
 
 
+def test_http_first_browser_actions_explain_explicit_takeover(production_browser) -> None:
+    session, tools, _browser = production_browser
+    result, ok, _ = _delegate(session, tools).execute(ToolCall("browser_snapshot", {}))
+    assert not ok
+    assert "browser_navigate" in result.model_text
+    assert "HTTP-first source" in result.model_text
+
+
 def test_actions_and_reads_share_worker_but_only_committed_reads_establish_evidence(production_browser) -> None:
     session, tools, browser = production_browser
     delegate = _delegate(session, tools)
