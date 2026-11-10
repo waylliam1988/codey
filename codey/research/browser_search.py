@@ -216,6 +216,7 @@ class BrowserSearchProvider:
             port=self.cdp_port,
             profile=self.profile_dir,
             open_if_missing=self.launch and not self.require_existing_session,
+            require_exact_port=self.require_existing_session,
             bring_to_front=False,
             isolated=self.isolated,
             fresh_tab=False,

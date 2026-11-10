@@ -72,7 +72,7 @@ class ReferenceHandleResolver:
         """Create the short, version-bound display form for an existing ref."""
         text = str(ref or "").strip().lower()
         if text in self._session._memory_results:
-            rows = tuple(self._session._memory_results)
+            rows = self._receipt_rows()
             return f"rc{rows.index(text) + 1}"
         if text.startswith(("rc", "r")):
             self.resolve(text)
@@ -86,7 +86,7 @@ class ReferenceHandleResolver:
         raise ReferenceHandleError("invalid reference identity")
 
     def _receipt(self, handle: str, number: int) -> ResolvedReference:
-        rows = tuple(self._session._memory_results.items())
+        rows = tuple((ref, self._session._memory_results[ref]) for ref in self._receipt_rows())
         if number > len(rows):
             raise ReferenceHandleError("receipt handle is unavailable in this task")
         ref, result = rows[number - 1]
@@ -101,6 +101,45 @@ class ReferenceHandleResolver:
             args_digest=compute_args_digest(result.call.args),
             result=result,
         )
+
+    def _receipt_rows(self) -> tuple[str, ...]:
+        """Order receipts from stable call identity and parent-child facts.
+
+        A nested child settles before its parent in a live projection, while
+        durable recovery rebuilds intents in parent-first order.  Replaying
+        the committed child references before their parent preserves the
+        original display order without depending on dictionary insertion.
+        """
+        available = set(self._session._memory_results)
+        records = self._session.executed
+        children: dict[str, tuple[str, ...]] = {}
+        nested: set[str] = set()
+        for parent, record in records.items():
+            refs = tuple(ref for ref in record.get("child_effect_ids", ()) if ref in available)
+            if refs:
+                children[parent] = refs
+                nested.update(refs)
+
+        def stable_key(ref: str) -> tuple[str, str, str]:
+            result = self._session._memory_results[ref]
+            return (result.call.call_id, result.call.name, ref)
+
+        ordered: list[str] = []
+        visiting: set[str] = set()
+
+        def visit(ref: str) -> None:
+            if ref in visiting or ref not in available:
+                return
+            visiting.add(ref)
+            for child in children.get(ref, ()):
+                visit(child)
+            ordered.append(ref)
+
+        for ref in sorted(available - nested, key=stable_key):
+            visit(ref)
+        for ref in sorted(available - set(ordered), key=stable_key):
+            visit(ref)
+        return tuple(ordered)
 
     def _search_result(self, handle: str, number: int) -> ResolvedReference:
         ref = f"r{number}"
@@ -126,10 +165,28 @@ class ReferenceHandleResolver:
 
     def _evidence(self, handle: str, number: int, expected_version: str) -> ResolvedReference:
         ledger = self._ledger
-        if ledger is None or not self._web_allowed() or number > len(ledger.evidence_items):
+        if ledger is None or not self._web_allowed():
             raise ReferenceHandleError("evidence handle is unavailable")
-        item = ledger.evidence_items[number - 1]
-        source = self._find_source(item.source_url)
+        from codey.research.answer_contract import answer_scope
+
+        scope = answer_scope(self._session)
+        aliases = dict(scope.aliases)
+        passage_ref = aliases.get(f"e{number}")
+        passage = ledger.read_passages.get(passage_ref) if passage_ref else None
+        source: OpenedSource | None
+        if passage is not None:
+            source = passage.source
+            item = next(
+                (candidate for candidate in ledger.evidence_items
+                 if candidate.locator.removeprefix("passage:") == passage.ref),
+                EvidenceItem(claim="", source_url=source.final_url, excerpt=passage.excerpt,
+                             locator=f"passage:{passage.ref}"),
+            )
+        else:
+            if number > len(ledger.evidence_items):
+                raise ReferenceHandleError("evidence handle is unavailable")
+            item = ledger.evidence_items[number - 1]
+            source = self._find_source(item.source_url)
         if source is None:
             raise ReferenceHandleError("evidence source version is unavailable")
         if expected_version and source.text_hash != expected_version:
@@ -141,7 +198,7 @@ class ReferenceHandleResolver:
         )
         if not source_ref:
             raise ReferenceHandleError("evidence source is outside this task")
-        text = ledger.source_text_for_url(source.final_url)
+        text = passage.source_text if passage is not None else ledger.source_text_for_url(source.final_url)
         if not item.excerpt or item.excerpt not in text:
             raise ReferenceHandleError("evidence excerpt is not in the source snapshot")
         return ResolvedReference(

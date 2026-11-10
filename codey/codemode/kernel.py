@@ -101,13 +101,14 @@ class CodeModeKernelExecutor:
             replay=self.replay_child,
         )
         try:
+            state_store = self.state_store if self.state_store is not None else self.replay
             result = self.runtime.execute(
                 program.code,
                 inputs=program.inputs,
                 catalog=self.catalog.entries,
                 invoke=host.invoke,
                 limits=self.limits,
-                state_store=self.replay if self.replay is not None else self.state_store,
+                state_store=state_store,
                 replay_context=self.replay.context if self.replay is not None else None,
             )
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
@@ -138,7 +139,7 @@ class CodeModeKernelExecutor:
         return ToolResult(ok=True, call=call, model_text=text, audit=audit, canonical={"value": value})
 
 
-def build_execute_turn_executor(  # noqa: PLR0915
+def build_execute_turn_executor(  # noqa: C901, PLR0915
     *,
     session: TaskSession,
     snapshot: TurnSnapshot,
@@ -182,10 +183,14 @@ def build_execute_turn_executor(  # noqa: PLR0915
     if not effective_session_id and isinstance(intent_sink, KernelEffectSink):
         effective_session_id = intent_sink.session_id
 
-    def run_parent(call: ToolCall) -> ToolResult:  # noqa: PLR0915
+    def run_parent(call: ToolCall) -> ToolResult:  # noqa: C901, PLR0915
         from codey.operations.task_session import turn_effect_id
 
-        child_effect_ids: list[str] = []
+        child_effect_ids_by_index: dict[int, str] = {}
+
+        def child_effect_ids() -> list[str]:
+            """Return child receipts in the RPC call order, not completion order."""
+            return [child_effect_ids_by_index[index] for index in sorted(child_effect_ids_by_index)]
         parent_id = parent_execution_id(run_id, turn, call)
         child_scope = f"{effect_scope}:codemode:{parent_id}"
         repair_context = None
@@ -203,7 +208,9 @@ def build_execute_turn_executor(  # noqa: PLR0915
                     ok=False, call=call, model_text=str(exc),
                     audit={"error_code": "repair_rejected"}, canonical={"child_effect_ids": []},
                 )
-            child_effect_ids.extend(child.effect_id for child in repair_context.children)
+            child_effect_ids_by_index.update(
+                (child.position, child.effect_id) for child in repair_context.children
+            )
         child_sink = intent_sink.for_child(call, turn=turn) if isinstance(intent_sink, KernelEffectSink) else intent_sink
         runtime = (runtime_factory or NodeWorkerRuntime)()
         replay = None
@@ -274,7 +281,9 @@ def build_execute_turn_executor(  # noqa: PLR0915
             child_identity = turn_effect_id(f"{run_id}:{child_effect_scope}", turn, child_index)
             if child_identity not in session.executed:
                 raise RuntimeError(f"nested kernel result was not committed: {results[0].model_text}")
-            child_effect_ids.append(child_identity)
+            if child_index in child_effect_ids_by_index and child_effect_ids_by_index[child_index] != child_identity:
+                raise RuntimeError("CodeMode child identity was reused for a different receipt")
+            child_effect_ids_by_index[child_index] = child_identity
             if on_event is not None:
                 result = results[0]
                 outcome = ToolOutcome(model_text=result.model_text, ok=result.ok,
@@ -287,6 +296,11 @@ def build_execute_turn_executor(  # noqa: PLR0915
                 on_event(event)
             return replace(results[0], audit={**results[0].audit, "result_ref": child_identity})
 
+        repair_state_store = None
+        if repair_context is not None:
+            base_state_store = replay if replay is not None else state_store
+            if base_state_store is not None:
+                repair_state_store = repair_context.readonly_state(base_state_store)
         result = CodeModeKernelExecutor(
             execution_id=parent_id,
             catalog=catalog,
@@ -294,7 +308,7 @@ def build_execute_turn_executor(  # noqa: PLR0915
             runtime=runtime,
             limits=limits,
             allow_writes=allow_writes,
-            state_store=state_store,
+            state_store=repair_state_store if repair_context is not None else state_store,
             replay=replay,
             replay_child=repair_context.replay_child if repair_context is not None else None,
             artifact_store=managed_outputs,
@@ -308,7 +322,7 @@ def build_execute_turn_executor(  # noqa: PLR0915
                 return ToolResult(
                     ok=False, call=call, model_text=str(exc),
                     audit={**result.audit, "error_code": "repair_rejected"},
-                    canonical={"child_effect_ids": child_effect_ids},
+                    canonical={"child_effect_ids": child_effect_ids()},
                 )
             result = replace(
                 result,
@@ -317,21 +331,22 @@ def build_execute_turn_executor(  # noqa: PLR0915
                 canonical={**result.canonical, "repaired_from": repair_context.parent_effect_id},
             )
         # References only: child facts stay in their original committed receipts.
-        result = replace(result, canonical={**result.canonical, "child_effect_ids": list(child_effect_ids)})
+        ordered_child_effect_ids = child_effect_ids()
+        result = replace(result, canonical={**result.canonical, "child_effect_ids": ordered_child_effect_ids})
         if not result.ok:
             from codey.toolchain.result_schema import schema_typescript
             from codey.toolchain.tool_prompt import tool_repair_text
 
             detail = result.model_text
-            if result.audit.get("error_code") in {"missing_return", "result_encoding"} and child_effect_ids:
-                names = sorted({session.executed[ref]["name"] for ref in child_effect_ids})
+            if result.audit.get("error_code") in {"missing_return", "result_encoding"} and ordered_child_effect_ids:
+                names = sorted({session.executed[ref]["name"] for ref in ordered_child_effect_ids})
                 detail += "\nInvoked tool return types (Result<T> success data is result.value):\n" + "\n".join(
                     f"tools.{name}: Result<{schema_typescript(specs[name].output_schema)}>" for name in names)
-                detail += "\nCommitted child receipts (effects already executed): " + ", ".join(child_effect_ids)
+                detail += "\nCommitted child receipts (effects already executed): " + ", ".join(ordered_child_effect_ids)
                 from codey.codemode.replay import repair_catalog_digest, repair_metadata
-                child_names = [session.executed[ref]["name"] for ref in child_effect_ids]
+                child_names = [session.executed[ref]["name"] for ref in ordered_child_effect_ids]
                 metadata = repair_metadata(
-                    effective_session_id, parent_id, str(result.audit["error_code"]), child_effect_ids,
+                    effective_session_id, parent_id, str(result.audit["error_code"]), ordered_child_effect_ids,
                     repair_catalog_digest(catalog, child_names),
                 )
                 result = replace(result, canonical={**result.canonical, "repair": metadata})

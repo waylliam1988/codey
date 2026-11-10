@@ -266,8 +266,22 @@ class ResearchLedger:
                 text = "\n\n".join(page_map[number] for number in sorted(page_map))
                 source = replace(source, text_hash=hashlib.sha256(
                     text.encode("utf-8", errors="replace")).hexdigest()[:16])
-        self.opened_sources = [item for item in self.opened_sources if item not in previous]
-        self.opened_sources.append(source)
+        # A historical hit may be opened after a newer acquisition.  Keep the
+        # latest source projection as the current source; the historical bytes
+        # remain owned by the read passage that referenced them.
+        if previous and source.content_kind != "pdf":
+            latest = max(
+                (*previous, source),
+                key=lambda item: (item.retrieved_at, item.final_url, item.text_hash),
+            )
+            self.opened_sources = [item for item in self.opened_sources if item not in previous]
+            self.opened_sources.append(latest)
+            if latest is not source:
+                return
+            source = latest
+        else:
+            self.opened_sources = [item for item in self.opened_sources if item not in previous]
+            self.opened_sources.append(source)
         self.opened_sources.sort(key=lambda item: (datetime.fromisoformat(item.retrieved_at), item.final_url))
         for url in aliases:
             self._source_texts[url] = text
@@ -567,7 +581,7 @@ class ResearchLedger:
 
 
 def now_iso() -> str:
-    return datetime.now(UTC).astimezone().replace(microsecond=0).isoformat()
+    return datetime.now(UTC).astimezone().isoformat(timespec="microseconds")
 
 
 def classify_source_quality(url: str, text: str = "") -> SourceQuality:

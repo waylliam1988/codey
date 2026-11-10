@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import time
+from types import SimpleNamespace
+
 import pytest
+
+from tests.support.provider_actions import ProviderActions
 
 
 def _run_codemode(
@@ -63,6 +68,7 @@ def test_kernel_argument_normalization_preserves_repair_token() -> None:
 def test_return_only_repair_reuses_the_original_child_receipt(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+
     monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: None)
 
     session = TaskSession(
@@ -220,6 +226,106 @@ def test_repair_argument_change_fails_without_fetching_again(tmp_path, monkeypat
     assert not mismatch.ok
     assert "repair" in mismatch.model_text.lower()
     assert source.calls == 1
+
+
+def test_receipt_only_repair_rejects_state_writes_without_reapplying_them(tmp_path) -> None:
+    from codey.codemode.kernel import build_execute_turn_executor
+    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.runtime.core.models import ToolCall
+    from tests.test_codemode_replay_authority import fixture
+
+    project, _state, _logdir, mutations, managed, revisions, sink, session = fixture(tmp_path)
+    first_call = ToolCall(
+        "codemode",
+        {"code": "await store('counter', 1); const result = await tools.read_file({path:'a.py'}); return result.value.missing;"},
+        call_id="first",
+    )
+    snapshot = build_turn_snapshot(session)
+    parent = build_execute_turn_executor(
+        session=session, snapshot=snapshot, run_id="r", effect_scope="outer", turn=0,
+        project_path=project, managed_outputs=managed, workspace_revision_store=revisions,
+        intent_sink=sink, durable=mutations.durable,
+    )
+    try:
+        failed = execute_turn(
+            session, [first_call], executors={"codemode": parent}, run_id="r", effect_scope="outer", turn=0,
+            snapshot=snapshot, intent_sink=sink, durable=mutations.durable, project_path=project,
+            managed_outputs=managed, workspace_revision_store=revisions,
+        )[0]
+        assert not failed.ok
+        ProviderActions(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
+        token = failed.canonical["repair"]["token"]
+        repair_call = ToolCall(
+            "codemode",
+            {"repair_of": token, "code": "await store('counter', 2); return 1;"},
+            call_id="repair",
+        )
+        repair_snapshot = build_turn_snapshot(session)
+        repair_parent = build_execute_turn_executor(
+            session=session, snapshot=repair_snapshot, run_id="r", effect_scope="outer", turn=1,
+            project_path=project, managed_outputs=managed, workspace_revision_store=revisions,
+            intent_sink=sink, durable=mutations.durable,
+        )
+        repaired = execute_turn(
+            session, [repair_call], executors={"codemode": repair_parent}, run_id="r", effect_scope="outer", turn=1,
+            snapshot=repair_snapshot, intent_sink=sink, durable=mutations.durable, project_path=project,
+            managed_outputs=managed, workspace_revision_store=revisions,
+        )[0]
+        assert not repaired.ok
+        assert "repair" in repaired.model_text.lower()
+        assert mutations.durable.task("r").state["codemode_state"]["counter"] == 1
+    finally:
+        mutations.durable.close()
+
+
+def test_parallel_repair_binds_receipts_to_original_child_indices(tmp_path) -> None:
+    from codey.codemode.kernel import build_execute_turn_executor
+    from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel_protocol import build_turn_snapshot
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
+    from codey.runtime.core.models import ToolCall, ToolResult
+
+    session = TaskSession(
+        TaskPolicy(frozenset({"control", "project.read"})), project=str(tmp_path),
+    )
+
+    def read(call: ToolCall) -> ToolResult:
+        index = int(call.call_id.rsplit(":", 1)[-1])
+        if index == 0:
+            time.sleep(0.05)
+        return ToolResult(call, "", ok=True, canonical={"value": {
+            "path": "same", "start_line": 1, "end_line": 1, "total_lines": 1,
+            "next_offset": 0, "text_complete": True, "text": f"ORIGINAL_CALL_{index}",
+        }})
+
+    def run(turn: int, call: ToolCall) -> ToolResult:
+        snapshot = build_turn_snapshot(session)
+        parent = build_execute_turn_executor(
+            session=session, snapshot=snapshot, run_id="parallel", effect_scope="task", turn=turn,
+            project_path=tmp_path, executors={"read_file": read},
+        )
+        return execute_turn(
+            session, [call], executors={"codemode": parent}, run_id="parallel", effect_scope="task", turn=turn,
+            project_path=tmp_path, snapshot=snapshot,
+        )[0]
+
+    failed = run(0, ToolCall(
+        "codemode",
+        {"code": "const rows = await Promise.all([tools.read_file({path:'same'}), tools.read_file({path:'same'})]); return rows[0].value.missing;"},
+        call_id="first",
+    ))
+    assert not failed.ok
+    print("PARALLEL", failed.model_text, failed.audit, failed.canonical)
+    token = failed.canonical["repair"]["token"]
+    repaired = run(1, ToolCall(
+        "codemode",
+        {"repair_of": token, "code": "const rows = await Promise.all([tools.read_file({path:'same'}), tools.read_file({path:'same'})]); return rows.map(row => row.value.text);"},
+        call_id="repair",
+    ))
+    assert repaired.ok, repaired.model_text
+    assert repaired.canonical["value"] == ["ORIGINAL_CALL_0", "ORIGINAL_CALL_1"]
 
 
 def test_repair_after_durable_restore_reuses_the_original_child_receipt(tmp_path) -> None:

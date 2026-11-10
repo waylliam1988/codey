@@ -349,6 +349,7 @@ def _ensure_cdp_endpoint(
     start_url: str,
     url_contains: str,
     open_if_missing: bool,
+    require_exact_port: bool = False,
     isolated: bool = False,
     browser_path: str | Path | None = None,
     wait_timeout: float = 20.0,
@@ -385,6 +386,24 @@ def _ensure_cdp_endpoint(
         if last_error is not None:
             raise last_error
         raise RuntimeError("no free isolated CDP port available")
+
+    if require_exact_port:
+        if _cdp_available(preferred):
+            return CdpEndpoint(_remember_cdp_port(preferred))
+        if not open_if_missing:
+            raise RuntimeError(f"CDP port {preferred} is not open")
+        process = _launch_browser(
+            preferred,
+            profile,
+            start_url,
+            **({"browser_path": browser_path} if browser_path is not None else {}),
+        )
+        try:
+            _wait_port(preferred, timeout=wait_timeout)
+        except Exception:
+            _terminate_browser_process(process)
+            raise
+        return CdpEndpoint(_remember_cdp_port(preferred), process)
 
     existing = _find_cdp_port_with_target(url_contains, preferred)
     if existing is not None:
@@ -627,6 +646,7 @@ def open_chat_page(
     port: int = DEFAULT_PORT,
     profile: Path = DEFAULT_PROFILE,
     open_if_missing: bool = True,
+    require_exact_port: bool = False,
     bring_to_front: bool = True,
     isolated: bool = False,
     fresh_tab: bool = False,
@@ -645,6 +665,7 @@ def open_chat_page(
         start_url="about:blank" if fresh_tab else start_url,
         url_contains=url_contains,
         open_if_missing=open_if_missing,
+        require_exact_port=require_exact_port,
         isolated=isolated,
         browser_path=browser_path,
         wait_timeout=CDP_PORT_WAIT_TIMEOUT,

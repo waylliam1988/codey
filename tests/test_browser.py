@@ -459,6 +459,25 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         self.assertEqual(port, 9333)
         launch.assert_not_called()
 
+    def test_exact_existing_cdp_port_does_not_scan_another_endpoint(self) -> None:
+        with (
+            mock.patch.object(browser, "_cdp_available", side_effect=lambda port: port == 9263),
+            mock.patch.object(browser, "_find_cdp_port_with_target", return_value=9263) as find_target,
+            mock.patch.object(browser, "_find_existing_cdp_port", return_value=9263) as find_existing,
+            self.assertRaisesRegex(RuntimeError, "CDP port 9262 is not open"),
+        ):
+            browser._ensure_cdp_endpoint(
+                preferred=9262,
+                profile=Path("profile"),
+                start_url="https://chat.deepseek.com/",
+                url_contains="chat.deepseek.com",
+                open_if_missing=False,
+                require_exact_port=True,
+            )
+
+        find_target.assert_not_called()
+        find_existing.assert_not_called()
+
     def test_isolated_cdp_port_does_not_reuse_existing_browser_or_save_port(self) -> None:
         with (
             mock.patch.object(browser, "_find_cdp_port_with_target") as find_target,

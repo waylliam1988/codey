@@ -96,3 +96,16 @@
 - `tool_spec` 的策略能力使用 `ToolPolicy.allows` Protocol，自定义执行器使用现有 `ToolCall -> ToolResult` 合同；schema 动态值统一为明确的 `object`/`Mapping[str, object]` 边界。
 - 旧测试对废弃的 `{ok:true, value}` 提示文本的断言已更新为当前 `Result<T>` 合同；没有恢复旧 prompt。
 - 验证：直接相关 CodeMode、回放、句柄、浏览器会话测试 `50 passed`；工具注册表、快照和合同回归 `36 passed`；上述三个生产文件 Ruff 与严格 Mypy 通过。
+
+## 第八批：确定性复现后的修复
+
+- 复现并修复了五项回执/会话边界问题，以及续读旧来源版本覆盖当前正文的问题：
+  - `rc` 句柄按稳定的父子回执关系和调用身份排序，恢复不再依赖 `_memory_results` 字典插入顺序；
+  - CodeMode 子回执按原始 RPC `child_index` 绑定和回放，并发完成顺序不会交换结果；
+  - receipt-only repair 使用只读 state view，`store` 明确拒绝，不会在新 repair 身份下再次写入持久化状态；
+  - `require_existing_session` 固定验证指定 CDP endpoint，指定端口不可用时直接报错，不扫描其他端口；
+  - `eN` 优先复用生产 `answer_scope` 的 label→passage 绑定，正文来自该 passage 的原始版本，即使 `evidence_items` 为空也可解析；
+  - 历史 hit/续读合并时保留最新来源作为当前正文，旧版本只由已有 passage 继续承载；采集时间提高到微秒精度以保持同秒内版本顺序。
+- 新增回归：`tests/test_receipt_handle_resolution.py`、`tests/test_codemode_repair_replay.py`、`tests/test_browser.py`，覆盖恢复顺序、并发 repair、state 写入拒绝、真实 passage eN 和 endpoint 固定。
+- 定向验证：CodeMode/回放/句柄/浏览器主回归 `96 passed`；研究来源/答案/导航回归 `63 passed`；浏览器/已有会话回归 `54 passed`；Ruff 通过；修改的 6 个生产模块 Mypy 通过；未运行全量 pytest、覆盖率或安装包测试。
+- KoboldCpp 实机：脚本 gate 通过（`source_fetches=1`、`repair_replayed=true`）；Gemma4 实机 gate 未通过，模型第一次生成了包含未转义原始换行的非法 JavaScript，未执行子工具，后续重复未知 repair token。该失败是模型遵循输入合同的观测，未发现新的生产确定性 bug，gate 输出已记录。

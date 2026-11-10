@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from threading import RLock
 from typing import TypedDict, cast
 
-from codey.codemode.state import DurableCodeModeState
+from codey.codemode.state import CodeModeStateStore, DurableCodeModeState
 from codey.codemode.types import ToolCatalogSnapshot
 from codey.durable.model import TaskCheckpoint, thaw_json
 from codey.durable.session import DurableSession
@@ -102,6 +102,9 @@ class CodeModeRepairContext:
     receipts: Mapping[str, ToolResult]
     _used_positions: set[int]
 
+    def readonly_state(self, replay: CodeModeStateStore) -> ReceiptOnlyStateStore:
+        return ReceiptOnlyStateStore(replay)
+
     def replay_child(self, position: int, tool_name: str, args: JsonObject) -> ToolResult:
         if position < 0 or position >= len(self.children):
             raise CodeModeReplayError("repair issued a child call outside the original sequence")
@@ -125,6 +128,19 @@ class CodeModeRepairContext:
     def assert_complete(self) -> None:
         if self._used_positions != set(range(len(self.children))):
             raise CodeModeReplayError("repair did not consume the original child sequence")
+
+
+class ReceiptOnlyStateStore:
+    """State view for repair programs; reads replay recorded steps, writes fail."""
+
+    def __init__(self, replay: CodeModeStateStore) -> None:
+        self._replay = replay
+
+    def store(self, key: str, value: object) -> None:
+        raise CodeModeReplayError("receipt-only repair cannot write CodeMode state")
+
+    def load(self, key: str) -> object:
+        return self._replay.load(key)
 
 
 def repair_token(

@@ -122,3 +122,58 @@ def test_result_prompt_exposes_the_short_receipt_handle(tmp_path) -> None:
     result = session._memory_results["task_turn_effect:run:1:0"]
     prompt = _result_context(result, session)
     assert "Receipt display handle: rc1" in prompt
+
+
+def test_receipt_handles_keep_nested_child_before_parent_after_projection_restore(tmp_path) -> None:
+    from codey.operations.reference_handles import ReferenceHandleResolver
+    from codey.runtime.core.models import ToolCall, ToolResult
+
+    session = _session(tmp_path)
+    child_ref = "task_turn_effect:child"
+    parent_ref = "task_turn_effect:parent"
+    child_call = ToolCall("read_file", {"path": "a.txt"}, call_id="parent:child:0")
+    parent_call = ToolCall("codemode", {"code": "return 1;"}, call_id="parent")
+    child = ToolResult(child_call, "child", ok=True, canonical={"value": "child"})
+    parent = ToolResult(parent_call, "parent", ok=True, canonical={"value": 1, "child_effect_ids": [child_ref]})
+    # Durable recovery inserts the parent intent before the nested child even
+    # though the live projection commits the child first.
+    session._memory_results[parent_ref] = parent
+    session._memory_results[child_ref] = child
+    session.executed[parent_ref] = {"name": "codemode", "ok": True, "call_id": "parent",
+                                    "excerpt": "parent", "args_digest": "", "child_effect_ids": [child_ref]}
+    session.executed[child_ref] = {"name": "read_file", "ok": True, "call_id": "parent:child:0",
+                                   "excerpt": "child", "args_digest": ""}
+    resolver = ReferenceHandleResolver(session)
+    assert resolver.resolve("rc1").ref == child_ref
+    assert resolver.resolve("rc2").ref == parent_ref
+    assert resolver.handle_for(child_ref) == "rc1"
+
+
+def test_evidence_handle_reuses_answer_scope_passage_without_evidence_items(tmp_path) -> None:
+    from codey.operations.reference_handles import ReferenceHandleResolver
+    from codey.research.ledger import ResearchLedger
+    from codey.research.ledger_receipts import ledger_observation
+    from codey.research.passages import describe_window, restore_passages
+    from codey.runtime.core.models import ToolCall, ToolResult
+
+    session = _session(tmp_path)
+    url = "https://example.test/article"
+    session.source_ids["s1"] = url
+    ledger = ResearchLedger()
+    text = "An exact production passage with enough words for a citation."
+    ledger.record_open(url, url, "Article", text)
+    source = ledger.opened_sources[-1]
+    assert source is not None
+    rows = describe_window(url, source.text_hash, text, 0, len(text))
+    restore_passages(ledger, ledger_observation(ledger, "open", url=url), rows)
+    session._memory_results["read"] = ToolResult(
+        ToolCall("open_url", {"url": url}), text, ok=True, canonical={"read_passages": rows},
+    )
+    resolver = ReferenceHandleResolver(session, ledger=ledger)
+
+    resolved = resolver.resolve("e1")
+    assert resolved.kind == "evidence"
+    assert resolved.source_ref == "s1"
+    assert resolved.evidence is not None
+    assert resolved.evidence.excerpt == text
+    assert not ledger.evidence_items
