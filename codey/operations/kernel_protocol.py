@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
@@ -299,7 +299,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
 
-        aggregate_browser = exposure is None and any(spec.executor == "browser" for spec in frozen)
+        aggregate_browser = any(spec.executor == "browser" for spec in frozen)
         # Browser aggregation keeps the real project edit action in the same
         # CodeMode surface as browser/read leaves. Returning modified data is
         # still not a write; only the nested kernel edit receipt can satisfy
@@ -355,7 +355,7 @@ def _grant_for_tool(tool: str) -> str:
     if spec is None or not spec.grant:
         # Unknown tools are denied, never passed as control.
         return ""
-    return spec.grant
+    return cast(str, spec.grant)
 
 
 def _canonical_name(tool: str) -> str:
@@ -364,7 +364,7 @@ def _canonical_name(tool: str) -> str:
     except Exception:
         return (tool or "").strip().lower()
     try:
-        name: str = canonical_tool_name(tool)
+        name = cast(str, canonical_tool_name(tool))
         return name
     except Exception:
         return (tool or "").strip().lower()

@@ -63,6 +63,18 @@ def test_outer_protocol_rejects_hidden_browser_leaf_and_keeps_one_frozen_catalog
     assert {spec.name for spec in snapshot.frozen_specs} == set(snapshot.inventory_names)
 
 
+def test_explicit_exposure_does_not_duplicate_browser_leaf_with_codemode() -> None:
+    session = TaskSession(
+        policy=TaskPolicy(grants=frozenset({"control", "browser.observe", "browser.interact"})),
+        task_kind="chat",
+        model_tool_names=("codemode", "done", "browser_snapshot"),
+    )
+    snapshot = build_turn_snapshot(session)
+    assert "browser_snapshot" not in snapshot.tool_names
+    assert "browser_snapshot" in snapshot.nested_tool_names
+    assert set(snapshot.tool_names).isdisjoint(snapshot.nested_tool_names)
+
+
 @pytest.mark.parametrize("native", [False, True])
 def test_aggregated_project_surface_does_not_advertise_unexecutable_text_wrappers(native: bool) -> None:
     from codey.protocols.text_turn import decode_text_turn
