@@ -163,6 +163,7 @@ export interface UiStateApi {
       projectId,
       provider: resolved,
       research: false,
+      browser: false,
     });
   }
   function pathName(path: string): string {
@@ -296,6 +297,7 @@ export interface UiStateApi {
         projectId: typeof item.projectId === 'string' ? item.projectId : null,
         provider: typeof item.provider === 'string' && item.provider.length <= 100 ? item.provider : '',
         research: item.research === true,
+        browser: item.browser === true,
         ...(isRecord(item.modelSelection)
           ? {
               modelSelection: {

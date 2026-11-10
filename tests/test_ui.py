@@ -496,6 +496,13 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("provider-item", PROVIDER_UI_JS)
         self.assertNotIn('data-provider="deepseek"', HTML)
 
+    def test_composer_browser_toggle_sends_explicit_capabilities(self) -> None:
+        self.assertIn('id="ctx-browser"', APP_RUNTIME_SOURCE)
+        self.assertIn("browser: item.browser === true", UI_STATE_JS)
+        self.assertIn("requested_capabilities", COMPOSER_JS)
+        for grant in ("browser.observe", "browser.interact", "browser.effect"):
+            self.assertIn(grant, COMPOSER_JS)
+
 
     def test_new_chat_is_blank_without_welcome_or_example_cards(self) -> None:
         self.assertNotIn("Send a message to start.", CONVERSATION_UI_JS)

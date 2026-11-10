@@ -415,10 +415,12 @@ function updateComposerContext() {
     runProjection.primaryRun?.sessionId === sessionState.activeId || runtime.Composer.isSending(sessionState.activeId);
   const folderDisabled = disabled || !!p || projectPickerBusy;
   const researchActive = !!(s && s.research);
+  const browserActive = !!(s && s.browser);
   const pieces = [
     `<button class="ctx-token ctx-folder" id="ctx-folder" ${folderDisabled ? 'disabled' : ''}${p ? ` title="${escapeHtml(p.path)}"` : ''}>${escapeHtml(proj)}</button>`,
     `<span class="ctx-sep">·</span>`,
     `<button class="ctx-token ctx-research ${researchActive ? 'active' : ''}" id="ctx-research" ${disabled ? 'disabled' : ''} aria-pressed="${researchActive ? 'true' : 'false'}">Research</button>`,
+    `<button class="ctx-token ctx-browser ${browserActive ? 'active' : ''}" id="ctx-browser" ${disabled ? 'disabled' : ''} aria-pressed="${browserActive ? 'true' : 'false'}">Browser</button>`,
   ];
   el.innerHTML = pieces.join('');
   el.title = '';
@@ -1063,6 +1065,9 @@ function updateSend() {
 function toggleResearchForActive() {
   return runtime.Composer.toggleResearchForActive();
 }
+function toggleBrowserForActive() {
+  return runtime.Composer.toggleBrowserForActive();
+}
 
 // Local provider config popover lives in the provider_ui module.
 function openLocalProviderConfig() {
@@ -1243,6 +1248,7 @@ async function boot() {
     sessionProject,
     sessionProjectPath,
     currentIntentForSession,
+    toggleBrowserForActive,
     currentProviderId,
     persistActive,
     persistActiveNow,

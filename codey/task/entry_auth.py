@@ -5,7 +5,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from codey.policies.capabilities import KNOWN_TASK_GRANTS
+from codey.policies.capabilities import BROWSER_CAPABILITIES, KNOWN_TASK_GRANTS
 from codey.task.model import derive_project_changes_required
 
 
@@ -78,7 +78,7 @@ def derive_entry_auth(body: Mapping[str, object] | None, *, project: str | None 
     sources_required = data.get("sources_open_required") is True
     denied: set[str] = set()
     if allow_web is False:
-        denied.update({"web.read", "browser.observe", "browser.interact", "browser.effect"})
+        denied.update({"web.read", *BROWSER_CAPABILITIES})
         sources_required = False
     if intent in {"project", "hybrid", "auto", "chat"} and _explicit_readonly_task(task):
         # 明确只读：取消“必须修改”，同时落实“禁止修改”。project_changes_required

@@ -6,6 +6,8 @@ import type { Draft, Message, Project, Session } from './types/domain';
 import type { RunDetailsAction } from './run_details';
 import { recoveryForFailure } from './failure_presentation';
 
+const BROWSER_CAPABILITIES = ['browser.observe', 'browser.interact', 'browser.effect'] as const;
+
 export interface ComposerDeps {
   $: (id: string) => HTMLElement;
   getRunningSessionId: () => string | null;
@@ -19,6 +21,7 @@ export interface ComposerDeps {
   sessionProject: (session: Session | undefined) => Project | null | undefined;
   sessionProjectPath: (id: string) => string;
   currentIntentForSession: (id: string) => string;
+  toggleBrowserForActive: () => void;
   projectPickerBusy: () => boolean;
   persistActive: () => void;
   persistActiveNow: () => void;
@@ -48,6 +51,7 @@ export interface ComposerApi {
   resizeTask(): void;
   updateSend(): void;
   toggleResearchForActive(): void;
+  toggleBrowserForActive(): void;
   setActiveProvider(id: string): void;
   continueTask(sessionId: string, sourceRunId: string): Promise<void>;
   recallMessage(sessionId: string, text: string): void;
@@ -307,6 +311,20 @@ export interface ComposerApi {
     deps.renderChat();
   }
 
+  function toggleBrowserForActive() {
+    if (runningSessionId() === activeId() || sendingSessionId === activeId()) return;
+    const s = deps.activeSession();
+    if (!s) return;
+    s.browser = !s.browser;
+    deps.persistActiveNow();
+    deps.updateComposerContext();
+    deps.renderChat();
+  }
+
+  function requestedCapabilities(session: Session): string[] {
+    return session.browser ? [...BROWSER_CAPABILITIES] : [];
+  }
+
   function setActiveProvider(id: string) {
     const provider = PROVIDERS.includes(id) ? id : liveDefaultProvider();
     const s = deps.activeSession();
@@ -526,6 +544,7 @@ export interface ComposerApi {
           ...(refs.length ? { attachments: refs } : {}),
           provider,
           intent,
+          requested_capabilities: requestedCapabilities(s),
           ...(edit
             ? {
                 input: {
@@ -589,13 +608,10 @@ export interface ComposerApi {
     const files = attachments?.refs() || [];
     const task = rawTask || (files.length ? 'Review the attached files.' : '');
     const provider = currentProviderId();
+    const session = deps.findSession(sessionId);
+    if (!session) return;
     if (!task || attachments?.blocked()) return;
-    if (
-      !runtime.Models.allows(
-        provider,
-        runtime.ProviderUI.runSelection(deps.findSession(sessionId), provider).model_selection?.model,
-      )
-    )
+    if (!runtime.Models.allows(provider, runtime.ProviderUI.runSelection(session, provider).model_selection?.model))
       return;
     // Claim this session before the state reconciliation below. Without the
     // early claim, the composer appears idle while the first /api/state call
@@ -625,9 +641,10 @@ export interface ComposerApi {
           task,
           provider,
           intent: deps.currentIntentForSession(sessionId),
+          requested_capabilities: requestedCapabilities(session),
           input_mode: isRunningForSession(sessionId) ? 'steer' : 'follow_up',
           ...(files.length ? { attachments: files } : {}),
-          ...runtime.ProviderUI.runSelection(deps.findSession(sessionId), provider),
+          ...runtime.ProviderUI.runSelection(session, provider),
         };
         if (!(await runtime.UiState.ensureSaved())) {
           deps.addToSession(sessionId, {
@@ -774,6 +791,7 @@ export interface ComposerApi {
           input: { kind: 'resume_run', source_run_id: sourceRunId, instruction },
           provider: s.provider || liveDefaultProvider(),
           intent: deps.currentIntentForSession(sessionId),
+          requested_capabilities: requestedCapabilities(s),
           ...runtime.ProviderUI.runSelection(s, s.provider || liveDefaultProvider()),
         }),
       });
@@ -820,6 +838,8 @@ export interface ComposerApi {
         deps.attachCurrentChatToPickedProject();
       } else if (target.id === 'ctx-research') {
         toggleResearchForActive();
+      } else if (target.id === 'ctx-browser') {
+        toggleBrowserForActive();
       }
     };
     $('composer-context').addEventListener('keydown', (e: KeyboardEvent) => {
@@ -857,6 +877,7 @@ export interface ComposerApi {
     resizeTask,
     updateSend,
     toggleResearchForActive,
+    toggleBrowserForActive,
     setActiveProvider,
     continueTask,
     recallMessage,

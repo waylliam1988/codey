@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from codey.policies.capabilities import KNOWN_TASK_GRANTS
+from codey.policies.capabilities import BROWSER_CAPABILITIES, KNOWN_TASK_GRANTS
 
 TASK_POLICY_VERSION = 1
 _TASK_POLICY_FIELDS = frozenset({
@@ -165,7 +165,7 @@ def _restored_bool(value: object, field: str) -> bool:
 
 def _browser_grants(kind: str, requested: frozenset[str]) -> frozenset[str]:
     if kind in {"project", "hybrid", "chat", "auto", "research"}:
-        return requested & {"browser.observe", "browser.interact", "browser.effect"}
+        return requested.intersection(BROWSER_CAPABILITIES)
     if kind in {"planning", "planning_readonly", "readonly"}:
         return requested & {"browser.observe"}
     return frozenset()

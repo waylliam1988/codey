@@ -32,6 +32,7 @@ from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
 )
+from codey.policies.capabilities import BROWSER_CAPABILITIES
 from codey.task.kind import ui_mode
 from codey.task.model import TaskSubmission
 
@@ -172,7 +173,7 @@ def _entry_executors(frame: RunFrame, deps: Any, policy: Any) -> tuple[Any | Non
             state_home=managed_outputs.root.parent if managed_outputs is not None else None,
         )
     research_tools = None
-    browser_actions = any(policy.allows(grant) for grant in ("browser.observe", "browser.interact", "browser.effect"))
+    browser_actions = any(policy.allows(grant) for grant in BROWSER_CAPABILITIES)
     if browser_actions or any(policy.allows(grant) for grant in ("web.read", "knowledge.read", "knowledge.write", "knowledge.link")):
         from codey.operations.task_execution import build_research_tools
 

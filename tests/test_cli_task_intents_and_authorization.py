@@ -27,6 +27,18 @@ def test_cli_reuse_session_and_explicit_network_grant_reach_request(tmp_path, mo
     assert requests[0].requested_capabilities == ()
 
 
+def test_cli_browser_grant_reaches_request(tmp_path, monkeypatch):
+    requests = []
+    monkeypatch.setattr(
+        "codey.app.headless_runner.run_headless",
+        lambda request, **_: requests.append(request) or HeadlessResult(0, "r", "s", "done"),
+    )
+    assert cli.main(["agent", "--project", str(tmp_path), "--allow-browser", "task"]) == 0
+    assert requests[0].requested_capabilities == (
+        "browser.observe", "browser.interact", "browser.effect",
+    )
+
+
 @pytest.mark.parametrize("options,expected", [([], None), (["--allow-web"], True), (["--no-web"], False)])
 def test_cli_preserves_unspecified_and_disabled_web_separately(
     monkeypatch: pytest.MonkeyPatch, options: list[str], expected: bool | None,

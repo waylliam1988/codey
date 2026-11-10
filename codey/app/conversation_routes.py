@@ -34,7 +34,7 @@ def register_fork(ctx: Any, source: str, child: str, *, workspace: str = '', pre
             parent: dict[str, Any] = next((session for session in state['sessions'] if session['id'] == source), {})
             if not parent:
                 raise ValueError('The source chat was removed. No new sidebar entry was created.')
-            session = {key: parent[key] for key in ('provider', 'modelSelection', 'projectId', 'research') if key in parent}
+            session = {key: parent[key] for key in ('provider', 'modelSelection', 'projectId', 'research', 'browser') if key in parent}
             if workspace:
                 if len(state['projects']) >= MAX_PROJECTS:
                     raise ValueError('Project list is full. Remove a project before creating a worktree.')

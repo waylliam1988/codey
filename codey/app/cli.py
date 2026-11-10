@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
+from codey.policies.capabilities import BROWSER_CAPABILITIES
+
 
 def _safe_print(value: Any, *, file: Any = None) -> None:
     if file is None:
@@ -95,6 +97,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         allow_web=args.allow_web,
         requested_capabilities=tuple(name for name, enabled in (
             ("project.write", args.allow_write),
+            *((name, args.allow_browser) for name in BROWSER_CAPABILITIES),
         ) if enabled),
         continue_task=args.continue_task,
         review_policy=args.review_policy,
@@ -589,6 +592,7 @@ def main(argv: list[str] | None = None) -> int:
     web = sp_agent.add_mutually_exclusive_group()
     web.add_argument("--allow-web", action="store_true", default=None, help="authorize web reading")
     web.add_argument("--no-web", action="store_false", dest="allow_web", help="disable Web tools for this task")
+    web.add_argument("--allow-browser", action="store_true", help="authorize browser tools")
     sp_agent.add_argument("--allow-write", action="store_true", help="authorize project writing, including Research")
     sp_agent.add_argument("--session-id", default="", help="existing or new task session")
     sp_agent.add_argument("--continue", dest="continue_task", action="store_true", help="continue the selected session")

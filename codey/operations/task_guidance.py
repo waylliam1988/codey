@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codey.policies.capabilities import BROWSER_CAPABILITIES
 from codey.policies.output_requirement import guidance
 from codey.policies.task_policy import TaskPolicy
 from codey.research.completion_guidance import render_completion_guidance
@@ -84,7 +85,7 @@ def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
          "after page mutations. browser_read returns source text as a string and is the only browser result eligible "
          "for citations; other action results are observations. If delivery is uncertain, inspect the current page "
          "before retrying."
-         if any(policy.allows(grant) for grant in ("browser.observe", "browser.interact", "browser.effect")) else ""),
+         if any(policy.allows(grant) for grant in BROWSER_CAPABILITIES) else ""),
         guidance(policy.required_checks),
     ) if part)
 

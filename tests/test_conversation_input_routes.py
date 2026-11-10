@@ -13,9 +13,13 @@ def test_input_route_preserves_delivery_mode(tmp_path, mode):
         ctx.save_ui_state({'active_id': 'chat', 'projects': [], 'sessions': [{'id': 'chat', 'title': 'Chat', 'messages': []}]}, base_revision=0)
         status, payload = routes.input_action_response(ctx, {'action': 'create', 'id': 'one', 'request': {
             'session_id': 'chat', 'run_id': 'run_one', 'task': 'instruction', 'provider': 'local', 'input_mode': mode,
+            'requested_capabilities': ['browser.observe', 'browser.interact', 'browser.effect'],
         }})
         assert status == 202
         assert payload['item']['request']['input_mode'] == mode
+        assert payload['item']['request']['requested_capabilities'] == [
+            'browser.observe', 'browser.interact', 'browser.effect',
+        ]
         assert ctx.durable.store.submission(ctx.durable.task('run_one').submission_id).mode == mode
     finally:
         ctx.close()

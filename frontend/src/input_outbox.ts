@@ -6,6 +6,7 @@ export interface QueuedRequest {
   provider: string;
   project?: string;
   intent?: string;
+  requested_capabilities?: string[];
   model_selection?: unknown;
   input_mode?: 'steer' | 'follow_up';
 }

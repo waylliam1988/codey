@@ -24,4 +24,6 @@ KNOWN_TASK_GRANTS = frozenset(
     }
 )
 
-__all__ = ["KNOWN_TASK_GRANTS"]
+BROWSER_CAPABILITIES = ("browser.observe", "browser.interact", "browser.effect")
+
+__all__ = ["BROWSER_CAPABILITIES", "KNOWN_TASK_GRANTS"]
