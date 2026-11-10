@@ -61,7 +61,8 @@ class ProductionRecordingProvider(attempts.RecordingProvider):
 
 def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore_snapshots: bool = False,
              reread: bool = False, stale_edit: bool = False, structured: bool = False,
-             upload_file: bool = False, download_file: bool = False, bound_output: bool = False) -> dict[str, object]:
+             upload_file: bool = False, download_file: bool = False, bound_output: bool = False,
+             strict_research: bool = False) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     events: list[dict[str, object]] = []
@@ -173,6 +174,7 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
                     "amount": {"type": "integer"}, "code": {"type": "string"}},
                     "required": ["amount", "code"], "additionalProperties": False}) if bound_output else "",
                 model_selection={"model": target.model, "base_url": target.base_url},
+                strict_research=strict_research,
             ), emit_jsonl=observe, connect_provider=connect)
             artifact = json.loads(result_file.read_text(encoding="utf-8"))
             (directory / "project-result.json").write_text(json.dumps(artifact), encoding="utf-8")

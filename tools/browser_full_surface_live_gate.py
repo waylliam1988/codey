@@ -19,7 +19,7 @@ from tools import local_model_gate_attempts as attempts
 from tools.browser_production_live_gate import run_case
 from tools.shell_web_diagnostic_gate import select_target
 
-SCENARIOS = ("basic", "structured", "reread", "stale_edit", "upload", "download")
+SCENARIOS = ("basic", "structured", "reread", "stale_edit", "upload", "download", "research")
 
 
 def _case(root: Path, scenario: str, target: attempts.GateTarget) -> dict[str, object]:
@@ -31,8 +31,8 @@ def _case(root: Path, scenario: str, target: attempts.GateTarget) -> dict[str, o
         "upload_file": scenario == "upload",
         "download_file": scenario == "download",
     }
-    mode = "hybrid" if scenario == "stale_edit" else "chat"
-    return run_case(root / scenario, mode, target, **options)
+    mode = "hybrid" if scenario == "stale_edit" else "research" if scenario == "research" else "chat"
+    return run_case(root / scenario, mode, target, strict_research=scenario == "research", **options)
 
 
 def main() -> int:
