@@ -174,9 +174,14 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
 
     frozen_specs = getattr(snapshot, "frozen_specs", ()) or ()
     specs = {str(getattr(spec, "name", "")): spec for spec in frozen_specs}
+    nested_names = set(snapshot.nested_tool_names)
     catalog = build_codemode_catalog(
-        {name: spec for name, spec in specs.items() if name in snapshot.nested_tool_names},
+        {name: spec for name, spec in specs.items() if name in nested_names},
         allow_writes=allow_writes and session.policy.allows("project.write"),
+        allow_project_edit=(allow_writes and session.policy.allows("project.write")
+                            and "edit" in nested_names),
+        allow_project_run=(allow_writes and session.policy.allows("project.write")
+                           and "run" in nested_names),
     )
     # The catalog has already selected project writes and browser capabilities
     # independently. Host mutation support is not a project permission grant.

@@ -46,14 +46,15 @@ def test_aggregated_leaf_keeps_its_original_semantics_in_the_frozen_model_contra
     })))
     snapshot = build_turn_snapshot(session)
     specs = {spec.name: spec for spec in snapshot.frozen_specs}
-    assert "edit" in snapshot.tool_names
-    assert "edit" not in snapshot.nested_tool_names
+    assert "edit" not in snapshot.tool_names
+    assert "edit" in snapshot.nested_tool_names
+    assert "run" not in snapshot.nested_tool_names
     declarations = specs["codemode"].declarations
     for name in ("read_file", "browser_read", "browser_fill"):
         assert specs[name].description
         for line in specs[name].description.splitlines():
             assert f"// {line}" in declarations
     assert "Returning modified data does not persist it" in specs["codemode"].description
-    assert specs["edit"].description in snapshot.contract_text
-    assert "edit(args:" not in declarations
+    assert f"// {specs['edit'].description}" in declarations
+    assert "edit(args:" in declarations
 

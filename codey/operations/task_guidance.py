@@ -80,13 +80,10 @@ def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
          "copy their actual ids and revisions. If background recall lacks the requested topic or object kind, "
          "search for that target before editing. A related premise is not the inference being revised."
          if policy.allows("knowledge.read") and policy.allows("knowledge.write") and not policy.strict_research else ""),
-        ("Browser operations use the current frozen CodeMode catalog. Await actions sequentially. "
-         "browser_snapshot returns an object with elements containing ref, role and name; after a mutation, "
-         "take a fresh snapshot before using element refs again. unwrap(await tools.browser_read({})) returns "
-         "the source STRING directly: return that string, without .text or another .value. "
-         "Other browser action results contain a text field. Snapshot, click and eval output are action observations; "
-         "capture source text with browser_read before citing facts. If delivery is uncertain, inspect and reconcile "
-         "the page instead of repeating the action."
+        ("Browser actions in CodeMode are sequential: use refs from the latest snapshot and take a fresh snapshot "
+         "after page mutations. browser_read returns source text as a string and is the only browser result eligible "
+         "for citations; other action results are observations. If delivery is uncertain, inspect the current page "
+         "before retrying."
          if any(policy.allows(grant) for grant in ("browser.observe", "browser.interact", "browser.effect")) else ""),
         guidance(policy.required_checks),
     ) if part)

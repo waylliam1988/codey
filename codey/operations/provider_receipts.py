@@ -187,7 +187,11 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     if nested:
         from codey.codemode.catalog import build_codemode_catalog
 
-        catalog = build_codemode_catalog(specs, allow_writes=policy.allows("project.write"))
+        catalog = build_codemode_catalog(
+            specs, allow_writes=policy.allows("project.write"),
+            allow_project_edit="edit" in nested,
+            allow_project_run="run" in nested,
+        )
         if "codemode" not in names or not set(nested) <= {entry.name for entry in catalog.entries}:
             raise ValueError("captured nested capabilities exceed the frozen CodeMode inventory")
     compatible = payload["implementation_id"] == runtime_implementation_id()

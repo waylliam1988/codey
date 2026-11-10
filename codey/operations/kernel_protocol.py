@@ -300,11 +300,14 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
 
         aggregate_browser = exposure is None and any(spec.executor == "browser" for spec in frozen)
-        # Browser aggregation must not move project writes out of their
-        # established action surface. Keep one explicit persistent-write entry,
-        # rather than making a JS return look like a successful project edit.
+        # Browser aggregation keeps the real project edit action in the same
+        # CodeMode surface as browser/read leaves. Returning modified data is
+        # still not a write; only the nested kernel edit receipt can satisfy
+        # project completion. Project verification remains outside this
+        # composable surface.
         catalog = build_codemode_catalog(frozen,
-            allow_writes=session.policy.allows("project.write") and not aggregate_browser)
+            allow_writes=session.policy.allows("project.write"),
+            allow_project_run=session.policy.allows("project.write") and not aggregate_browser)
         nested = tuple(entry.name for entry in catalog.entries)
         if aggregate_browser:
             # One declaration per leaf: browser-enabled tasks use the existing

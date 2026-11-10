@@ -73,6 +73,16 @@
 - **当前最近实机** `.e2e-artifacts/browser-tool-convergence-20261110-batch4-diagnostics`：hybrid 已完成完整浏览器读取和项目文件读取，但反复在 CodeMode 中调用不在嵌套目录的 tools.edit，没有转到已展示的顶层 edit，最后 no_progress；文件没有写回。
 - 下一步需要解决当前顶层与嵌套路由的可用性问题，进一步验证展示策略及错误修复反馈；不能把这份检查点描述为“Research 和混合任务均已恢复”。
 
+### 批次 5：Hybrid 统一嵌套写入路由
+
+- 状态：已完成针对性实现和受控生产 gate 验证。
+- 浏览器聚合面将真实 `edit` 放入冻结 CodeMode catalog，并从顶层移除；`tools.edit` 仍通过原 `execute_turn()` 执行，生成正常写入回执和完成证据。
+- `run` 从浏览器聚合的 CodeMode 面单独排除，不因项目写权限自动出现；非浏览器任务继续保留原兼容行为。
+- 仅返回修改后的内存 JSON 仍不会改变文件；只有实际 `edit` 子回执能满足 `project_changes_required`。
+- 受控 KoboldCpp gate：Chat、Research、Hybrid 均通过；Hybrid 的 `result.json` 写回为 `{"amount":173,"code":"QUARTZ_851"}`。
+- prompt 审计后将浏览器指导从七句压缩为三句：只保留顺序执行和 fresh ref、`browser_read` 字符串及引用资格、不确定动作先核对。CodeMode 的“返回对象不等于持久写入”和 operation receipts 仍保留，因为前者是写入真实性合同，后者是运行时事实恢复，不是重复提示。
+- 精简 prompt 的针对性回归为 `39 passed`；独立 Hybrid 实机再次通过，实际写回同一组 `result.json` 值。浏览器工具 schema 和 CodeMode catalog 中的说明继续作为冻结合同生成，不额外复制到任务提示。
+
 ### 后续批次
 
 1. 优先解决混合任务的顶层/嵌套路由与真实写入闭环；保持原任务提示、真实文件结果与完成检查，补实机验收。

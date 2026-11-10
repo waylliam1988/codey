@@ -83,14 +83,23 @@ def build_catalog_from_specs(specs: Mapping[str, ToolSpec] | Iterable[ToolSpec])
 
 def build_codemode_catalog(
     specs: Mapping[str, ToolSpec] | Iterable[ToolSpec], *, allow_writes: bool = False,
+    allow_project_edit: bool | None = None, allow_project_run: bool | None = None,
 ) -> ToolCatalogSnapshot:
     """Build the frozen CodeMode catalog for one permission snapshot.
 
     Read tools remain limited to the existing safe project/source/knowledge
-    surface.  Explicit write mode adds only project ``edit`` and ``run``;
+    surface.  Explicit write mode adds project ``edit`` and optionally ``run``;
     shell is always kept behind the normal approval path and is never exposed
     directly to the Node worker.
+
+    ``allow_writes`` remains the compatibility switch for callers that want
+    both project actions.  Browser-composed surfaces can select the persistent
+    edit action without implicitly exposing project verification commands.
     """
+    if allow_project_edit is None:
+        allow_project_edit = allow_writes
+    if allow_project_run is None:
+        allow_project_run = allow_writes
     snapshot = build_catalog_from_specs(specs)
     allowed: list[ToolCatalogEntry] = []
     for entry in snapshot.entries:
@@ -101,10 +110,10 @@ def build_codemode_catalog(
              and entry.grant in {"project.read", "web.read", "knowledge.read"})
             or entry.namespace == "browser"
             or (
-                allow_writes
-                and entry.name in {"edit", "run"}
-                and entry.namespace == "project"
+                entry.namespace == "project"
                 and entry.grant == "project.write"
+                and ((allow_project_edit and entry.name == "edit")
+                     or (allow_project_run and entry.name == "run"))
             )
         ):
             allowed.append(entry)

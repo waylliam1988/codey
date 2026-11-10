@@ -48,6 +48,10 @@ def test_every_advertised_json_example_can_be_decoded_and_normalized():
     state.hit_targets["h1"] = {"url": "https://example.com/", "offset": 0, "pages": ""}
     snapshot = build_turn_snapshot(state)
     for spec in snapshot.frozen_specs:
+        # CodeMode leaves are frozen for the nested catalog and are advertised
+        # through its declarations, not as standalone outer JSON tools.
+        if spec.name not in snapshot.tool_names:
+            continue
         for example in spec.json_examples:
             assert json.loads(example), spec.name
             plan = normalize_turn(decode_text_turn(example), snapshot=snapshot)
