@@ -221,8 +221,10 @@ def test_pdf_overlap_uses_observation_time_and_delta_not_replay_order(reverse):
     assert restored.source_text_for_url(url) == "new page\n\nsecond page"
     assert restored.page_was_read(url, 1)
     view = ExecutionDelegate(session=TaskSession(policy=None),
-                             research_tools=SimpleNamespace(ledger=restored))._observation_tools(source_read=True)
-    assert view.ledger.opened_sources == []
+                             research_tools=SimpleNamespace(ledger=restored, browser_session=None))._observation_tools(source_read=True)
+    assert view.ledger.opened_sources == restored.opened_sources
+    assert view.ledger.source_text_for_url(url) == ""
+    assert view.ledger.read_passages == {}
     assert restored.pages_read_for_url(url) == {1, 2}
 
 

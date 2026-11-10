@@ -4,11 +4,26 @@ from itertools import permutations
 
 import pytest
 
+from codey.operations.kernel_execution import execute_turn
 from codey.operations.reference_handles import ReferenceHandleError, ReferenceHandleResolver
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import source_observation, source_snapshot
+from codey.runtime.core.models import ToolCall
+from codey.types.json_value import JsonObject
+from tests.test_committed_research_projection import runtime
+
+
+class _ChangingSource:
+    def __init__(self) -> None:
+        self.body = "Initial article amount is 17 grams.\n" * 32
+
+    def search(self, query: str, *, limit: int) -> list[JsonObject]:
+        return []
+
+    def fetch(self, url: str) -> dict[str, object]:
+        return {"status": "ok", "url": url, "title": "Record", "text": self.body}
 
 
 @pytest.mark.parametrize("clock", ["2026-11-10T00:00:00+00:00", "2020-01-01T00:00:00+00:00"])
@@ -37,3 +52,28 @@ def test_sequential_captures_keep_original_order_under_equal_or_backwards_clock(
             restored.merge_opened_source(source, text, pages)
         assert restored.opened_sources == ledger.opened_sources
         assert restored.source_text_for_url(url) == "the final passage"
+
+
+def test_production_delegate_stamps_each_read_from_formal_source_versions(
+    tmp_path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, tools, managed, _deps, _sink = runtime(tmp_path, monkeypatch)
+    backend = _ChangingSource()
+    tools.search = backend
+    url = "https://example.com/record"
+    first_stamp = "2026-11-10T00:00:00+00:00"
+    monkeypatch.setattr("codey.research.ledger.now_iso", lambda: first_stamp)
+    first = execute_turn(session, [ToolCall("open_url", {"url": url})], run_id="r", effect_scope="task",
+                         turn=1, research_tools=tools, managed_outputs=managed, session_id="s")[0]
+    assert first.ok
+
+    backend.body = "New amount is 0 grams.\n" * 32
+    monkeypatch.setattr("codey.research.ledger.now_iso", lambda: "2020-01-01T00:00:00+00:00")
+    second = execute_turn(session, [ToolCall("open_url", {"url": url})], run_id="r", effect_scope="task",
+                          turn=2, research_tools=tools, managed_outputs=managed, session_id="s")[0]
+    assert second.ok
+
+    first_source, _, _ = source_observation(first.canonical["research_observation"])
+    second_source, _, _ = source_observation(second.canonical["research_observation"])
+    assert second_source.retrieved_at > first_source.retrieved_at
+    assert "New amount is 0 grams." in tools.ledger.source_text_for_url(url)

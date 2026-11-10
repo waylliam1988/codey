@@ -591,9 +591,10 @@ class ExecutionDelegate:
                                 and self.session.policy.strict_research)
         tools.answer_submission = self._research_scope is not None
         ledger = tools.ledger
-        # A read receipt contains only this acquisition, without stale pages.
+        # Acquisition keeps source version metadata for monotonic timestamps,
+        # while the receipt still starts without stale bodies or passages.
         with self.session.projection_lock if self.session is not None else contextlib.nullcontext():
-            tools.ledger = ResearchLedger() if source_read else ledger.clone()
+            tools.ledger = ledger.clone_for_acquisition() if source_read else ledger.clone()
         tools.sources_read = {url for source in ledger.opened_sources
                               for url in (source.requested_url, source.final_url)}
         tools.search_result_urls = {hit.url for search in ledger.searches for hit in search.results}

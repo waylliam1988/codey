@@ -152,6 +152,12 @@ class ResearchLedger:
         forked._source_page_versions = {k: dict(v) for k, v in self._source_page_versions.items()}
         return forked
 
+    def clone_for_acquisition(self) -> ResearchLedger:
+        """Start an acquisition view with source version ordering only."""
+        forked = ResearchLedger()
+        forked.opened_sources = list(self.opened_sources)
+        return forked
+
     def commit_projection(self, staged: ResearchLedger) -> None:
         """Publish a fully validated receipt projection while keeping this view."""
         self.searches = staged.searches

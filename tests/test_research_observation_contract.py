@@ -144,7 +144,7 @@ def _assert_source_rejected(observation):
 
 @pytest.mark.parametrize("name", ["web_search", "open_url", "source_search"])
 def test_delegate_rejects_success_without_matching_observation(name):
-    tools = SimpleNamespace(ledger=ResearchLedger(),
+    tools = SimpleNamespace(ledger=ResearchLedger(), browser_session=None,
                             web_search=lambda *a: ResearchToolOutput(URL, ok=True),
                             source_search=lambda *a: ResearchToolOutput("1. offset 7: text", ok=True),
                             open_url=lambda *a, **kw: ResearchToolOutput("body", ok=True))
