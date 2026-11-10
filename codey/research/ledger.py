@@ -13,7 +13,7 @@ import hashlib
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from difflib import get_close_matches
 
 from codey.research import source_domains
@@ -213,11 +213,17 @@ class ResearchLedger:
             ),
             None,
         )
+        # Assign the acquisition stamp once, before the original receipt is
+        # recorded. A coarse/backwards wall clock must not reverse sequential
+        # captures of this source. Replay retains these original stamps.
+        acquired = datetime.fromisoformat(now_iso())
+        if existing is not None:
+            acquired = max(acquired, datetime.fromisoformat(existing.retrieved_at) + timedelta(microseconds=1))
         opened = OpenedSource(
             requested_url=(existing.requested_url if existing is not None else "") or requested_url or final_url,
             final_url=final_url,
             title=_clip((document.title or (existing.title if existing is not None else "")), 180),
-            retrieved_at=now_iso(),
+            retrieved_at=acquired.isoformat(),
             text_hash=hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16],
             quality=classify_source_quality(final_url, text),
             content_kind=(document.content_kind or "html"),

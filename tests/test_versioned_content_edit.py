@@ -50,7 +50,7 @@ def test_invalid_program_return_exposes_only_invoked_frozen_types_and_child_rece
     from codey.operations.kernel_protocol import build_turn_snapshot
 
     (tmp_path / "a.py").write_text("old\n")
-    session = TaskSession(TaskPolicy(frozenset({"project.read", "project.write"})), project=str(tmp_path))
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"})), project=str(tmp_path))
     snapshot = build_turn_snapshot(session)
     revisions = WorkspaceRevisionStore(tmp_path.parent / (tmp_path.name + "-state"))
     parent = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="return-type", effect_scope="task",
@@ -103,7 +103,7 @@ def test_codemode_whole_file_update_reuses_child_receipt_in_same_runtime(tmp_pat
     from codey.operations.kernel_protocol import build_turn_snapshot
 
     (tmp_path / "a.py").write_bytes(b"before\n")
-    session = TaskSession(TaskPolicy(frozenset({"project.read", "project.write"})), project=str(tmp_path))
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "project.write"})), project=str(tmp_path))
     snapshot = build_turn_snapshot(session)
     revisions = WorkspaceRevisionStore(tmp_path.parent / (tmp_path.name + "-state"))
     parent = build_execute_turn_executor(session=session, snapshot=snapshot, run_id="code", effect_scope="task",

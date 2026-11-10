@@ -48,7 +48,8 @@ class ProductionRecordingProvider(attempts.RecordingProvider):
         super()._record(row)
 
 
-def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore_snapshots: bool = False) -> dict[str, object]:
+def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore_snapshots: bool = False,
+             reread: bool = False) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     events: list[dict[str, object]] = []
@@ -96,6 +97,8 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
         task += "然后读取项目的 result.json，将 amount 改为实测克数，code 改为实测校验码，再用 done 报告。"
     else:
         task += "最后用 done 报告，不修改文件。"
+    if reread:
+        task += "另一个验收要求：导航后、填写之前先 browser_read 读取未加载状态；加载后再次 browser_read，以后一次正文为准。"
     try:
         with tempfile.TemporaryDirectory(prefix="codey-browser-live-project-") as temporary, ExitStack() as stack:
             project = Path(temporary)
@@ -106,6 +109,8 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
             stack.enter_context(attempts.record_api_generations(directory / "provider.jsonl"))
             if restore_snapshots:
                 stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", restored_snapshot))
+            if reread:
+                stack.enter_context(patch("codey.research.ledger.now_iso", return_value="2026-11-10T00:00:00+00:00"))
             stack.enter_context(patch.object(provider, "_guard_request", route_document))
             stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", source_factory))
             stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory))
@@ -122,11 +127,15 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
         answer = str(terminal.get("summary") or "")
         successful = {str(row.get("tool_name")) for row in events if row.get("type") == "tool" and row.get("ok") is True}
         required = {"browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read"}
+        reads = sum(row.get("type") == "tool" and row.get("tool_name") == "browser_read" and row.get("ok") is True
+                    for row in events)
         passed = (result.stop_reason == "done" and required <= successful and "173" in answer and "QUARTZ_851" in answer
+                  and (not reread or reads >= 2)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
                   and (mode != "hybrid" or artifact == {"amount": 173, "code": "QUARTZ_851"}))
         summary: dict[str, object] = {"mode": mode, "passed": passed, "stop_reason": result.stop_reason,
-            "successful_tools": sorted(successful), "answer": answer, "project_result": artifact, "navigations": navigations}
+            "successful_tools": sorted(successful), "answer": answer, "project_result": artifact, "navigations": navigations,
+            "source_reads": reads}
     except Exception as exc:
         summary = {"mode": mode, "passed": False, "error": f"{type(exc).__name__}: {exc}"}
     finally:
@@ -143,6 +152,7 @@ def main() -> int:
     parser.add_argument("--mode", choices=("chat", "research", "hybrid", "all"), default="all")
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--restore-snapshots", action="store_true", help="Execute serialized/restored production contracts.")
+    parser.add_argument("--reread", action="store_true", help="Read changed source twice with a fixed acquisition clock.")
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
     args = parser.parse_args()
     root = args.run_dir.resolve()
@@ -152,7 +162,7 @@ def main() -> int:
     rows = []
     for mode in modes:
         print(json.dumps({"starting": mode}), flush=True)
-        row = run_case(root / mode, mode, target, restore_snapshots=args.restore_snapshots)
+        row = run_case(root / mode, mode, target, restore_snapshots=args.restore_snapshots, reread=args.reread)
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
     summary = {"passed": sum(row["passed"] is True for row in rows), "runs": len(rows), "results": rows}
