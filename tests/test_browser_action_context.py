@@ -7,7 +7,7 @@ from codey.research.answer_context import answer_context
 from codey.research.answer_contract import answer_scope
 from codey.research.ledger import ResearchLedger
 from codey.runtime.core.models import ToolCall, ToolResult
-from tools.browser_experiment_contracts import browser_action_context
+from tools.browser_experiment_context import browser_action_context
 
 
 def test_settled_browser_actions_survive_research_view_without_becoming_passages() -> None:

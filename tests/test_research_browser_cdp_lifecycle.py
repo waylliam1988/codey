@@ -12,7 +12,6 @@ from codey.research.browser_search import BrowserSearchProvider, _search_browser
 from codey.research.source_acquisition import with_attempt
 from codey.research.web_sources import WebSourceProvider
 from tests.support.real_cdp import cdp_browser
-from tools.browser_experiment_binding import BrowserTargetBindingError, assert_bound, bind_page
 from tools.browser_experiment_interaction import BrowserInteraction
 from tools.browser_experiment_sources import ResumableBrowserSearchProvider
 
@@ -68,19 +67,6 @@ def test_task_close_releases_task_pages_and_keeps_borrowed_browser(
             assert user_page.inner_text("body") == "User page must remain"
             assert len(browser.contexts[0].pages) == before
             assert browser.is_connected()
-
-
-def test_new_browser_on_same_port_cannot_satisfy_old_binding(tmp_path: Path) -> None:
-    with sync_playwright() as pw:
-        with cdp_browser(tmp_path / "first") as port:
-            browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
-            old_session = Session(pw, browser, browser.contexts[0].pages[0])
-            old_binding = bind_page(old_session)
-        with cdp_browser(tmp_path / "second", port=port):
-            replacement = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
-            new_session = Session(pw, replacement, replacement.contexts[0].pages[0])
-            with pytest.raises(BrowserTargetBindingError):
-                assert_bound(new_session, old_binding)
 
 
 def test_failed_search_keeps_borrowed_user_page(tmp_path: Path) -> None:

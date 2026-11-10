@@ -29,16 +29,15 @@ from codey.operations.task_execution import ExecutionDelegate
 from codey.providers.request_context import clock_context
 from codey.research import answer_contract
 from codey.research.browser_search import BrowserSearchProvider
-from codey.research.knowledge_schema import schema_object, schema_strings
 from codey.research.ledger import ResearchLedger
 from codey.research.source_reading import render_source_read
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.tool_spec import register_custom_executor, register_custom_tool, unregister_custom_tool
+from codey.toolchain.tool_spec import register_custom_executor, spec_for_tool, unregister_custom_tool
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, require_json_integer
 from tests.support.real_cdp import cdp_browser
 from tools import local_model_gate_attempts as attempts
-from tools.browser_experiment_contracts import BROWSER_CONTRACTS, browser_action_context
+from tools.browser_experiment_context import browser_action_context
 from tools.browser_experiment_interaction import BrowserInteraction
 from tools.browser_experiment_sources import BrowserCaptureGateway, ResumableBrowserSearchProvider
 from tools.browser_observation_candidates import PROJECTIONS, observation_candidate
@@ -204,12 +203,9 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, c
     try:
         if candidate:
             for name in BROWSER_TOOLS:
-                contract = BROWSER_CONTRACTS[name]
-                schema = canonical_json_object(contract.input_schema)
-                if not register_custom_tool(name, grant="web.read", executor="browser_experiment",
-                        parameters=tuple(schema_object(schema, "properties").items()),
-                        required=tuple(schema_strings(schema, "required")), description=contract.description):
-                    raise RuntimeError(f"cannot register candidate {name}")
+                spec = spec_for_tool(name)
+                if spec is None:
+                    raise RuntimeError(f"missing production browser spec {name}")
                 if not register_custom_executor(name, executor):
                     raise RuntimeError(f"cannot register executor {name}")
         with ExitStack() as stack:
@@ -235,7 +231,8 @@ def run(directory: Path, timeout: float, *, candidate: bool, diagnostic: bool, c
                 stack.enter_context(patch.object(answer_contract, "ANSWER_TOOLS", (*answer_contract.ANSWER_TOOLS, *BROWSER_TOOLS)))
             result = run_headless(HeadlessRequest(None, task, intent="research", provider_id="local", max_turns=14,
                 state_home=directory / "state", research_store_root=directory / "knowledge",
-                model_selection={"model": target.model, "base_url": target.base_url}, project_changes_required=False),
+                model_selection={"model": target.model, "base_url": target.base_url}, project_changes_required=False,
+                requested_capabilities=("browser.observe", "browser.interact") if candidate else ()),
                 emit_jsonl=observe, connect_provider=connect)
         tools = [row for row in events if row.get("type") == "tool"]
         seen = {str(row.get("tool_name")) for row in tools if row.get("ok") is True}

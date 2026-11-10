@@ -7,10 +7,13 @@ from codey.launcher.runtime import read_runtime
 from codey.research.answer_contract import ANSWER_TOOLS
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.search_factory import default_research_search_provider
-from codey.research.tool_contract import TOOL_CONTRACTS, validate_tool_args
+from codey.research.tool_contract import validate_tool_args
 from codey.research.web_sources import WebSourceProvider
 from codey.toolchain.tool_spec import custom_executor_for, spec_for_tool
-from tools.browser_experiment_contracts import BROWSER_CONTRACTS
+
+BROWSER_EXPERIMENT_TOOLS = (
+    "browser_snapshot", "browser_click", "browser_fill", "browser_scroll", "browser_wait", "browser_read",
+)
 
 
 def test_default_research_uses_only_production_provider_and_contracts() -> None:
@@ -18,8 +21,7 @@ def test_default_research_uses_only_production_provider_and_contracts() -> None:
     try:
         assert type(provider.base_provider) is WebSourceProvider
         assert type(provider.base_provider.browser_source) is BrowserSearchProvider
-        assert not BROWSER_CONTRACTS.keys() & TOOL_CONTRACTS.keys()
-        for name in BROWSER_CONTRACTS:
+        for name in BROWSER_EXPERIMENT_TOOLS:
             spec = spec_for_tool(name)
             assert spec is not None and spec.executor == "browser"
             assert custom_executor_for(name) is None

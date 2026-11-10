@@ -11,7 +11,6 @@ from codey.automation.browser import CdpEndpoint
 from codey.research.browser_search import _search_browser_call
 from codey.research.ledger import ResearchLedger
 from codey.types.json_value import JsonObject, canonical_json_object, decode_json_value
-from tools.browser_experiment_binding import bind_page
 from tools.browser_experiment_interaction import BrowserInteraction
 from tools.browser_experiment_sources import BrowserCaptureGateway, ResumableBrowserSearchProvider
 
@@ -40,9 +39,8 @@ def run(directory: Path, port: int) -> JsonObject:
         page = provider._fetch_page
         if session is None or page is None:
             raise ValueError("fetch did not retain a bound page")
-        target = bind_page(session, page)
-        return {"browser_token": target.browser_token, "context_token": target.context_token,
-                "page_token": target.page_token, "owns_browser": session.owns_browser,
+        return {"browser_token": id(session.browser), "context_token": id(page.context),
+                "page_token": id(page), "owns_browser": session.owns_browser,
                 "owns_context": session.owns_context, "owns_session_page": session.owns_page,
                 "fetch_is_session_page": page is session.page}
 
