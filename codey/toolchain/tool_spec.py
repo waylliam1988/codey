@@ -324,9 +324,9 @@ def _browser_specs() -> dict[str, ToolSpec]:
             name="browser_download", grant="browser.effect", executor="browser",
             namespace="browser.effect", effect="external_effect",
             parameters=(("ref", {"type": "string"}),), required=("ref",),
-            description="Download through an authorized link ref and return a file receipt.",
+            description="Download through an authorized link ref. Return a managed path, byte count, SHA256 and artifact handle; the suggested filename never chooses a host path.",
             json_examples=('{"tool":"browser_download","args":{"ref":"<snapshot ref>"}}',),
-            preconditions=("browser_bound", "fresh_snapshot", "explicit_file_authorization"),
+            preconditions=("browser_bound", "fresh_snapshot", "managed_output_storage"),
         ),
     }
     from codey.toolchain.result_schema import browser_output_schema

@@ -42,7 +42,8 @@ def browser_output_schema(name: str) -> dict[str, object]:
         "browser_tab_switch": record({**action, "index": integer, "url": string}),
         "browser_upload": record({**action, "ref": string, "attachment_id": string, "name": string,
                                   "media_type": string, "bytes": integer, "sha256": string, "effect_verified": boolean}),
-        "browser_download": record({**action, "ref": string, "path": string, "suggested_filename": string}),
+        "browser_download": record({**action, "ref": string, "path": string, "suggested_filename": string,
+                                    "handle": string, "bytes": integer, "sha256": string}),
         "browser_read": text_output_schema(),
     }
     return schemas[name]

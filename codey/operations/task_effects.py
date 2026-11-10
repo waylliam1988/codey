@@ -298,6 +298,12 @@ class KernelEffectSink:
                 str(managed.get("handle") or ""), session_id=self.session_id, run_id=self.run_id,
                 owner_task_id=self.run_id, owner_effect_id=identity,
             ),)
+        if result.ok and result.call.name == "browser_download":
+            value = result.canonical.get("value")
+            if not isinstance(value, dict) or self._managed_outputs is None:
+                raise ValueError("download settlement requires its original file artifact")
+            artifacts = (*artifacts, self._managed_outputs.file_artifact_record(
+                value, session_id=self.session_id, run_id=self.run_id, owner_effect_id=identity))
         self.mutations.settle_tool_effect(
             self.session_id, self.run_id,
             settlement,

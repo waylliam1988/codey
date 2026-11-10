@@ -334,8 +334,26 @@ class ExecutionDelegate:
             output = browser.upload(ref, {"name": file.name, "mimeType": file.media_type, "buffer": file.data})
             return replace(output, observation={**output.observation, "attachment_id": identity})
         if call.name == "browser_download":
-            return browser.download(ref)
+            return self._browser_download(browser, ref)
         raise ValueError(f"unsupported browser tool {call.name}")
+
+    def _browser_download(self, browser: BrowserSession, ref: str) -> BrowserToolOutput:
+        if self.managed_outputs is None or not self.session_id or not self.run_id:
+            raise ValueError("task-scoped download storage unavailable")
+        output = browser.download(ref)
+        if not output.ok:
+            return output
+        try:
+            stored = self.managed_outputs.write_file_artifact(
+                session_id=self.session_id, run_id=self.run_id,
+                source=Path(str(output.observation["path"])), permission_profile=self.permission_profile)
+        except (OSError, ValueError) as exc:
+            return replace(output, ok=False, model_text=f"ERROR: download delivered but persistence failed: {exc}",
+                           observation={"action": "download", "delivery": "delivered", "storage": "failed"})
+        return replace(output, model_text=f"Download retained: {output.observation['suggested_filename']} "
+                       f"({stored.stored_bytes} bytes, SHA256 {stored.sha256})",
+                       observation={**output.observation, "path": str(stored.path), "handle": stored.handle,
+                                    "bytes": stored.stored_bytes, "sha256": stored.sha256})
 
     def _policy_check(self, call: ToolCall) -> ProjectPolicyCheck:
         """Keep machine-readable denial separate from its explanation."""

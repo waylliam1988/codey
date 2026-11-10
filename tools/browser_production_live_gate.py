@@ -36,6 +36,7 @@ from tools import local_model_gate_attempts as attempts
 from tools.shell_web_diagnostic_gate import select_target
 
 URL = "https://example.com/production-browser-record"
+DOWNLOAD_BYTES = b"DOWNLOAD_BYTES_93\n"
 HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Production browser fixture</title></head><body>
 <label>Locality<input id="city"></label>
 <button onclick="if(document.querySelector('#city').value==='福州') {
@@ -44,7 +45,9 @@ document.querySelector('article').textContent='福州样本：鱼丸净重为 17
 <article>尚未加载记录。请填写 Locality 并点击 Load record。</article>
 <label>Attachment<input type="file" onchange="this.files[0].text().then(t => document.querySelector('#uploaded').textContent=this.files[0].name+':'+t)"></label>
 <p id="uploaded">No file selected</p>
-<script>window.__contractToken='SCHEMA_TOKEN_74';</script></body></html>"""
+<a href="data:application/octet-stream;base64,__DOWNLOAD_DATA__" download="fixture-download.txt">Download fixture</a>
+<script>window.__contractToken='SCHEMA_TOKEN_74';</script></body></html>""".replace(
+    "__DOWNLOAD_DATA__", base64.b64encode(DOWNLOAD_BYTES).decode("ascii"))
 
 
 class ProductionRecordingProvider(attempts.RecordingProvider):
@@ -56,7 +59,7 @@ class ProductionRecordingProvider(attempts.RecordingProvider):
 
 def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore_snapshots: bool = False,
              reread: bool = False, stale_edit: bool = False, structured: bool = False,
-             upload_file: bool = False) -> dict[str, object]:
+             upload_file: bool = False, download_file: bool = False) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     events: list[dict[str, object]] = []
@@ -128,6 +131,10 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
                 "browser_upload 选择这个附件，browser_wait 等待页面出现 UPLOAD_BYTES_82，再 browser_read。"
                 "用 done 报告实际文件名、文件内容标记和选择回执的 SHA256。不要修改项目或运行命令。")
         required = {"browser_navigate", "browser_snapshot", "browser_upload", "browser_wait", "browser_read"}
+    if download_file:
+        task = (f"用户授权浏览器下载：打开 {URL}，snapshot 观察后用 browser_download 点击名称为『Download fixture』的链接。"
+                "下载后用 browser_read 读取当前页面作为操作来源，最后 done 报告实际保存路径、文件名、字节数和 SHA256，不要猜内容，不运行命令。")
+        required = {"browser_navigate", "browser_snapshot", "browser_download", "browser_read"}
     try:
         with tempfile.TemporaryDirectory(prefix="codey-browser-live-project-") as temporary, ExitStack() as stack:
             project = Path(temporary)
@@ -148,7 +155,7 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
                 session_id=session_id,
                 state_home=directory / "state", research_store_root=directory / "knowledge",
                 requested_capabilities=("web.read", "browser.observe", "browser.interact", *(
-                    ("browser.effect",) if structured or upload_file else ())),
+                    ("browser.effect",) if structured or upload_file or download_file else ())),
                 project_changes_required=mode == "hybrid", required_tools=tuple(sorted(required)),
                 model_selection={"model": target.model, "base_url": target.base_url},
             ), emit_jsonl=observe, connect_provider=connect)
@@ -164,6 +171,10 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
         facts_match = ("fixture.txt" in answer and "UPLOAD_BYTES_82" in answer
                        and hashlib.sha256(b"UPLOAD_BYTES_82\n").hexdigest() in answer) if upload_file else (
             "173" in answer and "QUARTZ_851" in answer)
+        downloads = list((directory / "state" / "managed_outputs").rglob("*_file_*.bin"))
+        if download_file:
+            facts_match = (bool(downloads) and all(path.read_bytes() == DOWNLOAD_BYTES for path in downloads)
+                           and hashlib.sha256(DOWNLOAD_BYTES).hexdigest() in answer and "fixture-download.txt" in answer)
         passed = (result.stop_reason == "done" and required <= successful and facts_match
                   and (not reread or reads >= 2)
                   and (not stale_edit or changed_after_read and failed_edits >= 1)
@@ -172,7 +183,8 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
                   and (mode != "hybrid" or artifact == {"amount": 173, "code": "QUARTZ_851"}))
         summary: dict[str, object] = {"mode": mode, "passed": passed, "stop_reason": result.stop_reason,
             "successful_tools": sorted(successful), "answer": answer, "project_result": artifact, "navigations": navigations,
-            "source_reads": reads, "failed_edits": failed_edits, "changed_after_read": changed_after_read}
+            "source_reads": reads, "failed_edits": failed_edits, "changed_after_read": changed_after_read,
+            "downloads": [str(path) for path in downloads]}
     except Exception as exc:
         summary = {"mode": mode, "passed": False, "error": f"{type(exc).__name__}: {exc}"}
     finally:
@@ -193,6 +205,7 @@ def main() -> int:
     parser.add_argument("--stale-edit", action="store_true", help="Change the file after its first read; require edit recovery.")
     parser.add_argument("--structured", action="store_true", help="Exercise eval.value and tab_list.tabs declarations.")
     parser.add_argument("--upload-file", action="store_true", help="Upload an explicitly imported task attachment.")
+    parser.add_argument("--download-file", action="store_true", help="Download and verify a persistent binary artifact.")
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
     args = parser.parse_args()
     root = args.run_dir.resolve()
@@ -203,7 +216,8 @@ def main() -> int:
     for mode in modes:
         print(json.dumps({"starting": mode}), flush=True)
         row = run_case(root / mode, mode, target, restore_snapshots=args.restore_snapshots, reread=args.reread,
-                       stale_edit=args.stale_edit, structured=args.structured, upload_file=args.upload_file)
+                       stale_edit=args.stale_edit, structured=args.structured, upload_file=args.upload_file,
+                       download_file=args.download_file)
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
     summary = {"passed": sum(row["passed"] is True for row in rows), "runs": len(rows), "results": rows}

@@ -622,7 +622,7 @@ def open_headless_page(*, browser_path: str | None = None) -> Session:
             executable = str(_find_browser().path)
         browser = pw.chromium.launch(executable_path=executable, headless=True, timeout=timeout)
         try:
-            context = browser.new_context(service_workers="block", accept_downloads=False)
+            context = browser.new_context(service_workers="block", accept_downloads=True)
             page = context.new_page()
             cancellation.check()
             return Session(pw, browser, page, owns_browser=True, owns_context=True, owns_page=True)

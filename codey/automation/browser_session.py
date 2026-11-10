@@ -357,6 +357,7 @@ class BrowserSession:
                                   "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
 
     def _download_on_browser_thread(self, ref: str) -> BrowserToolOutput:
+        cancellation.check()
         page, handle = self._resolve_ref(ref)
         try:
             with page.expect_download(timeout=20_000) as pending:
@@ -365,6 +366,8 @@ class BrowserSession:
             path = download.path()
             if path is None:
                 raise RuntimeError("download path unavailable")
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception as exc:
             self._invalidate_refs()
             return BrowserToolOutput(f"ERROR: download failed: {exc}", False,

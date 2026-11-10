@@ -11,7 +11,7 @@
 | 3 | 子调用失败的原回执反馈与 Hybrid 修复验收，保留显式错误处理 | 完成 |
 | 4 | 浏览器各工具实际输出的 schema 与 CodeMode 声明 | 完成 |
 | 5 | 上传的用户选定附件授权与真实文件回执 | 完成 |
-| 6 | 下载启用、持久化存储、摘要与回执 | 待开始 |
+| 6 | 下载启用、持久化存储、摘要与回执 | 完成 |
 | 7 | 完整能力 gate 迁移到生产合同；Chat/Research/Hybrid 集成验收 | 待开始 |
 
 ## 批次 1
@@ -53,3 +53,10 @@
 - 文件摘要进入已有 operation_receipts；非法 execution_claims 返回真实可用 shell/process 回执，避免把浏览器操作误当成进程执行。未放松完成检查或增加 Hybrid prompt。
 - 验证：上传/附件存储/注册合同 26 passed；上传/子反馈/执行声明与恢复 43 passed；guest 相关 runtime/unwrap/repair 等 60 passed。Ruff、七份生产文件 mypy 通过，无显式 Any。
 - 最终实机 `.e2e-artifacts/browser-seven-b5-file-receipts` 通过；真实选入 fixture.txt，页面读到 UPLOAD_BYTES_82，答案摘要与实际字节 SHA256 一致。中间的失败记录保留。模型最后引用了较冗长的原文，属于回答质量限制，不把它宣称为任意上传任务的稳定成功率。
+
+## 批次 6
+
+- 启用生产 Chromium context 的 downloads；browser_download 不再向模型暴露 Playwright 临时路径作为最终事实。文件完整复制到现有 ManagedOutputStore，生成受运行/会话范围约束的 artifact handle、路径、字节数和 SHA256。
+- 原有 RuntimeEffect settlement 通过 `file_artifact_record` 注册同一个文件 artifact；冷恢复读取 durable artifact 后仍验证内容和摘要。下载失败、超出既有大小/数量策略、跨范围和损坏均 fail-closed。没有第二个下载存储或文件账本。
+- 实机初次失败根因是 Chromium 对被 route 拦截的 `<a download>` 响应报告 canceled；独立 Playwright 复现后改用真实 data URL fixture，未改变生产下载逻辑。最终 `.e2e-artifacts/browser-seven-b6-final2` 通过：18 bytes、fixture-download.txt、SHA256 与保存文件一致。
+- 验证：下载/managed output/schema 共 23 passed；Ruff、七份生产文件 mypy 通过。

@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -99,7 +100,7 @@ class ManagedOutputStore:
         try:
             run_dir = self._run_dir(session_id, run_id)
             with with_file_lock(filesystem_path(run_dir)):
-                existing = tuple(run_dir.glob(f"{HANDLE_PREFIX}*.json")) if run_dir.exists() else ()
+                existing_count = _optional_output_count(run_dir)
                 original_text = (text or "")
                 original_bytes = len(original_text.encode("utf-8"))
                 policy = evaluate_action(ActionSubject(
@@ -107,7 +108,7 @@ class ManagedOutputStore:
                     phase="managed_output",
                     permission_profile=permission_profile,
                     byte_count=original_bytes,
-                    item_count=len(existing),
+                    item_count=existing_count,
                 ))
                 if policy.decision == DECISION_DENY:
                     return None
@@ -117,7 +118,7 @@ class ManagedOutputStore:
                 )
                 digest = hashlib.sha256(stored_text.encode("utf-8")).hexdigest()
                 original_digest = hashlib.sha256(original_text.encode("utf-8")).hexdigest()
-                handle = f"{HANDLE_PREFIX}{_artifact_scope(session_id, run_id)}_{len(existing) + 1:04d}_{digest[:12]}"
+                handle = f"{HANDLE_PREFIX}{_artifact_scope(session_id, run_id)}_{existing_count + 1:04d}_{digest[:12]}"
                 path = self.path_for(session_id, run_id, handle)
                 metadata_path = self.metadata_path_for(session_id, run_id, handle)
                 write_bytes_atomic(path, stored_text.encode("utf-8"))
@@ -153,6 +154,41 @@ class ManagedOutputStore:
             raise
         except (OSError, TypeError, ValueError):
             return None
+
+    def write_file_artifact(self, *, session_id: str, run_id: str, source: Path,
+                            permission_profile: str) -> ManagedOutputRef:
+        """Retain complete binary bytes once; the effect settlement owns metadata."""
+        with source.open("rb") as stream:
+            raw = stream.read(MAX_MANAGED_OUTPUT_BYTES + 1)
+        run_dir = self._run_dir(session_id, run_id)
+        with with_file_lock(filesystem_path(run_dir)):
+            count = _optional_output_count(run_dir)
+            policy = evaluate_action(ActionSubject(kind="managed_output", phase="managed_output",
+                permission_profile=permission_profile, byte_count=len(raw), item_count=count))
+            if policy.decision == DECISION_DENY:
+                raise ValueError("download exceeds managed artifact size or count policy")
+            digest = hashlib.sha256(raw).hexdigest()
+            handle = f"artifact_{_artifact_scope(session_id, run_id)}_file_{count + 1:04d}_{digest[:16]}"
+            path = self._handle_path(session_id, run_id, handle, ".bin")
+            write_bytes_atomic(path, raw)
+        return ManagedOutputRef(handle, path, len(raw), len(raw), digest, original_sha256=digest)
+
+    def file_artifact_record(self, value: Mapping[str, object], *, session_id: str, run_id: str,
+                             owner_effect_id: str) -> ArtifactRecord:
+        from codey.durable.model import ArtifactRecord
+        from codey.types.json_value import require_json_integer, require_json_string
+
+        handle = require_json_string(value.get("handle"), "handle")
+        digest = require_json_string(value.get("sha256"), "sha256")
+        size = require_json_integer(value.get("bytes"), "bytes")
+        path = self._handle_path(session_id, run_id, _safe_artifact_handle(handle), ".bin")
+        with filesystem_path(path).open("rb") as stream:
+            raw = stream.read(MAX_MANAGED_OUTPUT_BYTES + 1)
+        if len(raw) != size or hashlib.sha256(raw).hexdigest() != digest or size > MAX_MANAGED_OUTPUT_BYTES:
+            raise ValueError("file artifact content differs from its receipt")
+        return ArtifactRecord(handle=handle, sha256=digest, byte_count=size, storage_path=str(path),
+            owner_task_id=run_id, owner_effect_id=owner_effect_id, created_at=_now(),
+            metadata={"kind": "browser_download", "suggested_filename": value.get("suggested_filename", "")})
 
     def path_for(self, session_id: str, run_id: str, handle: str) -> Path:
         return self._handle_path(session_id, run_id, handle, ".txt")
@@ -459,6 +495,10 @@ def _safe_component(value: object, fallback: str) -> str:
     text = str(value or "").strip()
     text = re.sub(r"[^A-Za-z0-9_.-]+", "_", text)[:120].strip("._")
     return text or fallback
+
+
+def _optional_output_count(directory: Path) -> int:
+    return sum(1 for _ in directory.glob("out_*.json")) + sum(1 for _ in directory.glob("artifact_*_file_*.bin"))
 
 
 def _safe_handle(value: object) -> str:
