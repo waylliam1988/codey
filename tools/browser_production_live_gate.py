@@ -132,8 +132,10 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
                 "用 done 报告实际文件名、文件内容标记和选择回执的 SHA256。不要修改项目或运行命令。")
         required = {"browser_navigate", "browser_snapshot", "browser_upload", "browser_wait", "browser_read"}
     if download_file:
-        task = (f"用户授权浏览器下载：打开 {URL}，snapshot 观察后用 browser_download 点击名称为『Download fixture』的链接。"
-                "下载后用 browser_read 读取当前页面作为操作来源，最后 done 报告实际保存路径、文件名、字节数和 SHA256，不要猜内容，不运行命令。")
+        task = (f"User authorized browser download task. Navigate to {URL}. Use codemode only: browser_snapshot, "
+                "then browser_download on the element named Download fixture, then browser_read the current page. "
+                "Call done with the actual managed path, filename, byte count and SHA256 from the download receipt. "
+                "Do not use run, shell, tests, or guessed values.")
         required = {"browser_navigate", "browser_snapshot", "browser_download", "browser_read"}
     try:
         with tempfile.TemporaryDirectory(prefix="codey-browser-live-project-") as temporary, ExitStack() as stack:

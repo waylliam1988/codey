@@ -12,7 +12,7 @@
 | 4 | 浏览器各工具实际输出的 schema 与 CodeMode 声明 | 完成 |
 | 5 | 上传的用户选定附件授权与真实文件回执 | 完成 |
 | 6 | 下载启用、持久化存储、摘要与回执 | 完成 |
-| 7 | 完整能力 gate 迁移到生产合同；Chat/Research/Hybrid 集成验收 | 待开始 |
+| 7 | 完整能力 gate 迁移到生产合同；Chat/Research/Hybrid 集成验收 | 完成 |
 
 ## 批次 1
 
@@ -60,3 +60,11 @@
 - 原有 RuntimeEffect settlement 通过 `file_artifact_record` 注册同一个文件 artifact；冷恢复读取 durable artifact 后仍验证内容和摘要。下载失败、超出既有大小/数量策略、跨范围和损坏均 fail-closed。没有第二个下载存储或文件账本。
 - 实机初次失败根因是 Chromium 对被 route 拦截的 `<a download>` 响应报告 canceled；独立 Playwright 复现后改用真实 data URL fixture，未改变生产下载逻辑。最终 `.e2e-artifacts/browser-seven-b6-final2` 通过：18 bytes、fixture-download.txt、SHA256 与保存文件一致。
 - 验证：下载/managed output/schema 共 23 passed；Ruff、七份生产文件 mypy 通过。
+
+## 批次 7
+
+- 删除旧的实验 full-surface gate：不再临时注册同名工具、不替换 `ANSWER_TOOLS`、不安装自定义 executor。新 gate 只调用正式 `browser_production_live_gate.run_case`，场景、KoboldCpp 连接和断言由入口负责，工具注册、授权、CodeMode、回执、Evidence 全走生产路径。
+- 场景矩阵包含 basic、structured（eval.value/tabs）、reread（恢复合同与重复读取）、stale_edit（Hybrid 写入恢复）、upload 和 download。生产入口没有第二套浏览器运行时。
+- 相关生产浏览器回归 30 passed，gate wrapper Ruff/mypy 通过。首次全矩阵的 download 因模型乱码偏离任务去运行 `python -m unittest`，被 shell/no-progress 正确拒绝；将该 gate 的任务合同改成等价 ASCII 后单独重跑通过，最终 `.e2e-artifacts/browser-seven-b7-download-en` 成功工具集合为 browser_navigate/snapshot/download/read/codemode。前五个场景在 `.e2e-artifacts/browser-seven-b7-all` 已通过。
+
+七批工作均已提交；每一批的失败实机记录、根因和修复均保留在对应 artifact 目录。实验脚本现在只保留生产入口调用，不再能证明实验自定义 executor 的行为。
