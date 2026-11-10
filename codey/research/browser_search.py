@@ -192,6 +192,12 @@ class BrowserSearchProvider:
         self._session: Session | None = None
         self._search_page: Page | None = None
         self._fetch_page: Page | None = None
+        # Page lifecycle is task-scoped.  A CDP session may expose pages that
+        # predate this provider; those pages are borrowed and must survive
+        # provider.close().  Pages created by this provider are the only ones
+        # it may discard.
+        self._owned_pages: dict[int, Page] = {}
+        self._borrowed_pages: dict[int, Page] = {}
         self._last_worker_health: dict[str, object] = {}
         self.last_search_errors: list[dict[str, str]] = []
         self.last_search_failure: dict[str, str] = {}
@@ -208,6 +214,7 @@ class BrowserSearchProvider:
             # Context routing also covers the first request of script-opened
             # pages, which a route attached only to the main page cannot see.
             self._session.page.context.route("**/*", self._guard_request)
+            self._register_owned_page_on_browser_thread(self._session.page)
             return self._session
         target_reuse = "" if self.isolated else reuse_url_contains
         self._session = open_chat_page(
@@ -223,7 +230,22 @@ class BrowserSearchProvider:
             browser_path=self.browser_path,
             allow_new_page=True,
         )
+        if self._session.owns_page:
+            self._register_owned_page_on_browser_thread(self._session.page)
+        else:
+            self._register_borrowed_page_on_browser_thread(self._session.page)
         return self._session
+
+    def _register_owned_page_on_browser_thread(self, page: Page) -> None:
+        self._owned_pages[id(page)] = page
+        self._borrowed_pages.pop(id(page), None)
+
+    def _register_borrowed_page_on_browser_thread(self, page: Page) -> None:
+        if id(page) not in self._owned_pages:
+            self._borrowed_pages[id(page)] = page
+
+    def _page_owned_by_provider_on_browser_thread(self, page: Page | None) -> bool:
+        return page is not None and id(page) in self._owned_pages
 
     def _prepare_page_on_browser_thread(self, page: Page) -> Page:
         page.set_default_navigation_timeout(_NAV_TIMEOUT_MS)
@@ -247,6 +269,7 @@ class BrowserSearchProvider:
         session = self._ensure_session_on_browser_thread(reuse_url_contains=self._reuse_url_contains)
         context = self._page_context_on_browser_thread(self._search_page or session.page)
         page = context.new_page()
+        self._register_owned_page_on_browser_thread(page)
         self._search_page = page
         if self.bring_to_front:
             self._bring_to_front_on_browser_thread(page)
@@ -257,6 +280,7 @@ class BrowserSearchProvider:
         if self._page_closed_on_browser_thread(self._fetch_page):
             context = self._page_context_on_browser_thread(self._search_page or session.page)
             self._fetch_page = context.new_page()
+            self._register_owned_page_on_browser_thread(self._fetch_page)
             if self.bring_to_front:
                 self._bring_to_front_on_browser_thread(self._fetch_page)
         return self._prepare_page_on_browser_thread(cast(Page, self._fetch_page))
@@ -617,15 +641,12 @@ class BrowserSearchProvider:
         try:
             if (session is not None and session.process is None and not session.owns_browser
                     and not session.owns_context):
-                pages = {id(page): page for page in (self._fetch_page, self._search_page)
-                         if page is not None and page is not session.page}
-                for owned_page in pages.values():
+                for owned_page in tuple(self._owned_pages.values()):
                     self._discard_page_on_browser_thread(owned_page)
                 self._fetch_page = None
-                if self._search_page is not session.page:
-                    self._search_page = None
+                self._search_page = None
             seen_pages: set[int] = set()
-            for page in (self._fetch_page, self._search_page):
+            for page in tuple(self._owned_pages.values()) + tuple(self._borrowed_pages.values()):
                 if page is None or id(page) in seen_pages:
                     continue
                 seen_pages.add(id(page))
@@ -637,6 +658,8 @@ class BrowserSearchProvider:
         finally:
             self._fetch_page = None
             self._search_page = None
+            self._owned_pages.clear()
+            self._borrowed_pages.clear()
             self._session = None
 
     def _release_page_guard_on_browser_thread(self, page: Page | None) -> None:
@@ -653,8 +676,12 @@ class BrowserSearchProvider:
         if page is None:
             return
         self._release_page_guard_on_browser_thread(page)
-        with contextlib.suppress(Exception):
-            page.close()
+        if self._page_owned_by_provider_on_browser_thread(page):
+            with contextlib.suppress(Exception):
+                page.close()
+            self._owned_pages.pop(id(page), None)
+        else:
+            self._borrowed_pages.pop(id(page), None)
 
     def _discard_fetch_page_on_browser_thread(self, page: Page | None) -> None:
         self._discard_page_on_browser_thread(page)

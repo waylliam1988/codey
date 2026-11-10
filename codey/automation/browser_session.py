@@ -313,6 +313,7 @@ class BrowserSession:
         session = self.provider._ensure_session_on_browser_thread()
         context = session.browser.contexts[0] if session.browser.contexts else session.page.context
         page = self.provider._prepare_page_on_browser_thread(context.new_page())
+        self.provider._register_owned_page_on_browser_thread(page)
         self.provider._fetch_page = page
         self._invalidate_refs()
         page.goto(url.strip(), wait_until="domcontentloaded", timeout=20_000)
@@ -329,7 +330,9 @@ class BrowserSession:
         if index < 0 or index >= len(pages):
             return BrowserToolOutput("ERROR: tab index is unavailable", False,
                                      {"action": "tab_switch", "index": index, "delivery": "not_delivered"})
-        self.provider._fetch_page = self.provider._prepare_page_on_browser_thread(pages[index])
+        page = self.provider._prepare_page_on_browser_thread(pages[index])
+        self.provider._register_borrowed_page_on_browser_thread(page)
+        self.provider._fetch_page = page
         self._invalidate_refs()
         return BrowserToolOutput(f"Switched to tab {index}", True,
                                  {"action": "tab_switch", "index": index, "url": pages[index].url,
@@ -337,7 +340,10 @@ class BrowserSession:
 
     def _upload_on_browser_thread(self, ref: str, file: FilePayload) -> BrowserToolOutput:
         cancellation.check()
-        _, handle = self._resolve_ref(ref)
+        try:
+            _, handle = self._resolve_ref(ref)
+        except RuntimeError as exc:
+            return self._stale_ref_output("upload", ref, exc)
         try:
             handle.set_input_files(file)
             selected = handle.evaluate("el => Array.from(el.files, f => ({name:f.name,size:f.size,type:f.type}))")
@@ -358,7 +364,10 @@ class BrowserSession:
 
     def _download_on_browser_thread(self, ref: str) -> BrowserToolOutput:
         cancellation.check()
-        page, handle = self._resolve_ref(ref)
+        try:
+            page, handle = self._resolve_ref(ref)
+        except RuntimeError as exc:
+            return self._stale_ref_output("download", ref, exc)
         try:
             with page.expect_download(timeout=20_000) as pending:
                 handle.click(timeout=5_000, no_wait_after=True)

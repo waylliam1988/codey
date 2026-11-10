@@ -68,3 +68,12 @@
 - 相关生产浏览器回归 30 passed，gate wrapper Ruff/mypy 通过。首次全矩阵的 download 因模型乱码偏离任务去运行 `python -m unittest`，被 shell/no-progress 正确拒绝；将该 gate 的任务合同改成等价 ASCII 后单独重跑通过，最终 `.e2e-artifacts/browser-seven-b7-download-en` 成功工具集合为 browser_navigate/snapshot/download/read/codemode。前五个场景在 `.e2e-artifacts/browser-seven-b7-all` 已通过。
 
 七批工作均已提交；每一批的失败实机记录、根因和修复均保留在对应 artifact 目录。实验脚本现在只保留生产入口调用，不再能证明实验自定义 executor 的行为。
+
+## 后续收尾批次
+
+### 批次 A：页面所有权与 stale 动作回执
+
+- BrowserSearchProvider 记录任务拥有页和借用页。CDP 中已有的用户标签只解除路由，不在任务结束时关闭；任务创建的搜索、读取和新标签仍由 provider 清理。
+- `browser_upload`、`browser_download` 与 click/fill 使用相同的 stale 元素回执，旧引用返回 `reason=stale_ref`，不会进入文件操作。
+- 相关 Chromium 生产测试 29 passed；Ruff、browser_search.py 和 browser_session.py 的 mypy 通过。
+- KoboldCpp + Chromium：`.e2e-artifacts/browser-followup-a` 的 structured full-surface gate 通过。
