@@ -68,3 +68,13 @@ def test_undefined_argument_feedback_uses_the_original_field_contract() -> None:
     )
     assert "Field contract: Use readResult.result_ref." in result.error
 
+
+def test_result_envelope_misuse_reports_the_contract_at_the_original_access() -> None:
+    result = NodeWorkerRuntime().execute(
+        "const r=await tools.browser_snapshot({}); return r.elements.find(e=>e.name==='A');",
+        catalog=(ToolCatalogEntry(name="browser_snapshot", description="observe"),),
+        invoke=lambda *_: {"ok": True, "value": {"elements": []}, "result_ref": "receipt"},
+    )
+    assert not result.ok and result.error_code == "result_contract"
+    assert "unwrap(result).elements" in result.error
+

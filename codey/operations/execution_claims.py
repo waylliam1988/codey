@@ -33,7 +33,10 @@ def validate_execution_claims(session: TaskSession) -> CompletionCheck | None:
             raise ValueError("execution_claims fields must be result_ref, status, exit_code_scope and optional exit_code")
         ref = claim["result_ref"]
         if not isinstance(ref, str) or ref not in receipts or ref in selected:
-            raise ValueError("execution_claims.result_ref must identify a distinct execution receipt from this task")
+            available = json.dumps([observed_claim(key, receipt) for key, receipt in receipts.items()], ensure_ascii=False)
+            raise ValueError("execution_claims.result_ref must identify a distinct execution receipt from this task. "
+                             "Eligible shell/process receipts: " + available + ". Browser actions are operation receipts; "
+                             "omit this optional claim if no eligible receipt exists")
         receipt = receipts[ref]
         if (claim["status"] != receipt.status or claim["exit_code_scope"] != receipt.exit_code_scope
                 or (receipt.exit_code is None and "exit_code" in claim)

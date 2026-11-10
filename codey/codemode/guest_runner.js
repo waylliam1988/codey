@@ -82,6 +82,23 @@ function encodeJson(value, label, errorCode, properties = {}) {
   });
 }
 
+function checkedToolResult(value, name) {
+  if (value === null || typeof value !== "object" || typeof value.ok !== "boolean") return value;
+  return new Proxy(value, {
+    get(target, property, receiver) {
+      if (typeof property === "string" && !["then", "toJSON", "ok", "value", "error", "result_ref"].includes(property)
+          && !Reflect.has(target, property)) {
+        const error = new Error("tools." + name + " returned Result<T>, not its data. Undeclared result field "
+          + JSON.stringify(property) + "; use unwrap(result)." + property + " or result.value." + property
+          + ". Receipt metadata result_ref stays on result.");
+        error.code = "result_contract";
+        throw error;
+      }
+      return Reflect.get(target, property, receiver);
+    },
+  });
+}
+
 function toolsProxy(path = []) {
   const callable = (args = {}) => {
     const name = path.join(".");
@@ -99,7 +116,7 @@ function toolsProxy(path = []) {
     const callId = `call-${++nextCall}`;
     active.calls += 1;
     active.pending += 1;
-    const result = trackedCall(callId);
+    const result = trackedCall(callId, false, name);
     send({ type: "call", callId, name, args: JSON.parse(encodedArgs) });
     return result;
   };
@@ -125,14 +142,14 @@ function stateCall(op, key, value) {
   return result;
 }
 
-function trackedCall(callId, state = false) {
+function trackedCall(callId, state = false, name = "") {
   let resolve;
   let reject;
   const promise = new Promise((accept, decline) => {
     resolve = accept;
     reject = decline;
   });
-  const record = { resolve, reject, state, observed: false };
+  const record = { resolve, reject, state, name, observed: false };
   pending.set(callId, record);
   active.issued.set(callId, record);
   return Object.freeze({
@@ -271,7 +288,7 @@ return async (line) => {
     if (!waiter) return;
     pending.delete(message.callId);
     if (active && message.type === "result") active.pending = Math.max(0, active.pending - 1);
-    if (message.ok) waiter.resolve(message.value); else {
+    if (message.ok) waiter.resolve(waiter.state ? message.value : checkedToolResult(message.value, waiter.name)); else {
       const error = new Error(String(message.error ?? "tool call failed"));
       error.code = String(message.errorCode ?? "tool_error");
       waiter.reject(error);

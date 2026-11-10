@@ -6,6 +6,7 @@ import binascii
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from codey.storage.file_lock import with_file_lock
@@ -13,6 +14,19 @@ from codey.storage.local_store import read_json_strict, session_key, write_json_
 from codey.task.attachments import MAX_ATTACHMENT_BYTES, public_attachment, validate_attachments
 
 MAX_SESSION_BYTES = 32 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class InputAttachmentFile:
+    name: str
+    media_type: str
+    data: bytes
+
+
+def _content_bytes(item: dict[str, object]) -> bytes:
+    if item["media_type"] == "text/plain":
+        return str(item["text"]).encode("utf-8")
+    return base64.b64decode(str(item["data_url"]).split(",", 1)[1], validate=True)
 
 
 class InputAttachmentStore:
@@ -78,12 +92,17 @@ class InputAttachmentStore:
         expected_id = "att_" + hashlib.sha256((str(result["name"]) + "\0" + str(result["sha256"])).encode()).hexdigest()
         if expected_id != identity:
             raise ValueError("Attachment metadata is corrupted.")
-        raw = str(result.get("text", "")).encode("utf-8") if result["media_type"] == "text/plain" else base64.b64decode(str(result["data_url"]).split(",", 1)[1], validate=True)
+        raw = _content_bytes(result)
         # UTF-8 BOM is normalized at import; image bytes remain exact.
         expected = result.get("text_sha256") if result["media_type"] == "text/plain" else result["sha256"]
         if hashlib.sha256(raw).hexdigest() != expected:
             raise ValueError("Attachment content is corrupted.")
         return result
+
+    def read_file(self, identity: object) -> InputAttachmentFile:
+        """Expose verified selected bytes; never interpret a model-supplied path."""
+        item = self.read(identity)
+        return InputAttachmentFile(str(item["name"]), str(item["media_type"]), _content_bytes(item))
 
 
 def _media_type(data: bytes) -> str:

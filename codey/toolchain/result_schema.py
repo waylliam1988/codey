@@ -40,7 +40,8 @@ def browser_output_schema(name: str) -> dict[str, object]:
             "index": integer, "page_id": string, "url": string, "title": string})}}),
         "browser_tab_new": record({**action, **page}),
         "browser_tab_switch": record({**action, "index": integer, "url": string}),
-        "browser_upload": record(observed),
+        "browser_upload": record({**action, "ref": string, "attachment_id": string, "name": string,
+                                  "media_type": string, "bytes": integer, "sha256": string, "effect_verified": boolean}),
         "browser_download": record({**action, "ref": string, "path": string, "suggested_filename": string}),
         "browser_read": text_output_schema(),
     }

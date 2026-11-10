@@ -10,7 +10,7 @@
 | 2 | 同时间采集版本排序、旧 handle 与乱序 replay；对齐 CodeMode 授权 fixture | 完成 |
 | 3 | 子调用失败的原回执反馈与 Hybrid 修复验收，保留显式错误处理 | 完成 |
 | 4 | 浏览器各工具实际输出的 schema 与 CodeMode 声明 | 完成 |
-| 5 | 上传的项目/附件文件授权与真实文件回执 | 待开始 |
+| 5 | 上传的用户选定附件授权与真实文件回执 | 完成 |
 | 6 | 下载启用、持久化存储、摘要与回执 | 待开始 |
 | 7 | 完整能力 gate 迁移到生产合同；Chat/Research/Hybrid 集成验收 | 待开始 |
 
@@ -44,3 +44,12 @@
 - 补明 browser_eval 的参数语法：表达式或函数，不是 CodeMode 函数体。模型曾连续传入裸 return；这是必要的工具语法合同，未加任务专用 prompt，也未对失败脚本自动改写重执行。
 - 相关 schema/恢复/unwrap 共 21 passed；通用 schema/递归校验/合同漂移另 10 passed（扩大原因：共享 schema 增加 anyOf/null 支持）。Ruff、三份生产文件 mypy 通过。
 - 最终实机 `.e2e-artifacts/browser-seven-b4-eval-contract` 通过；所有要求的工具均有成功原回执，脚本 token、当前页 URL、正文结果都正确。此前失败记录保留，不将 marker 命中误当成完整通过。
+
+## 批次 5
+
+- 复用 InputAttachmentStore 的会话授权、不可变内容、摘要校验和既有体积/格式限制。browser_upload 接受当前会话用户已导入的 attachment_id，不接受任意宿主路径；通过内存字节选择文件，避免另建文件授权名单和存储。项目文件须由用户通过已有附件导入入口选定。
+- 回执校验真实 file input 的文件名、大小和 MIME，SHA256 是实际传递字节（文本 BOM 沿用原导入规范化）；不宣称服务端已收到或提交。跨会话、路径、内容损坏均拒绝，操作不产生引用。
+- 实机暴露成功 snapshot 被父异常遮住，以及 Result<T> 当作数据直接取字段。原回执派生最近控件观察，原 guest 对返回 envelope 的未声明字段访问给出准确合同错误；保留 unwrap、optional 元数据和程序显式处理失败。
+- 文件摘要进入已有 operation_receipts；非法 execution_claims 返回真实可用 shell/process 回执，避免把浏览器操作误当成进程执行。未放松完成检查或增加 Hybrid prompt。
+- 验证：上传/附件存储/注册合同 26 passed；上传/子反馈/执行声明与恢复 43 passed；guest 相关 runtime/unwrap/repair 等 60 passed。Ruff、七份生产文件 mypy 通过，无显式 Any。
+- 最终实机 `.e2e-artifacts/browser-seven-b5-file-receipts` 通过；真实选入 fixture.txt，页面读到 UPLOAD_BYTES_82，答案摘要与实际字节 SHA256 一致。中间的失败记录保留。模型最后引用了较冗长的原文，属于回答质量限制，不把它宣称为任意上传任务的稳定成功率。

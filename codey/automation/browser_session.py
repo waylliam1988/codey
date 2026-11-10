@@ -7,13 +7,14 @@ the ordinary kernel ``ToolResult`` receipt.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from dataclasses import dataclass
 from typing import cast
 from uuid import uuid4
 
-from playwright.sync_api import ElementHandle, Error, Page
+from playwright.sync_api import ElementHandle, Error, FilePayload, Page
 
 from codey.research.browser_search import (
     BrowserSearchProvider,
@@ -107,8 +108,8 @@ class BrowserSession:
     def tab_switch(self, index: int) -> BrowserToolOutput:
         return _search_browser_call(self._tab_switch_on_browser_thread, index)
 
-    def upload(self, ref: str, path: str) -> BrowserToolOutput:
-        return _search_browser_call(self._upload_on_browser_thread, ref, path)
+    def upload(self, ref: str, file: FilePayload) -> BrowserToolOutput:
+        return _search_browser_call(self._upload_on_browser_thread, ref, file)
 
     def download(self, ref: str) -> BrowserToolOutput:
         return _search_browser_call(self._download_on_browser_thread, ref)
@@ -334,16 +335,26 @@ class BrowserSession:
                                  {"action": "tab_switch", "index": index, "url": pages[index].url,
                                   "delivery": "delivered"})
 
-    def _upload_on_browser_thread(self, ref: str, path: str) -> BrowserToolOutput:
-        page, handle = self._resolve_ref(ref)
+    def _upload_on_browser_thread(self, ref: str, file: FilePayload) -> BrowserToolOutput:
+        cancellation.check()
+        _, handle = self._resolve_ref(ref)
         try:
-            handle.set_input_files(path)
+            handle.set_input_files(file)
+            selected = handle.evaluate("el => Array.from(el.files, f => ({name:f.name,size:f.size,type:f.type}))")
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
         except Exception as exc:
             self._invalidate_refs()
             return BrowserToolOutput(f"ERROR: upload failed: {exc}", False,
                                      {"action": "upload", "ref": ref, "delivery": "uncertain"})
         self._invalidate_refs()
-        return self._action_observation(page, "upload", ref)
+        data = file["buffer"]
+        verified = selected == [{"name": file["name"], "size": len(data), "type": file["mimeType"]}]
+        return BrowserToolOutput("File input selection " + ("verified" if verified else "unverified"), verified,
+                                 {"action": "upload", "ref": ref,
+                                  "delivery": "verified" if verified else "unverified", "effect_verified": False,
+                                  "name": file["name"], "media_type": file["mimeType"],
+                                  "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
 
     def _download_on_browser_thread(self, ref: str) -> BrowserToolOutput:
         page, handle = self._resolve_ref(ref)

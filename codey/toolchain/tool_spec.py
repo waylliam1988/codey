@@ -313,10 +313,11 @@ def _browser_specs() -> dict[str, ToolSpec]:
         "browser_upload": ToolSpec(
             name="browser_upload", grant="browser.effect", executor="browser",
             namespace="browser.effect", effect="external_effect",
-            parameters=(("ref", {"type": "string"}), ("path", {"type": "string", "minLength": 1})),
-            required=("ref", "path"),
-            description="Upload an authorized local file through a file input ref.",
-            json_examples=('{"tool":"browser_upload","args":{"ref":"<snapshot ref>","path":"file.txt"}}',),
+            parameters=(("ref", {"type": "string"}),
+                        ("attachment_id", {"type": "string", "pattern": "^att_[a-f0-9]{64}$"})),
+            required=("ref", "attachment_id"),
+            description="Select a user-imported attachment from this chat in a file input. Returns verified selection metadata, not proof of server submission. Host filesystem paths are not accepted.",
+            json_examples=('{"tool":"browser_upload","args":{"ref":"<snapshot ref>","attachment_id":"<user attachment id>"}}',),
             preconditions=("browser_bound", "fresh_snapshot", "explicit_file_authorization"),
         ),
         "browser_download": ToolSpec(

@@ -276,6 +276,7 @@ def _child_failure_context(result: ToolResult, session: TaskSession) -> str:
     references = result.canonical.get("child_effect_ids")
     failures: list[JsonObject] = []
     reads: list[JsonObject] = []
+    observations: list[JsonObject] = []
     if isinstance(references, list):
         for reference in references:
             child = session._memory_results.get(reference) if isinstance(reference, str) else None
@@ -285,8 +286,14 @@ def _child_failure_context(result: ToolResult, session: TaskSession) -> str:
             elif child is not None and child.call.name == "read_file":
                 reads.append({"result_ref": reference, "tool": child.call.name,
                               "path": child.call.args.get("path"), "ok": True})
+            elif child is not None and not result.ok and child.call.name == "browser_snapshot":
+                value = child.canonical.get("value")
+                if isinstance(value, dict):
+                    observations.append({"result_ref": reference, "tool": child.call.name,
+                                         "page_url": value.get("page_url"), "elements": value.get("elements")})
     return ("\n\nChild failure receipts (parent status is the program outcome):\n"
-            + json.dumps({"failed": failures[-12:], "file_reads": reads[-12:]}, ensure_ascii=False)) if failures else ""
+            + json.dumps({"failed": failures[-12:], "file_reads": reads[-12:],
+                          "observations": observations[-1:]}, ensure_ascii=False)) if failures or observations else ""
 
 
 def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
@@ -435,7 +442,8 @@ def operation_receipts(session: TaskSession) -> list[JsonObject]:
         status = value if isinstance(value, dict) else {}
         row: JsonObject = {"result_ref": identity, "tool": result.call.name, "ok": result.ok}
         for key in ("action", "delivery", "page_id", "page_url", "generation", "reason",
-                    "matched", "effect_verified", "value_length"):
+                    "matched", "effect_verified", "value_length", "name", "bytes", "sha256",
+                    "suggested_filename", "handle", "path"):
             if key in status:
                 row[key] = status[key]
         rows.append(row)

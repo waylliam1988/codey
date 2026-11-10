@@ -12,7 +12,7 @@ from __future__ import annotations
 import contextlib
 import copy
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -299,8 +299,7 @@ class ExecutionDelegate:
         except Exception as exc:
             return ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
 
-    @staticmethod
-    def _browser_action(browser: BrowserSession, call: ToolCall) -> BrowserToolOutput:
+    def _browser_action(self, browser: BrowserSession, call: ToolCall) -> BrowserToolOutput:
         args = call.args
         ref = str(args.get("ref") or "")
         if call.name == "browser_snapshot":
@@ -326,7 +325,14 @@ class ExecutionDelegate:
         if call.name == "browser_tab_switch":
             return browser.tab_switch(require_json_integer(args.get("index"), "index"))
         if call.name == "browser_upload":
-            return browser.upload(ref, str(args.get("path") or ""))
+            from codey.storage.input_attachments import InputAttachmentStore
+
+            if self.managed_outputs is None or not self.session_id:
+                raise ValueError("task-scoped attachment storage unavailable")
+            identity = str(args.get("attachment_id") or "")
+            file = InputAttachmentStore(self.managed_outputs.root.parent, self.session_id).read_file(identity)
+            output = browser.upload(ref, {"name": file.name, "mimeType": file.media_type, "buffer": file.data})
+            return replace(output, observation={**output.observation, "attachment_id": identity})
         if call.name == "browser_download":
             return browser.download(ref)
         raise ValueError(f"unsupported browser tool {call.name}")

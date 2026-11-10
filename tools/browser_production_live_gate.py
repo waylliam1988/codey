@@ -7,6 +7,8 @@ It exercises a controlled page, not general autonomous website reliability.
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import os
 import re
@@ -29,6 +31,7 @@ from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.research.browser_search import BrowserSearchProvider
+from codey.storage.input_attachments import InputAttachmentStore
 from tools import local_model_gate_attempts as attempts
 from tools.shell_web_diagnostic_gate import select_target
 
@@ -39,6 +42,8 @@ HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Production bro
 document.querySelector('article').textContent='福州样本：鱼丸净重为 173 克。记录校验码 QUARTZ_851。';
 } else { document.querySelector('article').textContent='请先填写福州'; }">Load record</button>
 <article>尚未加载记录。请填写 Locality 并点击 Load record。</article>
+<label>Attachment<input type="file" onchange="this.files[0].text().then(t => document.querySelector('#uploaded').textContent=this.files[0].name+':'+t)"></label>
+<p id="uploaded">No file selected</p>
 <script>window.__contractToken='SCHEMA_TOKEN_74';</script></body></html>"""
 
 
@@ -50,7 +55,8 @@ class ProductionRecordingProvider(attempts.RecordingProvider):
 
 
 def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore_snapshots: bool = False,
-             reread: bool = False, stale_edit: bool = False, structured: bool = False) -> dict[str, object]:
+             reread: bool = False, stale_edit: bool = False, structured: bool = False,
+             upload_file: bool = False) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     events: list[dict[str, object]] = []
@@ -113,6 +119,15 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
     required = {"browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read"}
     if structured:
         required.update({"browser_eval", "browser_tab_list"})
+    session_id = "browser-file-fixture" if upload_file else ""
+    if upload_file:
+        attachment = InputAttachmentStore(directory / "state", session_id).put(
+            "fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode("ascii"))
+        task = (f"用户授权浏览器上传已选择的附件 fixture.txt，attachment_id={attachment['id']}。"
+                f"用 codemode 的浏览器工具打开 {URL}，snapshot 找到名称为『Attachment』的文件输入框，"
+                "browser_upload 选择这个附件，browser_wait 等待页面出现 UPLOAD_BYTES_82，再 browser_read。"
+                "用 done 报告实际文件名、文件内容标记和选择回执的 SHA256。不要修改项目或运行命令。")
+        required = {"browser_navigate", "browser_snapshot", "browser_upload", "browser_wait", "browser_read"}
     try:
         with tempfile.TemporaryDirectory(prefix="codey-browser-live-project-") as temporary, ExitStack() as stack:
             project = Path(temporary)
@@ -130,9 +145,10 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
             stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory))
             result = run_headless(HeadlessRequest(
                 project if mode == "hybrid" else None, task, intent=mode, provider_id="local", max_turns=12,
+                session_id=session_id,
                 state_home=directory / "state", research_store_root=directory / "knowledge",
                 requested_capabilities=("web.read", "browser.observe", "browser.interact", *(
-                    ("browser.effect",) if structured else ())),
+                    ("browser.effect",) if structured or upload_file else ())),
                 project_changes_required=mode == "hybrid", required_tools=tuple(sorted(required)),
                 model_selection={"model": target.model, "base_url": target.base_url},
             ), emit_jsonl=observe, connect_provider=connect)
@@ -145,7 +161,10 @@ def run_case(directory: Path, mode: str, target: attempts.GateTarget, *, restore
                     for row in events)
         failed_edits = sum(row.get("type") == "tool" and row.get("tool_name") == "edit" and row.get("ok") is False
                            for row in events)
-        passed = (result.stop_reason == "done" and required <= successful and "173" in answer and "QUARTZ_851" in answer
+        facts_match = ("fixture.txt" in answer and "UPLOAD_BYTES_82" in answer
+                       and hashlib.sha256(b"UPLOAD_BYTES_82\n").hexdigest() in answer) if upload_file else (
+            "173" in answer and "QUARTZ_851" in answer)
+        passed = (result.stop_reason == "done" and required <= successful and facts_match
                   and (not reread or reads >= 2)
                   and (not stale_edit or changed_after_read and failed_edits >= 1)
                   and (not structured or "SCHEMA_TOKEN_74" in answer and URL in answer)
@@ -173,6 +192,7 @@ def main() -> int:
     parser.add_argument("--reread", action="store_true", help="Read changed source twice with a fixed acquisition clock.")
     parser.add_argument("--stale-edit", action="store_true", help="Change the file after its first read; require edit recovery.")
     parser.add_argument("--structured", action="store_true", help="Exercise eval.value and tab_list.tabs declarations.")
+    parser.add_argument("--upload-file", action="store_true", help="Upload an explicitly imported task attachment.")
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
     args = parser.parse_args()
     root = args.run_dir.resolve()
@@ -183,7 +203,7 @@ def main() -> int:
     for mode in modes:
         print(json.dumps({"starting": mode}), flush=True)
         row = run_case(root / mode, mode, target, restore_snapshots=args.restore_snapshots, reread=args.reread,
-                       stale_edit=args.stale_edit, structured=args.structured)
+                       stale_edit=args.stale_edit, structured=args.structured, upload_file=args.upload_file)
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
     summary = {"passed": sum(row["passed"] is True for row in rows), "runs": len(rows), "results": rows}
