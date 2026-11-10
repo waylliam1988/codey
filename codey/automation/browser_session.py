@@ -10,27 +10,27 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TypeVar, cast
+from typing import TypeVar
 from uuid import uuid4
 
 from playwright.sync_api import ElementHandle, Error, FilePayload, Page
 
+from codey.automation.browser_binding import BrowserBinding
 from codey.policies.network import check_fetch_url
-from codey.research.browser_search import (
-    BrowserSearchProvider,
-    _fetch_page_content_after_settle,
-    _search_browser_call,
+from codey.research.browser_page import (
     _validate_page_content_type,
     _validate_page_observation,
     _validate_page_status,
 )
+from codey.research.browser_search import BrowserSearchProvider, _fetch_page_content_after_settle, _search_browser_call
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.extract import _MAX_PAGE_CHARS, extract_title
 from codey.research.source_acquisition import with_attempt
 from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
+from codey.runtime.core.models import ToolResult
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_value
 
 MAX_SNAPSHOT_ELEMENTS = 80
@@ -56,11 +56,11 @@ class _ElementRef:
 
 def _browser_call(fn: Callable[..., T], *args: object) -> T:
     """Keep the browser worker boundary typed when its runtime is imported lazily."""
-    return cast(T, _search_browser_call(fn, *args))
+    return _search_browser_call(fn, *args)
 
 
 def _browser_attempt(page: dict[str, object], url: str) -> dict[str, object]:
-    return cast(dict[str, object], with_attempt(page, "browser", url))
+    return with_attempt(page, "browser", url)
 
 
 def _base_provider(provider: object) -> BrowserSearchProvider:
@@ -82,6 +82,23 @@ class BrowserSession:
         self._refs: dict[str, _ElementRef] = {}
         self._page_ids: dict[Page, str] = {}
         self._navigation_facts: dict[int, tuple[int | None, str]] = {}
+        self._recovery_checked = False
+
+    def prepare_from_receipts(self, results: Iterable[ToolResult]) -> None:
+        """Project committed metadata once; connecting waits until an actual browser call."""
+        if self._recovery_checked:
+            return
+        latest: BrowserBinding | None = None
+        for result in results:
+            if result.call.name.startswith("browser_") and "browser_resource" in result.audit:
+                latest = BrowserBinding.read(result.audit["browser_resource"])
+        if self.provider._session is None:
+            self.provider._resume_binding = latest
+        self._recovery_checked = True
+
+    def resource_binding(self) -> JsonObject | None:
+        binding = _browser_call(self.provider._binding_on_browser_thread)
+        return binding.payload() if binding is not None else None
 
     @classmethod
     def from_provider(cls, provider: object) -> BrowserSession:
@@ -132,6 +149,8 @@ class BrowserSession:
         return _browser_call(self._capture_on_browser_thread)
 
     def _page_on_browser_thread(self) -> Page:
+        if self.provider._resume_binding is not None:
+            self.provider._ensure_session_on_browser_thread()
         page = self.provider._fetch_page
         if page is None or page.is_closed():
             raise RuntimeError(
@@ -185,7 +204,7 @@ class BrowserSession:
                 + (" disabled" if row["disabled"] else "") for row in elements]
         text = (f"Page URL: {page.url}\nObservation generation: {self._generation}\n"
                 f"Visible text:\n{body}\nInteractive elements:\n" + "\n".join(rows))
-        elements_value: list[JsonValue] = [cast(JsonValue, row) for row in elements]
+        elements_value: list[JsonValue] = [row for row in elements]
         return BrowserToolOutput(text, True, {
             "page_id": self._page_id(page), "page_url": page.url, "generation": self._generation,
             "complete": len(body) == len(full_text) and not elements_truncated,
@@ -310,7 +329,7 @@ class BrowserSession:
             return BrowserToolOutput("ERROR: browser_eval needs code", False,
                                      {"action": "eval", "delivery": "not_delivered"})
         try:
-            value = page.evaluate(code)
+            value: object = page.evaluate(code)
             canonical = decode_json_value(value)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
@@ -328,6 +347,8 @@ class BrowserSession:
                                   "truncated": truncated})
 
     def _tab_list_on_browser_thread(self) -> BrowserToolOutput:
+        if self.provider._resume_binding is not None:
+            self.provider._ensure_session_on_browser_thread()
         session = self.provider._session
         if session is None:
             raise RuntimeError("no browser session")
@@ -366,6 +387,8 @@ class BrowserSession:
                                   "http_status": status, "content_type": content_type})
 
     def _tab_switch_on_browser_thread(self, index: int) -> BrowserToolOutput:
+        if self.provider._resume_binding is not None:
+            self.provider._ensure_session_on_browser_thread()
         session = self.provider._session
         if session is None:
             raise RuntimeError("no browser session")
@@ -390,7 +413,7 @@ class BrowserSession:
             return self._stale_ref_output("upload", ref, exc)
         try:
             handle.set_input_files(file)
-            selected = handle.evaluate("el => Array.from(el.files, f => ({name:f.name,size:f.size,type:f.type}))")
+            selected: object = handle.evaluate("el => Array.from(el.files, f => ({name:f.name,size:f.size,type:f.type}))")
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
@@ -433,6 +456,16 @@ class BrowserSession:
     def _capture_on_browser_thread(self) -> dict[str, object]:
         page = self._page_on_browser_thread()
         response_status, content_type = self._navigation_facts.get(id(page), (None, ""))
+        # A resumed/borrowed document has no trustworthy process-local navigation
+        # response. Observe the surviving document rather than replaying old headers.
+        if id(page) not in self._navigation_facts:
+            observed = canonical_json_object(page.evaluate("""() => ({
+                status: performance.getEntriesByType('navigation')[0]?.responseStatus || 0,
+                content_type: document.contentType
+            })"""))
+            status = observed["status"]
+            response_status = status if isinstance(status, int) and not isinstance(status, bool) and status > 0 else None
+            content_type = str(observed["content_type"])
         invalid = (_validate_page_status(page.url, response_status)
                    or _validate_page_content_type(page.url, content_type))
         if invalid is not None:
@@ -454,7 +487,7 @@ class BrowserSession:
         if entry is None or entry.page_token != id(page) or entry.generation != self._generation or entry.url != page.url:
             raise RuntimeError("stale browser element reference; take a fresh browser_snapshot")
         try:
-            connected = entry.handle.evaluate("el => el.isConnected && el.ownerDocument === document")
+            connected: object = entry.handle.evaluate("el => el.isConnected && el.ownerDocument === document")
         except Error as exc:
             raise RuntimeError("stale browser element reference; document is no longer available") from exc
         if connected is not True:

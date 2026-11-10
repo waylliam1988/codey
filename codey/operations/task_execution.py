@@ -272,6 +272,27 @@ class ExecutionDelegate:
         if browser is None:
             return ToolResult(ok=False, call=call, model_text="ERROR: browser session unavailable"), False, None
         try:
+            assert self.session is not None
+            with self.session.projection_lock:
+                browser.prepare_from_receipts(tuple(self.session._memory_results.values()))
+            result, ok, code = self._execute_browser_operation(browser, call, turn=turn, tool_index=tool_index)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception as exc:
+            result, ok, code = ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}"), False, None
+        try:
+            binding = browser.resource_binding()
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception as exc:
+            return replace(result, ok=False, model_text=result.model_text + f"\nERROR: browser resource identity unavailable: {exc}"), False, code
+        if binding is not None:
+            result = replace(result, audit={**result.audit, "browser_resource": binding})
+        return result, ok, code
+
+    def _execute_browser_operation(self, browser: BrowserSession, call: ToolCall, *, turn: int,
+                                   tool_index: int) -> tuple[ToolResult, bool, int | None]:
+        try:
             if call.name == "browser_read":
                 if not self._reserve_research_acquisition(call.name, turn, tool_index):
                     return ToolResult(ok=False, call=call,

@@ -314,6 +314,8 @@ class KernelContext:
         if tools is not None:
             from codey.operations.research_continuation import ResearchContinuation
             ResearchContinuation.project_urls(tools)
+            if tools.browser_session is not None:
+                tools.browser_session.prepare_from_receipts(tuple(self.session._memory_results.values()))
 
     def restore_completion_proposal(self, effect: RuntimeEffectProjection) -> None:
         """Rebuild proposal metadata from its original response, without a gate."""

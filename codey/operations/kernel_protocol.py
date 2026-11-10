@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
@@ -355,7 +355,7 @@ def _grant_for_tool(tool: str) -> str:
     if spec is None or not spec.grant:
         # Unknown tools are denied, never passed as control.
         return ""
-    return cast(str, spec.grant)
+    return spec.grant
 
 
 def _canonical_name(tool: str) -> str:
@@ -364,7 +364,7 @@ def _canonical_name(tool: str) -> str:
     except Exception:
         return (tool or "").strip().lower()
     try:
-        name = cast(str, canonical_tool_name(tool))
+        name = canonical_tool_name(tool)
         return name
     except Exception:
         return (tool or "").strip().lower()

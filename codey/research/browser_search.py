@@ -10,28 +10,40 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar
 from urllib.parse import ParseResult, parse_qs, quote_plus, unquote, urlparse
 
-from playwright.sync_api import BrowserContext, ElementHandle, Page, Request, Response, Route
-from playwright.sync_api import Error as BrowserError
+from playwright.sync_api import BrowserContext, ElementHandle, Page, Route
 
 from codey.automation import browser_worker
 from codey.automation.browser import DEFAULT_PORT, Session, open_chat_page, open_headless_page
 from codey.policies.network import check_fetch_url
 from codey.research import source_download
+from codey.research.browser_page import (
+    _application_content_pending,
+    _page_content_after_navigation,
+    _PageFailures,
+    _validate_page_content_type,
+    _validate_page_observation,
+    _validate_page_status,
+)
+from codey.research.browser_page import (
+    _requires_login as _requires_login,
+)
 from codey.research.extract import (
     _MAX_PAGE_CHARS,
     _clean_space,
-    _fetch_page_failure_kind,
     _usable_fetch_page_text,
     extract_text,
     extract_title,
 )
-from codey.research.source_acquisition import SourceFailureCode, http_failure_code, with_attempt
+from codey.research.source_acquisition import with_attempt
 from codey.runtime.core import cancellation
 from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+
+if TYPE_CHECKING:
+    from codey.automation.browser_binding import BrowserBinding
 
 _PROFILES_PATH = Path(__file__).with_name("search_profiles.json")
 RESEARCH_PROFILE = DEFAULT_STATE_HOME / "research-edge-profile"
@@ -45,98 +57,10 @@ _FETCH_TOTAL_TIMEOUT_SECONDS = 16.0
 _FETCH_SETTLE_TIMEOUT_SECONDS = 8.0
 _FETCH_SETTLE_TICK = 0.5
 _CLOSE_TIMEOUT_SECONDS = 3.0
-_CONTENT_RETRY_TIMEOUT = 3.0
-_CONTENT_RETRY_TICK = 0.2
 _PAGE_GUARD_ATTRIBUTE = "_codey_research_guarded"
 T = TypeVar("T")
 _SEARCH_WORKER_LOCK = threading.Lock()
 _SEARCH_WORKER: browser_worker.BrowserWorker | None = None
-
-
-class _PageFailures:
-    """Bounded observations for one navigation; unrelated errors cannot veto usable text."""
-
-    def __init__(self, page: Page) -> None:
-        self.page = page
-        self.errors: list[tuple[SourceFailureCode, str]] = []
-        page.on("pageerror", self.script_error)
-        page.on("requestfailed", self.request_failed)
-        page.on("response", self.response_failed)
-
-    def script_error(self, error: BrowserError) -> None:
-        if len(self.errors) < 8:
-            self.errors.append(("render_script_error", "render_script_error: " + error.message[:240]))
-
-    def request_failed(self, request: Request) -> None:
-        if request.resource_type in {"script", "xhr", "fetch"} and len(self.errors) < 8:
-            self.errors.append(("render_request_failed", "render_request_failed: " + (request.failure or "unknown")[:240]))
-
-    def response_failed(self, response: Response) -> None:
-        if response.status >= 400 and response.request.resource_type in {"script", "xhr", "fetch"} and len(self.errors) < 8:
-            self.errors.append(("render_request_failed", f"render_request_failed: HTTP {response.status}"))
-
-    def failure(self, text: str) -> tuple[SourceFailureCode, str]:
-        if self.errors:
-            return self.errors[0][0], "; ".join(detail for _code, detail in self.errors)
-        detail = "render_timeout" if _application_content_pending(self.page) else _fetch_page_failure_kind(text)
-        return ("access_restricted" if detail == "page_unavailable" else "page_not_loaded"), detail
-
-    def close(self) -> None:
-        self.page.remove_listener("pageerror", self.script_error)
-        self.page.remove_listener("requestfailed", self.request_failed)
-        self.page.remove_listener("response", self.response_failed)
-
-
-def _requires_login(page: Page, text: str) -> bool:
-    return (len(text) < 1500 and any(marker in text.casefold() for marker in ("log in", "sign in", "登录", "登入"))
-            and page.query_selector('input[type="password"]') is not None)
-
-
-def _validate_page_status(url: str, response_status: int | None) -> dict[str, object] | None:
-    """Reject failed responses before reading the DOM or selecting a PDF download."""
-    if response_status is not None and response_status >= 400:
-        return source_download._fetch_failure(
-            url, f"could not load page: HTTP {response_status}",
-            code=http_failure_code(response_status), delivery="confirmed", http_status=response_status,
-        )
-    return None
-
-
-def _validate_page_content_type(url: str, content_type: str) -> dict[str, object] | None:
-    normalized_type = content_type.lower()
-    if normalized_type and not any(kind in normalized_type for kind in ("html", "text", "xml", "json")):
-        return source_download._fetch_failure(
-            url, f"unsupported content type: {normalized_type}", status="skipped",
-            code="unsupported_content", delivery="confirmed",
-        )
-    return None
-
-
-def _validate_page_observation(
-    page: Page,
-    url: str,
-    html: str,
-    text: str,
-    *,
-    failures: _PageFailures | None = None,
-) -> dict[str, object] | None:
-    """Validate visible content after response checks and DOM settling."""
-    if _requires_login(page, text):
-        return source_download._fetch_failure(
-            url, "login_required: page requires authentication",
-            code="login_required", delivery="confirmed",
-        )
-    if not _usable_fetch_page_text(text):
-        if failures is None:
-            detail = _fetch_page_failure_kind(text)
-            code: SourceFailureCode = "access_restricted" if detail == "page_unavailable" else "page_not_loaded"
-        else:
-            code, detail = failures.failure(text)
-        return source_download._fetch_failure(
-            url, "page had no usable visible content after navigation: " + detail,
-            title=extract_title(html), code=code, delivery="confirmed",
-        )
-    return None
 
 
 class SearchUnavailableError(RuntimeError):
@@ -245,13 +169,17 @@ class BrowserSearchProvider:
         # it may discard.
         self._owned_pages: dict[int, Page] = {}
         self._borrowed_pages: dict[int, Page] = {}
+        self._resume_binding: BrowserBinding | None = None
+        self._cdp_browser_id = ""
         self._last_worker_health: dict[str, object] = {}
         self.last_search_errors: list[dict[str, str]] = []
         self.last_search_failure: dict[str, str] = {}
 
     def _ensure_session_on_browser_thread(self, *, reuse_url_contains: str = "") -> Session:
+        if self._session is None and self._resume_binding is not None:
+            self._reattach_on_browser_thread()
         if self._session is not None:
-            connected = getattr(self._session.browser, "is_connected", None)
+            connected: object = getattr(self._session.browser, "is_connected", None)
             if callable(connected) and not connected():
                 self._close_on_browser_thread()
         if self._session is not None:
@@ -310,7 +238,8 @@ class BrowserSearchProvider:
                 self._search_page = self._page_context_on_browser_thread(session.page).new_page()
             if self.bring_to_front:
                 self._bring_to_front_on_browser_thread(self._search_page)
-        return self._prepare_page_on_browser_thread(cast(Page, self._search_page))
+        assert self._search_page is not None
+        return self._prepare_page_on_browser_thread(self._search_page)
 
     def _replace_search_page_on_browser_thread(self) -> Page:
         session = self._ensure_session_on_browser_thread(reuse_url_contains=self._reuse_url_contains)
@@ -330,7 +259,45 @@ class BrowserSearchProvider:
             self._register_owned_page_on_browser_thread(self._fetch_page)
             if self.bring_to_front:
                 self._bring_to_front_on_browser_thread(self._fetch_page)
-        return self._prepare_page_on_browser_thread(cast(Page, self._fetch_page))
+        assert self._fetch_page is not None
+        return self._prepare_page_on_browser_thread(self._fetch_page)
+
+    def _binding_on_browser_thread(self) -> BrowserBinding | None:
+        from codey.automation.browser_binding import describe_binding
+
+        session, current = self._session, self._fetch_page
+        if session is None or session.cdp_port == 0 or current is None or current.is_closed():
+            return self._resume_binding
+        binding = describe_binding(session, current, tuple(self._owned_pages.values()), tuple(self._borrowed_pages.values()),
+                                   browser_id=self._cdp_browser_id)
+        self._cdp_browser_id = binding.browser_id
+        return binding
+
+    def _reattach_on_browser_thread(self) -> None:
+        from codey.automation.browser_binding import connect_binding
+
+        binding = self._resume_binding
+        assert binding is not None
+        session, pages = connect_binding(binding, timeout_ms=_NAV_TIMEOUT_MS)
+        try:
+            self._session = session
+            self._cdp_browser_id = binding.browser_id
+            for prior, page in pages:
+                if prior.owned:
+                    self._register_owned_page_on_browser_thread(page)
+                else:
+                    self._register_borrowed_page_on_browser_thread(page)
+                self._prepare_page_on_browser_thread(page)
+            self._fetch_page = session.page
+            self._resume_binding = None
+        except BaseException:
+            for _, page in pages:
+                self._release_page_guard_on_browser_thread(page)
+            self._session = None
+            self._owned_pages.clear()
+            self._borrowed_pages.clear()
+            session.pw.stop()
+            raise
 
     def _prepare_fetch_page_on_browser_thread(self, url: str) -> Page:
         cancellation.check()
@@ -480,7 +447,7 @@ class BrowserSearchProvider:
             )
         # Search pages may paint navigation before their result blocks. A
         # populated page body alone must not win that race as "no results".
-        wait = getattr(page, "wait_for_selector", None)
+        wait: object = getattr(page, "wait_for_selector", None)
         remaining_ms = int(max(0.0, deadline - time.monotonic()) * 1000)
         if callable(wait) and remaining_ms:
             try:
@@ -651,7 +618,7 @@ class BrowserSearchProvider:
             self._discard_fetch_page_on_browser_thread(self._fetch_page)
 
     def close(self) -> None:
-        if self._session is None:
+        if self._session is None and self._resume_binding is None:
             return
         try:
             _search_browser_call(self._close_on_browser_thread, timeout=_CLOSE_TIMEOUT_SECONDS)
@@ -678,7 +645,7 @@ class BrowserSearchProvider:
         }
         if isinstance(exc, SearchUnavailableError) and exc.engine:
             payload["engine"] = exc.engine[:40]
-        observed_host = getattr(exc, "observed_host", "")
+        observed_host: object = getattr(exc, "observed_host", "")
         if observed_host:
             payload["observed_host"] = str(observed_host)[:120]
         self.last_search_errors.append(payload)
@@ -686,6 +653,8 @@ class BrowserSearchProvider:
         self.last_search_failure = dict(payload)
 
     def _close_on_browser_thread(self) -> None:
+        if self._session is None and self._resume_binding is not None:
+            self._reattach_on_browser_thread()
         session = self._session
         try:
             if (session is not None and session.process is None and not session.owns_browser
@@ -710,6 +679,8 @@ class BrowserSearchProvider:
             self._owned_pages.clear()
             self._borrowed_pages.clear()
             self._session = None
+            self._cdp_browser_id = ""
+            self._resume_binding = None
 
     def _release_page_guard_on_browser_thread(self, page: Page | None) -> None:
         if page is None:
@@ -749,20 +720,6 @@ class BrowserSearchProvider:
             self._search_page = None
 
 
-def _page_content_after_navigation(page: Page) -> str:
-    stop_at = time.monotonic() + _CONTENT_RETRY_TIMEOUT
-    while True:
-        cancellation.check()
-        try:
-            return str(page.content() or "")
-        except Exception as exc:
-            if not _content_retryable(exc) or time.monotonic() >= stop_at:
-                raise
-            with contextlib.suppress(Exception):
-                page.wait_for_load_state("domcontentloaded", timeout=500)
-            cancellation.wait(_CONTENT_RETRY_TICK)
-
-
 def _fetch_page_content_after_settle(page: Page) -> tuple[str, str]:
     html = _page_content_after_navigation(page)
     text = extract_text(html)
@@ -786,31 +743,6 @@ def _fetch_page_content_after_settle(page: Page) -> tuple[str, str]:
     if _application_content_pending(page):
         return html, ""  # Navigation/footer alone cannot stand in for an unloaded application.
     return best_html, best_text
-
-
-def _application_content_pending(page: Page) -> bool:
-    """Recognize an empty app/main region while the SPA is still hydrating."""
-    try:
-        pending: object = page.evaluate("""() => {
-            const roots = [...document.querySelectorAll('app-root, #root, #app, #__next')];
-            return roots.length > 0 && roots.every(root => {
-                const main = root.querySelector('main, [role="main"]');
-                const text = (main || root).innerText.trim();
-                return !text || /^(loading|please wait|加载中)[.\\s…]*$/i.test(text);
-            });
-        }""")
-        return pending is True
-    except Exception:
-        return False
-
-
-def _content_retryable(exc: Exception) -> bool:
-    text = str(exc).lower()
-    return (
-        "page is navigating" in text
-        or "navigating and changing the content" in text
-        or "execution context was destroyed" in text
-    )
 
 
 def _search_host(profile: JsonObject) -> str:
@@ -929,7 +861,7 @@ def _element_raw_text(element: ElementHandle | None) -> str:
         return ""
     for getter in ("inner_text", "text_content"):
         try:
-            text = getattr(element, getter)()
+            text: object = getattr(element, getter)()
         except Exception:
             text = ""
         text = str(text or "").strip()
