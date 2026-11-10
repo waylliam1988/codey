@@ -17,7 +17,7 @@ import time
 import traceback
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,22 +26,45 @@ from codey.codemode import catalog as codemode_catalog
 from codey.codemode.runtime import NodeWorkerRuntime, ToolInvoker
 from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.env_names import NATIVE_TOOLS_ENV
+from codey.operations import kernel_protocol
+from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.policies.tool_requirement import require_tool_success
 from codey.runtime.core import cancellation
+from codey.toolchain.tool_prompt import json_contract_text
+from codey.toolchain.tool_spec import is_text_batch_tool
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
 from tools import local_model_gate_attempts as attempts
 from tools.shell_web_diagnostic_gate import select_target
 
-HELPER = """async function update_file(path, transform) {
-  const read = await tools.read_file({path});
-  const content = transform(unwrap(read).text);
-  return unwrap(await tools.edit({path, content, base_result_ref: read.result_ref}));
-}
+HELPER = """return await (async (hostTools) => {
+let helperCalls = 0;
+let helperCompleted = 0;
+const tools = new Proxy(hostTools, {
+  get(target, property) {
+    if (property !== "edit") return Reflect.get(target, property);
+    return async ({path, transform}) => {
+      helperCalls += 1;
+      const read = await hostTools.read_file({path});
+      const content = transform(unwrap(read).text);
+      const edited = await hostTools.edit({path, content, base_result_ref: read.result_ref});
+      unwrap(edited);
+      helperCompleted += 1;
+      return edited;
+    };
+  },
+});
+return {probe_value: await (async () => {
 """
-HELPER_DIGEST = hashlib.sha256(HELPER.encode("utf-8")).hexdigest()
-DECLARATION = ("\n// Scoped update of an existing file using its own read receipt; errors propagate.\n"
-               "declare function update_file(path: string, transform: (text: string) => string): Promise<string>;\n")
+HELPER_SUFFIX = "\n})(), probe_helper_calls: helperCalls, probe_helper_completed: helperCompleted};\n})(tools);\n"
+HELPER_DIGEST = hashlib.sha256((HELPER + HELPER_SUFFIX).encode("utf-8")).hexdigest()
+DECLARATION = (
+    "  // Guest composition: reads this path, transforms its text, edits using that exact receipt. Errors propagate.\n"
+    "  // Callback stays in the guest. No content/base_result_ref/replacements arguments on this interface.\n"
+    "  edit(args: {path: string; transform: (text: string) => string}): Result<string>;\n"
+    "  // Example: return unwrap(await tools.edit({path: inputs.path, transform: text => text.replace('old', 'new')}));\n"
+)
 ROOT = Path(__file__).resolve().parents[1]
+INTERFACE_VERSION = "guest-tools-edit-transform-v3"
 
 
 @dataclass(frozen=True)
@@ -72,9 +95,35 @@ def write_json(path: Path, value: JsonValue) -> None:
 
 
 def mentions_helper_call(code: str) -> bool:
-    """Audit direct calls, excluding tools.update_file and named definitions."""
-    return any(not re.search(r"\bfunction\s*$", code[:match.start()])
-               for match in re.finditer(r"(?<![\w.])update_file\s*\(", code))
+    """Lexical hint only; executed counters are the adoption evidence."""
+    return bool(re.search(r"\btools\s*\.\s*edit\s*\(", code))
+
+
+def codemode_only_surface(snapshot: TurnSnapshot) -> TurnSnapshot:
+    """Both arms expose project leaves through CodeMode, retaining their frozen executors."""
+    outer = tuple(name for name in snapshot.tool_names
+                  if name not in snapshot.nested_tool_names and not is_text_batch_tool(name))
+    inventory = tuple(dict.fromkeys((*outer, *snapshot.nested_tool_names)))
+    by_name = {spec.name: spec for spec in snapshot.frozen_specs}
+    executors = dict(snapshot.custom_executors)
+    return replace(snapshot, tool_names=outer,
+                   contract_text=json_contract_text(by_name[name] for name in outer),
+                   frozen_specs=tuple(by_name[name] for name in inventory),
+                   custom_executors=tuple((name, executors[name]) for name in inventory))
+
+
+def helper_metrics(directory: Path) -> JsonObject:
+    """Only successful guest envelopes confirm execution; failed programs stay unknown."""
+    path = directory / "helper-executions.jsonl"
+    rows = [decode_json_object(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines()
+            ] if path.exists() else []
+    return {
+        "confirmed_helper_calls": sum(require_json_integer(row["helper_calls"], "helper_calls")
+                                      for row in rows if row["helper_calls"] is not None),
+        "confirmed_helper_edits": sum(require_json_integer(row["helper_completed"], "helper_completed")
+                                      for row in rows if row["helper_completed"] is not None),
+        "untraced_failed_programs": sum(row["ok"] is False for row in rows),
+    }
 
 
 def production_source_digest() -> str:
@@ -94,27 +143,42 @@ def prototype_helper(directory: Path, *, enabled: bool) -> Iterator[None]:
     execute = NodeWorkerRuntime.execute
     contract_digest = NodeWorkerRuntime.contract_digest
     declarations = codemode_catalog.render_declarations
+    build_snapshot = kernel_protocol.build_turn_snapshot
+
+    def probe_snapshot(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
+        return codemode_only_surface(build_snapshot(session, native=native))
 
     def helper_declarations(snapshot: ToolCatalogSnapshot) -> str:
-        return declarations(snapshot) + DECLARATION
+        visible = replace(snapshot, entries=tuple(entry for entry in snapshot.entries if entry.name != "edit"))
+        return declarations(visible).replace("\n};", "\n" + DECLARATION + "};")
 
     def recorded_execute(
         runtime: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
         inputs: Mapping[str, object] | None = None, state_store: object = None,
         replay_context: Mapping[str, object] | None = None, limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
-        expanded = HELPER + code if enabled else code
+        expanded = HELPER + code + HELPER_SUFFIX if enabled else code
         with (directory / "programs.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps({"model_code": code, "executed_code": expanded}, ensure_ascii=False) + "\n")
-        return execute(runtime, expanded, catalog=catalog, invoke=invoke, inputs=inputs,
-                       state_store=state_store, replay_context=replay_context, limits=limits)
+        result = execute(runtime, expanded, catalog=catalog, invoke=invoke, inputs=inputs,
+                         state_store=state_store, replay_context=replay_context, limits=limits)
+        trace: JsonObject = {"ok": result.ok, "helper_calls": None, "helper_completed": None}
+        if enabled and result.ok:
+            envelope = decode_json_object(result.value)
+            trace.update(helper_calls=require_json_integer(envelope["probe_helper_calls"], "probe_helper_calls"),
+                         helper_completed=require_json_integer(envelope["probe_helper_completed"], "probe_helper_completed"))
+            result = replace(result, value=envelope["probe_value"])
+        with (directory / "helper-executions.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(trace, ensure_ascii=False) + "\n")
+        return result
 
     def bound_contract_digest(runtime: NodeWorkerRuntime) -> str:
         original = contract_digest(runtime)
-        return hashlib.sha256((original + ":update_file:" + HELPER_DIGEST).encode("utf-8")).hexdigest()
+        return hashlib.sha256((original + ":guest-tools-edit-transform:" + HELPER_DIGEST).encode("utf-8")).hexdigest()
 
     with ExitStack() as stack:
         stack.enter_context(patch.object(NodeWorkerRuntime, "execute", recorded_execute))
+        stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", probe_snapshot))
         if enabled:
             stack.enter_context(patch.object(NodeWorkerRuntime, "contract_digest", bound_contract_digest))
             stack.enter_context(patch.object(codemode_catalog, "render_declarations", helper_declarations))
@@ -179,13 +243,16 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
         return attempts.RecordingProvider(target, directory)
 
     common = ("只修改现有 result.json。" + case.task + "保留其余字段、嵌套内容和 JSON 类型，result-backup.json 不得改变。"
-              "本任务专门验收整文件更新，使用 content 模式，不用 replacements。"
+              "本任务专门验收整文件更新。"
               "用 codemode 完成文件操作，返回实际写入结果，然后用 done 简短报告。不要运行命令、测试或浏览网页。")
-    interface = ("当前使用现有协议：先 read_file 完整读取，再 edit；content 模式传入该读取回执的 result_ref。"
-                 "回执编号在 readResult.result_ref，正文在 unwrap(readResult).text；检查工具是否成功。") if arm == "A" else (
-                     "本实验在 codemode 作用域提供 update_file(path: string, transform: (text: string) => string): Promise<string>。"
-                     "请用它更新文件：transform 收到完整正文并返回新正文。该函数内部使用本次 read_file 回执调用 edit，"
-                     "并在读取或编辑失败时抛出错误。它不会自动重试或选择历史读取。")
+    interface = ("当前使用现有协议：先 tools.read_file 完整读取，再 tools.edit；使用 content，不用 replacements。"
+                 "回执编号在 readResult.result_ref，正文在 unwrap(readResult).text；检查工具是否成功。"
+                 "示例：const r=await tools.read_file({path:inputs.path}); "
+                 "return unwrap(await tools.edit({path:inputs.path,content:unwrap(r).text.replace('old','new'),"
+                 "base_result_ref:r.result_ref}));") if arm == "A" else (
+                     "本实验 tools.edit 的唯一签名是 tools.edit({path, transform})，返回 Result<string>。"
+                     "transform 收到读取正文并返回新正文；读取回执由程序绑定，读取不完整或版本变动仍拒绝写入。"
+                     "示例：return unwrap(await tools.edit({path:inputs.path,transform:text=>text.replace('old','new')}));")
     summary: JsonObject = {"case": case.name, "arm": arm, "passed": False}
     try:
         with (prototype_helper(directory, enabled=arm == "B"),
@@ -226,7 +293,8 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
         edit_calls=sum(row.get("tool_name") == "edit" for row in tools),
         failed_edits=sum(row.get("tool_name") == "edit" and row.get("ok") is False for row in tools),
         failed_codemode_calls=sum(row.get("tool_name") == "codemode" and row.get("ok") is False for row in tools),
-        helper_call_programs=helper_programs,
+        edit_call_programs=helper_programs,
+        **helper_metrics(directory),
         **provider_metrics(directory / "provider.jsonl"),
     )
     write_json(directory / "summary.json", summary)
@@ -254,7 +322,9 @@ def run_worker(directory: Path, case: EditCase, arm: str, *, base_url: str, time
         return decode_json_object(json.loads(summary_path.read_text(encoding="utf-8")))
     summary: JsonObject = {"case": case.name, "arm": arm, "passed": False, "first_pass_success": False,
                            "error": error, "seconds": timeout, "failed_edits": None,
-                           "failed_codemode_calls": None, **provider_metrics(directory / "provider.jsonl")}
+                           "failed_codemode_calls": None, "confirmed_helper_calls": None,
+                           "confirmed_helper_edits": None, "untraced_failed_programs": None,
+                           **provider_metrics(directory / "provider.jsonl")}
     write_json(summary_path, summary)
     return summary
 
@@ -263,9 +333,10 @@ def aggregate(rows: list[JsonObject], arm: str) -> JsonObject:
     selected = [row for row in rows if row["arm"] == arm]
     summary: JsonObject = {"runs": len(selected), "passed": sum(row["passed"] is True for row in selected),
                            "first_pass_successes": sum(row["first_pass_success"] is True for row in selected),
-                           "runs_mentioning_helper": sum(isinstance(row.get("helper_call_programs"), int)
-                                                        and bool(row["helper_call_programs"]) for row in selected)}
-    for key in ("model_calls", "prompt_tokens", "completion_tokens", "failed_edits", "failed_codemode_calls"):
+                           "runs_mentioning_edit": sum(isinstance(row.get("edit_call_programs"), int)
+                                                      and bool(row["edit_call_programs"]) for row in selected)}
+    for key in ("model_calls", "prompt_tokens", "completion_tokens", "failed_edits", "failed_codemode_calls",
+                "confirmed_helper_calls", "confirmed_helper_edits", "untraced_failed_programs"):
         values = [row[key] for row in selected]
         summary[key] = sum(require_json_integer(value, key) for value in values) if all(
             type(value) is int for value in values) else None
@@ -279,6 +350,9 @@ def aggregate(rows: list[JsonObject], arm: str) -> JsonObject:
 def audit_run(root: Path) -> JsonObject:
     """Recompute derived adoption metrics from the unmodified model programs."""
     summary = decode_json_object(json.loads((root / "summary.json").read_text(encoding="utf-8")))
+    manifest = decode_json_object(json.loads((root / "manifest.json").read_text(encoding="utf-8")))
+    if manifest.get("interface_version") != INTERFACE_VERSION:
+        raise ValueError("This auditor requires guest-tools-edit-transform-v3 artifacts; preserve earlier audits.")
     audited: list[JsonValue] = []
     pairs: dict[str, dict[str, tuple[JsonObject, int]]] = {}
     for programs in sorted(root.glob("??-*/*/programs.jsonl")):
@@ -286,11 +360,12 @@ def audit_run(root: Path) -> JsonObject:
         row = decode_json_object(json.loads((directory / "summary.json").read_text(encoding="utf-8")))
         code = [str(decode_json_object(json.loads(line))["model_code"])
                 for line in programs.read_text(encoding="utf-8").splitlines()]
-        direct_calls = sum(mentions_helper_call(program) for program in code)
-        pairs.setdefault(directory.parent.name, {})[str(row["arm"])] = (row, direct_calls)
+        metrics = helper_metrics(directory)
+        completed = require_json_integer(metrics["confirmed_helper_edits"], "confirmed_helper_edits")
+        pairs.setdefault(directory.parent.name, {})[str(row["arm"])] = (row, completed)
         audited.append({"directory": str(directory.relative_to(root)), "case": row["case"], "arm": row["arm"],
-                        "helper_call_programs": direct_calls,
-                        "wrong_tools_update_file": any("tools.update_file" in program for program in code),
+                        "edit_call_programs": sum(mentions_helper_call(program) for program in code),
+                        **metrics,
                         "source_digest_kind": row.get("source_digest_kind", "git-state-v1"),
                         "source_stable": row.get("source_before") == row.get("source_after")
                         if row.get("source_before") else None})
@@ -307,7 +382,7 @@ def audit_run(root: Path) -> JsonObject:
                             "efficacy_comparable": comparable and adopted})
     audit: JsonObject = {"A": summary["A"], "B": summary["B"], "program_audit": audited,
                          "pair_comparisons": comparisons,
-                         "adoption_rule": "Direct unqualified calls; excludes named function declarations and tools.update_file."}
+                         "adoption_rule": "Guest execution counters confirm calls and edits. Failed guest traces are unknown."}
     write_json(root / "audit.json", audit)
     return audit
 
@@ -337,7 +412,7 @@ def main() -> int:
         return 0
     root = args.run_dir.resolve()
     root.mkdir(parents=True, exist_ok=False)
-    (root / "helper.js").write_text(HELPER, encoding="utf-8")
+    (root / "helper.js").write_text(HELPER + "/* model program */" + HELPER_SUFFIX, encoding="utf-8")
     write_json(root / "manifest.json", {
         "scope": "prototype_helper_over_existing_production_runtime", "model": target.model,
         "base_url": target.base_url, "temperature": target.temperature, "helper_sha256": HELPER_DIGEST,
@@ -346,6 +421,7 @@ def main() -> int:
         "source_digest_kind": "codey-files-sha256-v2",
         "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "helper_declaration": DECLARATION,
+        "interface_version": INTERFACE_VERSION,
         "first_pass_definition": "task completed correctly without any failed tool receipt",
         "limitations": "Small pilot; prompt caching and model variation affect wall time. No browser work is included.",
     })
