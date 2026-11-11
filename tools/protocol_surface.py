@@ -393,7 +393,7 @@ def prototype(directory: Path, scenario: str, config: str, *,
                     self.scripted_exchange = self.exchange
                     body = script_body(action)
                     append_json(directory / "provider.jsonl", {"type": "runtime_action", "exchange": self.exchange,
-                                                                "payload": body})
+                                                                "payload": body, "action": action})
                     return body
             if features.recovery and (directory / "state/durable.sqlite3").exists():
                 receipts = tool_receipts(directory / "state")

@@ -529,16 +529,18 @@ def test_codemode_can_compute_whole_file_after_reading_in_same_program(
         "return await tools.edit({path:'result.json',base_result_ref:read.result_ref,content:JSON.stringify(current)});")
     action: JsonObject = {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
     install_http(monkeypatch, [action, action, {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}])
-    row = probe.run_arm(tmp_path / "run", "stale_edit", "A", "B3", TARGET, max_turns=4)
+    row = probe.run_arm(tmp_path / "run", "stale_edit", "A", probe.EDIT_CONTINUATION, TARGET, max_turns=4)
     assert row["passed"] and row["true_stale_conflicts"] == 1 and row["fresh_read_recovery"], row
     assert not row["external_field_lost"]
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
-@pytest.mark.parametrize("arm", ["A", "B"])
+@pytest.mark.parametrize(("arm", "config"), [
+    ("A", probe.FILE_HANDOFF), ("B", probe.FILE_HANDOFF), ("B", probe.EDIT_CONTINUATION),
+])
 @pytest.mark.parametrize("scenario", ["hybrid", "stale_edit"])
 def test_file_handoff_delivers_read_before_edit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, scenario: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, config: str, scenario: str,
 ) -> None:
     directory = tmp_path / "run"
     external = {"marker": secrets.token_hex(16)}
@@ -573,6 +575,7 @@ def test_file_handoff_delivers_read_before_edit(
             action = plan(step("edit", "edit", {"read_handle": old_ref, "content": json.dumps(content)}))
         elif scenario == "stale_edit" and not recovered:
             if len(reads) == 1:
+                assert config != probe.EDIT_CONTINUATION
                 assert "version" in wire.lower()
                 action = plan(step("fresh", "read_file", {"path": "result.json"}))
             else:
@@ -583,7 +586,10 @@ def test_file_handoff_delivers_read_before_edit(
                 action = plan(step("edit", "edit", {"read_handle": fresh_ref, "content": json.dumps(content)}))
                 recovered = True
         else:
-            action = {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851，已更新文件。"}}
+            done: JsonObject = {"summary": "净重 173 克，校验码 QUARTZ_851，已更新文件。"}
+            if config == probe.EDIT_CONTINUATION:
+                done["knowledge_refs"] = [{"id": old_ref, "revision": 1}]
+            action = {"tool": "done", "args": done}
         observe = kwargs["observe"]
         assert callable(observe)
         observe(attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0.0)
@@ -591,10 +597,10 @@ def test_file_handoff_delivers_read_before_edit(
 
     monkeypatch.setattr("codey.providers.api_generation.generate", scripted)
     monkeypatch.setattr("tools.completion_explanation_ab.service_state", lambda _url: {})
-    row = probe.run_arm(directory, scenario, arm, probe.FILE_HANDOFF, TARGET, max_turns=8)
+    row = probe.run_arm(directory, scenario, arm, config, TARGET, max_turns=8)
     assert row["passed"], row
     stale = scenario == "stale_edit"
-    assert row["model_calls"] == 3 + 2 * stale + (arm == "A")
+    assert row["model_calls"] == 3 + 2 * stale + (arm == "A") - (stale and config == probe.EDIT_CONTINUATION)
     handoff = decode_json_object(row["file_handoff"])
     metrics = decode_json_object(row["metrics"])
     assert metrics["successful_edits"] == 1 and metrics["successful_file_reads"] == 1 + stale
@@ -615,8 +621,62 @@ def test_file_handoff_delivers_read_before_edit(
         assert schedule(browser_only) is None
         assert schedule([browser_parent, *browser_only]) is not None
         assert schedule([browser_parent, *browser_only]) is None
+        if config == probe.EDIT_CONTINUATION:
+            events = [json.loads(line) for line in (directory / "protocol-events.jsonl").read_text(
+                encoding="utf-8").splitlines()]
+            projected = [event for event in events if event["kind"] == "projected_done_refs"]
+            assert projected and all(event["removed"] == [{"id": old_ref, "revision": 1}] and event["accepted"]
+                                     for event in projected)
+            if stale:
+                audit = decode_json_object(row["conflict_reread"])
+                assert audit["scheduled_exchanges"] == [4] and audit["next_request_exchange"] == 5
+                assert audit["file_observation_in_next_request"] is True
+                conflict_index = next(i for i, r in enumerate(receipts) if r.identity == audit["conflict_ref"])
+                conflict = receipts[conflict_index]
+                after_conflict = receipts[:conflict_index + 1]
+                schedule_stale = probe.stale_reread_scheduler("result.json")
+                assert schedule_stale(after_conflict) is not None
+                assert schedule_stale(after_conflict) is None
+                bad_ref = replace(conflict.result, call=replace(conflict.result.call, args={
+                    **conflict.result.call.args, "base_result_ref": "unrelated-read"}))
+                assert probe.stale_reread_scheduler("result.json")([
+                    *after_conflict[:-1], replace(conflict, result=bad_ref)]) is None
+                assert probe.stale_reread_scheduler("result.json")(receipts) is None
     else:
         assert handoff["scheduled_exchanges"] == []
+
+
+@pytest.mark.parametrize("edit_ok", [False, True])
+def test_project_done_refs_keeps_knowledge_versions_and_unknown_receipts(tmp_path: Path, edit_ok: bool) -> None:
+    from codey.knowledge.store import KnowledgeStore
+    from codey.operations.research_completion_checks import knowledge_reference_checks
+    from tests.test_knowledge_repository import example
+
+    store = KnowledgeStore(tmp_path / "knowledge")
+    try:
+        store.repository.commit("initial", example())
+        context = CompletionContext(knowledge_store=store)
+        task = TaskSession(TaskPolicy(frozenset({"control"})), task_kind="hybrid")
+        known_ref = "task_turn_effect:known"
+        ref = {"id": known_ref, "revision": 1}
+        real = {"id": "claim", "revision": 1}
+        unknown = {"id": "task_turn_effect:unknown", "revision": 1}
+        result = ToolResult(ToolCall("edit", {"path": "result.json"}), "written", ok=edit_ok)
+        task._memory_results[known_ref] = result
+        task.executed[known_ref] = record(result)
+        task.last_done_args = {"knowledge_refs": [real, ref]}
+        assert knowledge_reference_checks(task, context)[0].status == "fail"
+        projected, removed = probe.project_done_refs(task, context, "result.json")
+        assert removed == ([ref] if edit_ok else [])
+        assert knowledge_reference_checks(projected, context)[0].status == ("pass" if edit_ok else "fail")
+        assert task.last_done_args["knowledge_refs"] == [real, ref]
+        for invalid in (unknown, {"id": "claim", "revision": 99}):
+            task.last_done_args = {"knowledge_refs": [invalid, ref]}
+            projected, _ = probe.project_done_refs(task, context, "result.json")
+            assert invalid in projected.last_done_args["knowledge_refs"]
+            assert knowledge_reference_checks(projected, context)[0].status == "fail"
+    finally:
+        store.close()
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")

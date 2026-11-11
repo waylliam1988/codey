@@ -15,12 +15,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from codey.completion.contract import CHECK_FAIL, CHECK_PASS, CompletionCheck
-from codey.operations import completion_gate
+from codey.operations import completion_gate, research_completion_checks
+from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import CompletionCheckInput
 from codey.operations.task_session import TaskSession
 from codey.policies.tool_requirement import ToolObservation
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolResult
+from codey.toolchain.constants import STALE_READ_REFERENCE_ERROR
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, decode_json_value
 from tools import browser_production_live_gate as gate
 from tools import protocol_surface as surface
@@ -33,10 +35,16 @@ PAGE_RESET_GATE = "page-reset-gate"
 PAGE_RESET_NAVIGATION = "page-reset-navigation"
 PAGE_RESET_CONFIGS = {PAGE_RESET_GATE, PAGE_RESET_NAVIGATION}
 FILE_HANDOFF = "file-handoff"
+EDIT_CONTINUATION = "edit-continuation"
 FILE_HANDOFF_CODE = (
     "const file = await tools.read_file({path:inputs.path});"
     "return {runtime_action:'read_authorized_project_file',browser_read_ref:inputs.browser_read_ref,file,"
     "next:file.ok ? 'Use the delivered file observation to prepare the requested edit.' : file.error};"
+)
+STALE_REREAD_CODE = (
+    "const file=await tools.read_file({path:inputs.path});"
+    "return {runtime_action:'reread_after_version_conflict',conflict_ref:inputs.conflict_ref,file,"
+    "next:file.ok ? 'Use the new file observation and preserve existing fields. Submit the edit separately.' : file.error};"
 )
 PAGE_RESET_CHECK = "page_reset_two_rounds"
 PAGE_TRANSITIONS = {"browser_navigate", "browser_tab_switch", "browser_tab_new"}
@@ -58,6 +66,7 @@ SCENARIOS = {
     surface.RECEIPT_DELIVERY: ("upload_bound", "upload", "download", "return_failure"),
     surface.EDIT_BOUNDARY: ("hybrid", "stale_edit"),
     FILE_HANDOFF: ("hybrid", "stale_edit"),
+    EDIT_CONTINUATION: ("hybrid", "stale_edit"),
     PAGE_RESET_GATE: ("page_reset",),
     PAGE_RESET_NAVIGATION: ("page_reset",),
     "combined": (*previous.SCENARIOS, "page_reset", "return_failure"),
@@ -191,18 +200,103 @@ def file_handoff_scheduler(authorized_path: str | None) -> Callable[[list[Effect
     return schedule
 
 
-def file_handoff_audit(directory: Path, receipts: list[EffectReceipt]) -> JsonObject:
+def stale_reread_scheduler(path: str) -> Callable[[list[EffectReceipt]], JsonObject | None]:
+    first_read = file_handoff_scheduler(path)
+    reread_attempted = False
+
+    def schedule(receipts: list[EffectReceipt]) -> JsonObject | None:
+        nonlocal reread_attempted
+        if reread_attempted:
+            return None
+        for index, row in reversed(list(enumerate(receipts))):
+            result = row.result
+            args = result.call.args
+            if result.call.name != "edit" or args.get("path") != path:
+                continue
+            if result.ok or STALE_READ_REFERENCE_ERROR not in result.model_text:
+                return None
+            original, _observations = surface.delivered_reads({r.identity: r.result for r in receipts[:index]})
+            ref = args.get("base_result_ref")
+            if not isinstance(ref, str) or ref not in original or decode_json_object(original[ref])["path"] != path:
+                return None
+            if any(r.result.call.name == "read_file" and r.result.call.args.get("path") == path
+                   for r in receipts[index + 1:]):
+                return None
+            reread_attempted = True
+            return {"tool": "codemode", "args": {"code": STALE_REREAD_CODE,
+                "inputs": {"path": path, "conflict_ref": row.identity}}}
+        return first_read(receipts)
+
+    return schedule
+
+
+def project_done_refs(session: TaskSession, context: CompletionContext, path: str) -> tuple[TaskSession, list[JsonValue]]:
+    """Remove only misfiled references to known successful tool receipts."""
+    from codey.knowledge.answer_refs import answer_references
+
+    raw = session.last_done_args.get("knowledge_refs")
+    if (session.policy.strict_research or session.task_kind != "hybrid" or not isinstance(raw, list)
+            or len(raw) > 32):
+        return session, []
+    receipts = {ref: result for ref, result in session._memory_results.items()
+                if result.ok and ref in session.executed and session.executed[ref]["ok"] is True}
+    if not any(result.call.name == "edit" and result.call.args.get("path") == path for result in receipts.values()):
+        return session, []
+    kept: list[JsonValue] = []
+    removed: list[JsonValue] = []
+    for ref in raw:
+        if (isinstance(ref, dict) and set(ref) == {"id", "revision"}
+                and isinstance(identity := ref["id"], str) and identity.startswith("task_turn_effect:")
+                and identity in receipts and type(ref["revision"]) is int and ref["revision"] > 0):
+            try:
+                answer_references([ref], context.knowledge_store, project=str(context.knowledge_project or ""),
+                                  session_id=str(context.knowledge_session_id or ""))
+            except (ValueError, TypeError, KeyError):
+                removed.append(ref)
+                continue
+        kept.append(ref)
+    if not removed:
+        return session, []
+    return replace(session, last_done_args={**session.last_done_args, "knowledge_refs": kept}), removed
+
+
+@contextmanager
+def edit_completion_projection(directory: Path) -> Iterator[None]:
+    evaluate = completion_gate.evaluate
+    check_refs = research_completion_checks.knowledge_reference_checks
+
+    def evaluate_projected(session: TaskSession, done_text: object, *, context: object = None,
+                           observations: Mapping[str, ToolObservation] | None = None) -> completion_gate.GateVerdict:
+        projected, removed = project_done_refs(session, CompletionContext.from_value(context), "result.json")
+        if not removed:
+            return evaluate(session, done_text, context=context, observations=observations)
+
+        def check_projected(current: TaskSession, check_context: object = None) -> list[CompletionCheck]:
+            return check_refs(projected if current is session else current, check_context)
+
+        with patch.object(research_completion_checks, "knowledge_reference_checks", check_projected):
+            verdict = evaluate(session, done_text, context=context, observations=observations)
+        append_json(directory / "protocol-events.jsonl", {"kind": "projected_done_refs", "removed": removed,
+                    "accepted": verdict.complete})
+        return verdict
+
+    with patch.object(completion_gate, "evaluate", evaluate_projected):
+        yield
+
+
+def file_handoff_audit(directory: Path, receipts: list[EffectReceipt], *, code: str = FILE_HANDOFF_CODE) -> JsonObject:
     log = directory / "provider.jsonl"
     events = [decode_json_object(json.loads(line))
               for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
-    actions = [int(str(row["exchange"])) for row in events if row.get("type") == "runtime_action"]
+    actions = [int(str(row["exchange"])) for row in events if row.get("type") == "runtime_action"
+               and (decode_json_object(decode_json_object(row["action"])["args"]).get("code") == code
+                    if "action" in row else code == FILE_HANDOFF_CODE)]
     scheduled_exchanges: list[JsonValue] = list(actions)
     parent = next((row for row in receipts if row.result.call.name == "codemode"
-                   and row.result.call.args.get("code") == FILE_HANDOFF_CODE), None)
+                   and row.result.call.args.get("code") == code), None)
     if parent is None:
         return {"scheduled_exchanges": scheduled_exchanges, "file_read_ref": None}
     inputs = decode_json_object(parent.result.call.args["inputs"])
-    browser_ref = inputs["browser_read_ref"]
     children = parent.result.canonical.get("child_effect_ids")
     file_read = next((row for row in receipts if isinstance(children, list) and row.identity in children
                       and row.result.call.name == "read_file"), None)
@@ -213,7 +307,8 @@ def file_handoff_audit(directory: Path, receipts: list[EffectReceipt]) -> JsonOb
         reads, observations = surface.delivered_reads({parent.identity: parent.result, file_read.identity: file_read.result})
         seen = file_read.identity in surface.transmitted_reads(
             decode_json_object(request["payload"]), reads, observations)
-    return {"scheduled_exchanges": scheduled_exchanges, "browser_read_ref": browser_ref,
+    source_key = "browser_read_ref" if code == FILE_HANDOFF_CODE else "conflict_ref"
+    return {"scheduled_exchanges": scheduled_exchanges, source_key: inputs[source_key],
             "file_read_ref": file_read.identity if file_read else None,
             "file_read_ok": file_read is not None and file_read.result.ok,
             "file_observation_in_next_request": seen,
@@ -344,6 +439,8 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
         raise ValueError(f"{config} only runs page_reset")
     if config == FILE_HANDOFF and scenario not in SCENARIOS[FILE_HANDOFF]:
         raise ValueError("file-handoff only runs hybrid and stale_edit")
+    if config == EDIT_CONTINUATION and scenario not in SCENARIOS[EDIT_CONTINUATION]:
+        raise ValueError("edit-continuation only runs hybrid and stale_edit")
     gate_enabled = config == PAGE_RESET_NAVIGATION or (config == PAGE_RESET_GATE and arm == "B")
     scheduler = page_reset_scheduler() if config == PAGE_RESET_NAVIGATION and arm == "B" else None
     active = (surface.EDIT_BOUNDARY_CONTROL if config == surface.EDIT_BOUNDARY and arm == "A" else
@@ -351,19 +448,26 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
     if config == FILE_HANDOFF:
         active = surface.EDIT_BOUNDARY
         scheduler = file_handoff_scheduler("result.json") if arm == "B" else None
+    if config == EDIT_CONTINUATION and arm == "B":
+        active = surface.EDIT_BOUNDARY
+        scheduler = (stale_reread_scheduler("result.json") if scenario == "stale_edit"
+                     else file_handoff_scheduler("result.json"))
     with (surface.prototype(directory, scenario, active, runtime_action=scheduler),
           page_reset_completion(directory) if gate_enabled else nullcontext(),
+          edit_completion_projection(directory) if config == EDIT_CONTINUATION and arm == "B" else nullcontext(),
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(gate.run_case(directory, mode, target, max_turns=max_turns,
             task_transform=lambda task: task_text(task, scenario), **options))
     after = edit.production_source_digest()
     metrics = artifact_metrics(directory)
-    if config == FILE_HANDOFF:
+    if config in {FILE_HANDOFF, EDIT_CONTINUATION}:
         receipts = tool_receipts(directory / "state")
         metrics["successful_file_reads"] = sum(r.result.ok and r.result.call.name == "read_file" for r in receipts)
         metrics["successful_edits"] = sum(r.result.ok and r.result.call.name == "edit" for r in receipts)
         row["file_handoff"] = file_handoff_audit(directory, receipts)
+        if config == EDIT_CONTINUATION:
+            row["conflict_reread"] = file_handoff_audit(directory, receipts, code=STALE_REREAD_CODE)
     passed = row.get("passed") is True
     if scenario == "page_reset":
         passed = passed and metrics["page_reset_completed"] is True
@@ -589,10 +693,13 @@ def main() -> int:
         parser.error("edit-boundary only runs hybrid and stale_edit")
     if args.config == FILE_HANDOFF and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
         parser.error("file-handoff only runs hybrid and stale_edit")
+    if args.config == EDIT_CONTINUATION and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
+        parser.error("edit-continuation only runs hybrid and stale_edit")
     if args.plan:
         features = {PAGE_RESET_GATE: PAGE_RESET_CHECK,
                     PAGE_RESET_NAVIGATION: f"{PAGE_RESET_CHECK}; B schedules the second navigation",
-                    FILE_HANDOFF: "Both arms use the static edit boundary. B schedules the first file read."}
+                    FILE_HANDOFF: "Both arms use the static edit boundary. B schedules the first file read.",
+                    EDIT_CONTINUATION: "Production A. B uses bounded file reads and typed completion references."}
         print(json.dumps({"config": args.config, "scenarios": args.scenario or SCENARIOS[args.config],
             "units": 2 * args.repeats * len(args.scenario or SCENARIOS[args.config]),
             "diagnostic_scenarios": sorted(DIAGNOSTIC_SCENARIOS),
