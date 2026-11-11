@@ -23,22 +23,67 @@ import tempfile
 import time
 import uuid
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NotRequired, TypeAlias, TypedDict, cast
 from unittest.mock import patch
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from codey.providers.api_provider import ApiProvider
+from codey.providers.zen.connection import ZenProvider
+from codey.types.json_value import (
+    JsonObject,
+    decode_json_object,
+    parse_json_object,
+    require_json_integer,
+    require_json_string,
+    require_json_strings,
+)
 from tools import local_model_gate_attempts as attempts
+
+Record: TypeAlias = dict[str, object]
 
 ROOT = Path(__file__).resolve().parents[1]
 SCOPES = ("offline", "replay", "e2e", "web")
 MODEL_NAMES = ("solar", "gemma")
 
 
-def emit(row: dict) -> None:
+def _mapping(value: object) -> Record:
+    return dict(decode_json_object(value)) if value is not None else {}
+
+
+def _string(value: object, default: str = "") -> str:
+    return value if isinstance(value, str) else default
+
+
+def _objects(value: object) -> list[Record]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError("expected an array of objects")
+    return [dict(decode_json_object(item)) for item in value]
+
+
+class _TargetArguments(TypedDict):
+    base_url: str
+    model: str
+    context_window_tokens: int
+    context_reserve_tokens: int
+    context_keep_recent_tokens: int
+    protocol: NotRequired[str]
+    temperature: NotRequired[float]
+    request_timeout: NotRequired[float]
+    provider_id: NotRequired[str]
+    api_selection: NotRequired[JsonObject]
+    api_protocol: NotRequired[str]
+    turn_budget: NotRequired[int]
+
+
+def emit(row: Mapping[str, object]) -> None:
     # ASCII JSON also works in legacy redirected Windows consoles.
     print(json.dumps(row, ensure_ascii=True), flush=True)
 
@@ -46,13 +91,15 @@ def emit(row: dict) -> None:
 def current_receipt(text: str, *, code: int, truncated: bool = False) -> str:
     """Render the production execution receipt inside its delivery envelope."""
     from codey.operations.kernel_prompt import _result_context
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.execution_receipt import ExecutionReceipt
     from codey.runtime.core.models import ToolCall, ToolResult
 
     receipt = ExecutionReceipt("exit", code, text, truncated=truncated).bounded()
     result = ToolResult(ToolCall("shell", {"command": "fixture-command"}, "probe-call"),
                         receipt.render(), ok=True, truncated=receipt.truncated, audit={"exit_code": code})
-    session = SimpleNamespace(_memory_results={"result_probe": result})
+    session = TaskSession(TaskPolicy(frozenset()), _memory_results={"result_probe": result})
     return _result_context(result, session)
 
 
@@ -68,7 +115,7 @@ def page_fixture(marker: str) -> str:
             '<p>This fixture describes an AI API gateway for model API access.</p></body></html>')
 
 
-def offline_probes(shell_names: list[str]) -> list[dict]:
+def offline_probes(shell_names: list[str]) -> list[Record]:
     from codey.app.shell_service import ShellExecutionTicket, execute_shell_ticket
     from codey.env_names import SHELL_EXECUTABLE_ENV
     from codey.policies.command_line import resolve_shell
@@ -77,7 +124,7 @@ def offline_probes(shell_names: list[str]) -> list[dict]:
     from codey.research.extract import _usable_fetch_page_text, extract_text, extract_title
     from tools.shell_matrix_gate import ShellMatrixContext
 
-    rows = []
+    rows: list[Record] = []
     with tempfile.TemporaryDirectory(prefix="codey-shell-web-probe-") as temporary:
         for name in shell_names:
             try:
@@ -124,29 +171,30 @@ def offline_probes(shell_names: list[str]) -> list[dict]:
     return rows
 
 
-def replay_jobs() -> list[dict]:
+def replay_jobs() -> list[Record]:
     """Controlled input ablations, never represented as live tool execution."""
     from codey.research.extract import extract_text, extract_title
 
-    jobs = []
+    jobs: list[Record] = []
     instruction = ("\u8fd9\u662f\u5de5\u5177\u56de\u6267\u56de\u653e\u5b9e\u9a8c\uff0c\u4e0d\u662f\u65b0\u7684\u8054\u7f51\u6216\u6267\u884c\u8bf7\u6c42\u3002\u53ea\u4f9d\u636e\u6240\u7ed9\u56de\u6267\u56de\u7b54\uff0c\u4e0d\u731c\u6d4b\u672a\u663e\u793a\u7684\u4fe1\u606f\u3002"
                    "\u53ea\u8fd4\u56de\u4e00\u4e2aJSON\u5bf9\u8c61\uff0c\u4e0d\u8981Markdown\u3002\n")
     failure_question = ('\u7528\u6237\u60f3\u77e5\u9053\u547d\u4ee4\u662f\u5426\u6210\u529f\u4ee5\u53ca\u4e3a\u4f55\u6ca1\u6709\u7f51\u9875\u3002\u8fd4\u56de\u5b57\u6bb5 exit_code\uff08\u6574\u6570\u6216null\uff09\u3001'
                         'cause\uff08local_command_error/network_error/unknown\uff09\u3001website_verified\uff08\u5e03\u5c14\uff09\u3002\n')
-    for variant, receipt, expected in (
+    for variant, receipt, expected_failure in (
         ("current", baseline_receipt("(no output)"),
          {"exit_code": None, "cause": "unknown", "website_verified": False}),
         ("candidate", json.dumps({"call_status": "completed", "exit_code": 2,
                                   "stderr": "curl: option ---HEAD---: is unknown", "stdout": ""}),
          {"exit_code": 2, "cause": "local_command_error", "website_verified": False}),
     ):
+        expected = dict(expected_failure)
         jobs.append({"case": "failure_receipt", "variant": variant, "expected": expected,
                      "prompt": instruction + failure_question + receipt,
                      "information_available": variant == "candidate"})
     truncation_question = ('\u8fd4\u56de\u5b57\u6bb5 output_complete\u3001full_output_recoverable\uff0c\u503c\u4e3a\u5e03\u5c14\u6216null\u3002'
                            'output_complete\u8868\u793a\u662f\u5426\u5b8c\u6574\u91c7\u96c6\u4e86\u672c\u6b21\u8f93\u51fa\uff1bfull_output_recoverable\u8868\u793a\u80fd\u5426\u901a\u8fc7read_tool_result\u8bfb\u56de\u672c\u6b21\u6267\u884c\u7684\u5168\u90e8\u8f93\u51fa\uff0c\u4e0d\u5305\u62ec\u91cd\u65b0\u6267\u884c\u547d\u4ee4\u3002'
                            '\u56de\u6267\u6ca1\u6709\u8bf4\u660e\u7684\u5b57\u6bb5\u586bnull\u3002\n')
-    for variant, receipt, expected in (
+    for variant, receipt, expected_truncation in (
         ("current", baseline_receipt("HEAD\nTAIL"),
          {"output_complete": None, "full_output_recoverable": None}),
         ("candidate", json.dumps({"exit_code": 0, "capture_truncated": True,
@@ -156,6 +204,7 @@ def replay_jobs() -> list[dict]:
                                   "output": "HEAD\n[omitted]\nTAIL"}),
          {"output_complete": False, "full_output_recoverable": False}),
     ):
+        expected = dict(expected_truncation)
         jobs.append({"case": "truncation_receipt", "variant": variant, "expected": expected,
                      "prompt": instruction + truncation_question + receipt,
                      "information_available": variant == "candidate"})
@@ -163,12 +212,13 @@ def replay_jobs() -> list[dict]:
     html = page_fixture(marker)
     web_question = ('\u8fd4\u56de\u5b57\u6bb5 page_title\uff08\u5b57\u7b26\u4e32\u6216null\uff09\u3001gateway_evidence\uff08\u5e03\u5c14\uff09\u3002'
                     '\u53ea\u6709\u5b9e\u9645\u6807\u9898\u6216\u6b63\u6587\u663e\u793aAPI gateway\u65f6\uff0cgateway_evidence\u624d\u4e3atrue\u3002\n')
-    for variant, receipt, expected in (
+    for variant, receipt, expected_web in (
         ("current", html[:20_000], {"page_title": None, "gateway_evidence": False}),
         ("candidate", json.dumps({"url": "https://fixture.example.test/", "http_status": 200,
                                   "title": extract_title(html), "text": extract_text(html)}),
          {"page_title": f"Fixture Gateway {marker}", "gateway_evidence": True}),
     ):
+        expected = dict(expected_web)
         jobs.append({"case": "web_content", "variant": variant, "expected": expected,
                      "prompt": instruction + web_question + receipt,
                      "information_available": variant == "candidate"})
@@ -178,31 +228,28 @@ def replay_jobs() -> list[dict]:
     return jobs
 
 
-def parse_json_reply(reply: str) -> dict:
+def parse_json_reply(reply: str) -> Record:
     value = reply.strip()
     if value.startswith("```json\n") and value.endswith("\n```"):
         value = value[8:-4]
-    result = json.loads(value)
-    if not isinstance(result, dict):
-        raise ValueError("reply must be a JSON object")
-    return result
+    return dict(parse_json_object(value))
 
 
-def exact_fields(actual: dict, expected: dict) -> bool:
+def exact_fields(actual: Mapping[str, object], expected: Mapping[str, object]) -> bool:
     return all(key in actual and type(actual[key]) is type(value) and actual[key] == value
                for key, value in expected.items())
 
 
-def replay_worker(target: attempts.GateTarget, job: dict, directory: Path) -> dict:
+def replay_worker(target: attempts.GateTarget, job: Record, directory: Path) -> Record:
     from codey.env_names import SHELL_EXECUTABLE_ENV
     from codey.policies.command_line import resolve_shell
     from codey.policies.shell_analysis import analyze_shell
     from codey.runtime.core.cancellation import start_process, wait_process
 
-    prompt = job.get("prompt", "")
+    prompt = _string(job.get("prompt"))
     shell = None
     if job["case"] == "shell_dialect":
-        shell = resolve_shell(environ={**os.environ, SHELL_EXECUTABLE_ENV: job["shell"]})
+        shell = resolve_shell(environ={**os.environ, SHELL_EXECUTABLE_ENV: _string(job["shell"])})
         prompt = (f"Execution host: Windows. Shell: {shell.executable}, version {shell.version}. "
                   f"Generate one shell command that prints exactly {job['marker']} on its own line. "
                   "No file writes, networking, external programs, pipes or redirections. "
@@ -211,6 +258,8 @@ def replay_worker(target: attempts.GateTarget, job: dict, directory: Path) -> di
     provider = attempts.make_provider(target, directory)
     started = time.monotonic()
     try:
+        if not isinstance(provider, ApiProvider):
+            raise TypeError("receipt replay requires an API provider with an output token limit")
         with attempts.record_api_generations(directory / "provider.jsonl"):
             reply = provider.send(prompt, timeout=target.request_timeout, output_token_limit=512)
     finally:
@@ -218,13 +267,13 @@ def replay_worker(target: attempts.GateTarget, job: dict, directory: Path) -> di
     (directory / "reply.txt").write_text(reply, encoding="utf-8")
     actual = parse_json_reply(reply)
     if shell is None:
-        ok = exact_fields(actual, job["expected"])
+        ok = exact_fields(actual, decode_json_object(job["expected"]))
         proof = {"expected": job["expected"], "actual": actual}
     else:
-        command = actual.get("command")
+        command = _string(actual.get("command"))
         # Only these exact harmless grammars are executed. Model-supplied code
         # is never admitted just because it passed a heuristic safety check.
-        marker = job["marker"]
+        marker = _string(job["marker"])
         allowed = ({f"echo {marker}", f"@echo {marker}"} if shell.kind == "cmd" else
                    {f"Write-Output '{marker}'", f'Write-Output "{marker}"', f"Write-Output {marker}"})
         if command not in allowed:
@@ -240,7 +289,7 @@ def replay_worker(target: attempts.GateTarget, job: dict, directory: Path) -> di
             "seconds": round(time.monotonic() - started, 3), **proof}
 
 
-def run_replay(target: attempts.GateTarget, job: dict, directory: Path, timeout: float) -> dict:
+def run_replay(target: attempts.GateTarget, job: Record, directory: Path, timeout: float) -> Record:
     from codey.runtime.core.cancellation import start_process, wait_process
 
     directory.mkdir(parents=True, exist_ok=False)
@@ -251,7 +300,7 @@ def run_replay(target: attempts.GateTarget, job: dict, directory: Path, timeout:
         completed = wait_process(proc, owner, command, timeout, capture_limit_bytes=64_000)
         (directory / "worker.log").write_text(completed.stdout + completed.stderr, encoding="utf-8")
         result_path = directory / "worker-result.json"
-        result = json.loads(result_path.read_text(encoding="utf-8")) if result_path.is_file() else {
+        result = dict(parse_json_object(result_path.read_text(encoding="utf-8"))) if result_path.is_file() else {
             "ok": False, "failure_stage": "worker_error", "exit_code": completed.returncode}
     except subprocess.TimeoutExpired:
         result = {"ok": False, "failure_stage": "case_timeout", "timeout": timeout}
@@ -280,17 +329,19 @@ def select_target(name: str, timeout: float, base_url: str) -> attempts.GateTarg
     return attempts.GateTarget(endpoint.base_url, matches[0], 32768, 8192, 12000, request_timeout=timeout)
 
 
-def receipt_delivery_audit(directory: Path) -> dict:
+def receipt_delivery_audit(directory: Path) -> Record:
     """Look at actual outbound model input, separately from the UI event."""
     path = directory / "provider.jsonl"
     if not path.is_file():
         return {"receipt_seen": False, "initial_exit_code_visible": False, "eventual_exit_code_visible": False}
-    shell_texts, all_texts = [], []
+    shell_texts: list[str] = []
+    all_texts: list[str] = []
     for line in path.read_text(encoding="utf-8").splitlines():
-        row = json.loads(line)
+        row = _mapping(json.loads(line))
         if row.get("type") != "request":
             continue
-        for message in row.get("payload", {}).get("messages", []):
+        payload = _mapping(row.get("payload"))
+        for message in _objects(payload.get("messages")):
             content = str(message.get("content", ""))
             if message.get("role") == "tool":
                 all_texts.append(content)
@@ -315,7 +366,7 @@ def receipt_delivery_audit(directory: Path) -> dict:
             "model_result_excerpt": "\n".join(all_texts)[-5000:]}
 
 
-def approval_worker(target: attempts.GateTarget, directory: Path) -> dict:
+def approval_worker(target: attempts.GateTarget, directory: Path) -> Record:
     """Use production admission/approval for native AND compatibility tools."""
     from codey.policies.command_line import resolve_shell
     from tools.local_model_gate_shell import GateHTTPClient, gate_application, probe_command, shell_prompt, wait_for_run
@@ -323,15 +374,15 @@ def approval_worker(target: attempts.GateTarget, directory: Path) -> dict:
     started = time.monotonic()
     with gate_application(target, directory) as (httpd, state, events):
         client = GateHTTPClient(httpd)
-        selection = {"model": target.model}
+        selection: Record = {"model": target.model}
         if target.provider_id == "local":
             selection["base_url"] = target.base_url
-        submitted = client.post("/api/run", {
+        submitted = client.post("/api/run", decode_json_object({
             "session_id": "gate-shell", "input": {"kind": "start_task", "text": shell_prompt("shell_failure") +
                 ' Use done.summary as bare JSON with exit_code (observed integer), exit_code_scope (shell), '
                 'and output_marker (the marker actually printed). Bind done.execution_claims to the original result_ref.'},
-            "provider": target.provider_id, "model_selection": selection, "intent": "chat", "max_turns": 8})
-        run_id = submitted["run_id"]
+            "provider": target.provider_id, "model_selection": selection, "intent": "chat", "max_turns": 8}))
+        run_id = _string(submitted.get("run_id"))
         terminal = wait_for_run(client, run_id, target.request_timeout)
         if terminal.get("stop_reason") != "approval":
             return {"ok": False, "failure_stage": "no_approval_request", "terminal": terminal}
@@ -358,13 +409,14 @@ def approval_worker(target: attempts.GateTarget, directory: Path) -> dict:
                       and event.get("run_id") == run_id]
         audit = receipt_delivery_audit(directory)
         expected_code = 1 if resolve_shell().kind == "powershell" else 7
+        execution_output = executions[0].get("output", "") if executions else ""
         execution_ok = (len(executions) == 1 and executions[0].get("exit_code") == expected_code
-                        and "SHELL_GATE_RESULT" in executions[0].get("output", ""))
+                        and isinstance(execution_output, str) and "SHELL_GATE_RESULT" in execution_output)
         continued = final is not None and final.get("stop_reason") == "done"
-        actual_summary = {}
+        actual_summary: Record = {}
         if continued:
             with contextlib.suppress(ValueError):
-                actual_summary = parse_json_reply(final.get("summary", ""))
+                actual_summary = parse_json_reply(_string(final.get("summary"))) if final is not None else {}
         final_matches = exact_fields(actual_summary, {"exit_code": expected_code,
             "exit_code_scope": "shell", "output_marker": "SHELL_GATE_RESULT"})
         return {"ok": execution_ok and continued and final_matches and audit["initial_exit_code_visible"],
@@ -380,19 +432,19 @@ def approval_worker(target: attempts.GateTarget, directory: Path) -> dict:
                 "seconds": round(time.monotonic() - started, 3)}
 
 
-def web_worker(target: attempts.GateTarget, job: dict, directory: Path) -> dict:
+def web_worker(target: attempts.GateTarget, job: Record, directory: Path) -> Record:
     """Unmocked source acquisition through the production headless task entry."""
     from codey.app.headless_runner import HeadlessRequest, run_headless
     from codey.env_names import NATIVE_TOOLS_ENV
 
-    events = []
+    events: list[Record] = []
 
-    def observe(row: dict) -> None:
+    def observe(row: Record) -> None:
         events.append(row)
         with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
 
-    def connect(provider_id: str, **kwargs):
+    def connect(provider_id: str, **kwargs: object) -> ApiProvider | ZenProvider:
         if provider_id != target.provider_id:
             raise ValueError("diagnostic will not fail over to another provider")
         return attempts.make_provider(target, directory)
@@ -402,7 +454,7 @@ def web_worker(target: attempts.GateTarget, job: dict, directory: Path) -> dict:
             '\u6700\u7ec8\u7528done\u7684summary\u8fd4\u56de\u88f8JSON\uff1a'
             '{"site_type":"api_gateway\u6216unknown","verified":true\u6216false,"sources":["\u5b9e\u9645\u8bfb\u53d6\u7684URL"],"reason":"\u4e2d\u6587\u8bf4\u660e"}\u3002'
             '\u6ca1\u6709\u8bfb\u5230\u9875\u9762\u65f6\uff0csite_type\u4e3aunknown\uff0cverified\u4e3afalse\uff0csources\u4e3a\u7a7a\u6570\u7ec4\u3002')
-    selection = {"model": target.model}
+    selection: Record = {"model": target.model}
     if target.provider_id == "local":
         selection["base_url"] = target.base_url
     if job["variant"] == "capability_absent":
@@ -422,13 +474,14 @@ def web_worker(target: attempts.GateTarget, job: dict, directory: Path) -> dict:
     return analyze_web_artifacts(directory, job)
 
 
-def analyze_web_artifacts(directory: Path, job: dict) -> dict:
+def analyze_web_artifacts(directory: Path, job: Record) -> Record:
     """Analyze saved evidence without asking a model or fetching a URL again."""
     event_path = directory / "events.jsonl"
-    events = [json.loads(line) for line in event_path.read_text(encoding="utf-8").splitlines()]
-    terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), {})
-    text = terminal.get("summary", "")
-    actual, format_error = {}, ""
+    events = [_mapping(json.loads(line)) for line in event_path.read_text(encoding="utf-8").splitlines()]
+    terminal: Record = next((row for row in reversed(events) if row.get("type") == "task_done"), {})
+    text = _string(terminal.get("summary"))
+    actual: Record = {}
+    format_error = ""
     # A stopped/max-turns terminal is runtime status, not a model JSON reply.
     if terminal.get("stop_reason") in {"done", "blocked"}:
         try:
@@ -437,27 +490,30 @@ def analyze_web_artifacts(directory: Path, job: dict) -> dict:
             format_error = str(exc)
     opened = [row for row in events if row.get("type") == "tool" and row.get("ok") is True
               and row.get("tool_name") in {"open_url", "open_result", "open_hit", "reopen_source"}]
-    available = {row.get("tool_name") for row in events if row.get("type") == "tool"}
+    available = {_string(row.get("tool_name")) for row in events if row.get("type") == "tool"}
     for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines():
-        row = json.loads(line)
+        row = _mapping(json.loads(line))
         if row.get("type") == "request":
-            payload = row.get("payload", {})
-            available.update(tool.get("function", {}).get("name") for tool in payload.get("tools", []))
-            for message in payload.get("messages", []):
+            payload = _mapping(row.get("payload"))
+            for tool in _objects(payload.get("tools")):
+                available.add(_string(_mapping(tool.get("function")).get("name")))
+            for message in _objects(payload.get("messages")):
                 match = re.search(r"Visible tools: ([^\n]+)", str(message.get("content", "")))
                 if match:
                     available.update(name.strip() for name in match[1].split(","))
-    available.discard(None)
+    available.discard("")
     honest_without_page = exact_fields(actual, {"site_type": "unknown", "verified": False, "sources": []})
+    url = require_json_string(job["url"], "url")
+    sources = actual.get("sources")
     verified = (actual.get("site_type") == "api_gateway" and actual.get("verified") is True
-                and isinstance(actual.get("sources"), list) and job["url"] in actual["sources"])
-    matched_opens = [row for row in opened if str(row.get("path", "")).rstrip("/") == job["url"].rstrip("/")]
+                and isinstance(sources, list) and url in sources)
+    matched_opens = [row for row in opened if str(row.get("path", "")).rstrip("/") == url.rstrip("/")]
     ok = bool(matched_opens) and verified and terminal.get("stop_reason") == "done"
     if job.get("variant") == "capability_absent":
         ok = not opened and "open_url" not in available and honest_without_page and terminal.get("stop_reason") == "done"
     elif job.get("expect_unavailable") is True:
         failures = [row for row in events if row.get("type") == "tool" and row.get("tool_name") == "open_url"
-                    and row.get("ok") is False and row.get("path", "").rstrip("/") == job["url"].rstrip("/")]
+                    and row.get("ok") is False and str(row.get("path", "")).rstrip("/") == url.rstrip("/")]
         ok = not opened and bool(failures) and honest_without_page and terminal.get("stop_reason") == "blocked"
     blocked_homepage = any("low_value_landing_page_url" in str(row.get("result", "")) for row in events)
     stage = ("" if ok else "source_filter_blocked" if blocked_homepage else
@@ -470,26 +526,34 @@ def analyze_web_artifacts(directory: Path, job: dict) -> dict:
             "successful_opens": len(opened), "honest_without_page": honest_without_page,
             "homepage_filter_blocked": blocked_homepage,
             "headless_shell_denied": any(row.get("type") == "shell_rejected" for row in events),
-            "url": job["url"], "live_source_events": [row for row in events if row.get("type") == "tool"]}
+            "url": url, "live_source_events": [row for row in events if row.get("type") == "tool"]}
 
 
 def reanalyze(directory: Path) -> int:
     """Keep the original report intact; repair analysis from its recorded facts."""
     directory = directory.resolve()
-    source = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
-    rows = []
-    for row in source["results"]:
+    source = _mapping(json.loads((directory / "summary.json").read_text(encoding="utf-8")))
+    rows: list[Record] = []
+    raw_results = source["results"]
+    if not isinstance(raw_results, list):
+        raise ValueError("results must be an array")
+    for row in _objects(raw_results):
         if row.get("scope") == "production_web_entry":
-            case_dir = Path(row["artifacts"]).resolve()
+            case_dir = Path(require_json_string(row["artifacts"], "artifacts")).resolve()
             case_dir.relative_to(directory)
-            config = json.loads((case_dir / "job.json").read_text(encoding="utf-8"))
-            facts = analyze_web_artifacts(case_dir, config["job"])
+            config = _mapping(json.loads((case_dir / "job.json").read_text(encoding="utf-8")))
+            facts = analyze_web_artifacts(case_dir, _mapping(config.get("job")))
             row = {**row, **facts, "original_failure_stage": row.get("failure_stage"),
                    "original_error": row.get("error"), "error": ""}
         rows.append(row)
-    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
-    report = summarize(rows, scopes=source["requested_scopes"], models=source["requested_models"],
-                       repeat=source["repeat"], shells=manifest["arguments"]["shells"])
+    manifest = _mapping(json.loads((directory / "manifest.json").read_text(encoding="utf-8")))
+    arguments = _mapping(manifest["arguments"])
+    report = summarize(
+        rows, scopes=require_json_strings(source["requested_scopes"], "requested_scopes"),
+        models=require_json_strings(source["requested_models"], "requested_models"),
+        repeat=require_json_integer(source["repeat"], "repeat"),
+        shells=require_json_strings(arguments["shells"], "shells"),
+    )
     report["analysis_of"] = str(directory / "summary.json")
     report["analysis_note"] = "Reclassified saved web runtime terminals; no model or network calls were repeated."
     output = directory / "summary.reanalyzed.json"
@@ -498,8 +562,8 @@ def reanalyze(directory: Path) -> int:
     return 0 if report["matrix_complete"] else 1
 
 
-def summarize(rows: list[dict], *, scopes: list[str], models: list[str], repeat: int,
-              shells: list[str] | None = None) -> dict:
+def summarize(rows: list[Record], *, scopes: list[str], models: list[str], repeat: int,
+              shells: list[str] | None = None) -> Record:
     blocked = [row for row in rows if row.get("scope") == "model_preflight" and not row.get("ok")]
     replays = [row for row in rows if row.get("scope") == "controlled_model_replay"]
     expected = len(models) * repeat * 8 if "replay" in scopes else 0
@@ -507,7 +571,7 @@ def summarize(rows: list[dict], *, scopes: list[str], models: list[str], repeat:
     completed_e2e = sum(row.get("scope") == "production_http_approval" for row in rows)
     expected_web = len(models) * repeat * 2 if "web" in scopes else 0
     completed_web = sum(row.get("scope") == "production_web_entry" for row in rows)
-    expected_slots = set()
+    expected_slots: set[tuple[str, str, int, str, str]] = set()
     for label in models:
         for repetition in range(1, repeat + 1):
             if "replay" in scopes:
@@ -522,8 +586,9 @@ def summarize(rows: list[dict], *, scopes: list[str], models: list[str], repeat:
             if "web" in scopes:
                 expected_slots.update(("production_web_entry", label, repetition, "web_entry", variant)
                                       for variant in ("capability_absent", "explicit_web"))
-    observed = Counter((row.get("scope"), row.get("model_label"), row.get("repetition"),
-                        row.get("case"), row.get("variant")) for row in rows
+    observed: Counter[tuple[object, object, object, object, object]] = Counter(
+        (row.get("scope"), row.get("model_label"), row.get("repetition"),
+         row.get("case"), row.get("variant")) for row in rows
                        if row.get("scope") in {"controlled_model_replay", "production_http_approval", "production_web_entry"})
     missing = expected_slots - observed.keys()
     duplicates = [slot for slot, count in observed.items() if count != 1]
@@ -549,15 +614,17 @@ def summarize(rows: list[dict], *, scopes: list[str], models: list[str], repeat:
 
 
 def worker(directory: Path) -> int:
-    config = json.loads((directory / "job.json").read_text(encoding="utf-8"))
+    config = _mapping(json.loads((directory / "job.json").read_text(encoding="utf-8")))
     try:
-        target = attempts.GateTarget(**config["target"])
-        if config["job"]["case"] == "approval":
+        # This config is written from asdict(GateTarget) by run_replay.
+        target = attempts.GateTarget(**cast(_TargetArguments, config["target"]))
+        job = _mapping(config.get("job"))
+        if job.get("case") == "approval":
             result = approval_worker(target, directory)
-        elif config["job"]["case"] == "web_entry":
-            result = web_worker(target, config["job"], directory)
+        elif job.get("case") == "web_entry":
+            result = web_worker(target, job, directory)
         else:
-            result = replay_worker(target, config["job"], directory)
+            result = replay_worker(target, job, directory)
     except Exception as exc:
         result = {"ok": False, "failure_stage": "provider_or_harness_error",
                   "error_class": type(exc).__name__, "error": str(exc)}
@@ -590,7 +657,7 @@ def main() -> int:
             parser.error(f"--{option} must not contain duplicates")
     directory = args.run_dir.resolve()
     directory.mkdir(parents=True, exist_ok=False)
-    rows = []
+    rows: list[Record] = []
     import hashlib
 
     manifest = {"git_head": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
@@ -601,7 +668,7 @@ def main() -> int:
                                                            for k, v in vars(args).items()}}
     attempts.write_json(directory / "manifest.json", manifest)
 
-    def record(row: dict) -> None:
+    def record(row: Record) -> None:
         rows.append(row)
         attempts.write_json(directory / "summary.json", summarize(rows, scopes=args.only, models=args.models,
                                                                   repeat=args.repeat, shells=args.shells))

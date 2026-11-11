@@ -44,7 +44,7 @@ class ShellMatrixContext:
         pass
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--required", nargs="+", required=True)
     parser.add_argument("--output", type=Path, required=True)

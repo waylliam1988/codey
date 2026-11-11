@@ -91,7 +91,8 @@ def test_plain_text_is_generated_and_terminal_receipt_closes_without_generation(
     provider._codec.validate_view(provider.context_ledger.view)
 
 
-def test_gate_records_the_actual_auto_request(monkeypatch, tmp_path):
+@pytest.mark.parametrize("require_tool_call", [False, True])
+def test_gate_records_the_actual_tool_choice_request(monkeypatch, tmp_path, require_tool_call):
     from tools.local_model_gate_attempts import GateTarget, RecordingProvider
 
     wire = []
@@ -103,10 +104,10 @@ def test_gate_records_the_actual_auto_request(monkeypatch, tmp_path):
     monkeypatch.setattr(api_transport, "open_request", reply)
     target = GateTarget("http://model.test/v1", "test", 32768, 8192, 12000)
     provider = RecordingProvider(target, tmp_path)
-    provider.send_turn("finish", TOOLS, output_token_limit=123)
+    provider.send_turn("finish", TOOLS, output_token_limit=123, require_tool_call=require_tool_call)
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
     assert rows[0]["payload"] == wire[0]
-    assert rows[0]["payload"]["tool_choice"] == "auto"
+    assert rows[0]["payload"]["tool_choice"] == ("required" if require_tool_call else "auto")
     assert rows[0]["payload"]["max_tokens"] == 123
     provider.acknowledge_tool_results([ProviderToolResult('c1', 'OK: done accepted')], TOOLS)
     rows = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]

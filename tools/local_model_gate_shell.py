@@ -15,10 +15,13 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
+from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 from tools.local_model_gate_attempts import (
     GateTarget,
     isolate_gate_secondary_models,
@@ -26,8 +29,24 @@ from tools.local_model_gate_attempts import (
     write_json,
 )
 
+if TYPE_CHECKING:
+    from codey.app.context import AppContext
+    from codey.app.server import CodeyHTTPServer
+
 SHELL_CASES = ("shell_approve", "shell_deny", "shell_failure")
 SHELL_MARKER = "SHELL_GATE_RESULT"
+
+
+def _mapping(value: object) -> JsonObject:
+    return decode_json_object(value) if value is not None else {}
+
+
+def _string(value: object) -> str:
+    return require_json_string(value, "gate value")
+
+
+def _objects(value: object) -> list[JsonObject]:
+    return [_mapping(item) for item in value] if isinstance(value, list) else []
 
 
 def probe_command(case: str) -> str:
@@ -46,13 +65,14 @@ def shell_prompt(case: str) -> str:
 
 
 class GateHTTPClient:
-    def __init__(self, httpd):
-        host, port = httpd.server_address
+    def __init__(self, httpd: CodeyHTTPServer) -> None:
+        host, port = httpd.server_address[:2]
+        host = _string(host)
         self.origin = f"http://{host}:{port}"
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         self.post("/api/operator_session", {"token": httpd.operator_auth.issue_bootstrap()})
 
-    def request(self, path: str, body: dict | None = None) -> tuple[int, dict]:
+    def request(self, path: str, body: JsonObject | None = None) -> tuple[int, JsonObject]:
         request = urllib.request.Request(
             self.origin + path, data=json.dumps(body).encode() if body is not None else None,
             headers={"Origin": self.origin, "Content-Type": "application/json"})
@@ -61,15 +81,15 @@ class GateHTTPClient:
         except urllib.error.HTTPError as exc:
             response = exc
         with response:
-            return response.status, json.loads(response.read())
+            return response.status, decode_json_object(json.loads(response.read()))
 
-    def post(self, path: str, body: dict) -> dict:
+    def post(self, path: str, body: JsonObject) -> JsonObject:
         status, payload = self.request(path, body)
         if status not in {200, 202}:
             raise AssertionError(f"{path}: HTTP {status}: {payload}")
         return payload
 
-    def state(self) -> dict:
+    def state(self) -> JsonObject:
         status, payload = self.request("/api/state")
         if status not in {200, 202}:
             raise AssertionError(f"state: HTTP {status}: {payload}")
@@ -77,7 +97,9 @@ class GateHTTPClient:
 
 
 @contextmanager
-def gate_application(target: GateTarget, directory: Path):
+def gate_application(
+    target: GateTarget, directory: Path,
+) -> Iterator[tuple[CodeyHTTPServer, AppContext, list[dict[str, object]]]]:
     """Isolate app/config stores while using production factories and worker."""
     from codey.app import server
     from codey.app.context import AppContext
@@ -88,9 +110,9 @@ def gate_application(target: GateTarget, directory: Path):
     # The parent owns the archive destination. Use its temporary state root
     # so successful shell cases do not collide with copytree(directory/state).
     input_path = directory / "input.json"
-    inputs = json.loads(input_path.read_text(encoding="utf8")) if input_path.is_file() else {}
+    inputs = _mapping(json.loads(input_path.read_text(encoding="utf8"))) if input_path.is_file() else {}
     if inputs.get("state"):
-        state_root = Path(inputs["state"])
+        state_root = Path(_string(inputs["state"]))
         cleanup_state_root = False
     else:
         state_root = Path(tempfile.gettempdir()) / (
@@ -98,7 +120,7 @@ def gate_application(target: GateTarget, directory: Path):
         )
         state_root.mkdir(parents=True, exist_ok=False)
         cleanup_state_root = True
-    events = []
+    events: list[dict[str, object]] = []
     env = {"NATIVE_TOOLS": "1"}
     if target.provider_id == "local":
         env.update(LOCAL_OPENAI_BASE_URL=target.base_url, LOCAL_OPENAI_MODEL=target.model)
@@ -116,12 +138,17 @@ def gate_application(target: GateTarget, directory: Path):
         state = AppContext(state_root)
         stack.callback(state.close)
         # Record production events without modifying dispatch or provider state.
-        state._on_event_emitted = lambda row: events.append(dict(row))
+        def record_event(payload: dict[str, object]) -> None:
+            events.append(dict(payload))
+
+        stack.enter_context(patch.object(state, "_on_event_emitted", record_event))
         preferences = state.providers.model_preferences
         snapshot = preferences.snapshot()
         sources = snapshot["sources"]
         sources[target.provider_id] = {"enabled": True, "models": [target.model]}
         preferences.save(sources, base_revision=snapshot["revision"])
+        if state.ghost_inbox is None:
+            raise RuntimeError("ghost inbox is unavailable")
         state.ghost_inbox.set_learning_enabled(False)
         stack.enter_context(isolate_gate_secondary_models(target))
         stack.enter_context(record_api_generations(directory / "provider.jsonl"))
@@ -148,19 +175,21 @@ def gate_application(target: GateTarget, directory: Path):
                 raise RuntimeError("shell gate did not release its worker/server")
 
 
-def wait_for_run(client: GateHTTPClient, run_id: str, timeout: float) -> dict:
+def wait_for_run(client: GateHTTPClient, run_id: str, timeout: float) -> JsonObject:
     deadline = time.monotonic() + timeout
-    snapshot = {}
+    snapshot: JsonObject = {}
     while time.monotonic() < deadline:
         snapshot = client.state()
-        event = snapshot.get("last_terminal_event") or {}
+        event = _mapping(snapshot.get("last_terminal_event"))
         if not snapshot.get("busy") and event.get("run_id") == run_id:
             return event
         time.sleep(0.02)
     raise AssertionError(f"run did not finish: {snapshot}")
 
 
-def verify_shell_events(events: list[dict], source_run: str, case: str, original_window: dict) -> dict:
+def verify_shell_events(
+    events: list[dict[str, object]], source_run: str, case: str, original_window: JsonObject,
+) -> dict[str, object]:
     terminals = [row for row in events if row.get("type") == "task_done"]
     if any(row.get("stop_reason") not in {"approval", "done"} for row in terminals):
         raise AssertionError(f"intermediate task failure: {terminals}")
@@ -172,9 +201,11 @@ def verify_shell_events(events: list[dict], source_run: str, case: str, original
     expected_exit = 7 if case == "shell_failure" else 0
     if result.get("approved") is not approved:
         raise AssertionError("approval decision mismatch")
-    if approved and (result.get("exit_code") != expected_exit or SHELL_MARKER not in result.get("output", "")):
+    output = result.get("output", "")
+    if approved and (result.get("exit_code") != expected_exit or not isinstance(output, str)
+                     or SHELL_MARKER not in output):
         raise AssertionError(f"execution output mismatch: {result}")
-    if not approved and (result.get("exit_code") is not None or SHELL_MARKER in result.get("output", "")):
+    if not approved and (result.get("exit_code") is not None or (isinstance(output, str) and SHELL_MARKER in output)):
         raise AssertionError("denied command was reported as executed")
     # Approval continuation resumes the original durable task checkpoint. It
     # therefore keeps the source run identity while producing a second
@@ -187,19 +218,19 @@ def verify_shell_events(events: list[dict], source_run: str, case: str, original
             "stop_reason": finals[0]["stop_reason"], "summary": finals[0].get("summary", "")}
 
 
-def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict:
+def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict[str, object]:
     if target.protocol != "native":
         raise ValueError("shell continuation gate requires native tools")
     started = time.monotonic()
     with gate_application(target, directory) as (httpd, state, events):
         client = GateHTTPClient(httpd)
-        selection = {"model": target.model}
+        selection: JsonObject = {"model": target.model}
         if target.provider_id == "local":
             selection["base_url"] = target.base_url
         submitted = client.post("/api/run", {
             "session_id": "gate-shell", "input": {"kind": "start_task", "text": shell_prompt(case)},
             "provider": target.provider_id, "model_selection": selection, "intent": "chat", "max_turns": 6})
-        source_run = submitted["run_id"]
+        source_run = _string(submitted.get("run_id"))
         terminal = wait_for_run(client, source_run, target.request_timeout)
         if terminal.get("stop_reason") != "approval":
             raise AssertionError(f"shell request did not pause for approval: {terminal}")
@@ -219,7 +250,8 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict:
         deadline = time.monotonic() + target.request_timeout
         while time.monotonic() < deadline:
             snapshot = client.state()
-            approval = next((row for row in snapshot.get("shell_approvals", []) if row["id"] == approval_id), {})
+            approval = next((row for row in _objects(snapshot.get("shell_approvals"))
+                             if row.get("id") == approval_id), {})
             continuation_run = approval.get("continuation_run_id")
             completed = any(
                 row.get("type") == "task_done" and row.get("run_id") == source_run
@@ -247,7 +279,7 @@ def run_shell_case(case: str, target: GateTarget, directory: Path) -> dict:
         from codey.runtime.core.protocol_window import ProtocolWindowRef
 
         ref = ProtocolWindowRef.from_payload(original_window)
-        if state.durable.task(approval.get("continuation_run_id", "")).conversation_id != ref.session_id:
+        if state.durable.task(_string(approval.get("continuation_run_id", ""))).conversation_id != ref.session_id:
             raise AssertionError("approval continuation changed the protocol session")
         result_items = []
         for entry in state.durable.entries(ref.session_id):
