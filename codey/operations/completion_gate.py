@@ -225,16 +225,21 @@ def _required_checks_verdict(
             by_id.setdefault((row.check_id or ""), []).append(row)
         except Exception:
             continue
-    from codey.policies.tool_requirement import parse_tool_success_check
+    from codey.policies.output_requirement import check_id as output_id
+    from codey.policies.output_requirement import is_output_check
+    from codey.policies.tool_requirement import PREFIX, parse_tool_success_check
+
+    if any(key.startswith(PREFIX) and issue.reason_code in {
+        "tool_execution_missing", "tool_parent_missing", "observation_receipt_invalid",
+        "observation_selector_unavailable", "conflicting_observations",
+    } for key, issue in tool_evaluations.items()):
+        required = tuple(sorted(required, key=is_output_check))
 
     for declaration in required:
         try:
             requirement = parse_tool_success_check(declaration)
         except (ValueError, TypeError):
             return GateVerdict(complete=False, followup="Invalid declared tool requirement; task cannot complete.", proof=None)
-        from codey.policies.output_requirement import check_id as output_id
-        from codey.policies.output_requirement import is_output_check
-
         req = (requirement.check_id if requirement is not None else
                output_id(declaration) if is_output_check(declaration) else declaration)
         rows = by_id.get(req, [])

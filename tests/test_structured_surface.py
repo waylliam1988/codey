@@ -220,7 +220,7 @@ def test_binding_precondition_feedback_precedes_answer_format(tmp_path: Path, en
         checks = completion_gate._required_tool_checks(s, output.text, CompletionContext(), output.observations)
         verdict = completion_gate._required_checks_verdict(s, checks.rows, checks.evaluations)
     assert verdict is not None and not verdict.complete
-    assert ("tool_parent_missing" if enabled else "output_format_invalid") in verdict.followup
+    assert "tool_parent_missing" in verdict.followup
 
 
 def kernel_output(s: TaskSession) -> completion_output.CompletionOutput:

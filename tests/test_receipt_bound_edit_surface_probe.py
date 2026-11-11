@@ -51,18 +51,18 @@ def test_upload_assembly_uses_receipts_when_model_summary_omits_facts(
     ])
     row = probe.run_arm(tmp_path / "run", "upload_bound" if assembled else "upload", arm,
                         Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10), max_turns=4)
-    assert row.get("stop_reason") == ("no_progress" if assembled else "done"), row
-    assert row["passed"] is False, row
-    assert row["facts_match"] is False
+    assert row.get("stop_reason") == "done", row
+    assert row["passed"] is assembled, row
+    assert row["facts_match"] is assembled
     assert row["receipt_report_available"] is True
     report = json.loads((tmp_path / "run" / "receipt-report.json").read_text(encoding="utf-8"))
     assert report["filename"] == "fixture.txt" and "UPLOAD_BYTES_82" in report["page_text"]
     assert report["effect_verified"] is False
     if assembled:
-        assert "page_text" in str(row["first_rejection"])
-        assert row["model_calls"] == 4
-    else:
-        assert row["model_calls"] == 2
+        output = json.loads(str(row["answer"]))
+        assert output["sha256"] == report["sha256"]
+        assert output["page_text"] == report["page_text"]
+    assert row["model_calls"] == 2
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")

@@ -168,7 +168,7 @@ def test_b2_feedback_identifies_missing_parent_before_answer_format(tmp_path: Pa
         checks = completion_gate._required_tool_checks(s, output.text, CompletionContext(), output.observations)
         verdict = completion_gate._required_checks_verdict(s, checks.rows, checks.evaluations)
     assert verdict is not None and not verdict.complete
-    assert ("tool_parent_missing" if config == "B2" else "output_format_invalid") in verdict.followup
+    assert "tool_parent_missing" in verdict.followup
 
 
 @pytest.mark.parametrize(("state", "reason"), [
@@ -303,7 +303,7 @@ def test_b2_real_upload_binding_paired_without_edit_or_typed_helpers(tmp_path: P
     install_http(monkeypatch, [{"tool": "codemode", "args": {"code": code, "inputs": {"url": URL, "attachment": attachment["id"]}}},
                                done, done, done])
     row = probe.run_arm(tmp_path / "run", "upload_bound", arm, "B2", TARGET, max_turns=4)
-    assert row["passed"] is (arm == "B"), row
+    assert row["passed"], row
     assert decode_json_object(row["metrics"])["browser_upload"] == 1
     if arm == "B":
         assert "UPLOAD_BYTES_82" in str(row["answer"])

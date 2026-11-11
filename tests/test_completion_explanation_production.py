@@ -1,6 +1,7 @@
 """Production prose assembly retains original receipts and strict final checks."""
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -30,6 +31,7 @@ from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.policies.tool_requirement import require_tool_success
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
+from codey.research.ledger import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object
 
@@ -73,6 +75,43 @@ def test_missing_failed_and_conflicting_receipts_cannot_be_filled_by_model_claim
             assert json.loads(output.text) == {"code": "actual", "explanation": 'code="actual"'}
         else:
             assert "code" not in json.loads(output.text)
+
+
+@pytest.mark.parametrize(("state", "reason"), [
+    ("missing", "tool_execution_missing"), ("failed_parent", "tool_parent_missing"),
+    ("bad_hash", "observation_receipt_invalid"), ("truncated", "observation_selector_unavailable"),
+    ("partial", "observation_selector_unavailable"), ("complete", ""),
+])
+def test_browser_body_binding_uses_complete_original_receipt_before_format(state: str, reason: str) -> None:
+    schema = '{"type":"object","properties":{"explanation":{"type":"string"},"body":{"type":"string"}},' \
+             '"required":["explanation","body"]}'
+    binding = require_tool_success("browser_read", via="codemode", answer_pointer="/body")
+    session = session_for(binding)
+    session.policy = replace(session.policy, required_checks=(declaration("json_explanation", schema), binding))
+    text = "Verified page正文"
+    url = "https://example.test/page"
+    digest = hashlib.sha256(text.encode()).hexdigest()[:16]
+    source = OpenedSource(url, url, "Page", "2026-11-11T00:00:00+00:00",
+                          "tampered" if state == "bad_hash" else digest, truncated=state == "truncated")
+    read = ToolResult(ToolCall("browser_read", {}, "read"), "decoy display", ok=True, canonical={
+        "research_observation": {"source": source.to_dict(), "text": text, "pages": []},
+        "read_passages": [{"start": 1 if state == "partial" else 0, "end": len(text)}],
+    })
+    if state != "missing":
+        parent = ToolResult(ToolCall("codemode", {}, "parent"), "parent", ok=state != "failed_parent",
+                            canonical={"child_effect_ids": ["read"]})
+        for receipt in (read, parent):
+            identity = receipt.call.call_id
+            session._memory_results[identity] = receipt
+            project_execution_record(session, identity, receipt.call, receipt, ok=receipt.ok)
+    output = prepare_completion_output(session, "explanation", CompletionContext())
+    verdict = evaluate(session, output.text, observations=output.observations)
+    assert verdict.complete is (state == "complete"), verdict
+    if reason:
+        assert reason in verdict.followup and "output_format_invalid" not in verdict.followup
+    else:
+        assert json.loads(output.text)["body"] == text
+    assert "value" not in read.canonical
 
 
 @pytest.mark.parametrize("pointer", ["", "/explanation", "/explanation/child"])

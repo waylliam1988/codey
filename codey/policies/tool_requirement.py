@@ -125,7 +125,8 @@ class ToolSuccessRequirement:
         execution = self.execution_guidance
         if self.answer_pointer is None:
             return execution
-        selected = f"value{self.result_pointer}"
+        selected = ("research_observation.text" if self._binds_browser_body
+                    else f"value{self.result_pointer}")
         if self.result_line is not None:
             selected += f", absolute file line {self.result_line}"
         instruction = EXPLANATION_GUIDANCE if explanation else JSON_ANSWER_GUIDANCE
@@ -187,16 +188,28 @@ class ToolSuccessRequirement:
                         or {key: argument_digest(value) for key, value in receipt.call.args.items()}
                         != row.get("argument_digests")):
                     raise ValueError("receipt differs from committed execution")
-                value = decode_json_value(receipt.canonical["value"])
+                if ((self._binds_browser_body or self.tool == "browser_upload")
+                        and receipt.call.call_id != row.get("call_id")):
+                    raise ValueError("browser receipt identity differs from committed execution")
+                value = (_browser_body(receipt) if self._binds_browser_body
+                         else decode_json_value(receipt.canonical["value"]))
             except (KeyError, ValueError, TypeError):
                 return ToolObservation(RequirementEvaluation("observation_receipt_invalid",
                     "The required execution committed, but its full receipt is unavailable or inconsistent. "
                     "Restore the original verified receipt before proposing done; display text cannot prove the answer."))
+            if ((self._binds_browser_body and value is None)
+                    or (self.tool == "browser_upload" and receipt.truncated)):
+                return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
+                    "The committed browser receipt or read window is incomplete. Obtain complete evidence before editing the answer. "
+                    + self.execution_guidance))
+            selected: JsonValue
             try:
-                if self.result_line is not None:
+                if self._binds_browser_body:
+                    selected = value
+                elif self.result_line is not None:
                     from codey.toolchain.result_schema import read_page_line
 
-                    selected: JsonValue = read_page_line(value, self.result_line)
+                    selected = read_page_line(value, self.result_line)
                     if selected is None:
                         continue
                 else:
@@ -213,6 +226,10 @@ class ToolSuccessRequirement:
                 "Committed observations disagree at the required selector. An answer edit cannot resolve this. "
                 "Report the conflict; do not choose an arbitrary result or repeat execution merely to restate it."))
         return ToolObservation(RequirementEvaluation(), observed[0][1], tuple(item[0] for item in observed))
+
+    @property
+    def _binds_browser_body(self) -> bool:
+        return self.tool == "browser_read" and self.result_pointer in {"", "/text"}
 
     def evaluate_observation(self, observation: ToolObservation, final_text: str) -> RequirementEvaluation:
         if not observation.evaluation.passed or self.answer_pointer is None:
@@ -240,13 +257,33 @@ class ToolSuccessRequirement:
             result.feedback + "\nActual answer value (JSON): " + _value_preview(actual))
 
     def _answer_failure(self, reason: str, expected: JsonValue, refs: list[str]) -> RequirementEvaluation:
+        view = "output" if self._binds_browser_body else "value"
         return RequirementEvaluation(reason,
             "Execution and observation are already satisfied. Do not repeat the tool execution. "
             + JSON_ANSWER_GUIDANCE + f" Repair only the answer at pointer {self.answer_pointer!r} "
             "using the committed selected value below. Preserve its JSON type and content, including literal quotes. "
-            'Do not copy a truncated preview; use read_tool_result with view="value" for omitted detail.\n'
+            f'Do not copy a truncated preview; use read_tool_result with view="{view}" for omitted detail.\n'
             "Expected selected value (JSON): " + _value_preview(expected) + "\n"
             "Committed result references: " + _json(refs[:8]) + f" (total {len(refs)})")
+
+
+def _browser_body(receipt: ToolResult) -> str | None:
+    from codey.research.ledger_receipts import source_observation
+
+    source, text, _pages = source_observation(receipt.canonical.get("research_observation"))
+    passages = receipt.canonical.get("read_passages")
+    if receipt.truncated or source.truncated or not isinstance(passages, list) or not passages:
+        return None
+    covered = 0
+    for passage in passages:
+        row = decode_json_object(passage)
+        start, end = row.get("start"), row.get("end")
+        if type(start) is not int or type(end) is not int or not covered <= start < end <= len(text):
+            return None
+        if text[covered:start].strip():
+            return None
+        covered = end
+    return None if text[covered:].strip() else text
 
 
 def _value_preview(value: JsonValue) -> str:
