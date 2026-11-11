@@ -351,6 +351,14 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                     "\nSyntax repair required: submit one new syntactically valid CodeMode program; "
                     "do not repeat the rejected source."
                 )
+            if result.audit.get("error_code") == "result_contract":
+                for ref in ordered_child_effect_ids:
+                    receipt = session._memory_results.get(ref)
+                    if (receipt is not None and receipt.ok and receipt.call.name == "browser_download"
+                            and "value" in receipt.canonical):
+                        args = json.dumps({"result_ref": ref, "view": "value"})
+                        detail += ("\nBrowser download already completed. Recover the path and SHA256 with "
+                                   f"read_tool_result({args}). Do not repeat the download.")
             if result.audit.get("error_code") in {"missing_return", "result_encoding"} and ordered_child_effect_ids:
                 names = sorted({session.executed[ref]["name"] for ref in ordered_child_effect_ids})
                 detail += "\nInvoked tool return types (Result<T> success data is result.value):\n" + "\n".join(

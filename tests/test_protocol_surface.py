@@ -868,6 +868,79 @@ def test_production_download_delivers_only_authorized_recovery(
     assert any(item["value"]["replayed"] == replayed for item in results)
 
 
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("download_succeeds", [True, False])
+def test_production_result_contract_points_to_successful_download_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, download_succeeds: bool,
+) -> None:
+    directory = tmp_path / "run"
+    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
+            "const s=unwrap(await tools.browser_snapshot({}));"
+            "const ref=s.elements.find(e=>e.name==='Download fixture').ref;")
+    if not download_succeeds:
+        code += "unwrap(await tools.browser_snapshot({}));"
+    code += ("const download=await tools.browser_download({ref});"
+             "unwrap(await tools.browser_read({})); return download.path;")
+    request_count = 0
+    checked_feedback = False
+
+    def scripted(url: str, payload: dict[str, object], headers: dict[str, str], **kwargs: object) -> dict[str, object]:
+        nonlocal request_count, checked_feedback
+        request_count += 1
+        observe = kwargs.get("observe")
+        assert callable(observe)
+        observe(attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0.0)
+        if request_count == 1:
+            return surface.script_body({"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}})
+
+        messages = payload["messages"]
+        assert isinstance(messages, list)
+        contents = [require_json_string(msg["content"], "content") for msg in map(decode_json_object, messages)]
+        download, = [r for r in tool_receipts(directory / "state") if r.result.call.name == "browser_download"]
+        assert download.result.ok is download_succeeds
+        if request_count == 2:
+            parent_text, = [content for content in contents if content.startswith("[result: codemode]\n")]
+            assert 'Undeclared result field "path"' in parent_text
+            receipt_args: JsonObject = {"result_ref": download.identity, "view": "value"}
+            instruction = "read_tool_result(" + json.dumps(receipt_args) + ")"
+            assert (instruction in parent_text) is download_succeeds
+            checked_feedback = True
+            if download_succeeds:
+                return surface.script_body({"tool": "read_tool_result", "args": receipt_args})
+            return surface.script_body({"tool": "done", "args": {"summary": "The download failed."}})
+
+        assert request_count == 3 and download_succeeds
+        receipt_text, = [content for content in contents if content.startswith("[result: read_tool_result]\n")]
+        page = decode_json_object(json.loads(receipt_text.split("\n", 1)[1].split("\n\nResult metadata:", 1)[0]))
+        assert page["result_ref"] == download.identity and page["view"] == "value"
+        data = decode_json_object(json.loads(require_json_string(page["text"], "text")))["value"]
+        assert data == download.result.canonical["value"]
+        value = decode_json_object(data)
+        assert value["sha256"] == hashlib.sha256(DOWNLOAD_BYTES).hexdigest()
+        assert value["suggested_filename"] == "fixture-download.txt"
+        return surface.script_body({"tool": "done", "args": {"summary":
+            f'{value["suggested_filename"]} {value["path"]} SHA256 {value["sha256"]}'}})
+
+    monkeypatch.setattr("codey.providers.api_generation.generate", scripted)
+    monkeypatch.setattr("tools.completion_explanation_ab.service_state", lambda _url: {})
+    row = probe.run_arm(directory, "download", "A", "B4", TARGET, max_turns=3 if download_succeeds else 2)
+    assert checked_feedback, row
+    assert row["passed"] is download_succeeds, row
+    assert row["model_calls"] == (3 if download_succeeds else 2), row
+    receipts = tool_receipts(directory / "state")
+    download, = [r for r in receipts if r.result.call.name == "browser_download"]
+    assert download.result.ok is download_succeeds
+    reads = [r.result for r in receipts if r.result.call.name == "read_tool_result"]
+    if download_succeeds:
+        read, = reads
+        assert read.ok and read.call.args["result_ref"] == download.identity
+    else:
+        assert not reads
+    parent, = [r.result for r in receipts if r.result.call.name == "codemode"]
+    assert not parent.ok and parent.audit["error_code"] == "result_contract"
+    assert "repair" not in parent.canonical and "recovered_return" not in parent.canonical
+
+
 def page_reset_action(*, navigate: bool = True, reread: bool = False) -> JsonObject:
     code = "unwrap(await tools.browser_navigate({url:inputs.url}));" if navigate else ""
     code += ("let s=unwrap(await tools.browser_snapshot({}));"
