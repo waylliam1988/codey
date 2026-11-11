@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
-from tools import mechanical_surface
+from tools import mechanical_surface, structured_surface
 from tools import receipt_bound_edit_ab as edit
 from tools.browser_production_live_gate import run_case, select_target
 from tools.completion_artifact_audit import tool_receipts
@@ -67,13 +67,14 @@ def scenario_options(scenario: str) -> tuple[str, dict[str, bool]]:
 
 
 def run_arm(directory: Path, scenario: str, arm: str, target: Target, *, max_turns: int,
-            mechanical: bool = False) -> JsonObject:
+            mechanical: bool = False, structured: bool = False) -> JsonObject:
     before = edit.production_source_digest()
     mode, options = scenario_options(scenario)
     # Optional second-model review is outside this edit/browser probe. None
     # reports review unavailable; it never manufactures a positive review.
-    with (edit.prototype_helper(directory, enabled=arm == "B"),
+    with (edit.prototype_helper(directory, enabled=arm == "B" and not structured),
           mechanical_surface.prototype(directory, scenario, enabled=mechanical and arm == "B"),
+          structured_surface.prototype(directory, scenario, enabled=structured and arm == "B"),
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(run_case(directory, mode, target, max_turns=max_turns, **options))
@@ -83,6 +84,7 @@ def run_arm(directory: Path, scenario: str, arm: str, target: Target, *, max_tur
                acquisition="scripted-open-url" if scenario == "source_failure_fixed" else "autonomous-model",
                **edit.helper_metrics(directory), **provider_metrics(directory / "provider.jsonl"))
     row.update(mechanical=mechanical and arm == "B", **mechanical_surface.metrics(directory))
+    row.update(structured_entry=structured and arm == "B", **structured_surface.metrics(directory))
     if mechanical and arm == "B" and scenario == "source_failure":
         row["acquisition"] = "mechanical-required-open-url"
     if scenario in {"upload", "upload_bound"} and (directory / "state" / "durable.sqlite3").exists():
@@ -94,13 +96,15 @@ def run_arm(directory: Path, scenario: str, arm: str, target: Target, *, max_tur
 
 
 def run_worker(directory: Path, scenario: str, arm: str, target: Target, *, budget: float,
-               max_turns: int, mechanical: bool = False) -> JsonObject:
+               max_turns: int, mechanical: bool = False, structured: bool = False) -> JsonObject:
     command = [sys.executable, "-m", "tools.receipt_bound_edit_surface_probe", "--run-dir", str(directory),
                "--worker-case", scenario, "--worker-arm", arm, "--expected-model", target.model,
                "--kobold-base-url", target.base_url, "--timeout", str(target.timeout),
                "--max-turns", str(max_turns), "--budget", str(budget)]
     if mechanical:
         command.append("--mechanical-b")
+    if structured:
+        command.append("--structured-b")
     process, owner = cancellation.start_process(command, cwd=edit.ROOT)
     error = ""
     output = ""
@@ -141,7 +145,9 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=90, help="Per model request timeout.")
     parser.add_argument("--budget", type=float, default=300, help="Total seconds per isolated worker.")
     parser.add_argument("--max-turns", type=int, default=10)
-    parser.add_argument("--mechanical-b", action="store_true", help="B additionally uses typed browser helpers, receipt-only repair and factual delivery.")
+    variants = parser.add_mutually_exclusive_group()
+    variants.add_argument("--mechanical-b", action="store_true", help="B additionally uses typed browser helpers, receipt-only repair and factual delivery.")
+    variants.add_argument("--structured-b", action="store_true", help="B uses JSON steps, frozen admission checks and receipt-bound delivery.")
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--worker-case", choices=SCENARIOS, help=argparse.SUPPRESS)
     parser.add_argument("--worker-arm", choices=("A", "B"), help=argparse.SUPPRESS)
@@ -155,7 +161,7 @@ def main() -> int:
             parser.error("worker requires a pinned arm and unchanged model")
         try:
             row = run_arm(args.run_dir.resolve(), args.worker_case, args.worker_arm, target,
-                          max_turns=args.max_turns, mechanical=args.mechanical_b)
+                          max_turns=args.max_turns, mechanical=args.mechanical_b, structured=args.structured_b)
             print(json.dumps(row, ensure_ascii=True), flush=True)
         except Exception:
             traceback.print_exc()
@@ -169,20 +175,26 @@ def main() -> int:
              edit.ROOT / "tools/completion_explanation_ab.py", edit.ROOT / "tools/receipt_bound_edit_recovery_probe.py"]
     if args.mechanical_b:
         files.append(Path(mechanical_surface.__file__))
+    if args.structured_b:
+        files.extend((Path(mechanical_surface.__file__), Path(structured_surface.__file__)))
+    version = structured_surface.VERSION if args.structured_b else mechanical_surface.VERSION if args.mechanical_b else VERSION
+    harness_before: JsonObject = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
     edit.write_json(root / "manifest.json", {
-        "version": mechanical_surface.VERSION if args.mechanical_b else VERSION, "scenarios": list(selected), "repeats": args.repeats,
+        "version": version, "scenarios": list(selected), "repeats": args.repeats,
         "model": target.model, "base_url": target.base_url, "seed": target.seed, "temperature": 0,
         "provider": "Shared ExperimentProvider/text JSON schema; B adds scripted repair and required-source acquisition"
-                    if args.mechanical_b else "ExperimentProvider; text JSON schema; both arms identical",
+                    if args.mechanical_b else "ExperimentProvider/text JSON schema; B exposes structured steps compiled to real CodeMode"
+                    if args.structured_b else "ExperimentProvider; text JSON schema; both arms identical",
         "max_turns": args.max_turns,
         "request_timeout": args.timeout, "worker_budget": args.budget,
         "production_source_before": before, "source_digest_kind": "codey-files-sha256-v2",
         "interface_version": edit.INTERFACE_VERSION, "helper_sha256": edit.HELPER_DIGEST,
         "mechanical_b": args.mechanical_b, "mechanical_version": mechanical_surface.VERSION if args.mechanical_b else None,
         "mechanical_helper_sha256": mechanical_surface.HELPER_DIGEST if args.mechanical_b else None,
-        "harnesses": {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in files},
+        "structured_b": args.structured_b, "structured_program_sha256": structured_surface.PROGRAM_DIGEST if args.structured_b else None,
+        "harnesses": harness_before,
         "optional_model_review": "unavailable; not scored as positive review", "secondary_provider_tabs": False,
-        "diagnostics": {"upload_bound": "Production binder in A; experiment source-text selector in B" if args.mechanical_b else
+        "diagnostics": {"upload_bound": "Production binder in A; experiment source-text selector in B" if args.mechanical_b or args.structured_b else
                         "Existing production json_explanation + receipt binding in both arms",
                         "source_failure_fixed": "Scripted first CodeMode/open_url; real acquisition, not autonomous tool selection"},
         "snapshot_scope": "Serialize/restore frozen turn contracts; not a whole-process restart",
@@ -198,7 +210,7 @@ def main() -> int:
             for arm in (("A", "B") if (index + repetition) % 2 == 0 else ("B", "A")):
                 print(json.dumps({"starting": scenario, "arm": arm, "repetition": repetition + 1}), flush=True)
                 row = run_worker(pair / arm, scenario, arm, target, budget=args.budget,
-                                 max_turns=args.max_turns, mechanical=args.mechanical_b)
+                                 max_turns=args.max_turns, mechanical=args.mechanical_b, structured=args.structured_b)
                 rows.append(row)
                 pair_rows.append(row)
                 print(json.dumps({"scenario": scenario, "arm": arm, "passed": row["passed"],
@@ -206,12 +218,13 @@ def main() -> int:
                 edit.write_json(root / "progress.json", {"runs": list(rows), "pairs": pairs})
             pairs.append(pair_audit(pair, pair_rows))
     after = edit.production_source_digest()
-    summary: JsonObject = {"version": mechanical_surface.VERSION if args.mechanical_b else VERSION,
+    harness_after: JsonObject = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
+    summary: JsonObject = {"version": version, "harnesses_stable": harness_before == harness_after,
                            "source_before": before, "source_after": after,
                            "source_stable": before == after, "total_runs": len(rows),
                            "passed_runs": sum(row["passed"] is True for row in rows), "runs": list(rows), "pairs": pairs}
     edit.write_json(root / "summary.json", summary)
-    return 0 if before == after and all(row["passed"] is True for row in rows) else 1
+    return 0 if before == after and harness_before == harness_after and all(row["passed"] is True for row in rows) else 1
 
 
 if __name__ == "__main__":
