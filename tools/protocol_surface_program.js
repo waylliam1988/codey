@@ -1,6 +1,7 @@
 // Experiment-only interpreter. No mutation cache: historical success is not current page state.
 const completed = [];
 const snapshots = {};
+const fileReads = new Map();
 for (const step of inputs.steps) {
   try {
     let name = step.op;
@@ -25,7 +26,7 @@ for (const step of inputs.steps) {
       args = {code:'window.' + args.name};
     }
     if (name === 'edit') {
-      const read = inputs.reads[args.read_handle];
+      const read = args.same_plan_read ? fileReads.get(args.read_handle) : inputs.reads[args.read_handle];
       if (!read) throw Error('read_not_delivered: first read the file in a separate plan');
       args = {path:read.path, base_result_ref:read.result_ref, content:args.content};
     }
@@ -39,6 +40,7 @@ for (const step of inputs.steps) {
     const data = typeof value === 'string' ? {text:value} : value;
     completed.push({id:step.id,op:step.op,status:'succeeded',data,receipt_ref:result.result_ref ?? null});
     if (name === 'browser_snapshot') snapshots[step.id] = data;
+    if (name === 'read_file') fileReads.set(step.id, {path:value.path, result_ref:result.result_ref});
   } catch (error) {
     return {completed,failed_step:step.id,error:String(error.message ?? error)};
   }

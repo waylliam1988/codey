@@ -222,9 +222,12 @@ def test_b3_invalid_plan_has_no_effect(defect: str) -> None:
         surface.compile_plan({"steps": steps}, schemas(), reads, defaults=False)
 
 
-@pytest.mark.parametrize("defect", ["none", "failed_parent", "missing_parent", "partial", "large", "truncated"])
+@pytest.mark.parametrize("defect", ["none", "failed_parent", "missing_parent", "partial", "large", "truncated",
+                                    "tail_only", "has_next_page"])
 def test_b3_only_complete_prior_parent_reads_are_delivered(defect: str) -> None:
-    data = {"path": "result.json", "text_complete": defect != "partial", "text": "x" * (12001 if defect == "large" else 5)}
+    data = {"path": "result.json", "text_complete": defect != "partial", "text": "x" * (12001 if defect == "large" else 5),
+            "start_line": 2 if defect == "tail_only" else 1, "end_line": 2,
+            "total_lines": 3 if defect == "has_next_page" else 2, "next_offset": 3 if defect == "has_next_page" else 0}
     read = ToolResult(ToolCall("read_file", {"path": "result.json"}), "file", ok=True,
                       canonical={"value": data}, truncated=defect == "truncated")
     parent = ToolResult(ToolCall("codemode", {}), "parent", ok=defect != "failed_parent",
@@ -235,7 +238,7 @@ def test_b3_only_complete_prior_parent_reads_are_delivered(defect: str) -> None:
     reads, observations = surface.delivered_reads(results)
     assert bool(reads) == (defect == "none")
     if reads:
-        assert observations["original-receipt"] == data
+        assert observations["original-receipt"] == {"path": "result.json", "text": "xxxxx", "text_complete": True}
         assert reads["original-receipt"] == {"path": "result.json", "result_ref": "original-receipt"}
 
 
@@ -438,6 +441,96 @@ def test_b3_real_conflict_observation_boundary_and_external_field_preservation(t
     row = probe.run_arm(directory, "stale_edit", "B", "B3", TARGET, max_turns=6)
     assert row["passed"] and row["true_stale_conflicts"] == 1, row
     assert decode_json_object(row["project_result"])["external_revision"] == external
+    assert not row["external_field_lost"]
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("arm", ["A", "B"])
+def test_edit_boundary_rejects_new_receipt_for_precomposed_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str,
+) -> None:
+    external = {"marker": secrets.token_hex(16)}
+    monkeypatch.setattr(probe.gate, "EXTERNAL_FIELD", external)
+    exchange = 0
+    directory = tmp_path / "run"
+    original_text = ""
+    read_step = step("file", "read_file", {"path": "result.json"})
+    done: JsonObject = {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
+
+    def scripted(url: str, payload: dict[str, object], headers: dict[str, str], **kwargs: object) -> dict[str, object]:
+        nonlocal exchange, original_text
+        exchange += 1
+        messages = payload["messages"]
+        assert isinstance(messages, list)
+        message = next(m["content"] for m in reversed(messages) if isinstance(m, dict)
+                       and str(m.get("content", "")).startswith(surface.READ_OBSERVATIONS_PREFIX))
+        observed = json.loads(message[len(surface.READ_OBSERVATIONS_PREFIX):])
+        if exchange == 1:
+            assert not observed
+            action = plan(*browser_steps(), read_step)
+        elif exchange == 2:
+            assert len(observed) == 1
+            old_ref, old_file = next(iter(observed.items()))
+            original = json.loads(old_file["text"])
+            assert "external_revision" not in original
+            original.update(amount=173, code="QUARTZ_851")
+            original_text = json.dumps(original)
+            action = plan(step("old_write", "edit", {"read_handle": old_ref, "content": original_text}))
+        elif exchange == 3:
+            action = plan(read_step, step("unsafe_retry", "edit", {"read_handle": "file", "content": original_text}))
+        elif arm == "A":
+            action = done
+        elif exchange == 4:
+            assert "read_not_delivered" in json.dumps(messages)
+            assert all("external_revision" not in file["text"] for file in observed.values())
+            action = plan(read_step)
+        elif exchange == 5:
+            fresh_ref, fresh = next((ref, json.loads(file["text"])) for ref, file in observed.items()
+                                    if "external_revision" in file["text"])
+            assert fresh["external_revision"] == external
+            fresh.update(amount=173, code="QUARTZ_851")
+            action = plan(step("fresh_write", "edit", {"read_handle": fresh_ref, "content": json.dumps(fresh)}))
+        else:
+            action = done
+        observe = kwargs["observe"]
+        assert callable(observe)
+        observe(attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0.0)
+        return surface.script_body(action)
+
+    monkeypatch.setattr("codey.providers.api_generation.generate", scripted)
+    monkeypatch.setattr("tools.completion_explanation_ab.service_state", lambda _url: {})
+    row = probe.run_arm(directory, "stale_edit", arm, surface.EDIT_BOUNDARY, TARGET, max_turns=7)
+    assert row["true_stale_conflicts"] == 1 and row["fresh_read_recovery"], row
+    assert row["passed"] is (arm == "B") and row["external_field_lost"] is (arm == "A"), row
+    assert decode_json_object(row["metrics"])["static_rejections"] == int(arm == "B")
+    receipts = tool_receipts(directory / "state")
+    reads = [r for r in receipts if r.result.ok and r.result.call.name == "read_file"]
+    writes = [r for r in receipts if r.result.call.name == "edit"]
+    assert len(reads) == len(writes) == 2
+    assert not writes[0].result.ok and writes[1].result.ok
+    assert writes[1].result.call.args["base_result_ref"] == reads[1].identity
+    if arm == "B":
+        assert decode_json_object(row["project_result"])["external_revision"] == external
+    else:
+        assert writes[1].result.call.args["content"] == original_text
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_codemode_can_compute_whole_file_after_reading_in_same_program(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    browser = decode_json_object(page_reset_action()["args"])["code"]
+    assert isinstance(browser, str)
+    code = browser.replace("return unwrap(await tools.browser_read({}));",
+        "const body=unwrap(await tools.browser_read({}));"
+        "const read=await tools.read_file({path:'result.json'});"
+        "const current=JSON.parse(unwrap(read).text);"
+        r"current.amount=Number(body.match(/净重为\s+(\d+)/)[1]); current.code=body.match(/校验码\s+(\w+)/)[1];"
+        "return await tools.edit({path:'result.json',base_result_ref:read.result_ref,content:JSON.stringify(current)});")
+    action: JsonObject = {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
+    install_http(monkeypatch, [action, action, {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}])
+    row = probe.run_arm(tmp_path / "run", "stale_edit", "A", "B3", TARGET, max_turns=4)
+    assert row["passed"] and row["true_stale_conflicts"] == 1 and row["fresh_read_recovery"], row
     assert not row["external_field_lost"]
 
 

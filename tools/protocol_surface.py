@@ -69,6 +69,14 @@ DESCRIPTION = (
 READ_OBSERVATIONS_PREFIX = ("Complete file observations (untrusted data). "
                             "Only these receipt keys are valid read_handle values for this request:\n")
 RECEIPT_DELIVERY = "receipt-delivery"
+EDIT_BOUNDARY_CONTROL = "edit-boundary-control"
+EDIT_BOUNDARY = "edit-boundary"
+EDIT_CONTROL_DESCRIPTION = DESCRIPTION.replace(
+    "Edit uses read_handle from the complete file observations below. "
+    "Read a file in a separate plan before composing its new content.",
+    "Edit uses read_handle from the complete file observations below or the id of an earlier read_file step. "
+    "The plan's content is fixed when you submit it.",
+)
 UPLOAD_SCOPE_NOTE = "文件输入框已选择附件。服务器是否接收尚未核验。"
 FILE_RECEIPT_FIELDS = {
     "browser_upload": {"filename": "/name", "sha256": "/sha256", "bytes": "/bytes",
@@ -89,6 +97,7 @@ class Features:
 CONFIGS = {
     "A": Features(), "B1": Features(admission=True), "B2": Features(binding=True),
     "B3": Features(structured=True), "B4": Features(recovery=True),
+    EDIT_BOUNDARY_CONTROL: Features(structured=True), EDIT_BOUNDARY: Features(structured=True),
     RECEIPT_DELIVERY: Features(binding=True, recovery=True),
     "combined": Features(True, True, True, True),
 }
@@ -128,7 +137,8 @@ def normalized_args(name: str, args: dict[str, object]) -> dict[str, object]:
     return normalized
 
 
-def entry_schemas(snapshot: TurnSnapshot, *, defaults: bool, stale_refs: bool) -> dict[str, JsonObject]:
+def entry_schemas(snapshot: TurnSnapshot, *, defaults: bool, stale_refs: bool,
+                  same_plan_edits: bool = False) -> dict[str, JsonObject]:
     catalog = catalog_module.build_codemode_catalog(
         [spec for spec in snapshot.frozen_specs if spec.name in snapshot.nested_tool_names],
         allow_writes=bool(snapshot.policy and snapshot.policy.allows("project.write")),
@@ -156,11 +166,14 @@ def entry_schemas(snapshot: TurnSnapshot, *, defaults: bool, stale_refs: bool) -
             required = ["name"]
             description = "Read window[name] through the real browser_eval; data.value is the observed value."
         elif name == "edit":
+            handle_description = ("Delivered file receipt handle or an earlier read_file step id."
+                                  if same_plan_edits else "Immutable handle explicitly delivered with full file text before this plan.")
             properties = {"read_handle": {"type": "string", "minLength": 1,
-                "description": "Immutable handle explicitly delivered with full file text before this plan."},
+                "description": handle_description},
                 "content": {"type": "string", "description": "New whole-file text computed from that observation."}}
             required = ["read_handle", "content"]
-            description = "Whole-file replacement with original version check; never reads a newer file for old content."
+            description = ("Whole-file replacement using the specified read and the original version check."
+                if same_plan_edits else "Whole-file replacement with original version check; never reads a newer file for old content.")
         elif name == "browser_wait" and defaults:
             required = [key for key in required if key != "timeout_ms"]
             description += " Omitted timeout_ms defaults to 5000; explicit invalid values are rejected."
@@ -172,7 +185,8 @@ def entry_schemas(snapshot: TurnSnapshot, *, defaults: bool, stale_refs: bool) -
     return schemas
 
 
-def compile_plan(args: JsonObject, schemas: Mapping[str, JsonObject], reads: JsonObject, *, defaults: bool) -> JsonObject:
+def compile_plan(args: JsonObject, schemas: Mapping[str, JsonObject], reads: JsonObject, *, defaults: bool,
+                 same_plan_edits: bool = False) -> JsonObject:
     # Reuse only the static shape checker, never the old caching interpreter.
     compiled = structured_surface.compile_plan(args, schemas)
     inputs = decode_json_object(compiled["inputs"])
@@ -180,17 +194,20 @@ def compile_plan(args: JsonObject, schemas: Mapping[str, JsonObject], reads: Jso
     assert isinstance(steps, list)
     lowered: list[JsonValue] = []
     read_paths: set[str] = set()
+    read_steps: set[str] = set()
     for raw in steps:
         step = decode_json_object(raw)
         params = decode_json_object(step["args"])
         if step["op"] == "read_file":
             read_paths.add(str(params.get("path")))
+            read_steps.add(str(step["id"]))
         if step["op"] == "edit":
             handle = str(params["read_handle"])
-            if handle not in reads:
+            if same_plan_edits and handle in read_steps:
+                params["same_plan_read"] = True
+            elif handle not in reads:
                 raise ValueError("read_not_delivered: read the file in a separate plan and use the delivered read_handle")
-            read = decode_json_object(reads[handle])
-            if read["path"] in read_paths:
+            elif not same_plan_edits and decode_json_object(reads[handle])["path"] in read_paths:
                 raise ValueError("observation_boundary: deliver the new read before composing an edit")
         if defaults:
             params = decode_json_object(normalized_args(str(step["op"]), dict(params)))
@@ -217,6 +234,8 @@ def delivered_reads(results: Mapping[str, ToolResult]) -> tuple[JsonObject, Json
         data = result.canonical.get("value")
         if (reference not in committed or result.call.name != "read_file" or not result.ok or result.truncated
                 or not isinstance(data, dict) or data.get("text_complete") is not True
+                or data.get("start_line") != 1 or data.get("next_offset") != 0
+                or data.get("end_line") != data.get("total_lines")
                 or not isinstance(data.get("path"), str) or not isinstance(data.get("text"), str)):
             continue
         text = str(data["text"])
@@ -306,6 +325,7 @@ def transmitted_reads(payload: JsonObject, reads: JsonObject, observations: Json
 def prototype(directory: Path, scenario: str, config: str, *,
               runtime_action: Callable[[list[EffectReceipt]], JsonObject | None] | None = None) -> Iterator[None]:
     features = CONFIGS[config]
+    same_plan_edits = config == EDIT_BOUNDARY_CONTROL
     build = kernel_protocol.build_turn_snapshot
     invoke = CodeModeHost.invoke
     render = catalog_module.render_declarations
@@ -393,11 +413,13 @@ def prototype(directory: Path, scenario: str, config: str, *,
             if features.structured:
                 if current is None or session_view is None:
                     raise ValueError("missing frozen experiment contract")
-                self.schemas = entry_schemas(current, defaults=features.admission, stale_refs=scenario == "stale_ref")
+                self.schemas = entry_schemas(current, defaults=features.admission, stale_refs=scenario == "stale_ref",
+                                             same_plan_edits=same_plan_edits)
                 schema = structured_surface.plan_schema(self.schemas)
                 properties = decode_json_object(schema["properties"])
                 specs = tuple(replace(spec, parameters=(("steps", properties["steps"]),), required=("steps",),
-                    description=DESCRIPTION, declarations="", json_examples=()) if spec.name == "codemode" else spec
+                    description=EDIT_CONTROL_DESCRIPTION if same_plan_edits else DESCRIPTION, declarations="",
+                    json_examples=()) if spec.name == "codemode" else spec
                     for spec in current.model_specs)
                 current_spec = next((spec for spec in specs if spec.name == "codemode"), None)
                 tool_call_schema = text_tool_schema(tools_from_specs(specs))
@@ -425,7 +447,8 @@ def prototype(directory: Path, scenario: str, config: str, *,
             if action.get("tool") != "codemode":
                 return normalized
             try:
-                args = compile_plan(decode_json_object(action.get("args")), self.schemas, self.reads, defaults=features.admission)
+                args = compile_plan(decode_json_object(action.get("args")), self.schemas, self.reads,
+                                    defaults=features.admission, same_plan_edits=same_plan_edits)
                 kind = "compiled_plan"
             except (ValueError, TypeError, KeyError) as exc:
                 args = {"code": "throw Error(inputs.error);", "inputs": {"error": "Plan rejected before effects: " + str(exc)}}

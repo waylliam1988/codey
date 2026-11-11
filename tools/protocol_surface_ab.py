@@ -49,6 +49,7 @@ SCENARIOS = {
     "B3": ("legacy_structured", "upload", "hybrid", "stale_edit"),
     "B4": ("page_reset", "return_failure", "download"),
     surface.RECEIPT_DELIVERY: ("upload_bound", "upload", "download", "return_failure"),
+    surface.EDIT_BOUNDARY: ("hybrid", "stale_edit"),
     PAGE_RESET_GATE: ("page_reset",),
     PAGE_RESET_NAVIGATION: ("page_reset",),
     "combined": (*previous.SCENARIOS, "page_reset", "return_failure"),
@@ -269,7 +270,8 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
         raise ValueError(f"{config} only runs page_reset")
     gate_enabled = config == PAGE_RESET_NAVIGATION or (config == PAGE_RESET_GATE and arm == "B")
     scheduler = page_reset_scheduler() if config == PAGE_RESET_NAVIGATION and arm == "B" else None
-    active = config if arm == "B" and config not in PAGE_RESET_CONFIGS else "A"
+    active = (surface.EDIT_BOUNDARY_CONTROL if config == surface.EDIT_BOUNDARY and arm == "A" else
+              config if arm == "B" and config not in PAGE_RESET_CONFIGS else "A")
     with (surface.prototype(directory, scenario, active, runtime_action=scheduler),
           page_reset_completion(directory) if gate_enabled else nullcontext(),
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),
@@ -499,6 +501,8 @@ def main() -> int:
         parser.error(f"{args.config} only runs page_reset")
     if args.config == surface.RECEIPT_DELIVERY and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
         parser.error("receipt-delivery only runs file receipt scenarios")
+    if args.config == surface.EDIT_BOUNDARY and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
+        parser.error("edit-boundary only runs hybrid and stale_edit")
     if args.plan:
         features = {PAGE_RESET_GATE: PAGE_RESET_CHECK,
                     PAGE_RESET_NAVIGATION: f"{PAGE_RESET_CHECK}; B schedules the second navigation"}
