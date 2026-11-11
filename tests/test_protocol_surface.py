@@ -29,7 +29,7 @@ from codey.policies.tool_requirement import ToolSuccessRequirement, require_tool
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.toolchain import tool_prompt
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 from tests.test_mechanical_surface import read_result, record
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
@@ -677,6 +677,53 @@ def test_project_done_refs_keeps_knowledge_versions_and_unknown_receipts(tmp_pat
             assert knowledge_reference_checks(projected, context)[0].status == "fail"
     finally:
         store.close()
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_production_hybrid_completes_with_misfiled_browser_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory = tmp_path / "run"
+    browser = decode_json_object(page_reset_action()["args"])["code"]
+    assert isinstance(browser, str)
+    code = browser.replace("return unwrap(await tools.browser_read({}));",
+        "const browser=await tools.browser_read({}); const body=unwrap(browser);"
+        "const read=await tools.read_file({path:'result.json'}); const file=JSON.parse(unwrap(read).text);"
+        r"file.amount=Number(body.match(/净重为\s+(\d+)/)[1]); file.code=body.match(/校验码\s+(\w+)/)[1];"
+        "unwrap(await tools.edit({path:'result.json',base_result_ref:read.result_ref,content:JSON.stringify(file)}));"
+        "return {browser_ref:browser.result_ref};")
+    calls = 0
+    browser_ref = ""
+    prefix = "[result: codemode]\nResult data (JSON):\n"
+
+    def scripted(url: str, payload: dict[str, object], headers: dict[str, str], **kwargs: object) -> dict[str, object]:
+        nonlocal calls, browser_ref
+        calls += 1
+        observe = kwargs["observe"]
+        assert callable(observe)
+        observe(attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0.0)
+        if calls == 1:
+            action: JsonObject = {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
+        else:
+            messages = payload["messages"]
+            assert isinstance(messages, list)
+            if not browser_ref:
+                result = next(str(m["content"]) for m in messages if isinstance(m, dict)
+                              and str(m.get("content", "")).startswith(prefix))
+                payload_value = decode_json_object(json.loads(result[len(prefix):].split("\n\nResult metadata:", 1)[0]))
+                browser_ref = require_json_string(decode_json_object(payload_value["value"])["browser_ref"], "browser_ref")
+            action = {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851，已更新项目文件。",
+                "knowledge_refs": [{"id": browser_ref, "revision": 1}]}}
+        return surface.script_body(action)
+
+    monkeypatch.setattr("codey.providers.api_generation.generate", scripted)
+    monkeypatch.setattr("tools.completion_explanation_ab.service_state", lambda _url: {})
+    row = probe.run_arm(directory, "hybrid", "A", "B3", TARGET, max_turns=5)
+    assert row["active_config"] == "A" and row["project_result"] == {"amount": 173, "code": "QUARTZ_851"}
+    receipts = tool_receipts(directory / "state")
+    assert any(r.identity == browser_ref and r.result.ok and r.result.call.name == "browser_read" for r in receipts)
+    assert sum(r.result.ok and r.result.call.name == "edit" for r in receipts) == 1
+    assert row["passed"] and row["model_calls"] == 2, row
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")

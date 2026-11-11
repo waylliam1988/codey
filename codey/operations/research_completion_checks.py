@@ -17,6 +17,7 @@ from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
 from codey.research.finding_report import ResearchReport, compile_finding_report
 from codey.toolchain.tool_spec import SOURCE_TOOL_NAMES
+from codey.types.json_value import JsonValue
 
 
 def prepare_research_completion(session: TaskSession, text: str, context: object) -> tuple[str, ResearchReport | None]:
@@ -50,9 +51,31 @@ def prepare_research_completion(session: TaskSession, text: str, context: object
     return report.text, report
 
 
+def _hybrid_knowledge_refs(session: TaskSession, raw: JsonValue) -> JsonValue:
+    """Keep saved knowledge citations separate from settled execution evidence."""
+    if (session.task_kind != "hybrid" or session.policy.strict_research or not session.edited_files
+            or "knowledge_versions" in session.policy.required_checks
+            or not isinstance(raw, list) or len(raw) > 32):
+        return raw
+    receipts = {
+        identity for identity, result in session._memory_results.items()
+        if identity.startswith("task_turn_effect:") and result.ok
+        and (record := session.executed.get(identity)) is not None
+        and record["ok"] and record["call_id"] == result.call.call_id and record["name"] == result.call.name
+    }
+    if not any(session.executed[identity]["name"] == "browser_read" for identity in receipts):
+        return raw
+    return [
+        ref for ref in raw
+        if not (isinstance(ref, dict) and set(ref) == {"id", "revision"}
+                and isinstance(identity := ref["id"], str) and identity in receipts
+                and type(ref["revision"]) is int and ref["revision"] == 1)
+    ]
+
+
 def knowledge_reference_checks(session: TaskSession, context: object = None) -> list[CompletionCheck]:
     context = CompletionContext.from_value(context)
-    raw = session.last_done_args.get("knowledge_refs")
+    raw = _hybrid_knowledge_refs(session, session.last_done_args.get("knowledge_refs"))
     if not raw:
         return []
     from codey.knowledge.answer_refs import answer_references
