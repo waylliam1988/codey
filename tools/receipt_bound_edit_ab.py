@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 import traceback
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -159,6 +159,8 @@ def prototype_helper(directory: Path, *, enabled: bool) -> Iterator[None]:
         return codemode_only_surface(build_snapshot(session, native=native))
 
     def helper_declarations(snapshot: ToolCatalogSnapshot) -> str:
+        if not any(entry.name == "edit" for entry in snapshot.entries):
+            return declarations(snapshot)
         visible = replace(snapshot, entries=tuple(entry for entry in snapshot.entries if entry.name != "edit"))
         return declarations(visible).replace("\n};", "\n" + DECLARATION + "};")
 
@@ -232,7 +234,14 @@ def provider_metrics(path: Path, *, through_bytes: int | None = None) -> JsonObj
             "inference_seconds": round(inference_seconds, 3)}
 
 
-def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarget, *, max_turns: int) -> JsonObject:
+def common_task(case: EditCase) -> str:
+    return ("只修改现有 result.json。" + case.task + "保留其余字段、嵌套内容和 JSON 类型，result-backup.json 不得改变。"
+            "本任务专门验收整文件更新。"
+            "用 codemode 完成文件操作，返回实际写入结果，然后用 done 简短报告。不要运行命令、测试或浏览网页。")
+
+
+def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarget, *, max_turns: int,
+            task: str | None = None, on_event: Callable[[JsonObject], None] | None = None) -> JsonObject:
     directory.mkdir(parents=True, exist_ok=False)
     project = directory / "project"
     project.mkdir()
@@ -254,15 +263,15 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
             first_edit_bytes = provider_path.stat().st_size
         with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(event, ensure_ascii=False) + "\n")
+        if on_event is not None:
+            on_event(event)
 
     def connect(provider_id: str, **_kwargs: object) -> attempts.RecordingProvider:
         if provider_id != "local":
             raise ValueError("probe requires the selected local model")
         return attempts.RecordingProvider(target, directory)
 
-    common = ("只修改现有 result.json。" + case.task + "保留其余字段、嵌套内容和 JSON 类型，result-backup.json 不得改变。"
-              "本任务专门验收整文件更新。"
-              "用 codemode 完成文件操作，返回实际写入结果，然后用 done 简短报告。不要运行命令、测试或浏览网页。")
+    common = common_task(case)
     interface = ("当前使用现有协议：先 tools.read_file 完整读取，再 tools.edit；使用 content，不用 replacements。"
                  "回执编号在 readResult.result_ref，正文在 unwrap(readResult).text；检查工具是否成功。"
                  "示例：const r=await tools.read_file({path:inputs.path}); "
@@ -273,13 +282,15 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
                      "不重新读取。正文在 unwrap(readResult).text；读取不完整或版本变动仍拒绝写入。"
                      "示例：const r=await tools.read_file({path:inputs.path}); "
                      "return unwrap(await tools.edit({read:r,content:unwrap(r).text.replace('old','new')}));")
+    selected_task = common + interface if task is None else task
+    (directory / "task.txt").write_text(selected_task, encoding="utf-8")
     summary: JsonObject = {"case": case.name, "arm": arm, "passed": False}
     try:
         with (prototype_helper(directory, enabled=arm == "B"),
               patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}),
               attempts.isolate_gate_secondary_models(target)):
             result = run_headless(HeadlessRequest(
-                project=project, task=common + interface, intent="project", provider_id="local", max_turns=max_turns,
+                project=project, task=selected_task, intent="project", provider_id="local", max_turns=max_turns,
                 state_home=directory / "state", research_store_root=directory / "knowledge", allow_web=False,
                 project_changes_required=True,
                 required_tools=(require_tool_success("read_file", via="codemode"),
@@ -326,10 +337,11 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
     return summary
 
 
-def run_worker(directory: Path, case: EditCase, arm: str, *, base_url: str, timeout: float, max_turns: int) -> JsonObject:
-    command = [sys.executable, "-m", "tools.receipt_bound_edit_ab", "--run-dir", str(directory),
+def run_worker(directory: Path, case: EditCase, arm: str, *, base_url: str, timeout: float, max_turns: int,
+               worker_module: str = "tools.receipt_bound_edit_ab", worker_args: Sequence[str] = ()) -> JsonObject:
+    command = [sys.executable, "-m", worker_module, "--run-dir", str(directory),
                "--worker-case", case.name, "--worker-arm", arm, "--kobold-base-url", base_url,
-               "--timeout", str(timeout), "--max-turns", str(max_turns)]
+               "--timeout", str(timeout), "--max-turns", str(max_turns), *worker_args]
     process, owner = cancellation.start_process(command, cwd=ROOT)
     error = ""
     output = ""

@@ -128,6 +128,14 @@ def test_declarations_replace_edit_contract_instead_of_adding_an_alternative(tmp
     assert codemode_catalog.render_declarations(snapshot) == original
 
 
+def test_helper_does_not_advertise_edit_when_the_catalog_has_no_edit(tmp_path: Path) -> None:
+    snapshot = codemode_catalog.build_catalog_snapshot([ToolCatalogEntry("browser_read", "Read current page")])
+    original = codemode_catalog.render_declarations(snapshot)
+    with prototype_helper(tmp_path, enabled=True):
+        assert codemode_catalog.render_declarations(snapshot) == original
+        assert "edit(args:" not in codemode_catalog.render_declarations(snapshot)
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 def test_outer_prompt_and_native_tools_never_advertise_a_second_edit_contract(tmp_path: Path, enabled: bool) -> None:
     from codey.operations.provider_receipts import restore_snapshot, snapshot_description

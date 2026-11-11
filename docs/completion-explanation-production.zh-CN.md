@@ -81,3 +81,17 @@ surface-v3 原始脚本结果 **4/10**：basic、reread、stale_ref、research �
 每次实机保存实际请求、seed、响应、正式回执、首个完成拒绝及后续修复、停止原因、事后格式检查和源码指纹。工具程序失败可能发生在 done 之前，此时 first_rejection 为空；应读原始 provider 与工具回执。停机说明不是 JSON 的事后检查不作为首个失败原因。
 
 不通过继续忽略其他参数、把浏览器放宽为进程证据或反复重跑追求全绿。当前模型和服务环境的失败需分别报告，后续改进另定范围。
+
+## 后续重新授权的实验验证（2026-11-11）
+
+用户在上述历史停止要求之后，明确重新授权先写实验脚本、再运行完整表面 A/B，最后要求本组结束后更新文档、汇报失败、commit 并停止。本轮直接使用原工作区，未改生产代码或生产 prompt，未创建或使用 worktree。详细任务、协议、证据与限制见[原始读取对象完整表面实验](receipt-bound-edit-surface-probe.zh-CN.md)。
+
+`.e2e-artifacts/receipt-bound-edit-surface-20261111/` 完整 **23/28**：现有编辑接口 A **11/14**、原始读取对象接口 B **12/14**；排除上传绑定与固定来源读取两个独立诊断，常规场景为 A **10/12**、B **11/12**。Chat basic、新 structured、Hybrid、strict Research、冻结契约快照恢复、重复读取、DOM stale-ref、文件 stale-edit、下载及自主 open_url 来源失败均两组通过。source-failure 的通过含义是真实 403 后 blocked，未将其统计为读取成功。
+
+五个失败单元全部保留：legacy structured / A 是非法页面求值代码与编译错误耗尽轮次；legacy structured / B 在工具成功后用占位说明替代真实 token；upload / A 上传和读取成功，但最终漏报 SHA256；upload_bound / A、B 都先把 browser_read 字符串错误取 `.text` 导致父调用失败，随后修复未正确消费回放控制流，完成绑定缺少成功父回执，最终 no_progress。脚本另外用成功父调用的真实 Chromium 负例确认：现有绑定器只消费 canonical.value，browser_read 正文位于 canonical.research_observation.text，不能直接据现有接口绑定 page_text；这是独立于实机首次程序错误的机制限制。
+
+Hybrid / A 曾漏传 base_result_ref，恢复后 6 次模型调用完成；B 正确使用原始读取对象，无失败工具回执，4 次完成。stale-edit 两组均经历一次有效旧凭证的真实版本拒绝，重新读取并保留外部新增字段后完成，各 5 次调用。它支持原型保持版本保护，没有证明成功率稳定提高，也没有证据把其余场景差异归因于编辑接口。固定来源读取诊断由脚本提供首次 open_url，不能冒充模型自主工具选择。
+
+14 对任务文字一致，生产源码内容摘要始终为 `0686d61cd4fbd923cfb089a89abc0f772a9331366c8152a9c756b49a118ca4b1`（codey-files-sha256-v2），五份实验脚本运行期间未变。实际请求、seed、响应、原始／展开程序、来源及工具回执、首次工具拒绝与首次完成拒绝、状态库及最终矩阵全部保留；wire-audit.json 记录审计。完整请求含独立 workspace、时钟和回执标识，不能把固定 seed 当作跨单元确定性。
+
+本轮相关测试 **52 项通过**，Ruff、strict mypy 通过，不包含或覆盖此前 versioned_content_edit 的两项提示文案失败。未放宽任何生产完成规则、未将实验回执事实报告替代真实模型答案。按用户最新要求，本组文档与实验代码提交后停止，不再启动测试或实机。

@@ -43,6 +43,7 @@ from tools.completion_explanation_ab import (
     explanation_checks,
     final_checks,
 )
+from tools.receipt_bound_edit_recovery_probe import EXTERNAL_FIELD, receipt_audit
 
 URL = "https://example.com/production-browser-record"
 
@@ -78,10 +79,14 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              reread: bool = False, stale_edit: bool = False, structured: bool = False,
              upload_file: bool = False, download_file: bool = False, bound_output: bool = False,
              strict_research: bool = False, explanation_output: bool = False,
-             stale_ref: bool = False, source_failure: bool = False, fixed_failure: bool = False) -> dict[str, object]:
+             stale_ref: bool = False, source_failure: bool = False, fixed_failure: bool = False,
+             max_turns: int = 12, source_attempt_only: bool = False, preserve_external_field: bool = False,
+             assembled_upload: bool = False, fixed_source_attempt: bool = False) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
-    recording = ExperimentProvider(target, directory, fixed_acquisition=fixed_failure, acquisition_action={
+    recording = ExperimentProvider(target, directory, fixed_acquisition=fixed_failure or fixed_source_attempt,
+        acquisition_action={"tool": "codemode", "args": {
+            "code": "return await tools.open_url({url:inputs.url});", "inputs": {"url": URL}}} if fixed_source_attempt else {
         "tool": "codemode", "args": {"code": "unwrap(await tools.browser_navigate({url:inputs.url})); "
             "return await tools.browser_read({});", "inputs": {"url": URL}}} if fixed_failure else None)
     events: list[dict[str, object]] = []
@@ -99,6 +104,9 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         if restored != original:
             raise AssertionError("snapshot serialization changed the frozen contract")
         snapshot_count += 1
+        with (directory / "snapshots.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"original": snapshot_description(original),
+                                     "restored": snapshot_description(restored)}) + "\n")
         return restored
 
     def observe(row: dict[str, object]) -> None:
@@ -109,8 +117,21 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
         if (stale_edit and not changed_after_read and result_file is not None
-                and row.get("type") == "tool" and row.get("tool_name") == "read_file" and row.get("ok") is True):
-            result_file.write_text('{"amount": -1, "code": "externally_changed"}\n', encoding="utf-8")
+                and row.get("type") == "tool" and row.get("tool_name") == "read_file" and row.get("ok") is True
+                and isinstance(path := row.get("path"), str)
+                and (result_file.parent / path).resolve() == result_file.resolve()):
+            if preserve_external_field and not any(
+                receipt.result.call.name == "read_file" and receipt.result.ok
+                and receipt.result.call.args.get("path") == path
+                and isinstance(value := receipt.result.canonical.get("value"), dict)
+                and value.get("text_complete") is True for receipt in tool_receipts(directory / "state")
+            ):
+                return
+            changed: dict[str, object] = {"amount": -1, "code": "externally_changed"}
+            if preserve_external_field:
+                changed["external_revision"] = EXTERNAL_FIELD
+            result_file.write_text(json.dumps(changed) + "\n", encoding="utf-8")
+            (directory / "injection.json").write_text(json.dumps({"trigger": row, "file": changed}), encoding="utf-8")
             changed_after_read = True
 
     def route_document(route: Route) -> None:
@@ -167,6 +188,12 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 "browser_upload 选择这个附件，browser_wait 等待页面出现 UPLOAD_BYTES_82，再 browser_read。"
                 "用 done 报告实际文件名、文件内容标记和选择回执的 SHA256。不要修改项目或运行命令。")
         required = {"browser_navigate", "browser_snapshot", "browser_upload", "browser_wait", "browser_read"}
+        if assembled_upload:
+            bindings = (
+                require_tool_success("browser_upload", via="codemode", answer_pointer="/filename", result_pointer="/name"),
+                require_tool_success("browser_upload", via="codemode", answer_pointer="/sha256", result_pointer="/sha256"),
+                require_tool_success("browser_read", via="codemode", answer_pointer="/page_text"),
+            )
     if download_file:
         task = (f"User authorized browser download task. Navigate to {URL}. Use codemode only: browser_snapshot, "
                 "then browser_download on the element named Download fixture, then browser_read the current page. "
@@ -181,6 +208,10 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         task = (f"固定 Chromium 采集程序将先导航至必要来源 {URL} 并读取正文。"
                 "请根据真实读取回执解释限制并调用 done，不要猜测正文内容。")
         required = {"browser_navigate", "browser_read"}
+    upload_schema = {"type": "object", "properties": {
+        key: {"type": "string"} for key in ("explanation", "filename", "sha256", "page_text")},
+        "required": ["explanation", "filename", "sha256", "page_text"], "additionalProperties": False}
+    (directory / "task.txt").write_text(task, encoding="utf-8")
     try:
         with tempfile.TemporaryDirectory(prefix="codey-browser-live-project-") as temporary, ExitStack() as stack:
             project = Path(temporary)
@@ -195,21 +226,30 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             stack.enter_context(patch.object(provider, "_guard_request", route_document))
             stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", source_factory))
             stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory))
-            result = run_headless(HeadlessRequest(
-                project if mode == "hybrid" else None, task, intent=mode, provider_id="local", max_turns=12,
+            request = HeadlessRequest(
+                project if mode == "hybrid" else None, task, intent=mode, provider_id="local", max_turns=max_turns,
                 session_id=session_id,
                 state_home=directory / "state", research_store_root=directory / "knowledge",
                 requested_capabilities=("web.read", "browser.observe", "browser.interact", *(
                     ("browser.effect",) if structured or explanation_output or upload_file or download_file or bound_output else ())),
-                project_changes_required=mode == "hybrid", required_tools=(*sorted(required), *bindings),
-                output_format="json_explanation" if explanation_output else "json" if bound_output else "text",
+                project_changes_required=mode == "hybrid",
+                required_tools=(*(() if source_failure and source_attempt_only else sorted(required)), *bindings),
+                output_format="json_explanation" if explanation_output or assembled_upload else "json" if bound_output else "text",
                 sources_open_required=True if source_failure else None,
-                output_schema=json.dumps(SCHEMA) if explanation_output else json.dumps({"type": "object", "properties": {
+                output_schema=json.dumps(upload_schema) if assembled_upload else json.dumps(SCHEMA) if explanation_output else json.dumps({"type": "object", "properties": {
                     "amount": {"type": "integer"}, "code": {"type": "string"}},
                     "required": ["amount", "code"], "additionalProperties": False}) if bound_output else "",
                 model_selection={"model": target.model, "base_url": target.base_url},
                 strict_research=strict_research,
-            ), emit_jsonl=observe, connect_provider=connect)
+            )
+            (directory / "request.json").write_text(json.dumps({
+                "task": task, "mode": mode, "max_turns": max_turns, "required_tools": request.required_tools,
+                "sources_open_required": request.sources_open_required, "strict_research": strict_research,
+                "output_format": request.output_format, "output_schema": request.output_schema,
+                "model": target.model, "base_url": target.base_url, "seed": target.seed,
+                "source_attempt_only": source_attempt_only, "fixed_source_attempt": fixed_source_attempt,
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            result = run_headless(request, emit_jsonl=observe, connect_provider=connect)
             artifact = decode_json_object(json.loads(result_file.read_text(encoding="utf-8")))
             (directory / "project-result.json").write_text(json.dumps(artifact), encoding="utf-8")
         terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), {})
@@ -228,6 +268,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                            and hashlib.sha256(DOWNLOAD_BYTES).hexdigest() in answer and "fixture-download.txt" in answer)
         output_checks = final_checks(answer, expected_url=URL) if explanation_output else {}
         receipts = tool_receipts(directory / "state")
+        audit = receipt_audit([(row.identity, row.result) for row in receipts])
+        (directory / "receipts.json").write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
         failed_refs = sum(not row.result.ok and isinstance(value := row.result.canonical.get("value"), dict)
                           and value.get("reason") == "stale_ref" for row in receipts)
         source_failures = [dict(row.result.canonical) for row in receipts
@@ -239,7 +281,17 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                   and (not explanation_output or output_checks.get("schema_valid") is True and output_checks.get("exact_fields") is True)
                   and (not stale_ref or failed_refs >= 1)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
-                  and (mode != "hybrid" or artifact == {"amount": 173, "code": "QUARTZ_851"}))
+                  and (mode != "hybrid" or artifact == {"amount": 173, "code": "QUARTZ_851", **(
+                      {"external_revision": EXTERNAL_FIELD} if preserve_external_field and stale_edit else {})}))
+        if stale_edit and preserve_external_field:
+            passed = passed and audit["true_stale_conflicts"] == 1 and audit["fresh_read_recovery"] is True
+        if assembled_upload:
+            try:
+                delivered = decode_json_object(json.loads(answer))
+                passed = passed and delivered["filename"] == "fixture.txt" and delivered["sha256"] == hashlib.sha256(
+                    b"UPLOAD_BYTES_82\n").hexdigest() and "UPLOAD_BYTES_82" in str(delivered["page_text"])
+            except (ValueError, KeyError):
+                passed = False
         if source_failure:
             passed = result.stop_reason == "blocked" and bool(source_failures)
         summary: dict[str, object] = {"mode": mode, "passed": passed, "stop_reason": result.stop_reason,
@@ -248,6 +300,11 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             "downloads": [str(path) for path in downloads], "failed_stale_refs": failed_refs,
             "posthoc_output_checks": output_checks, "explanation_output": explanation_output,
             "source_failure_receipts": source_failures}
+        summary.update(first_tool_rejection=audit["first_tool_rejection"],
+                       first_edit_rejection=audit["first_edit_rejection"],
+                       true_stale_conflicts=audit["true_stale_conflicts"], fresh_read_recovery=audit["fresh_read_recovery"],
+                       facts_match=facts_match, assembled_upload=assembled_upload, source_attempt_only=source_attempt_only,
+                       fixed_source_attempt=fixed_source_attempt)
         explanation = output_checks.get("explanation")
         if isinstance(explanation, str):
             summary["explanation_quality"] = explanation_checks(explanation, 1, expected_url=URL)
