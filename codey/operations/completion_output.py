@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
-from codey.policies.output_requirement import PREFIX as OUTPUT_JSON
+from codey.policies.output_requirement import has_explanation, is_output_check, schema_for
 from codey.policies.tool_requirement import ToolObservation, argument_digest, decode_answer, parse_tool_success_check
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
@@ -40,6 +40,9 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
     records, results = tool_facts(session, context)
     observations: dict[str, ToolObservation] = {}
     fields: list[_Field] = []
+    explanation = has_explanation(session.policy.required_checks)
+    if explanation and session.policy.strict_research:
+        raise OutputBindingError("json_explanation cannot replace the strict Research answer contract.")
     for declaration in session.policy.required_checks:
         try:
             requirement = parse_tool_success_check(declaration)
@@ -47,21 +50,26 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
             raise OutputBindingError("Invalid declared tool requirement.") from exc
         if requirement is None:
             continue
+        if explanation and requirement.answer_pointer is not None and (
+                requirement.answer_pointer == "" or requirement.answer_pointer.split("/")[1] == "explanation"):
+            raise OutputBindingError("A receipt binding overlaps the declared /explanation text destination.")
         observation = requirement.observe(records, results=results)
         observations[requirement.check_id] = observation
         if requirement.answer_pointer is not None and observation.evaluation.passed:
             pointer = requirement.answer_pointer
             path = tuple(part.replace("~1", "/").replace("~0", "~") for part in pointer[1:].split("/")) if pointer else ()
             fields.append(_Field(path, observation.value))
-    if not fields or session.policy.strict_research:
+    if (not fields and not explanation) or session.policy.strict_research:
         return CompletionOutput(text, observations)
     proposed: JsonValue
-    try:
-        proposed = decode_answer(text)
-    except (ValueError, TypeError):
-        proposed = {}
-    schema = next((decode_answer(check[len(OUTPUT_JSON) + 1:]) for check in session.policy.required_checks
-                   if check.startswith(OUTPUT_JSON + ":")), None)
+    if explanation:
+        proposed = {"explanation": text}
+    else:
+        try:
+            proposed = decode_answer(text)
+        except (ValueError, TypeError):
+            proposed = {}
+    schema = next((schema_for(check) for check in session.policy.required_checks if is_output_check(check)), None)
     assembled = _assemble(proposed, schema, fields)
     return CompletionOutput(json.dumps(assembled, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                                        allow_nan=False), observations)

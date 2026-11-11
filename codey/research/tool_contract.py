@@ -20,7 +20,7 @@ from codey.research.knowledge_schema import (
     schema_strings,
 )
 from codey.research.questions import QUESTION_BOUND_TOOLS
-from codey.toolchain.tool_spec import ToolSpec
+from codey.toolchain.tool_spec import EXECUTION_CLAIMS_GUIDANCE, SOURCE_GAPS_GUIDANCE, ToolSpec
 from codey.types.json_value import JsonObject, ToolArgs, canonical_json_object, decode_json_object
 
 PROTOCOL_NO_JSON = "no_json"
@@ -280,6 +280,11 @@ def done_spec_for_purpose(spec: ToolSpec, purpose: str, *, task: str = "", quest
     example: ToolArgs
     if purpose == "ordinary":
         return spec
+    if purpose == "chat":
+        removed = {"source_gaps", "execution_claims"}
+        return replace(spec, parameters=tuple((key, value) for key, value in spec.parameters if key not in removed),
+            description=spec.description.replace(EXECUTION_CLAIMS_GUIDANCE, "")
+            .replace(SOURCE_GAPS_GUIDANCE, "The runtime checks required source coverage. "))
     if purpose == "evidence":
         schema = object_schema({"summary": {"type": "string"}}, "summary")
         example = {"tool": "done", "args": {"summary": "Saved findings and remaining evidence gaps"}}

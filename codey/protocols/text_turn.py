@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from codey.protocols.json_scanner import balanced_json_spans
-from codey.types.json_value import JsonValue, ToolArgs, decode_json_object
+from codey.types.json_value import JsonValue, ToolArgs, decode_json_object, unique_json_fields
 
 MAX_TEXT_REQUESTS = 8
 
@@ -115,10 +115,12 @@ def _json_objects(text: str) -> list[ToolArgs] | TextError | None:
     objects: list[ToolArgs] = []
     for start, end in spans:
         try:
-            value = json.loads(source[start:end])
+            value: object = json.loads(source[start:end], object_pairs_hook=unique_json_fields)
         except json.JSONDecodeError as exc:
             return _json_error(source[start:end], exc)
-        except (ValueError, RecursionError):
+        except ValueError as exc:
+            return TextError(f"invalid JSON: {exc}", kind="invalid_json")
+        except RecursionError:
             return TextError("invalid JSON: value exceeds decoder limits", kind="invalid_json")
         if isinstance(value, dict):
             try:

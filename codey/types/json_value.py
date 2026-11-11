@@ -6,6 +6,7 @@ Container cycles and oversized/deep values fail before reaching core logic.
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, is_dataclass
@@ -138,3 +139,18 @@ def require_json_strings(value: object, field: str) -> list[str]:
     if not isinstance(value, list):
         raise ValueError(f"{field} must be an array of strings")
     return [require_json_string(item, field) for item in value]
+
+
+def unique_json_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Reject duplicate keys before a transport can overwrite their values."""
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def parse_json_object(source: str) -> JsonObject:
+    value: object = json.loads(source, object_pairs_hook=unique_json_fields)
+    return decode_json_object(value)

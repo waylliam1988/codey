@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import NoReturn
 
-from codey.policies.output_requirement import JSON_ANSWER_GUIDANCE
+from codey.policies.output_requirement import EXPLANATION_GUIDANCE, JSON_ANSWER_GUIDANCE
 from codey.policies.requirement import RequirementEvaluation
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
@@ -106,7 +106,7 @@ class ToolSuccessRequirement:
         return PREFIX + hashlib.sha256(self.declaration.encode("utf-8")).hexdigest()[:32]
 
     @property
-    def guidance(self) -> str:
+    def execution_guidance(self) -> str:
         target = self.tool + (f" with arguments matching {self.arguments_json}" if self.arguments_json != "{}" else "")
         if self.via:
             execution = (f"Required execution: inside {self.via}, call tools.{target}. "
@@ -115,14 +115,25 @@ class ToolSuccessRequirement:
         else:
             execution = (f"Required execution: call {target} and receive a successful tool result. "
                          "Displayed examples and failed calls do not satisfy this requirement.")
+        return execution
+
+    @property
+    def guidance(self) -> str:
+        return self.model_guidance()
+
+    def model_guidance(self, *, explanation: bool = False) -> str:
+        execution = self.execution_guidance
         if self.answer_pointer is None:
             return execution
         selected = f"value{self.result_pointer}"
         if self.result_line is not None:
             selected += f", absolute file line {self.result_line}"
-        return (execution + " " + JSON_ANSWER_GUIDANCE + f" The application fills pointer {self.answer_pointer!r} "
+        instruction = EXPLANATION_GUIDANCE if explanation else JSON_ANSWER_GUIDANCE
+        content = ("In done.summary, supply only the natural-language explanation. " if explanation else
+                   "In done.summary, supply only unbound JSON fields, or {} when none are needed. ")
+        return (execution + " " + instruction + f" The application fills pointer {self.answer_pointer!r} "
                 f"from the committed {selected}, preserving its JSON type and complete value. "
-                "In done.summary, supply only unbound JSON fields, or {} when none are needed. "
+                + content +
                 "Conflicting observations cannot establish this answer requirement.")
 
     def evaluate(
@@ -153,8 +164,8 @@ class ToolSuccessRequirement:
         if not eligible:
             if matching_execution:
                 return ToolObservation(RequirementEvaluation("tool_parent_missing",
-                    "The child execution succeeded, but no successful required parent committed it. " + self.guidance))
-            return ToolObservation(RequirementEvaluation("tool_execution_missing", self.guidance))
+                    "The child execution succeeded, but no successful required parent committed it. " + self.execution_guidance))
+            return ToolObservation(RequirementEvaluation("tool_execution_missing", self.execution_guidance))
         outcome = (ToolObservation(RequirementEvaluation()) if self.answer_pointer is None
                    else self._observe_value(eligible, results))
         return replace(outcome, evaluation=replace(outcome.evaluation, evidence_refs=tuple(sorted(witnesses))))
@@ -193,10 +204,10 @@ class ToolSuccessRequirement:
                 observed.append((identity, selected, _json(selected)))
             except (KeyError, ValueError, TypeError, IndexError):
                 return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
-                    "The committed result does not contain the required result selector. " + self.guidance))
+                    "The committed result does not contain the required result selector. " + self.execution_guidance))
         if not observed:
             return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
-                "No committed page contains the required absolute line. " + self.guidance))
+                "No committed page contains the required absolute line. " + self.execution_guidance))
         if any(item[2] != observed[0][2] for item in observed):
             return ToolObservation(RequirementEvaluation("conflicting_observations",
                 "Committed observations disagree at the required selector. An answer edit cannot resolve this. "

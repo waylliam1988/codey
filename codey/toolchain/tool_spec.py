@@ -13,7 +13,7 @@ import json
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import Protocol, cast
+from typing import Protocol
 
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE
@@ -23,6 +23,14 @@ from codey.toolchain.tool_prompt import model_tool_description
 from codey.types.json_value import ToolArgs
 
 _TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
+SOURCE_GAPS_GUIDANCE = (
+    "The runtime checks all execution receipts and required source coverage; neither execution_claims nor "
+    "source_gaps needs to list them all. Optional source_gaps cites actual failed acquisition receipts. "
+)
+EXECUTION_CLAIMS_GUIDANCE = (
+    "Optional execution_claims must match actual result_ref, status, exit_code_scope "
+    "and observed exit_code from the receipts; omit exit_code when unknown. "
+)
 
 
 class ToolPolicy(Protocol):
@@ -116,8 +124,8 @@ def freeze_spec_parameters(spec: ToolSpec) -> ToolSpec:
         )
     except Exception as exc:
         raise RuntimeError(f"tool snapshot freeze failed for {getattr(spec, 'name', '?')}: {exc}") from exc
-    return _replace(spec, parameters=params,
-                    output_schema=cast(Mapping[str, object], _freeze_schema_value(spec.output_schema)))
+    return _replace(spec, parameters=params, output_schema=MappingProxyType(
+        {key: _freeze_schema_value(value) for key, value in spec.output_schema.items()}))
 
 
 def _coding_specs() -> dict[str, ToolSpec]:
@@ -414,10 +422,7 @@ def _all_specs() -> dict[str, ToolSpec]:
         specs["done"] = _coding_specs().get("done", ToolSpec(name="done", grant="control"))
     done = specs["done"]
     specs["done"] = replace(done, description=done.description +
-        " Optional execution_claims must match actual result_ref, status, exit_code_scope "
-        "and observed exit_code from the receipts; omit exit_code when unknown. "
-        "The runtime checks all execution receipts and required source coverage; neither execution_claims nor "
-        "source_gaps needs to list them all. Optional source_gaps cites actual failed acquisition receipts. "
+        " " + EXECUTION_CLAIMS_GUIDANCE + SOURCE_GAPS_GUIDANCE +
         "Use the current source coverage to explain limitations in the requested final format.", parameters=(*done.parameters,
         ("execution_claims", {"type": "array", "maxItems": 64, "items": {"type": "object",
             "required": ["result_ref", "status", "exit_code_scope"], "additionalProperties": False,
@@ -1017,12 +1022,15 @@ def _declared_map(spec: ToolSpec) -> tuple[dict[str, object], str, bool]:
 
 
 def _validate_required_presence(spec: ToolSpec, declared: dict[str, object], is_builtin: bool, args: dict[str, object]) -> str:
+    required = tuple(key for key in spec.required if not (
+        isinstance(args.get(key), str) and isinstance(schema := declared.get(key), Mapping)
+        and schema.get("minLength") == 0))
     if is_builtin:
-        missing_key = _builtin_required_satisfied(spec.name, tuple(spec.required or ()), args)
+        missing_key = _builtin_required_satisfied(spec.name, required, args)
         if missing_key:
             return f"{spec.name} missing required arg '{missing_key}'"
         return ""
-    for key in (spec.required or ()):
+    for key in required:
         if key not in args:
             return f"{spec.name} missing required arg '{key}'"
         value = args.get(key)

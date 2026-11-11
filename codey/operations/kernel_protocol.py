@@ -18,7 +18,7 @@ from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
-from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES, ToolSpec, is_text_batch_tool
+from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES, ToolSpec, freeze_spec_parameters, is_text_batch_tool
 from codey.types.json_value import JsonValue, ToolArgs, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
@@ -93,6 +93,7 @@ class TurnSnapshot:
     implementation_compatible: bool = True
     nested_tool_names: tuple[str, ...] = ()
     research_scope: AnswerScope | None = None
+    ignore_runtime_claims: bool = False
 
     @property
     def inventory_names(self) -> tuple[str, ...]:
@@ -284,10 +285,16 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     from codey.research.tool_contract import done_spec_for_purpose, question_bound_spec
 
     purpose = ("evidence" if session.task_kind == "evidence_followup" else
-               "report" if session.policy.strict_research else "ordinary")
+               "report" if session.policy.strict_research else "chat" if session.task_kind == "chat" else "ordinary")
     frozen = tuple(done_spec_for_purpose(spec, purpose, task=session.task_text,
                                         questions=session.research_questions) if spec.name == "done" else spec
                    for spec in frozen)
+    from codey.policies.output_requirement import has_explanation
+
+    if has_explanation(session.policy.required_checks):
+        frozen = tuple(freeze_spec_parameters(replace(spec, parameters=tuple(
+            (key, {"type": "string", "minLength": 0}) if key == "summary" else (key, value)
+            for key, value in spec.parameters))) if spec.name == "done" else spec for spec in frozen)
     from codey.research.questions import requires_question_ref
 
     if requires_question_ref(session):
@@ -337,6 +344,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         custom_executors=executors,
         nested_tool_names=nested,
         research_scope=scope,
+        ignore_runtime_claims=purpose == "chat",
     )
 
 
@@ -651,6 +659,11 @@ def _lower_text_batches(items: list[tuple[str, ToolArgs, str]]) -> tuple[list[tu
     return expanded, ""
 
 
+def _drop_legacy_done_declarations(args: ToolArgs, *, runtime_owned: bool) -> ToolArgs:
+    ignored = {"source_gaps", "execution_claims"} if runtime_owned else set()
+    return {key: value for key, value in args.items() if key not in ignored}
+
+
 def _plan_from_tool_objects(
     items: list[tuple[str, ToolArgs, str]],
     *,
@@ -658,6 +671,7 @@ def _plan_from_tool_objects(
     controller_allowed: set[str] | None,
     snapshot_names: tuple[str, ...] | None = None,
     frozen_specs: Mapping[str, ToolSpec] | None = None,
+    ignore_runtime_claims: bool = False,
 ) -> ToolPlan:
     items, batch_error = _lower_text_batches(items)
     if batch_error:
@@ -685,10 +699,16 @@ def _plan_from_tool_objects(
                 return _disallowed_plan(tool)
             if not _controller_allows(tool, controller_allowed):
                 return _disallowed_plan(tool, controller=True)
+            if tool == "done":
+                args = _drop_legacy_done_declarations(args, runtime_owned=ignore_runtime_claims)
             validated, error = _validate_tool_args(tool, args, frozen_specs=frozen_specs)
             if error:
                 return _invalid_plan(error, tool=tool)
-            text = str(validated.get("summary" if tool == "done" else "question") or "").strip()
+            text = str(validated.get("summary" if tool == "done" else "question") or "")
+            from codey.policies.output_requirement import has_explanation
+
+            if tool != "done" or policy is None or not has_explanation(policy.required_checks):
+                text = text.strip()
             return ToolPlan(calls=[], control=Control(kind=tool, body=text), control_args=validated)
         if not _policy_allows(policy, tool, frozen_specs):
             return _disallowed_plan(tool)
@@ -816,6 +836,7 @@ def normalize_turn(
     return _plan_from_tool_objects(
         items, policy=policy, controller_allowed=allowed,
         snapshot_names=snapshot_names, frozen_specs=frozen,
+        ignore_runtime_claims=snapshot.ignore_runtime_claims if snapshot is not None else False,
     )
 
 

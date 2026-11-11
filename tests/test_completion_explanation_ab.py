@@ -1,4 +1,4 @@
-"""Candidate wrapping never repairs tool calls or weakens exact-field checks."""
+"""Production experiment observes proposals without weakening exact-field checks."""
 from __future__ import annotations
 
 import json
@@ -6,35 +6,32 @@ from pathlib import Path
 
 import pytest
 
-from codey.policies.output_requirement import JSON_ANSWER_GUIDANCE
-from codey.policies.tool_requirement import decode_answer, parse_tool_success_check
+from codey.policies.tool_requirement import decode_answer
 from codey.types.json_value import JsonObject, decode_json_object
+from tools.browser_production_live_gate import URL as LEGACY_URL
+from tools.browser_production_live_gate import legacy_urls_match
 from tools.completion_explanation_ab import (
-    BINDINGS,
-    PROSE_RULE,
     URL,
-    adapt_reply,
     audit_run,
+    completion_summary,
     explanation_checks,
     final_checks,
     production_source_digest,
-    prose_guidance,
     provider_metrics,
 )
 
 
-def test_candidate_preserves_prose_and_only_wraps_summary() -> None:
+def test_recorder_preserves_prose_without_wrapping_summary() -> None:
     explanation = '点击 "Load record"。\n路径示例 C:\\record\\draft；净重 173 克，QUARTZ_851。'
     action: JsonObject = {"tool": "done", "args": {"summary": explanation, "knowledge_refs": []}}
     original = json.dumps(action, ensure_ascii=False)
-    adapted, raw = adapt_reply(original, "B")
-    decoded = decode_json_object(decode_answer(adapted))
+    raw = completion_summary(original)
+    decoded = decode_json_object(decode_answer(original))
     args = decode_json_object(decoded["args"])
     assert raw == explanation
-    assert decode_answer(str(args["summary"])) == {"explanation": explanation}
+    assert args["summary"] == explanation
     assert args["knowledge_refs"] == []
     assert "page_url" not in str(args["summary"]) and "token" not in str(args["summary"])
-    assert adapt_reply(original, "A") == (original, explanation)
 
 
 @pytest.mark.parametrize("reply", [
@@ -44,28 +41,13 @@ def test_candidate_preserves_prose_and_only_wraps_summary() -> None:
     'ordinary prose without the required outer tool envelope',
     '{"tool":"codemode","args":{"code":"// comment\\nawait tools.browser_wait({});"}}',
 ])
-def test_candidate_never_repairs_outer_json_or_other_actions(reply: str) -> None:
-    assert adapt_reply(reply, "B") == (reply, None)
+def test_recorder_never_repairs_outer_json_or_other_actions(reply: str) -> None:
+    assert completion_summary(reply) is None
 
 
 def test_json_looking_prose_is_not_implicitly_unpacked() -> None:
     text = '{"explanation":"still raw text","page_url":"model guess"}'
-    adapted, _ = adapt_reply(json.dumps({"tool": "done", "args": {"summary": text}}), "B")
-    args = decode_json_object(decode_json_object(decode_answer(adapted))["args"])
-    assert decode_answer(str(args["summary"])) == {"explanation": text}
-
-
-def test_guidance_preserves_execution_requirements_and_removes_inner_json_demand() -> None:
-    for binding in BINDINGS:
-        requirement = parse_tool_success_check(binding)
-        assert requirement is not None
-        output = prose_guidance(requirement.guidance)
-        assert output.startswith("Required execution:")
-        assert "parent must both commit successfully" in output
-        assert PROSE_RULE in output
-        assert JSON_ANSWER_GUIDANCE not in output
-        assert "supply only unbound JSON fields" not in output
-    assert prose_guidance("observations and browser action contract") == "observations and browser action contract"
+    assert completion_summary(json.dumps({"tool": "done", "args": {"summary": text}})) == text
 
 
 def test_exact_fields_cannot_be_proven_by_correct_strings_elsewhere() -> None:
@@ -77,6 +59,13 @@ def test_exact_fields_cannot_be_proven_by_correct_strings_elsewhere() -> None:
     assert final_checks(json.dumps(value))["exact_fields"] is True
     value["token"] = "wrong"
     assert final_checks(json.dumps(value))["exact_fields"] is False
+
+
+def test_legacy_url_oracle_accepts_markdown_but_rejects_wrong_urls() -> None:
+    assert legacy_urls_match(f"**{LEGACY_URL}**")
+    assert legacy_urls_match(f"[{LEGACY_URL}]({LEGACY_URL})")
+    assert not legacy_urls_match(f"{LEGACY_URL}\nhttps://example.com/wrong")
+    assert not legacy_urls_match("no URL")
 
 
 @pytest.mark.parametrize("explanation", [None, "", 173])

@@ -134,9 +134,10 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         progress.reject_completion(proposal, followup, context.session,
             failure_key=(domain_issue["code"] + ":" + domain_issue["path"]) if domain_issue else "")
         counters = replace(state.counters, progress=progress.snapshot())
+        done_spec = next((spec for spec in context.response(state).snapshot.model_specs if spec.name == "done"), None)
         decision = RetryDecision(
             purpose="retry", prompt=kernel_prompt._completion_followup(followup, native=context.native,
-                structured_report="report_sections" in context.session.last_done_args,
+                structured_report=done_spec is not None and "report_sections" in done_spec.required,
                 whole_submission=whole_research(context.session)), error="",
             error_source=error_source, error_type=error_type)
         context.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision,

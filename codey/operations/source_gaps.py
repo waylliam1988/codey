@@ -111,7 +111,7 @@ def source_gap_context(session: TaskSession, ledger: ResearchLedger | None = Non
         text += "\nOpen the unattempted required URLs before proposing completion."
     elif coverage.unavailable and source_read_required(session):
         text += ("\nRequired source reading remains unavailable. Deliver the acquired content and explain the actual limitations "
-                 "in the requested final format. Proposing done closes as blocked; source_gaps need not be copied. "
+                 "in the requested final format. Proposing done closes as blocked. "
                  "No acquired body supports conclusions about the failed pages' purpose or contents. "
                  "Do not repeat an unchanged failing fetch merely to satisfy source-open checks.")
     elif source_read_required(session) and not coverage.satisfied:

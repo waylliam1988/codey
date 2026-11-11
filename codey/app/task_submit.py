@@ -206,7 +206,7 @@ def submit_task(
 ) -> str | None:
     from codey.policies.output_requirement import declaration
 
-    declaration(output_format, output_schema)
+    declaration(output_format, output_schema, strict_research=strict_research)
     from codey.policies.tool_requirement import required_tool_names
 
     required_tools = required_tool_names(required_tools)

@@ -262,7 +262,8 @@ def build_task_policy(
         required_checks = (*required_checks, "project_changes_required")
     from codey.policies.output_requirement import declaration
 
-    output = declaration(getattr(submission, "output_format", "text"), getattr(submission, "output_schema", ""))
+    output = declaration(getattr(submission, "output_format", "text"), getattr(submission, "output_schema", ""),
+                         strict_research=strict)
     required_checks = (*required_checks, *((output,) if output else ()))
     from codey.policies.tool_requirement import ToolSuccessRequirement, parse_tool_success_check, required_tool_names
 

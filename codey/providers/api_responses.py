@@ -1,23 +1,22 @@
 """Stateless Responses items. Call identity and reasoning are replayed verbatim."""
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
-from typing import Any
 
 from codey.providers.api_codec import GenerationSettings
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.providers.error_classification import OutputLengthError, RequestPrepError
 from codey.toolchain.tool_spec import thaw_schema_value
+from codey.types.json_value import decode_json_object, parse_json_object
 
 endpoint = "responses"
 
 
-def encode_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def encode_context(messages: list[dict[str, object]]) -> list[dict[str, object]]:
     """Translate canonical tool pairs into Responses function items."""
     from codey.providers.api_chat import encode_context as canonical_messages
 
-    result: list[dict[str, Any]] = []
+    result: list[dict[str, object]] = []
     for message in canonical_messages(messages):
         if message.get("role") == "tool":
             call_id = message.get("tool_call_id")
@@ -27,8 +26,12 @@ def encode_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         elif message.get("role") == "assistant" and message.get("tool_calls"):
             if message.get("content"):
                 result.append({"role": "assistant", "content": message["content"]})
-            for call in message["tool_calls"]:
-                function = call.get("function", {})
+            raw_calls = message["tool_calls"]
+            if not isinstance(raw_calls, list):
+                raise RequestPrepError("durable function calls are malformed")
+            for raw_call in raw_calls:
+                call = decode_json_object(raw_call)
+                function = decode_json_object(call.get("function", {}))
                 if (not call.get("id") or not function.get("name") or not isinstance(function.get("arguments"), str)):
                     raise RequestPrepError("durable function call is malformed")
                 result.append({"type": "function_call", "call_id": call["id"], "name": function["name"],
@@ -38,25 +41,25 @@ def encode_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
-def pending_calls(items: list[dict[str, Any]]) -> tuple[str, ...]:
+def pending_calls(items: list[dict[str, object]]) -> tuple[str, ...]:
     open_calls: list[str] = []
     for item in items:
         kind = item.get("type")
         call_id = item.get("call_id")
         if kind == "function_call" and isinstance(call_id, str) and call_id:
             open_calls.append(call_id)
-        elif kind == "function_call_output" and call_id in open_calls:
+        elif kind == "function_call_output" and isinstance(call_id, str) and call_id in open_calls:
             open_calls.remove(call_id)
     return tuple(open_calls)
 
 
-def encode_tools(tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
+def encode_tools(tools: list[ProviderToolDefinition] | None) -> list[dict[str, object]]:
     return [{"type": "function", "name": t.name, "description": t.description,
              "parameters": thaw_schema_value(t.parameters), "strict": False} for t in tools or []]
 
 
-def encode_results(results: list[ProviderToolResult]) -> list[dict[str, Any]]:
-    encoded: list[dict[str, Any]] = []
+def encode_results(results: list[ProviderToolResult]) -> list[dict[str, object]]:
+    encoded: list[dict[str, object]] = []
     for result in results:
         encoded.append({"type": "function_call_output", "call_id": result.call_id, "output": result.content})
         if result.user_content:
@@ -64,8 +67,8 @@ def encode_results(results: list[ProviderToolResult]) -> list[dict[str, Any]]:
     return encoded
 
 
-def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, system: str,
-            tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
+def prepare(history: list[dict[str, object]], pending: list[dict[str, object]], *, system: str,
+            tools: list[ProviderToolDefinition] | None) -> list[dict[str, object]]:
     candidate = [dict(item) for item in history]
     if not candidate and system:
         candidate.append({"role": "system", "content": system})
@@ -78,7 +81,7 @@ def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, sys
                 raise RequestPrepError("Responses history has duplicate or missing call IDs")
             calls.add(identity)
         elif kind == "function_call_output":
-            if identity not in calls:
+            if not isinstance(identity, str) or identity not in calls:
                 raise RequestPrepError("Responses history has an unpaired result")
             calls.remove(identity)
         elif calls and kind != "reasoning" and not (kind == "message" and item.get("role") == "assistant"):
@@ -88,7 +91,7 @@ def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, sys
     return candidate
 
 
-def validate_view(items: list[dict[str, Any]]) -> None:
+def validate_view(items: list[dict[str, object]]) -> None:
     calls = {item.get("call_id") for item in items if item.get("type") == "function_call"}
     answered = {item.get("call_id") for item in items if item.get("type") == "function_call_output"}
     additions = [{"type": "function_call_output", "call_id": identity, "output": ""}
@@ -96,7 +99,7 @@ def validate_view(items: list[dict[str, Any]]) -> None:
     prepare(items, additions, system="", tools=None)
 
 
-def closed_spans(items: list[dict[str, Any]]) -> list[tuple[int, int]]:
+def closed_spans(items: list[dict[str, object]]) -> list[tuple[int, int]]:
     spans: list[tuple[int, int]] = []
     start = 0
     calls: set[str] = set()
@@ -109,7 +112,7 @@ def closed_spans(items: list[dict[str, Any]]) -> list[tuple[int, int]]:
             calls.add(identity)
         elif kind == "function_call_output":
             identity = item.get("call_id")
-            if identity not in calls:
+            if not isinstance(identity, str) or identity not in calls:
                 raise RequestPrepError("Responses history has unpaired results")
             calls.remove(identity)
         if not calls and kind != "reasoning":
@@ -119,13 +122,13 @@ def closed_spans(items: list[dict[str, Any]]) -> list[tuple[int, int]]:
     return spans
 
 
-def checkpoint_item(text: str) -> dict[str, Any]:
+def checkpoint_item(text: str) -> dict[str, object]:
     return {"role": "assistant", "content": "Current project state:\n" + text}
 
 
-def build_payload(items: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
-                  settings: GenerationSettings) -> dict[str, Any]:
-    body: dict[str, Any] = {"model": settings.model, "input": items, "stream": settings.stream, "store": False,
+def build_payload(items: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
+                  settings: GenerationSettings) -> dict[str, object]:
+    body: dict[str, object] = {"model": settings.model, "input": items, "stream": settings.stream, "store": False,
                             "include": ["reasoning.encrypted_content"]}
     if settings.effort is not None:
         body["reasoning"] = {"effort": "none" if settings.effort == "off" else settings.effort}
@@ -136,20 +139,22 @@ def build_payload(items: list[dict[str, Any]], tools: list[ProviderToolDefinitio
     return body
 
 
-def decode_exchange(body: dict[str, Any], *, text_only: bool,
+def decode_exchange(body: dict[str, object], *, text_only: bool,
                     text_decoder: Callable[[str], str | AssistantTurn] | None,
-                    ) -> tuple[AssistantTurn, list[dict[str, Any]]]:
+                    ) -> tuple[AssistantTurn, list[dict[str, object]]]:
     status = body.get("status")
-    limited = status == "incomplete" and (body.get("incomplete_details") or {}).get("reason") == "max_output_tokens"
+    details = body.get("incomplete_details")
+    limited = status == "incomplete" and isinstance(details, dict) and details.get("reason") == "max_output_tokens"
     if status != "completed" and not limited:
         raise RuntimeError(f"Responses generation did not complete: {status}: {body.get('error')}")
     output = body.get("output")
     if not isinstance(output, list) or any(not isinstance(item, dict) for item in output):
         raise RuntimeError("Responses returned malformed output items")
+    decoded_output: list[dict[str, object]] = [dict(decode_json_object(item)) for item in output]
     calls: list[ProviderToolCall] = []
     text: list[str] = []
     reasoning: list[str] = []
-    for item in output:
+    for item in decoded_output:
         kind = item.get("type")
         if not limited and "status" in item and item["status"] != "completed":
             raise RuntimeError(f"Responses output item is not complete: {item['status']}")
@@ -158,8 +163,8 @@ def decode_exchange(body: dict[str, Any], *, text_only: bool,
                 raise OutputLengthError("Responses tool output truncated; refusing partial tool execution")
             call_id, name = item.get("call_id"), item.get("name")
             try:
-                arguments = json.loads(item.get("arguments", ""))
-            except (ValueError, TypeError) as exc:
+                arguments = parse_json_object(str(item.get("arguments", "")))
+            except (ValueError, TypeError, RecursionError) as exc:
                 raise RuntimeError("Responses returned invalid function arguments") from exc
             if not isinstance(call_id, str) or not call_id or not isinstance(name, str) or not name or not isinstance(arguments, dict):
                 raise RuntimeError("Responses returned malformed function call")
@@ -167,15 +172,22 @@ def decode_exchange(body: dict[str, Any], *, text_only: bool,
                 raise RuntimeError("Responses returned duplicate call IDs")
             calls.append(ProviderToolCall(call_id, name, arguments))
         elif kind == "message":
-            for part in item.get("content", []):
+            content = item.get("content", [])
+            if not isinstance(content, list):
+                raise RuntimeError("Responses returned malformed message content")
+            for raw_part in content:
+                part = decode_json_object(raw_part)
                 if part.get("type") == "output_text":
                     text.append(str(part.get("text", "")))
                 elif part.get("type") == "refusal":
                     raise RuntimeError("Responses model refused the request")
         elif kind == "reasoning":
-            reasoning.extend(str(part.get("text", "")) for part in item.get("summary", []))
+            summary = item.get("summary", [])
+            if not isinstance(summary, list):
+                raise RuntimeError("Responses returned malformed reasoning summary")
+            reasoning.extend(str(decode_json_object(part).get("text", "")) for part in summary)
         else:
             raise RuntimeError(f"unsupported Responses output item: {kind}")
     turn = AssistantTurn(text="\n".join(text), tool_calls=tuple(calls), reasoning="\n".join(reasoning),
                          finish=TurnFinish.OUTPUT_LIMIT if limited else TurnFinish.COMPLETE)
-    return turn, output
+    return turn, decoded_output

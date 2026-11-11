@@ -1,8 +1,8 @@
-"""Live Chat A/B: model JSON explanation versus experimental prose wrapping.
+"""Live Chat A/B: model JSON explanation versus production prose assembly.
 
 Both arms use Chromium, the production headless kernel, the same receipt
-bindings and strict final schema. B only wraps done.summary at the provider
-boundary; it is a candidate adapter, not an installed production capability.
+bindings and strict final schema. B selects production json_explanation;
+provider prompts and completion proposals are never rewritten by this script.
 No tool execution, receipt selection or completion verdict is reimplemented.
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ if __package__ in (None, ""):
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.env_names import NATIVE_TOOLS_ENV
-from codey.policies.output_requirement import JSON_ANSWER_GUIDANCE, evaluate
+from codey.policies.output_requirement import evaluate
 from codey.policies.tool_requirement import decode_answer, require_tool_success
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
@@ -42,10 +42,10 @@ from codey.types.json_value import (
     JsonObject,
     JsonValue,
     decode_json_object,
-    decode_json_value,
     require_json_integer,
     require_json_string,
 )
+from tools.completion_artifact_audit import rejection_audit
 
 Arm = Literal["A", "B"]
 ROOT = Path(__file__).resolve().parents[1]
@@ -85,11 +85,6 @@ SHAPES = (
     "用两条 Markdown 列表分别说明操作和结果，列表之间使用真实换行。",
     "用自然语言说明结果，并用 Markdown 行内代码提及 Locality 和 Load record。",
 )
-PROSE_RULE = ("Experimental explanation adapter: the application produces the final JSON. "
-              "For done.summary, supply only the natural-language explanation as a string, "
-              "not an inner JSON document. The adapter preserves that string at /explanation; "
-              "the production assembler fills /page_url and /token from committed receipts. "
-              "The required JSON schema describes the application's final output.")
 
 
 def write_json(path: Path, value: object) -> None:
@@ -110,34 +105,16 @@ def production_source_digest() -> str:
     return digest.hexdigest()
 
 
-def adapt_reply(reply: str, arm: Arm) -> tuple[str, str | None]:
-    """Wrap only a valid outer done action; never repair JSON or extract prose."""
+def completion_summary(reply: str) -> str | None:
+    """Observe the raw proposal without changing its transport or content."""
     try:
         action = decode_json_object(decode_answer(reply))
     except (ValueError, TypeError):
-        return reply, None
+        return None
     args = action.get("args")
     if action.get("tool") != "done" or not isinstance(args, dict) or not isinstance(args.get("summary"), str):
-        return reply, None
-    summary = require_json_string(args["summary"], "summary")
-    if arm == "A":
-        return reply, summary
-    args["summary"] = json.dumps({"explanation": summary}, ensure_ascii=False, allow_nan=False)
-    return json.dumps(action, ensure_ascii=False, allow_nan=False), summary
-
-
-def prose_guidance(text: str) -> str:
-    """Change only model-facing output guidance, retaining execution requirements."""
-    text = text.replace(JSON_ANSWER_GUIDANCE, PROSE_RULE)
-    for binding in BINDINGS:
-        from codey.policies.tool_requirement import parse_tool_success_check
-
-        requirement = parse_tool_success_check(binding)
-        assert requirement is not None
-        original = requirement.guidance.replace(JSON_ANSWER_GUIDANCE, PROSE_RULE)
-        execution = original.split(PROSE_RULE, 1)[0]
-        text = text.replace(original, execution + PROSE_RULE)
-    return text
+        return None
+    return require_json_string(args["summary"], "summary")
 
 
 def service_state(base_url: str) -> JsonObject:
@@ -157,12 +134,14 @@ class Target:
 
 
 class ExperimentProvider(ApiProvider):
-    def __init__(self, target: Target, directory: Path, arm: Arm, *, fixed_acquisition: bool = True) -> None:
-        self.target, self.directory, self.arm = target, directory, arm
+    def __init__(self, target: Target, directory: Path, *, fixed_acquisition: bool = True,
+                 acquisition_action: JsonObject | None = None) -> None:
+        self.target, self.directory = target, directory
         self.exchange = 0
         self.observed_tools = 0
         self.proposals: list[JsonObject] = []
         self.fixed_acquisition = fixed_acquisition
+        self.acquisition_action = acquisition_action
         super().__init__(target.base_url, target.model, temperature=0, timeout=target.timeout,
                          context_window_tokens=32768, context_reserve_tokens=8192,
                          context_keep_recent_tokens=12000, native_tools=False, thinking_enabled=False,
@@ -171,18 +150,6 @@ class ExperimentProvider(ApiProvider):
 
     def configure_experiment(self, payload: dict[str, object]) -> None:
         payload["seed"] = self.target.seed
-        if self.arm == "B":
-            messages = decode_json_value(payload.get("messages"))
-            if not isinstance(messages, list):
-                raise ValueError("expected chat messages")
-            changed: list[JsonValue] = []
-            for raw in messages:
-                message = decode_json_object(raw)
-                content = message.get("content")
-                if message.get("role") in {"system", "user"} and isinstance(content, str):
-                    message["content"] = prose_guidance(content)
-                changed.append(message)
-            payload["messages"] = changed
 
     def _generate(self, messages: list[dict[str, object]], tools: list[ProviderToolDefinition] | None = None,
                   *, timeout: float | None = None, checkpoints: list[dict[str, object]] | None = None,
@@ -192,7 +159,7 @@ class ExperimentProvider(ApiProvider):
                   require_tool_call: bool = False) -> dict[str, object]:
         self.exchange += 1
         if self.fixed_acquisition and self.exchange == 1:
-            action = {"tool": "codemode", "args": {"code": ACQUISITION, "inputs": {
+            action = self.acquisition_action or {"tool": "codemode", "args": {"code": ACQUISITION, "inputs": {
                 "url": URL, "city": "福州", "wait_text": "鱼丸"}}}
             scripted_body: dict[str, object] = {"choices": [{"message": {
                 "role": "assistant", "content": json.dumps(action), "tool_calls": []}, "finish_reason": "stop"}]}
@@ -229,18 +196,18 @@ class ExperimentProvider(ApiProvider):
         normalized = super().normalize_reply(reply)
         if not isinstance(normalized, str):
             return normalized
-        adapted, summary = adapt_reply(normalized, self.arm)
+        summary = completion_summary(normalized)
         if summary is not None:
             row: JsonObject = {"exchange": self.exchange, "raw_reply": reply,
-                               "normalized_reply": normalized, "adapted_reply": adapted, "raw_summary": summary,
+                               "normalized_reply": normalized, "raw_summary": summary,
                                "tools_before_proposal": self.observed_tools}
             if not self.proposals or self.proposals[-1]["exchange"] != self.exchange:
                 self.proposals.append(row)
                 append_json(self.directory / "proposals.jsonl", row)
-        return adapted
+        return normalized
 
 
-def final_checks(answer: str) -> JsonObject:
+def final_checks(answer: str, *, expected_url: str = URL) -> JsonObject:
     """Field equality is independent of other correct strings elsewhere in prose."""
     from codey.policies.output_requirement import declaration
 
@@ -251,7 +218,7 @@ def final_checks(answer: str) -> JsonObject:
     value = decode_json_object(decode_answer(answer))
     explanation = require_json_string(value["explanation"], "explanation")
     return {"schema_valid": True,
-            "exact_fields": value["page_url"] == URL and value["token"] == TOKEN,
+            "exact_fields": value["page_url"] == expected_url and value["token"] == TOKEN,
             "facts_mentioned": bool(re.search(r"(?<!\d)173(?!\d)", explanation))
             and bool(re.search(r"(?<![A-Za-z0-9_])QUARTZ_851(?![A-Za-z0-9_])", explanation)),
             "explanation": explanation, "reason": ""}
@@ -282,7 +249,7 @@ def run_arm(directory: Path, target: Target, arm: Arm, shape: int, max_turns: in
             *, fixed_acquisition: bool = True) -> JsonObject:
     directory.mkdir(parents=True, exist_ok=False)
     browser = BrowserSearchProvider(headless=True)
-    provider = ExperimentProvider(target, directory, arm, fixed_acquisition=fixed_acquisition)
+    provider = ExperimentProvider(target, directory, fixed_acquisition=fixed_acquisition)
     events: list[JsonObject] = []
     started = time.monotonic()
 
@@ -312,14 +279,14 @@ def run_arm(directory: Path, target: Target, arm: Arm, shape: int, max_turns: in
             "最后通过 done 提交解释，用数字报告实测净重和校验码；不要在解释中重复 URL 或脚本 token。"
             + SHAPES[shape] + "URL 和 token 均由应用从正式回执填入。")
     task += ('done.summary 只提交一个 JSON 对象，形如 {"explanation":"你的解释"}，不抄写其他字段。'
-             if arm == "A" else "实验适配已启用：done.summary 直接填写自然语言解释，不包装成内层 JSON 对象。")
+             if arm == "A" else "done.summary 直接填写自然语言解释，不包装成内层 JSON 对象。")
     if fixed_acquisition:
         task += "实验固定采集程序将先执行上述浏览器步骤；成功回执到达后直接提交解释，不要重复已经成功的操作。"
     write_json(directory / "request.json", {"task": task, "arm": arm, "shape": shape,
                "required_tools": [*REQUIRED, *BINDINGS], "output_schema": SCHEMA, "seed": target.seed,
                "fixed_acquisition": fixed_acquisition})
     summary: JsonObject = {"arm": arm, "shape": shape, "passed": False,
-                           "scope": "live_model_and_chromium_with_experimental_provider_boundary_adapter",
+                           "scope": "live_model_and_chromium_with_production_completion_assembly",
                            "fixed_acquisition": fixed_acquisition}
     try:
         with ExitStack() as stack:
@@ -334,7 +301,8 @@ def run_arm(directory: Path, target: Target, arm: Arm, shape: int, max_turns: in
                 None, task, intent="chat", provider_id="local", max_turns=max_turns,
                 state_home=directory / "state", research_store_root=directory / "knowledge",
                 requested_capabilities=("web.read", "browser.observe", "browser.interact", "browser.effect"),
-                required_tools=(*REQUIRED, *BINDINGS), output_format="json", output_schema=json.dumps(SCHEMA),
+                required_tools=(*REQUIRED, *BINDINGS),
+                output_format="json" if arm == "A" else "json_explanation", output_schema=json.dumps(SCHEMA),
                 model_selection={"model": target.model, "base_url": target.base_url}),
                 emit_jsonl=observe, connect_provider=connect)
         terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), {})
@@ -370,6 +338,13 @@ def run_arm(directory: Path, target: Target, arm: Arm, shape: int, max_turns: in
                    failed_tools=sum(row.get("ok") is False for row in tools), **metrics)
     summary["failure_stage"] = ("none" if summary["passed"] is True else "before_delivery" if not proposals
                                 else "delivery_or_final_validation")
+    summary.update(rejection_audit(directory / "state"))
+    if isinstance(summary.get("explanation"), str):
+        quality = explanation_checks(require_json_string(summary["explanation"], "explanation"), shape)
+        summary["explanation_quality"] = quality
+        summary["all_requirements_passed"] = (summary["passed"] is True
+            and quality["requested_shape_valid"] is True and quality["bound_values_repeated"] is False
+            and quality["literal_backslash_n"] is False)
     write_json(directory / "summary.json", summary)
     return summary
 
@@ -403,6 +378,7 @@ def run_worker(directory: Path, target: Target, arm: Arm, shape: int, max_turns:
 def aggregate(rows: list[JsonObject], arm: Arm) -> JsonObject:
     selected = [row for row in rows if row["arm"] == arm]
     result: JsonObject = {"runs": len(selected), "passed": sum(row.get("passed") is True for row in selected),
+                          "all_requirements_passed": sum(row.get("all_requirements_passed") is True for row in selected),
                           "first_delivery_successes": sum(row.get("first_delivery_success") is True for row in selected),
                           "reached_delivery": sum(isinstance(row.get("done_proposals"), int)
                                                   and bool(row["done_proposals"]) for row in selected)}
@@ -416,7 +392,7 @@ def aggregate(rows: list[JsonObject], arm: Arm) -> JsonObject:
     return result
 
 
-def explanation_checks(explanation: str, shape: int) -> JsonObject:
+def explanation_checks(explanation: str, shape: int, *, expected_url: str = URL) -> JsonObject:
     """Limited presentation audit; never a claim of general semantic correctness."""
     list_items = len(re.findall(r"(?m)^(?:[-*]|\d+[.)])\s+", explanation))
     shape_valid = (
@@ -430,7 +406,7 @@ def explanation_checks(explanation: str, shape: int) -> JsonObject:
     tokens = re.findall(r"SCHEMA_TOKEN_[A-Za-z0-9_]+", explanation)
     return {"requested_shape_valid": shape_valid, "literal_backslash_n": "\\n" in explanation,
             "bound_values_repeated": bool(urls or tokens),
-            "unexpected_url_mentions": [value for value in urls if value != URL],
+            "unexpected_url_mentions": [value for value in urls if value != expected_url],
             "unexpected_token_mentions": [value for value in tokens if value != TOKEN]}
 
 
@@ -438,7 +414,7 @@ def audit_run(directory: Path) -> JsonObject:
     """Read original artifacts and write a separate audit, leaving primary results intact."""
     report = decode_json_object(json.loads((directory / "summary.json").read_text(encoding="utf-8")))
     manifest = decode_json_object(json.loads((directory / "manifest.json").read_text(encoding="utf-8")))
-    if manifest.get("interface") != "explanation-wrapper-ab-v1":
+    if manifest.get("interface") not in {"explanation-wrapper-ab-v1", "production-explanation-ab-v2"}:
         raise ValueError("unsupported experiment artifact version")
     results = report["results"]
     if not isinstance(results, list):
@@ -525,6 +501,7 @@ class Options:
     worker_shape: int = 0
     autonomous_acquisition: bool = False
     audit: bool = False
+    arm: str = "both"
 
 
 def main() -> int:
@@ -542,6 +519,7 @@ def main() -> int:
     parser.add_argument("--autonomous-acquisition", action="store_true",
                         help="Exploratory full-task run; default fixes acquisition to isolate final delivery.")
     parser.add_argument("--audit", action="store_true", help="Audit existing artifacts without calling a model.")
+    parser.add_argument("--arm", choices=("A", "B", "both"), default="both")
     args = parser.parse_args(namespace=Options())
     directory = args.run_dir.resolve()
     if args.audit:
@@ -565,9 +543,10 @@ def main() -> int:
         parser.error("--pairs must be positive")
     directory.mkdir(parents=True, exist_ok=False)
     before = production_source_digest()
-    write_json(directory / "manifest.json", {"interface": "explanation-wrapper-ab-v1", "model": model,
+    write_json(directory / "manifest.json", {"interface": "production-explanation-ab-v2", "model": model,
                "base_url": base_url, "seed": target.seed, "temperature": 0, "pairs": args.pairs,
-               "scope": "chat_browser_task_and_candidate_explanation_adapter",
+               "scope": "chat_browser_task_and_production_completion_assembly",
+               "arm": args.arm,
                "fixed_acquisition": not args.autonomous_acquisition,
                "source_before": before, "schema": SCHEMA, "bindings": list(BINDINGS),
                "order": "AB for even pairs; BA for odd pairs; five explanation shapes repeated",
@@ -576,6 +555,8 @@ def main() -> int:
     for pair in range(args.pairs):
         order: tuple[Arm, Arm] = ("A", "B") if pair % 2 == 0 else ("B", "A")
         for arm in order:
+            if args.arm != "both" and args.arm != arm:
+                continue
             print(json.dumps({"starting_pair": pair + 1, "arm": arm}), flush=True)
             row = run_worker(directory / f"{pair + 1:02d}" / arm, target, arm, pair % len(SHAPES),
                              args.max_turns, args.case_budget, fixed_acquisition=not args.autonomous_acquisition)

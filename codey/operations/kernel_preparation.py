@@ -6,6 +6,7 @@ from codey.operations.completion_context import CompletionContextInput
 from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import TaskSession
+from codey.policies.output_requirement import has_explanation
 from codey.policies.tool_requirement import parse_tool_success_check
 
 
@@ -32,7 +33,7 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     for check_id in snapshot.policy.required_checks:
         requirement = parse_tool_success_check(check_id)
         if requirement is not None:
-            guidance.append(requirement.guidance)
+            guidance.append(requirement.model_guidance(explanation=has_explanation(snapshot.policy.required_checks)))
     prompt = kernel_prompt.kernel_prompt_for_session(
         session, user_task=user_task, contract_text=snapshot.contract_text,
         context_text=context_text,

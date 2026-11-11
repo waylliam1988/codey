@@ -4,16 +4,16 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Callable
-from typing import Any, cast
 
 from codey.providers.api_codec import GenerationSettings
 from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult, TurnFinish
 from codey.toolchain.tool_spec import thaw_schema_value
+from codey.types.json_value import decode_json_object, parse_json_object
 
 endpoint = "chat/completions"
 
 
-def encode_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def encode_context(messages: list[dict[str, object]]) -> list[dict[str, object]]:
     """Encode canonical history without leaking internal recovery metadata."""
     result = copy.deepcopy(messages)
     for message in result:
@@ -21,7 +21,7 @@ def encode_context(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 
-def pending_calls(items: list[dict[str, Any]]) -> tuple[str, ...]:
+def pending_calls(items: list[dict[str, object]]) -> tuple[str, ...]:
     open_calls: list[str] = []
     for item in items:
         if item.get("role") == "assistant":
@@ -35,18 +35,18 @@ def pending_calls(items: list[dict[str, Any]]) -> tuple[str, ...]:
                     open_calls.append(call["id"])
         elif item.get("role") == "tool":
             call_id = item.get("tool_call_id")
-            if call_id in open_calls:
+            if isinstance(call_id, str) and call_id in open_calls:
                 open_calls.remove(call_id)
     return tuple(open_calls)
 
 
-def decode_exchange(body: dict[str, Any], *, text_only: bool,
+def decode_exchange(body: dict[str, object], *, text_only: bool,
                     text_decoder: Callable[[str], str | AssistantTurn] | None,
-                    ) -> tuple[AssistantTurn, list[dict[str, Any]] | None]:
+                    ) -> tuple[AssistantTurn, list[dict[str, object]] | None]:
     if text_only:
         text = _extract_reply(body)
-        choice = body["choices"][0]
-        message = choice.get("message") or {"content": text}
+        choice = _first_choice(body)
+        message: dict[str, object] = dict(decode_json_object(choice.get("message") or {"content": text}))
         _parse_tool_calls(message)
         if message.get("tool_calls"):
             raise RuntimeError("unexpected native tool calls in a text-only exchange")
@@ -56,13 +56,13 @@ def decode_exchange(body: dict[str, Any], *, text_only: bool,
     return turn, [stored] if stored is not None else None
 
 
-def encode_tools(tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
+def encode_tools(tools: list[ProviderToolDefinition] | None) -> list[dict[str, object]]:
     return [{"type": "function", "function": {"name": t.name, "description": t.description,
              "parameters": thaw_schema_value(t.parameters)}} for t in tools or []]
 
 
-def encode_results(results: list[ProviderToolResult]) -> list[dict[str, Any]]:
-    encoded: list[dict[str, Any]] = []
+def encode_results(results: list[ProviderToolResult]) -> list[dict[str, object]]:
+    encoded: list[dict[str, object]] = []
     for item in results:
         encoded.append({"role": "tool", "tool_call_id": item.call_id, "content": item.content})
         if item.user_content:
@@ -70,8 +70,8 @@ def encode_results(results: list[ProviderToolResult]) -> list[dict[str, Any]]:
     return encoded
 
 
-def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, system: str,
-            tools: list[ProviderToolDefinition] | None) -> list[dict[str, Any]]:
+def prepare(history: list[dict[str, object]], pending: list[dict[str, object]], *, system: str,
+            tools: list[ProviderToolDefinition] | None) -> list[dict[str, object]]:
     from codey.agents import context_compaction as compaction
     from codey.providers import error_classification as errors
 
@@ -85,11 +85,11 @@ def prepare(history: list[dict[str, Any]], pending: list[dict[str, Any]], *, sys
     return candidate
 
 
-def validate_view(items: list[dict[str, Any]]) -> None:
+def validate_view(items: list[dict[str, object]]) -> None:
     from codey.agents.context_compaction import group_messages_for_compaction
 
     groups = group_messages_for_compaction(items)
-    additions: list[dict[str, Any]] = []
+    additions: list[dict[str, object]] = []
     if groups:
         group = groups[-1]
         calls = items[group[0]].get("tool_calls")
@@ -102,20 +102,20 @@ def validate_view(items: list[dict[str, Any]]) -> None:
     prepare(items, additions, system="", tools=None)
 
 
-def closed_spans(items: list[dict[str, Any]]) -> list[tuple[int, int]]:
+def closed_spans(items: list[dict[str, object]]) -> list[tuple[int, int]]:
     from codey.agents.context_compaction import group_messages_for_compaction, is_tool_group_complete
 
     return [(group[0], group[-1] + 1) for group in group_messages_for_compaction(items)
             if is_tool_group_complete(items, group) and items[group[0]].get("role") not in {"system", "developer"}]
 
 
-def checkpoint_item(text: str) -> dict[str, Any]:
+def checkpoint_item(text: str) -> dict[str, object]:
     return {"role": "assistant", "content": "Current project state:\n" + text}
 
 
-def build_payload(messages: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
-                  settings: GenerationSettings) -> dict[str, Any]:
-    body: dict[str, Any] = {"model": settings.model, "messages": messages, "temperature": settings.temperature, "stream": settings.stream}
+def build_payload(messages: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
+                  settings: GenerationSettings) -> dict[str, object]:
+    body: dict[str, object] = {"model": settings.model, "messages": messages, "temperature": settings.temperature, "stream": settings.stream}
     if settings.thinking is not None:
         body["chat_template_kwargs"] = {"enable_thinking": settings.thinking}
     if settings.effort is not None:
@@ -126,7 +126,7 @@ def build_payload(messages: list[dict[str, Any]], tools: list[ProviderToolDefini
         body.update(tools=encode_tools(tools), tool_choice=settings.choice, parallel_tool_calls=False)
     return body
 
-def _parse_tool_calls(message: dict[str, Any]) -> tuple[list[dict[str, object]], int]:
+def _parse_tool_calls(message: dict[str, object]) -> tuple[list[dict[str, object]], int]:
     """Parse raw tool_calls, returning the usable calls plus a drop count.
 
     A call without an id, without a name, or without a JSON-object
@@ -169,11 +169,8 @@ def _parse_tool_calls(message: dict[str, Any]) -> tuple[list[dict[str, object]],
                 dropped += 1
                 continue
             try:
-                decoded = json.loads(raw_args)
-            except json.JSONDecodeError:
-                dropped += 1
-                continue
-            if not isinstance(decoded, dict):
+                decoded = parse_json_object(raw_args)
+            except (ValueError, RecursionError):
                 dropped += 1
                 continue
             arguments = dict(decoded)
@@ -184,7 +181,7 @@ def _parse_tool_calls(message: dict[str, Any]) -> tuple[list[dict[str, object]],
     return parsed, dropped
 
 
-def _store_assistant_message(message: dict[str, Any]) -> dict[str, Any]:
+def _store_assistant_message(message: dict[str, object]) -> dict[str, object]:
     stored: dict[str, object] = {"role": "assistant", "content": str(message.get("content") or "")}
     reasoning = _reasoning_text(message)
     if reasoning:
@@ -205,9 +202,9 @@ def _reasoning_text(message: object) -> str:
     return ""
 
 
-def decode_turn(message: dict[str, Any], *,
+def decode_turn(message: dict[str, object], *,
                 text_decoder: Callable[[str], str | AssistantTurn] | None = None,
-                ) -> tuple[AssistantTurn, dict[str, Any] | None]:
+                ) -> tuple[AssistantTurn, dict[str, object] | None]:
     """Normalize text frames and native calls before runtime state commits."""
     parsed, dropped = _parse_tool_calls(message)
     text = str(message.get("content") or "")
@@ -232,19 +229,24 @@ def decode_turn(message: dict[str, Any], *,
         }, finish=TurnFinish.PROTOCOL_ERROR), None
     turn = AssistantTurn(text=text, reasoning=_reasoning_text(message), tool_calls=tuple(
         ProviderToolCall(id=str(call["id"]), name=str(call["name"]),
-            arguments=cast(dict[str, Any], call.get("arguments")) if isinstance(call.get("arguments"), dict) else {}) for call in parsed),
+            arguments=decode_json_object(call["arguments"])) for call in parsed),
         raw={"finish_reason": str(message.get("_finish_reason") or ""), **provider_metadata},
         finish=TurnFinish.OUTPUT_LIMIT if message.get("_continuable_length") else TurnFinish.COMPLETE)
     return turn, _store_assistant_message(message)
 
 
-def _extract_reply(body: dict[str, Any]) -> str:
-    try:
-        choice = body["choices"][0]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise RuntimeError("local model returned no choices") from exc
-    if not isinstance(choice, dict):
+def _first_choice(body: dict[str, object]) -> dict[str, object]:
+    choices = body.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise RuntimeError("local model returned no choices")
+    if not isinstance(choices[0], dict):
         raise RuntimeError("local model returned a malformed choice")
+    choice: dict[str, object] = dict(decode_json_object(choices[0]))
+    return choice
+
+
+def _extract_reply(body: dict[str, object]) -> str:
+    choice = _first_choice(body)
     from codey.providers import error_classification as errors
 
     kind = errors.classify_openai_choice(choice)
@@ -261,20 +263,15 @@ def _extract_reply(body: dict[str, Any]) -> str:
     if isinstance(message, dict):
         return str(message.get("content") or "")
     if isinstance(choice.get("text"), str):
-        return (choice.get("text") or "")
+        return str(choice["text"])
     raise RuntimeError("local model returned a choice without message content")
 
 
 
-def decode_message(body: dict[str, Any]) -> dict[str, Any]:
+def decode_message(body: dict[str, object]) -> dict[str, object]:
     from codey.providers import error_classification as errors
 
-    try:
-        choice = body["choices"][0]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise RuntimeError("local model returned no choices") from exc
-    if not isinstance(choice, dict):
-        raise RuntimeError("local model returned a malformed choice")
+    choice = _first_choice(body)
     kind = errors.classify_openai_choice(choice)
     if kind == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
         raise errors.ContextOverflowError("local model context overflow (finish_reason=length)")
