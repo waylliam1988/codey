@@ -535,6 +535,134 @@ def test_codemode_can_compute_whole_file_after_reading_in_same_program(
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("arm", ["A", "B"])
+@pytest.mark.parametrize("scenario", ["hybrid", "stale_edit"])
+def test_file_handoff_delivers_read_before_edit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, scenario: str,
+) -> None:
+    directory = tmp_path / "run"
+    external = {"marker": secrets.token_hex(16)}
+    monkeypatch.setattr(probe.gate, "EXTERNAL_FIELD", external)
+    exchange = 0
+    old_ref = ""
+    recovered = False
+
+    def scripted(url: str, payload: dict[str, object], headers: dict[str, str], **kwargs: object) -> dict[str, object]:
+        nonlocal exchange, old_ref, recovered
+        exchange += 1
+        messages = payload["messages"]
+        assert isinstance(messages, list)
+        observation = next(m["content"] for m in reversed(messages) if isinstance(m, dict)
+                           and str(m.get("content", "")).startswith(surface.READ_OBSERVATIONS_PREFIX))
+        reads = json.loads(observation[len(surface.READ_OBSERVATIONS_PREFIX):])
+        wire = json.dumps(messages, ensure_ascii=False)
+        if exchange == 2:
+            assert "鱼丸净重为 173 克" in wire and "QUARTZ_851" in wire
+            assert bool(reads) is (arm == "B")
+            if arm == "B":
+                assert "read_authorized_project_file" in wire
+        if exchange == 1:
+            action = plan(*browser_steps())
+        elif not reads:
+            action = plan(step("file", "read_file", {"path": "result.json"}))
+        elif not old_ref:
+            old_ref, observation = next(iter(reads.items()))
+            content = json.loads(observation["text"])
+            assert content == {"amount": 0, "code": "unknown"}
+            content.update(amount=173, code="QUARTZ_851")
+            action = plan(step("edit", "edit", {"read_handle": old_ref, "content": json.dumps(content)}))
+        elif scenario == "stale_edit" and not recovered:
+            if len(reads) == 1:
+                assert "version" in wire.lower()
+                action = plan(step("fresh", "read_file", {"path": "result.json"}))
+            else:
+                fresh_ref, observation = next((ref, item) for ref, item in reads.items() if ref != old_ref)
+                content = json.loads(observation["text"])
+                assert content["external_revision"] == external
+                content.update(amount=173, code="QUARTZ_851")
+                action = plan(step("edit", "edit", {"read_handle": fresh_ref, "content": json.dumps(content)}))
+                recovered = True
+        else:
+            action = {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851，已更新文件。"}}
+        observe = kwargs["observe"]
+        assert callable(observe)
+        observe(attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0.0)
+        return surface.script_body(action)
+
+    monkeypatch.setattr("codey.providers.api_generation.generate", scripted)
+    monkeypatch.setattr("tools.completion_explanation_ab.service_state", lambda _url: {})
+    row = probe.run_arm(directory, scenario, arm, probe.FILE_HANDOFF, TARGET, max_turns=8)
+    assert row["passed"], row
+    stale = scenario == "stale_edit"
+    assert row["model_calls"] == 3 + 2 * stale + (arm == "A")
+    handoff = decode_json_object(row["file_handoff"])
+    metrics = decode_json_object(row["metrics"])
+    assert metrics["successful_edits"] == 1 and metrics["successful_file_reads"] == 1 + stale
+    assert row["true_stale_conflicts"] == int(stale)
+    if stale:
+        assert row["fresh_read_recovery"] and decode_json_object(row["project_result"])["external_revision"] == external
+    if arm == "B":
+        assert handoff["scheduled_exchanges"] == [2]
+        assert handoff["file_read_ref"] == old_ref and handoff["file_observation_in_next_request"] is True
+        assert handoff["next_request_exchange"] == 3
+        receipts = tool_receipts(directory / "state")
+        browser_ref = handoff["browser_read_ref"]
+        browser_parent = next(receipt for receipt in receipts if
+            receipt.result.call.name == "codemode" and browser_ref in receipt.result.canonical.get("child_effect_ids", []))
+        browser_only = [receipt for receipt in receipts if receipt.result.call.name.startswith("browser_")]
+        assert probe.file_handoff_scheduler(None)([browser_parent, *browser_only]) is None
+        schedule = probe.file_handoff_scheduler("result.json")
+        assert schedule(browser_only) is None
+        assert schedule([browser_parent, *browser_only]) is not None
+        assert schedule([browser_parent, *browser_only]) is None
+    else:
+        assert handoff["scheduled_exchanges"] == []
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("mode", ["already_read", "browser_read_failed", "file_read_failed"])
+def test_file_handoff_does_not_duplicate_reads_or_hide_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str,
+) -> None:
+    from codey.toolchain.runtime import ToolOutcome
+
+    error = "scripted fixture file read failure"
+    steps = browser_steps()
+    if mode == "already_read":
+        steps.append(step("file", "read_file", {"path": "./result.json"}))
+    elif mode == "browser_read_failed":
+        steps[-1] = step("body", "browser_read", {"offset": 100000})
+    else:
+        from codey.agents.tool_execution import execute_information_tool_call
+
+        def fail_file(project: Path, tool_fns: object, call: ToolCall) -> ToolOutcome:
+            if call.name == "read" and call.args.get("path") == "result.json":
+                return ToolOutcome.error(error)
+            return execute_information_tool_call(project, tool_fns, call)
+
+        monkeypatch.setattr("codey.agents.tool_execution.execute_information_tool_call", fail_file)
+    done: JsonObject = {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
+    install_http(monkeypatch, [plan(*steps), done, done, done, done])
+    directory = tmp_path / "run"
+    row = probe.run_arm(directory, "hybrid", "B", probe.FILE_HANDOFF, TARGET, max_turns=6)
+    handoff = decode_json_object(row["file_handoff"])
+    receipts = tool_receipts(directory / "state")
+    file_reads = [receipt.result for receipt in receipts if receipt.result.call.name == "read_file"]
+    assert not row["passed"]
+    if mode == "file_read_failed":
+        assert handoff["scheduled_exchanges"] == [2] and handoff["file_read_ok"] is False
+        assert len(file_reads) == 1 and not file_reads[0].ok and error in file_reads[0].model_text
+        requests = [event["payload"] for event in map(json.loads, (directory / "provider.jsonl").read_text(
+            encoding="utf-8").splitlines()) if event.get("phase") == "request"]
+        assert error in json.dumps(requests[1]["messages"])
+    else:
+        assert handoff["scheduled_exchanges"] == []
+        assert len(file_reads) == int(mode == "already_read")
+        if mode == "browser_read_failed":
+            assert any(r.result.call.name == "browser_read" and not r.result.ok for r in receipts)
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 def test_b3_real_upload_uses_control_name_and_preserves_raw_result_types(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     attachment = InputAttachmentStore(tmp_path / "inputs", "upload").put("fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode())
     action = plan(step("nav", "browser_navigate", {"url": URL}),

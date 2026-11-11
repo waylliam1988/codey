@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import posixpath
 import subprocess
 import sys
 import traceback
@@ -20,7 +21,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.tool_requirement import ToolObservation
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolResult
-from codey.types.json_value import JsonObject, decode_json_object, decode_json_value
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, decode_json_value
 from tools import browser_production_live_gate as gate
 from tools import protocol_surface as surface
 from tools import receipt_bound_edit_ab as edit
@@ -31,6 +32,12 @@ from tools.completion_explanation_ab import Target, append_json, provider_metric
 PAGE_RESET_GATE = "page-reset-gate"
 PAGE_RESET_NAVIGATION = "page-reset-navigation"
 PAGE_RESET_CONFIGS = {PAGE_RESET_GATE, PAGE_RESET_NAVIGATION}
+FILE_HANDOFF = "file-handoff"
+FILE_HANDOFF_CODE = (
+    "const file = await tools.read_file({path:inputs.path});"
+    "return {runtime_action:'read_authorized_project_file',browser_read_ref:inputs.browser_read_ref,file,"
+    "next:file.ok ? 'Use the delivered file observation to prepare the requested edit.' : file.error};"
+)
 PAGE_RESET_CHECK = "page_reset_two_rounds"
 PAGE_TRANSITIONS = {"browser_navigate", "browser_tab_switch", "browser_tab_new"}
 PAGE_RESET_STEPS = (
@@ -50,6 +57,7 @@ SCENARIOS = {
     "B4": ("page_reset", "return_failure", "download"),
     surface.RECEIPT_DELIVERY: ("upload_bound", "upload", "download", "return_failure"),
     surface.EDIT_BOUNDARY: ("hybrid", "stale_edit"),
+    FILE_HANDOFF: ("hybrid", "stale_edit"),
     PAGE_RESET_GATE: ("page_reset",),
     PAGE_RESET_NAVIGATION: ("page_reset",),
     "combined": (*previous.SCENARIOS, "page_reset", "return_failure"),
@@ -144,6 +152,72 @@ def page_reset_scheduler() -> Callable[[list[EffectReceipt]], JsonObject | None]
             "inputs": {"url": gate.URL, "first_round_read": read_ref}}}
 
     return schedule
+
+
+def file_handoff_scheduler(authorized_path: str | None) -> Callable[[list[EffectReceipt]], JsonObject | None]:
+    """Read the one task-declared file after the fixture's browser evidence commits."""
+    scheduled = False
+
+    def schedule(receipts: list[EffectReceipt]) -> JsonObject | None:
+        nonlocal scheduled
+        if scheduled or not authorized_path:
+            return None
+        path = posixpath.normpath(authorized_path.replace("\\", "/"))
+        if any(row.result.call.name in {"read_file", "read"}
+               and isinstance(target := row.result.call.args.get("path"), str)
+               and posixpath.normpath(target.replace("\\", "/")) == path for row in receipts):
+            return None
+        completed, _current = page_reset_progress(receipts)
+        if not completed:
+            return None
+        read_ref = completed[-1][-1]
+        later = receipts_after(receipts, read_ref)
+        if any(row.result.call.name in PAGE_TRANSITIONS for row in later):
+            return None
+        if not any(row.result.call.name == "codemode" and row.result.ok and not row.result.truncated
+                   and isinstance(children := row.result.canonical.get("child_effect_ids"), list)
+                   and read_ref in children for row in receipts):
+            return None
+        read = next(row.result for row in receipts if row.identity == read_ref)
+        try:
+            if not surface.complete_browser_read(read):
+                return None
+        except (TypeError, ValueError):
+            return None
+        scheduled = True
+        return {"tool": "codemode", "args": {"code": FILE_HANDOFF_CODE,
+            "inputs": {"path": authorized_path, "browser_read_ref": read_ref}}}
+
+    return schedule
+
+
+def file_handoff_audit(directory: Path, receipts: list[EffectReceipt]) -> JsonObject:
+    log = directory / "provider.jsonl"
+    events = [decode_json_object(json.loads(line))
+              for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
+    actions = [int(str(row["exchange"])) for row in events if row.get("type") == "runtime_action"]
+    scheduled_exchanges: list[JsonValue] = list(actions)
+    parent = next((row for row in receipts if row.result.call.name == "codemode"
+                   and row.result.call.args.get("code") == FILE_HANDOFF_CODE), None)
+    if parent is None:
+        return {"scheduled_exchanges": scheduled_exchanges, "file_read_ref": None}
+    inputs = decode_json_object(parent.result.call.args["inputs"])
+    browser_ref = inputs["browser_read_ref"]
+    children = parent.result.canonical.get("child_effect_ids")
+    file_read = next((row for row in receipts if isinstance(children, list) and row.identity in children
+                      and row.result.call.name == "read_file"), None)
+    request = next((row for row in events if row.get("phase") == "request"
+                    and actions and int(str(row["exchange"])) > actions[0]), None)
+    seen = False
+    if file_read is not None and request is not None:
+        reads, observations = surface.delivered_reads({parent.identity: parent.result, file_read.identity: file_read.result})
+        seen = file_read.identity in surface.transmitted_reads(
+            decode_json_object(request["payload"]), reads, observations)
+    return {"scheduled_exchanges": scheduled_exchanges, "browser_read_ref": browser_ref,
+            "file_read_ref": file_read.identity if file_read else None,
+            "file_read_ok": file_read is not None and file_read.result.ok,
+            "file_observation_in_next_request": seen,
+            "next_request_exchange": request["exchange"] if request else None}
 
 
 def page_reset_navigation_audit(directory: Path, receipts: list[EffectReceipt]) -> JsonObject:
@@ -268,10 +342,15 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
     mode, options = previous.scenario_options(base_scenario)
     if config in PAGE_RESET_CONFIGS and scenario != "page_reset":
         raise ValueError(f"{config} only runs page_reset")
+    if config == FILE_HANDOFF and scenario not in SCENARIOS[FILE_HANDOFF]:
+        raise ValueError("file-handoff only runs hybrid and stale_edit")
     gate_enabled = config == PAGE_RESET_NAVIGATION or (config == PAGE_RESET_GATE and arm == "B")
     scheduler = page_reset_scheduler() if config == PAGE_RESET_NAVIGATION and arm == "B" else None
     active = (surface.EDIT_BOUNDARY_CONTROL if config == surface.EDIT_BOUNDARY and arm == "A" else
               config if arm == "B" and config not in PAGE_RESET_CONFIGS else "A")
+    if config == FILE_HANDOFF:
+        active = surface.EDIT_BOUNDARY
+        scheduler = file_handoff_scheduler("result.json") if arm == "B" else None
     with (surface.prototype(directory, scenario, active, runtime_action=scheduler),
           page_reset_completion(directory) if gate_enabled else nullcontext(),
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),
@@ -280,6 +359,11 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
             task_transform=lambda task: task_text(task, scenario), **options))
     after = edit.production_source_digest()
     metrics = artifact_metrics(directory)
+    if config == FILE_HANDOFF:
+        receipts = tool_receipts(directory / "state")
+        metrics["successful_file_reads"] = sum(r.result.ok and r.result.call.name == "read_file" for r in receipts)
+        metrics["successful_edits"] = sum(r.result.ok and r.result.call.name == "edit" for r in receipts)
+        row["file_handoff"] = file_handoff_audit(directory, receipts)
     passed = row.get("passed") is True
     if scenario == "page_reset":
         passed = passed and metrics["page_reset_completed"] is True
@@ -503,9 +587,12 @@ def main() -> int:
         parser.error("receipt-delivery only runs file receipt scenarios")
     if args.config == surface.EDIT_BOUNDARY and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
         parser.error("edit-boundary only runs hybrid and stale_edit")
+    if args.config == FILE_HANDOFF and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
+        parser.error("file-handoff only runs hybrid and stale_edit")
     if args.plan:
         features = {PAGE_RESET_GATE: PAGE_RESET_CHECK,
-                    PAGE_RESET_NAVIGATION: f"{PAGE_RESET_CHECK}; B schedules the second navigation"}
+                    PAGE_RESET_NAVIGATION: f"{PAGE_RESET_CHECK}; B schedules the second navigation",
+                    FILE_HANDOFF: "Both arms use the static edit boundary. B schedules the first file read."}
         print(json.dumps({"config": args.config, "scenarios": args.scenario or SCENARIOS[args.config],
             "units": 2 * args.repeats * len(args.scenario or SCENARIOS[args.config]),
             "diagnostic_scenarios": sorted(DIAGNOSTIC_SCENARIOS),
