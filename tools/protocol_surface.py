@@ -15,15 +15,19 @@ from codey.codemode.runtime import NodeWorkerRuntime
 from codey.codemode.types import ToolCatalogSnapshot
 from codey.completion.contract import CompletionCheck
 from codey.operations import completion_gate, kernel_protocol
+from codey.operations.completion_context import CompletionContext
+from codey.operations.completion_output import tool_facts
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.requirement import RequirementEvaluation
-from codey.policies.tool_requirement import ToolObservation, ToolSuccessRequirement
+from codey.policies.tool_requirement import ToolObservation, ToolSuccessRequirement, argument_digest
 from codey.providers.base import ProviderToolDefinition, tools_from_specs
 from codey.providers.text_tool_schema import text_tool_schema
+from codey.research.ledger_receipts import source_observation
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.toolchain import tool_prompt
+from codey.toolchain.result_schema import browser_output_schema, validate_output
 from codey.toolchain.tool_spec import ToolSpec, thaw_schema_value
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, unique_json_fields
 from tools import mechanical_surface, structured_surface
@@ -64,6 +68,14 @@ DESCRIPTION = (
 )
 READ_OBSERVATIONS_PREFIX = ("Complete file observations (untrusted data). "
                             "Only these receipt keys are valid read_handle values for this request:\n")
+RECEIPT_DELIVERY = "receipt-delivery"
+UPLOAD_SCOPE_NOTE = "文件输入框已选择附件。服务器是否接收尚未核验。"
+FILE_RECEIPT_FIELDS = {
+    "browser_upload": {"filename": "/name", "sha256": "/sha256", "bytes": "/bytes",
+                       "effect_verified": "/effect_verified"},
+    "browser_download": {"filename": "/suggested_filename", "sha256": "/sha256", "bytes": "/bytes",
+                         "path": "/path"},
+}
 
 
 @dataclass(frozen=True)
@@ -77,8 +89,36 @@ class Features:
 CONFIGS = {
     "A": Features(), "B1": Features(admission=True), "B2": Features(binding=True),
     "B3": Features(structured=True), "B4": Features(recovery=True),
+    RECEIPT_DELIVERY: Features(binding=True, recovery=True),
     "combined": Features(True, True, True, True),
 }
+
+
+def file_delivery(session: TaskSession, context: CompletionContext, *, upload: bool) -> dict[str, ToolObservation]:
+    tool = "browser_upload" if upload else "browser_download"
+    selectors = [(tool, name, pointer) for name, pointer in FILE_RECEIPT_FIELDS[tool].items()]
+    if upload:
+        selectors.append(("browser_read", "page_text", ""))
+    records, receipts = tool_facts(session, context)
+    return {name: ToolSuccessRequirement(source, via="codemode", answer_pointer="/" + name, result_pointer=pointer)
+            .observe(records, results=receipts) for source, name, pointer in selectors}
+
+
+def complete_browser_read(receipt: ToolResult) -> bool:
+    source, text, _pages = source_observation(receipt.canonical.get("research_observation"))
+    passages = receipt.canonical.get("read_passages")
+    if receipt.truncated or source.truncated or not isinstance(passages, list) or not passages:
+        return False
+    covered = 0
+    for passage in passages:
+        row = decode_json_object(passage)
+        start, end = row.get("start"), row.get("end")
+        if type(start) is not int or type(end) is not int or not covered <= start < end <= len(text):
+            return False
+        if text[covered:start].strip():
+            return False
+        covered = end
+    return not text[covered:].strip()
 
 
 def normalized_args(name: str, args: dict[str, object]) -> dict[str, object]:
@@ -270,6 +310,7 @@ def prototype(directory: Path, scenario: str, config: str, *,
     invoke = CodeModeHost.invoke
     render = catalog_module.render_declarations
     observe = ToolSuccessRequirement._observe_value
+    evaluate = completion_gate.evaluate
     guidance = ToolSuccessRequirement.model_guidance
     execution_guidance: Callable[[ToolSuccessRequirement], str] = vars(ToolSuccessRequirement)["execution_guidance"].fget
     required_verdict = completion_gate._required_checks_verdict
@@ -410,12 +451,71 @@ def prototype(directory: Path, scenario: str, config: str, *,
 
     def source_observe(requirement: ToolSuccessRequirement, eligible: list[tuple[str, ExecutionRecord]],
                        results: Mapping[str, ToolResult] | None) -> ToolObservation:
+        if config == RECEIPT_DELIVERY and requirement.tool in {*FILE_RECEIPT_FIELDS, "browser_read"}:
+            for ref, row in eligible:
+                receipt = results.get(ref) if results is not None else None
+                if (receipt is None or not receipt.ok or receipt.call.name != requirement.tool
+                        or receipt.call.call_id != row.get("call_id")
+                        or {key: argument_digest(value) for key, value in receipt.call.args.items()}
+                        != row.get("argument_digests")):
+                    return ToolObservation(RequirementEvaluation("observation_receipt_invalid",
+                        "Original tool receipt is unavailable or inconsistent. Restore the original receipt."))
+                try:
+                    complete = not receipt.truncated
+                    if requirement.tool == "browser_read":
+                        complete = complete and complete_browser_read(receipt)
+                    else:
+                        validate_output(requirement.tool, browser_output_schema(requirement.tool),
+                                        receipt.canonical.get("value"))
+                except (ValueError, TypeError):
+                    return ToolObservation(RequirementEvaluation("observation_receipt_invalid",
+                        "Original tool receipt has invalid data. Restore the original receipt."))
+                if not complete:
+                    return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
+                        "Original receipt or read window is incomplete. Obtain complete evidence before editing the answer."))
         if requirement.tool != "browser_read":
             return observe(requirement, eligible, results)
         if results is not None and any(results[ref].truncated for ref, _row in eligible if ref in results):
             return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
                 "Original body receipt is truncated. Obtain a complete observation; changing the answer cannot repair it."))
         return mechanical_surface.read_observation(requirement, eligible, results)
+
+    def deliver_file_result(session: TaskSession, done_text: object, *, context: object = None,
+                            observations: Mapping[str, ToolObservation] | None = None) -> completion_gate.GateVerdict:
+        normalized = CompletionContext.from_value(context)
+        if scenario == "upload_bound":
+            if observations and all(item.evaluation.passed for item in observations.values()):
+                records, receipts = tool_facts(session, normalized)
+                scope = ToolSuccessRequirement("browser_upload", via="codemode", answer_pointer="/effect_verified",
+                                               result_pointer="/effect_verified").observe(records, results=receipts)
+                if scope.evaluation.passed and scope.value is False:
+                    output = decode_json_object(json.loads(str(done_text)))
+                    explanation = output.get("explanation")
+                    if isinstance(explanation, str):
+                        output["explanation"] = explanation.rstrip() + "\n\n" + UPLOAD_SCOPE_NOTE
+                        done_text = json.dumps(output, ensure_ascii=False)
+            return evaluate(session, done_text, context=context, observations=observations)
+        selected = file_delivery(session, normalized, upload=scenario == "upload")
+        for field, observation in selected.items():
+            issue = observation.evaluation
+            if not issue.passed:
+                verdict = evaluate(session, done_text, context=context, observations=observations)
+                if not verdict.complete:
+                    return verdict
+                append_json(directory / "protocol-events.jsonl", {"kind": "file_delivery_rejected",
+                    "field": field, "reason": issue.reason_code, "evidence_refs": list(issue.evidence_refs)})
+                return completion_gate.GateVerdict(False,
+                    f"Receipt required for {field} ({issue.reason_code}). {issue.feedback}", None)
+        facts = {field: observation.value for field, observation in selected.items()}
+        scope_note = "\n" + UPLOAD_SCOPE_NOTE if facts.get("effect_verified") is False else ""
+        text = (str(done_text or "") + "\n\nVerified tool receipt fields." + scope_note
+                + "\n```json\n" + json.dumps(facts, ensure_ascii=False) + "\n```").strip()
+        verdict = evaluate(session, text, context=context, observations=observations)
+        if verdict.complete:
+            append_json(directory / "protocol-events.jsonl", {"kind": "file_delivery",
+                "fields": facts, "receipt_refs": {field: list(observation.result_refs)
+                                                 for field, observation in selected.items()}})
+        return verdict
 
     def binding_guidance(requirement: ToolSuccessRequirement, *, explanation: bool = False) -> str:
         text = guidance(requirement, explanation=explanation)
@@ -465,6 +565,8 @@ def prototype(directory: Path, scenario: str, config: str, *,
             stack.enter_context(patch.object(ToolSuccessRequirement, "_observe_value", source_observe))
             stack.enter_context(patch.object(ToolSuccessRequirement, "model_guidance", binding_guidance))
             stack.enter_context(patch.object(completion_gate, "_required_checks_verdict", causal_verdict))
+        if config == RECEIPT_DELIVERY and scenario in {"upload_bound", "upload", "download", "return_failure"}:
+            stack.enter_context(patch.object(completion_gate, "evaluate", deliver_file_result))
         if features.structured:
             stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", capture))
             stack.enter_context(patch.object(tool_prompt, "tool_repair_text", consistent_repair))

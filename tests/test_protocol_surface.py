@@ -48,7 +48,7 @@ def schemas(*, defaults: bool = False, stale_refs: bool = False) -> dict[str, Js
     return surface.entry_schemas(build_turn_snapshot(session()), defaults=defaults, stale_refs=stale_refs)
 
 
-@pytest.mark.parametrize("config", ["A", "B1", "B2", "B3", "B4", "combined"])
+@pytest.mark.parametrize("config", ["A", "B1", "B2", "B3", "B4", surface.RECEIPT_DELIVERY, "combined"])
 def test_configuration_installs_only_declared_mechanisms(tmp_path: Path, config: str) -> None:
     original = (CodeModeHost.invoke, ToolSuccessRequirement._observe_value, build_turn_snapshot,
                 tool_prompt.tool_repair_text, completion_gate._required_checks_verdict)
@@ -171,6 +171,30 @@ def test_b2_feedback_identifies_missing_parent_before_answer_format(tmp_path: Pa
     assert ("tool_parent_missing" if config == "B2" else "output_format_invalid") in verdict.followup
 
 
+@pytest.mark.parametrize(("state", "reason"), [
+    ("missing_action", "tool_execution_missing"),
+    ("failed_parent", "tool_parent_missing"),
+    ("bad_source", "observation_receipt_invalid"),
+    ("truncated", "observation_selector_unavailable"),
+])
+def test_receipt_delivery_explains_missing_evidence_before_format(tmp_path: Path, state: str, reason: str) -> None:
+    schema = structured_surface.object_schema({"explanation": {"type": "string"}, "body": {"type": "string"}},
+                                             ["explanation", "body"])
+    task = TaskSession(TaskPolicy(frozenset({"control"}), required_checks=(declaration("json_explanation", json.dumps(schema)),
+        require_tool_success("browser_read", via="codemode", answer_pointer="/body"))))
+    read = replace(read_result("unverified"), truncated=state == "truncated")
+    parent = ToolResult(ToolCall("codemode", {}), "parent", ok=state != "failed_parent")
+    if state != "missing_action":
+        task.executed.update(read=record(read), parent=record(parent, ["read"]))
+        task._memory_results["read"] = read
+    with surface.prototype(tmp_path, "upload_bound", surface.RECEIPT_DELIVERY):
+        output = kernel_control.prepare_completion_output(task, "explanation", CompletionContext())
+        checks = completion_gate._required_tool_checks(task, output.text, CompletionContext(), output.observations)
+        verdict = completion_gate._required_checks_verdict(task, checks.rows, checks.evaluations)
+    assert verdict is not None and not verdict.complete
+    assert reason in verdict.followup and "output_format_invalid" not in verdict.followup
+
+
 def test_b3_frozen_permissions_descriptions_and_no_implicit_b1_defaults() -> None:
     snapshot = build_turn_snapshot(TaskSession(TaskPolicy(frozenset({"control", "project.read"}))))
     limited = surface.entry_schemas(snapshot, defaults=False, stale_refs=False)
@@ -283,6 +307,77 @@ def test_b2_real_upload_binding_paired_without_edit_or_typed_helpers(tmp_path: P
     assert decode_json_object(row["metrics"])["browser_upload"] == 1
     if arm == "B":
         assert "UPLOAD_BYTES_82" in str(row["answer"])
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("scenario,arm", [
+    ("upload_bound", "B"), ("upload", "A"), ("upload", "B"),
+    ("download", "A"), ("download", "B"), ("return_failure", "B"),
+])
+def test_receipt_delivery_uses_original_file_and_page_data(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str, arm: str,
+) -> None:
+    upload = scenario.startswith("upload")
+    filename = "fixture.txt" if upload else "fixture-download.txt"
+    data = b"UPLOAD_BYTES_82\n" if upload else DOWNLOAD_BYTES
+    inputs: JsonObject = {"url": URL}
+    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
+            "const s=unwrap(await tools.browser_snapshot({}));")
+    if upload:
+        attachment = InputAttachmentStore(tmp_path / "inputs", "upload").put(filename, base64.b64encode(data).decode())
+        inputs["attachment"] = attachment["id"]
+        code += ("unwrap(await tools.browser_upload({ref:s.elements.find(e=>e.name==='Attachment').ref,"
+                 "attachment_id:inputs.attachment}));"
+                 "unwrap(await tools.browser_wait({condition:'text',value:'UPLOAD_BYTES_82',timeout_ms:5000}));")
+    else:
+        code += "unwrap(await tools.browser_download({ref:s.elements.find(e=>e.name==='Download fixture').ref}));"
+    code += "return unwrap(await tools.browser_read({}));"
+    summary = "已完成工具操作，请查看实际回执。"
+    done: JsonObject = {"tool": "done", "args": {"summary": summary}}
+    install_http(monkeypatch, [done] if scenario == "return_failure" else [
+        {"tool": "codemode", "args": {"code": code, "inputs": inputs}}, done])
+    directory = tmp_path / "run"
+    row = probe.run_arm(directory, scenario, arm, surface.RECEIPT_DELIVERY, TARGET, max_turns=4)
+    assert row["stop_reason"] == "done" and row["passed"] is (arm == "B"), row
+    tool = "browser_upload" if upload else "browser_download"
+    metrics = decode_json_object(row["metrics"])
+    assert metrics[tool] == 1
+    assert metrics["file_deliveries"] == (1 if arm == "B" and scenario != "upload_bound" else 0)
+    if arm == "A":
+        assert row["answer"] == summary
+        return
+    receipts = tool_receipts(directory / "state")
+    effect = next(r for r in receipts if r.result.call.name == tool)
+    value = decode_json_object(effect.result.canonical["value"])
+    answer = str(row["answer"])
+    facts = json.loads(answer if scenario == "upload_bound" else answer.split("```json\n")[1].split("\n```")[0])
+    assert facts["filename"] == filename and facts["sha256"] == value["sha256"] == hashlib.sha256(data).hexdigest()
+    if upload:
+        read = next(r.result for r in receipts if r.result.call.name == "browser_read")
+        assert surface.complete_browser_read(read)
+        incomplete = replace(read, canonical={**read.canonical, "read_passages": [{"start": 1, "end": 2}]})
+        assert not surface.complete_browser_read(incomplete)
+        assert facts["page_text"] == decode_json_object(read.canonical["research_observation"])["text"]
+        assert value["effect_verified"] is False
+        if scenario == "upload":
+            assert facts["effect_verified"] is False and surface.UPLOAD_SCOPE_NOTE in answer
+        else:
+            assert facts["explanation"] == summary + "\n\n" + surface.UPLOAD_SCOPE_NOTE
+    else:
+        assert facts["bytes"] == len(data) and facts["path"] == value["path"]
+    if scenario == "return_failure":
+        assert row["model_calls"] == 1 and metrics["mechanical_repairs"] == 1 and metrics["repaired_parent"]
+        requests = [event["payload"] for event in map(json.loads, (directory / "provider.jsonl").read_text(
+            encoding="utf-8").splitlines()) if event.get("phase") == "request"]
+        results = [json.loads(content.split("Result data (JSON):\n", 1)[1].split("\n\nResult metadata:", 1)[0])
+                   for message in requests[0]["messages"] if (content := message.get("content", "")).startswith(
+                       "[result: codemode]\nResult data (JSON):")]
+        replayed = next(item["value"]["replayed"] for item in results if item["value"].get("replayed"))
+        download = next(item for item in replayed if item["tool"] == tool)
+        read = next(r for r in receipts if r.result.call.name == "browser_read")
+        body = next(item for item in replayed if item["tool"] == "browser_read")
+        assert download["receipt_ref"] == effect.identity and download["data"] == value and not download["truncated"]
+        assert body["receipt_ref"] == read.identity and body["data"]["text"] == read.result.model_text and not body["truncated"]
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")

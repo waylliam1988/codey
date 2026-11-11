@@ -48,6 +48,7 @@ SCENARIOS = {
     "B2": ("upload_bound", "structured"),
     "B3": ("legacy_structured", "upload", "hybrid", "stale_edit"),
     "B4": ("page_reset", "return_failure", "download"),
+    surface.RECEIPT_DELIVERY: ("upload_bound", "upload", "download", "return_failure"),
     PAGE_RESET_GATE: ("page_reset",),
     PAGE_RESET_NAVIGATION: ("page_reset",),
     "combined": (*previous.SCENARIOS, "page_reset", "return_failure"),
@@ -237,6 +238,7 @@ def artifact_metrics(directory: Path) -> JsonObject:
     counts["failed_steps"] = sum(row.result.call.name == "codemode" and row.result.ok
         and isinstance(value := row.result.canonical.get("value"), dict) and bool(value.get("failed_step")) for row in receipts)
     counts["mechanical_repairs"] = sum(event["kind"] == "receipt_repair" for event in events)
+    counts["file_deliveries"] = sum(event["kind"] == "file_delivery" for event in events)
     counts["compiled_plans"] = sum(event["kind"] == "compiled_plan" for event in events)
     counts["static_rejections"] = sum(event["kind"] == "invalid_plan" for event in events)
     # Ordered leaf receipts, not parent counts, establish both completed cycles.
@@ -461,7 +463,7 @@ def matrix(args: argparse.Namespace, target: Target) -> int:
     report = {**manifest, "source_after": after, "source_stable": before == after,
         "harnesses_stable": hashes == harness_digests(), "runs": list(rows), "pairs": list(pairs), "arms": per_arm,
         "paired_outcomes": outcomes,
-        "combination_eligible": (args.config not in PAGE_RESET_CONFIGS and stable
+        "combination_eligible": (args.config in {"B1", "B2", "B3", "B4", "combined"} and stable
                                  and qualification(rows, pairs, args.config, args.repeats))}
     edit.write_json(root / "summary.json", decode_json_object(report))
     return 0 if stable and all(pair["comparable"] is True for pair in pairs) and all(row["passed"] is True for row in rows) else 1
@@ -492,6 +494,8 @@ def main() -> int:
         parser.error("duplicate scenarios are not allowed; use --repeats")
     if args.config in PAGE_RESET_CONFIGS and args.scenario and args.scenario != ["page_reset"]:
         parser.error(f"{args.config} only runs page_reset")
+    if args.config == surface.RECEIPT_DELIVERY and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
+        parser.error("receipt-delivery only runs file receipt scenarios")
     if args.plan:
         features = {PAGE_RESET_GATE: PAGE_RESET_CHECK,
                     PAGE_RESET_NAVIGATION: f"{PAGE_RESET_CHECK}; B schedules the second navigation"}
