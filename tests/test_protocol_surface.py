@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.codemode import catalog
 from codey.codemode.host import CodeModeHost
 from codey.codemode.kernel import build_execute_turn_executor
@@ -399,14 +400,16 @@ def test_b4_real_return_failure_repairs_without_second_download(tmp_path: Path, 
     assert requests and all(event["payload"]["stream"] is True for event in requests)
 
 
-def page_reset_action() -> JsonObject:
-    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
-        "let s=unwrap(await tools.browser_snapshot({}));"
+def page_reset_action(*, navigate: bool = True, reread: bool = False) -> JsonObject:
+    code = "unwrap(await tools.browser_navigate({url:inputs.url}));" if navigate else ""
+    code += ("let s=unwrap(await tools.browser_snapshot({}));"
         "unwrap(await tools.browser_fill({ref:s.elements.find(e=>e.name==='Locality').ref,value:'福州'}));"
         "s=unwrap(await tools.browser_snapshot({}));"
         "unwrap(await tools.browser_click({ref:s.elements.find(e=>e.name==='Load record').ref}));"
-        "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:5000}));"
-        "return unwrap(await tools.browser_read({}));")
+        "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:5000}));")
+    if reread:
+        code += "unwrap(await tools.browser_read({}));"
+    code += "return unwrap(await tools.browser_read({}));"
     return {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
 
 
@@ -471,6 +474,79 @@ def test_b4_history_does_not_claim_current_form_state() -> None:
     state = surface.recovery_state([EffectReceipt("old", old, None), EffectReceipt("new", new, None)])
     assert decode_json_object(state["latest_page_transition"])["receipt_ref"] == "new"
     assert "not current form state" in str(state["rule"])
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("arm", ["A", "B"])
+def test_page_reset_runtime_navigation_starts_once_and_still_requires_second_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str,
+) -> None:
+    done: JsonObject = {"tool": "done", "args": {"summary": "净重 173，校验码 QUARTZ_851。"}}
+    install_http(monkeypatch, [page_reset_action(reread=True), done, page_reset_action(navigate=arm == "A"), done])
+    directory = tmp_path / "run"
+    row = probe.run_arm(directory, "page_reset", arm, probe.PAGE_RESET_NAVIGATION, TARGET, max_turns=7)
+    assert row["passed"] and row["page_reset_gate_enabled"], row
+    assert row["model_calls"] == 4
+    nav = decode_json_object(row["runtime_navigation"])
+    metrics = decode_json_object(row["metrics"])
+    assert metrics["browser_navigate"] == metrics["verified_rounds"] == 2
+    checks = row["page_reset_gate_checks"]
+    assert isinstance(checks, list)
+    early, final = map(decode_json_object, checks)
+    assert early["done_accepted"] is False
+    assert early["next_missing_tool"] == ("browser_snapshot" if arm == "B" else "browser_navigate")
+    assert final["done_accepted"] is True
+
+    receipts = tool_receipts(directory / "state")
+    completed, _ = probe.page_reset_progress(receipts)
+    first_read, second_nav = completed[0][-1], completed[1][0]
+    read_index = next(i for i, receipt in enumerate(receipts) if receipt.identity == first_read)
+    nav_index = next(i for i, receipt in enumerate(receipts) if receipt.identity == second_nav)
+    assert read_index < nav_index
+    assert probe.page_reset_scheduler()(receipts[:read_index]) is None
+    assert probe.page_reset_scheduler()(receipts[:nav_index + 1]) is None
+    schedule = probe.page_reset_scheduler()
+    replay = EffectReceipt("replay", ToolResult(ToolCall("codemode", {"repair_of": "original"}), "replayed", ok=True,
+                                               canonical={"child_effect_ids": [first_read]}), None)
+    assert schedule([*receipts[:read_index + 1], replay]) is not None
+    assert schedule(receipts[:nav_index]) is None
+    if arm == "A":
+        assert nav["scheduled_exchanges"] == [] and nav["navigation_ref"] is None
+        return
+
+    assert nav["scheduled_exchanges"] == [2] and nav["parent_count"] == 1
+    assert nav["success"] is True and nav["first_round_read"] == first_read and nav["navigation_ref"] == second_nav
+    requests = [json.loads(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()
+                if json.loads(line).get("phase") == "request"]
+    assert requests[1]["exchange"] == 3
+    messages = json.dumps(requests[1]["payload"]["messages"], ensure_ascii=False)
+    assert "第二轮已导航" in messages and second_nav in messages
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_page_reset_runtime_navigation_delivers_failure_without_retry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    navigate = BrowserSession._navigate_on_browser_thread
+    error = "ERROR: scripted fixture navigation failure"
+    calls: list[str] = []
+
+    def fail_second(session: BrowserSession, url: str) -> BrowserToolOutput:
+        calls.append(url)
+        if len(calls) == 2:
+            return BrowserToolOutput(error, False, {"action": "navigate", "url": url, "delivery": "uncertain"})
+        return navigate(session, url)
+
+    monkeypatch.setattr(BrowserSession, "_navigate_on_browser_thread", fail_second)
+    done: JsonObject = {"tool": "done", "args": {"summary": "净重 173，校验码 QUARTZ_851。"}}
+    install_http(monkeypatch, [page_reset_action(), done, done, done, done])
+    directory = tmp_path / "run"
+    row = probe.run_arm(directory, "page_reset", "B", probe.PAGE_RESET_NAVIGATION, TARGET, max_turns=7)
+    nav = decode_json_object(row["runtime_navigation"])
+    assert calls == [URL, URL]
+    assert row["passed"] is False and row["stop_reason"] == "no_progress"
+    assert nav["scheduled_exchanges"] == [2] and nav["success"] is False and nav["result"] == error
+    requests = [json.loads(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()
+                if json.loads(line).get("phase") == "request"]
+    assert error in json.dumps(requests[1]["payload"]["messages"], ensure_ascii=False)
 
 
 @pytest.mark.parametrize("defect", ["runtime", "failed_child", "missing_child", "edit", "attempted", "repaired"])

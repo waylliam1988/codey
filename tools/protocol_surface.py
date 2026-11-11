@@ -263,7 +263,8 @@ def transmitted_reads(payload: JsonObject, reads: JsonObject, observations: Json
 
 
 @contextmanager
-def prototype(directory: Path, scenario: str, config: str) -> Iterator[None]:
+def prototype(directory: Path, scenario: str, config: str, *,
+              runtime_action: Callable[[list[EffectReceipt]], JsonObject | None] | None = None) -> Iterator[None]:
     features = CONFIGS[config]
     build = kernel_protocol.build_turn_snapshot
     invoke = CodeModeHost.invoke
@@ -324,6 +325,15 @@ def prototype(directory: Path, scenario: str, config: str) -> Iterator[None]:
                       require_tool_call: bool = False) -> dict[str, object]:
             nonlocal current_spec
             messages = list(messages)
+            if runtime_action is not None and (directory / "state/durable.sqlite3").exists():
+                action = runtime_action(tool_receipts(directory / "state"))
+                if action is not None:
+                    self.exchange += 1
+                    self.scripted_exchange = self.exchange
+                    body = script_body(action)
+                    append_json(directory / "provider.jsonl", {"type": "runtime_action", "exchange": self.exchange,
+                                                                "payload": body})
+                    return body
             if features.recovery and (directory / "state/durable.sqlite3").exists():
                 receipts = tool_receipts(directory / "state")
                 candidate = recovery_action(receipts, attempted)

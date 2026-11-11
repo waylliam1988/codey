@@ -7,7 +7,7 @@ import json
 import subprocess
 import sys
 import traceback
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from pathlib import Path
@@ -19,7 +19,8 @@ from codey.operations.completion_inputs import CompletionCheckInput
 from codey.operations.task_session import TaskSession
 from codey.policies.tool_requirement import ToolObservation
 from codey.runtime.core import cancellation
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.runtime.core.models import ToolResult
+from codey.types.json_value import JsonObject, decode_json_object, decode_json_value
 from tools import browser_production_live_gate as gate
 from tools import protocol_surface as surface
 from tools import receipt_bound_edit_ab as edit
@@ -28,9 +29,18 @@ from tools.completion_artifact_audit import EffectReceipt, tool_receipts
 from tools.completion_explanation_ab import Target, append_json, provider_metrics
 
 PAGE_RESET_GATE = "page-reset-gate"
+PAGE_RESET_NAVIGATION = "page-reset-navigation"
+PAGE_RESET_CONFIGS = {PAGE_RESET_GATE, PAGE_RESET_NAVIGATION}
 PAGE_RESET_CHECK = "page_reset_two_rounds"
+PAGE_TRANSITIONS = {"browser_navigate", "browser_tab_switch", "browser_tab_new"}
 PAGE_RESET_STEPS = (
     "browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read",
+)
+PAGE_RESET_NAVIGATION_CODE = (
+    "const navigation = await tools.browser_navigate({url:inputs.url});"
+    "return {runtime_action:'page_reset_second_navigation',first_round_read:inputs.first_round_read,navigation,"
+    "next:navigation.ok && navigation.value.http_status === 200 && navigation.value.url === inputs.url "
+    "? '第二轮已导航。请重新观察、填写、点击、等待并读取。' : '第二轮导航未成功。请根据实际工具结果判断。'};"
 )
 
 SCENARIOS = {
@@ -39,9 +49,18 @@ SCENARIOS = {
     "B3": ("legacy_structured", "upload", "hybrid", "stale_edit"),
     "B4": ("page_reset", "return_failure", "download"),
     PAGE_RESET_GATE: ("page_reset",),
+    PAGE_RESET_NAVIGATION: ("page_reset",),
     "combined": (*previous.SCENARIOS, "page_reset", "return_failure"),
 }
 DIAGNOSTIC_SCENARIOS = {"return_failure", "source_failure_fixed", "upload_bound"}
+
+
+def fixture_navigation_value(result: ToolResult) -> JsonObject | None:
+    value = result.canonical.get("value")
+    if (result.call.name == "browser_navigate" and result.ok and result.call.args.get("url") == gate.URL
+            and isinstance(value, dict) and value.get("url") == gate.URL and value.get("http_status") == 200):
+        return decode_json_object(value)
+    return None
 
 
 def page_reset_progress(receipts: list[EffectReceipt]) -> tuple[list[list[str]], list[str]]:
@@ -54,12 +73,11 @@ def page_reset_progress(receipts: list[EffectReceipt]) -> tuple[list[list[str]],
         result = receipt.result
         name, args = result.call.name, result.call.args
         value = result.canonical.get("value")
-        if name in {"browser_navigate", "browser_tab_switch", "browser_tab_new"}:
+        if name in PAGE_TRANSITIONS:
             current, targets, page_id = [], {}, None
-            if (name == "browser_navigate" and result.ok and args.get("url") == gate.URL
-                    and isinstance(value, dict) and value.get("url") == gate.URL and value.get("http_status") == 200):
+            if (navigation := fixture_navigation_value(result)) is not None:
                 current.append(receipt.identity)
-                page_id = value.get("page_id")
+                page_id = navigation.get("page_id")
             continue
         if not current or not result.ok:
             continue
@@ -98,6 +116,55 @@ def page_reset_progress(receipts: list[EffectReceipt]) -> tuple[list[list[str]],
             if len(completed) == 2:
                 break
     return completed, current
+
+
+def receipts_after(receipts: list[EffectReceipt], reference: str) -> list[EffectReceipt]:
+    index = next(i for i, receipt in enumerate(receipts) if receipt.identity == reference)
+    return receipts[index + 1:]
+
+
+def page_reset_scheduler() -> Callable[[list[EffectReceipt]], JsonObject | None]:
+    """Schedule one declared reset when the first complete read has committed."""
+    scheduled = False
+
+    def schedule(receipts: list[EffectReceipt]) -> JsonObject | None:
+        nonlocal scheduled
+        if scheduled:
+            return None
+        completed, _current = page_reset_progress(receipts)
+        if len(completed) != 1:
+            return None
+        read_ref = completed[0][-1]
+        if any(receipt.result.call.name in PAGE_TRANSITIONS for receipt in receipts_after(receipts, read_ref)):
+            return None
+        scheduled = True
+        return {"tool": "codemode", "args": {"code": PAGE_RESET_NAVIGATION_CODE,
+            "inputs": {"url": gate.URL, "first_round_read": read_ref}}}
+
+    return schedule
+
+
+def page_reset_navigation_audit(directory: Path, receipts: list[EffectReceipt]) -> JsonObject:
+    log = directory / "provider.jsonl"
+    actions = [event["exchange"] for line in log.read_text(encoding="utf-8").splitlines()
+               if (event := decode_json_object(json.loads(line))).get("type") == "runtime_action"] if log.exists() else []
+    parents = [row for row in receipts if row.result.call.name == "codemode"
+               and row.result.call.args.get("code") == PAGE_RESET_NAVIGATION_CODE
+               and "repair_of" not in row.result.call.args]
+    if not parents:
+        return {"scheduled_exchanges": actions, "parent_ref": None, "navigation_ref": None, "success": False}
+    parent = parents[0]
+    children = parent.result.canonical.get("child_effect_ids")
+    child = next((row for row in receipts if isinstance(children, list) and row.identity in children
+                  and row.result.call.name == "browser_navigate"), None)
+    inputs = decode_json_object(parent.result.call.args["inputs"])
+    child_result = None
+    if child is not None:
+        child_result = (decode_json_value(child.result.canonical.get("value")) if child.result.ok
+                        else child.result.model_text)
+    return {"scheduled_exchanges": actions, "parent_ref": parent.identity, "parent_count": len(parents),
+            "first_round_read": inputs["first_round_read"], "navigation_ref": child.identity if child else None,
+            "success": child is not None and fixture_navigation_value(child.result) is not None, "result": child_result}
 
 
 @contextmanager
@@ -193,11 +260,12 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
     before = edit.production_source_digest()
     base_scenario = {"page_reset": "basic", "return_failure": "download"}.get(scenario, scenario)
     mode, options = previous.scenario_options(base_scenario)
-    if config == PAGE_RESET_GATE and scenario != "page_reset":
-        raise ValueError("page-reset-gate only runs page_reset")
-    gate_enabled = config == PAGE_RESET_GATE and arm == "B"
-    active = config if arm == "B" and config != PAGE_RESET_GATE else "A"
-    with (surface.prototype(directory, scenario, active),
+    if config in PAGE_RESET_CONFIGS and scenario != "page_reset":
+        raise ValueError(f"{config} only runs page_reset")
+    gate_enabled = config == PAGE_RESET_NAVIGATION or (config == PAGE_RESET_GATE and arm == "B")
+    scheduler = page_reset_scheduler() if config == PAGE_RESET_NAVIGATION and arm == "B" else None
+    active = config if arm == "B" and config not in PAGE_RESET_CONFIGS else "A"
+    with (surface.prototype(directory, scenario, active, runtime_action=scheduler),
           page_reset_completion(directory) if gate_enabled else nullcontext(),
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),
           patch("codey.app.review_service.run_review", return_value=None)):
@@ -208,11 +276,16 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
     passed = row.get("passed") is True
     if scenario == "page_reset":
         passed = passed and metrics["page_reset_completed"] is True
-    if config == PAGE_RESET_GATE:
-        completed, current = page_reset_progress(tool_receipts(directory / "state"))
+    if config in PAGE_RESET_CONFIGS:
+        receipts = tool_receipts(directory / "state")
+        completed, current = page_reset_progress(receipts)
         metrics["verified_rounds"] = len(completed)
         metrics["next_missing_tool"] = PAGE_RESET_STEPS[len(current)] if len(completed) < 2 else None
         passed = passed and len(completed) == 2
+        if config == PAGE_RESET_NAVIGATION:
+            metrics["second_round_started"] = bool(completed) and any(
+                fixture_navigation_value(receipt.result) is not None for receipt in receipts_after(receipts, completed[0][-1]))
+            row["runtime_navigation"] = page_reset_navigation_audit(directory, receipts)
         row["page_reset_gate_enabled"] = gate_enabled
         checks = directory / "page-reset-checks.jsonl"
         row["page_reset_gate_checks"] = (
@@ -388,7 +461,7 @@ def matrix(args: argparse.Namespace, target: Target) -> int:
     report = {**manifest, "source_after": after, "source_stable": before == after,
         "harnesses_stable": hashes == harness_digests(), "runs": list(rows), "pairs": list(pairs), "arms": per_arm,
         "paired_outcomes": outcomes,
-        "combination_eligible": (args.config != PAGE_RESET_GATE and stable
+        "combination_eligible": (args.config not in PAGE_RESET_CONFIGS and stable
                                  and qualification(rows, pairs, args.config, args.repeats))}
     edit.write_json(root / "summary.json", decode_json_object(report))
     return 0 if stable and all(pair["comparable"] is True for pair in pairs) and all(row["passed"] is True for row in rows) else 1
@@ -417,13 +490,15 @@ def main() -> int:
         parser.error("repeats, timeout, budget and max-turns must be positive")
     if args.scenario and len(args.scenario) != len(set(args.scenario)):
         parser.error("duplicate scenarios are not allowed; use --repeats")
-    if args.config == PAGE_RESET_GATE and args.scenario and args.scenario != ["page_reset"]:
-        parser.error("page-reset-gate only runs page_reset")
+    if args.config in PAGE_RESET_CONFIGS and args.scenario and args.scenario != ["page_reset"]:
+        parser.error(f"{args.config} only runs page_reset")
     if args.plan:
+        features = {PAGE_RESET_GATE: PAGE_RESET_CHECK,
+                    PAGE_RESET_NAVIGATION: f"{PAGE_RESET_CHECK}; B schedules the second navigation"}
         print(json.dumps({"config": args.config, "scenarios": args.scenario or SCENARIOS[args.config],
             "units": 2 * args.repeats * len(args.scenario or SCENARIOS[args.config]),
             "diagnostic_scenarios": sorted(DIAGNOSTIC_SCENARIOS),
-            "features": (PAGE_RESET_CHECK if args.config == PAGE_RESET_GATE else str(surface.CONFIGS[args.config])),
+            "features": features[args.config] if args.config in features else str(surface.CONFIGS[args.config]),
             "combination_requires": ["B1", "B2", "B3", "B4"]}, indent=2))
         return 0
     if args.run_dir is None:
