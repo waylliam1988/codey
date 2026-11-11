@@ -228,6 +228,14 @@ def matrix(args: argparse.Namespace, target: Target) -> int:
                 rows.append(row)
                 pair_rows.append(row)
                 edit.write_json(root / "progress.json", {"runs": list(rows), "pairs": list(pairs)})
+                if row.get("stop_reason") == "provider_failure" or row.get("error"):
+                    edit.write_json(root / "interruption.json", {"status": "interrupted",
+                        "reason": "Worker/provider failed; do not queue another generation after an uncertain outcome",
+                        "scenario": scenario, "arm": arm, "repetition": repeat + 1,
+                        "runs": list(rows), "pairs": list(pairs),
+                        "source_stable": before == edit.production_source_digest(),
+                        "harnesses_stable": hashes == harness_digests()})
+                    return 1
             pairs.append(previous.pair_audit(pair, pair_rows))
     after = edit.production_source_digest()
     stable = before == after and hashes == harness_digests()

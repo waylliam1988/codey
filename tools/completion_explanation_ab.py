@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -121,7 +122,7 @@ def service_state(base_url: str) -> JsonObject:
     try:
         with urllib.request.urlopen(base_url.removesuffix("/v1") + "/api/extra/perf", timeout=5) as response:
             return decode_json_object(json.loads(response.read()))
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, http.client.HTTPException) as exc:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
 
@@ -135,14 +136,14 @@ class Target:
 
 class ExperimentProvider(ApiProvider):
     def __init__(self, target: Target, directory: Path, *, fixed_acquisition: bool = True,
-                 acquisition_action: JsonObject | None = None) -> None:
+                 acquisition_action: JsonObject | None = None, stream: bool = False) -> None:
         self.target, self.directory = target, directory
         self.exchange = 0
         self.observed_tools = 0
         self.proposals: list[JsonObject] = []
         self.fixed_acquisition = fixed_acquisition
         self.acquisition_action = acquisition_action
-        super().__init__(target.base_url, target.model, temperature=0, timeout=target.timeout,
+        super().__init__(target.base_url, target.model, temperature=0, timeout=target.timeout, stream=stream,
                          context_window_tokens=32768, context_reserve_tokens=8192,
                          context_keep_recent_tokens=12000, native_tools=False, thinking_enabled=False,
                          text_tool_format="json_schema", text_decoder=normalize_local_reply,

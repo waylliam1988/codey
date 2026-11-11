@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import http.client
 import json
 import secrets
 from dataclasses import replace
@@ -393,6 +394,9 @@ def test_b4_real_return_failure_repairs_without_second_download(tmp_path: Path, 
     if arm == "B":
         assert row["model_calls"] == 1
     assert row["acquisition"] == "scripted-fault-then-model"
+    requests = [json.loads(line) for line in (tmp_path / "run/provider.jsonl").read_text(encoding="utf-8").splitlines()
+                if json.loads(line).get("phase") == "request"]
+    assert requests and all(event["payload"]["stream"] is True for event in requests)
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
@@ -422,6 +426,131 @@ def test_b4_history_does_not_claim_current_form_state() -> None:
     state = surface.recovery_state([EffectReceipt("old", old, None), EffectReceipt("new", new, None)])
     assert decode_json_object(state["latest_page_transition"])["receipt_ref"] == "new"
     assert "not current form state" in str(state["rule"])
+
+
+@pytest.mark.parametrize("defect", ["runtime", "failed_child", "missing_child", "edit", "attempted", "repaired"])
+def test_b4_data_delivery_preserves_replay_refusals(defect: str) -> None:
+    parent = ToolResult(ToolCall("codemode", {}), "failed", ok=False, canonical={
+        "repair": {"token": "token", "failure_code": "runtime_error" if defect == "runtime" else "result_encoding",
+                   "parent_effect_id": "parent"}, "child_effect_ids": ["child"]})
+    child = ToolResult(ToolCall("edit" if defect == "edit" else "browser_read", {}), "body", ok=defect != "failed_child")
+    receipts = [EffectReceipt("parent", parent, None)]
+    if defect != "missing_child":
+        receipts.append(EffectReceipt("child", child, None))
+    if defect == "repaired":
+        receipts.append(EffectReceipt("repaired", ToolResult(ToolCall("codemode", {}), "done", ok=True,
+            canonical={"repaired_from": "parent"}), None))
+    assert surface.recovery_action(receipts, {"token"} if defect == "attempted" else set()) is None
+
+
+def test_b4_replay_bounds_data_and_preserves_original_truncation() -> None:
+    children = [
+        ToolResult(ToolCall("browser_read", {}), "x" * (surface.RECOVERY_DATA_CHARS + 1), ok=True),
+        ToolResult(ToolCall("browser_read", {}), "partial source", ok=True,
+                   canonical={"research_observation": {"source": {"truncated": True}}}),
+        ToolResult(ToolCall("browser_download", {}), "downloaded", ok=True,
+                   canonical={"value": {"filename": "actual.txt", "sha256": "original"}}),
+    ]
+    references = ["large", "partial", "download"]
+    parent = ToolResult(ToolCall("codemode", {}), "failed", ok=False, canonical={
+        "repair": {"token": "token", "failure_code": "result_encoding", "parent_effect_id": "parent"},
+        "child_effect_ids": references})
+    candidate = surface.recovery_action([EffectReceipt("parent", parent, None),
+        *[EffectReceipt(ref, child, None) for ref, child in zip(references, children, strict=True)]], set())
+    assert candidate is not None
+    args = decode_json_object(candidate[1]["args"])
+    replayed = iter(zip(references, children, strict=True))
+    calls: list[str] = []
+
+    def invoke(name: str, params: dict[str, object]) -> object:
+        ref, child = next(replayed)
+        assert name == child.call.name and params == child.call.args
+        calls.append(ref)
+        return {"ok": True, "result_ref": ref, "value": child.canonical.get("value", child.model_text)}
+
+    result = NodeWorkerRuntime().execute(str(args["code"]), inputs=decode_json_object(args["inputs"]),
+        catalog=[ToolCatalogEntry(name, name) for name in ("browser_read", "browser_download")], invoke=invoke)
+    assert result.ok, result
+    value = decode_json_object(result.value)
+    assert value["receipts_replayed"] == 3 and calls == references
+    rows = value["replayed"]
+    assert isinstance(rows, list)
+    large, partial, download = [decode_json_object(row) for row in rows]
+    assert large["data"] is None and large["data_omitted"] and large["truncated"]
+    assert large["omission_reason"] == "recovery_delivery_limit"
+    assert partial["data"] == {"text": "partial source"} and partial["truncated"] and not partial["data_omitted"]
+    assert download["data"] == children[2].canonical["value"] and not download["truncated"]
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_b4_repair_delivers_original_body_on_wire_without_reexecution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    marker = "BODY_" + secrets.token_hex(16)
+    monkeypatch.setattr(probe.gate, "HTML", probe.gate.HTML.replace("Production browser fixture", marker))
+    exchange = 0
+    directory = tmp_path / "run"
+    code = ("for (let i=0;i<2;i++) {"
+        "unwrap(await tools.browser_navigate({url:inputs.url}));"
+        "let s=unwrap(await tools.browser_snapshot({}));"
+        "unwrap(await tools.browser_fill({ref:s.elements.find(e=>e.name==='Locality').ref,value:'福州'}));"
+        "s=unwrap(await tools.browser_snapshot({}));"
+        "unwrap(await tools.browser_click({ref:s.elements.find(e=>e.name==='Load record').ref}));"
+        "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:5000}));"
+        "unwrap(await tools.browser_read({})); } return {broken:undefined};")
+
+    def scripted(url: str, payload: dict[str, object], headers: dict[str, str], **kwargs: object) -> dict[str, object]:
+        nonlocal exchange
+        exchange += 1
+        observe = kwargs["observe"]
+        assert callable(observe)
+        observe(attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0.0)
+        if exchange == 1:
+            action: JsonObject = {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
+        else:
+            messages = payload["messages"]
+            assert isinstance(messages, list)
+            results = [json.loads(content.split("Result data (JSON):\n", 1)[1].split("\n\nResult metadata:", 1)[0])
+                for m in messages if isinstance(m, dict) and isinstance(content := m.get("content"), str)
+                and content.startswith("[result: codemode]\nResult data (JSON):")]
+            recovered = next(result["value"] for result in results if result["value"].get("receipts_replayed"))
+            bodies = [row for row in recovered["replayed"] if row["tool"] == "browser_read"]
+            assert len(bodies) == 2
+            for body in bodies:
+                assert marker in body["data"]["text"] and "QUARTZ_851" in body["data"]["text"]
+                assert body["receipt_ref"].startswith("task_turn_effect:")
+                assert body["status"] == "succeeded" and not body["truncated"] and not body["data_omitted"]
+            assert "untrusted" in recovered["notice"]
+            action = {"tool": "done", "args": {"summary": bodies[-1]["data"]["text"]}}
+        return surface.script_body(action)
+
+    monkeypatch.setattr("codey.providers.api_generation.generate", scripted)
+    monkeypatch.setattr("tools.completion_explanation_ab.service_state", lambda _url: {})
+    row = probe.run_arm(directory, "page_reset", "B", "B4", TARGET, max_turns=4)
+    assert row["passed"] and exchange == 2, row
+    metrics = decode_json_object(row["metrics"])
+    assert metrics["mechanical_repairs"] == 1 and metrics["repaired_parent"]
+    assert metrics["browser_navigate"] == metrics["browser_fill"] == metrics["browser_click"] == 2
+
+
+def test_optional_perf_failure_does_not_discard_a_successful_generation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tools.completion_explanation_ab import ExperimentProvider, service_state
+
+    install_http(monkeypatch, [{"tool": "done", "args": {"summary": "actual successful reply"}}])
+    monkeypatch.setattr("tools.completion_explanation_ab.service_state", service_state)
+
+    def broken_get(*args: object, **kwargs: object) -> object:
+        raise http.client.IncompleteRead(b"partial", 100)
+
+    monkeypatch.setattr("urllib.request.urlopen", broken_get)
+    provider = ExperimentProvider(TARGET, tmp_path, fixed_acquisition=False)
+    try:
+        body = provider._generate([{"role": "user", "content": "synthetic test"}])
+        assert "actual successful reply" in json.dumps(body)
+        events = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
+        response = next(event for event in events if event.get("type") == "response")
+        assert "IncompleteRead" in response["service"]["error"]
+        assert not any(event.get("type") == "error" for event in events)
+    finally:
+        provider.close()
 
 
 def test_combination_requires_complete_independent_evidence(tmp_path: Path) -> None:
@@ -515,6 +644,29 @@ def test_matrix_preserves_negative_baseline_and_alternates_pairs(tmp_path: Path,
     assert report["arms"]["B"]["prompt_tokens"] == 40
     with pytest.raises(FileExistsError):
         probe.matrix(args, TARGET)
+
+
+@pytest.mark.parametrize("failure", ["provider_failure", "worker_failure"])
+def test_matrix_stops_before_queuing_after_transport_or_worker_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                                    failure: str) -> None:
+    calls: list[str] = []
+
+    def worker(directory: Path, scenario: str, arm: str, config: str, target: Target,
+               *, budget: float, max_turns: int) -> JsonObject:
+        calls.append(arm)
+        return {"arm": arm, "scenario": scenario, "passed": False,
+                **({"stop_reason": "provider_failure"} if failure == "provider_failure" else {"error": "worker exited 2"})}
+
+    monkeypatch.setattr(probe, "run_worker", worker)
+    monkeypatch.setattr(probe.edit, "production_source_digest", lambda: "source")
+    monkeypatch.setattr(probe, "harness_digests", lambda: {})
+    args = argparse.Namespace(config="B4", run_dir=tmp_path / "run", scenario=None, repeats=2,
+                              evidence=[], budget=300, max_turns=10)
+    assert probe.matrix(args, TARGET) == 1
+    assert calls == ["A"]
+    assert not (args.run_dir / "summary.json").exists()
+    interrupted = json.loads((args.run_dir / "interruption.json").read_text(encoding="utf-8"))
+    assert interrupted["status"] == "interrupted" and len(interrupted["runs"]) == 1
 
 
 def test_source_digest_unchanged_and_no_production_patch_leaks(tmp_path: Path) -> None:

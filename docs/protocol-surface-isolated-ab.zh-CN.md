@@ -4,6 +4,8 @@
 
 用户随后授权运行实机，批次为 `.e2e-artifacts/protocol-isolated-live-20261111-01/`；结果与限制记录于[实机报告](protocol-surface-isolated-live-20261111.zh-CN.md)。下述实现、确定性验证与实机证据分别记录，不以诊断通过代替自主成功率。
 
+后续 v2 修补 B4 回放后的结果交付；中断复测并定位传输后，v3 同时把本协议实验 A/B 显式改为流式、隔离可选性能诊断错误，并在 provider/worker 异常后立即中断矩阵，见[B4 修补与复测](protocol-surface-b4-delivery-live-20261111.zh-CN.md)。v1、v2 证据保留，不与 v3 混作同一版组合证据；共享实验 provider 默认保持非流式，历史实验默认不变。
+
 入口：`python -m tools.protocol_surface_ab`。候选机制位于 `tools/protocol_surface.py`，结构化执行器位于 `tools/protocol_surface_program.js`；确定性测试为 `tests/test_protocol_surface.py`。
 
 ## 配置与隔离
@@ -36,6 +38,8 @@ B1/B2/B4 不安装旧编辑 helper、正文类型包装、结构化步骤或额�
 B3 执行器不缓存导航、填表、点击或编辑。历史成功不能代表当前页面状态。stale_ref 专用 `snapshot_id` 只能选择同计划更早的真实 snapshot，必须由模型选择，不能把默认新快照当旧引用诊断通过。
 
 **B4。** 只在生产已签发 `repair_of`、错误为 missing_return/result_encoding、原子调用全部成功、无 edit、无已修复父调用时，最多调度一次原顺序/参数回放。原内核验证授权和回执；不重新执行副作用。随后提供正式上传/下载事实以及最近页面转换的历史信息，明确历史不证明当前表单状态。不会自动重复动作，也不承诺阻止模型使用新程序再次执行。没有签发修复凭证的运行时错误、未知副作用和崩溃窗口仍不自动修复。这是窄范围恢复候选，不声称实现了通用状态机或全局 exactly-once。
+
+v1 回放只返回计数，实机发现它不能保证正文交付。v2 在相同授权边界内返回实际回放的原始子结果和回执引用，字符串放在 `data.text`，保留截断标记；数据序列化长度合计超过 12000 时整项省略并显式标记，继续消费全部原序列。来源数据仍不可信，恢复父调用不代表原 JS 语义计算正确。历史机械实验文件不变，具体诊断与实机证据见 B4 复测报告。
 
 本轮结果组装复用生产 json_explanation 路径，B2 改善其正文绑定。没有额外启用上一轮给普通文本答案追加整份事实报告的机制，避免混入未经独立测量的收益。
 
@@ -85,6 +89,8 @@ python -m tools.protocol_surface_ab --config combined --run-dir .e2e-artifacts/p
 ```
 
 独立候选失败时，先分析该机制，不跳过前提直接组合。退出码 1 表示存在评分失败、来源变化或配对不可比，不能仅凭进程退出码判断 B 没收益；例如 A 失败、B 成功也会返回 1，应读取 summary.json。
+
+v3 遇 provider_failure 或 worker 异常时改为立即停止后续单元，保留 progress.json、interruption.json，不生成貌似完整的 summary。普通评分失败继续完成矩阵。中断批次不能作为完整对照，也不自动重试失败生成。
 
 ## 证据与统计
 
