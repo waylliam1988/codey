@@ -7,26 +7,137 @@ import json
 import subprocess
 import sys
 import traceback
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
+from codey.completion.contract import CHECK_FAIL, CHECK_PASS, CompletionCheck
+from codey.operations import completion_gate
+from codey.operations.completion_inputs import CompletionCheckInput
+from codey.operations.task_session import TaskSession
+from codey.policies.tool_requirement import ToolObservation
 from codey.runtime.core import cancellation
 from codey.types.json_value import JsonObject, decode_json_object
 from tools import browser_production_live_gate as gate
 from tools import protocol_surface as surface
 from tools import receipt_bound_edit_ab as edit
 from tools import receipt_bound_edit_surface_probe as previous
-from tools.completion_artifact_audit import tool_receipts
-from tools.completion_explanation_ab import Target, provider_metrics
+from tools.completion_artifact_audit import EffectReceipt, tool_receipts
+from tools.completion_explanation_ab import Target, append_json, provider_metrics
+
+PAGE_RESET_GATE = "page-reset-gate"
+PAGE_RESET_CHECK = "page_reset_two_rounds"
+PAGE_RESET_STEPS = (
+    "browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read",
+)
 
 SCENARIOS = {
     "B1": ("basic", "snapshot_restore", "stale_ref"),
     "B2": ("upload_bound", "structured"),
     "B3": ("legacy_structured", "upload", "hybrid", "stale_edit"),
     "B4": ("page_reset", "return_failure", "download"),
+    PAGE_RESET_GATE: ("page_reset",),
     "combined": (*previous.SCENARIOS, "page_reset", "return_failure"),
 }
 DIAGNOSTIC_SCENARIOS = {"return_failure", "source_failure_fixed", "upload_bound"}
+
+
+def page_reset_progress(receipts: list[EffectReceipt]) -> tuple[list[list[str]], list[str]]:
+    """Find two real loads of the controlled fixture, each within its own navigation."""
+    completed: list[list[str]] = []
+    current: list[str] = []
+    targets: dict[str, str] = {}
+    page_id: object = None
+    for receipt in receipts:
+        result = receipt.result
+        name, args = result.call.name, result.call.args
+        value = result.canonical.get("value")
+        if name in {"browser_navigate", "browser_tab_switch", "browser_tab_new"}:
+            current, targets, page_id = [], {}, None
+            if (name == "browser_navigate" and result.ok and args.get("url") == gate.URL
+                    and isinstance(value, dict) and value.get("url") == gate.URL and value.get("http_status") == 200):
+                current.append(receipt.identity)
+                page_id = value.get("page_id")
+            continue
+        if not current or not result.ok:
+            continue
+        if name == "browser_snapshot":
+            targets = {}
+            if (isinstance(value, dict) and value.get("page_id") == page_id and value.get("page_url") == gate.URL
+                    and isinstance(elements := value.get("elements"), list)):
+                for label in ("Locality", "Load record"):
+                    refs = [element.get("ref") for element in elements
+                            if isinstance(element, dict) and element.get("name") == label]
+                    if len(refs) == 1 and isinstance(refs[0], str):
+                        targets[label] = refs[0]
+        if name != PAGE_RESET_STEPS[len(current)]:
+            continue
+        if name == "browser_snapshot" and "Locality" not in targets:
+            continue
+        if name == "browser_fill" and (args.get("value") != "福州" or args.get("ref") != targets.get("Locality")
+                                       or "Locality" not in targets):
+            continue
+        if name == "browser_click" and (args.get("ref") != targets.get("Load record") or "Load record" not in targets):
+            continue
+        if name == "browser_wait" and (not isinstance(value, dict) or value.get("page_url") != gate.URL
+                                       or value.get("matched") is not True):
+            continue
+        if name == "browser_read":
+            observation = result.canonical.get("research_observation")
+            source = observation.get("source") if isinstance(observation, dict) else None
+            if (result.truncated or not isinstance(observation, dict) or not isinstance(source, dict)
+                    or source.get("truncated") is not False or source.get("final_url") != gate.URL
+                    or "QUARTZ_851" not in str(observation.get("text", ""))):
+                continue
+        current.append(receipt.identity)
+        if len(current) == len(PAGE_RESET_STEPS):
+            completed.append(current)
+            current = []
+            if len(completed) == 2:
+                break
+    return completed, current
+
+
+@contextmanager
+def page_reset_completion(directory: Path) -> Iterator[None]:
+    """Add a fixture check to the production proof in this experiment process."""
+    evaluate = completion_gate.evaluate
+    observed: list[tuple[list[list[str]], list[str]]] = []
+
+    def check(_input: CompletionCheckInput) -> list[CompletionCheck]:
+        completed, current = page_reset_progress(tool_receipts(directory / "state"))
+        observed.append((completed, current))
+        if len(completed) == 2:
+            return [CompletionCheck(PAGE_RESET_CHECK, CHECK_PASS)]
+        missing = PAGE_RESET_STEPS[len(current)]
+        return [CompletionCheck(PAGE_RESET_CHECK, CHECK_FAIL, f"page_reset_round_{len(completed) + 1}_missing_{missing}")]
+
+    def evaluate_with_feedback(session: TaskSession, done_text: object, *, context: object = None,
+                               observations: Mapping[str, ToolObservation] | None = None) -> completion_gate.GateVerdict:
+        observed.clear()
+        verdict = evaluate(session, done_text, context=context, observations=observations)
+        if not observed:
+            return verdict
+        completed, current = observed[-1]
+        missing = PAGE_RESET_STEPS[len(current)] if len(completed) < 2 else None
+        append_json(directory / "page-reset-checks.jsonl", {
+            "completed_rounds": len(completed), "round_receipts": completed, "partial_receipts": current,
+            "next_missing_tool": missing, "done_accepted": verdict.complete,
+        })
+        if missing is None or verdict.complete or verdict.blocked:
+            return verdict
+        return replace(verdict, followup=(
+            f"页面加载已完成 {len(completed)}/2 轮。第 {len(completed) + 1} 轮下一步是 {missing}。"
+            "从这一步继续执行，完成本轮剩余操作后再提交 done。\n\n" + verdict.followup))
+
+    completion_gate.register_completion_check_provider(PAGE_RESET_CHECK, check, profile="chat")
+    try:
+        with patch.object(completion_gate, "evaluate", evaluate_with_feedback):
+            yield
+    finally:
+        completion_gate.unregister_completion_check_provider(PAGE_RESET_CHECK)
 
 
 def task_text(task: str, scenario: str) -> str:
@@ -82,8 +193,12 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
     before = edit.production_source_digest()
     base_scenario = {"page_reset": "basic", "return_failure": "download"}.get(scenario, scenario)
     mode, options = previous.scenario_options(base_scenario)
-    active = config if arm == "B" else "A"
+    if config == PAGE_RESET_GATE and scenario != "page_reset":
+        raise ValueError("page-reset-gate only runs page_reset")
+    gate_enabled = config == PAGE_RESET_GATE and arm == "B"
+    active = config if arm == "B" and config != PAGE_RESET_GATE else "A"
     with (surface.prototype(directory, scenario, active),
+          page_reset_completion(directory) if gate_enabled else nullcontext(),
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(gate.run_case(directory, mode, target, max_turns=max_turns,
@@ -93,6 +208,16 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
     passed = row.get("passed") is True
     if scenario == "page_reset":
         passed = passed and metrics["page_reset_completed"] is True
+    if config == PAGE_RESET_GATE:
+        completed, current = page_reset_progress(tool_receipts(directory / "state"))
+        metrics["verified_rounds"] = len(completed)
+        metrics["next_missing_tool"] = PAGE_RESET_STEPS[len(current)] if len(completed) < 2 else None
+        passed = passed and len(completed) == 2
+        row["page_reset_gate_enabled"] = gate_enabled
+        checks = directory / "page-reset-checks.jsonl"
+        row["page_reset_gate_checks"] = (
+            [decode_json_object(json.loads(line)) for line in checks.read_text(encoding="utf-8").splitlines()]
+            if checks.exists() else [])
     if scenario == "return_failure":
         passed = passed and metrics["browser_download"] == 1 and metrics["repaired_parent"] is True
     uploads, downloads = int(str(metrics["browser_upload"])), int(str(metrics["browser_download"]))
@@ -263,7 +388,8 @@ def matrix(args: argparse.Namespace, target: Target) -> int:
     report = {**manifest, "source_after": after, "source_stable": before == after,
         "harnesses_stable": hashes == harness_digests(), "runs": list(rows), "pairs": list(pairs), "arms": per_arm,
         "paired_outcomes": outcomes,
-        "combination_eligible": stable and qualification(rows, pairs, args.config, args.repeats)}
+        "combination_eligible": (args.config != PAGE_RESET_GATE and stable
+                                 and qualification(rows, pairs, args.config, args.repeats))}
     edit.write_json(root / "summary.json", decode_json_object(report))
     return 0 if stable and all(pair["comparable"] is True for pair in pairs) and all(row["passed"] is True for row in rows) else 1
 
@@ -291,11 +417,14 @@ def main() -> int:
         parser.error("repeats, timeout, budget and max-turns must be positive")
     if args.scenario and len(args.scenario) != len(set(args.scenario)):
         parser.error("duplicate scenarios are not allowed; use --repeats")
+    if args.config == PAGE_RESET_GATE and args.scenario and args.scenario != ["page_reset"]:
+        parser.error("page-reset-gate only runs page_reset")
     if args.plan:
         print(json.dumps({"config": args.config, "scenarios": args.scenario or SCENARIOS[args.config],
             "units": 2 * args.repeats * len(args.scenario or SCENARIOS[args.config]),
             "diagnostic_scenarios": sorted(DIAGNOSTIC_SCENARIOS),
-            "features": str(surface.CONFIGS[args.config]), "combination_requires": ["B1", "B2", "B3", "B4"]}, indent=2))
+            "features": (PAGE_RESET_CHECK if args.config == PAGE_RESET_GATE else str(surface.CONFIGS[args.config])),
+            "combination_requires": ["B1", "B2", "B3", "B4"]}, indent=2))
         return 0
     if args.run_dir is None:
         parser.error("--run-dir is required")

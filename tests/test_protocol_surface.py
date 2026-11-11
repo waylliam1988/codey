@@ -37,7 +37,7 @@ from tools import protocol_surface as surface
 from tools import protocol_surface_ab as probe
 from tools import structured_surface
 from tools.browser_production_live_gate import DOWNLOAD_BYTES, URL
-from tools.completion_artifact_audit import EffectReceipt
+from tools.completion_artifact_audit import EffectReceipt, artifacts, tool_receipts
 from tools.completion_explanation_ab import Target
 
 TARGET = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
@@ -399,25 +399,70 @@ def test_b4_real_return_failure_repairs_without_second_download(tmp_path: Path, 
     assert requests and all(event["payload"]["stream"] is True for event in requests)
 
 
+def page_reset_action() -> JsonObject:
+    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
+        "let s=unwrap(await tools.browser_snapshot({}));"
+        "unwrap(await tools.browser_fill({ref:s.elements.find(e=>e.name==='Locality').ref,value:'福州'}));"
+        "s=unwrap(await tools.browser_snapshot({}));"
+        "unwrap(await tools.browser_click({ref:s.elements.find(e=>e.name==='Load record').ref}));"
+        "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:5000}));"
+        "return unwrap(await tools.browser_read({}));")
+    return {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
+
+
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 @pytest.mark.parametrize("config", ["B4", "combined"])
 def test_b4_page_reset_requires_real_second_fill_and_click(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config: str) -> None:
-    if config == "combined":
-        action = plan(*browser_steps())
-    else:
-        code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
-            "let s=unwrap(await tools.browser_snapshot({}));"
-            "unwrap(await tools.browser_fill({ref:s.elements.find(e=>e.name==='Locality').ref,value:'福州'}));"
-            "s=unwrap(await tools.browser_snapshot({}));"
-            "unwrap(await tools.browser_click({ref:s.elements.find(e=>e.name==='Load record').ref}));"
-            "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:5000}));"
-            "return unwrap(await tools.browser_read({}));")
-        action = {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
+    action = plan(*browser_steps()) if config == "combined" else page_reset_action()
     install_http(monkeypatch, [action, action, {"tool": "done", "args": {"summary": "两次加载完成，净重 173，校验码 QUARTZ_851。"}}])
     row = probe.run_arm(tmp_path / "run", "page_reset", "B", config, TARGET, max_turns=4)
     assert row["passed"], row
     metrics = decode_json_object(row["metrics"])
     assert metrics["browser_fill"] == metrics["browser_click"] == 2
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("arm", ["A", "B"])
+def test_page_reset_gate_rejects_early_done_and_accepts_completed_rounds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str,
+) -> None:
+    action = page_reset_action()
+    done: JsonObject = {"tool": "done", "args": {"summary": "两次加载完成，净重 173，校验码 QUARTZ_851。"}}
+    install_http(monkeypatch, [action, done, action, done])
+    directory = tmp_path / "run"
+    row = probe.run_arm(directory, "page_reset", arm, probe.PAGE_RESET_GATE, TARGET, max_turns=5)
+    assert row["stop_reason"] == "done", row
+    assert row["passed"] is (arm == "B"), row
+    assert row["silent_failure"] is (arm == "A"), row
+    metrics = decode_json_object(row["metrics"])
+    assert metrics["verified_rounds"] == metrics["browser_navigate"] == (2 if arm == "B" else 1)
+    checks = row["page_reset_gate_checks"]
+    assert isinstance(checks, list)
+    if arm == "A":
+        assert checks == []
+        return
+
+    early, final = map(decode_json_object, checks)
+    assert early["next_missing_tool"] == "browser_navigate" and early["done_accepted"] is False
+    assert final["completed_rounds"] == 2 and final["done_accepted"] is True
+    requests = [json.loads(line)["payload"] for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()
+                if json.loads(line).get("phase") == "request"]
+    assert "第 2 轮下一步是 browser_navigate" in json.dumps(requests[2]["messages"], ensure_ascii=False)
+    decisions = [body["data"] for _, body in artifacts(directory / "state")
+                 if isinstance(body.get("data"), dict) and body["data"].get("purpose") == "done"]
+    assert any(probe.PAGE_RESET_CHECK in json.dumps(decision) for decision in decisions)
+
+    receipts = tool_receipts(directory / "state")
+    seen, _ = probe.page_reset_progress(receipts)
+    second = seen[1]
+    for missing_index in (0, 2, 3, 4, 5):
+        completed, _ = probe.page_reset_progress([receipt for receipt in receipts if receipt.identity != second[missing_index]])
+        assert len(completed) == 1
+    second_wait = next(index for index, receipt in enumerate(receipts) if receipt.identity == second[4])
+    first_nav = next(receipt for receipt in receipts if receipt.identity == seen[0][0])
+    reset = replace(first_nav, identity="intervening-navigation")
+    completed, partial = probe.page_reset_progress([*receipts[:second_wait], reset, *receipts[second_wait:]])
+    assert len(completed) == 1 and partial == [reset.identity]
 
 
 def test_b4_history_does_not_claim_current_form_state() -> None:
