@@ -15,6 +15,7 @@ import re
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
@@ -81,7 +82,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              strict_research: bool = False, explanation_output: bool = False,
              stale_ref: bool = False, source_failure: bool = False, fixed_failure: bool = False,
              max_turns: int = 12, source_attempt_only: bool = False, preserve_external_field: bool = False,
-             assembled_upload: bool = False, fixed_source_attempt: bool = False) -> dict[str, object]:
+             assembled_upload: bool = False, fixed_source_attempt: bool = False,
+             task_transform: Callable[[str], str] | None = None) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     recording = ExperimentProvider(target, directory, fixed_acquisition=fixed_failure or fixed_source_attempt,
@@ -211,6 +213,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
     upload_schema = {"type": "object", "properties": {
         key: {"type": "string"} for key in ("explanation", "filename", "sha256", "page_text")},
         "required": ["explanation", "filename", "sha256", "page_text"], "additionalProperties": False}
+    if task_transform is not None:
+        task = task_transform(task)
     (directory / "task.txt").write_text(task, encoding="utf-8")
     try:
         with tempfile.TemporaryDirectory(prefix="codey-browser-live-project-") as temporary, ExitStack() as stack:

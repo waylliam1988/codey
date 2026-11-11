@@ -1,0 +1,524 @@
+"""Deterministic protocol ablations; all model HTTP is scripted, Chromium is real."""
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import secrets
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+from codey.codemode import catalog
+from codey.codemode.host import CodeModeHost
+from codey.codemode.kernel import build_execute_turn_executor
+from codey.codemode.runtime import NodeWorkerRuntime
+from codey.codemode.types import ToolCatalogEntry
+from codey.operations import completion_gate, kernel_control
+from codey.operations.completion_context import CompletionContext
+from codey.operations.kernel_execution import execute_turn
+from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.task_session import TaskSession
+from codey.policies.output_requirement import declaration
+from codey.policies.task_policy import TaskPolicy
+from codey.policies.tool_requirement import ToolSuccessRequirement, require_tool_success
+from codey.runtime.core.models import ToolCall, ToolResult
+from codey.storage.input_attachments import InputAttachmentStore
+from codey.toolchain import tool_prompt
+from codey.types.json_value import JsonObject, decode_json_object
+from tests.test_mechanical_surface import read_result, record
+from tests.test_receipt_bound_edit_surface_probe import install_http
+from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
+from tests.test_structured_surface import plan, session, step
+from tools import protocol_surface as surface
+from tools import protocol_surface_ab as probe
+from tools import structured_surface
+from tools.browser_production_live_gate import DOWNLOAD_BYTES, URL
+from tools.completion_artifact_audit import EffectReceipt
+from tools.completion_explanation_ab import Target
+
+TARGET = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
+
+
+def schemas(*, defaults: bool = False, stale_refs: bool = False) -> dict[str, JsonObject]:
+    return surface.entry_schemas(build_turn_snapshot(session()), defaults=defaults, stale_refs=stale_refs)
+
+
+@pytest.mark.parametrize("config", ["A", "B1", "B2", "B3", "B4", "combined"])
+def test_configuration_installs_only_declared_mechanisms(tmp_path: Path, config: str) -> None:
+    original = (CodeModeHost.invoke, ToolSuccessRequirement._observe_value, build_turn_snapshot,
+                tool_prompt.tool_repair_text, completion_gate._required_checks_verdict)
+    with surface.prototype(tmp_path, "basic", config):
+        from codey.operations import kernel_protocol
+
+        flags = surface.CONFIGS[config]
+        assert (CodeModeHost.invoke is not original[0]) == flags.admission
+        assert (ToolSuccessRequirement._observe_value is not original[1]) == flags.binding
+        assert (kernel_protocol.build_turn_snapshot is not original[2]) == flags.structured
+        assert (tool_prompt.tool_repair_text is not original[3]) == flags.structured
+        assert (completion_gate._required_checks_verdict is not original[4]) == flags.binding
+    assert CodeModeHost.invoke is original[0] and ToolSuccessRequirement._observe_value is original[1]
+
+
+@pytest.mark.parametrize("timeout", [None, True, "5000", -1])
+def test_b1_invalid_explicit_wait_does_not_execute(tmp_path: Path, timeout: object) -> None:
+    spec = next(s for s in build_turn_snapshot(session()).frozen_specs if s.name == "browser_wait")
+    entry = catalog.build_catalog_from_specs([spec]).entries[0]
+    calls: list[ToolCall] = []
+
+    def execute(call: ToolCall) -> ToolResult:
+        calls.append(call)
+        return ToolResult(call, "unreachable")
+
+    host = CodeModeHost(execution_id="test", catalog=[entry], execute=execute)
+    with surface.prototype(tmp_path, "basic", "B1"), pytest.raises(ValueError, match="timeout_ms"):
+        host.invoke("browser_wait", {"condition": "text", "value": "ready", "timeout_ms": timeout})
+    assert not calls
+
+
+def test_b1_default_enters_original_executor_and_keeps_explicit_value(tmp_path: Path) -> None:
+    spec = next(s for s in build_turn_snapshot(session()).frozen_specs if s.name == "browser_wait")
+    entry = catalog.build_catalog_from_specs([spec]).entries[0]
+    calls: list[dict[str, object]] = []
+
+    def execute(call: ToolCall) -> ToolResult:
+        calls.append(dict(call.args))
+        return ToolResult(call, "matched", ok=True, canonical={"value": {
+            "action": "wait", "condition": "text", "matched": True, "page_url": URL, "text": "ready"}})
+
+    host = CodeModeHost(execution_id="test", catalog=[entry], execute=execute)
+    with surface.prototype(tmp_path, "basic", "B1"):
+        host.invoke("browser_wait", {"condition": "text", "value": "ready"})
+        host.invoke("browser_wait", {"condition": "text", "value": "ready", "timeout_ms": 1234})
+        rendered = catalog.render_declarations(catalog.build_catalog_snapshot([entry]))
+    assert [call["timeout_ms"] for call in calls] == [5000, 1234]
+    assert '"timeout_ms"?:' in rendered and "defaults to 5000" in rendered
+
+
+@pytest.mark.parametrize("config", ["A", "B1"])
+def test_b1_durable_invalid_parameter_reports_root_cause_without_child_intent(tmp_path: Path, config: str) -> None:
+    project, state, logdir = _dirs(tmp_path)
+    _, mutations, managed, revisions, _deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    s = TaskSession(TaskPolicy(frozenset({"control", "project.read", "browser.observe"})), project=str(project))
+    from codey.operations.recovery import record_entry_policy
+
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=s.policy, durable=mutations.durable)
+    try:
+        with surface.prototype(tmp_path, "basic", config):
+            snapshot = build_turn_snapshot(s)
+            executor = build_execute_turn_executor(session=s, snapshot=snapshot, run_id="r", effect_scope="probe",
+                turn=0, project_path=project, managed_outputs=managed, workspace_revision_store=revisions,
+                intent_sink=sink, durable=mutations.durable, session_id="s")
+            result = execute_turn(s, [ToolCall("codemode", {"code":
+                "return unwrap(await tools.browser_wait({condition:'text',value:'ready',timeout_ms:null}));"}, call_id="p")],
+                executors={"codemode": executor}, run_id="r", effect_scope="probe", turn=0, project_path=project,
+                snapshot=snapshot, intent_sink=sink, durable=mutations.durable)[0]
+        assert not result.ok
+        assert ("timeout_ms" if config == "B1" else "recorded control flow") in result.model_text
+        assert result.canonical["child_effect_ids"] == []
+        assert len(mutations.durable.effects("r")) == 1
+    finally:
+        mutations.durable.close()
+
+
+@pytest.mark.parametrize("defect", ["none", "parent", "receipt", "identity", "arguments", "truncated", "source_truncated", "conflict"])
+def test_b2_binding_uses_original_body_and_rejects_invalid_evidence(tmp_path: Path, defect: str) -> None:
+    result = read_result("complete original")
+    if defect == "truncated":
+        result = replace(result, truncated=True)
+    if defect == "source_truncated":
+        result = replace(result, canonical={"research_observation": {"text": "partial", "source": {"truncated": True}}})
+    parent = ToolResult(ToolCall("codemode", {}), "parent", ok=defect != "parent")
+    rows = {"read": record(result), "parent": record(parent, ["read"])}
+    results = {} if defect == "receipt" else {"read": result}
+    if defect == "identity":
+        rows["read"]["call_id"] = "wrong"
+    if defect == "arguments":
+        rows["read"]["argument_digests"] = {"offset": "wrong"}
+    if defect == "conflict":
+        other = read_result("different")
+        results["other"] = other
+        rows["other"] = record(other)
+        rows["parent"]["child_effect_ids"] = ["read", "other"]
+    requirement = ToolSuccessRequirement("browser_read", via="codemode", answer_pointer="/body")
+    with surface.prototype(tmp_path, "upload_bound", "B2"):
+        outcome = requirement.observe(rows, results=results)
+        assert "research_observation.text" in requirement.model_guidance(explanation=True)
+    assert outcome.evaluation.passed == (defect == "none")
+    if defect == "none":
+        assert outcome.value == "complete original" and outcome.result_refs == ("read",)
+    assert "value" not in result.canonical
+
+
+@pytest.mark.parametrize("config", ["A", "B2"])
+def test_b2_feedback_identifies_missing_parent_before_answer_format(tmp_path: Path, config: str) -> None:
+    schema = structured_surface.object_schema({"explanation": {"type": "string"}, "body": {"type": "string"}},
+                                             ["explanation", "body"])
+    s = TaskSession(TaskPolicy(frozenset({"control"}), required_checks=(declaration("json_explanation", json.dumps(schema)),
+        require_tool_success("browser_read", via="codemode", answer_pointer="/body"))))
+    result = read_result("real")
+    s.executed["read"] = record(result)
+    s._memory_results["read"] = result
+    with surface.prototype(tmp_path, "upload_bound", config):
+        output = kernel_control.prepare_completion_output(s, "explanation", CompletionContext())
+        checks = completion_gate._required_tool_checks(s, output.text, CompletionContext(), output.observations)
+        verdict = completion_gate._required_checks_verdict(s, checks.rows, checks.evaluations)
+    assert verdict is not None and not verdict.complete
+    assert ("tool_parent_missing" if config == "B2" else "output_format_invalid") in verdict.followup
+
+
+def test_b3_frozen_permissions_descriptions_and_no_implicit_b1_defaults() -> None:
+    snapshot = build_turn_snapshot(TaskSession(TaskPolicy(frozenset({"control", "project.read"}))))
+    limited = surface.entry_schemas(snapshot, defaults=False, stale_refs=False)
+    assert not {"edit", "browser_property", "browser_upload"} & limited.keys()
+    entries = schemas()
+    assert "timeout_ms" in entries["browser_wait"]["required"]
+    assert "timeout_ms" not in schemas(defaults=True)["browser_wait"]["required"]
+    assert "Result data schema" in str(entries["browser_property"]["description"])
+    assert "target_name" in entries["browser_upload"]["required"]
+    assert "snapshot_id" not in decode_json_object(entries["browser_click"]["properties"])
+
+
+@pytest.mark.parametrize("defect", ["same_plan", "invented", "reread_old_handle", "missing_timeout", "illegal_property"])
+def test_b3_invalid_plan_has_no_effect(defect: str) -> None:
+    reads: JsonObject = {"receipt-1": {"path": "result.json", "result_ref": "receipt-1"}}
+    steps = [step("read", "read_file", {"path": "result.json"})]
+    if defect in {"same_plan", "invented", "reread_old_handle"}:
+        handle = "receipt-1" if defect == "reread_old_handle" else "read" if defect == "same_plan" else "invented"
+        steps.append(step("edit", "edit", {"read_handle": handle, "content": "{}"}))
+    elif defect == "missing_timeout":
+        steps.append(step("wait", "browser_wait", {"condition": "text", "value": "ready"}))
+    else:
+        steps.append(step("property", "browser_property", {"name": "x;bad()"}))
+    with pytest.raises(ValueError):
+        surface.compile_plan({"steps": steps}, schemas(), reads, defaults=False)
+
+
+@pytest.mark.parametrize("defect", ["none", "failed_parent", "missing_parent", "partial", "large", "truncated"])
+def test_b3_only_complete_prior_parent_reads_are_delivered(defect: str) -> None:
+    data = {"path": "result.json", "text_complete": defect != "partial", "text": "x" * (12001 if defect == "large" else 5)}
+    read = ToolResult(ToolCall("read_file", {"path": "result.json"}), "file", ok=True,
+                      canonical={"value": data}, truncated=defect == "truncated")
+    parent = ToolResult(ToolCall("codemode", {}), "parent", ok=defect != "failed_parent",
+                        canonical={"child_effect_ids": ["original-receipt"]})
+    results = {"original-receipt": read}
+    if defect != "missing_parent":
+        results["parent"] = parent
+    reads, observations = surface.delivered_reads(results)
+    assert bool(reads) == (defect == "none")
+    if reads:
+        assert observations["original-receipt"] == data
+        assert reads["original-receipt"] == {"path": "result.json", "result_ref": "original-receipt"}
+
+
+@pytest.mark.parametrize("defect", ["none", "omitted", "partial", "different"])
+def test_b3_context_reduction_revokes_undelivered_edit_handles(defect: str) -> None:
+    reads: JsonObject = {"read": {"path": "result.json", "result_ref": "read"}}
+    observations: JsonObject = {"read": {"text": "complete file", "path": "result.json", "text_complete": True}}
+    actual = observations if defect == "none" else {} if defect == "omitted" else {
+        "read": {"text": "complete" if defect == "partial" else "other file", "path": "result.json", "text_complete": True}}
+    payload: JsonObject = {"messages": [{"role": "user", "content": surface.READ_OBSERVATIONS_PREFIX + json.dumps(actual)}]}
+    assert surface.transmitted_reads(payload, reads, observations) == (reads if defect == "none" else {})
+
+
+@pytest.mark.parametrize("matches", [0, 2])
+def test_b3_target_error_returns_real_candidates_without_upload(matches: int) -> None:
+    calls: list[str] = []
+
+    def invoke(name: str, args: dict[str, object]) -> object:
+        calls.append(name)
+        return {"ok": True, "value": {"page_id": "page", "generation": 4,
+            "elements": [{"name": "Attachment", "role": "button", "ref": str(i)} for i in range(matches)]}}
+
+    compiled = surface.compile_plan({"steps": [step("upload", "browser_upload", {
+        "target_name": "Attachment", "attachment_id": "att_" + "0" * 64})]}, schemas(), {}, defaults=False)
+    result = NodeWorkerRuntime().execute(str(compiled["code"]), inputs=decode_json_object(compiled["inputs"]),
+        catalog=[ToolCatalogEntry(name, name) for name in ("browser_snapshot", "browser_upload")], invoke=invoke)
+    assert result.ok and ("target_ambiguous" if matches else "target_missing") in str(result.value)
+    assert calls == ["browser_snapshot"]
+
+
+def test_b3_old_handle_never_acquires_a_new_version() -> None:
+    captured: list[dict[str, object]] = []
+
+    def invoke(name: str, args: dict[str, object]) -> object:
+        assert name == "edit"
+        captured.append(args)
+        return {"ok": False, "error": "file version changed"}
+
+    compiled = surface.compile_plan({"steps": [step("write", "edit", {"read_handle": "old", "content": "{}"})]},
+        schemas(), {"old": {"path": "result.json", "result_ref": "original-old-receipt"}}, defaults=False)
+    result = NodeWorkerRuntime().execute(str(compiled["code"]), inputs=decode_json_object(compiled["inputs"]),
+        catalog=[ToolCatalogEntry("edit", "Edit")], invoke=invoke)
+    assert result.ok and "file version changed" in str(result.value)
+    assert captured == [{"path": "result.json", "base_result_ref": "original-old-receipt", "content": "{}"}]
+
+
+def browser_steps() -> list[JsonObject]:
+    return [step("nav", "browser_navigate", {"url": URL}),
+        step("fill", "browser_fill", {"target_name": "Locality", "value": "福州"}),
+        step("click", "browser_click", {"target_name": "Load record"}),
+        step("wait", "browser_wait", {"condition": "text", "value": "鱼丸", "timeout_ms": 5000}),
+        step("body", "browser_read", {})]
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("arm", ["A", "B"])
+def test_b2_real_upload_binding_paired_without_edit_or_typed_helpers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str) -> None:
+    attachment = InputAttachmentStore(tmp_path / "inputs", "upload").put("fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode())
+    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
+        "const s=unwrap(await tools.browser_snapshot({}));"
+        "unwrap(await tools.browser_upload({ref:s.elements.find(e=>e.name==='Attachment').ref,attachment_id:inputs.attachment}));"
+        "unwrap(await tools.browser_wait({condition:'text',value:'UPLOAD_BYTES_82',timeout_ms:5000}));"
+        "return unwrap(await tools.browser_read({}));")
+    done: JsonObject = {"tool": "done", "args": {"summary": "已选择附件，服务器接收未核验。"}}
+    install_http(monkeypatch, [{"tool": "codemode", "args": {"code": code, "inputs": {"url": URL, "attachment": attachment["id"]}}},
+                               done, done, done])
+    row = probe.run_arm(tmp_path / "run", "upload_bound", arm, "B2", TARGET, max_turns=4)
+    assert row["passed"] is (arm == "B"), row
+    assert decode_json_object(row["metrics"])["browser_upload"] == 1
+    if arm == "B":
+        assert "UPLOAD_BYTES_82" in str(row["answer"])
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_b3_real_property_target_and_consistent_repair_wire(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    actions = browser_steps() + [step("token", "browser_property", {"name": "__contractToken"}),
+                                 step("tabs", "browser_tab_list", {})]
+    bad = plan(step("bad", "browser_property", {"name": "invalid;code"}))
+    install_http(monkeypatch, [bad, plan(*actions), {"tool": "done", "args": {
+        "summary": "净重 173 克，校验码 QUARTZ_851。token SCHEMA_TOKEN_74，URL " + URL}}])
+    directory = tmp_path / "run"
+    row = probe.run_arm(directory, "legacy_structured", "B", "B3", TARGET, max_turns=4)
+    assert row["passed"], row
+    requests = [json.loads(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()
+                if json.loads(line).get("phase") == "request"]
+    assert len(requests) == 3
+    wire = json.dumps(requests[1], ensure_ascii=False)
+    assert "Plan rejected before effects" in wire and "Execute ordered JSON steps" in wire
+    assert "Write an async JavaScript function body" not in wire and "return unwrap(await tools.browser_read" not in wire
+    assert "call tools.browser_eval" not in wire
+    assert "op=browser_property" in wire
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_b3_real_conflict_observation_boundary_and_external_field_preservation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    directory = tmp_path / "run"
+    exchange = 0
+    import tools.completion_explanation_ab as provider_module
+
+    external = {"revision": 2, "marker": secrets.token_hex(16)}
+    monkeypatch.setattr(probe.gate, "EXTERNAL_FIELD", external)
+
+    def scripted(url: str, payload: dict[str, object], headers: dict[str, str], **kwargs: object) -> dict[str, object]:
+        nonlocal exchange
+        exchange += 1
+        messages = payload["messages"]
+        assert isinstance(messages, list)
+        read_message = next(str(m["content"]) for m in reversed(messages) if isinstance(m, dict)
+                            and str(m.get("content", "")).startswith("Complete file observations"))
+        observations = json.loads(read_message.split("\n", 1)[1])
+        if exchange == 1:
+            action = plan(*browser_steps(), step("file", "read_file", {"path": "result.json"}))
+        elif exchange in {2, 4}:
+            handle, observed = next(iter(observations.items()))
+            content = json.loads(observed["text"])
+            content.update(amount=173, code="QUARTZ_851")
+            action = plan(step("write", "edit", {"read_handle": handle, "content": json.dumps(content)}))
+        elif exchange == 3:
+            action = plan(step("fresh", "read_file", {"path": "result.json"}))
+        else:
+            action = {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851，已更新并保留其他字段。"}}
+        observe = kwargs["observe"]
+        assert callable(observe)
+        observe(attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0.0)
+        return surface.script_body(action)
+
+    monkeypatch.setattr("codey.providers.api_generation.generate", scripted)
+    monkeypatch.setattr(provider_module, "service_state", lambda _url: {})
+    row = probe.run_arm(directory, "stale_edit", "B", "B3", TARGET, max_turns=6)
+    assert row["passed"] and row["true_stale_conflicts"] == 1, row
+    assert decode_json_object(row["project_result"])["external_revision"] == external
+    assert not row["external_field_lost"]
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_b3_real_upload_uses_control_name_and_preserves_raw_result_types(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    attachment = InputAttachmentStore(tmp_path / "inputs", "upload").put("fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode())
+    action = plan(step("nav", "browser_navigate", {"url": URL}),
+        step("upload", "browser_upload", {"target_name": "Attachment", "attachment_id": attachment["id"]}),
+        step("wait", "browser_wait", {"condition": "text", "value": "UPLOAD_BYTES_82", "timeout_ms": 5000}),
+        step("body", "browser_read", {}))
+    install_http(monkeypatch, [action, {"tool": "done", "args": {"summary":
+        "fixture.txt UPLOAD_BYTES_82 SHA256 " + hashlib.sha256(b"UPLOAD_BYTES_82\n").hexdigest()}}])
+    row = probe.run_arm(tmp_path / "run", "upload", "B", "B3", TARGET, max_turns=3)
+    assert row["passed"], row
+    assert decode_json_object(row["metrics"])["browser_upload"] == 1
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_b1_real_wait_omission_uses_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
+        "let s=unwrap(await tools.browser_snapshot({}));"
+        "unwrap(await tools.browser_fill({ref:s.elements.find(e=>e.name==='Locality').ref,value:'福州'}));"
+        "s=unwrap(await tools.browser_snapshot({}));"
+        "unwrap(await tools.browser_click({ref:s.elements.find(e=>e.name==='Load record').ref}));"
+        "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸'}));"
+        "return unwrap(await tools.browser_read({}));")
+    install_http(monkeypatch, [{"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}},
+        {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}])
+    directory = tmp_path / "run"
+    row = probe.run_arm(directory, "basic", "B", "B1", TARGET, max_turns=3)
+    assert row["passed"], row
+    from tools.completion_artifact_audit import tool_receipts
+
+    waits = [r.result for r in tool_receipts(directory / "state") if r.result.call.name == "browser_wait"]
+    assert len(waits) == 1 and waits[0].call.args["timeout_ms"] == 5000
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("arm,config", [("A", "B4"), ("B", "B4"), ("B", "combined")])
+def test_b4_real_return_failure_repairs_without_second_download(tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+                                                               arm: str, config: str) -> None:
+    done: JsonObject = {"tool": "done", "args": {"summary":
+        "fixture-download.txt SHA256 " + hashlib.sha256(DOWNLOAD_BYTES).hexdigest()}}
+    install_http(monkeypatch, [done, done, done])
+    row = probe.run_arm(tmp_path / "run", "return_failure", arm, config, TARGET, max_turns=4)
+    assert row["passed"] is (arm == "B"), row
+    metrics = decode_json_object(row["metrics"])
+    assert metrics["browser_download"] == 1
+    assert metrics["mechanical_repairs"] == (1 if arm == "B" else 0)
+    if arm == "B":
+        assert row["model_calls"] == 1
+    assert row["acquisition"] == "scripted-fault-then-model"
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("config", ["B4", "combined"])
+def test_b4_page_reset_requires_real_second_fill_and_click(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config: str) -> None:
+    if config == "combined":
+        action = plan(*browser_steps())
+    else:
+        code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
+            "let s=unwrap(await tools.browser_snapshot({}));"
+            "unwrap(await tools.browser_fill({ref:s.elements.find(e=>e.name==='Locality').ref,value:'福州'}));"
+            "s=unwrap(await tools.browser_snapshot({}));"
+            "unwrap(await tools.browser_click({ref:s.elements.find(e=>e.name==='Load record').ref}));"
+            "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:5000}));"
+            "return unwrap(await tools.browser_read({}));")
+        action = {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
+    install_http(monkeypatch, [action, action, {"tool": "done", "args": {"summary": "两次加载完成，净重 173，校验码 QUARTZ_851。"}}])
+    row = probe.run_arm(tmp_path / "run", "page_reset", "B", config, TARGET, max_turns=4)
+    assert row["passed"], row
+    metrics = decode_json_object(row["metrics"])
+    assert metrics["browser_fill"] == metrics["browser_click"] == 2
+
+
+def test_b4_history_does_not_claim_current_form_state() -> None:
+    old = ToolResult(ToolCall("browser_upload", {}), "uploaded", ok=True, canonical={"value": {"name": "a.txt"}})
+    new = ToolResult(ToolCall("browser_navigate", {}), "navigated", ok=True, canonical={"value": {"page_id": "new"}})
+    state = surface.recovery_state([EffectReceipt("old", old, None), EffectReceipt("new", new, None)])
+    assert decode_json_object(state["latest_page_transition"])["receipt_ref"] == "new"
+    assert "not current form state" in str(state["rule"])
+
+
+def test_combination_requires_complete_independent_evidence(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="B1, B2, B3 and B4"):
+        probe.check_evidence([], TARGET)
+    rows: list[JsonObject] = []
+    pairs: list[JsonObject] = []
+    for repetition in (1, 2):
+        for scenario in probe.SCENARIOS["B1"]:
+            for arm in ("A", "B"):
+                rows.append({"arm": arm, "scenario": scenario, "repetition": repetition, "passed": True})
+            pairs.append({"comparable": True})
+    assert probe.qualification(rows, pairs, "B1", 2)
+    rows[-1]["duplicate_effect"] = True
+    assert not probe.qualification(rows, pairs, "B1", 2)
+    rows[-1]["duplicate_effect"] = False
+    assert not probe.qualification(rows[:-1], pairs, "B1", 2)
+
+
+@pytest.mark.parametrize("defect", ["none", "model", "source", "harness", "failed", "duplicate_arm"])
+def test_combination_checks_evidence_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, defect: str) -> None:
+    # This test concerns record validation, not repeatedly hashing the entire repository.
+    monkeypatch.setattr(probe.edit, "production_source_digest", lambda: "source-fingerprint")
+    monkeypatch.setattr(probe, "harness_digests", lambda: {"test.py": "harness-fingerprint"})
+    paths: list[Path] = []
+    for config in ("B1", "B2", "B3", "B4"):
+        root = tmp_path / config
+        root.mkdir()
+        rows: list[JsonObject] = []
+        pairs: list[JsonObject] = []
+        for repetition in (1, 2):
+            for scenario in probe.SCENARIOS[config]:
+                for arm in ("A", "B"):
+                    rows.append({"arm": arm, "scenario": scenario, "repetition": repetition, "passed": True})
+                pairs.append({"comparable": True})
+        report: JsonObject = {"config": config, "version": surface.VERSION, "repeats": 2,
+            "runs": list(rows), "pairs": list(pairs), "model": TARGET.model, "seed": TARGET.seed,
+            "base_url": TARGET.base_url, "request_timeout": TARGET.timeout,
+            "source_before": probe.edit.production_source_digest(), "source_after": probe.edit.production_source_digest(),
+            "harnesses": probe.harness_digests(), "harnesses_stable": True}
+        if config == "B4":
+            if defect == "model":
+                report["model"] = "other"
+            elif defect == "source":
+                report["source_after"] = "changed"
+            elif defect == "harness":
+                report["harnesses"] = {}
+            elif defect == "failed":
+                rows[-1]["passed"] = False
+            elif defect == "duplicate_arm":
+                rows[0]["arm"] = "B"
+        probe.edit.write_json(root / "summary.json", report)
+        paths.append(root)
+    if defect == "none":
+        assert len(probe.check_evidence(paths, TARGET)) == 4
+    else:
+        with pytest.raises(ValueError):
+            probe.check_evidence(paths, TARGET)
+
+
+def test_neutral_task_is_identical_for_both_arms() -> None:
+    task = "browser_read 返回字符串，直接 return unwrap(await tools.browser_read({}))，不要再取 .text。读取实际记录。"
+    assert probe.task_text(task, "basic") == "读取实际记录。"
+
+
+def test_matrix_preserves_negative_baseline_and_alternates_pairs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    order: list[str] = []
+
+    def worker(directory: Path, scenario: str, arm: str, config: str, target: Target,
+               *, budget: float, max_turns: int) -> JsonObject:
+        order.append(arm)
+        directory.mkdir(parents=True)
+        (directory / "task.txt").write_text("same task " + scenario, encoding="utf-8")
+        row: JsonObject = {"scenario": scenario, "config": config, "arm": arm,
+            "passed": arm == "B" or scenario == "structured", "source_before": "source", "source_after": "source",
+            "model_calls": 2, "usage_complete": True, "prompt_tokens": 10, "completion_tokens": 5}
+        probe.edit.write_json(directory / "summary.json", row)
+        return row
+
+    monkeypatch.setattr(probe, "run_worker", worker)
+    monkeypatch.setattr(probe.edit, "production_source_digest", lambda: "source")
+    monkeypatch.setattr(probe, "harness_digests", lambda: {"tools/protocol_surface_ab.py": "hash"})
+    args = argparse.Namespace(config="B2", run_dir=tmp_path / "matrix", scenario=None, repeats=2,
+                              evidence=[], budget=300, max_turns=10)
+    assert probe.matrix(args, TARGET) == 1  # A's genuine scoring failures remain failures.
+    report = json.loads((args.run_dir / "summary.json").read_text(encoding="utf-8"))
+    assert order == ["A", "B", "B", "A", "B", "A", "A", "B"]
+    assert report["arms"]["B"]["passed"] == 4 and report["arms"]["A"]["passed"] == 2
+    assert report["paired_outcomes"]["B_only"] == 2
+    assert report["combination_eligible"] is True
+    assert report["arms"]["B"]["prompt_tokens"] == 40
+    with pytest.raises(FileExistsError):
+        probe.matrix(args, TARGET)
+
+
+def test_source_digest_unchanged_and_no_production_patch_leaks(tmp_path: Path) -> None:
+    before = probe.edit.production_source_digest()
+    with surface.prototype(tmp_path, "basic", "combined"):
+        assert probe.edit.production_source_digest() == before
+    assert probe.edit.production_source_digest() == before
