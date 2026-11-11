@@ -65,6 +65,44 @@ def test_kernel_argument_normalization_preserves_repair_token() -> None:
     assert normalized["repair_of"] == "cmr_abc123"
 
 
+@pytest.mark.parametrize("failed_child", [False, True])
+def test_browser_file_replay_bounds_original_data_and_requires_settled_success(failed_child: bool) -> None:
+    from codey.codemode.catalog import build_catalog_snapshot
+    from codey.codemode.replay import browser_file_replay_value, repair_catalog_digest, repair_metadata
+    from codey.codemode.types import ToolCatalogEntry
+    from codey.runtime.core.models import ToolCall, ToolResult
+    from codey.toolchain.result_schema import browser_output_schema
+
+    tools = ["browser_download", "browser_read", "browser_read"]
+    catalog = build_catalog_snapshot([
+        ToolCatalogEntry(name, name, output_schema=browser_output_schema(name)) for name in dict.fromkeys(tools)
+    ])
+    download = {"action": "download", "delivery": "delivered", "text": "file", "ref": "ref",
+                "path": "file.txt", "suggested_filename": "file.txt", "handle": "out_file", "bytes": 4,
+                "sha256": "a" * 64}
+    children = {
+        "download": ToolResult(ToolCall("browser_download", {}, "one"), "file", ok=not failed_child,
+                               canonical={"value": download}),
+        "large": ToolResult(ToolCall("browser_read", {}, "two"), "大" * 5000, ok=True),
+        "partial": ToolResult(ToolCall("browser_read", {}, "three"), "partial", ok=True, truncated=True),
+    }
+    metadata = repair_metadata("session", "run:parent", "result_encoding", list(children),
+                               repair_catalog_digest(catalog, tools))
+    parent = ToolResult(ToolCall("codemode", {}, "parent"), "failed", ok=False,
+                        canonical={"repair": metadata, "child_effect_ids": list(children)})
+    result = browser_file_replay_value(SimpleNamespace(_memory_results=children), parent, str(metadata["token"]),
+                                      session_id="session", run_id="run", catalog=catalog)
+    if failed_child:
+        assert result is None
+        return
+    assert result is not None
+    file, large, partial = result["replayed"]
+    assert file["data"] == download and not file["truncated"]
+    assert large["data"] is None and large["truncated"] and large["data_omitted"]
+    assert partial["data"] == {"text": children["partial"].model_text}
+    assert partial["truncated"] and not partial["data_omitted"]
+
+
 def test_return_only_repair_reuses_the_original_child_receipt(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy

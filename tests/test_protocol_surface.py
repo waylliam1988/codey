@@ -366,7 +366,7 @@ def test_receipt_delivery_uses_original_file_and_page_data(
     else:
         assert facts["bytes"] == len(data) and facts["path"] == value["path"]
     if scenario == "return_failure":
-        assert row["model_calls"] == 1 and metrics["mechanical_repairs"] == 1 and metrics["repaired_parent"]
+        assert row["model_calls"] == 1 and metrics["automatic_receipt_recoveries"] == 1 and metrics["repaired_parent"]
         requests = [event["payload"] for event in map(json.loads, (directory / "provider.jsonl").read_text(
             encoding="utf-8").splitlines()) if event.get("phase") == "request"]
         results = [json.loads(content.split("Result data (JSON):\n", 1)[1].split("\n\nResult metadata:", 1)[0])
@@ -483,16 +483,61 @@ def test_b4_real_return_failure_repairs_without_second_download(tmp_path: Path, 
         "fixture-download.txt SHA256 " + hashlib.sha256(DOWNLOAD_BYTES).hexdigest()}}
     install_http(monkeypatch, [done, done, done])
     row = probe.run_arm(tmp_path / "run", "return_failure", arm, config, TARGET, max_turns=4)
-    assert row["passed"] is (arm == "B"), row
+    assert row["passed"], row
     metrics = decode_json_object(row["metrics"])
     assert metrics["browser_download"] == 1
-    assert metrics["mechanical_repairs"] == (1 if arm == "B" else 0)
-    if arm == "B":
-        assert row["model_calls"] == 1
+    assert metrics["mechanical_repairs"] == 0 and metrics["automatic_receipt_recoveries"] == 1
+    assert row["model_calls"] == 1
     assert row["acquisition"] == "scripted-fault-then-model"
     requests = [json.loads(line) for line in (tmp_path / "run/provider.jsonl").read_text(encoding="utf-8").splitlines()
                 if json.loads(line).get("phase") == "request"]
     assert requests and all(event["payload"]["stream"] is True for event in requests)
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize(("suffix", "failure"), [
+    ("", "missing_return"), ("return {broken:undefined};", "result_encoding"),
+    ("return download.path;", "result_contract"),
+])
+def test_production_download_delivers_only_authorized_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str, failure: str,
+) -> None:
+    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
+            "const s=unwrap(await tools.browser_snapshot({}));"
+            "const download=await tools.browser_download({ref:s.elements.find(e=>e.name==='Download fixture').ref});"
+            "unwrap(await tools.browser_read({}));" + suffix)
+    digest = hashlib.sha256(DOWNLOAD_BYTES).hexdigest()
+    install_http(monkeypatch, [
+        {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}},
+        {"tool": "done", "args": {"summary": "fixture-download.txt SHA256 " + digest}},
+    ])
+    directory = tmp_path / "run"
+    row = probe.run_arm(directory, "download", "A", "B4", TARGET, max_turns=3)
+    assert row["passed"] and row["model_calls"] == 2, row
+    receipts = tool_receipts(directory / "state")
+    download, = [r for r in receipts if r.result.call.name == "browser_download"]
+    read, = [r for r in receipts if r.result.call.name == "browser_read"]
+    parent, = [r.result for r in receipts if r.result.call.name == "codemode"]
+    assert download.result.ok and download.result.canonical["value"]["sha256"] == digest
+    if failure == "result_contract":
+        assert not parent.ok and parent.audit["error_code"] == failure
+        assert "repair" not in parent.canonical and "recovered_return" not in parent.canonical
+        return
+    assert parent.ok and parent.audit["original_error_code"] == failure
+    assert parent.canonical["recovered_return"] is True and "repair" not in parent.canonical
+    assert decode_json_object(row["metrics"])["mechanical_repairs"] == 0
+    replayed = parent.canonical["value"]["replayed"]
+    assert [item["receipt_ref"] for item in replayed] == parent.canonical["child_effect_ids"]
+    assert replayed[-2]["receipt_ref"] == download.identity
+    assert replayed[-2]["data"] == download.result.canonical["value"]
+    assert replayed[-1]["receipt_ref"] == read.identity
+    assert replayed[-1]["data"] == {"text": read.result.model_text}
+    requests = [event["payload"] for event in map(json.loads, (directory / "provider.jsonl").read_text(
+        encoding="utf-8").splitlines()) if event.get("phase") == "request"]
+    results = [json.loads(content.split("Result data (JSON):\n", 1)[1].split("\n\nResult metadata:", 1)[0])
+               for message in requests[1]["messages"] if (content := message.get("content", "")).startswith(
+                   "[result: codemode]\nResult data (JSON):")]
+    assert any(item["value"]["replayed"] == replayed for item in results)
 
 
 def page_reset_action(*, navigate: bool = True, reread: bool = False) -> JsonObject:

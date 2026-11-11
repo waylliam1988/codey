@@ -15,6 +15,18 @@ class CodeModeHostProtocol(Protocol):
         """Invoke one frozen, host-mediated child tool."""
 
 
+def successful_tool_value(raw: ToolResult, entry: ToolCatalogEntry) -> object:
+    schema = entry.output_schema
+    if schema.get("type") == "string":
+        value: object = raw.model_text
+    else:
+        if "value" not in raw.canonical:
+            raise ValueError(f"missing structured result for {entry.name}")
+        value = raw.canonical["value"]
+    validate_output(entry.name, schema, value)
+    return value
+
+
 class CodeModeHost:
     """Translate sandbox RPC calls into the existing kernel tool callback."""
 
@@ -65,14 +77,7 @@ class CodeModeHost:
             raise TypeError("host executor must return a ToolResult")
         if not raw.ok:
             return {"ok": False, "error": raw.model_text}
-        schema = self._catalog[tool_name].output_schema
-        if schema.get("type") == "string":
-            value: object = raw.model_text
-        else:
-            if "value" not in raw.canonical:
-                raise ValueError(f"missing structured result for {tool_name}")
-            value = raw.canonical["value"]
-        validate_output(tool_name, schema, value)
+        value = successful_tool_value(raw, self._catalog[tool_name])
         output: dict[str, object] = {"ok": True, "value": value}
         if raw.audit.get("result_ref"):
             output["result_ref"] = raw.audit["result_ref"]

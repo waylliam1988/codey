@@ -252,7 +252,10 @@ def artifact_metrics(directory: Path) -> JsonObject:
                     continue
             cursor += 1
     counts["page_reset_completed"] = cursor == len(expected)
-    counts["repaired_parent"] = any(row.result.ok and row.result.canonical.get("repaired_from") for row in receipts)
+    counts["automatic_receipt_recoveries"] = sum(
+        row.result.ok and row.result.canonical.get("recovered_return") is True for row in receipts)
+    counts["repaired_parent"] = any(row.result.ok and (row.result.canonical.get("repaired_from")
+        or row.result.canonical.get("recovered_return") is True) for row in receipts)
     return counts
 
 

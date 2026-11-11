@@ -356,13 +356,25 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                 detail += "\nInvoked tool return types (Result<T> success data is result.value):\n" + "\n".join(
                     f"tools.{name}: Result<{schema_typescript(specs[name].output_schema)}>" for name in names)
                 detail += "\nCommitted child receipts (effects already executed): " + ", ".join(ordered_child_effect_ids)
-                from codey.codemode.replay import repair_catalog_digest, repair_metadata
+                from codey.codemode.replay import browser_file_replay_value, repair_catalog_digest, repair_metadata
                 child_names = [session.executed[ref]["name"] for ref in ordered_child_effect_ids]
                 metadata = repair_metadata(
                     effective_session_id, parent_id, str(result.audit["error_code"]), ordered_child_effect_ids,
                     repair_catalog_digest(catalog, child_names),
                 )
                 result = replace(result, canonical={**result.canonical, "repair": metadata})
+                if durable is not None and repair_context is None:
+                    value = browser_file_replay_value(session, result, str(metadata["token"]),
+                        session_id=effective_session_id, run_id=str(run_id or ""), catalog=catalog)
+                    if value is not None:
+                        audit = dict(result.audit)
+                        audit["original_error_code"] = audit.pop("error_code")
+                        audit["recovery_disposition"] = "receipt_replay"
+                        return replace(result, ok=True, audit=audit,
+                            model_text=json.dumps({"ok": True, "value": value}, ensure_ascii=False,
+                                                  sort_keys=True, separators=(",", ":")),
+                            canonical={"value": value, "child_effect_ids": ordered_child_effect_ids,
+                                       "recovered_return": True})
                 detail += ". Correct only the return expression. Use repair_of=" + str(metadata["token"])
                 detail += " to replay these settled child receipts; do not repeat the child calls."
             result = replace(result, model_text=tool_repair_text(detail, specs["codemode"]))
