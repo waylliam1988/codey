@@ -24,6 +24,7 @@ from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.constants import STALE_READ_REFERENCE_ERROR
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, decode_json_value
+from tools import browser_entry_surface as entry
 from tools import browser_production_live_gate as gate
 from tools import protocol_surface as surface
 from tools import receipt_bound_edit_ab as edit
@@ -59,6 +60,8 @@ PAGE_RESET_NAVIGATION_CODE = (
 )
 
 SCENARIOS = {
+    **entry.SCENARIOS,
+    entry.COMBINED: tuple(dict.fromkeys(scenario for scenarios in entry.SCENARIOS.values() for scenario in scenarios)),
     "B1": ("basic", "snapshot_restore", "stale_ref"),
     "B2": ("upload_bound", "structured"),
     "B3": ("legacy_structured", "upload", "hybrid", "stale_edit"),
@@ -429,7 +432,8 @@ def artifact_metrics(directory: Path) -> JsonObject:
     return counts
 
 
-def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Target, *, max_turns: int) -> JsonObject:
+def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Target, *, max_turns: int,
+            entry_features: frozenset[str] = frozenset()) -> JsonObject:
     if config not in SCENARIOS or arm not in {"A", "B"} or scenario not in SCENARIOS["combined"]:
         raise ValueError("unknown experiment configuration, scenario or arm")
     before = edit.production_source_digest()
@@ -452,7 +456,12 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
         active = surface.EDIT_BOUNDARY
         scheduler = (stale_reread_scheduler("result.json") if scenario == "stale_edit"
                      else file_handoff_scheduler("result.json"))
+    if config in entry.FEATURES:
+        entry_features = frozenset({config})
+    if entry_features:
+        active = "A"
     with (surface.prototype(directory, scenario, active, runtime_action=scheduler),
+          entry.prototype(directory, entry_features) if entry_features and arm == "B" else nullcontext(),
           page_reset_completion(directory) if gate_enabled else nullcontext(),
           edit_completion_projection(directory) if config == EDIT_CONTINUATION and arm == "B" else nullcontext(),
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),
@@ -461,6 +470,11 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
             task_transform=lambda task: task_text(task, scenario), **options))
     after = edit.production_source_digest()
     metrics = artifact_metrics(directory)
+    if entry_features:
+        receipts = tool_receipts(directory / "state")
+        metrics["successful_browser_reads"] = sum(r.result.ok and r.result.call.name == "browser_read" for r in receipts)
+        metrics["result_reads"] = sum(r.result.call.name == "read_tool_result" for r in receipts)
+        metrics["browser_entry_features"] = decode_json_value(sorted(entry_features))
     if config in {FILE_HANDOFF, EDIT_CONTINUATION}:
         receipts = tool_receipts(directory / "state")
         metrics["successful_file_reads"] = sum(r.result.ok and r.result.call.name == "read_file" for r in receipts)
@@ -508,16 +522,19 @@ def harness_digests() -> JsonObject:
              "tools/structured_surface.py", "tools/mechanical_surface.py", "tools/receipt_bound_edit_surface_probe.py",
              "tools/receipt_bound_edit_ab.py", "tools/receipt_bound_edit_recovery_probe.py",
              "tools/browser_production_live_gate.py", "tools/completion_explanation_ab.py",
-             "tools/completion_artifact_audit.py", "tests/test_protocol_surface.py")
+             "tools/completion_artifact_audit.py", "tests/test_protocol_surface.py",
+             "tools/browser_entry_surface.py", "tools/browser_entry_surface.js", "tests/test_browser_entry_candidates.py")
     return {name: hashlib.sha256((edit.ROOT / name).read_bytes()).hexdigest() for name in names}
 
 
 def run_worker(directory: Path, scenario: str, arm: str, config: str, target: Target,
-               *, budget: float, max_turns: int) -> JsonObject:
+               *, budget: float, max_turns: int, entry_features: frozenset[str] = frozenset()) -> JsonObject:
     command = [sys.executable, "-m", "tools.protocol_surface_ab", "--run-dir", str(directory), "--config", config,
         "--worker-case", scenario, "--worker-arm", arm, "--expected-model", target.model,
         "--kobold-base-url", target.base_url, "--timeout", str(target.timeout), "--seed", str(target.seed),
         "--max-turns", str(max_turns)]
+    for feature in sorted(entry_features):
+        command.extend(("--entry-feature", feature))
     process, owner = cancellation.start_process(command, cwd=edit.ROOT)
     error, output = "", ""
     try:
@@ -601,6 +618,9 @@ def matrix(args: argparse.Namespace, target: Target) -> int:
         "worker_budget": args.budget, "max_turns": args.max_turns, "combination_evidence": list(evidence),
         "scope": "Controlled Chromium; text JSON schema provider; shared neutral task. Optional review unavailable.",
         "diagnostics": [str(name) for name in sorted(DIAGNOSTIC_SCENARIOS)], "automatic_failure_reruns": False}
+    entry_features = frozenset(args.entry_feature or ()) if args.config == entry.COMBINED else frozenset()
+    if entry_features:
+        manifest["entry_features"] = sorted(entry_features)
     edit.write_json(root / "manifest.json", manifest)
     frozen = root / "frozen-harness"
     for name in hashes:
@@ -616,12 +636,20 @@ def matrix(args: argparse.Namespace, target: Target) -> int:
             pair_rows = []
             for arm in (("A", "B") if (repeat + index) % 2 == 0 else ("B", "A")):
                 print(json.dumps({"starting": scenario, "config": args.config, "arm": arm, "repetition": repeat + 1}), flush=True)
-                row = run_worker(pair / arm, scenario, arm, args.config, target, budget=args.budget, max_turns=args.max_turns)
+                if entry_features:
+                    row = run_worker(pair / arm, scenario, arm, args.config, target, budget=args.budget,
+                                     max_turns=args.max_turns, entry_features=entry_features)
+                else:
+                    row = run_worker(pair / arm, scenario, arm, args.config, target, budget=args.budget, max_turns=args.max_turns)
                 row["repetition"] = repeat + 1
                 rows.append(row)
                 pair_rows.append(row)
                 edit.write_json(root / "progress.json", {"runs": list(rows), "pairs": list(pairs)})
-                if row.get("stop_reason") == "provider_failure" or row.get("error"):
+                pre_send_overflow = (args.config in {*entry.FEATURES, entry.COMBINED}
+                    and row.get("stop_reason") == "provider_failure"
+                    and "ContextOverflowError" in str(row.get("answer"))
+                    and "before send" in str(row.get("answer")))
+                if (row.get("stop_reason") == "provider_failure" and not pre_send_overflow) or row.get("error"):
                     edit.write_json(root / "interruption.json", {"status": "interrupted",
                         "reason": "Worker/provider failed; do not queue another generation after an uncertain outcome",
                         "scenario": scenario, "arm": arm, "repetition": repeat + 1,
@@ -674,6 +702,7 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=123456789)
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--evidence", type=Path, action="append", default=[])
+    parser.add_argument("--entry-feature", action="append", choices=sorted(entry.FEATURES))
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--plan", action="store_true")
     mode.add_argument("--diagnostics", action="store_true")
@@ -695,11 +724,18 @@ def main() -> int:
         parser.error("file-handoff only runs hybrid and stale_edit")
     if args.config == EDIT_CONTINUATION and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
         parser.error("edit-continuation only runs hybrid and stale_edit")
+    if args.config == entry.COMBINED and len(set(args.entry_feature or ())) < 2:
+        parser.error("browser-entry-combined requires at least two --entry-feature values")
+    if args.entry_feature and args.config != entry.COMBINED:
+        parser.error("--entry-feature is only for browser-entry-combined")
+    if args.config in entry.FEATURES and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
+        parser.error("scenario outside this browser entry experiment")
     if args.plan:
         features = {PAGE_RESET_GATE: PAGE_RESET_CHECK,
                     PAGE_RESET_NAVIGATION: f"{PAGE_RESET_CHECK}; B schedules the second navigation",
                     FILE_HANDOFF: "Both arms use the static edit boundary. B schedules the first file read.",
-                    EDIT_CONTINUATION: "Production A. B uses bounded file reads and typed completion references."}
+                    EDIT_CONTINUATION: "Production A. B uses bounded file reads and typed completion references.",
+                    **{name: name for name in (*entry.FEATURES, entry.COMBINED)}}
         print(json.dumps({"config": args.config, "scenarios": args.scenario or SCENARIOS[args.config],
             "units": 2 * args.repeats * len(args.scenario or SCENARIOS[args.config]),
             "diagnostic_scenarios": sorted(DIAGNOSTIC_SCENARIOS),
@@ -718,7 +754,8 @@ def main() -> int:
         if not args.worker_arm or args.expected_model != target.model:
             parser.error("worker requires a pinned arm and unchanged model")
         try:
-            run_arm(args.run_dir.resolve(), args.worker_case, args.worker_arm, args.config, target, max_turns=args.max_turns)
+            run_arm(args.run_dir.resolve(), args.worker_case, args.worker_arm, args.config, target,
+                    max_turns=args.max_turns, entry_features=frozenset(args.entry_feature or ()))
             return 0
         except Exception:
             traceback.print_exc()
