@@ -85,7 +85,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              max_turns: int = 12, source_attempt_only: bool = False, preserve_external_field: bool = False,
              assembled_upload: bool = False, fixed_source_attempt: bool = False,
              task_transform: Callable[[str], str] | None = None,
-             acquisition_action: JsonObject | None = None, source_status: int = 403) -> dict[str, object]:
+             acquisition_action: JsonObject | None = None, source_status: int = 403,
+             explicit_wait: bool = True, fixture_html: str = HTML) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     recording = ExperimentProvider(target, directory,
@@ -147,7 +148,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                           body=f"<article>Required source record: {SOURCE_SUCCESS_MARKER}</article>" if matches else "Fixture URL unavailable")
             return
         route.fulfill(status=403 if source_failure else 200 if route.request.url == URL else 404, content_type="text/html",
-                      body="HTTP 403: fixture access denied" if source_failure else HTML if route.request.url == URL else "Fixture URL unavailable")
+                      body="HTTP 403: fixture access denied" if source_failure else fixture_html if route.request.url == URL else "Fixture URL unavailable")
 
     def source_factory() -> BrowserSearchProvider:
         return provider
@@ -178,6 +179,11 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         task += ("另外用 browser_eval 读取 window.__contractToken，取得返回对象的 value；"
                  "用 browser_tab_list 获取当前绑定标签页的 URL。最终报告脚本 token 和当前标签页 URL；脚本 token 是动作结果，不要作为来源引用。")
     required = {"browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read"}
+    if not explicit_wait:
+        required.remove("browser_wait")
+        task = task.replace("、browser_wait", "").replace(
+            "点击 Load record，等待出现鱼丸，最后 browser_read 当前页。",
+            "点击 Load record，再用 browser_read 读取本次加载后的完整记录。")
     if structured or explanation_output:
         required.update({"browser_eval", "browser_tab_list"})
     bindings: tuple[str, ...] = BINDINGS if explanation_output else ()
