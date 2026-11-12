@@ -16,6 +16,7 @@ from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.codemode import catalog
 from codey.codemode.host import CodeModeHost
 from codey.codemode.kernel import build_execute_turn_executor
+from codey.codemode.replay import DurableCodeModeReplay
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.codemode.types import ToolCatalogEntry
 from codey.operations import completion_gate, kernel_control
@@ -952,6 +953,62 @@ def page_reset_action(*, navigate: bool = True, reread: bool = False) -> JsonObj
         code += "unwrap(await tools.browser_read({}));"
     code += "return unwrap(await tools.browser_read({}));"
     return {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize(("scenario", "invalid_args", "error"), [
+    ("basic", "condition:'text',value:'鱼丸'", "browser_wait missing required arg 'timeout_ms'"),
+    ("snapshot_restore", "condition:'invalid',value:'鱼丸',timeout_ms:5000", "browser_wait arg 'condition'"),
+    ("stale_ref", "condition:'text',value:'鱼丸',timeout_ms:30001", "browser_wait arg 'timeout_ms'"),
+])
+def test_production_wait_validates_before_durable_child_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str, invalid_args: str, error: str,
+) -> None:
+    registered_waits: list[JsonObject] = []
+    register_child = DurableCodeModeReplay.child
+
+    def record_child(replay: DurableCodeModeReplay, call: ToolCall, effect_id: str) -> None:
+        if call.name == "browser_wait":
+            registered_waits.append(call.args)
+        register_child(replay, call, effect_id)
+
+    monkeypatch.setattr(DurableCodeModeReplay, "child", record_child)
+    first = page_reset_action()
+    args = decode_json_object(first["args"])
+    code = require_json_string(args["code"], "code").split("unwrap(await tools.browser_wait", 1)[0]
+    if scenario == "stale_ref":
+        code = code.replace("unwrap(await tools.browser_fill",
+            "const old=s.elements.find(e=>e.name==='Load record').ref;unwrap(await tools.browser_fill", 1)
+        code = code.replace("s=unwrap(await tools.browser_snapshot({}));unwrap(await tools.browser_click",
+            "const stale=await tools.browser_click({ref:old});if(stale.ok)throw Error('Expected stale ref');"
+            "s=unwrap(await tools.browser_snapshot({}));unwrap(await tools.browser_click", 1)
+    args["code"] = code + f"return await tools.browser_wait({{{invalid_args}}});"
+    install_http(monkeypatch, [
+        {"tool": "codemode", "args": args},
+        {"tool": "codemode", "args": {"code":
+            "const timed=await tools.browser_wait({condition:'text',value:'NONEXISTENT_MARKER',timeout_ms:100});"
+            "if(timed.ok)throw Error('Expected timeout');"
+            "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:5000}));"
+            "return unwrap(await tools.browser_read({}));"}},
+        {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}},
+    ])
+    directory = tmp_path / "run"
+    row = probe.run_arm(directory, scenario, "A", "B1", TARGET, max_turns=4)
+    assert row["passed"], row
+    receipts = [r.result for r in tool_receipts(directory / "state")]
+    fault, recovered = [r for r in receipts if r.call.name == "codemode"]
+    assert not fault.ok and fault.model_text.startswith(error) and recovered.ok
+    timed, waited = [r for r in receipts if r.call.name == "browser_wait"]
+    assert registered_waits == [timed.call.args, waited.call.args]
+    assert not timed.ok and "wait timed out" in timed.model_text and waited.ok
+    requests = [event["payload"] for event in map(json.loads, (directory / "provider.jsonl").read_text(
+        encoding="utf-8").splitlines()) if event.get("phase") == "request"]
+    assert any(message.get("content", "").startswith(f"[result: codemode]\n{error}")
+               for message in requests[1]["messages"])
+    if scenario == "stale_ref":
+        stale, fresh = [r for r in receipts if r.call.name == "browser_click"]
+        assert decode_json_object(stale.canonical["value"])["reason"] == "stale_ref"
+        assert fresh.ok and fresh.call.args["ref"] != stale.call.args["ref"]
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")

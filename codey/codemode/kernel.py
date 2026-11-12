@@ -16,6 +16,7 @@ from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.tool_spec import validate_args_with_spec
 from codey.types.json_value import JsonObject
 
 if TYPE_CHECKING:
@@ -241,6 +242,11 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             from codey.operations.kernel_events import _event_call
             from codey.runtime.observe.events import RunEvent
             from codey.toolchain.runtime import ToolOutcome
+            # An invalid wait cannot settle a child receipt for durable replay.
+            if child.name == "browser_wait":
+                error = validate_args_with_spec(specs[child.name], child.args)
+                if error:
+                    raise ValueError(error)
             if on_event is not None:
                 event = RunEvent.tool_started(turn, _event_call(session, child), child.name)
                 event.metadata['parent_call_id'] = parent_id
