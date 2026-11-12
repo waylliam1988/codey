@@ -5,7 +5,7 @@ import argparse
 import hashlib
 import json
 import sys
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from subprocess import TimeoutExpired
@@ -49,14 +49,11 @@ DELAYED_HTML = gate.HTML.replace(
 ).replace("} else { document", "}, 1500); } else { document")
 
 
-def post_load_read(session: TaskSession, context: CompletionContext) -> RequirementEvaluation:
-    records, results = tool_facts(session, context)
-    committed = {child for row in records.values() if row["name"] == "codemode" and row["ok"]
-                 for child in row.get("child_effect_ids", ())}
+def loaded_record(rows: Iterable[tuple[str, ToolResult]], committed: set[str]) -> JsonObject | None:
     document = None
     control = click = ""
-    evidence: tuple[str, ...] = ()
-    for ref, result in committed_results(records, results, OBSERVED | {"edit"}, include_failed=frozenset({"edit"})):
+    evidence: JsonObject | None = None
+    for ref, result in rows:
         name = result.call.name
         if name == "edit":
             break
@@ -64,23 +61,35 @@ def post_load_read(session: TaskSession, context: CompletionContext) -> Requirem
         if name in PAGE_TRANSITIONS:
             document = identity if isinstance(identity, dict) and identity.get("url") == gate.URL else None
             control = click = ""
-            evidence = ()
+            evidence = None
         elif document is not None and identity == document:
             if name == "browser_snapshot":
                 control = _snapshot_ref(result, "Load record", gate.URL)
             elif name == "browser_click":
                 click = ref if control and result.call.args.get("ref") == control else ""
                 control = ""
-                evidence = ()
-            elif click and ref in committed:
+                evidence = None
+            elif name == "browser_read" and click and ref in committed:
                 try:
                     body = _browser_body(result, url=gate.URL)
                 except (TypeError, ValueError, KeyError):
                     body = None
                 matches = RECORD.findall(body or "")
-                evidence = (click, ref) if len(matches) == 1 else ()
+                evidence = ({"click_ref": click, "read_ref": ref, "document": document,
+                             "changes": {"amount": int(matches[0][0]), "code": matches[0][1]}}
+                            if len(matches) == 1 else None)
+    return evidence
+
+
+def post_load_read(session: TaskSession, context: CompletionContext) -> RequirementEvaluation:
+    records, results = tool_facts(session, context)
+    committed = {child for row in records.values() if row["name"] == "codemode" and row["ok"]
+                 for child in row.get("child_effect_ids", ())}
+    evidence = loaded_record(
+        committed_results(records, results, OBSERVED | {"edit"}, include_failed=frozenset({"edit"})), committed,
+    )
     if evidence:
-        return RequirementEvaluation(evidence_refs=evidence)
+        return RequirementEvaluation(evidence_refs=(str(evidence["click_ref"]), str(evidence["read_ref"])))
     return RequirementEvaluation("loaded_record_missing",
         "Read the complete record on the same document after clicking Load record, before editing result.json.")
 

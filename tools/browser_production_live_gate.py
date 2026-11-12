@@ -86,7 +86,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              assembled_upload: bool = False, fixed_source_attempt: bool = False,
              task_transform: Callable[[str], str] | None = None,
              acquisition_action: JsonObject | None = None, source_status: int = 403,
-             explicit_wait: bool = True, fixture_html: str = HTML) -> dict[str, object]:
+             explicit_wait: bool = True, fixture_html: str = HTML,
+             expected_amount: int = 173, expected_code: str = "QUARTZ_851") -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     recording = ExperimentProvider(target, directory,
@@ -283,7 +284,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                            for row in events)
         facts_match = ("fixture.txt" in answer and "UPLOAD_BYTES_82" in answer
                        and hashlib.sha256(b"UPLOAD_BYTES_82\n").hexdigest() in answer) if upload_file else (
-            "173" in answer and "QUARTZ_851" in answer)
+            str(expected_amount) in answer and expected_code in answer)
         downloads = list((directory / "state" / "managed_outputs").rglob("*_file_*.bin"))
         if download_file:
             facts_match = (bool(downloads) and all(path.read_bytes() == DOWNLOAD_BYTES for path in downloads)
@@ -303,7 +304,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                   and (not explanation_output or output_checks.get("schema_valid") is True and output_checks.get("exact_fields") is True)
                   and (not stale_ref or failed_refs >= 1)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
-                  and (mode != "hybrid" or artifact == {"amount": 173, "code": "QUARTZ_851", **(
+                  and (mode != "hybrid" or artifact == {"amount": expected_amount, "code": expected_code, **(
                       {"external_revision": EXTERNAL_FIELD} if preserve_external_field and stale_edit else {})}))
         if stale_edit and preserve_external_field:
             passed = passed and audit["true_stale_conflicts"] == 1 and audit["fresh_read_recovery"] is True
