@@ -1,0 +1,68 @@
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from codey.runtime.core.models import ToolCall, ToolResult
+from codey.types.json_value import JsonObject
+from tests.test_receipt_bound_edit_surface_probe import install_http
+from tools import required_source_prefetch_ab as probe
+from tools.browser_production_live_gate import SOURCE_SUCCESS_MARKER, URL
+from tools.completion_artifact_audit import EffectReceipt, tool_receipts
+from tools.completion_explanation_ab import Target
+
+
+def test_requires_one_explicit_authorized_unattempted_url_and_frozen_tools() -> None:
+    policy = TaskPolicy(frozenset({"control", "web.read", "browser.observe"}), sources_open_required=True)
+    session = TaskSession(policy, task_kind="chat", required_source_urls=frozenset({URL}))
+    snapshot = build_turn_snapshot(session)
+    assert probe.eligible_source(session, snapshot) == URL
+    assert probe.eligible_source(session, replace(snapshot, nested_tool_names=())) is None
+    assert probe.eligible_source(session, replace(snapshot, tool_names=())) is None
+    for denied in (replace(policy, grants=frozenset({"control"})), replace(policy, sources_open_required=False)):
+        assert probe.eligible_source(replace(session, policy=denied), snapshot) is None
+    for urls in (frozenset(), frozenset({URL, "https://example.com/another"}), frozenset({"http://127.0.0.1/"})):
+        assert probe.eligible_source(replace(session, required_source_urls=urls), snapshot) is None
+    assert probe.eligible_source(replace(session, opened_sources={URL}), snapshot) is None
+
+
+def test_scheduling_runs_once_and_does_not_repeat_an_existing_attempt() -> None:
+    schedule = probe.first_attempt(lambda: URL)
+    action = schedule([])
+    assert action is not None and action["tool"] == "codemode"
+    assert schedule([]) is None
+    receipt = EffectReceipt("previous", ToolResult(ToolCall("open_url", {"url": URL}), "failed", ok=False), None)
+    assert probe.first_attempt(lambda: URL)([receipt]) is None
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("arm", ["A", "B"])
+@pytest.mark.parametrize("status", [200, 403])
+def test_first_request_delivery_and_real_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, status: int,
+) -> None:
+    summary = f"实际记录：{SOURCE_SUCCESS_MARKER}" if status == 200 else "来源返回 HTTP 403，无法读取正文。"
+    done: JsonObject = {"tool": "done", "args": {"summary": summary}}
+    open_source: JsonObject = {"tool": "codemode", "args": {
+        "code": "return await tools.open_url({url:inputs.url});", "inputs": {"url": URL},
+    }}
+    replies = [done] if arm == "B" else [open_source, done] if status == 200 else [done] * 4
+    install_http(monkeypatch, replies)
+    directory = tmp_path / "run"
+    target = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
+    row = probe.run_arm(directory, arm, status, target, max_turns=4)
+    if status == 403 and arm == "A":
+        assert row["passed"] is False and row["source_attempts"] == 0
+        assert row["stop_reason"] == "no_progress"
+        return
+    assert row["passed"] is True, row
+    assert row["stop_reason"] == ("done" if status == 200 else "blocked")
+    assert row["source_attempts"] == 1 and row["source_results_delivered"] is True
+    assert row["first_request_has_source_result"] is (arm == "B")
+    assert row["runtime_actions"] == (1 if arm == "B" else 0)
+    assert row["model_calls"] == (1 if arm == "B" else 2)
+    source, = [r.result for r in tool_receipts(directory / "state") if r.result.call.name == "open_url"]
+    assert source.call.args["url"] == URL and source.ok is (status == 200)

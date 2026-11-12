@@ -47,6 +47,7 @@ from tools.completion_explanation_ab import (
 from tools.receipt_bound_edit_recovery_probe import EXTERNAL_FIELD, receipt_audit
 
 URL = "https://example.com/production-browser-record"
+SOURCE_SUCCESS_MARKER = "REQUIRED_SOURCE_RECORD_418"
 
 
 def legacy_urls_match(answer: str) -> bool:
@@ -84,7 +85,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              max_turns: int = 12, source_attempt_only: bool = False, preserve_external_field: bool = False,
              assembled_upload: bool = False, fixed_source_attempt: bool = False,
              task_transform: Callable[[str], str] | None = None,
-             acquisition_action: JsonObject | None = None) -> dict[str, object]:
+             acquisition_action: JsonObject | None = None, source_status: int = 403) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     recording = ExperimentProvider(target, directory,
@@ -140,6 +141,11 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
 
     def route_document(route: Route) -> None:
         navigations.append(route.request.url)
+        if source_failure and source_status == 200:
+            matches = route.request.url == URL
+            route.fulfill(status=200 if matches else 404, content_type="text/html",
+                          body=f"<article>Required source record: {SOURCE_SUCCESS_MARKER}</article>" if matches else "Fixture URL unavailable")
+            return
         route.fulfill(status=403 if source_failure else 200 if route.request.url == URL else 404, content_type="text/html",
                       body="HTTP 403: fixture access denied" if source_failure else HTML if route.request.url == URL else "Fixture URL unavailable")
 
@@ -258,8 +264,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             result = run_headless(request, emit_jsonl=observe, connect_provider=connect)
             artifact = decode_json_object(json.loads(result_file.read_text(encoding="utf-8")))
             (directory / "project-result.json").write_text(json.dumps(artifact), encoding="utf-8")
-        terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), {})
-        answer = str(terminal.get("summary") or "")
+        terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), None)
+        answer = str(terminal.get("summary") or "") if terminal is not None else ""
         successful = {str(row.get("tool_name")) for row in events if row.get("type") == "tool" and row.get("ok") is True}
         reads = sum(row.get("type") == "tool" and row.get("tool_name") == "browser_read" and row.get("ok") is True
                     for row in events)
@@ -272,7 +278,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         if download_file:
             facts_match = (bool(downloads) and all(path.read_bytes() == DOWNLOAD_BYTES for path in downloads)
                            and hashlib.sha256(DOWNLOAD_BYTES).hexdigest() in answer and "fixture-download.txt" in answer)
-        output_checks = final_checks(answer, expected_url=URL) if explanation_output else {}
+        output_checks: JsonObject = final_checks(answer, expected_url=URL) if explanation_output else {}
         receipts = tool_receipts(directory / "state")
         audit = receipt_audit([(row.identity, row.result) for row in receipts])
         (directory / "receipts.json").write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -298,7 +304,9 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                     b"UPLOAD_BYTES_82\n").hexdigest() and "UPLOAD_BYTES_82" in str(delivered["page_text"])
             except (ValueError, KeyError):
                 passed = False
-        if source_failure:
+        if source_failure and source_status == 200:
+            passed = result.stop_reason == "done" and "open_url" in successful and SOURCE_SUCCESS_MARKER in answer
+        elif source_failure:
             passed = result.stop_reason == "blocked" and bool(source_failures)
         summary: dict[str, object] = {"mode": mode, "passed": passed, "stop_reason": result.stop_reason,
             "successful_tools": sorted(successful), "answer": answer, "project_result": artifact, "navigations": navigations,
