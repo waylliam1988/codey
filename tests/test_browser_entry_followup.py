@@ -112,8 +112,7 @@ def test_properties_distinguish_missing_read_from_missing_final_facts(
 def test_real_ambiguous_controls_and_named_file_actions_with_original_receipts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str,
 ) -> None:
-    monkeypatch.setattr(gate, "HTML", gate.HTML.replace("</body>",
-        "<button>Duplicate</button><button>Duplicate</button></body>"))
+    fixture_html = gate.HTML.replace("</body>", "<button>Duplicate</button><button>Duplicate</button></body>")
     code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
             "const ambiguous=await browser.click({target_name:'Duplicate',role:'button'});"
             "const absent=await browser.click({target_name:'No such control',role:'button'});")
@@ -132,7 +131,7 @@ def test_real_ambiguous_controls_and_named_file_actions_with_original_receipts(
     install_http(monkeypatch, [action(code + "return {ambiguous,absent,file,body:await browser.read({})};", **inputs), done(summary)])
     directory = tmp_path / "run"
     row = probe.run_arm(directory, scenario, "B", entry.COMBINED, TARGET, max_turns=3,
-                        entry_features=frozenset({entry.TARGETS, entry.RESULTS}))
+                        entry_features=frozenset({entry.TARGETS, entry.RESULTS}), fixture_html=fixture_html)
     assert row["passed"], row
     receipts = tool_receipts(directory / "state")
     assert not any(r.result.call.name == "browser_click" for r in receipts)

@@ -12,6 +12,7 @@ import subprocess
 import sys
 import traceback
 from pathlib import Path
+from typing import TypedDict
 from unittest.mock import patch
 
 from codey.runtime.core import cancellation
@@ -26,6 +27,24 @@ VERSION = "read-object-full-surface-v1"
 SCENARIOS = ("basic", "structured", "legacy_structured", "hybrid", "research", "snapshot_restore",
              "reread", "stale_ref", "stale_edit", "upload", "download", "source_failure",
              "upload_bound", "source_failure_fixed")
+
+
+class ScenarioOptions(TypedDict):
+    strict_research: bool
+    research_sequence: bool
+    restore_snapshots: bool
+    reread: bool
+    explanation_output: bool
+    structured: bool
+    stale_ref: bool
+    stale_edit: bool
+    preserve_external_field: bool
+    upload_file: bool
+    assembled_upload: bool
+    download_file: bool
+    source_failure: bool
+    source_attempt_only: bool
+    fixed_source_attempt: bool
 
 
 def upload_receipt_report(directory: Path) -> JsonObject:
@@ -50,7 +69,7 @@ def upload_receipt_report(directory: Path) -> JsonObject:
             "scope": "Diagnostic extraction; file-input selection and page display, not server acceptance or delivered answer"}
 
 
-def scenario_options(scenario: str) -> tuple[str, dict[str, bool]]:
+def scenario_options(scenario: str) -> tuple[str, ScenarioOptions]:
     if scenario not in SCENARIOS:
         raise ValueError("unknown scenario: " + scenario)
     mode = "hybrid" if scenario in {"hybrid", "stale_edit"} else "research" if scenario == "research" else "chat"

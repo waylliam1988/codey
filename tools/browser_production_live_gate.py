@@ -56,6 +56,12 @@ def legacy_urls_match(answer: str) -> bool:
     return bool(urls) and all(value == URL for value in urls)
 
 
+def legacy_report_fields_match(answer: str) -> bool:
+    lines = answer.splitlines()
+    return (lines.count(f"当前标签页 URL：{URL}") == 1
+            and lines.count("脚本 token：SCHEMA_TOKEN_74") == 1)
+
+
 DOWNLOAD_BYTES = b"DOWNLOAD_BYTES_93\n"
 HTML = """<!doctype html><html><head><meta charset="utf-8"><title>Production browser fixture</title></head><body>
 <label>Locality<input id="city"></label>
@@ -89,6 +95,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              acquisition_action: JsonObject | None = None, source_status: int = 403,
              explicit_wait: bool = True, fixture_html: str = HTML,
              upload_navigation_required: bool = True, research_sequence: bool = False,
+             model_reports_metadata: bool = False,
              expected_amount: int = 173, expected_code: str = "QUARTZ_851") -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
@@ -302,10 +309,12 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                           and value.get("reason") == "stale_ref" for row in receipts)
         source_failures = [dict(row.result.canonical) for row in receipts
                            if not row.result.ok and "source_failure" in row.result.canonical]
+        metadata_matches = ("SCHEMA_TOKEN_74" in answer and legacy_urls_match(answer)
+                            if model_reports_metadata else legacy_report_fields_match(answer))
         passed = (result.stop_reason == "done" and required <= successful and facts_match
                   and (not reread or reads >= 2)
                   and (not stale_edit or changed_after_read and failed_edits >= 1)
-                  and (not structured or "SCHEMA_TOKEN_74" in answer and legacy_urls_match(answer))
+                  and (not structured or metadata_matches)
                   and (not explanation_output or output_checks.get("schema_valid") is True and output_checks.get("exact_fields") is True)
                   and (not stale_ref or failed_refs >= 1)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)

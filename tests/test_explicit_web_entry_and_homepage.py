@@ -20,7 +20,7 @@ URL = "https://example.com/"
 
 
 class Sources(WebSourceProvider):
-    def search(self, query: str, *, limit: int) -> list[JsonObject]:
+    def search(self, query: str, *, limit: int = 8) -> list[JsonObject]:
         return []
 
 class PageProvider:
@@ -59,6 +59,7 @@ def test_chat_web_permission_does_not_imply_mandatory_reading(task: str) -> None
 @pytest.mark.parametrize("task", [
     URL, f"解释这段代码：`open('{URL}')`", f"```python\nopen_url('{URL}')\n```", "查一下本地函数定义",
     "不要上网看看", f"不要打开 {URL}", f"Don't open {URL}",
+    f"[查看帮助]({URL})",
 ])
 def test_examples_and_negations_do_not_create_required_urls(task: str) -> None:
     auth = derive_entry_auth({"intent": "chat", "task": task})
@@ -78,6 +79,26 @@ def test_explicit_disabled_web_wins_over_request() -> None:
 def test_requested_query_url_survives_clause_splitting() -> None:
     url = "https://example.com/?q=hello&lang=zh"
     assert explicit_web_intent(f"打开 {url} 看看").urls == frozenset({url})
+
+
+@pytest.mark.parametrize("task", [
+    f"帮我看看这个页面\n{URL}",
+    f"帮我看看这个页面。\n{URL}",
+    f"{URL}\nPlease read this page",
+    f"请打开以下页面：\n- {URL}",
+    f"请打开这个页面\n\n[参考页面]({URL})",
+])
+def test_standalone_url_adjacent_to_open_request_is_required(task: str) -> None:
+    intent = explicit_web_intent(task)
+    assert intent.requested and intent.urls == frozenset({URL})
+
+
+def test_newline_does_not_reassign_a_negated_or_unrelated_url() -> None:
+    other = "https://example.com/other"
+    intent = explicit_web_intent(f"不要打开这个页面\n{other}\n请打开这个页面\n{URL}")
+    assert intent.urls == frozenset({URL})
+    assert not explicit_web_intent(f"请上网查官方文档。\n额外参考链接：{other}").urls
+    assert not explicit_web_intent(f"不要打开这个页面。\n{other}").urls
 
 
 def test_search_does_not_reauthorize_a_negated_url() -> None:

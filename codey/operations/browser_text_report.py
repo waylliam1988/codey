@@ -5,7 +5,6 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit
 
 from codey.operations.browser_completion import committed_results
 from codey.policies.output_requirement import is_output_check
@@ -25,10 +24,18 @@ _REPORT = re.compile(r"(?:报告|返回|列出|给出|输出|告诉我|\b(?:repo
 _NO_REPORT = re.compile(r"(?:不要|无需|不用|不必|禁止|勿|不|\bdo not|\bdon't|\bnever)\s*$", re.I)
 _TOKEN = re.compile(r"\btoken\b|令牌", re.I | re.ASCII)
 _URL = re.compile(r"\burl\b|网址|网页地址|标签页地址", re.I | re.ASCII)
-_LABEL = r"(?:当前\s*(?:绑定\s*)?标签页\s*(?:的\s*)?(?:URL|地址)|(?:current\s+)?(?:tab|page)\s+URL|URL|(?:脚本\s*|script\s+)?token|脚本令牌)"
-_DRAFT_FIELD = re.compile(rf"(?im)^\s*(?:[-*>]\s*)?{_LABEL}\s*[:：=][^\n]*$")
-_ESCAPED_FIELD_BREAK = re.compile(rf"(?:\\n)+(?=\s*{_LABEL}\s*[:：=])", re.I)
-_DRAFT_URL = re.compile(r"https?://[^\s`*<>\"\[\]()，。；、！？（）]+", re.I)
+_LABEL = (r"(?:(?:当前[ \t]*(?:绑定[ \t]*)?)?(?:标签页|网页|页面|页)[ \t]*(?:的[ \t]*)?(?:URL|地址|网址)"
+          r"|(?:current[ \t]+)?(?:tab|page)[ \t]+URL|URL|(?:脚本[ \t]*|script[ \t]+)?(?:token|令牌))")
+_FIELD_LABEL = rf"(?:[-*>][ \t]+)?(?:the[ \t]+)?(?:\*\*|__)?{_LABEL}(?:\*\*|__)?"
+_FIELD_PREDICATE = r"(?:[:：=]|是|为|等于|\b(?:is|was|equals)\b|(?=https?://))"
+_FIELD_END = r"(?:\\n|[。！？；，\n]|[.!?,;](?=[ \t]|$))"
+_FIELD_VALUE = (r'(?:`[^`\n]+`|\[[^\]\n]+\]\(https?://[^\s)]+\)|<https?://[^\s>]+>|"[^"\n]+"|“[^”\n]+”'
+                rf"|[^\s。！？；，]+?(?={_FIELD_END}|\s|$))")
+_DRAFT_FIELD = re.compile(
+    rf"(?im)(?:^|(?<=[。！？；，])|(?<=[.!?,;])(?=[ \t])|(?<=\\n)|(?:\\n)+)"
+    rf"[ \t]*{_FIELD_LABEL}[ \t]*{_FIELD_PREDICATE}[ \t]*{_FIELD_VALUE}(?:[ \t]*{_FIELD_END})?"
+)
+_FENCED_CODE = re.compile(r"(```[\s\S]*?```|~~~[\s\S]*?~~~)")
 
 
 @dataclass(frozen=True)
@@ -60,19 +67,8 @@ class BrowserMetadata:
     token: str
 
     def render(self, prose: str, *, chinese: bool) -> str:
-        prose = _DRAFT_FIELD.sub("", _ESCAPED_FIELD_BREAK.sub("\n", prose))
-        origin = urlsplit(self.page_url).netloc
-
-        def replace_url(match: re.Match[str]) -> str:
-            value = match[0]
-            address = value.rstrip(".,;:!?")
-            try:
-                same_origin = urlsplit(address).netloc.casefold() == origin.casefold()
-            except ValueError:
-                same_origin = False
-            return self.page_url + value[len(address):] if same_origin else value
-
-        prose = _DRAFT_URL.sub(replace_url, prose).strip()
+        prose = "".join(part if index % 2 else _DRAFT_FIELD.sub("", part)
+                        for index, part in enumerate(_FENCED_CODE.split(prose))).strip()
         fields = (f"当前标签页 URL：{self.page_url}\n脚本 token：{self.token}" if chinese else
                   f"Current tab URL: {self.page_url}\nScript token: {self.token}")
         return f"{prose}\n\n{fields}" if prose else fields

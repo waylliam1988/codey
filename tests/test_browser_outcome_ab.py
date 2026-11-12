@@ -18,7 +18,7 @@ EDIT = ("const read=await tools.read_file({path:'result.json'});"
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
-@pytest.mark.parametrize(("arm", "token", "passed"), [("A", True, False), ("B", True, True), ("B", False, False)])
+@pytest.mark.parametrize(("arm", "token", "passed"), [("A", True, True), ("B", True, True), ("B", False, False)])
 def test_text_delivery_uses_original_receipts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, token: bool, passed: bool,
 ) -> None:
@@ -32,7 +32,11 @@ def test_text_delivery_uses_original_receipts(
     directory = tmp_path / "run"
     row = probe.run_arm(directory, "legacy_structured", arm, TARGET, max_turns=2)
     assert row["passed"] is passed, row
-    if passed:
+    if passed and arm == "A":
+        assert "production_browser_record" not in str(row["answer"])
+        assert f"当前标签页 URL：{URL}" in str(row["answer"])
+        assert not (directory / "rendered-answer.txt").exists()
+    elif passed:
         assert row["rendered_answer"] == f"{FACTS}\n\n页面地址：{URL}\nToken：SCHEMA_TOKEN_74\n"
         assert row["raw_explanation_preserved"] is True
     else:

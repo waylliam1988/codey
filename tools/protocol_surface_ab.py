@@ -438,7 +438,7 @@ def artifact_metrics(directory: Path) -> JsonObject:
 
 
 def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Target, *, max_turns: int,
-            entry_features: frozenset[str] = frozenset()) -> JsonObject:
+            entry_features: frozenset[str] = frozenset(), fixture_html: str = gate.HTML) -> JsonObject:
     if config not in SCENARIOS or arm not in {"A", "B"} or scenario not in SCENARIOS["combined"]:
         raise ValueError("unknown experiment configuration, scenario or arm")
     before = edit.production_source_digest()
@@ -475,7 +475,8 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(gate.run_case(directory, mode, target, max_turns=max_turns,
-            task_transform=lambda task: task_text(task, scenario), acquisition_action=acquisition_action, **options))
+            task_transform=lambda task: task_text(task, scenario), acquisition_action=acquisition_action,
+            model_reports_metadata=scenario == "legacy_structured", fixture_html=fixture_html, **options))
     after = edit.production_source_digest()
     metrics = artifact_metrics(directory)
     if entry_features:

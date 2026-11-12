@@ -4,11 +4,15 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from itertools import groupby
 from urllib.parse import urlsplit, urlunsplit
 
 _CODE = re.compile(r"```[\s\S]*?```|`[^`\n]*`")
 _URL = re.compile(r"https?://[^\s<>`\"'、，。；！？（）\[\]]+", re.IGNORECASE)
-_CLAUSES = re.compile(r"[，。；;!?！？\n]|\.\s+")
+_CLAUSES = re.compile(r"[，。；;!?！？]|\.\s+|\.$")
+_URL_TOKEN = re.compile(r"\x00\d+\x00")
+_URL_LINE = re.compile(r"[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?"
+                       r"(?:<\x00\d+\x00>|\[[^\]\n]+\]\(\x00\d+\x00\)|\x00\d+\x00)[ \t。；.!?]*")
 _ACTION = re.compile(
     r"web_search|open_url|上网|联网查询|在线查找|查网页|查资料|官方文档|浏览网页|读取网页|"
     r"\b(?:browse|search the web|look online)\b", re.IGNORECASE)
@@ -32,31 +36,51 @@ def source_url_key(url: str) -> str:
     return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path or "/", parts.query, ""))
 
 
+def _open_clause(clause: str) -> bool:
+    return bool(_OPEN.search(clause) or re.search(r"\bopen_url\b", clause, re.I))
+
+
+def _request_clauses(text: str) -> list[str]:
+    lines = [line for line in text.splitlines() if line.strip()]
+    clauses = [[part.strip() for part in _CLAUSES.split(line) if part.strip()] for line in lines]
+    for links, group in groupby(range(len(lines)), key=lambda i: _URL_LINE.fullmatch(lines[i]) is not None):
+        if not links:
+            continue
+        rows = tuple(group)
+        before, after = rows[0] - 1, rows[-1] + 1
+        targets = [(before, -1), (after, 0)]
+        for line, index in targets:
+            if 0 <= line < len(lines) and clauses[line] and _open_clause(clauses[line][index]):
+                tokens = [token for row in rows for token in _URL_TOKEN.findall(lines[row])]
+                clauses[line][index] += " " + " ".join(tokens)
+                break
+        for row in rows:
+            clauses[row].clear()
+    return [clause for line in clauses for clause in line]
+
+
 def explicit_web_intent(task: str) -> WebIntent:
     text = _CODE.sub("", task)
     url_tokens: dict[str, str] = {}
 
     def protect_url(match: re.Match[str]) -> str:
         token = f"\x00{len(url_tokens)}\x00"
-        url_tokens[token] = source_url_key(match.group().rstrip(").,:;!?"))
-        return token
+        value = match[0]
+        address = value.rstrip(").,:;!?")
+        url_tokens[token] = source_url_key(address)
+        return token + value[len(address):]
 
     text = _URL.sub(protect_url, text)
-    urls = frozenset(url_tokens.values())
     requested = False
     direct: set[str] = set()
-    for clause in _CLAUSES.split(text):
-        clause_urls = frozenset(url for token, url in url_tokens.items() if token in clause)
-        masked = clause
-        actions = list(_ACTION.finditer(masked))
-        if clause_urls or (urls and any(word in clause for word in ("网站", "网址", "链接", "website", "URL"))):
-            actions.extend(_OPEN.finditer(masked))
-        if any(_NEGATED.search(masked[:match.start()]) is None for match in actions):
+    for clause in _request_clauses(text):
+        clause_urls = {url_tokens[token] for token in _URL_TOKEN.findall(clause) if token in url_tokens}
+        actions = list(_ACTION.finditer(clause))
+        if clause_urls:
+            actions.extend(_OPEN.finditer(clause))
+        if any(_NEGATED.search(clause[:match.start()]) is None for match in actions):
             requested = True
             direct.update(clause_urls)
-            if not clause_urls and any(_NEGATED.search(masked[:match.start()]) is None
-                                      for match in _OPEN.finditer(masked)):
-                direct.update(urls)
     return WebIntent(requested, frozenset(direct))
 
 
