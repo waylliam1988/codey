@@ -90,23 +90,31 @@ def unique(rows: list[JsonValue], key: str, value: JsonValue) -> JsonObject:
     return matches[0]
 
 
+class TableSelectionError(ValueError):
+    def __init__(self, message: str, candidates: JsonObject) -> None:
+        super().__init__(message)
+        self.candidates = candidates
+
+
 def table_value(table: JsonObject, selector: JsonObject) -> JsonValue:
     headers, rows = table["headers"], table["rows"]
     if not isinstance(headers, list) or not isinstance(rows, list):
         raise ValueError("Invalid table projection")
     key_column, column = selector["key_column"], selector["column"]
     if headers.count(key_column) != 1 or headers.count(column) != 1:
-        raise ValueError("Table column missing or ambiguous")
+        raise TableSelectionError("Table column missing or ambiguous", {"columns": headers})
     key_index, index = headers.index(key_column), headers.index(column)
     if any(not isinstance(row, list) or len(row) != len(headers) for row in rows):
         raise ValueError("Unsupported table row shape")
     matches = [row for row in rows if isinstance(row, list) and row[key_index] == selector["key"]]
     if len(matches) != 1:
-        raise ValueError(f"Expected exactly one table row, found {len(matches)}")
+        raise TableSelectionError(f"Expected exactly one table row, found {len(matches)}",
+                                  {"key_column": key_column, "keys": [row[key_index] for row in rows[:8]
+                                                                     if isinstance(row, list)]})
     return matches[0][index]
 
 
-def select_value(receipt: ToolResult, selector: JsonObject, url: str) -> JsonValue:
+def select_value(receipt: ToolResult, selector: JsonObject, url: str, *, table_projection: str = TABLE) -> JsonValue:
     code = receipt.call.args.get("code")
     if receipt.call.name == "browser_read":
         body = _browser_body(receipt, url=url)
@@ -115,13 +123,13 @@ def select_value(receipt: ToolResult, selector: JsonObject, url: str) -> JsonVal
         prefix = require_json_string(selector["prefix"], "prefix")
         suffix = require_json_string(selector["suffix"], "suffix")
         value: JsonValue = BrowserTextSelector(url, prefix, suffix).select(body)
-    elif receipt.call.name == "browser_eval" and code in (TABLE, STRUCTURED):
+    elif receipt.call.name == "browser_eval" and code in (table_projection, STRUCTURED):
         output = decode_json_object(receipt.canonical["value"])
         data = output["value"]
         if output["truncated"] is not False or not isinstance(data, list):
             raise ValueError("Expected the complete fixed browser projection")
         item = unique(data, "id", selector["id"])
-        if code == TABLE:
+        if code == table_projection:
             value = table_value(item, selector)
         else:
             pointer = require_json_string(selector["pointer"], "pointer")
@@ -142,10 +150,11 @@ def select_value(receipt: ToolResult, selector: JsonObject, url: str) -> JsonVal
 
 
 @contextmanager
-def field_binding(directory: Path) -> Iterator[None]:
+def field_binding(directory: Path, *, table_projection: str = TABLE, expire_url: str | None = None) -> Iterator[None]:
     invoke = CodeModeHost.invoke
     execute = ExecutionDelegate._execute_browser_operation
     browser: BrowserSession | None = None
+    expired = False
 
     def observe(delegate: ExecutionDelegate, active: BrowserSession, call: ToolCall, *,
                 turn: int, tool_index: int) -> tuple[ToolResult, bool, int | None]:
@@ -154,10 +163,17 @@ def field_binding(directory: Path) -> Iterator[None]:
         return execute(delegate, active, call, turn=turn, tool_index=tool_index)
 
     def bind(host: CodeModeHost, name: str, args: dict[str, object]) -> object:
+        nonlocal expired
         if name == "browser_eval" and isinstance(code := args.get("code"), str) and code in PROJECTIONS:
-            return invoke(host, name, {**args, "code": PROJECTIONS[code]})
+            return invoke(host, name, {**args, "code": table_projection if code == "receipt:table" else PROJECTIONS[code]})
         if name != "edit":
             return invoke(host, name, args)
+        if expire_url is not None and not expired and browser is not None:
+            reload = browser.navigate(expire_url)
+            if not reload.ok:
+                raise RuntimeError("Fixture could not reload the browser document")
+            expired = True
+            append_json(directory / "expiry.jsonl", {"url": expire_url, "document": browser.document_identity()})
         try:
             file_ref = args.get("base_result_ref")
             if (host._replay is not None or set(args) != {"base_result_ref", "changes"}
@@ -178,10 +194,19 @@ def field_binding(directory: Path) -> Iterator[None]:
                 selector = decode_json_object(raw)
                 ref = require_json_string(selector.get("ref"), "selector.ref")
                 receipt = receipts.get(ref) if ref in committed else None
-                if (receipt is None or not receipt.ok or receipt.truncated
-                        or receipt.audit.get("browser_document") != document):
+                if receipt is not None and receipt.audit.get("browser_document") != document:
+                    reason = "Expected a complete committed receipt from the current document; observe again"
+                    append_json(directory / "bindings.jsonl", {"status": "rejected", "reason": reason,
+                                "kind": "source_expired", "source_ref": ref})
+                    return {"ok": False, "error": reason}
+                if receipt is None or not receipt.ok or receipt.truncated:
                     raise ValueError("Expected a complete committed receipt from the current document")
-                changes[field] = select_value(receipt, selector, str(document["url"]))
+                changes[field] = select_value(receipt, selector, str(document["url"]), table_projection=table_projection)
+        except TableSelectionError as exc:
+            reason = f"Browser field binding rejected: {exc}. Observed candidates: {json.dumps(exc.candidates, ensure_ascii=False)}"
+            append_json(directory / "bindings.jsonl", {"status": "rejected", "reason": reason,
+                        "kind": "selector", "candidates": exc.candidates})
+            return {"ok": False, "error": reason}
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             reason = f"Browser field binding rejected: {exc}"
             append_json(directory / "bindings.jsonl", {"status": "rejected", "reason": reason})
@@ -203,13 +228,16 @@ def field_binding(directory: Path) -> Iterator[None]:
 
 def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
              task_override: str | None = None,
-             provider_factory: Callable[[Target, Path], ExperimentProvider] | None = None) -> JsonObject:
+             provider_factory: Callable[[Target, Path], ExperimentProvider] | None = None,
+             table_projection: str = TABLE, expire_source: bool = False,
+             initial_fields: JsonObject | None = None) -> JsonObject:
     directory.mkdir(parents=True)
     project = directory / "project"
     project.mkdir()
     state = directory / "state"
     file = project / case.path
-    initial: JsonObject = {**dict.fromkeys(case.expected), "metadata": {"keep": "00017"}}
+    initial: JsonObject = {**(dict.fromkeys(case.expected) if initial_fields is None else initial_fields),
+                           "metadata": {"keep": "00017"}}
     external: JsonObject = {**initial, "external_revision": EXTERNAL_FIELD}
     write_json(file, initial)
     backup = project / "backup.json"
@@ -266,7 +294,8 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
     recorder = (provider_factory(target, directory) if provider_factory is not None
                 else ExperimentProvider(target, directory, fixed_acquisition=False))
     try:
-        with (field_binding(directory), patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}),
+        with (field_binding(directory, table_projection=table_projection, expire_url=case.url if expire_source else None),
+              patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}),
               patch.object(BrowserSearchProvider, "_guard_request", route),
               patch("codey.app.provider_services.provider_availability", return_value={"local": True}),
               patch("codey.app.provider_services.provider_tab_availability", return_value={}),
@@ -293,9 +322,12 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
         for line in binding_log.read_text(encoding="utf-8").splitlines()] if binding_log.exists() else []
     applied = [r for r in bindings if isinstance(r, dict) and r.get("status") == "applied"]
     correctly_bound = len(applied) == 1 and applied[0]["changes"] == case.expected
-    passed = (result.stop_reason == "done" and stable and backup_preserved and unchanged_on_conflict
-              and correctly_bound and len(edit_snapshots) == 2 and disk == {**external, **case.expected}
-              and audit["true_stale_conflicts"] == 1 and audit["fresh_read_recovery"] is True)
+    version_ok = ((directory / "expiry.jsonl").exists() and len(edit_snapshots) == 1
+                  and audit["true_stale_conflicts"] == 0 if expire_source else
+                  unchanged_on_conflict and len(edit_snapshots) == 2
+                  and audit["true_stale_conflicts"] == 1 and audit["fresh_read_recovery"] is True)
+    passed = (result.stop_reason == "done" and stable and backup_preserved and version_ok
+              and correctly_bound and disk == {**external, **case.expected})
     summary: JsonObject = {"passed": passed, "stop_reason": result.stop_reason, "source_stable": stable,
         "project_result": disk, "backup_preserved": backup_preserved, "unchanged_on_conflict": unchanged_on_conflict,
         "true_stale_conflicts": audit["true_stale_conflicts"], "fresh_read_recovery": audit["fresh_read_recovery"],
