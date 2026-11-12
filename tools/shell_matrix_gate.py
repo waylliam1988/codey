@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -55,7 +56,14 @@ def main() -> int:
             for mode in ("noninteractive", "login") if name != "cmd" else ("noninteractive",):
                 row = {"name": name, "startup": mode, "ok": False}
                 try:
-                    shell = resolve_shell(environ={**os.environ, SHELL_EXECUTABLE_ENV: name, SHELL_STARTUP_ENV: mode})
+                    environ = {**os.environ, SHELL_EXECUTABLE_ENV: name, SHELL_STARTUP_ENV: mode}
+                    try:
+                        shell = resolve_shell(environ=environ)
+                    except subprocess.TimeoutExpired as exc:
+                        # Hosted Windows runners can exceed the probe budget on
+                        # cold startup. Retry discovery once, never execution.
+                        row["discovery_retry"] = f"{type(exc).__name__}: {exc}"
+                        shell = resolve_shell(environ=environ)
                     command = {"cmd": "echo SHELL_MATRIX", "powershell": "Write-Output 'SHELL_MATRIX'; exit 7"}.get(
                         shell.kind, "printf '%s\\n' SHELL_MATRIX; exit 7")
                     analysis = analyze_shell(command, shell)
