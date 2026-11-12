@@ -93,7 +93,7 @@ class BrowserSession:
             return
         latest: BrowserBinding | None = None
         for result in results:
-            if result.call.name.startswith("browser_") and "browser_resource" in result.audit:
+            if (result.call.name.startswith("browser_") or result.call.name == "open_url") and "browser_resource" in result.audit:
                 latest = BrowserBinding.read(result.audit["browser_resource"])
         if self.provider._session is None:
             self.provider._resume_binding = latest
@@ -164,8 +164,8 @@ class BrowserSession:
     def tab_switch(self, index: int) -> BrowserToolOutput:
         return _browser_call(self._tab_switch_on_browser_thread, index)
 
-    def upload(self, ref: str, file: FilePayload) -> BrowserToolOutput:
-        return _browser_call(self._upload_on_browser_thread, ref, file)
+    def upload(self, ref: str, file: FilePayload, *, expected_document: JsonObject | None = None) -> BrowserToolOutput:
+        return _browser_call(self._upload_on_browser_thread, ref, file, expected_document)
 
     def download(self, ref: str) -> BrowserToolOutput:
         return _browser_call(self._download_on_browser_thread, ref)
@@ -432,8 +432,10 @@ class BrowserSession:
                                  {"action": "tab_switch", "index": index, "url": pages[index].url,
                                   "delivery": "delivered"})
 
-    def _upload_on_browser_thread(self, ref: str, file: FilePayload) -> BrowserToolOutput:
+    def _upload_on_browser_thread(self, ref: str, file: FilePayload, expected_document: JsonObject | None = None) -> BrowserToolOutput:
         cancellation.check()
+        if expected_document is not None and self._document_identity_on_browser_thread() != expected_document:
+            return self._stale_ref_output("upload", ref, RuntimeError("upload page changed; take a fresh snapshot"))
         try:
             _, handle = self._resolve_ref(ref)
         except RuntimeError as exc:

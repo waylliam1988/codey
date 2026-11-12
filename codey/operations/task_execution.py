@@ -286,8 +286,10 @@ class ExecutionDelegate:
                 browser.prepare_from_receipts(tuple(self.session._memory_results.values()))
             checks = self.session.policy.required_checks
             from codey.operations.browser_copy import CAPTURE
+            from codey.operations.browser_upload import UPLOAD_RECEIPTS, upload_scope
 
             trace_document = (call.name in browser_receipt_tools(checks)
+                              or (call.name in UPLOAD_RECEIPTS and upload_scope(self.session) is not None)
                               or (call.name == "browser_eval" and call.args.get("code") == CAPTURE) or
                               (call.name in {"browser_eval", "browser_read"} and has_browser_field_bindings(checks, tool=call.name)))
             transition = call.name in PAGE_TRANSITIONS
@@ -367,13 +369,24 @@ class ExecutionDelegate:
         if call.name == "browser_tab_switch":
             return browser.tab_switch(require_json_integer(args.get("index"), "index"))
         if call.name == "browser_upload":
+            from codey.operations.browser_upload import upload_page_ready, upload_scope
             from codey.storage.input_attachments import InputAttachmentStore
 
             if self.managed_outputs is None or not self.session_id:
                 raise ValueError("task-scoped attachment storage unavailable")
             identity = str(args.get("attachment_id") or "")
+            document = None
+            if self.session is not None and (scope := upload_scope(self.session)) is not None:
+                if scope.attachment and scope.attachment != identity:
+                    raise ValueError("Select the attachment identified by the task.")
+                document = browser.document_identity()
+                with self.session.projection_lock:
+                    ready = upload_page_ready(scope, document, self.session._memory_results)
+                if not ready:
+                    raise ValueError("Open the authorized upload page with browser_navigate, then take a fresh snapshot before selecting the attachment.")
             file = InputAttachmentStore(self.managed_outputs.root.parent, self.session_id).read_file(identity)
-            output = browser.upload(ref, {"name": file.name, "mimeType": file.media_type, "buffer": file.data})
+            output = browser.upload(ref, {"name": file.name, "mimeType": file.media_type, "buffer": file.data},
+                                    expected_document=document)
             return replace(output, observation={**output.observation, "attachment_id": identity})
         if call.name == "browser_download":
             return self._browser_download(browser, ref)
@@ -818,7 +831,20 @@ class ExecutionDelegate:
             opened = open_source(call, tools, self._research_resources().ledger, url, target)
         except SourceSnapshotUnavailable as exc:
             opened = ResearchToolOutput(f"ERROR: {exc}", ok=False, failure_code="snapshot_unavailable")
-        return self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
+        result, ok, code = self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
+        if ok and call.name == "open_url" and self.session is not None:
+            from codey.operations.browser_upload import browser_opened, matches_document, upload_scope
+
+            scope = upload_scope(self.session)
+            if scope is not None and not scope.navigate and browser_opened(result, scope.url):
+                browser = self.browser_session
+                if browser is not None and matches_document(document := browser.document_identity(), scope.url):
+                    audit = {**result.audit, "browser_document": document}
+                    binding = browser.resource_binding()
+                    if binding is not None:
+                        audit["browser_resource"] = binding
+                    result = replace(result, audit=audit)
+        return result, ok, code
 
     def _commit_research_knowledge(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
         outcome = tools.knowledge_commit(call.args)

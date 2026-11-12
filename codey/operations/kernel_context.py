@@ -484,6 +484,7 @@ class KernelContext:
                     coding_context_prepared=True, initial_source_batch=prefetched is not None)
 
     def prefetch_required_sources(self, snapshot: TurnSnapshot) -> bool:
+        from codey.operations.browser_upload import upload_scope
         from codey.operations.source_gaps import task_source_coverage
         from codey.task.web_intent import source_url_key
 
@@ -497,9 +498,12 @@ class KernelContext:
             return False
         calls = [ToolCall("open_url", {"url": url}, call_id=f"required-source:{index}")
                  for index, url in enumerate(urls)]
+        upload = upload_scope(self.session)
+        if upload is not None and upload.navigate and upload.url in urls and "browser_navigate" in snapshot.inventory_names:
+            calls.append(ToolCall("browser_navigate", {"url": upload.url}, call_id="required-source:upload-page"))
         # CodeMode aggregation hides this leaf from the model's outer catalog,
         # while the frozen inventory still authorizes it for the runtime.
-        runtime_snapshot = replace(snapshot, tool_names=tuple(dict.fromkeys((*snapshot.tool_names, "open_url"))))
+        runtime_snapshot = replace(snapshot, tool_names=tuple(dict.fromkeys((*snapshot.tool_names, *(call.name for call in calls)))))
         self._execute_calls(calls, runtime_snapshot, turn=0)
         return True
 
@@ -647,8 +651,8 @@ class KernelContext:
         kernel_events._emit_tool_results(self.observation.on_event, self.session, results,
             run_id=f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id,
             turn=turn)
-        if turn == 0 and results and all(result.call.name == "open_url" and result.call.call_id.startswith("required-source:")
-                                        for result in results) and not self.cancelled():
+        if turn == 0 and results and all(result.call.name in {"open_url", "browser_navigate"}
+                and result.call.call_id.startswith("required-source:") for result in results) and not self.cancelled():
             self.prepare_turn(state, prefetched=results)
             return
         from codey.research.answer_contract import submitted_answer

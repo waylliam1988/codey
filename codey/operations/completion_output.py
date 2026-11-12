@@ -5,6 +5,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from codey.operations.browser_upload import UploadEvidence, upload_evidence, upload_scope
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import has_explanation, is_output_check, schema_for
@@ -75,6 +76,10 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
                     + requirement.execution_guidance, observation.evaluation.evidence_refs))
         observations[requirement.check_id] = observation
     if (not fields and not explanation) or session.policy.strict_research:
+        scope = upload_scope(session)
+        if (schema is None and scope is not None and scope.report_hash
+                and isinstance(evidence := upload_evidence(session, scope, context.browser_document), UploadEvidence)):
+            text = evidence.render(chinese=scope.chinese)
         return CompletionOutput(text, observations)
     proposed: JsonValue
     if explanation:

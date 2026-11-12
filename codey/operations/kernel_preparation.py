@@ -3,12 +3,13 @@ from dataclasses import dataclass
 
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
 from codey.operations import kernel_prompt, kernel_protocol
+from codey.operations.browser_upload import upload_scope
 from codey.operations.completion_context import CompletionContextInput
 from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.project_prompt_context import prepare_coding_context
 from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import parse_browser_requirement
-from codey.policies.output_requirement import has_explanation
+from codey.policies.output_requirement import has_explanation, is_output_check
 from codey.policies.tool_requirement import parse_tool_success_check
 
 
@@ -30,6 +31,12 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     guidance = [task_guidance] if task_guidance else []
     if snapshot.browser_copy is None and ".json" in user_task.casefold() and {"edit", "read_file"} <= set(snapshot.nested_tool_names):
         guidance.append(JSON_FIELD_EDIT_GUIDANCE)
+    if (upload := upload_scope(session)) is not None and "browser_upload" in snapshot.inventory_names:
+        plain_report = upload.report_hash and not any(is_output_check(check) for check in snapshot.policy.required_checks)
+        guidance.append("If the initial runtime results show the authorized upload page is already open and required navigation "
+                        "has succeeded, use that page for a fresh snapshot. Select the attachment once, then verify the page response."
+                        + (" The runtime reports the exact file facts from the selection receipt. "
+                           "In done.summary, report completion without copying the filename or SHA256." if plain_report else ""))
     if snapshot.policy.strict_research and snapshot.research_scope is None:
         from codey.research.methods import research_method_guidance
 

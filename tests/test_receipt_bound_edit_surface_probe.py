@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from pathlib import Path
 
@@ -10,7 +11,8 @@ import pytest
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.types.json_value import JsonObject
 from tools import receipt_bound_edit_surface_probe as probe
-from tools.browser_production_live_gate import URL
+from tools.browser_production_live_gate import URL, run_case
+from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import Target
 
 
@@ -27,6 +29,80 @@ def install_http(monkeypatch: pytest.MonkeyPatch, replies: list[JsonObject]) -> 
 
     monkeypatch.setattr("codey.providers.api_generation.generate", scripted)
     monkeypatch.setattr("tools.completion_explanation_ab.service_state", lambda _url: {})
+
+
+def run_prefetched_upload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, strict: bool,
+                         read_before_upload: bool = False) -> dict[str, object]:
+    attachment = InputAttachmentStore(tmp_path / "inputs", "upload-test").put(
+        "fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode())
+    identity = str(attachment["id"])
+    read = "return unwrap(await tools.browser_read({}));"
+    code = ("const s=unwrap(await tools.browser_snapshot({}));"
+            "const ref=s.elements.find(e=>e.name==='Attachment').ref;"
+            "unwrap(await tools.browser_upload({ref,attachment_id:inputs.attachment}));"
+            "unwrap(await tools.browser_wait({condition:'text',value:'UPLOAD_BYTES_82',timeout_ms:5000}));")
+    code = "unwrap(await tools.browser_read({}));" + code + "return null;" if read_before_upload else code + read
+    summary: JsonObject = {"tool": "done", "args": {"summary": "页面显示已选择附件。" if strict else
+                                                    f"文件名：fixture.txt\n内容标记：UPLOAD_BYTES_82\nSHA256：{identity}"}}
+    replies: list[JsonObject] = [
+        {"tool": "codemode", "args": {"code": code, "inputs": {"attachment": identity}}}, summary,
+    ]
+    if read_before_upload:
+        replies.append({"tool": "codemode", "args": {"code": read}})
+    install_http(monkeypatch, [*replies, summary, summary])
+    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr("codey.app.review_service.run_review", lambda *_args, **_kwargs: None)
+    return run_case(tmp_path / "run", "chat", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10),
+                    max_turns=4, upload_file=True, assembled_upload=strict, upload_navigation_required=strict)
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_plain_upload_delivers_receipt_hash_instead_of_model_attachment_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    row = run_prefetched_upload(tmp_path, monkeypatch, strict=False)
+    answer = str(row["answer"])
+    assert row["passed"] is True and row["stop_reason"] == "done", row
+    assert hashlib.sha256(b"UPLOAD_BYTES_82\n").hexdigest() in answer
+    assert "att_" not in answer
+    assert row["navigations"] == [URL]
+    receipts = tool_receipts(tmp_path / "run" / "state")
+    upload, = [receipt.result for receipt in receipts if receipt.result.call.name == "browser_upload"]
+    assert upload.ok
+    opened, = [receipt.result for receipt in receipts if receipt.result.call.name == "open_url"]
+    read, = [receipt.result for receipt in receipts if receipt.result.call.name == "browser_read"]
+    assert opened.audit["browser_document"] == upload.audit["browser_document"] == read.audit["browser_document"]
+    assert not [receipt for receipt in receipts if receipt.result.call.name == "browser_navigate"]
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_required_navigation_commits_before_the_first_upload_on_a_prefetched_page(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    row = run_prefetched_upload(tmp_path, monkeypatch, strict=True)
+    assert row["passed"] is True and row["stop_reason"] == "done", row
+    receipts = tool_receipts(tmp_path / "run" / "state")
+    steps = [receipt.result for receipt in receipts
+             if receipt.result.call.name in {"open_url", "browser_navigate", "browser_upload", "browser_read"}]
+    assert [step.call.name for step in steps] == ["open_url", "browser_navigate", "browser_upload", "browser_read"]
+    assert all(step.ok for step in steps)
+    documents = [step.audit["browser_document"] for step in steps[1:]]
+    assert documents[0] == documents[1] == documents[2]
+    output = json.loads(str(row["answer"]))
+    assert output["sha256"] == hashlib.sha256(b"UPLOAD_BYTES_82\n").hexdigest()
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+def test_upload_report_requires_a_post_selection_read_without_repeating_the_upload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    row = run_prefetched_upload(tmp_path, monkeypatch, strict=False, read_before_upload=True)
+    assert row["passed"] is True and row["stop_reason"] == "done", row
+    rejection = row["first_rejection"]
+    assert isinstance(rejection, dict) and "after selecting the attachment" in str(rejection["reason"])
+    receipts = tool_receipts(tmp_path / "run" / "state")
+    assert [receipt.result.call.name for receipt in receipts
+            if receipt.result.call.name in {"browser_read", "browser_upload"}] == ["browser_read", "browser_upload", "browser_read"]
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
@@ -52,8 +128,7 @@ def test_upload_assembly_uses_receipts_when_model_summary_omits_facts(
     row = probe.run_arm(tmp_path / "run", "upload_bound" if assembled else "upload", arm,
                         Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10), max_turns=4)
     assert row.get("stop_reason") == "done", row
-    assert row["passed"] is assembled, row
-    assert row["facts_match"] is assembled
+    assert row["passed"] is True and row["facts_match"] is True, row
     assert row["receipt_report_available"] is True
     report = json.loads((tmp_path / "run" / "receipt-report.json").read_text(encoding="utf-8"))
     assert report["filename"] == "fixture.txt" and "UPLOAD_BYTES_82" in report["page_text"]
@@ -62,6 +137,8 @@ def test_upload_assembly_uses_receipts_when_model_summary_omits_facts(
         output = json.loads(str(row["answer"]))
         assert output["sha256"] == report["sha256"]
         assert output["page_text"] == report["page_text"]
+    else:
+        assert report["sha256"] in str(row["answer"])
     assert row["model_calls"] == 2
 
 

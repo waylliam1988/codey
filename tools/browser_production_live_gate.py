@@ -87,6 +87,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              task_transform: Callable[[str], str] | None = None,
              acquisition_action: JsonObject | None = None, source_status: int = 403,
              explicit_wait: bool = True, fixture_html: str = HTML,
+             upload_navigation_required: bool = True,
              expected_amount: int = 173, expected_code: str = "QUARTZ_851") -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
@@ -205,6 +206,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 "browser_upload 选择这个附件，browser_wait 等待页面出现 UPLOAD_BYTES_82，再 browser_read。"
                 "用 done 报告实际文件名、文件内容标记和选择回执的 SHA256。不要修改项目或运行命令。")
         required = {"browser_navigate", "browser_snapshot", "browser_upload", "browser_wait", "browser_read"}
+        if not upload_navigation_required:
+            required.remove("browser_navigate")
         if assembled_upload:
             bindings = (
                 require_tool_success("browser_upload", via="codemode", answer_pointer="/filename", result_pointer="/name"),

@@ -427,21 +427,35 @@ def _proof_capacity_verdict(checks: list[CompletionCheck], *, publication: bool)
         f"(including publication when required). Checks: {ids}. This requires a local contract fix.")
 
 
+def _browser_completion_block(session: TaskSession, text: str, context: CompletionContext) -> GateVerdict | None:
+    from codey.operations.browser_upload import upload_evidence, upload_scope
+    from codey.operations.source_gaps import source_read_required, task_source_coverage
+
+    coverage = task_source_coverage(session, context.research_execution_ledger or context.research_ledger)
+    if (session.task_kind == "chat" and not session.policy.strict_research
+            and source_read_required(session) and coverage.unavailable):
+        return GateVerdict(False, "", None, final_text=text, blocked=True)
+    upload = upload_scope(session)
+    if upload is not None and upload.report_hash:
+        evidence = upload_evidence(session, upload, context.browser_document)
+        if isinstance(evidence, str):
+            return GateVerdict(False, evidence, None)
+    return None
+
+
 def _evaluate_inner(session: TaskSession, done_text: object, *, context: CompletionContext,
                     observations: Mapping[str, ToolObservation] | None) -> GateVerdict:
     text = str(done_text or "").strip()
     from codey.operations.execution_claims import validate_execution_claims
-    from codey.operations.source_gaps import source_read_required, task_source_coverage, validate_source_gaps
+    from codey.operations.source_gaps import validate_source_gaps
 
     try:
         execution_check = validate_execution_claims(session)
         validate_source_gaps(session)
     except ValueError as exc:
         return GateVerdict(False, str(exc), None)
-    coverage = task_source_coverage(session, context.research_execution_ledger or context.research_ledger)
-    if (session.task_kind == "chat" and not session.policy.strict_research
-            and source_read_required(session) and coverage.unavailable):
-        return GateVerdict(False, "", None, final_text=text, blocked=True)
+    if block := _browser_completion_block(session, text, context):
+        return block
     try:
         text, report = prepare_research_completion(session, text, context)
         if session.task_kind == "chat" and not session.policy.strict_research and session.policy.allows("web.read"):
