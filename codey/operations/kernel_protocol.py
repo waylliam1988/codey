@@ -10,12 +10,11 @@ from __future__ import annotations
 import json
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from codey.operations.browser_copy import CopyTurn, copy_target, copy_turn
 from codey.operations.browser_upload import (
     STRUCTURED_UPLOAD_TOOLS,
-    UPLOAD_ACTION,
     lower_upload_action,
     structured_upload_spec,
     task_upload_scope,
@@ -90,6 +89,17 @@ class KernelSessionView(Protocol):
 
 
 @dataclass(frozen=True)
+class ModelInputBinding:
+    """The captured model input; conversion still targets the original executor."""
+
+    kind: Literal["upload", "browser_copy"]
+    model_spec: ToolSpec
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "model_spec", freeze_spec_parameters(self.model_spec))
+
+
+@dataclass(frozen=True)
 class TurnSnapshot:
     """One authoritative per-round observation: policy ∩ current facts.
 
@@ -114,15 +124,33 @@ class TurnSnapshot:
     research_scope: AnswerScope | None = None
     ignore_runtime_claims: bool = False
     browser_copy: CopyTurn | None = None
+    input_binding: ModelInputBinding | None = None
 
     @property
     def inventory_names(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys((*self.tool_names, *self.nested_tool_names)))
+        names: dict[str, None] = dict.fromkeys((*self.tool_names, *self.nested_tool_names))
+        return tuple(names)
 
     @property
     def model_specs(self) -> tuple[ToolSpec, ...]:
-        return tuple(self.browser_copy.spec(spec) if self.browser_copy is not None and spec.name == "codemode" else upload_model_spec(spec)
+        binding = self.input_binding
+        return tuple(binding.model_spec if binding is not None and spec.name == binding.model_spec.name else spec
                      for spec in self.frozen_specs if spec.name in self.tool_names)
+
+
+def render_snapshot_contract(snapshot: TurnSnapshot) -> str:
+    from codey.toolchain.tool_prompt import json_contract_text
+
+    text = json_contract_text(snapshot.model_specs)
+    if snapshot.browser_copy is not None and snapshot.browser_copy.phase == "question":
+        text += "\nAsk which webpage source to use. The observation has no unique supported data format."
+    return text
+
+
+def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
+    if snapshot.input_binding is not None and snapshot.input_binding.model_spec.name not in snapshot.tool_names:
+        snapshot = replace(snapshot, input_binding=None)
+    return replace(snapshot, contract_text=render_snapshot_contract(snapshot))
 
 
 @dataclass(frozen=True)
@@ -147,6 +175,8 @@ def controller_allowed_for_session(session: KernelSessionView) -> tuple[str, ...
                   if str(n or "").strip()}
     except Exception:
         denied = {"submit_research_review"}
+    observed_aliases = {"open_result": bool(session.search_results), "reopen_source": bool(session.source_ids),
+                        "open_hit": bool(session.hit_targets)}
     if not policy.strict_research:
         denied.add("submit_research_answer")
         from codey.research.questions import requires_question_ref
@@ -167,10 +197,9 @@ def controller_allowed_for_session(session: KernelSessionView) -> tuple[str, ...
             # operation resources compose with it in this one turn planner.
             browser = tuple(spec.name for spec in tool_specs().values()
                             if spec.executor == "browser" and policy.allows(spec.grant))
-            tools = (*ANSWER_TOOLS, *browser, *(("codemode", "read_tool_result") if browser else ()))
+            tools: tuple[str, ...] = (*ANSWER_TOOLS, *browser, *(("codemode", "read_tool_result") if browser else ()))
             return tuple(name for name in tools if name not in denied and (
-                name not in {"open_result", "reopen_source", "open_hit"} or getattr(session,
-                {"open_result": "search_results", "reopen_source": "source_ids", "open_hit": "hit_targets"}[name], None)))
+                name not in observed_aliases or observed_aliases[name]))
         # Other strict callers retain their scoped acquisition contract.
         # Whole-answer submission requires the Research task's frozen scope.
         denied.update({"knowledge_write", "knowledge_commit", "knowledge_link", "submit_research_answer"})
@@ -206,9 +235,8 @@ def controller_allowed_for_session(session: KernelSessionView) -> tuple[str, ...
         base = (*base, "ask_user", "read_tool_result")
     # Reference aliases require an observed target, in ordinary and strict
     # tasks alike. The resulting list drives both wire protocols and execution.
-    for alias, facts in (("open_result", "search_results"),
-                         ("reopen_source", "source_ids"), ("open_hit", "hit_targets")):
-        if not getattr(session, facts, None):
+    for alias, observed in observed_aliases.items():
+        if not observed:
             denied.add(alias)
     if not denied:
         return base
@@ -324,6 +352,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     if isinstance(scope, AnswerScope):
         frozen = tuple(answer_spec(spec, scope) for spec in frozen)
     nested: tuple[str, ...] = ()
+    binding = None
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
 
@@ -351,7 +380,10 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         upload = task_upload_scope(session.task_kind, session.task_text, session.required_source_urls, session.policy)
         if upload is not None and set(nested) >= STRUCTURED_UPLOAD_TOOLS:
             phase = upload_phase(session._memory_results)
-            frozen = tuple(structured_upload_spec(spec, upload, phase) for spec in frozen)
+            binding = ModelInputBinding("upload", upload_model_spec(structured_upload_spec(
+                next(spec for spec in frozen if spec.name == "codemode"), upload, phase)))
+            frozen = tuple(structured_upload_spec(spec, upload, phase) if spec.name != "codemode" else spec
+                           for spec in frozen)
     browser_copy = None
     copy_tools = {"browser_navigate", "browser_eval", "read_file", "edit"}
     if (not session.policy.strict_research and "codemode" in names and "done" in names
@@ -373,20 +405,17 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
             ), required=("path", "base_result_ref", "browser_source"))) if spec.name == "edit" else spec for spec in frozen)
             if browser_copy.phase == "question":
                 browser_copy = CopyTurn(target)
-    from codey.toolchain.tool_spec import json_contract_text as _contract
-
     # JSON 与 native 契约同源：都从同一冻结定义生成，不再查实时注册表。
-    inventory = tuple(dict.fromkeys((*names, *nested)))
+    inventory_names: dict[str, None] = dict.fromkeys((*names, *nested))
+    inventory = tuple(inventory_names)
     by_name = {spec.name: spec for spec in frozen}
     frozen = tuple(by_name[name] for name in inventory)
-    contract_now = _contract(tuple(browser_copy.spec(by_name[name])
-                                   if browser_copy is not None and name == "codemode" else upload_model_spec(by_name[name]) for name in names))
-    if browser_copy is not None and browser_copy.phase == "question":
-        contract_now += "\nAsk which webpage source to use. The observation has no unique supported data format."
+    if browser_copy is not None and "codemode" in names:
+        binding = ModelInputBinding("browser_copy", browser_copy.spec(by_name["codemode"]))
     executors = _frozen_custom_executors(inventory)
-    return TurnSnapshot(
+    return refresh_snapshot_contract(TurnSnapshot(
         allowed=allowed,
-        contract_text=contract_now,
+        contract_text="",
         tool_names=names,
         policy=session.policy,
         frozen_specs=frozen,
@@ -395,7 +424,8 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         research_scope=scope,
         ignore_runtime_claims=purpose == "chat",
         browser_copy=browser_copy,
-    )
+        input_binding=binding,
+    ))
 
 
 _CONTROLLER_ALIASES = frozenset(_ALIAS_ARGS)
@@ -628,8 +658,6 @@ def _validate_tool_args(
         try:
             from codey.codemode.protocol import parse_codemode_args
 
-            if UPLOAD_ACTION in args and any(key == UPLOAD_ACTION for key, _ in spec.parameters):
-                args = lower_upload_action(args)
             program = parse_codemode_args(args if isinstance(args, dict) else {})
             from codey.runtime.core.models import canonical_json_mapping
 
@@ -772,7 +800,8 @@ def _plan_from_tool_objects(
         if error:
             return _invalid_plan(error, tool=tool)
         if not call_id:
-            key = json.dumps([tool, validated], sort_keys=True, ensure_ascii=False)
+            key_payload: list[JsonValue] = [tool, validated]
+            key = json.dumps(key_payload, sort_keys=True, ensure_ascii=False)
             if key in text_keys:
                 continue
             text_keys.add(key)
@@ -890,18 +919,30 @@ def normalize_turn(
             return _invalid_plan("Research completion requires done.report_sections.coverage under the frozen contract; "
                                  "plain text and summary-only reports are not accepted.", tool="done")
         return items
-    if snapshot is not None and snapshot.browser_copy is not None:
-        if len(items) != 1:
-            return _invalid_plan("Submit one browser copy action per turn.")
-        raw, args, call_id = items[0]
-        if _canonical_name(raw) == "codemode" and "codemode" in snapshot.tool_names:
-            spec = next(spec for spec in snapshot.model_specs if spec.name == "codemode")
+    if snapshot is not None and snapshot.browser_copy is not None and len(items) != 1:
+        return _invalid_plan("Submit one browser copy action per turn.")
+    if snapshot is not None and snapshot.input_binding is not None:
+        binding = snapshot.input_binding
+        lowered: list[tuple[str, ToolArgs, str]] = []
+        for raw, args, call_id in items:
+            name = _canonical_name(raw)
+            if name != binding.model_spec.name or name not in snapshot.tool_names:
+                lowered.append((raw, args, call_id))
+                continue
+            spec = binding.model_spec
             if error := validate_args_with_spec(spec, args):
-                return _invalid_plan(error, tool="codemode")
+                return _invalid_plan(error, tool=name)
             try:
-                items = [(raw, snapshot.browser_copy.lower(args), call_id)]
+                if binding.kind == "upload":
+                    converted = lower_upload_action(args)
+                else:
+                    if snapshot.browser_copy is None:
+                        raise ValueError("browser copy input has no captured observation")
+                    converted = snapshot.browser_copy.lower(args)
+                lowered.append((raw, converted, call_id))
             except (KeyError, TypeError, ValueError) as exc:
-                return _invalid_plan(str(exc), tool="codemode")
+                return _invalid_plan(str(exc), tool=name)
+        items = lowered
     return _plan_from_tool_objects(
         items, policy=policy, controller_allowed=allowed,
         snapshot_names=snapshot_names, frozen_specs=frozen,

@@ -16,7 +16,7 @@ from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.tool_spec import validate_args_with_spec
+from codey.toolchain.tool_spec import ToolSpec, validate_args_with_spec
 from codey.types.json_value import JsonObject
 
 if TYPE_CHECKING:
@@ -34,6 +34,23 @@ if TYPE_CHECKING:
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.workspace.revision import WorkspaceRevisionStore
+
+
+def _simplified_failure(result: ToolResult, spec: ToolSpec, child_refs: list[str]) -> ToolResult:
+    from codey.toolchain.tool_prompt import tool_repair_text
+
+    detail = result.model_text
+    audit = result.audit
+    error_code = audit.get("error_code")
+    if error_code in {"syntax_error", "missing_return", "result_encoding", "result_contract"}:
+        audit = {**audit, "template_error": detail}
+        detail = f"The fixed runtime template failed ({error_code}); the model cannot repair its JavaScript."
+    if child_refs:
+        detail += "\nSettled child receipts (the parent failure does not undo their effects): " + ", ".join(child_refs)
+        detail += "\nDo not replay the whole operation. The next request uses committed receipts to determine the available action."
+    else:
+        detail += "\nNo settled child receipt is available; this alone does not prove that no effect occurred."
+    return replace(result, model_text=tool_repair_text(detail, spec), audit=audit)
 
 
 class CodeModeReplay(Protocol):
@@ -133,7 +150,7 @@ class CodeModeKernelExecutor:
                 run_id=self.run_id,
                 max_inline_bytes=self.max_inline_bytes,
             )
-            text = json.dumps({"ok": True, "value": value}, ensure_ascii=False,
+            text = json.dumps(dict[str, object](ok=True, value=value), ensure_ascii=False,
                               sort_keys=True, separators=(",", ":"), allow_nan=False)
         except (TypeError, ValueError, OverflowError) as exc:
             return ToolResult(ok=False, call=call, model_text=str(exc), audit=audit)
@@ -173,8 +190,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.task_effects import KernelEffectSink
 
-    frozen_specs = getattr(snapshot, "frozen_specs", ()) or ()
-    specs = {str(getattr(spec, "name", "")): spec for spec in frozen_specs}
+    specs = {spec.name: spec for spec in snapshot.frozen_specs}
     nested_names = set(snapshot.nested_tool_names)
     catalog = build_codemode_catalog(
         {name: spec for name, spec in specs.items() if name in nested_names},
@@ -231,9 +247,10 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             if not isinstance(child_sink, KernelEffectSink):
                 raise ValueError("durable CodeMode requires the original effect sink")
             from codey.codemode.replay import DurableCodeModeReplay, digest
+            limit_payload: dict[str, object] = asdict(limits or CodeModeLimits())
             replay = DurableCodeModeReplay(durable, str(run_id), parent_id,
                 digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
-                        "limits": asdict(limits or CodeModeLimits()),
+                        "limits": limit_payload,
                         "runtime": runtime.contract_digest()}),
                 parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_mutations)
             child_sink.admission_guard = replay.admission
@@ -362,7 +379,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                     receipt = session._memory_results.get(ref)
                     if (receipt is not None and receipt.ok and receipt.call.name == "browser_download"
                             and "value" in receipt.canonical):
-                        args = json.dumps({"result_ref": ref, "view": "value"})
+                        args = json.dumps(dict[str, str](result_ref=ref, view="value"))
                         detail += ("\nBrowser download already completed. Recover the path and SHA256 with "
                                    f"read_tool_result({args}). Do not repeat the download.")
             if result.audit.get("error_code") in {"missing_return", "result_encoding"} and ordered_child_effect_ids:
@@ -385,13 +402,15 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                         audit["original_error_code"] = audit.pop("error_code")
                         audit["recovery_disposition"] = "receipt_replay"
                         return replace(result, ok=True, audit=audit,
-                            model_text=json.dumps({"ok": True, "value": value}, ensure_ascii=False,
+                            model_text=json.dumps(dict[str, object](ok=True, value=value), ensure_ascii=False,
                                                   sort_keys=True, separators=(",", ":")),
                             canonical={"value": value, "child_effect_ids": ordered_child_effect_ids,
                                        "recovered_return": True})
                 detail += ". Correct only the return expression. Use repair_of=" + str(metadata["token"])
                 detail += " to replay these settled child receipts; do not repeat the child calls."
-            result = replace(result, model_text=tool_repair_text(detail, specs["codemode"]))
+            result = (_simplified_failure(result, snapshot.input_binding.model_spec, ordered_child_effect_ids)
+                      if snapshot.input_binding is not None
+                      else replace(result, model_text=tool_repair_text(detail, specs["codemode"])))
         return result
 
     return run_parent

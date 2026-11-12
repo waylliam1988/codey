@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from codey.policies.network import check_fetch_url
 from codey.policies.tool_requirement import decode_answer, json_pointer
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_string
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 
 if TYPE_CHECKING:
     from codey.runtime.core.models import ToolResult
@@ -60,7 +60,7 @@ class CopyTarget:
 def copy_target(task: str) -> CopyTarget | None:
     """Recognize explicitly typed copies of one web value into one named field."""
     task = re.sub(r"```[\s\S]*?```", "", task)
-    urls = {match.rstrip(".,;!?") for match in _URL.findall(task)}
+    urls = {match.group(0).rstrip(".,;!?") for match in _URL.finditer(task)}
     targets = list(_TARGET.finditer(task))
     integer = bool(re.search(r"整数|\binteger\b", task, re.I))
     string = bool(re.search(r"字符串|保留前导零|\b(?:string|preserve leading zeros)\b", task, re.I))
@@ -156,8 +156,13 @@ class CopyTurn:
     target: CopyTarget
     phase: str = "observe"
     ref: str = ""
-    data: JsonObject | None = None
+    data_json: str = ""
     business_key: str = ""
+
+    @property
+    def data(self) -> JsonObject | None:
+        """A detached view; the request owns one immutable observation."""
+        return parse_json_object(self.data_json) if self.data_json else None
 
     def payload(self) -> JsonObject:
         return {"url": self.target.url, "path": self.target.path, "field": self.target.field, "type": self.target.value_type,
@@ -172,7 +177,8 @@ class CopyTurn:
         if phase not in {"observe", "edit", "done", "question"} or text("type") not in {"integer", "string"}:
             raise ValueError("Invalid browser copy state")
         return cls(CopyTarget(text("url"), text("path"), text("field"), text("type")), phase, text("ref"),
-                   decode_json_object(data["data"]) if data["data"] is not None else None, text("business_key"))
+                   json.dumps(decode_json_object(data["data"]), ensure_ascii=False, sort_keys=True)
+                   if data["data"] is not None else "", text("business_key"))
 
     def spec(self, original: ToolSpec) -> ToolSpec:
         if self.phase == "observe":
@@ -216,13 +222,14 @@ def _object(properties: dict[str, dict[str, object]]) -> dict[str, object]:
 
 
 def copy_turn(target: CopyTarget, task: str, results: Mapping[str, ToolResult]) -> CopyTurn:
-    keys = set(re.findall(r"(?<![\w-])[A-Z]+-\d+(?![\w-])", _URL.sub("", task)))
+    keys = {match.group(0) for match in re.finditer(r"(?<![\w-])[A-Z]+-\d+(?![\w-])", _URL.sub("", task))}
     key = next(iter(keys)) if len(keys) == 1 else ""
     committed = committed_children(results)
     turn = CopyTurn(target, business_key=key)
     for ref, result in results.items():
         if ref in committed and (data := captured_data(result)) is not None:
-            turn = CopyTurn(target, "edit" if observation_kind(data) else "question", ref, data, key)
+            turn = CopyTurn(target, "edit" if observation_kind(data) else "question", ref,
+                            json.dumps(data, ensure_ascii=False, sort_keys=True), key)
         if result.call.name != "edit" or result.call.args.get("path") != target.path:
             continue
         if result.ok and "browser_source" in result.call.args:

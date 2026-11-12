@@ -15,7 +15,6 @@ from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.tool_spec import (
     SOURCE_READ_TOOL_NAMES,
     freeze_spec_parameters,
-    json_contract_text,
     spec_for_tool,
     validate_args_with_spec,
 )
@@ -65,6 +64,8 @@ def _observed_document(session: TaskSession, browser: BrowserSession) -> JsonObj
 
 def offer_page_details(session: TaskSession, snapshot: TurnSnapshot,
                        browser: BrowserSession | None) -> tuple[TurnSnapshot, str]:
+    from codey.operations.kernel_protocol import refresh_snapshot_contract
+
     if (browser is None or not _can_inspect(session) or snapshot.research_scope is None
             or not {"browser_read", "browser_click"} <= set(snapshot.nested_tool_names)
             or PAGE_DETAIL_TOOL in session.controller_denied or session.model_tool_names is not None):
@@ -81,11 +82,13 @@ def offer_page_details(session: TaskSession, snapshot: TurnSnapshot,
         return snapshot, ""
     spec = freeze_spec_parameters(replace(base, parameters=(("choice", {"type": "string", "enum": choices}),)))
     index = len(snapshot.tool_names)
-    allowed = None if snapshot.allowed is None else tuple(dict.fromkeys((*snapshot.allowed, PAGE_DETAIL_TOOL)))
-    narrowed = replace(snapshot, allowed=allowed, tool_names=(*snapshot.tool_names, PAGE_DETAIL_TOOL),
+    allowed = snapshot.allowed
+    if allowed is not None:
+        allowed_names: dict[str, None] = dict.fromkeys((*allowed, PAGE_DETAIL_TOOL))
+        allowed = tuple(allowed_names)
+    narrowed = refresh_snapshot_contract(replace(snapshot, allowed=allowed, tool_names=(*snapshot.tool_names, PAGE_DETAIL_TOOL),
         frozen_specs=(*snapshot.frozen_specs[:index], spec, *snapshot.frozen_specs[index:]),
-        custom_executors=(*snapshot.custom_executors[:index], (PAGE_DETAIL_TOOL, None), *snapshot.custom_executors[index:]),
-        contract_text=json_contract_text((*snapshot.model_specs, spec)))
+        custom_executors=(*snapshot.custom_executors[:index], (PAGE_DETAIL_TOOL, None), *snapshot.custom_executors[index:])))
     lines = ["If the evidence already answers the question, submit it. To check missing details, choose an action below. "
              "These are observed native disclosures in the requested record."]
     for choice in choices:

@@ -12,7 +12,7 @@ import pytest
 from codey.automation.browser_session import BrowserSession
 from codey.research.browser_search import BrowserSearchProvider
 from codey.storage.input_attachments import InputAttachmentStore
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools.browser_production_live_gate import HTML, URL, run_case
 from tools.completion_artifact_audit import tool_receipts
@@ -32,7 +32,7 @@ def observed_controls(directory: Path) -> list[JsonObject]:
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
-@pytest.mark.parametrize("case", ["ordinary", "strict", "ambiguous", "expired", "premature"])
+@pytest.mark.parametrize("case", ["ordinary", "strict", "ambiguous", "expired", "premature", "raw_code", "parent_return"])
 def test_observed_file_controls_are_selected_without_model_javascript(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str,
 ) -> None:
@@ -41,10 +41,28 @@ def test_observed_file_controls_are_selected_without_model_javascript(
         "fixture.txt", base64.b64encode(data).decode("ascii"))
     identity = str(attachment["id"])
     directory = tmp_path / "run"
+    if case == "parent_return":
+        from codey.operations import kernel_protocol
+        from codey.operations.browser_upload import lower_upload_action
+
+        original_lower = lower_upload_action
+
+        def missing_return(args: JsonObject) -> JsonObject:
+            converted = original_lower(args)
+            if decode_json_object(args["upload"])["action"] == "select":
+                converted["code"] = str(converted["code"]).removeprefix("return ")
+            return converted
+
+        monkeypatch.setattr(kernel_protocol, "lower_upload_action", missing_return)
     strict = case == "strict"
     provider = BrowserSearchProvider(headless=True) if case == "expired" else None
     if provider is not None:
-        monkeypatch.setattr("tools.browser_production_live_gate.BrowserSearchProvider", lambda **_kwargs: provider)
+        fixed_provider = provider
+
+        def current_browser(**_kwargs: object) -> BrowserSearchProvider:
+            return fixed_provider
+
+        monkeypatch.setattr("tools.browser_production_live_gate.BrowserSearchProvider", current_browser)
     html = HTML
     if case == "ambiguous":
         html = HTML.replace('<label>Attachment<input type="file"',
@@ -53,6 +71,8 @@ def test_observed_file_controls_are_selected_without_model_javascript(
             '</label>\n<p id="uploaded">', '</label></fieldset>\n<p id="uploaded">')
 
     def replies() -> Iterator[JsonObject]:
+        if case == "raw_code":
+            yield {"tool": "codemode", "args": {"code": "return null;"}}
         if case == "premature":
             yield action("select", attachment_id=identity, target={"name": "Attachment"})
         yield action("observe")
@@ -79,12 +99,22 @@ def test_observed_file_controls_are_selected_without_model_javascript(
         yield {"tool": "done", "args": {"summary": "已选择附件并检查页面。"}}
 
     install_http(monkeypatch, replies())
-    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", lambda *_args, **_kwargs: {})
-    monkeypatch.setattr("codey.app.review_service.run_review", lambda *_args, **_kwargs: None)
+
+    def no_tabs(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {}
+
+    def no_review(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", no_tabs)
+    monkeypatch.setattr("codey.app.review_service.run_review", no_review)
     result = run_case(directory, "chat", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10),
         upload_file=True, assembled_upload=strict, upload_navigation_required=strict, fixture_html=html, max_turns=7,
         restore_snapshots=True)
     assert result["passed"] is True, result
+    if case == "parent_return":
+        parents = [row.result for row in tool_receipts(directory / "state") if row.result.call.name == "codemode"]
+        assert any(parent.canonical.get("recovered_return") is True for parent in parents)
     assert hashlib.sha256(data).hexdigest() in str(result["answer"])
     receipts = [row.result for row in tool_receipts(directory / "state")]
     attempts = [receipt for receipt in receipts if receipt.call.name == "browser_upload"]
@@ -109,6 +139,6 @@ def test_observed_file_controls_are_selected_without_model_javascript(
         assert next(receipt for receipt in receipts if receipt.call.name == "codemode").ok
         assert result["navigations"] == [URL]
         assert len([receipt for receipt in receipts if receipt.call.name == "browser_snapshot"]) == 1
-    requests = [json.loads(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
+    requests = [parse_json_object(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
     first = json.dumps(next(row["payload"] for row in requests if row.get("phase") == "request"))
     assert "Structured attachment selection" in first and "declare function unwrap" not in first

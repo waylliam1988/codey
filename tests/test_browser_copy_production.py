@@ -7,16 +7,16 @@ from playwright.sync_api import Route
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.automation.browser_session import BrowserSession
-from codey.operations.browser_copy import EXPIRED, copy_target
+from codey.operations.browser_copy import EXPIRED, CopyTurn, copy_target
 from codey.research.browser_search import BrowserSearchProvider
-from codey.types.json_value import JsonObject, decode_json_object
-from tests.test_protocol_surface import TARGET
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools.completion_artifact_audit import artifacts, tool_receipts
-from tools.completion_explanation_ab import ExperimentProvider, write_json
+from tools.completion_explanation_ab import ExperimentProvider, Target, write_json
 from tools.receipt_bound_edit_recovery_probe import receipt_audit
 
 URL = "https://example.com/copy-record"
+TARGET = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
 OBSERVE: JsonObject = {"tool": "codemode", "args": {}}
 DONE: JsonObject = {"tool": "done", "args": {"summary": "已复制网页值，保留文件其他字段。"}}
 TABLE = (
@@ -48,7 +48,7 @@ def test_copy_scope_is_explicit_and_narrow() -> None:
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 @pytest.mark.parametrize("case", [
-    "table", "json", "expired", "changed_data", "changed_file", "wrong_selector", "wrong_target", "raw_code", "duplicate",
+    "table", "json", "expired", "changed_data", "changed_file", "wrong_selector", "wrong_target", "raw_code", "duplicate", "parent_return",
 ])
 def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str) -> None:
     table = case in {"table", "wrong_selector", "duplicate"}
@@ -56,6 +56,16 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     task = (f"打开 {URL}，把 Retail 表中 B-17 的 Due 以整数原样写入 ledger.json 的 payable。"
             if table else f"打开 {URL}，把运单号原样写入 dispatch.json 的 carrier_label，保留前导零。")
     task += "保留其他字段。"
+    if case == "parent_return":
+        original_lower = CopyTurn.lower
+
+        def missing_return(copy: CopyTurn, args: JsonObject) -> JsonObject:
+            converted = original_lower(copy, args)
+            if copy.phase == "edit":
+                converted["code"] = str(converted["code"]).replace("return unwrap(await tools.edit", "unwrap(await tools.edit")
+            return converted
+
+        monkeypatch.setattr(CopyTurn, "lower", missing_return)
     selector: JsonObject = {"id": "table-2", "key_column": "Lot", "key": "B-17", "column": "Due"} if table else {"pointer": "/parcel/label"}
     edit: JsonObject = {"tool": "codemode", "args": {"source": selector, "target": {"file": path, "field": field}}}
     proposals: list[JsonObject] = (
@@ -129,14 +139,19 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr("codey.app.review_service.run_review", unavailable_review)
     recorder = ExperimentProvider(TARGET, tmp_path, fixed_acquisition=False)
+
+    def connect(*_args: object, **_kwargs: object) -> ExperimentProvider:
+        return recorder
+
     state = tmp_path / "state"
+    selection: JsonObject = {"model": TARGET.model, "base_url": TARGET.base_url}
     try:
         result = run_headless(HeadlessRequest(
             project, task, intent="hybrid", provider_id="local", max_turns=len(proposals), state_home=state,
             research_store_root=tmp_path / "knowledge",
             requested_capabilities=("web.read", "browser.observe", "browser.interact", "browser.effect"),
-            model_selection={"model": TARGET.model, "base_url": TARGET.base_url},
-        ), emit_jsonl=observe, connect_provider=lambda *_args, **_kwargs: recorder)
+            model_selection=selection,
+        ), emit_jsonl=observe, connect_provider=connect)
     finally:
         recorder.close()
     receipts = tool_receipts(state)
@@ -153,7 +168,7 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert result.stop_reason == "done", result
     assert len(edits) == 2 and [item.ok for item in edits] == [False, True]
     assert len(snapshots) == 2 and injected == snapshots[0]
-    assert decode_json_object(json.loads(file.read_text(encoding="utf-8"))) == {
+    assert parse_json_object(file.read_text(encoding="utf-8")) == {
         **initial, field: 962 if table else "000784" if case == "changed_data" else "000783", "external": "keep"}
     previous, final = [decode_json_object(item.call.args["browser_source"]) for item in edits]
     if case in {"expired", "changed_data"}:
@@ -163,7 +178,17 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         audit = receipt_audit([(item.identity, item.result) for item in receipts])
         assert audit["true_stale_conflicts"] == 1 and audit["fresh_read_recovery"] is True
         assert previous["ref"] == final["ref"]
-    requests = [json.loads(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
-    schemas = [row["payload"]["response_format"]["json_schema"]["schema"] for row in requests if row.get("phase") == "request"]
+    if case == "parent_return":
+        failures = [row.result for row in receipts if row.result.call.name == "codemode" and not row.result.ok
+                    and row.result.audit.get("error_code") == "missing_return"]
+        failed, = failures
+        assert failed.canonical["child_effect_ids"]
+        assert "Do not replay the whole operation" in failed.model_text
+        assert "repair_of=" not in failed.model_text and "Correct only the return expression" not in failed.model_text
+        assert "Return an explicit JSON value" not in failed.model_text
+        assert "CodeMode returned undefined" in str(failed.audit["template_error"])
+    requests = [parse_json_object(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
+    schemas = [decode_json_object(decode_json_object(decode_json_object(row["payload"])["response_format"])["json_schema"])["schema"]
+               for row in requests if row.get("phase") == "request"]
     assert len(schemas) == len(proposals)
     assert all('"code"' not in json.dumps(schema) for schema in schemas)

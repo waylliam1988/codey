@@ -6,10 +6,11 @@ conversation history is produced separately at its generation boundary.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import fields
+from collections.abc import Callable
+from dataclasses import Field, fields, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from codey.durable.model import ArtifactRecord, thaw_json
 from codey.durable.session import DurableSession
@@ -27,8 +28,9 @@ from codey.types.json_value import (
 from codey.workspace.context_admission import GhostContextSource
 
 if TYPE_CHECKING:
+    from codey.operations.browser_copy import CopyTurn
     from codey.operations.kernel_contracts import ToolExecutor
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel_protocol import ModelInputBinding, TurnSnapshot
     from codey.toolchain.tool_spec import ToolSpec
 
 REQUEST_KIND = "provider_request"
@@ -36,16 +38,20 @@ RESPONSE_KIND = "provider_response"
 
 
 def restore_ghost_context(payload: object) -> tuple[str, tuple[GhostContextSource, ...]]:
-    if (not isinstance(payload, dict) or set(payload) != {"text", "ghost_sources"}
+    payload = decode_json_object(payload)
+    if (set(payload) != {"text", "ghost_sources"}
             or not isinstance(payload["text"], str) or not isinstance(payload["ghost_sources"], list)):
         raise ValueError("frozen request has no valid context snapshot")
     sources = []
-    expected = {field.name for field in fields(GhostContextSource)}
-    for row in payload["ghost_sources"]:
-        if (not isinstance(row, dict) or set(row) != expected or type(row["budget"]) is not int
+    source_fields: tuple[Field[object], ...] = fields(GhostContextSource)
+    expected = {field.name for field in source_fields}
+    for raw in payload["ghost_sources"]:
+        row = decode_json_object(raw)
+        if (set(row) != expected or type(row["budget"]) is not int
                 or any(not isinstance(row[key], str) for key in expected - {"budget"})):
             raise ValueError("invalid frozen Ghost source")
-        sources.append(GhostContextSource(**row))
+        strings = {key: require_json_string(row[key], key) for key in expected - {"budget"}}
+        sources.append(GhostContextSource(budget=require_json_integer(row["budget"], "budget"), **strings))
     return payload["text"], tuple(sources)
 
 
@@ -68,13 +74,18 @@ def read_provider_artifact(store: ManagedOutputStore, record: ArtifactRecord, *,
     if record.owner_task_id != run_id or record.metadata.get("kind") != kind:
         raise RuntimeEffectError("provider artifact ownership mismatch")
     raw_ref = thaw_json(record.metadata.get("ref"))
-    if not isinstance(raw_ref, dict) or raw_ref.get("session_id") != session_id or raw_ref.get("run_id") != run_id:
+    if not isinstance(raw_ref, dict):
         raise RuntimeEffectError("provider artifact scope mismatch")
     ref: dict[str, object] = dict(raw_ref)
+    if ref.get("session_id") != session_id or ref.get("run_id") != run_id:
+        raise RuntimeEffectError("provider artifact scope mismatch")
     if ref.get("handle") != record.handle or ref.get("sha256") != record.sha256:
         raise RuntimeEffectError("provider artifact digest reference mismatch")
-    payload = store.read_json_artifact(ref)
-    if (not isinstance(payload, dict) or set(payload) != {"schema_version", "kind", "effect_id", "payload"}
+    raw_payload = store.read_json_artifact(ref)
+    if not isinstance(raw_payload, dict):
+        raise RuntimeEffectError("provider artifact envelope mismatch")
+    payload: dict[object, object] = raw_payload
+    if (set(payload) != {"schema_version", "kind", "effect_id", "payload"}
             or type(payload["schema_version"]) is not int
             or payload["schema_version"] not in ({1, 2} if kind == REQUEST_KIND else {1})
             or payload["kind"] != kind or payload["effect_id"] != effect_id):
@@ -102,21 +113,36 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
     """Persist the captured contract, never Python callables or a live registry."""
     if snapshot.policy is None:
         raise ValueError("captured turn has no authorization policy")
-    return decode_json_object(json_value({"schema_version": 5 if snapshot.browser_copy is not None else 4,
-            **({"browser_copy": snapshot.browser_copy.payload()} if snapshot.browser_copy is not None else {}),
+    return decode_json_object(json_value({"schema_version": 6,
+            "browser_copy": snapshot.browser_copy.payload() if snapshot.browser_copy is not None else None,
+            "input_binding": json_value(snapshot.input_binding),
             "implementation_id": runtime_implementation_id(), "allowed": json_value(snapshot.allowed),
             "contract_text": snapshot.contract_text, "tool_names": list(snapshot.tool_names),
             "nested_tool_names": list(snapshot.nested_tool_names),
             "research_scope": snapshot.research_scope.to_payload() if snapshot.research_scope is not None else None,
             "ignore_runtime_claims": snapshot.ignore_runtime_claims,
             "policy": snapshot.policy.to_payload(), "specs": json_value(snapshot.frozen_specs),
-            "executors": [{"name": name, "binding": None if fn is None else {
-                "module": getattr(fn, "__module__", ""), "name": getattr(fn, "__qualname__", ""),
-                "version": getattr(fn, "__codey_tool_version__", None),
-            }} for name, fn in snapshot.custom_executors]}))
+            "executors": [{"name": name, "binding": None if fn is None else _executor_identity(fn)}
+                          for name, fn in snapshot.custom_executors]}))
 
 
-@lru_cache(maxsize=1)
+def _executor_identity(fn: ToolExecutor) -> dict[str, object]:
+    module: object = getattr(fn, "__module__", "")
+    name: object = getattr(fn, "__qualname__", "")
+    version: object = getattr(fn, "__codey_tool_version__", None)
+    return {"module": module, "name": name, "version": version}
+
+
+class _CachedIdentity(Protocol):
+    def __call__(self) -> str: ...
+
+    def cache_clear(self) -> None: ...
+
+
+_cache_identity: Callable[[Callable[[], str]], _CachedIdentity] = lru_cache(maxsize=1)
+
+
+@_cache_identity
 def runtime_implementation_id() -> str:
     """Conservative identity for the installed built-in execution code.
 
@@ -132,16 +158,12 @@ def runtime_implementation_id() -> str:
     return digest.hexdigest()
 
 
-def _restore_spec(value: object, *, snapshot_version: int) -> ToolSpec:
+def _restore_spec(value: object) -> ToolSpec:
     from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
 
     row = decode_json_object(value)
-    expected = {field.name for field in fields(ToolSpec)}
-    legacy_metadata: JsonObject = {"namespace": "core", "effect": "read", "evidence_route": "none", "preconditions": []}
-    if snapshot_version <= 3 and set(row) == expected - legacy_metadata.keys():
-        # Original snapshots predate catalog metadata. Decode for inspection;
-        # restore_snapshot keeps these contracts incompatible with execution.
-        row.update(legacy_metadata)
+    spec_fields: tuple[Field[object], ...] = fields(ToolSpec)
+    expected = {field.name for field in spec_fields}
     if set(row) != expected:
         raise ValueError("invalid captured tool specification")
     parameters = row["parameters"]
@@ -170,25 +192,53 @@ def _restore_spec(value: object, *, snapshot_version: int) -> ToolSpec:
         preconditions=tuple(require_json_strings(row["preconditions"], "preconditions"))))
 
 
+def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSpec],
+                           copy: CopyTurn | None) -> ModelInputBinding | None:
+    from codey.operations.kernel_protocol import ModelInputBinding
+
+    if payload is None:
+        if copy is not None and "codemode" in names:
+            raise ValueError("captured browser copy has no input binding")
+        return None
+    raw = decode_json_object(payload)
+    if set(raw) != {"kind", "model_spec"}:
+        raise ValueError("invalid captured input binding")
+    model = _restore_spec(raw["model_spec"])
+    if raw["kind"] == "upload":
+        binding = ModelInputBinding("upload", model)
+    elif raw["kind"] == "browser_copy":
+        binding = ModelInputBinding("browser_copy", model)
+    else:
+        raise ValueError("unknown captured input binding")
+    execution = next((spec for spec in specs if spec.name == model.name), None)
+    if execution is None or model.name != "codemode" or model.name not in names:
+        raise ValueError("captured input binding has no visible executor")
+    if replace(model, parameters=execution.parameters, required=execution.required, description=execution.description,
+               declarations=execution.declarations, json_examples=execution.json_examples) != execution:
+        raise ValueError("captured input binding changes execution authority")
+    if binding.kind == "browser_copy":
+        if copy is None or copy.phase not in {"observe", "edit"} or copy.spec(execution) != model:
+            raise ValueError("captured input binding differs from its copy observation")
+    elif copy is not None or set(dict(model.parameters)) != {"upload"} or model.required != ("upload",):
+        raise ValueError("invalid captured upload input binding")
+    return binding
+
+
 def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import custom_executor_for
 
     payload = decode_json_object(payload)
-    expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors"}
+    expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors",
+                "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding"}
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version not in (1, 2, 3, 4, 5):
-        raise ValueError("invalid captured turn snapshot version/shape")
-    extra = {"nested_tool_names", "research_scope"} if version >= 3 else {"nested_tool_names"} if version == 2 else set()
-    if version >= 4:
-        extra.add("ignore_runtime_claims")
-    if version == 5:
-        extra.add("browser_copy")
-    if set(payload) != expected | extra:
+    if version != 6:
+        raise ValueError("unsupported captured turn snapshot version; start a new request")
+    if set(payload) != expected:
         raise ValueError("invalid captured turn snapshot version/shape")
     names = require_json_strings(payload["tool_names"], "tool_names")
-    nested = require_json_strings(payload.get("nested_tool_names", []), "nested_tool_names")
+    nested = require_json_strings(payload["nested_tool_names"], "nested_tool_names")
     allowed = None if payload["allowed"] is None else require_json_strings(payload["allowed"], "allowed")
     contract = require_json_string(payload["contract_text"], "contract_text")
     if any(not name for name in (*names, *nested)) or len(set(names)) != len(names) or len(set(nested)) != len(nested):
@@ -196,13 +246,13 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     raw_specs, raw_executors = payload["specs"], payload["executors"]
     if not isinstance(raw_specs, list) or not isinstance(raw_executors, list):
         raise ValueError("invalid captured turn definitions")
-    legacy_specs = any(isinstance(raw, dict) and "namespace" not in raw for raw in raw_specs)
-    specs = [_restore_spec(raw, snapshot_version=version) for raw in raw_specs]
-    inventory = list(dict.fromkeys([*names, *nested]))
+    specs = [_restore_spec(raw) for raw in raw_specs]
+    inventory_names: dict[str, None] = dict.fromkeys([*names, *nested])
+    inventory = list(inventory_names)
     if [spec.name for spec in specs] != inventory:
         raise ValueError("captured definitions do not match tool names")
     policy = TaskPolicy.from_payload(payload["policy"])
-    ignore_runtime_claims = require_json_boolean(payload["ignore_runtime_claims"], "ignore_runtime_claims") if version >= 4 else False
+    ignore_runtime_claims = require_json_boolean(payload["ignore_runtime_claims"], "ignore_runtime_claims")
     if nested:
         from codey.codemode.catalog import build_codemode_catalog
 
@@ -213,7 +263,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         )
         if "codemode" not in names or not set(nested) <= {entry.name for entry in catalog.entries}:
             raise ValueError("captured nested capabilities exceed the frozen CodeMode inventory")
-    compatible = not legacy_specs and payload["implementation_id"] == runtime_implementation_id()
+    compatible = payload["implementation_id"] == runtime_implementation_id()
     bindings: list[tuple[str, ToolExecutor | None]] = []
     for raw in raw_executors:
         row = decode_json_object(raw)
@@ -227,23 +277,21 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         else:
             if not isinstance(binding, dict) or set(binding) != {"module", "name", "version"}:
                 raise ValueError("invalid captured executor identity")
-            compatible = compatible and bool(binding["version"]) and current is not None and binding == {
-                "module": getattr(current, "__module__", ""), "name": getattr(current, "__qualname__", ""),
-                "version": getattr(current, "__codey_tool_version__", None),
-            }
+            compatible = (compatible and bool(binding["version"]) and current is not None
+                          and binding == _executor_identity(current))
         bindings.append((name, current))
     if [name for name, _ in bindings] != inventory:
         raise ValueError("captured executor descriptors do not match tool names")
     from codey.research.answer_contract import AnswerScope
 
-    raw_scope = payload.get("research_scope")
-    if isinstance(raw_scope, dict) and "plan_digest" in raw_scope:
-        raise ValueError("legacy local Research request is no longer supported; start a new Research task")
+    raw_scope = payload["research_scope"]
     scope = AnswerScope.from_payload(raw_scope) if raw_scope is not None else None
     from codey.operations.browser_copy import CopyTurn
 
+    copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
+    input_binding = _restore_input_binding(payload["input_binding"], names, specs, copy)
     return TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=contract,
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
-        browser_copy=CopyTurn.restore(decode_json_object(payload["browser_copy"])) if version == 5 else None)
+        browser_copy=copy, input_binding=input_binding)
