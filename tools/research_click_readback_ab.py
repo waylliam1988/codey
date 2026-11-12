@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import argparse
 import re
-from collections.abc import Iterator
-from contextlib import contextmanager, nullcontext
+from collections.abc import Generator
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 from unittest.mock import patch
@@ -25,7 +25,7 @@ from codey.research.passages import read_passage_refs
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tools import research_natural_handoff_ab as natural
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import tool_receipts
@@ -146,7 +146,8 @@ def cites_post_click(browser: BrowserSession, click: Click | None, rows: tuple[T
 
 
 @contextmanager
-def readback_experiment(directory: Path, arm: Arm, case: natural.Case) -> Iterator[None]:
+def readback_experiment(directory: Path, arm: Arm, case: natural.Case, *,
+                        automatic_readback: bool = True, guidance: bool = True) -> Generator[None, None, None]:
     execute, opened, submit = (ExecutionDelegate._execute_browser, ExecutionDelegate._execute_source_open,
                                ExecutionDelegate._submit_research_answer)
     fetch, generate, freeze = BrowserSearchProvider._fetch_on_browser_thread, ExperimentProvider._generate, KernelContext.freeze
@@ -226,7 +227,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case) -> Iterat
              tool_call_contract: str = "", tool_call_observations: str = "", tool_call_history_groups: int = 0,
              output_token_limit: int = 0, require_tool_call: bool = False) -> dict[str, object]:
         nonlocal pending, automatic
-        if pending is not None and active is not None:
+        if automatic_readback and pending is not None and active is not None:
             click, pending = pending, None
             receipts = tool_receipts(directory / "state")
             index = next((i for i, row in enumerate(receipts) if row.result.ok and row.result.call.call_id == click.call_id), None)
@@ -280,7 +281,7 @@ def readback_experiment(directory: Path, arm: Arm, case: natural.Case) -> Iterat
         nonlocal hinted, read_available
         read_available = "codemode" in snapshot.tool_names and "browser_read" in snapshot.nested_tool_names
         browser = active
-        if not hinted and browser is not None and isinstance(snapshot.research_scope, AnswerScope):
+        if guidance and not hinted and browser is not None and isinstance(snapshot.research_scope, AnswerScope):
             document = browser.document_identity()
             if document is not None and document.get("url") == case.url:
                 selected = _browser_call(lambda: projection(browser._page_on_browser_thread(), record))
@@ -327,15 +328,19 @@ def run_arm(directory: Path, case: natural.Case, arm: Arm, target: Target, *, ma
             tool_call_history_groups=tool_call_history_groups, output_token_limit=output_token_limit,
             require_tool_call=require_tool_call)
 
+    def configure(path: Path, group: Arm) -> AbstractContextManager[None]:
+        return readback_experiment(path, group, case)
+
     with (patch.object(ExperimentProvider, "_generate", seed) if seeded_click else nullcontext(),
-          patch.object(natural, "experiment", lambda path, group: readback_experiment(path, group, case))):
+          patch.object(natural, "experiment", configure)):
         row = natural.run_arm(directory, case, arm, target, max_turns=max_turns)
     receipts = [receipt.result for receipt in tool_receipts(directory / "state")]
     automatic = [result for result in receipts if result.ok and result.call.name == "browser_read"
                  and result.audit.get("readback_of")]
     actual = [result for result in receipts if result.ok and result.call.name in natural.READS and result.audit.get("record_id")]
+    scoped_texts: list[JsonValue] = [_browser_body(result) or "" for result in actual]
     row.update(seeded_click=bool(seeded_click), automatic_reads=len(automatic), scoped_reads=len(actual),
-        scoped_texts=[_browser_body(result) or "" for result in actual],
+        scoped_texts=scoped_texts,
         accepted_clicks=sum(result.ok and result.call.name == "browser_click" for result in receipts))
     write_json(directory / "summary.json", row)
     return row

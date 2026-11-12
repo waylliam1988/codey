@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -145,7 +145,7 @@ def acquisition_snapshot(snapshot: TurnSnapshot) -> TurnSnapshot:
 
 
 @contextmanager
-def experiment(directory: Path, arm: Arm) -> Iterator[None]:
+def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
     original_freeze, normalize = KernelContext.freeze, kernel_protocol.normalize_turn
     descriptor: object = vars(TurnSnapshot)["model_specs"]
     assert isinstance(descriptor, property) and descriptor.fget is not None
@@ -248,6 +248,15 @@ def contains_fact(text: str, fact: str) -> bool:
     return "".join(fact.split()) in "".join(text.split())
 
 
+def cited_page_text(receipts: list[ToolResult], case: Case) -> str:
+    submitted = next((row.canonical.get("research_submission") for row in reversed(receipts)
+                      if row.ok and row.call.name == "submit_research_answer"), None)
+    citations = submitted.get("citations") if isinstance(submitted, dict) else None
+    cited = {row.get("passage_ref") for row in citations if isinstance(row, dict)} if isinstance(citations, list) else set()
+    return "\n".join((_browser_body(row) or "") for row in receipts if row.ok and row.call.name in READS
+                     and cited.intersection(complete_page_passages(row, case.url)))
+
+
 def run_arm(directory: Path, case: Case, arm: Arm, target: Target, *, max_turns: int = 10,
             separate_url: bool = False) -> JsonObject:
     before = production_source_digest()
@@ -286,16 +295,12 @@ def run_arm(directory: Path, case: Case, arm: Arm, target: Target, *, max_turns:
         browser.close()
         provider.close()
     receipts = [row.result for row in tool_receipts(directory / "state")]
-    terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), {})
-    answer = str(terminal.get("summary") or "")
-    submitted = next((row.canonical.get("research_submission") for row in reversed(receipts)
-                      if row.ok and row.call.name == "submit_research_answer"), None)
-    citations = submitted.get("citations") if isinstance(submitted, dict) else None
-    cited = {row.get("passage_ref") for row in citations if isinstance(row, dict)} if isinstance(citations, list) else set()
-    cited_body = "\n".join((_browser_body(row) or "") for row in receipts if row.ok and row.call.name in READS
-                           and cited.intersection(complete_page_passages(row, case.url)))
+    terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), None)
+    answer = str(terminal.get("summary") or "") if terminal is not None else ""
+    cited_body = cited_page_text(receipts, case)
     trace = directory / "handoff.jsonl"
-    phases = [decode_json_object(json.loads(line)) for line in trace.read_text(encoding="utf-8").splitlines()] if trace.exists() else []
+    phases: list[JsonObject] = ([decode_json_object(json.loads(line))
+                                for line in trace.read_text(encoding="utf-8").splitlines()] if trace.exists() else [])
     early = [row["turn"] for row in phases if row["phase"] == "submit"
              and not all(contains_fact(json.dumps(row["evidence"], ensure_ascii=False), fact) for fact in case.facts)]
     stable = before == production_source_digest()
