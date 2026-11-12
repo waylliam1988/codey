@@ -4,8 +4,10 @@ from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from codey.codemode.identity import rpc_child_index
+from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE, replace_json_fields
 from codey.codemode.types import ToolCatalogEntry
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.constants import STALE_READ_REFERENCE_ERROR
 from codey.toolchain.result_schema import validate_output
 from codey.types.json_value import JsonObject, decode_json_object
 
@@ -54,6 +56,7 @@ class CodeModeHost:
         self._execute = execute
         self._replay = replay
         self._next_child = 0
+        self._complete_reads: dict[str, tuple[str, str]] = {}
 
     def invoke(self, name: str, args: dict[str, object]) -> object:
         tool_name = str(name or "").strip().lower()
@@ -68,6 +71,12 @@ class CodeModeHost:
             index = self._next_child
             self._next_child += 1
         decoded_args = decode_json_object(args)
+        json_edit = tool_name == "edit" and "changes" in decoded_args
+        if json_edit:
+            try:
+                decoded_args = self._json_edit_args(decoded_args)
+            except (ValueError, TypeError, RecursionError) as exc:
+                return {"ok": False, "error": f"JSON field edit rejected: {exc}"}
         if self._replay is not None:
             raw = self._replay(index, tool_name, decoded_args)
         else:
@@ -76,9 +85,27 @@ class CodeModeHost:
         if not isinstance(raw, ToolResult):
             raise TypeError("host executor must return a ToolResult")
         if not raw.ok:
-            return {"ok": False, "error": raw.model_text}
+            error = raw.model_text
+            if json_edit and STALE_READ_REFERENCE_ERROR in error:
+                error = f"{STALE_READ_REFERENCE_ERROR} {JSON_FIELD_EDIT_GUIDANCE}"
+            return {"ok": False, "error": error}
         value = successful_tool_value(raw, self._catalog[tool_name])
         output: dict[str, object] = {"ok": True, "value": value}
-        if raw.audit.get("result_ref"):
-            output["result_ref"] = raw.audit["result_ref"]
+        if ref := raw.audit.get("result_ref"):
+            output["result_ref"] = ref
+            if (tool_name == "read_file" and "edit" in self._catalog
+                    and isinstance(ref, str) and isinstance(value, dict) and not raw.truncated):
+                path, text = decoded_args.get("path"), value.get("text")
+                if (isinstance(path, str) and isinstance(text, str) and value.get("text_complete") is True
+                        and value.get("start_line") == 1 and value.get("next_offset") == 0
+                        and value.get("end_line") == value.get("total_lines")):
+                    self._complete_reads[ref] = (path, text)
         return output
+
+    def _json_edit_args(self, args: JsonObject) -> JsonObject:
+        ref = args.get("base_result_ref")
+        if set(args) != {"base_result_ref", "changes"} or not isinstance(ref, str) or ref not in self._complete_reads:
+            raise ValueError("use an original complete tools.read_file result from this program")
+        path, text = self._complete_reads[ref]
+        content = replace_json_fields(text, decode_json_object(args["changes"]))
+        return {"path": path, "content": content, "base_result_ref": ref}

@@ -88,9 +88,11 @@ function checkedToolResult(value, name) {
     get(target, property, receiver) {
       if (typeof property === "string" && !["then", "toJSON", "ok", "value", "error", "result_ref"].includes(property)
           && !Reflect.has(target, property)) {
+        const hint = name === "read_file" && property === "base_result_ref"
+          ? ". For whole-file edits, use readResult.result_ref, not readResult.value.result_ref."
+          : "; use unwrap(result)." + property + " or result.value." + property + ". Receipt metadata result_ref stays on result.";
         const error = new Error("tools." + name + " returned Result<T>, not its data. Undeclared result field "
-          + JSON.stringify(property) + "; use unwrap(result)." + property + " or result.value." + property
-          + ". Receipt metadata result_ref stays on result.");
+          + JSON.stringify(property) + hint);
         error.code = "result_contract";
         throw error;
       }
@@ -110,6 +112,14 @@ function toolsProxy(path = []) {
     }
     if (active.pending >= active.limits.maxPendingPromises) {
       throw new Error("codemode pending promise limit exceeded");
+    }
+    if (name === "edit" && args !== null && typeof args === "object"
+        && (Object.hasOwn(args, "read") || Object.hasOwn(args, "changes"))) {
+      const ref = active.readReceipts.get(args.read);
+      if (!ref || !Object.hasOwn(args, "read") || !Object.hasOwn(args, "changes") || Object.keys(args).length !== 2) {
+        throw new Error("JSON edit requires {read, changes}. Pass the original tools.read_file result from this program as read. Do not unwrap read.");
+      }
+      args = {base_result_ref: ref, changes: args.changes};
     }
     const encodedArgs = encodeJson(args, "Arguments for tools." + name, "argument_encoding",
       active.catalog.get(name)?.parameters?.properties);
@@ -198,6 +208,7 @@ async function execute(request) {
     calls: 0,
     pending: 0,
     issued: new Map(),
+    readReceipts: new WeakMap(),
     stateEnabled: Boolean(request.stateEnabled),
   };
   Object.assign(globalThis, {
@@ -288,7 +299,13 @@ return async (line) => {
     if (!waiter) return;
     pending.delete(message.callId);
     if (active && message.type === "result") active.pending = Math.max(0, active.pending - 1);
-    if (message.ok) waiter.resolve(waiter.state ? message.value : checkedToolResult(message.value, waiter.name)); else {
+    if (message.ok) {
+      const result = waiter.state ? message.value : checkedToolResult(message.value, waiter.name);
+      if (active && waiter.name === "read_file" && result?.ok === true && typeof result.result_ref === "string") {
+        active.readReceipts.set(result, result.result_ref);
+      }
+      waiter.resolve(result);
+    } else {
       const error = new Error(String(message.error ?? "tool call failed"));
       error.code = String(message.errorCode ?? "tool_error");
       waiter.reject(error);

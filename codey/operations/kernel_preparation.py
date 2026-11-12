@@ -1,6 +1,7 @@
 """Prepare an unsent kernel turn once; received turns reuse their original input."""
 from dataclasses import dataclass
 
+from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
 from codey.operations import kernel_prompt, kernel_protocol
 from codey.operations.completion_context import CompletionContextInput
 from codey.operations.kernel_protocol import TurnSnapshot
@@ -27,6 +28,8 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
         raise ValueError("prepared turn has no authorization policy")
     whole = isinstance(snapshot.research_scope, AnswerScope)
     guidance = [task_guidance] if task_guidance else []
+    if ".json" in user_task.casefold() and {"edit", "read_file"} <= set(snapshot.nested_tool_names):
+        guidance.append(JSON_FIELD_EDIT_GUIDANCE)
     if snapshot.policy.strict_research and snapshot.research_scope is None:
         from codey.research.methods import research_method_guidance
 

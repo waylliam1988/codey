@@ -121,15 +121,22 @@ def build_codemode_catalog(
 
 
 def render_declarations(snapshot: ToolCatalogSnapshot) -> str:
-    lines = [
-        "// tools.NAME uses NAME's declared arguments; returns Result<T>.",
+    from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
+
+    names = {entry.name for entry in snapshot.entries}
+    json_edit = {"edit", "read_file"} <= names
+    lines = ["// tools.NAME uses NAME's declared arguments; returns Result<T>."]
+    if json_edit:
+        lines.extend("// " + line for line in JSON_FIELD_EDIT_GUIDANCE.splitlines())
+        lines.append("type JsonEditValue = null | boolean | number | string | JsonEditValue[] | {[key: string]: JsonEditValue};")
+    lines.extend((
         "type ToolResult<T> =",
         "  | {ok: true; value: T; result_ref?: string}",
         "  | {ok: false; error: string};",
         "type Result<T> = Promise<ToolResult<T>>;",
         "declare function unwrap<T>(result: ToolResult<T>): T;",
         "declare const tools: {",
-    ]
+    ))
     for entry in snapshot.entries:
         # Aggregated leaves no longer have standalone model definitions.
         # Keep their semantics as well as their argument/return shapes.
@@ -140,6 +147,9 @@ def render_declarations(snapshot: ToolCatalogSnapshot) -> str:
             if description:
                 lines.append(f"  // {entry.name}.{name}: {description}")
         value = schema_typescript(entry.output_schema)
+        if entry.name == "edit" and json_edit:
+            lines.append("  // Pass the original complete read result and a nonempty object of existing top-level fields.")
+            lines.append(f"  edit(args: {{read: Awaited<ReturnType<typeof tools.read_file>>; changes: Record<string, JsonEditValue>}}): Result<{value}>;")
         lines.append(f"  {entry.name}(args: {schema_typescript(entry.parameters)}): Result<{value}>;")
     lines.extend(("};", f"// catalog_digest={snapshot.digest}"))
     return "\n".join(lines)
