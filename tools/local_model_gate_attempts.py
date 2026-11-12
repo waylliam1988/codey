@@ -22,7 +22,7 @@ from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from types import TracebackType
-from typing import NotRequired, Protocol, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, NotRequired, Protocol, TypedDict, Unpack, cast
 
 from codey.providers import api_generation
 from codey.providers.api_provider import ApiProvider
@@ -31,9 +31,11 @@ from codey.providers.api_transport import AttemptControl
 from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult
 from codey.providers.local_response_codec import normalize_local_reply
 from codey.providers.local_tool_compat import safe_native_tools
-from codey.providers.zen.connection import ZenProvider
 from codey.runtime.core.cancellation import CapturedProcess, start_process, wait_process
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
+
+if TYPE_CHECKING:
+    from codey.providers.zen.connection import ZenProvider
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OBJECTIVE_CASES = frozenset({"create", "edit", "references", "hybrid", "auto", "tests", "project_review"})
@@ -233,9 +235,9 @@ def make_provider(target: GateTarget, directory: Path) -> ApiProvider | ZenProvi
         from codey.providers.api_connections import open_selection
         from codey.runtime.core.api_selection import ApiRunSelection
 
-        provider = cast(ApiProvider | ZenProvider, open_selection(ApiRunSelection.from_payload(target.api_selection)))
+        provider = cast("ApiProvider | ZenProvider", open_selection(ApiRunSelection.from_payload(target.api_selection)))
         recorder_id = uuid.uuid4().hex
-        runtime = provider.runtime if isinstance(provider, ZenProvider) else provider
+        runtime = cast(ApiProvider, getattr(provider, "runtime", provider))
         cast(_RecorderIdentity, provider).recorder_id = recorder_id
         cast(_RuntimeRecorder, runtime)._gate_recorder_id = recorder_id
         runtime.timeout = target.request_timeout

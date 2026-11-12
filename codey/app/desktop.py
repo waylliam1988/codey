@@ -11,11 +11,10 @@ from codey.launcher.startup import StartupTrace, startup_stage
 
 
 def _set_taskbar_identity() -> None:
-    if sys.platform != "win32":
-        return
-    set_identity = ctypes.OleDLL("shell32").SetCurrentProcessExplicitAppUserModelID
-    set_identity.argtypes = [ctypes.c_wchar_p]
-    set_identity("Codey.Desktop")
+    if sys.platform == "win32":
+        set_identity = ctypes.OleDLL("shell32").SetCurrentProcessExplicitAppUserModelID
+        set_identity.argtypes = [ctypes.c_wchar_p]
+        set_identity("Codey.Desktop")
 
 
 def open_desktop(home: Path, *, port: int = 5173) -> None:

@@ -1,6 +1,7 @@
 """Real approval HTTP routes and native history, with a deterministic model peer."""
 from __future__ import annotations
 
+import faulthandler
 import inspect
 import json
 import sys
@@ -26,6 +27,11 @@ from tools.local_model_gate_shell import (
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
+
+# These bounds include real Windows shell startup and durable SQLite commits.
+# The barriers impose ordering; elapsed time is only a deadlock watchdog.
+TASK_TIMEOUT = 60
+BARRIER_TIMEOUT = 20  # Below GateHTTPClient's 30-second request deadline.
 
 
 def _after_return(function: Callable[_P, _T], callback: Callable[[], None]) -> Callable[_P, _T]:
@@ -114,7 +120,7 @@ def model_peer(protocol, case, tool_name="shell", repeat=False, retry_denied=Fal
         thread.join(timeout=5)
 
 
-def wait_for_completed_task(ctx, events, run_id, requests, errors, *, timeout=10):
+def wait_for_completed_task(ctx, events, run_id, requests, errors, *, timeout=TASK_TIMEOUT):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         terminal = next((event for event in reversed(events)
@@ -126,6 +132,7 @@ def wait_for_completed_task(ctx, events, run_id, requests, errors, *, timeout=10
             break
         time.sleep(.02)
     task = ctx.durable.task(run_id)
+    faulthandler.dump_traceback()
     pytest.fail(f'remembered task did not finish within {timeout}s: '
         f'approval={ctx.shell_approval_workflow.list_statuses()}, '
         f'task={task.phase}/{task.status}@{task.revision}, scheduler={ctx.durable_scheduler.health()}, '
@@ -177,7 +184,7 @@ def test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_p
                 })
                 run_id = submitted['run_id']
                 if attempt == 0:
-                    assert wait_for_run(client, run_id, 10)['stop_reason'] == 'approval'
+                    assert wait_for_run(client, run_id, TASK_TIMEOUT)['stop_reason'] == 'approval'
                     approval_id = next(iter(ctx.pending_shell_approvals()))
                     client.post('/api/shell_approval', {'id': approval_id, 'approved': True, 'scope': 'session'})
                 wait_for_completed_task(ctx, events, run_id, requests, errors)
@@ -232,7 +239,7 @@ def test_remembered_approval_keeps_worker_reservation_when_http_admission_loses_
         if reserved.run_id not in delayed_run:
             return original_claim(state, reserved, existing_reservation=existing_reservation)
         try:
-            assert worker_ready.wait(5), 'scheduler did not reach the completion boundary'
+            assert worker_ready.wait(BARRIER_TIMEOUT), 'scheduler did not reach the completion boundary'
             return original_claim(state, reserved, existing_reservation=existing_reservation)
         finally:
             admission_finished.set()
@@ -242,19 +249,20 @@ def test_remembered_approval_keeps_worker_reservation_when_http_admission_loses_
     ) -> CommitResult:
         if boundary == 'running' and task_id in delayed_run:
             worker_ready.set()
-            assert admission_finished.wait(5), 'HTTP claim did not finish'
+            assert admission_finished.wait(BARRIER_TIMEOUT), 'HTTP claim did not finish'
         return complete(self, task_id, answer, state=state)
 
     def before_finish(self: TaskLifecycleCoordinator, run_id: str, event: JsonObject) -> bool:
         if boundary == 'terminal' and run_id in delayed_run and event.get('stop_reason') == 'done':
             worker_ready.set()
-            assert admission_finished.wait(5), 'HTTP claim did not finish'
+            assert admission_finished.wait(BARRIER_TIMEOUT), 'HTTP claim did not finish'
         return finish(self, run_id, event)
 
     def before_admission_returns() -> None:
         if delayed_run:
-            ready = worker_ready.wait(5)
+            ready = worker_ready.wait(BARRIER_TIMEOUT)
             if not ready:
+                faulthandler.dump_traceback()
                 admission_finished.set()
             assert ready, 'worker did not reach the boundary before HTTP admission returned'
 

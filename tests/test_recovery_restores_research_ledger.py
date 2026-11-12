@@ -118,10 +118,10 @@ def test_failed_ledger_projection_does_not_commit_partial_task_facts():
         RecoveredToolOutcome(ToolCall("web_search", {"query": "helium"}),
                              ToolOutcome("1. docs\n   https://example.com", True,
                                          canonical={"research_observation": ledger_observation(search_ledger, "web_search")}),
-                             1, 0, effect_id="search"),
+                             1, 0, effect_id="search", redelivered=True),
         RecoveredToolOutcome(ToolCall("open_url", {"url": "https://example.com"}),
                              ToolOutcome("source", True, canonical={"research_observation": {"bad": True}}),
-                             2, 0, effect_id="open"),
+                             2, 0, effect_id="open", redelivered=True),
     )
     frame = SimpleNamespace(run_id="r", recovered_tool_outcomes=(), settled_tool_outcomes=rows)
     with pytest.raises(RecoveryFailed, match="recovered facts replay"):

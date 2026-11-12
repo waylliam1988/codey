@@ -32,6 +32,7 @@ def test_source_locator_guidance_uses_current_query_and_preserves_reused_ids():
 
     class Tools:
         ledger = ResearchLedger()
+        browser_session = None
 
         def source_search(self, url, query, limit=6):
             self.ledger.record_open(url, url, "Captured", "matched text\n" * 100)
@@ -79,6 +80,7 @@ def test_source_search_canonical_replays_to_same_facts():
 
     class FakeSearch:
         ledger = ResearchLedger()
+        browser_session = None
 
         def source_search(self, url, query, limit=6):
             from codey.research.tools import ResearchToolOutput

@@ -114,11 +114,11 @@ class _FailingProvider(_Provider):
         raise RuntimeError("offline")
 
 
-def test_chat_research_tools_continue_shared_kernel_without_mode_redispatch() -> None:
+def test_chat_research_tools_continue_shared_kernel_without_mode_redispatch(public_source_dns) -> None:
     import json
 
     from codey.research.ledger import ResearchLedger
-    from codey.research.tools import ResearchToolOutput, ResearchTools
+    from codey.research.tools import ResearchTools
 
     with tempfile.TemporaryDirectory() as td:
         state = server.AppContext(td)
@@ -133,16 +133,15 @@ def test_chat_research_tools_continue_shared_kernel_without_mode_redispatch() ->
             main_provider.prompts.append(text)
             return next(replies)
         main_provider.send = send
-        class FixtureResearchTools(ResearchTools):
-            def web_search(self, query):
-                self.ledger.record_search(query, [{"url": "https://example.com/version", "title": "Version"}])
-                return ResearchToolOutput("1. Version\nhttps://example.com/version", ok=True)
+        class Search:
+            def search(self, query, limit=8):
+                return [{"url": "https://example.com/version", "title": "Version"}]
 
-            def open_url(self, url, **_kwargs):
-                self.ledger.record_open(url, url, "Version", "VERSION_KERNEL_MARKER")
-                return ResearchToolOutput("VERSION_KERNEL_MARKER", ok=True)
+            def fetch(self, url):
+                return {"status": "ok", "url": url, "title": "Version",
+                        "text": "VERSION_KERNEL_MARKER", "truncated": False}
 
-        tools = FixtureResearchTools(search=None, store=None, changes=None, ledger=ResearchLedger())
+        tools = ResearchTools(search=Search(), store=None, changes=None, ledger=ResearchLedger())
         ledger = tools.ledger
         unused = mock.Mock(side_effect=AssertionError("mode redispatch must not run"))
         with (

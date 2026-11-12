@@ -77,7 +77,8 @@ def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = "
             "original_sha256": ref.original_sha256,
             "stored_truncated": ref.stored_truncated,
         }}
-        result = ToolResult(ok=True, call=read_call, model_text=long_text[:2000], audit=audit, truncated=True)
+        # Exceed the inline receipt limit, independently of the optional output attachment.
+        result = ToolResult(ok=True, call=read_call, model_text=long_text[:9000], audit=audit, truncated=True)
     else:
         result = ToolResult(ok=True, call=read_call, model_text=read_text)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "project.read", "project.verify"})),
@@ -87,8 +88,17 @@ def _settle_batch(tmp: Path, session_id: str, run_id: str, *, long_text: str = "
                            executors={"run":execute_run, "read_file":lambda _:result})
     assert results[0].model_text == "run output hi"
     assert (tmp / "execution-count.txt").read_text() == "1"
+    receipt_path = None
+    if long_text:
+        from codey.runtime.effects.effect_records import RuntimeEffectStore
+
+        row = next(row for row in RuntimeEffectStore(durable=durable).load_effects(session_id, run_id)
+                   if row.intent.tool_index == 1)
+        assert row.settlement is not None and row.settlement.result_ref.startswith("artifact_")
+        assert not row.settlement.result_payload
+        receipt_path, = (state_home / "managed_outputs").rglob(f"{row.settlement.result_ref}.json")
     durable.close()
-    return long_text
+    return receipt_path
 
 
 def _recover(tmp: Path, session_id: str, run_id: str, project: str):
@@ -195,11 +205,9 @@ def test_settled_redelivery_with_missing_receipt_fails_closed():
     long_text = "M0123456789\n" * 900
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         tmp = Path(td)
-        _settle_batch(tmp, "s-miss", "r-miss", long_text=long_text)
-        # 删除受管收据
-        for path in (tmp / "state" / "managed_outputs").rglob("*"):
-            if path.is_file():
-                path.unlink()
+        receipt = _settle_batch(tmp, "s-miss", "r-miss", long_text=long_text)
+        assert receipt is not None
+        receipt.unlink()
         recovery = _recover(tmp, "s-miss", "r-miss", str(tmp))
         assert recovery.ok is False, "收据缺失必须明确恢复失败，不得静默截断交付"
 
@@ -208,8 +216,8 @@ def test_settled_redelivery_with_tampered_receipt_fails_closed():
     long_text = "T0123456789\n" * 900
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         tmp = Path(td)
-        _settle_batch(tmp, "s-tamp", "r-tamp", long_text=long_text)
-        for path in (tmp / "state").rglob("*.txt"):
-            path.write_text("tampered", encoding="utf-8")
+        receipt = _settle_batch(tmp, "s-tamp", "r-tamp", long_text=long_text)
+        assert receipt is not None
+        receipt.write_text("{}", encoding="utf-8")
         recovery = _recover(tmp, "s-tamp", "r-tamp", str(tmp))
         assert recovery.ok is False, "收据被改必须明确恢复失败"

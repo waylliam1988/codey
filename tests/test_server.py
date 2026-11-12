@@ -5038,7 +5038,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.research.search_factory.WebSourceProvider", return_value=Search()),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 _run_task_with_ghost_wait("session-research", None, "Research helium", 8, False, "deepseek", "research")
@@ -5144,7 +5144,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.research.search_factory.WebSourceProvider", return_value=Search()),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
                 mock.patch.dict(
                     sys.modules,
@@ -5246,7 +5246,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.research.search_factory.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.research.search_factory.WebSourceProvider", return_value=Search()),
                 mock.patch.object(task_submit, "agent_run") as agent_run,
             ):
                 _run_task_with_ghost_wait(

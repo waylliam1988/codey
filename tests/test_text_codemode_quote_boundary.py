@@ -98,7 +98,7 @@ def test_original_loop_repairs_recorded_escape_failure_then_searches_exact_quote
         ),
         observation=KernelObservationDeps(intent_sink=runtime.sink),
     ))
-    assert result.completed and result.summary == correct and provider.step == 3
+    assert result.completed and json.loads(result.summary) == json.loads(correct) and provider.step == 3
     leaf = next(row for row in runtime.state._memory_results.values() if row.call.name == "grep")
     assert leaf.call.args == ARGS and leaf.canonical["value"]["matches"][0]["text"] == '"PATTERN.*"'
     restored = _restart(runtime)

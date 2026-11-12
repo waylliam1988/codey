@@ -198,6 +198,12 @@ export class RunEventCoordinator {
       return;
     }
     if (data.type === 'status') {
+      if (
+        data.run_id &&
+        data.session_id &&
+        !this.deps.requests.acceptsEvent({ ...data, session_id: data.session_id, run_id: data.run_id })
+      )
+        return;
       this.deps.transport.displayRunStatus(data.status || '');
       return;
     }
