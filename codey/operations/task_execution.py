@@ -279,7 +279,7 @@ class ExecutionDelegate:
                 browser.prepare_from_receipts(tuple(self.session._memory_results.values()))
             checks = self.session.policy.required_checks
             trace_document = (call.name in browser_receipt_tools(checks) or
-                              (call.name == "browser_eval" and has_browser_field_bindings(checks)))
+                              (call.name in {"browser_eval", "browser_read"} and has_browser_field_bindings(checks, tool=call.name)))
             transition = call.name in PAGE_TRANSITIONS
             before = browser.document_identity() if trace_document and not transition else None
             result, ok, code = self._execute_browser_operation(browser, call, turn=turn, tool_index=tool_index)

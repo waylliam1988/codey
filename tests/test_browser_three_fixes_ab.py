@@ -48,10 +48,10 @@ def test_observed_failure_and_candidate(tmp_path: Path, monkeypatch: pytest.Monk
     install_http(monkeypatch, replies)
     directory = tmp_path / "run"
     row = probe.run_arm(directory, scenario, arm, TARGET, max_turns=len(replies))
-    assert row["passed"] is (arm == "B"), row
+    assert row["passed"] is (arm == "B" or scenario == "legacy_structured"), row
     if scenario == "legacy_structured":
         evaluation, = [r.result for r in tool_receipts(directory / "state") if r.result.call.name == "browser_eval"]
-        assert evaluation.ok is (arm == "B")
+        assert evaluation.ok
         assert evaluation.call.args["code"] == "return window.__contractToken;"
         if arm == "B":
             assert row["candidate_actions"] == [{"original": "return window.__contractToken;",

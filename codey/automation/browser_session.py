@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -36,6 +37,7 @@ from codey.types.json_value import JsonObject, JsonValue, canonical_json_object,
 MAX_SNAPSHOT_ELEMENTS = 80
 MAX_SNAPSHOT_TEXT = 12_000
 MAX_ACTION_TEXT = 2_000
+_PROPERTY_RETURN = re.compile(r"\s*return[ \t]+(window\.[A-Za-z_$][\w$]*)(?:\s*;)?\s*", re.ASCII)
 T = TypeVar("T")
 P = ParamSpec("P")
 
@@ -352,7 +354,9 @@ class BrowserSession:
             return BrowserToolOutput("ERROR: browser_eval needs code", False,
                                      {"action": "eval", "delivery": "not_delivered"})
         try:
-            value: object = page.evaluate(code)
+            # CodeMode accepts a function body, while this browser call also accepts expressions.
+            property_return = _PROPERTY_RETURN.fullmatch(code)
+            value: object = page.evaluate(property_return[1] if property_return else code)
             canonical = decode_json_value(value)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise

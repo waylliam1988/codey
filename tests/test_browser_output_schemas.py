@@ -2,10 +2,14 @@ from collections.abc import Mapping
 
 import pytest
 
+from codey.automation.browser_session import BrowserSession
 from codey.operations.task_execution import ExecutionDelegate
+from codey.operations.task_session import TaskSession
+from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall
 from codey.toolchain.result_schema import schema_typescript, validate_output
 from codey.toolchain.tool_spec import tool_specs
+from codey.types.json_value import decode_json_object
 from tests.test_browser_production_execution import URL
 from tests.test_browser_production_execution import production_browser as production_browser
 
@@ -40,3 +44,25 @@ def test_declared_browser_fields_are_typed_and_missing_data_is_rejected() -> Non
     assert isinstance(properties, Mapping)
     with pytest.raises(ValueError, match="JSON cannot encode"):
         validate_output("eval", properties["value"], {"nested": object()})
+
+
+@pytest.mark.parametrize(("code", "expected"), [
+    ("return window.name;", ""),
+    ("window.name", ""),
+    ("() => { return window.name; }", ""),
+    ("return\nwindow.name;", None),
+    ("return window.String(42);", None),
+    ("return window.name; window.name = 'changed';", None),
+])
+def test_browser_eval_repairs_only_a_single_property_return(
+    production_browser: tuple[TaskSession, ResearchTools, BrowserSession], code: str, expected: str | None,
+) -> None:
+    session, tools, _ = production_browser
+    delegate = ExecutionDelegate(session=session, research_tools=tools)
+    assert delegate.execute(ToolCall("browser_navigate", {"url": URL}))[1]
+    result, ok, _ = delegate.execute(ToolCall("browser_eval", {"code": code}))
+    assert result.call.args["code"] == code
+    if expected is None:
+        assert not ok and "Illegal return statement" in result.model_text
+    else:
+        assert ok and decode_json_object(result.canonical["value"])["value"] == expected

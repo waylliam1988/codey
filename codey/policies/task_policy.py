@@ -171,7 +171,7 @@ def _browser_grants(kind: str, requested: frozenset[str]) -> frozenset[str]:
     return frozenset()
 
 
-def _entry_tool_checks(raw: object, *, kind: str, strict: bool) -> tuple[str, ...]:
+def _entry_tool_checks(raw: object, *, kind: str, strict: bool, explanation: bool) -> tuple[str, ...]:
     from codey.policies.browser_requirement import BrowserPageRounds, parse_browser_requirement
     from codey.policies.tool_requirement import ToolSuccessRequirement, parse_tool_success_check, required_tool_names
 
@@ -185,7 +185,10 @@ def _entry_tool_checks(raw: object, *, kind: str, strict: bool) -> tuple[str, ..
                 raise ValueError("browser research sequence requires strict Research")
             declared.append(browser.declaration)
         else:
-            declared.append((parse_tool_success_check(name) or ToolSuccessRequirement(name)).declaration)
+            requirement = parse_tool_success_check(name) or ToolSuccessRequirement(name)
+            if requirement.browser_text is not None and not explanation:
+                raise ValueError("browser text fields require json_explanation")
+            declared.append(requirement.declaration)
     return tuple(declared)
 
 
@@ -278,12 +281,13 @@ def build_task_policy(
     required_checks = strict_checks if strict else (("research_sources_opened",) if sources_open_required else ())
     if getattr(submission, "project_changes_required", False) is True:
         required_checks = (*required_checks, "project_changes_required")
-    from codey.policies.output_requirement import declaration
+    from codey.policies.output_requirement import declaration, has_explanation
 
     output = declaration(getattr(submission, "output_format", "text"), getattr(submission, "output_schema", ""),
                          strict_research=strict)
     required_checks = (*required_checks, *((output,) if output else ()))
-    required_checks = (*required_checks, *_entry_tool_checks(getattr(submission, "required_tools", ()), kind=kind, strict=strict))
+    required_checks = (*required_checks, *_entry_tool_checks(getattr(submission, "required_tools", ()), kind=kind,
+                                                            strict=strict, explanation=has_explanation(required_checks)))
     requested_text = ",".join(sorted(requested)) if requested else "-"
     denied_text = ",".join(sorted(denied)) if denied else "-"
     source = f"kind:{kind or 'project'};project:{'yes' if has_project else 'no'};requested:{requested_text};strict:{'yes' if strict else 'no'};denied:{denied_text}"

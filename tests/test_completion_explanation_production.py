@@ -29,7 +29,12 @@ from codey.policies.output_requirement import (
     submission_fields,
 )
 from codey.policies.task_policy import TaskPolicy, build_task_policy
-from codey.policies.tool_requirement import require_tool_success
+from codey.policies.tool_requirement import (
+    BrowserTextSelector,
+    parse_tool_success_check,
+    require_browser_read_field,
+    require_tool_success,
+)
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
 from codey.research.browser_search import BrowserSearchProvider
@@ -201,6 +206,22 @@ def test_schema_rejection_requests_prose_without_telling_model_to_encode_inner_j
     assert "application's final output" in guidance(session.policy.required_checks)
 
 
+def test_browser_text_binding_requires_explicit_explanation_mode() -> None:
+    binding = require_browser_read_field(url="https://example.com/records", prefix="Code: ", suffix=".", answer_pointer="/code")
+    requirement = parse_tool_success_check(binding)
+    assert requirement is not None and requirement.declaration == binding
+    with pytest.raises(ValueError, match="require json_explanation"):
+        build_task_policy(SimpleNamespace(project=None, required_tools=(binding,)), task_kind="chat")
+
+
+@pytest.mark.parametrize("text", ["Verified code: .", "Verified code: QUARTZ_851\n.",
+                                  "Verified code: A. Verified code: B.", "Initial code: OLD_101."])
+def test_browser_text_field_refuses_missing_or_ambiguous_values(text: str) -> None:
+    selector = BrowserTextSelector("https://example.com/records", "Verified code: ", ".")
+    with pytest.raises(ValueError):
+        selector.select(text)
+
+
 class ScriptedProvider(ApiProvider):
     def __init__(self, replies: list[JsonObject], *, native: bool) -> None:
         super().__init__("http://localhost:9/v1", "fixture", native_tools=native)
@@ -222,6 +243,65 @@ class ScriptedProvider(ApiProvider):
         else:
             message = {"role": "assistant", "content": json.dumps(reply), "tool_calls": []}
         return {"choices": [{"message": message, "finish_reason": "tool_calls" if self.native_tools else "stop"}]}
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("replace_document", [False, True])
+def test_headless_binds_latest_browser_text_field(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replace_document: bool,
+) -> None:
+    url = "https://example.com/browser-text-record"
+    browser = BrowserSearchProvider(headless=True, browser_path=chromium_executable())
+
+    def route_document(route: Route) -> None:
+        route.fulfill(status=200, content_type="text/html", body=(
+            "<article>Verified code: OLD_101.</article>"
+            """<button onclick="document.querySelector('article').textContent='Verified code: QUARTZ_851.'">Load</button>"""))
+
+    monkeypatch.setattr(browser, "_guard_request", route_document)
+    monkeypatch.setattr("codey.research.search_factory.default_research_search_provider", lambda: browser)
+    monkeypatch.setattr("codey.operations.task_phases.dispatch.default_research_search_provider", lambda: browser)
+    monkeypatch.setattr("codey.app.provider_services.provider_availability", lambda: {"local": True})
+    nav = "unwrap(await tools.browser_navigate({url:inputs.url}));"
+    read = "return unwrap(await tools.browser_read({}));"
+    load = ("const snapshot=unwrap(await tools.browser_snapshot({}));"
+            "unwrap(await tools.browser_click({ref:snapshot.elements.find(element=>element.name==='Load').ref}));")
+    prose = "已读取加载后的记录。"
+    done: JsonObject = {"tool": "done", "args": {"summary": prose}}
+    replies: list[JsonObject] = [
+        {"tool": "codemode", "args": {"code": nav + read, "inputs": {"url": url}}},
+        {"tool": "codemode", "args": {"code": load + read}},
+    ]
+    if replace_document:
+        replies.extend([{"tool": "codemode", "args": {"code": nav + "return null;", "inputs": {"url": url}}},
+                        done, {"tool": "codemode", "args": {"code": load + read}}])
+    replies.append(done)
+    provider = ScriptedProvider(replies, native=False)
+    events: list[JsonObject] = []
+
+    def connect(_provider_id: str, **_kwargs: object) -> ScriptedProvider:
+        return provider
+
+    try:
+        result = run_headless(HeadlessRequest(None, "Read the initial record, load it, then read and explain the record.",
+            intent="chat", provider_id="local", max_turns=6, state_home=tmp_path / "state",
+            research_store_root=tmp_path / "knowledge", requested_capabilities=("web.read", "browser.observe", "browser.interact"),
+            output_format="json_explanation",
+            output_schema='{"type":"object","properties":{"explanation":{"type":"string"},"code":{"type":"string"}},'
+                          '"required":["explanation","code"],"additionalProperties":false}',
+            required_tools=(require_browser_read_field(url=url, prefix="Verified code: ", suffix=".", answer_pointer="/code"),)),
+            emit_jsonl=lambda event: events.append(decode_json_object(event)), connect_provider=connect)
+    finally:
+        browser.close()
+        provider.close()
+    terminal = next(row for row in reversed(events) if row["type"] == "task_done")
+    assert result.stop_reason == "done", terminal
+    assert json.loads(str(terminal["summary"])) == {"code": "QUARTZ_851", "explanation": prose}
+    rejection = rejection_audit(tmp_path / "state")["first_rejection"]
+    if replace_document:
+        assert "No matching receipt observes the current browser page" in str(decode_json_object(rejection)["reason"])
+    else:
+        assert rejection is None
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")

@@ -42,4 +42,21 @@ answer_pointer 使用 JSON Pointer；空指针绑定整个答案，`~1` 和 `~0`
 
 应用在现有内核完成步骤中产生临时投影，接受的结果通过现有 DoneDecision 持久化。原模型提交和原始工具回执保持各自原有身份；没有新增映射账本、发布写入或恢复运行时。Research 继续交付其原始 Markdown 提交，并沿用当前引用和发布合同；此 JSON 投影用于普通 done.summary 交付，不会重写 Research 报告。
 
-browser_read 的正文依然是文本。识别陌生页面中的字段或作出解释仍由模型承担；此功能不从正文猜测字段关系。
+## 从页面正文绑定精确字符串
+
+已知页面的字段有固定文字边界时，可以在 `json_explanation` 任务里声明 `require_browser_read_field`。例如：
+
+```python
+from codey.policies.tool_requirement import require_browser_read_field
+
+required_tools = (
+    require_browser_read_field(
+        url="https://example.com/records",
+        prefix="记录校验码 ",
+        suffix="。",
+        answer_pointer="/code",
+    ),
+)
+```
+
+在 `output_schema` 中声明字符串字段 `code` 和 `explanation`。模型执行页面操作和 `browser_read`，并在 `done.summary` 提交说明。应用保留该说明，从指定当前文档最近一次匹配的已结算读取中填写 `code`。读取必须经成功的 CodeMode 父调用提交，正文必须完整，且只能有一个前缀。应用原样取出同一行内前缀与随后第一个后缀之间的字符串。重新导航后，旧文档的读取无法用于填字段。对于加载前后有两份记录的页面，前缀应明确标识需要报告的那份记录。
