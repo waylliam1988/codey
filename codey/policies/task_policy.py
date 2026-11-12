@@ -172,13 +172,16 @@ def _browser_grants(kind: str, requested: frozenset[str]) -> frozenset[str]:
 
 
 def _entry_tool_checks(raw: object, *, kind: str, strict: bool) -> tuple[str, ...]:
-    from codey.policies.browser_requirement import parse_browser_requirement
+    from codey.policies.browser_requirement import BrowserPageRounds, parse_browser_requirement
     from codey.policies.tool_requirement import ToolSuccessRequirement, parse_tool_success_check, required_tool_names
 
     declared: list[str] = []
     for name in required_tool_names(raw):
         if (browser := parse_browser_requirement(name)) is not None:
-            if kind != "research" or not strict:
+            if isinstance(browser, BrowserPageRounds):
+                if kind != "chat" or strict:
+                    raise ValueError("browser page rounds require ordinary Chat")
+            elif kind != "research" or not strict:
                 raise ValueError("browser research sequence requires strict Research")
             declared.append(browser.declaration)
         else:

@@ -26,7 +26,7 @@ from codey.completion.contract import (
     project_completion_proof,
     register_completion_domain,
 )
-from codey.operations.browser_completion import evaluate_research_sequence
+from codey.operations.browser_completion import evaluate_page_rounds, evaluate_research_sequence
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import CompletionCheckInput, ProjectCompletionFacts
 from codey.operations.completion_output import tool_facts
@@ -39,7 +39,7 @@ from codey.operations.research_completion_checks import (
     strict_research_checks,
 )
 from codey.operations.task_session import TaskSession
-from codey.policies.browser_requirement import parse_browser_requirement
+from codey.policies.browser_requirement import BrowserPageRounds, is_browser_requirement, parse_browser_requirement
 from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import MAX_REQUIRED_TOOLS, ToolObservation
 from codey.research.finding_report import ResearchReport
@@ -236,7 +236,7 @@ def _required_checks_verdict(
         "observation_selector_unavailable", "conflicting_observations",
     } for key, issue in tool_evaluations.items()):
         required = tuple(sorted(required, key=is_output_check))
-    required = tuple(sorted(required, key=lambda item: parse_browser_requirement(item) is None))
+    required = tuple(sorted(required, key=lambda item: not is_browser_requirement(item)))
 
     for declaration in required:
         try:
@@ -392,8 +392,9 @@ def _required_tool_checks(
             continue
         if browser is not None:
             identity = browser.check_id
-            outcome = evaluate_research_sequence(browser, records=records, results=results,
-                                                 document=context.browser_document, report=report)
+            outcome = (evaluate_page_rounds(browser, records=records, results=results) if isinstance(browser, BrowserPageRounds)
+                       else evaluate_research_sequence(browser, records=records, results=results,
+                                                       document=context.browser_document, report=report))
         elif requirement is not None:
             identity = requirement.check_id
             observation = (requirement.observe(records, results=results) if observations is None

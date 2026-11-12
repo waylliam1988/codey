@@ -10,9 +10,10 @@ from types import SimpleNamespace
 import pytest
 
 from codey.app.headless_runner import HeadlessRequest, HeadlessResult, run_headless
-from codey.policies.browser_requirement import require_browser_research_sequence
+from codey.policies.browser_requirement import require_browser_page_rounds, require_browser_research_sequence
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.policies.tool_requirement import required_tool_names
+from codey.types.json_value import JsonObject, decode_json_object
 from tests.test_protocol_surface import TARGET
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_prerequisite_ab as fixture
@@ -92,3 +93,61 @@ def test_research_sequence_is_explicit_and_frozen_without_granting_access() -> N
         required_tool_names([declaration + " "])
     with pytest.raises(ValueError, match="condition"):
         require_browser_research_sequence(url=gate.URL, condition="invalid", value="鱼丸")
+
+
+def rounds_requirement() -> str:
+    return require_browser_page_rounds(url=gate.URL, condition="text", value="鱼丸", rounds=2,
+                                      fill_name="Locality", fill_value="福州", click_name="Load record")
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_page_rounds_require_distinct_navigations_and_ordered_actions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupted: bool,
+) -> None:
+    add_requirement(monkeypatch, rounds_requirement())
+    done: JsonObject = {"tool": "done", "args": {"summary": fixture.SUMMARY}}
+    first_snapshot, click_snapshot = fixture.LOAD.split("s=unwrap(await tools.browser_snapshot({}));unwrap(await tools.browser_click", 1)
+    click = "let s=unwrap(await tools.browser_snapshot({}));unwrap(await tools.browser_click" + click_snapshot
+    second_setup = fixture.NAVIGATE + first_snapshot + "return null;"
+    replies = [fixture.code_action(fixture.ROUND), done, fixture.code_action(second_setup), done]
+    if interrupted:
+        replies.extend([fixture.code_action(fixture.NAVIGATE + f"return {fixture.READ};"), done,
+                        fixture.code_action(fixture.LOAD + fixture.WAIT + f"return {fixture.READ};"), done])
+    else:
+        wrong_wait = fixture.WAIT.replace("鱼丸", "福州")
+        replies.extend([fixture.code_action(click + wrong_wait + f"return {fixture.READ};"), done,
+                        fixture.code_action(fixture.WAIT + "return null;"), done,
+                        fixture.code_action(f"return {fixture.READ};"), done])
+    install_http(monkeypatch, replies)
+    directory = tmp_path / "run"
+    row = gate.run_case(directory, "chat", TARGET, max_turns=12)
+    assert row["passed"] and row["stop_reason"] == "done", row
+    messages = request_messages(directory)
+    assert len(messages) == len(replies)
+    assert "browser_round_missing_browser_navigate" in messages[2]
+    assert "Use a fresh browser_snapshot to find 'Load record'" in messages[4]
+    if interrupted:
+        assert "Use browser_snapshot to find 'Locality'" in messages[6]
+    else:
+        assert "browser_round_missing_browser_wait" in messages[6]
+        assert "browser_round_missing_browser_read" in messages[8]
+    receipts = tool_receipts(directory / "state")
+    navigations = [decode_json_object(r.result.audit["browser_document"])
+                   for r in receipts if r.result.call.name == "browser_navigate" and r.result.ok]
+    assert len({str(document["loader_id"]) for document in navigations}) == (3 if interrupted else 2)
+    assert all(document["url"] == gate.URL for document in navigations)
+    decisions = [value for _, body in artifacts(directory / "state")
+                 if isinstance(value := body.get("data"), dict) and value.get("purpose") == "done"]
+    assert len(decisions) == 1 and "required_tools_satisfied" in json.dumps(decisions[0])
+
+
+def test_rounds_declaration_is_opt_in_and_rejects_invalid_counts() -> None:
+    declaration = rounds_requirement()
+    policy = build_task_policy(SimpleNamespace(project=None, required_tools=(declaration,)), task_kind="chat")
+    assert policy.required_checks == (declaration,)
+    assert not policy.allows("browser.interact")
+    assert TaskPolicy.from_payload(policy.to_payload()) == policy
+    with pytest.raises(ValueError, match="integer between 1 and 8"):
+        require_browser_page_rounds(url=gate.URL, condition="text", value="ready", rounds=0,
+                                   fill_name="City", fill_value="Fuzhou", click_name="Load")

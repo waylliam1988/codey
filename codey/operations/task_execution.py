@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from codey.policies.browser_requirement import browser_receipt_tools
+from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
 from codey.policies.tool_requirement import has_browser_field_bindings
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation, source_search_observation
@@ -280,10 +280,13 @@ class ExecutionDelegate:
             checks = self.session.policy.required_checks
             trace_document = (call.name in browser_receipt_tools(checks) or
                               (call.name == "browser_eval" and has_browser_field_bindings(checks)))
-            document = browser.document_identity() if trace_document else None
+            transition = call.name in PAGE_TRANSITIONS
+            before = browser.document_identity() if trace_document and not transition else None
             result, ok, code = self._execute_browser_operation(browser, call, turn=turn, tool_index=tool_index)
-            if ok and document is not None and browser.document_identity() == document:
-                result = replace(result, audit={**result.audit, "browser_document": document})
+            if trace_document and (transition or before is not None):
+                after = browser.document_identity()
+                if after is not None and (transition or before == after):
+                    result = replace(result, audit={**result.audit, "browser_document": after})
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
