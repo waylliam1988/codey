@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import has_explanation, is_output_check, schema_for
+from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import ToolObservation, argument_digest, decode_answer, parse_tool_success_check
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
+from codey.toolchain.result_schema import validate_output
 from codey.types.json_value import JsonValue, decode_json_value
 
 
@@ -43,6 +45,7 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
     explanation = has_explanation(session.policy.required_checks)
     if explanation and session.policy.strict_research:
         raise OutputBindingError("json_explanation cannot replace the strict Research answer contract.")
+    schema = next((schema_for(check) for check in session.policy.required_checks if is_output_check(check)), None)
     for declaration in session.policy.required_checks:
         try:
             requirement = parse_tool_success_check(declaration)
@@ -53,12 +56,22 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
         if explanation and requirement.answer_pointer is not None and (
                 requirement.answer_pointer == "" or requirement.answer_pointer.split("/")[1] == "explanation"):
             raise OutputBindingError("A receipt binding overlaps the declared /explanation text destination.")
-        observation = requirement.observe(records, results=results)
-        observations[requirement.check_id] = observation
+        observation = (requirement.observe(records, results=results, browser_document=context.browser_document)
+                       if requirement.binds_browser_fields else requirement.observe(records, results=results))
         if requirement.answer_pointer is not None and observation.evaluation.passed:
             pointer = requirement.answer_pointer
             path = tuple(part.replace("~1", "/").replace("~0", "~") for part in pointer[1:].split("/")) if pointer else ()
-            fields.append(_Field(path, observation.value))
+            selected_schema = _field_schema(schema, path) if requirement.binds_browser_fields else None
+            try:
+                if selected_schema is not None:
+                    validate_output(pointer, selected_schema, observation.value)
+                fields.append(_Field(path, observation.value))
+            except ValueError as exc:
+                observation = ToolObservation(RequirementEvaluation("observation_selector_unavailable",
+                    f"The current-page receipt does not supply a valid answer field {pointer!r}. "
+                    f"Read result selector {requirement.result_pointer!r} with the required JSON type and constraints. {exc} "
+                    + requirement.execution_guidance, observation.evaluation.evidence_refs))
+        observations[requirement.check_id] = observation
     if (not fields and not explanation) or session.policy.strict_research:
         return CompletionOutput(text, observations)
     proposed: JsonValue
@@ -69,10 +82,21 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
             proposed = decode_answer(text)
         except (ValueError, TypeError):
             proposed = {}
-    schema = next((schema_for(check) for check in session.policy.required_checks if is_output_check(check)), None)
     assembled = _assemble(proposed, schema, fields)
     return CompletionOutput(json.dumps(assembled, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                                        allow_nan=False), observations)
+
+
+def _field_schema(schema: JsonValue, path: tuple[str, ...]) -> Mapping[str, object] | None:
+    for key in path:
+        if not isinstance(schema, dict):
+            return None
+        if schema.get("type") == "array":
+            schema = schema.get("items")
+        else:
+            properties = schema.get("properties")
+            schema = properties.get(key, schema.get("additionalProperties")) if isinstance(properties, dict) else None
+    return schema if isinstance(schema, dict) else None
 
 
 def _assemble(proposed: JsonValue, schema: JsonValue, fields: list[_Field]) -> JsonValue:

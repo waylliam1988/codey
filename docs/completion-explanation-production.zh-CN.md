@@ -8,6 +8,8 @@
 
 `output_schema` 必须声明必填字符串 explanation；省略时使用该最小对象 schema。精确字段通过已有 `require_tool_success(... answer_pointer=..., result_pointer=...)` 声明绑定。绑定不得覆盖根、explanation 或其子路径；字段缺失、类型不符、父调用未提交或回执冲突仍拒绝。声明沿原 required_checks 冻结，不额外存一份绑定结果。该模式可由 API / Python Headless 显式启用；不新增 UI 或 CLI 开关，strict Research 在提交时拒绝混用。
 
+浏览器结构化业务字段使用 `browser_eval` 的 `/value/...` 选择器。任务应为每个字段声明目标、来源和实际读取表达式，例如 `require_tool_success("browser_eval", via="codemode", arguments={"code": "window.__record"}, answer_pointer="/amount", result_pointer="/value/amount")`。`unit` 和 `code` 使用各自的选择器与输出类型。读取和完成检查都核对 Chromium 当前主文档，即使重载的 URL 相同也要重新读取。同一读取声明使用当前文档最近一次成功提交的回执，后续完整读取可以修复先前缺项。缺回执、结果截断、缺字段或类型不符时，完成反馈指出目标字段与回执选择器。已有的 URL 和 token 绑定继续使用 `browser_tab_list` 的 `/page_url` 和 `browser_eval` 的 `/value`。
+
 普通 Chat（`task_kind == "chat"` 且非 strict Research）的 text、json、json_explanation 合同同时移除 source_gaps、execution_claims。模型仍看到真实工具结果和来源覆盖，用来解释限制。若旧式回复多填这两个外层字段，文本与原生协议在同一个归一化入口整字段忽略，原始响应保留。其余参数、外层协议、重复键和大小限制继续严格检查；不处理解释或业务 JSON 中的同名字段。
 
 不生成新的 execution_claims，不增加事实表或执行循环。现有完成门直接解码正式 shell/run 及浏览器回执，读取 task_source_coverage 和 ledger。浏览器或 CodeMode 父回执不能证明进程成功；必要工具未执行、要求成功却非零退出、要求结束却仍运行、必要来源未尝试都仍阻断。真实必要来源不可获取按原规则 blocked。分析失败本身的任务不被一概禁止，后来成功及可选来源失败按原任务要求判断。

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import NoReturn
 
 import pytest
+from playwright.sync_api import Route
 
 from codey.app.api import run_submit_response
 from codey.app.headless_runner import HeadlessRequest, run_headless
@@ -31,9 +32,12 @@ from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.policies.tool_requirement import require_tool_success
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
+from codey.research.browser_search import BrowserSearchProvider
 from codey.research.ledger import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object
+from tests.support.real_cdp import chromium_executable
+from tools.completion_artifact_audit import rejection_audit, tool_receipts
 
 
 def session_for(*bindings: str, strict: bool = False) -> TaskSession:
@@ -218,6 +222,115 @@ class ScriptedProvider(ApiProvider):
         else:
             message = {"role": "assistant", "content": json.dumps(reply), "tool_calls": []}
         return {"choices": [{"message": message, "finish_reason": "tool_calls" if self.native_tools else "stop"}]}
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize(("state", "field"), [
+    ("complete", ""), ("missing", "amount"), ("partial", "unit"), ("wrong_type", "amount"),
+    ("truncated", "amount"), ("stale", "amount"), ("failed_parent", "amount"),
+])
+def test_headless_binds_declared_business_fields_from_current_browser_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: str, field: str,
+) -> None:
+    url = "https://example.com/business-record"
+    token = "PAGE_TOKEN_37"
+    record: JsonObject = {"amount": 173, "unit": "克", "code": "QUARTZ_851"}
+    later_record: JsonObject = {"amount": 227, "unit": "克", "code": "QUARTZ_906"}
+    initial = dict(record)
+    if state == "partial":
+        del initial["unit"]
+    if state == "wrong_type":
+        initial["amount"] = "173"
+    if state == "truncated":
+        initial["padding"] = "X" * 40_000
+    browser = BrowserSearchProvider(headless=True, browser_path=chromium_executable())
+    navigation_count = 0
+
+    def fixture_route(route: Route) -> None:
+        nonlocal navigation_count
+        navigation_count += 1
+        value = initial if navigation_count == 1 else later_record
+        route.fulfill(status=200, content_type="text/html", body=(
+            "<html><body>Business record<button onclick='window.__record=window.__nextRecord'>Refresh record</button><script>"
+            f"window.__record={json.dumps(value)};window.__contractToken={json.dumps(token)};"
+            f"window.__nextRecord={json.dumps(later_record)};"
+            "</script></body></html>"))
+
+    monkeypatch.setattr(browser, "_guard_request", fixture_route)
+    monkeypatch.setattr("codey.research.search_factory.default_research_search_provider", lambda: browser)
+    monkeypatch.setattr("codey.operations.task_phases.dispatch.default_research_search_provider", lambda: browser)
+    monkeypatch.setattr("codey.app.provider_services.provider_availability", lambda: {"local": True})
+
+    nav = "unwrap(await tools.browser_navigate({url:inputs.url}));"
+    meta = ("unwrap(await tools.browser_tab_list({}));"
+            "unwrap(await tools.browser_eval({code:'window.__contractToken'}));")
+    read = "return unwrap(await tools.browser_eval({code:'window.__record'}));"
+    prose = '按页面读取记录。模型草稿 {"amount":999}。'
+    done: JsonObject = {"tool": "done", "args": {"summary": prose}}
+    code = nav + meta + ("return null;" if state in {"missing", "failed_parent"} else read)
+    replies: list[JsonObject] = [{"tool": "codemode", "args": {"code": code, "inputs": {"url": url}}}]
+    if state == "failed_parent":
+        replies.append({"tool": "codemode", "args": {
+            "code": "unwrap(await tools.browser_eval({code:'window.__record'}));throw Error('after read');"}})
+    if state == "stale":
+        replies.append({"tool": "codemode", "args": {"code": nav + "return null;", "inputs": {"url": url}}})
+    replies.append(done)
+    if state != "complete":
+        prefix = ("const s=unwrap(await tools.browser_snapshot({}));"
+                  "unwrap(await tools.browser_click({ref:s.elements.find(e=>e.name==='Refresh record').ref}));"
+                  if state in {"partial", "wrong_type", "truncated"} else "")
+        replies.extend([{"tool": "codemode", "args": {"code": prefix + read, "inputs": {"url": url}}}, done])
+    provider = ScriptedProvider(replies, native=False)
+
+    def connect(_provider_id: str, **_kwargs: object) -> ScriptedProvider:
+        return provider
+
+    events: list[JsonObject] = []
+
+    def observe(value: dict[str, object]) -> None:
+        events.append(decode_json_object(value))
+
+    schema = {"type": "object", "properties": {
+        key: {"type": "integer"} if key == "amount" else {"type": "string", "minLength": 1}
+        for key in ("explanation", "page_url", "token", "amount", "unit", "code")},
+        "required": ["explanation", "page_url", "token", "amount", "unit", "code"], "additionalProperties": False}
+    bindings = (
+        require_tool_success("browser_tab_list", via="codemode", answer_pointer="/page_url", result_pointer="/page_url"),
+        require_tool_success("browser_eval", via="codemode", arguments={"code": "window.__contractToken"},
+                             answer_pointer="/token", result_pointer="/value"),
+        *(require_tool_success("browser_eval", via="codemode", arguments={"code": "window.__record"},
+                               answer_pointer=f"/{key}", result_pointer=f"/value/{key}") for key in record),
+    )
+    try:
+        result = run_headless(HeadlessRequest(None, "Read and explain the browser's business record.", intent="chat",
+            provider_id="local", max_turns=6, state_home=tmp_path / "state", research_store_root=tmp_path / "knowledge",
+            requested_capabilities=("web.read", "browser.observe", "browser.interact", "browser.effect"),
+            output_format="json_explanation", output_schema=json.dumps(schema), required_tools=bindings),
+            emit_jsonl=observe, connect_provider=connect)
+    finally:
+        browser.close()
+        provider.close()
+    terminal = next(row for row in reversed(events) if row["type"] == "task_done")
+    assert result.stop_reason == "done", terminal
+    expected = record if state in {"complete", "missing", "failed_parent"} else later_record
+    assert json.loads(str(terminal["summary"])) == {"page_url": url, "token": token, "explanation": prose, **expected}
+    assert provider.calls == len(replies)
+    receipts = tool_receipts(tmp_path / "state")
+    read_receipts = [r.result for r in receipts if r.result.ok and r.result.call.args.get("code") == "window.__record"]
+    assert len(read_receipts) == (1 if state in {"complete", "missing"} else 2)
+    documents = [decode_json_object(r.audit["browser_document"]) for r in read_receipts]
+    assert all(document["url"] == url for document in documents)
+    if state == "stale":
+        assert documents[0]["loader_id"] != documents[1]["loader_id"]
+    if state in {"partial", "wrong_type", "truncated"}:
+        assert documents[0] == documents[1]
+    rejection = rejection_audit(tmp_path / "state")["first_rejection"]
+    if field:
+        reason = str(decode_json_object(rejection)["reason"])
+        assert f"'/{field}'" in reason and f"'/value/{field}'" in reason
+        assert "output_format_invalid" not in reason
+    else:
+        assert rejection is None
 
 
 @pytest.mark.parametrize("native", [False, True])

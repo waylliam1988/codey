@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from codey.policies.tool_requirement import has_browser_field_bindings
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation, source_search_observation
 from codey.runtime.core import cancellation
@@ -275,7 +276,11 @@ class ExecutionDelegate:
             assert self.session is not None
             with self.session.projection_lock:
                 browser.prepare_from_receipts(tuple(self.session._memory_results.values()))
+            document = (browser.document_identity() if call.name == "browser_eval"
+                        and has_browser_field_bindings(self.session.policy.required_checks) else None)
             result, ok, code = self._execute_browser_operation(browser, call, turn=turn, tool_index=tool_index)
+            if ok and document is not None and browser.document_identity() == document:
+                result = replace(result, audit={**result.audit, "browser_document": document})
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:

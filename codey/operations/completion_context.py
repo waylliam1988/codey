@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from codey.research.ledger import ResearchLedger
     from codey.research.staging import StagedKnowledgeStore
     from codey.runtime.observe.execution_evidence import ExecutionEvidence
+    from codey.types.json_value import JsonObject
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class CompletionContext:
     scope_files: tuple[str, ...] = ()
     task_changed: bool | None = None
     checkpoint_green: bool = False
+    browser_document: JsonObject | None = None
 
     @classmethod
     def from_value(cls, value: object, *, ignored_paths: tuple[str, ...] = ()) -> CompletionContext:

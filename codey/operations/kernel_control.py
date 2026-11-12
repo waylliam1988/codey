@@ -16,6 +16,7 @@ from codey.operations.kernel_contracts import (
     RetryDecision,
     result_from_payload,
 )
+from codey.policies.tool_requirement import has_browser_field_bindings
 from codey.providers.base import AssistantTurn, ProviderToolResult
 from codey.runtime.core import operation_payload
 from codey.runtime.core.operation_payload import (
@@ -93,8 +94,14 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     blocked = False
     try:
         refresh_verification_candidates(context.session)
-        output = prepare_completion_output(context.session, context.session.last_done_text, context.completion_context)
-        verdict = evaluate(context.session, output.text, context=context.completion_context, observations=output.observations)
+        completion_context = context.completion_context
+        if has_browser_field_bindings(context.session.policy.required_checks):
+            tools = context.execution.research_tools
+            browser = tools.browser_session if tools is not None else None
+            if browser is not None:
+                completion_context = replace(completion_context, browser_document=browser.document_identity())
+        output = prepare_completion_output(context.session, context.session.last_done_text, completion_context)
+        verdict = evaluate(context.session, output.text, context=completion_context, observations=output.observations)
         if type(verdict.complete) is not bool:
             raise ValueError("completion gate returned an invalid verdict")
         complete, followup, proof = verdict.complete, verdict.followup, verdict.proof

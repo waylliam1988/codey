@@ -132,10 +132,11 @@ class ToolSuccessRequirement:
         instruction = EXPLANATION_GUIDANCE if explanation else JSON_ANSWER_GUIDANCE
         content = ("In done.summary, supply only the natural-language explanation. " if explanation else
                    "In done.summary, supply only unbound JSON fields, or {} when none are needed. ")
+        evidence = ("The latest matching receipt for the current browser document must be complete."
+                    if self.binds_browser_fields else "Conflicting observations cannot establish this answer requirement.")
         return (execution + " " + instruction + f" The application fills pointer {self.answer_pointer!r} "
                 f"from the committed {selected}, preserving its JSON type and complete value. "
-                + content +
-                "Conflicting observations cannot establish this answer requirement.")
+                + content + evidence)
 
     def evaluate(
         self, records: Mapping[str, ExecutionRecord], *, final_text: str = "", results: Mapping[str, ToolResult] | None = None,
@@ -144,6 +145,7 @@ class ToolSuccessRequirement:
 
     def observe(
         self, records: Mapping[str, ExecutionRecord], *, results: Mapping[str, ToolResult] | None = None,
+        browser_document: JsonObject | None = None,
     ) -> ToolObservation:
         expected = {key: argument_digest(value)
                     for key, value in decode_json_object(json.loads(self.arguments_json)).items()}
@@ -162,11 +164,24 @@ class ToolSuccessRequirement:
             if not self.via or parents:
                 eligible.append((identity, row))
                 witnesses.update((identity, *parents))
+        guidance = self._evidence_guidance
         if not eligible:
             if matching_execution:
                 return ToolObservation(RequirementEvaluation("tool_parent_missing",
-                    "The child execution succeeded, but no successful required parent committed it. " + self.execution_guidance))
-            return ToolObservation(RequirementEvaluation("tool_execution_missing", self.execution_guidance))
+                    "The child execution succeeded, but no successful required parent committed it. " + guidance))
+            return ToolObservation(RequirementEvaluation("tool_execution_missing", guidance))
+        if self.binds_browser_fields and results is not None:
+            eligible = [(identity, row) for identity, row in eligible
+                        if browser_document is not None and (identity not in results
+                            or results[identity].audit.get("browser_document") == browser_document)]
+            if not eligible:
+                return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
+                    "No matching receipt observes the current browser page. " + guidance))
+            # A later read of the same declared selector replaces the previous snapshot.
+            eligible = eligible[-1:]
+            children = {identity for identity, _ in eligible}
+            witnesses = children | {ref for ref, parent in records.items() if self.via and _succeeded(parent, self.via)
+                                    and children.intersection(parent.get("child_effect_ids", ()))}
         outcome = (ToolObservation(RequirementEvaluation()) if self.answer_pointer is None
                    else self._observe_value(eligible, results))
         return replace(outcome, evaluation=replace(outcome.evaluation, evidence_refs=tuple(sorted(witnesses))))
@@ -188,7 +203,7 @@ class ToolSuccessRequirement:
                         or {key: argument_digest(value) for key, value in receipt.call.args.items()}
                         != row.get("argument_digests")):
                     raise ValueError("receipt differs from committed execution")
-                if ((self._binds_browser_body or self.tool == "browser_upload")
+                if ((self._binds_browser_body or self.binds_browser_fields or self.tool == "browser_upload")
                         and receipt.call.call_id != row.get("call_id")):
                     raise ValueError("browser receipt identity differs from committed execution")
                 value = (_browser_body(receipt) if self._binds_browser_body
@@ -196,12 +211,15 @@ class ToolSuccessRequirement:
             except (KeyError, ValueError, TypeError):
                 return ToolObservation(RequirementEvaluation("observation_receipt_invalid",
                     "The required execution committed, but its full receipt is unavailable or inconsistent. "
-                    "Restore the original verified receipt before proposing done; display text cannot prove the answer."))
+                    "Restore the original verified receipt before proposing done; display text cannot prove the answer."
+                    + (" " + self._evidence_guidance if self.binds_browser_fields else "")))
             if ((self._binds_browser_body and value is None)
-                    or (self.tool == "browser_upload" and receipt.truncated)):
+                    or (self.tool == "browser_upload" and receipt.truncated)
+                    or (self.binds_browser_fields and (receipt.truncated or not isinstance(value, dict)
+                        or value.get("truncated") is not False))):
                 return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
                     "The committed browser receipt or read window is incomplete. Obtain complete evidence before editing the answer. "
-                    + self.execution_guidance))
+                    + self._evidence_guidance))
             selected: JsonValue
             try:
                 if self._binds_browser_body:
@@ -217,19 +235,31 @@ class ToolSuccessRequirement:
                 observed.append((identity, selected, _json(selected)))
             except (KeyError, ValueError, TypeError, IndexError):
                 return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
-                    "The committed result does not contain the required result selector. " + self.execution_guidance))
+                    "The committed result does not contain the required result selector. " + self._evidence_guidance))
         if not observed:
             return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
                 "No committed page contains the required absolute line. " + self.execution_guidance))
         if any(item[2] != observed[0][2] for item in observed):
             return ToolObservation(RequirementEvaluation("conflicting_observations",
                 "Committed observations disagree at the required selector. An answer edit cannot resolve this. "
-                "Report the conflict; do not choose an arbitrary result or repeat execution merely to restate it."))
+                "Report the conflict; do not choose an arbitrary result or repeat execution merely to restate it."
+                + (" " + self._evidence_guidance if self.binds_browser_fields else "")))
         return ToolObservation(RequirementEvaluation(), observed[0][1], tuple(item[0] for item in observed))
 
     @property
     def _binds_browser_body(self) -> bool:
         return self.tool == "browser_read" and self.result_pointer in {"", "/text"}
+
+    @property
+    def binds_browser_fields(self) -> bool:
+        return self.tool == "browser_eval" and self.result_pointer.startswith("/value/")
+
+    @property
+    def _evidence_guidance(self) -> str:
+        if self.binds_browser_fields:
+            return (f"Required answer field {self.answer_pointer!r} needs current-page result selector "
+                    f"{self.result_pointer!r}. " + self.execution_guidance)
+        return self.execution_guidance
 
     def evaluate_observation(self, observation: ToolObservation, final_text: str) -> RequirementEvaluation:
         if not observation.evaluation.passed or self.answer_pointer is None:
@@ -334,6 +364,14 @@ def _validate_pointer(pointer: str) -> None:
     if (type(pointer) is not str or len(pointer) > 512 or (pointer and not pointer.startswith("/"))
             or re.search(r"~(?![01])", pointer)):
         raise ValueError("answer selectors must be bounded JSON pointers")
+
+
+def has_browser_field_bindings(checks: tuple[str, ...]) -> bool:
+    for check in checks:
+        requirement = parse_tool_success_check(check)
+        if requirement is not None and requirement.binds_browser_fields:
+            return True
+    return False
 
 
 def json_pointer(value: JsonValue, pointer: str) -> JsonValue:

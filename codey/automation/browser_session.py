@@ -31,7 +31,7 @@ from codey.research.source_acquisition import with_attempt
 from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolResult
-from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_value
+from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object, decode_json_value
 
 MAX_SNAPSHOT_ELEMENTS = 80
 MAX_SNAPSHOT_TEXT = 12_000
@@ -99,6 +99,28 @@ class BrowserSession:
     def resource_binding(self) -> JsonObject | None:
         binding = _browser_call(self.provider._binding_on_browser_thread)
         return binding.payload() if binding is not None else None
+
+    def document_identity(self) -> JsonObject | None:
+        return _browser_call(self._document_identity_on_browser_thread)
+
+    def _document_identity_on_browser_thread(self) -> JsonObject | None:
+        """Chromium's main-frame loader changes even on a same-URL reload."""
+        try:
+            page = self._page_on_browser_thread()
+            cdp = page.context.new_cdp_session(page)
+            try:
+                tree = decode_json_object(cdp.send("Page.getFrameTree"))
+                frame = decode_json_object(decode_json_object(tree["frameTree"])["frame"])
+                loader, url = frame.get("loaderId"), frame.get("url")
+                if isinstance(loader, str) and loader and isinstance(url, str) and url:
+                    return {"loader_id": loader, "url": url}
+            finally:
+                cdp.detach()
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except (Error, KeyError, RuntimeError, ValueError):
+            return None
+        return None
 
     @classmethod
     def from_provider(cls, provider: object) -> BrowserSession:
