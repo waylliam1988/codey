@@ -61,6 +61,9 @@ PAGE_RESET_NAVIGATION_CODE = (
 
 SCENARIOS = {
     **entry.SCENARIOS,
+    entry.WAIT_RECOVERY: entry.SCENARIOS[entry.WAIT],
+    entry.PROPERTIES_DELIVERY: entry.SCENARIOS[entry.PROPERTIES],
+    entry.RESULT_DATA: entry.SCENARIOS[entry.RESULTS],
     entry.COMBINED: tuple(dict.fromkeys(scenario for scenarios in entry.SCENARIOS.values() for scenario in scenarios)),
     "B1": ("basic", "snapshot_restore", "stale_ref"),
     "B2": ("upload_bound", "structured"),
@@ -75,6 +78,8 @@ SCENARIOS = {
     "combined": (*previous.SCENARIOS, "page_reset", "return_failure"),
 }
 DIAGNOSTIC_SCENARIOS = {"return_failure", "source_failure_fixed", "upload_bound"}
+ENTRY_VARIANTS = {entry.WAIT_RECOVERY: entry.WAIT, entry.PROPERTIES_DELIVERY: entry.PROPERTIES,
+                  entry.RESULT_DATA: entry.RESULTS}
 
 
 def fixture_navigation_value(result: ToolResult) -> JsonObject | None:
@@ -456,18 +461,21 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
         active = surface.EDIT_BOUNDARY
         scheduler = (stale_reread_scheduler("result.json") if scenario == "stale_edit"
                      else file_handoff_scheduler("result.json"))
-    if config in entry.FEATURES:
-        entry_features = frozenset({config})
+    if config in entry.FEATURES or config in ENTRY_VARIANTS:
+        entry_features = frozenset({ENTRY_VARIANTS.get(config, config)})
     if entry_features:
         active = "A"
+    diagnostic = config in {entry.WAIT_RECOVERY, entry.PROPERTIES_DELIVERY}
+    acquisition_action = entry.diagnostic_action(config, scenario, arm, gate.URL) if diagnostic else None
     with (surface.prototype(directory, scenario, active, runtime_action=scheduler),
-          entry.prototype(directory, entry_features) if entry_features and arm == "B" else nullcontext(),
+          entry.prototype(directory, entry_features, file_feedback=config != entry.RESULT_DATA)
+          if entry_features and arm == "B" else nullcontext(),
           page_reset_completion(directory) if gate_enabled else nullcontext(),
           edit_completion_projection(directory) if config == EDIT_CONTINUATION and arm == "B" else nullcontext(),
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(gate.run_case(directory, mode, target, max_turns=max_turns,
-            task_transform=lambda task: task_text(task, scenario), **options))
+            task_transform=lambda task: task_text(task, scenario), acquisition_action=acquisition_action, **options))
     after = edit.production_source_digest()
     metrics = artifact_metrics(directory)
     if entry_features:
@@ -510,7 +518,8 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
         source_stable=before == after, passed=passed and before == after, metrics=metrics,
         silent_failure=row.get("stop_reason") == "done" and not passed, external_field_lost=external_lost,
         duplicate_effect=uploads > 1 or downloads > 1,
-        acquisition="scripted-fault-then-model" if scenario == "return_failure" else
+        acquisition="scripted-fault-then-model" if scenario == "return_failure" or config == entry.WAIT_RECOVERY else
+                    "scripted-browser-observation-then-model" if config == entry.PROPERTIES_DELIVERY else
                     "scripted-open-url" if scenario == "source_failure_fixed" else "autonomous-model",
         diagnostic=scenario in DIAGNOSTIC_SCENARIOS, **provider_metrics(directory / "provider.jsonl"))
     edit.write_json(directory / "summary.json", row)
@@ -645,7 +654,7 @@ def matrix(args: argparse.Namespace, target: Target) -> int:
                 rows.append(row)
                 pair_rows.append(row)
                 edit.write_json(root / "progress.json", {"runs": list(rows), "pairs": list(pairs)})
-                pre_send_overflow = (args.config in {*entry.FEATURES, entry.COMBINED}
+                pre_send_overflow = (args.config in {*entry.FEATURES, *ENTRY_VARIANTS, entry.COMBINED}
                     and row.get("stop_reason") == "provider_failure"
                     and "ContextOverflowError" in str(row.get("answer"))
                     and "before send" in str(row.get("answer")))
@@ -728,14 +737,14 @@ def main() -> int:
         parser.error("browser-entry-combined requires at least two --entry-feature values")
     if args.entry_feature and args.config != entry.COMBINED:
         parser.error("--entry-feature is only for browser-entry-combined")
-    if args.config in entry.FEATURES and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
+    if args.config in {*entry.FEATURES, *ENTRY_VARIANTS} and args.scenario and set(args.scenario) - set(SCENARIOS[args.config]):
         parser.error("scenario outside this browser entry experiment")
     if args.plan:
         features = {PAGE_RESET_GATE: PAGE_RESET_CHECK,
                     PAGE_RESET_NAVIGATION: f"{PAGE_RESET_CHECK}; B schedules the second navigation",
                     FILE_HANDOFF: "Both arms use the static edit boundary. B schedules the first file read.",
                     EDIT_CONTINUATION: "Production A. B uses bounded file reads and typed completion references.",
-                    **{name: name for name in (*entry.FEATURES, entry.COMBINED)}}
+                    **{name: name for name in (*entry.FEATURES, *ENTRY_VARIANTS, entry.COMBINED)}}
         print(json.dumps({"config": args.config, "scenarios": args.scenario or SCENARIOS[args.config],
             "units": 2 * args.repeats * len(args.scenario or SCENARIOS[args.config]),
             "diagnostic_scenarios": sorted(DIAGNOSTIC_SCENARIOS),

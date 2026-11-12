@@ -4,7 +4,7 @@ import hashlib
 from typing import TYPE_CHECKING
 
 from codey.agents.shell_approval import shell_command_payload
-from codey.policies.command_line import resolve_shell
+from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.policies.shell_analysis import analyze_shell
 from codey.runtime.effects.shell_approval_records import ShellApprovalFact
 
@@ -77,12 +77,13 @@ def add_pending_approval(ctx: "AppContext", approval_id: str, pending: dict[str,
 def seed_requested_approval(
     ctx: "AppContext", approval_id: str = "approval", *, continue_after: bool = True,
     command: str = "echo approval", source_run_id: str = "source",
+    shell: ShellSpec | None = None,
 ) -> ShellApprovalFact:
     # Approval lifecycle facts belong to the admitted durable task.  The
     # JSONL store is only an audit projection and must not be enough to make a
     # shell request executable in tests or production.
     admit_shell_task(ctx, session_id="session", run_id=source_run_id, task="shell approval source")
-    shell = resolve_shell()
+    shell = shell if shell is not None else resolve_shell()
     assert ctx.managed_outputs is not None
     artifact = ctx.managed_outputs.write_json_artifact(
         session_id="session",

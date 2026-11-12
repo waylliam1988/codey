@@ -12,7 +12,7 @@ import json
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TypeVar
+from typing import ParamSpec, TypeVar
 from uuid import uuid4
 
 from playwright.sync_api import ElementHandle, Error, FilePayload, Page
@@ -37,6 +37,7 @@ MAX_SNAPSHOT_ELEMENTS = 80
 MAX_SNAPSHOT_TEXT = 12_000
 MAX_ACTION_TEXT = 2_000
 T = TypeVar("T")
+P = ParamSpec("P")
 
 
 @dataclass(frozen=True)
@@ -54,9 +55,9 @@ class _ElementRef:
     url: str
 
 
-def _browser_call(fn: Callable[..., T], *args: object) -> T:
+def _browser_call(fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
     """Keep the browser worker boundary typed when its runtime is imported lazily."""
-    return _search_browser_call(fn, *args)
+    return _search_browser_call(lambda: fn(*args, **kwargs))
 
 
 def _browser_attempt(page: dict[str, object], url: str) -> dict[str, object]:

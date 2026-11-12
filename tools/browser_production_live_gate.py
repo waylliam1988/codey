@@ -34,7 +34,7 @@ from codey.policies.tool_requirement import require_tool_success
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.research.browser_search import BrowserSearchProvider
 from codey.storage.input_attachments import InputAttachmentStore
-from codey.types.json_value import decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object
 from tools.completion_artifact_audit import rejection_audit, tool_receipts
 from tools.completion_explanation_ab import (
     BINDINGS,
@@ -83,14 +83,16 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              stale_ref: bool = False, source_failure: bool = False, fixed_failure: bool = False,
              max_turns: int = 12, source_attempt_only: bool = False, preserve_external_field: bool = False,
              assembled_upload: bool = False, fixed_source_attempt: bool = False,
-             task_transform: Callable[[str], str] | None = None) -> dict[str, object]:
+             task_transform: Callable[[str], str] | None = None,
+             acquisition_action: JsonObject | None = None) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
-    recording = ExperimentProvider(target, directory, fixed_acquisition=fixed_failure or fixed_source_attempt,
-        acquisition_action={"tool": "codemode", "args": {
+    recording = ExperimentProvider(target, directory,
+        fixed_acquisition=acquisition_action is not None or fixed_failure or fixed_source_attempt,
+        acquisition_action=acquisition_action or ({"tool": "codemode", "args": {
             "code": "return await tools.open_url({url:inputs.url});", "inputs": {"url": URL}}} if fixed_source_attempt else {
         "tool": "codemode", "args": {"code": "unwrap(await tools.browser_navigate({url:inputs.url})); "
-            "return await tools.browser_read({});", "inputs": {"url": URL}}} if fixed_failure else None)
+            "return await tools.browser_read({});", "inputs": {"url": URL}}} if fixed_failure else None))
     events: list[dict[str, object]] = []
     navigations: list[str] = []
     started = time.monotonic()

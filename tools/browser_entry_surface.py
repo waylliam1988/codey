@@ -21,6 +21,9 @@ TARGETS = "browser-targets"
 RESULTS = "browser-results"
 PROPERTIES = "browser-properties"
 WAIT = "browser-wait"
+WAIT_RECOVERY = "browser-wait-recovery"
+RESULT_DATA = "browser-result-data"
+PROPERTIES_DELIVERY = "browser-properties-delivery"
 COMBINED = "browser-entry-combined"
 FEATURES = frozenset({TARGETS, RESULTS, PROPERTIES, WAIT})
 SCENARIOS = {
@@ -31,6 +34,32 @@ SCENARIOS = {
 }
 TARGET_ACTIONS = ("fill", "click", "upload", "download")
 SCRIPT = Path(__file__).with_name("browser_entry_surface.js").read_text(encoding="utf-8")
+
+
+def diagnostic_action(config: str, scenario: str, arm: str, url: str) -> JsonObject:
+    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
+            "let page=unwrap(await tools.browser_snapshot({}));"
+            "const button=()=>page.elements.find(e=>e.name==='Load record').ref;"
+            "const old=button();"
+            "unwrap(await tools.browser_fill({ref:page.elements.find(e=>e.name==='Locality').ref,value:'福州'}));")
+    if scenario == "stale_ref":
+        code += "const stale=await tools.browser_click({ref:old});if(stale.ok)throw Error('Expected old ref rejection');"
+    code += "page=unwrap(await tools.browser_snapshot({}));unwrap(await tools.browser_click({ref:button()}));"
+    if config == WAIT_RECOVERY:
+        args = ("condition:'invalid',value:'鱼丸',timeout_ms:5000" if scenario == "snapshot_restore"
+                else "condition:'text',value:'鱼丸'")
+        code += f"return await tools.browser_wait({{{args}}});"
+    else:
+        code += ("unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:5000}));"
+                 "const body=unwrap(await tools.browser_read({}));")
+        if arm == "B":
+            code += ("const url=unwrap(await browser.url({})).value;"
+                     "const token=unwrap(await browser.property({name:'__contractToken'})).value;")
+        else:
+            code += ("const url=unwrap(await tools.browser_tab_list({})).page_url;"
+                     "const token=unwrap(await tools.browser_eval({code:'window.__contractToken'})).value;")
+        code += "return {body,url,token};"
+    return {"tool": "codemode", "args": {"code": code, "inputs": {"url": url}}}
 
 
 def entry_methods(names: set[str], features: frozenset[str]) -> dict[str, str]:
@@ -92,7 +121,7 @@ def wrapped_code(code: str, catalog: Sequence[ToolCatalogEntry], features: froze
 
 
 @contextmanager
-def prototype(directory: Path, features: frozenset[str]) -> Iterator[None]:
+def prototype(directory: Path, features: frozenset[str], *, file_feedback: bool = True) -> Iterator[None]:
     if not features or not features <= FEATURES:
         raise ValueError("expected a nonempty set of browser entry candidates")
     render = catalog_module.render_declarations
@@ -113,7 +142,7 @@ def prototype(directory: Path, features: frozenset[str]) -> Iterator[None]:
 
         def collect(name: str, args: dict[str, object]) -> object:
             result = invoke(name, args)
-            if (RESULTS in features and name in {"browser_upload", "browser_download"}
+            if (file_feedback and RESULTS in features and name in {"browser_upload", "browser_download"}
                     and isinstance(result, dict) and result.get("ok") is True and result.get("result_ref")):
                 row: JsonObject = {"tool": name, "receipt_ref": str(result["result_ref"])}
                 file_actions.append(row)

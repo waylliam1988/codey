@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
+from codey.policies.command_line import ShellSpec, resolve_shell
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
 from tools.local_model_gate_attempts import (
     GateTarget,
@@ -49,13 +50,19 @@ def _objects(value: object) -> list[JsonObject]:
     return [_mapping(item) for item in value] if isinstance(value, list) else []
 
 
-def probe_command(case: str) -> str:
+def probe_command(case: str, *, shell: ShellSpec | None = None) -> str:
     if case not in SHELL_CASES:
         raise ValueError("unsupported shell gate case")
     code = f"print('{SHELL_MARKER}')"
     if case == "shell_failure":
         code = "import sys; " + code + "; sys.exit(7)"
-    return f'python -c "{code}"'
+    command = f'python -c "{code}"'
+    if case == "shell_failure":
+        selected = shell if shell is not None else resolve_shell()
+        if selected.kind == "powershell":
+            # PowerShell -EncodedCommand otherwise maps native failure to 1.
+            command += "; exit $LASTEXITCODE"
+    return command
 
 
 def shell_prompt(case: str) -> str:

@@ -68,15 +68,33 @@ def test_startup_parameters_are_owned_by_the_contract(name):
         assert replace(shell, startup="login").invocation("echo literal")[-2:] == ["-lc", "echo literal"]
 
 
-def test_changed_binary_is_rejected_before_any_spawn(tmp_path, monkeypatch):
+@pytest.mark.parametrize("name", NAMES)
+def test_changed_binary_is_rejected_before_any_spawn(tmp_path, monkeypatch, name):
     from codey.app import shell_service
-    shell = resolve_shell()
+    shell = installed(name)
+    # Admission may start the trusted PowerShell AST parser. Observe only
+    # execution after the approved ticket (including its analysis) exists.
+    ticket = make_ticket("echo harmless", tmp_path, 0, 10, 4000, shell=shell)
     start = []
     monkeypatch.setattr("codey.runtime.core.shell_discovery.binary_fingerprint", lambda path: "f" * 64)
     monkeypatch.setattr(shell_service.cancellation, "start_process", lambda *a, **kw: start.append(a))
-    result = execute_shell_ticket(_context(), make_ticket("echo harmless", tmp_path, 0, 10, 4000, shell=shell))
+    result = execute_shell_ticket(_context(), ticket)
     assert not start and not result["ok"] and result["status"] == "spawn_error"
     assert "changed after approval" in result["error"]
+
+
+@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("case", ["shell_approve", "shell_failure"])
+def test_release_probe_reports_the_requested_exit_code(tmp_path, name, case):
+    from tools.local_model_gate_shell import SHELL_MARKER, probe_command
+
+    shell = installed(name)
+    command = probe_command(case, shell=shell)
+    ticket = make_ticket(command, tmp_path, 0, 15, 4000, shell=shell)
+    result = execute_shell_ticket(_context(), ticket)
+    assert result["status"] == "exit", result
+    assert result["exit_code"] == (7 if case == "shell_failure" else 0), result
+    assert SHELL_MARKER in result["output"], result
 
 
 def test_missing_metadata_is_not_upgraded_from_the_current_host():

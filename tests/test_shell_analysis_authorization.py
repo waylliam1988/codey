@@ -91,16 +91,21 @@ def test_recovery_reuses_saved_analysis_without_running_any_parser(tmp_path, mon
         restarted.close()
 
 
-def test_opaque_request_requires_once_but_can_still_be_explicitly_approved(tmp_path, monkeypatch):
+@pytest.mark.parametrize("name", NAMES)
+def test_opaque_request_requires_once_but_can_still_be_explicitly_approved(tmp_path, monkeypatch, name):
     from codey.app import shell_service
-    # CMD caret, POSIX control flow: both are outside the auto-grant subset.
-    shell = installed("cmd" if __import__("os").name == "nt" else "sh")
-    command = "echo ^literal" if shell.kind == "cmd" else "for x in a; do echo $x; done"
+    # Each dialect uses syntax outside its auto-grant subset.
+    shell = installed(name)
+    command = ("echo ^literal" if shell.kind == "cmd" else
+               "foreach ($x in 'a') { echo $x }" if shell.kind == "powershell" else
+               "for x in a; do echo $x; done")
     state = AppContext(tmp_path, start_scheduler=False)
     try:
-        seed_requested_approval(state, command=command, continue_after=False)
+        seed_requested_approval(state, command=command, shell=shell, continue_after=False)
         restore_pending_shell_approvals(state)
-        card = state.approvals.shell_snapshot()["approval"]["ui_event"]
+        pending = state.approvals.shell_snapshot()["approval"]
+        assert pending["shell"] == shell.to_payload()
+        card = pending["ui_event"]
         assert card["session_rule_available"] is False and card["project_rule_available"] is False
         execute = Mock(return_value={"ok": True, "status": "exit", "exit_code": 0, "output": "done"})
         monkeypatch.setattr(shell_service, "execute_shell_ticket", execute)
