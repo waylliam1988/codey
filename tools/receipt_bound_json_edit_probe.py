@@ -27,6 +27,13 @@ FIELDS: JsonObject = {"amount": CASE.expected["amount"], "code": CASE.expected["
 TASK = ("只修改现有 result.json 的 amount 和 code。将 amount 改成数字 173，code 改成字符串 QUARTZ_851。"
         "保留其他字段和 JSON 类型，result-backup.json 不得改变。使用 CodeMode 读取并修改，检查写入结果后用 done 报告。"
         "如果文件版本冲突，重新完整读取，再对新读取提交同样两个字段。不要运行命令、测试或浏览网页。")
+WRITE_INSTRUCTION = (
+    "\n持久化步骤：第一次 CodeMode 就在同一段程序中读取文件、调用 tools.edit 并返回编辑结果。"
+    "只 return 修改后的 JSON 会显示文本，文件依旧未写入。按以下方式提交实际编辑：\n"
+    "const read = await tools.read_file({path: 'result.json'});\n"
+    "return unwrap(await tools.edit({read, changes: {amount: 173, code: 'QUARTZ_851'}}));\n"
+    "如果得到版本冲突，再执行这两行，让第二次编辑使用新读取。收到成功编辑回执后提交 done。"
+)
 HELPER = ab.read_object_helper("changes", "content: changes")
 DECLARATION = (
     "  // Pass the original result from tools.read_file in this program as read. Supply only the new field values.\n"
@@ -118,7 +125,8 @@ def field_interface(directory: Path) -> Generator[None, None, None]:
         yield
 
 
-def run_arm(directory: Path, arm: str, target: GateTarget, *, max_turns: int) -> JsonObject:
+def run_arm(directory: Path, arm: str, target: GateTarget, *, max_turns: int,
+            write_instruction_ab: bool = False) -> JsonObject:
     path = directory / "project" / "result.json"
     state = directory / "state"
     injected: bytes | None = None
@@ -146,9 +154,10 @@ def run_arm(directory: Path, arm: str, target: GateTarget, *, max_turns: int) ->
 
     with (patch("codey.app.provider_services.provider_tab_availability", return_value={}),
           patch("codey.app.review_service.run_review", return_value=None)):
-        # Both arms get the original-read-object helper. Only B changes the edit payload.
+        task = TASK + (WRITE_INSTRUCTION if write_instruction_ab and arm == "B" else "")
         row = ab.run_arm(directory, replace(CASE, expected=expected), "B", target, max_turns=max_turns,
-                         task=TASK, on_event=observe, interface=field_interface if arm == "B" else None)
+                         task=task, on_event=observe,
+                         interface=field_interface if write_instruction_ab or arm == "B" else None)
     receipts: list[EffectReceipt] = tool_receipts(state) if (state / "durable.sqlite3").exists() else []
     audit = receipt_audit([(receipt.identity, receipt.result) for receipt in receipts])
     ab.write_json(directory / "receipts.json", audit)
@@ -171,6 +180,8 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=180)
     parser.add_argument("--max-turns", type=int, default=8)
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
+    parser.add_argument("--write-instruction-ab", action="store_true",
+                        help="Use field edits in both arms and compare an explicit write instruction in two pairs.")
     parser.add_argument("--worker-case", choices=[CASE.name], help=argparse.SUPPRESS)
     parser.add_argument("--worker-arm", choices=("A", "B"), help=argparse.SUPPRESS)
     parser.add_argument("--expected-model", help=argparse.SUPPRESS)
@@ -180,31 +191,44 @@ def main() -> int:
     if args.worker_case:
         if not args.worker_arm or args.expected_model != target.model:
             parser.error("worker needs the matrix arm and the unchanged model")
-        run_arm(root, args.worker_arm, target, max_turns=args.max_turns)
+        run_arm(root, args.worker_arm, target, max_turns=args.max_turns, write_instruction_ab=args.write_instruction_ab)
         return 0
     root.mkdir(parents=True)
     source = ab.production_source_digest()
     paths = (Path(__file__), Path(ab.__file__))
     hashes: JsonObject = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
     manifest: JsonObject = {"model": target.model, "temperature": target.temperature, "protocol": target.protocol,
-                           "source": source, "harness_sha256": hashes, "max_turns": args.max_turns, "timeout": args.timeout}
+                           "source": source, "harness_sha256": hashes, "max_turns": args.max_turns,
+                           "timeout": args.timeout, "write_instruction_ab": args.write_instruction_ab}
     ab.write_json(root / "manifest.json", manifest)
     rows: list[JsonValue] = []
-    for arm in ("A", "B"):
-        print(f"Starting stale_edit/{arm}", flush=True)
-        row = ab.run_worker(root / arm, CASE, arm, base_url=args.kobold_base_url, timeout=args.timeout,
-                            max_turns=args.max_turns, worker_module="tools.receipt_bound_json_edit_probe",
-                            worker_args=("--expected-model", target.model))
-        rows.append(row)
-        print(f"stale_edit/{arm}: passed={row['passed']} stop={row.get('stop_reason')} "
-              f"calls={row.get('model_calls')} error={row.get('error')}", flush=True)
-        ab.write_json(root / "progress.json", rows)
-    task_files = [root / arm / "task.txt" for arm in ("A", "B")]
-    same_task = all(path.exists() for path in task_files) and task_files[0].read_bytes() == task_files[1].read_bytes()
+    task_matches: list[JsonValue] = []
+    orders = ("AB", "BA") if args.write_instruction_ab else ("AB",)
+    worker_args = ["--expected-model", target.model]
+    if args.write_instruction_ab:
+        worker_args.append("--write-instruction-ab")
+    for index, order in enumerate(orders, 1):
+        pair = root / f"{index:02d}" if args.write_instruction_ab else root
+        for arm in order:
+            print(f"Starting pair {index}/stale_edit/{arm}", flush=True)
+            row = ab.run_worker(pair / arm, CASE, arm, base_url=args.kobold_base_url, timeout=args.timeout,
+                                max_turns=args.max_turns, worker_module="tools.receipt_bound_json_edit_probe",
+                                worker_args=worker_args)
+            row["pair"] = index
+            rows.append(row)
+            print(f"pair {index}/stale_edit/{arm}: passed={row['passed']} stop={row.get('stop_reason')} "
+                  f"calls={row.get('model_calls')} error={row.get('error')}", flush=True)
+            ab.write_json(root / "progress.json", rows)
+        task_files = [pair / arm / "task.txt" for arm in ("A", "B")]
+        expected = (TASK, TASK + WRITE_INSTRUCTION if args.write_instruction_ab else TASK)
+        task_matches.append(all(path.exists() and path.read_text(encoding="utf-8") == task
+                                for path, task in zip(task_files, expected, strict=True)))
     stable = (source == ab.production_source_digest()
               and hashes == {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths})
-    ab.write_json(root / "summary.json", {**manifest, "runs": rows, "task_identical": same_task, "sources_stable": stable})
-    return 0 if stable and same_task and all(isinstance(row, dict) and row["passed"] is True for row in rows) else 1
+    ab.write_json(root / "summary.json", {**manifest, "runs": rows, "tasks_match_manifest": task_matches,
+                                          "task_identical": not args.write_instruction_ab and all(task_matches),
+                                          "sources_stable": stable})
+    return 0 if stable and all(task_matches) and all(isinstance(row, dict) and row["passed"] is True for row in rows) else 1
 
 
 if __name__ == "__main__":

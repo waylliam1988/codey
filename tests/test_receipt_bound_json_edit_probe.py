@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -32,13 +33,16 @@ def test_patch_rejects_unrequested_fields_and_wrong_types() -> None:
 
 
 @pytest.mark.usefixtures("scripted_local_api_connection")
-@pytest.mark.parametrize(("arm", "unsafe_full_text"), [("A", False), ("A", True), ("B", False)])
+@pytest.mark.parametrize(("arm", "unsafe_full_text", "write_instruction_ab"), [
+    ("A", False, False), ("A", True, False), ("B", False, False), ("A", False, True), ("B", False, True),
+])
 def test_real_conflict_and_local_update(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, unsafe_full_text: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, unsafe_full_text: bool, write_instruction_ab: bool,
 ) -> None:
     begin = "const r=await tools.read_file({path:'result.json'});"
     values = "{amount:173,code:'QUARTZ_851'}"
-    if arm == "A":
+    field_edit = write_instruction_ab or arm == "B"
+    if not field_edit:
         original = "unwrap(r)" if unsafe_full_text else "JSON.parse(unwrap(r).text)"
         args = f"read:r,content:JSON.stringify({{...{original},...{values}}})"
     else:
@@ -48,14 +52,20 @@ def test_real_conflict_and_local_update(
     install_http(monkeypatch, [edit, edit, {"tool": "done", "args": {"summary": "Updated result.json."}}])
     directory = tmp_path / "run"
     target = GateTarget("http://scripted.test/v1", "scripted-fixture", 32768, 8192, 12000, protocol="text")
-    row = probe.run_arm(directory, arm, target, max_turns=3)
+    row = probe.run_arm(directory, arm, target, max_turns=3, write_instruction_ab=write_instruction_ab)
     assert row["true_stale_conflicts"] == 1, row
     assert row["fresh_read_recovery"] is True
     assert row["rejected_edit_left_file_unchanged"] is True
     assert (directory / "after-edit-1.json").read_bytes() == (directory / "injected.json").read_bytes()
     assert row["confirmed_helper_edits"] == 1
     assert row["passed"] is (not unsafe_full_text), row
-    if arm == "B":
+    if write_instruction_ab:
+        transcript = [json.loads(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
+        requests = [json.dumps(record["payload"], ensure_ascii=False) for record in transcript if record["type"] == "request"]
+        assert len(requests) == 3
+        assert all("changes: {amount: number; code: string}" in request for request in requests)
+        assert all(("持久化步骤：" in request) is (arm == "B") for request in requests)
+    if field_edit:
         assert (directory / "after-edit-2.json").read_text(encoding="utf-8") == probe.patch_fields(
             (directory / "injected.json").read_text(encoding="utf-8"), probe.FIELDS)
         reads = [r.identity for r in tool_receipts(directory / "state") if r.result.call.name == "read_file"]
