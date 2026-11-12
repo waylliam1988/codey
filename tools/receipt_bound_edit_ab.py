@@ -15,8 +15,8 @@ import subprocess
 import sys
 import time
 import traceback
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import ExitStack, contextmanager
+from collections.abc import Callable, Generator, Mapping, Sequence
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from unittest.mock import patch
@@ -36,7 +36,7 @@ from codey.types.json_value import JsonObject, JsonValue, decode_json_object, re
 from tools import local_model_gate_attempts as attempts
 from tools.shell_web_diagnostic_gate import select_target
 
-HELPER = """return await (async (hostTools) => {
+_HELPER_TEMPLATE = """return await (async (hostTools) => {
 let helperCalls = 0;
 let helperCompleted = 0;
 const readPaths = new WeakMap();
@@ -50,12 +50,12 @@ const tools = new Proxy(hostTools, {
       return read;
     };
     if (property !== "edit") return Reflect.get(target, property);
-    return async ({read, content}) => {
+    return async ({read, __EDIT_PARAMETERS__}) => {
       helperCalls += 1;
       const path = readPaths.get(read);
       if (path === undefined) throw Error("edit.read must be the original tools.read_file result from this program; do not unwrap, clone or reconstruct it.");
       unwrap(read);
-      const edited = await hostTools.edit({path, content, base_result_ref: read.result_ref});
+      const edited = await hostTools.edit({path, __EDIT_CONTENT__, base_result_ref: read.result_ref});
       unwrap(edited);
       helperCompleted += 1;
       return edited;
@@ -64,6 +64,13 @@ const tools = new Proxy(hostTools, {
 });
 return {probe_value: await (async () => {
 """
+
+
+def read_object_helper(parameters: str, content: str) -> str:
+    return _HELPER_TEMPLATE.replace("__EDIT_PARAMETERS__", parameters).replace("__EDIT_CONTENT__", content)
+
+
+HELPER = read_object_helper("content", "content")
 HELPER_SUFFIX = "\n})(), probe_helper_calls: helperCalls, probe_helper_completed: helperCompleted};\n})(tools);\n"
 HELPER_DIGEST = hashlib.sha256((HELPER + HELPER_SUFFIX).encode("utf-8")).hexdigest()
 DECLARATION = (
@@ -125,7 +132,7 @@ def codemode_only_surface(snapshot: TurnSnapshot) -> TurnSnapshot:
 def helper_metrics(directory: Path) -> JsonObject:
     """Only successful guest envelopes confirm execution; failed programs stay unknown."""
     path = directory / "helper-executions.jsonl"
-    rows = [decode_json_object(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines()
+    rows: list[JsonObject] = [decode_json_object(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines()
             ] if path.exists() else []
     return {
         "confirmed_helper_calls": sum(require_json_integer(row["helper_calls"], "helper_calls")
@@ -148,7 +155,8 @@ def production_source_digest() -> str:
 
 
 @contextmanager
-def prototype_helper(directory: Path, *, enabled: bool) -> Iterator[None]:
+def prototype_helper(directory: Path, *, enabled: bool, helper: str = HELPER,
+                     declaration: str = DECLARATION) -> Generator[None, None, None]:
     """Prepend only the helper; retain the existing runtime and host executor."""
     execute = NodeWorkerRuntime.execute
     contract_digest = NodeWorkerRuntime.contract_digest
@@ -162,14 +170,14 @@ def prototype_helper(directory: Path, *, enabled: bool) -> Iterator[None]:
         if not any(entry.name == "edit" for entry in snapshot.entries):
             return declarations(snapshot)
         visible = replace(snapshot, entries=tuple(entry for entry in snapshot.entries if entry.name != "edit"))
-        return declarations(visible).replace("\n};", "\n" + DECLARATION + "};")
+        return declarations(visible).replace("\n};", "\n" + declaration + "};")
 
     def recorded_execute(
         runtime: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
         inputs: Mapping[str, object] | None = None, state_store: object = None,
         replay_context: Mapping[str, object] | None = None, limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
-        expanded = HELPER + code + HELPER_SUFFIX if enabled else code
+        expanded = helper + code + HELPER_SUFFIX if enabled else code
         with (directory / "programs.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps({"model_code": code, "executed_code": expanded}, ensure_ascii=False) + "\n")
         result = execute(runtime, expanded, catalog=catalog, invoke=invoke, inputs=inputs,
@@ -186,7 +194,8 @@ def prototype_helper(directory: Path, *, enabled: bool) -> Iterator[None]:
 
     def bound_contract_digest(runtime: NodeWorkerRuntime) -> str:
         original = contract_digest(runtime)
-        return hashlib.sha256((original + ":" + INTERFACE_VERSION + ":" + HELPER_DIGEST).encode("utf-8")).hexdigest()
+        helper_digest = hashlib.sha256((helper + HELPER_SUFFIX).encode("utf-8")).hexdigest()
+        return hashlib.sha256((original + ":" + INTERFACE_VERSION + ":" + helper_digest).encode("utf-8")).hexdigest()
 
     with ExitStack() as stack:
         stack.enter_context(patch.object(NodeWorkerRuntime, "execute", recorded_execute))
@@ -241,7 +250,8 @@ def common_task(case: EditCase) -> str:
 
 
 def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarget, *, max_turns: int,
-            task: str | None = None, on_event: Callable[[JsonObject], None] | None = None) -> JsonObject:
+            task: str | None = None, on_event: Callable[[JsonObject], None] | None = None,
+            interface: Callable[[Path], AbstractContextManager[None]] | None = None) -> JsonObject:
     directory.mkdir(parents=True, exist_ok=False)
     project = directory / "project"
     project.mkdir()
@@ -272,7 +282,7 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
         return attempts.RecordingProvider(target, directory)
 
     common = common_task(case)
-    interface = ("当前使用现有协议：先 tools.read_file 完整读取，再 tools.edit；使用 content，不用 replacements。"
+    interface_hint = ("当前使用现有协议：先 tools.read_file 完整读取，再 tools.edit；使用 content，不用 replacements。"
                  "回执编号在 readResult.result_ref，正文在 unwrap(readResult).text；检查工具是否成功。"
                  "示例：const r=await tools.read_file({path:inputs.path}); "
                  "return unwrap(await tools.edit({path:inputs.path,content:unwrap(r).text.replace('old','new'),"
@@ -282,11 +292,11 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
                      "不重新读取。正文在 unwrap(readResult).text；读取不完整或版本变动仍拒绝写入。"
                      "示例：const r=await tools.read_file({path:inputs.path}); "
                      "return unwrap(await tools.edit({read:r,content:unwrap(r).text.replace('old','new')}));")
-    selected_task = common + interface if task is None else task
+    selected_task = common + interface_hint if task is None else task
     (directory / "task.txt").write_text(selected_task, encoding="utf-8")
     summary: JsonObject = {"case": case.name, "arm": arm, "passed": False}
     try:
-        with (prototype_helper(directory, enabled=arm == "B"),
+        with (interface(directory) if interface is not None else prototype_helper(directory, enabled=arm == "B"),
               patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}),
               attempts.isolate_gate_secondary_models(target)):
             result = run_headless(HeadlessRequest(
