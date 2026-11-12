@@ -43,11 +43,8 @@ def complete_page_passages(result: ToolResult, url: str) -> set[str]:
     return {ref for item in passages if isinstance(item, dict) and isinstance(ref := item.get("ref"), str)}
 
 
-def evaluate_research_sequence(rule: BrowserResearchSequence, *, records: Mapping[str, ExecutionRecord],
-                               results: Mapping[str, ToolResult], document: JsonObject | None,
-                               report: ResearchReport | None) -> RequirementEvaluation:
-    if document is None or document.get("url") != rule.url:
-        return RequirementEvaluation("browser_navigation_missing", f"Use browser_navigate to open the required page {rule.url}.")
+def post_wait_passages(rule: BrowserResearchSequence, *, records: Mapping[str, ExecutionRecord],
+                       results: Mapping[str, ToolResult], document: JsonObject) -> tuple[str, dict[str, tuple[str, str]]]:
     wait = ""
     passages: dict[str, tuple[str, str]] = {}
     for ref, result in committed_results(records, results, rule.receipt_tools):
@@ -57,6 +54,15 @@ def evaluate_research_sequence(rule: BrowserResearchSequence, *, records: Mappin
             wait = ref
         elif wait and result.call.name == "browser_read":
             passages.update((passage, (wait, ref)) for passage in complete_page_passages(result, rule.url))
+    return wait, passages
+
+
+def evaluate_research_sequence(rule: BrowserResearchSequence, *, records: Mapping[str, ExecutionRecord],
+                               results: Mapping[str, ToolResult], document: JsonObject | None,
+                               report: ResearchReport | None) -> RequirementEvaluation:
+    if document is None or document.get("url") != rule.url:
+        return RequirementEvaluation("browser_navigation_missing", f"Use browser_navigate to open the required page {rule.url}.")
+    wait, passages = post_wait_passages(rule, records=records, results=results, document=document)
     if not wait:
         return RequirementEvaluation("browser_wait_missing", f"On the required current page, {rule.wait_step}")
     if not passages:

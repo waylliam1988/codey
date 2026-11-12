@@ -55,7 +55,8 @@ def scenario_options(scenario: str) -> tuple[str, dict[str, bool]]:
         raise ValueError("unknown scenario: " + scenario)
     mode = "hybrid" if scenario in {"hybrid", "stale_edit"} else "research" if scenario == "research" else "chat"
     return mode, {
-        "strict_research": scenario == "research", "restore_snapshots": scenario == "snapshot_restore",
+        "strict_research": scenario == "research", "research_sequence": scenario == "research",
+        "restore_snapshots": scenario == "snapshot_restore",
         "reread": scenario == "reread", "explanation_output": scenario == "structured",
         "structured": scenario == "legacy_structured", "stale_ref": scenario == "stale_ref",
         "stale_edit": scenario == "stale_edit", "preserve_external_field": scenario == "stale_edit",

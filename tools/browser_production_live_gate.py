@@ -30,6 +30,7 @@ from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
+from codey.policies.browser_requirement import require_browser_research_sequence
 from codey.policies.tool_requirement import require_tool_success
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.research.browser_search import BrowserSearchProvider
@@ -87,7 +88,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              task_transform: Callable[[str], str] | None = None,
              acquisition_action: JsonObject | None = None, source_status: int = 403,
              explicit_wait: bool = True, fixture_html: str = HTML,
-             upload_navigation_required: bool = True,
+             upload_navigation_required: bool = True, research_sequence: bool = False,
              expected_amount: int = 173, expected_code: str = "QUARTZ_851") -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
@@ -252,6 +253,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             stack.enter_context(patch.object(provider, "_guard_request", route_document))
             stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", source_factory))
             stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory))
+            sequence = (require_browser_research_sequence(url=URL, condition="text", value="鱼丸"),) if research_sequence else ()
             request = HeadlessRequest(
                 project if mode == "hybrid" else None, task, intent=mode, provider_id="local", max_turns=max_turns,
                 session_id=session_id,
@@ -259,7 +261,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 requested_capabilities=("web.read", "browser.observe", "browser.interact", *(
                     ("browser.effect",) if structured or explanation_output or upload_file or download_file or bound_output else ())),
                 project_changes_required=mode == "hybrid",
-                required_tools=(*(() if source_failure and source_attempt_only else sorted(required)), *bindings),
+                required_tools=(*(() if source_failure and source_attempt_only else sorted(required)), *bindings, *sequence),
                 output_format="json_explanation" if explanation_output or assembled_upload else "json" if bound_output else "text",
                 sources_open_required=True if source_failure else None,
                 output_schema=json.dumps(upload_schema) if assembled_upload else json.dumps(SCHEMA) if explanation_output else json.dumps({"type": "object", "properties": {

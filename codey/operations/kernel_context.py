@@ -369,6 +369,18 @@ class KernelContext:
                coding_context_prepared: bool = False, initial_source_batch: bool = False) -> None:
         from codey.operations.provider_request import prepare_provider_request
 
+        if not acknowledge and snapshot.research_scope is not None:
+            from codey.operations.research_submission_handoff import research_submission_handoff
+
+            research = self.execution.research_tools
+            snapshot, handoff = research_submission_handoff(
+                self.session, snapshot, self.completion_context, research.browser_session if research is not None else None)
+            if handoff:
+                if self.native and messages:
+                    messages[-1] = replace(messages[-1], user_content="\n\n".join(
+                        part for part in (messages[-1].user_content, handoff) if part))
+                else:
+                    prompt = "\n\n".join(part for part in (prompt, handoff) if part)
         scoped_contract = self.request_scoped_context
         if not self.native and not scoped_contract and state.leaf not in {operation_payload.LEAF_WRITER_RUNNING, operation_payload.LEAF_REPAIR_RUNNING}:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)

@@ -211,9 +211,11 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         if context.native and ids:
             messages = []
         snapshot = received.snapshot
-        # Native rejection replies use the exact declarations that answered
-        # the original calls. A text retry starts the next ordinary turn.
-        if messages is None:
+        from codey.operations.research_submission_handoff import SUBMISSION_TOOLS, submission_sequence
+
+        # A submission handoff must recheck the current document on repair.
+        # Other native rejection replies keep their original declarations.
+        if messages is None or (snapshot.tool_names == SUBMISSION_TOOLS and submission_sequence(context.session) is not None):
             from codey.operations.kernel_protocol import build_turn_snapshot
             snapshot = build_turn_snapshot(context.session, native=context.native)
         # Both request-scoped providers and text-only providers render the
