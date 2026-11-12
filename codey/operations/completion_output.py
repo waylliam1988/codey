@@ -5,6 +5,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from codey.operations.browser_text_report import BrowserMetadata, observe_metadata, report_scope
 from codey.operations.browser_upload import UploadEvidence, upload_evidence, upload_scope
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
@@ -76,6 +77,10 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
                     + requirement.execution_guidance, observation.evaluation.evidence_refs))
         observations[requirement.check_id] = observation
     if (not fields and not explanation) or session.policy.strict_research:
+        report = report_scope(session)
+        if (report is not None
+                and isinstance(metadata := observe_metadata(report, records, results, context.browser_document), BrowserMetadata)):
+            return CompletionOutput(metadata.render(text, chinese=report.chinese), observations)
         scope = upload_scope(session)
         if (schema is None and scope is not None and scope.report_hash
                 and isinstance(evidence := upload_evidence(session, scope, context.browser_document), UploadEvidence)):

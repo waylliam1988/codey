@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from codey.operations import browser_upload
+from codey.operations import browser_text_report, browser_upload
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
 from codey.policies.tool_requirement import has_browser_field_bindings
 from codey.research.ledger import ResearchLedger
@@ -289,6 +289,7 @@ class ExecutionDelegate:
             from codey.operations.browser_copy import CAPTURE
 
             trace_document = (call.name in browser_receipt_tools(checks)
+                              or (call.name in browser_text_report.METADATA_TOOLS and browser_text_report.report_scope(self.session) is not None)
                               or (call.name in browser_upload.UPLOAD_RECEIPTS and browser_upload.upload_scope(self.session) is not None)
                               or (call.name == "browser_snapshot" and call.args.get("file_inputs_only") is True)
                               or (call.name == "browser_eval" and call.args.get("code") == CAPTURE) or

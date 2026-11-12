@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
 from codey.operations import kernel_prompt, kernel_protocol
+from codey.operations.browser_text_report import report_scope
 from codey.operations.browser_upload import upload_scope
 from codey.operations.completion_context import CompletionContextInput
 from codey.operations.kernel_protocol import TurnSnapshot
@@ -31,6 +32,11 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     guidance = [task_guidance] if task_guidance else []
     if snapshot.browser_copy is None and ".json" in user_task.casefold() and {"edit", "read_file"} <= set(snapshot.nested_tool_names):
         guidance.append(JSON_FIELD_EDIT_GUIDANCE)
+    if (metadata := report_scope(session)) is not None:
+        guidance.append(f"After browser_read returns the requested page facts, reuse them. On the same page, collect any missing "
+                        f"metadata in a short separate CodeMode call: browser_eval with code {metadata.expression!r} and "
+                        "browser_tab_list with empty arguments. Then use done.summary for the other requested facts and explanation. "
+                        "The runtime fills the current tab URL and script token from the metadata receipts.")
     if (upload := upload_scope(session)) is not None and "browser_upload" in snapshot.inventory_names:
         plain_report = upload.report_hash and not any(is_output_check(check) for check in snapshot.policy.required_checks)
         guidance.append("If the initial runtime results show the authorized upload page is already open and required navigation "

@@ -80,6 +80,7 @@ def validate_decision(payload: object, *, schema_version: int = 2) -> KernelDeci
 
 
 def evaluate_completion(context: KernelContext, state: RuntimeOperationState) -> None:
+    from codey.operations.browser_text_report import report_scope
     from codey.operations.browser_upload import upload_scope
     from codey.operations.completion_gate import evaluate
     from codey.operations.project_verification import refresh_verification_candidates
@@ -99,7 +100,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         completion_context = context.completion_context
         checks = context.session.policy.required_checks
         upload = upload_scope(context.session)
-        if ((upload is not None and upload.report_hash) or has_browser_field_bindings(checks)
+        if ((upload is not None and upload.report_hash) or report_scope(context.session) is not None or has_browser_field_bindings(checks)
                 or any(check.startswith(RESEARCH_PREFIX) for check in checks)):
             tools = context.execution.research_tools
             browser = tools.browser_session if tools is not None else None

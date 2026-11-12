@@ -428,6 +428,7 @@ def _proof_capacity_verdict(checks: list[CompletionCheck], *, publication: bool)
 
 
 def _browser_completion_block(session: TaskSession, text: str, context: CompletionContext) -> GateVerdict | None:
+    from codey.operations.browser_text_report import observe_metadata, report_scope
     from codey.operations.browser_upload import upload_evidence, upload_scope
     from codey.operations.source_gaps import source_read_required, task_source_coverage
 
@@ -435,6 +436,11 @@ def _browser_completion_block(session: TaskSession, text: str, context: Completi
     if (session.task_kind == "chat" and not session.policy.strict_research
             and source_read_required(session) and coverage.unavailable):
         return GateVerdict(False, "", None, final_text=text, blocked=True)
+    if (report := report_scope(session)) is not None:
+        records, results = tool_facts(session, context)
+        metadata = observe_metadata(report, records, results, context.browser_document)
+        if isinstance(metadata, str):
+            return GateVerdict(False, metadata, None)
     upload = upload_scope(session)
     if upload is not None and upload.report_hash:
         evidence = upload_evidence(session, upload, context.browser_document)
