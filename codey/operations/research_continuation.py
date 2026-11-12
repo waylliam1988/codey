@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import thaw_json
@@ -18,6 +18,10 @@ from codey.operations.kernel_contracts import KernelResult, KernelRunRequest, re
 from codey.providers.response_record import json_value
 from codey.research.pipeline import ResearchContinuationError
 from codey.runtime.effects.effect_records import compute_args_digest
+
+if TYPE_CHECKING:
+    from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
 
 
 @dataclass(frozen=True)
@@ -165,7 +169,7 @@ class ResearchContinuation:
         return self.outputs.json_artifact_record(ref, owner_task_id=self.run_id, owner_effect_id=None,
                                                  metadata={"kind": payload["kind"]})
 
-    def prerequisite_facts(self, *, before_attempt: int, policy: Any) -> Any:
+    def prerequisite_facts(self, *, before_attempt: int, policy: TaskPolicy) -> TaskSession:
         """Read original completed writer receipts for root task requirements.
 
         This in-memory projection never records actions in the current session
@@ -174,6 +178,7 @@ class ResearchContinuation:
         from codey.operations.kernel_facts import project_execution_record
         from codey.operations.kernel_receipts import restore_result_receipt
         from codey.operations.task_session import TaskSession, turn_effect_id
+        from codey.policies.browser_requirement import browser_receipt_tools
         from codey.policies.tool_requirement import parse_tool_success_check
         from codey.runtime.effects.effect_records import RuntimeEffectStore
         from codey.toolchain.tool_spec import canonical_tool_name
@@ -181,9 +186,10 @@ class ResearchContinuation:
         facts = TaskSession(policy=policy, task_kind="research")
         requirements = [requirement for check in policy.required_checks
                         if (requirement := parse_tool_success_check(check)) is not None]
-        if before_attempt <= 1 or not requirements:
-            return facts
         names = {name for item in requirements for name in (item.tool, item.via) if name}
+        names.update(browser_receipt_tools(policy.required_checks))
+        if before_attempt <= 1 or not names:
+            return facts
         index = self.index(self.state())
         attempts = [int(key) for key in index["results"] if int(key) < before_attempt
                     and (key == "1" or index["invocations"].get(key, {}).get("purpose") == "synthesize")]

@@ -26,6 +26,7 @@ from codey.completion.contract import (
     project_completion_proof,
     register_completion_domain,
 )
+from codey.operations.browser_completion import evaluate_research_sequence
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import CompletionCheckInput, ProjectCompletionFacts
 from codey.operations.completion_output import tool_facts
@@ -38,6 +39,7 @@ from codey.operations.research_completion_checks import (
     strict_research_checks,
 )
 from codey.operations.task_session import TaskSession
+from codey.policies.browser_requirement import parse_browser_requirement
 from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import MAX_REQUIRED_TOOLS, ToolObservation
 from codey.research.finding_report import ResearchReport
@@ -234,13 +236,15 @@ def _required_checks_verdict(
         "observation_selector_unavailable", "conflicting_observations",
     } for key, issue in tool_evaluations.items()):
         required = tuple(sorted(required, key=is_output_check))
+    required = tuple(sorted(required, key=lambda item: parse_browser_requirement(item) is None))
 
     for declaration in required:
         try:
             requirement = parse_tool_success_check(declaration)
+            browser = parse_browser_requirement(declaration)
         except (ValueError, TypeError):
             return GateVerdict(complete=False, followup="Invalid declared tool requirement; task cannot complete.", proof=None)
-        req = (requirement.check_id if requirement is not None else
+        req = (browser.check_id if browser is not None else requirement.check_id if requirement is not None else
                output_id(declaration) if is_output_check(declaration) else declaration)
         rows = by_id.get(req, [])
         if not rows:
@@ -274,7 +278,7 @@ def _required_checks_verdict(
             if req in {"research_report_sections", "research_report_quality", "research_claim_bindings", "knowledge_versions"}:
                 instruction = ("Repair the reported report or reference defect, then propose done again. "
                                "Request additional evidence only if the reported defect requires it.")
-            if requirement is not None:
+            if requirement is not None or browser is not None:
                 instruction = tool_evaluations[req].feedback
             if is_output_check(declaration):
                 instruction = tool_evaluations[req].feedback
@@ -357,7 +361,7 @@ class _RequiredChecks:
 
 def _required_tool_checks(
     session: TaskSession, final_text: str, context: CompletionContext,
-    observations: Mapping[str, ToolObservation] | None,
+    observations: Mapping[str, ToolObservation] | None, report: ResearchReport | None,
 ) -> _RequiredChecks:
     """Explicit entry requirements consume the committed execution projection.
 
@@ -382,16 +386,23 @@ def _required_tool_checks(
             continue
         try:
             requirement = parse_tool_success_check(check_id)
+            browser = parse_browser_requirement(check_id)
         except (ValueError, TypeError):
             rows.append(CompletionCheck("invalid_tool_requirement", CHECK_FAIL, "invalid_tool_requirement"))
             continue
-        if requirement is None:
+        if browser is not None:
+            identity = browser.check_id
+            outcome = evaluate_research_sequence(browser, records=records, results=results,
+                                                 document=context.browser_document, report=report)
+        elif requirement is not None:
+            identity = requirement.check_id
+            observation = (requirement.observe(records, results=results) if observations is None
+                           else observations[identity])
+            outcome = requirement.evaluate_observation(observation, final_text)
+        else:
             continue
-        observation = (requirement.observe(records, results=results) if observations is None
-                       else observations[requirement.check_id])
-        outcome = requirement.evaluate_observation(observation, final_text)
-        evaluations[requirement.check_id] = outcome
-        row = CompletionCheck(requirement.check_id, CHECK_PASS if outcome.passed else CHECK_FAIL, outcome.reason_code)
+        evaluations[identity] = outcome
+        row = CompletionCheck(identity, CHECK_PASS if outcome.passed else CHECK_FAIL, outcome.reason_code)
         rows.append(row)
         witnesses: list[str] = []
         for ref in outcome.evidence_refs:
@@ -399,8 +410,7 @@ def _required_tool_checks(
             receipt = (result.call.name, result.call.args, result.ok, result.canonical, result.audit,
                        result.model_text, result.truncated) if result is not None else None
             witnesses.append(stable_ref("tool_witness", ref, records[ref], receipt))
-        tool_bindings[requirement.check_id] = stable_ref(
-            "tool_requirement", requirement.declaration, row.to_payload(), witnesses)
+        tool_bindings[identity] = stable_ref("tool_requirement", check_id, row.to_payload(), witnesses)
     return _RequiredChecks(rows, evaluations, tool_bindings)
 
 
@@ -464,7 +474,7 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     checks.extend(investigation_attempt_checks(session))
     checks.extend(citation_checks)
     checks.extend(strict_research_checks(session, text, context, report=report))
-    required_checks = _required_tool_checks(session, text, context, observations)
+    required_checks = _required_tool_checks(session, text, context, observations, report)
     if len(required_checks.tool_bindings) > MAX_REQUIRED_TOOLS:
         return _contract_error(f"Too many required tool predicates: {len(required_checks.tool_bindings)} "
                                f"> {MAX_REQUIRED_TOOLS}.")

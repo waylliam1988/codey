@@ -171,6 +171,21 @@ def _browser_grants(kind: str, requested: frozenset[str]) -> frozenset[str]:
     return frozenset()
 
 
+def _entry_tool_checks(raw: object, *, kind: str, strict: bool) -> tuple[str, ...]:
+    from codey.policies.browser_requirement import parse_browser_requirement
+    from codey.policies.tool_requirement import ToolSuccessRequirement, parse_tool_success_check, required_tool_names
+
+    declared: list[str] = []
+    for name in required_tool_names(raw):
+        if (browser := parse_browser_requirement(name)) is not None:
+            if kind != "research" or not strict:
+                raise ValueError("browser research sequence requires strict Research")
+            declared.append(browser.declaration)
+        else:
+            declared.append((parse_tool_success_check(name) or ToolSuccessRequirement(name)).declaration)
+    return tuple(declared)
+
+
 def build_task_policy(
     submission: object,
     *,
@@ -265,10 +280,7 @@ def build_task_policy(
     output = declaration(getattr(submission, "output_format", "text"), getattr(submission, "output_schema", ""),
                          strict_research=strict)
     required_checks = (*required_checks, *((output,) if output else ()))
-    from codey.policies.tool_requirement import ToolSuccessRequirement, parse_tool_success_check, required_tool_names
-
-    required_checks = (*required_checks, *((parse_tool_success_check(name) or ToolSuccessRequirement(name)).declaration
-        for name in required_tool_names(getattr(submission, "required_tools", ()))))
+    required_checks = (*required_checks, *_entry_tool_checks(getattr(submission, "required_tools", ()), kind=kind, strict=strict))
     requested_text = ",".join(sorted(requested)) if requested else "-"
     denied_text = ",".join(sorted(denied)) if denied else "-"
     source = f"kind:{kind or 'project'};project:{'yes' if has_project else 'no'};requested:{requested_text};strict:{'yes' if strict else 'no'};denied:{denied_text}"

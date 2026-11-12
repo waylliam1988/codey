@@ -35,7 +35,12 @@ def required_tool_names(raw: object) -> tuple[str, ...]:
         if not isinstance(name, str):
             raise ValueError("required_tools must contain canonical tool names or predicates")
         if _NAME.fullmatch(name) is None:
+            from codey.policies.browser_requirement import parse_browser_requirement
+
             try:
+                if parse_browser_requirement(name) is not None:
+                    declarations.append(name)
+                    continue
                 requirement = parse_tool_success_check(name)
             except (ValueError, TypeError) as exc:
                 raise ValueError("required_tools contains an invalid tool predicate") from exc

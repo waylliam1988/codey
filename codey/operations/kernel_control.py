@@ -16,6 +16,7 @@ from codey.operations.kernel_contracts import (
     RetryDecision,
     result_from_payload,
 )
+from codey.policies.browser_requirement import browser_receipt_tools
 from codey.policies.tool_requirement import has_browser_field_bindings
 from codey.providers.base import AssistantTurn, ProviderToolResult
 from codey.runtime.core import operation_payload
@@ -95,7 +96,8 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
     try:
         refresh_verification_candidates(context.session)
         completion_context = context.completion_context
-        if has_browser_field_bindings(context.session.policy.required_checks):
+        checks = context.session.policy.required_checks
+        if has_browser_field_bindings(checks) or browser_receipt_tools(checks):
             tools = context.execution.research_tools
             browser = tools.browser_session if tools is not None else None
             if browser is not None:
