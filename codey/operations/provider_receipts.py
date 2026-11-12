@@ -102,7 +102,9 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
     """Persist the captured contract, never Python callables or a live registry."""
     if snapshot.policy is None:
         raise ValueError("captured turn has no authorization policy")
-    return decode_json_object(json_value({"schema_version": 4, "implementation_id": runtime_implementation_id(), "allowed": json_value(snapshot.allowed),
+    return decode_json_object(json_value({"schema_version": 5 if snapshot.browser_copy is not None else 4,
+            **({"browser_copy": snapshot.browser_copy.payload()} if snapshot.browser_copy is not None else {}),
+            "implementation_id": runtime_implementation_id(), "allowed": json_value(snapshot.allowed),
             "contract_text": snapshot.contract_text, "tool_names": list(snapshot.tool_names),
             "nested_tool_names": list(snapshot.nested_tool_names),
             "research_scope": snapshot.research_scope.to_payload() if snapshot.research_scope is not None else None,
@@ -170,11 +172,13 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     payload = decode_json_object(payload)
     expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors"}
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version not in (1, 2, 3, 4):
+    if version not in (1, 2, 3, 4, 5):
         raise ValueError("invalid captured turn snapshot version/shape")
     extra = {"nested_tool_names", "research_scope"} if version >= 3 else {"nested_tool_names"} if version == 2 else set()
-    if version == 4:
+    if version >= 4:
         extra.add("ignore_runtime_claims")
+    if version == 5:
+        extra.add("browser_copy")
     if set(payload) != expected | extra:
         raise ValueError("invalid captured turn snapshot version/shape")
     names = require_json_strings(payload["tool_names"], "tool_names")
@@ -191,7 +195,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     if [spec.name for spec in specs] != inventory:
         raise ValueError("captured definitions do not match tool names")
     policy = TaskPolicy.from_payload(payload["policy"])
-    ignore_runtime_claims = require_json_boolean(payload["ignore_runtime_claims"], "ignore_runtime_claims") if version == 4 else False
+    ignore_runtime_claims = require_json_boolean(payload["ignore_runtime_claims"], "ignore_runtime_claims") if version >= 4 else False
     if nested:
         from codey.codemode.catalog import build_codemode_catalog
 
@@ -229,7 +233,10 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     if isinstance(raw_scope, dict) and "plan_digest" in raw_scope:
         raise ValueError("legacy local Research request is no longer supported; start a new Research task")
     scope = AnswerScope.from_payload(raw_scope) if raw_scope is not None else None
+    from codey.operations.browser_copy import CopyTurn
+
     return TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=contract,
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
-        research_scope=scope, ignore_runtime_claims=ignore_runtime_claims)
+        research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
+        browser_copy=CopyTurn.restore(decode_json_object(payload["browser_copy"])) if version == 5 else None)

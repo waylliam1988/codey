@@ -294,13 +294,41 @@ def project_completion_checks(session: TaskSession, context: object = None) -> l
     """
     context = CompletionContext.from_value(context)
     collect_completion_workspace(session, context)
-    rows = evaluate_project_completion(ProjectCompletionFacts.capture(session), context)
+    rows = project_evidence_checks(session, context)
     from codey.operations.explicit_execution_requirements import requested_output_read_check
 
     requested_read = requested_output_read_check(session, str(context.task or session.task_text))
     if requested_read is not None:
         rows.append(requested_read)
     return rows
+
+
+def project_evidence_checks(session: TaskSession, context: CompletionContext) -> list[CompletionCheck]:
+    rows = evaluate_project_completion(ProjectCompletionFacts.capture(session), context)
+    from pathlib import Path
+
+    from codey.operations.browser_copy import copy_target
+    from codey.toolchain.runtime import WRITE_MAX_FILE_BYTES, safe_join
+    from codey.workspace.paths import content_hash, read_text_bounded
+
+    target = copy_target(session.task_text)
+    if (target is None or session.selected_verification is not None or context.selected_check is not None
+            or set(session.edited_files) - {target.path} or set(context.scope_files) - {target.path}):
+        return rows
+    digest = next((value for result in reversed(tuple(session._memory_results.values()))
+                   if result.ok and result.call.name == "edit" and result.call.args.get("path") == target.path
+                   and "browser_source" in result.call.args
+                   and isinstance(value := result.audit.get("browser_copy_content_hash"), str)), "")
+    if not digest or not (root := session.project or context.project):
+        return rows
+    try:
+        current = read_text_bounded(safe_join(Path(root), target.path), max_bytes=WRITE_MAX_FILE_BYTES)
+        matches = content_hash(current) == digest
+    except (OSError, ValueError):
+        matches = False
+    return [*(row for row in rows if row.check_id != "relevant_verification"),
+            CompletionCheck("relevant_verification", CHECK_PASS if matches else CHECK_FAIL,
+                            "browser_copy_content_verified" if matches else "browser_copy_content_changed")]
 
 
 def evaluate_project_completion(session: ProjectCompletionFacts, context: CompletionContext) -> list[CompletionCheck]:

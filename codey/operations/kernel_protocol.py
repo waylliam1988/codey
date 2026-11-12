@@ -12,13 +12,20 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol
 
+from codey.operations.browser_copy import CopyTurn, copy_target, copy_turn
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
-from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES, ToolSpec, freeze_spec_parameters, is_text_batch_tool
+from codey.toolchain.tool_spec import (
+    SOURCE_READ_TOOL_NAMES,
+    ToolSpec,
+    freeze_spec_parameters,
+    is_text_batch_tool,
+    validate_args_with_spec,
+)
 from codey.types.json_value import JsonValue, ToolArgs, decode_json_object
 
 MAX_NATIVE_CALLS_PER_TURN = 8
@@ -94,6 +101,7 @@ class TurnSnapshot:
     nested_tool_names: tuple[str, ...] = ()
     research_scope: AnswerScope | None = None
     ignore_runtime_claims: bool = False
+    browser_copy: CopyTurn | None = None
 
     @property
     def inventory_names(self) -> tuple[str, ...]:
@@ -101,7 +109,8 @@ class TurnSnapshot:
 
     @property
     def model_specs(self) -> tuple[ToolSpec, ...]:
-        return tuple(spec for spec in self.frozen_specs if spec.name in self.tool_names)
+        return tuple(self.browser_copy.spec(spec) if self.browser_copy is not None and spec.name == "codemode" else spec
+                     for spec in self.frozen_specs if spec.name in self.tool_names)
 
 
 @dataclass(frozen=True)
@@ -327,13 +336,37 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         declarations = render_declarations(catalog)
         frozen = tuple(replace(spec, declarations=declarations)
                        if spec.name == "codemode" else spec for spec in frozen)
+    browser_copy = None
+    copy_tools = {"browser_navigate", "browser_eval", "read_file", "edit"}
+    if (not session.policy.strict_research and "codemode" in names and "done" in names
+            and copy_tools <= set(nested) and (target := copy_target(session.task_text)) is not None):
+        browser_copy = copy_turn(target, session.task_text, session._memory_results)
+        if browser_copy.phase == "done":
+            names, nested = ("done",), ()
+        elif browser_copy.phase == "question" and "ask_user" in names:
+            names, nested = ("ask_user",), ()
+        else:
+            names = ("codemode", "ask_user") if browser_copy.phase == "edit" and "ask_user" in names else ("codemode",)
+            nested = tuple(name for name in nested if name in copy_tools or name == "open_url")
+            frozen = tuple(freeze_spec_parameters(replace(spec, parameters=(
+                ("path", {"type": "string", "enum": [target.path]}),
+                ("base_result_ref", {"type": "string", "minLength": 1}),
+                ("browser_source", {"type": "object", "properties": {
+                    "ref": {"type": "string", "minLength": 1}, "selector": {"type": "object"}},
+                    "required": ["ref", "selector"], "additionalProperties": False}),
+            ), required=("path", "base_result_ref", "browser_source"))) if spec.name == "edit" else spec for spec in frozen)
+            if browser_copy.phase == "question":
+                browser_copy = CopyTurn(target)
     from codey.toolchain.tool_spec import json_contract_text as _contract
 
     # JSON 与 native 契约同源：都从同一冻结定义生成，不再查实时注册表。
     inventory = tuple(dict.fromkeys((*names, *nested)))
     by_name = {spec.name: spec for spec in frozen}
     frozen = tuple(by_name[name] for name in inventory)
-    contract_now = _contract(tuple(by_name[name] for name in names))
+    contract_now = _contract(tuple(browser_copy.spec(by_name[name])
+                                   if browser_copy is not None and name == "codemode" else by_name[name] for name in names))
+    if browser_copy is not None and browser_copy.phase == "question":
+        contract_now += "\nAsk which webpage source to use. The observation has no unique supported data format."
     executors = _frozen_custom_executors(inventory)
     return TurnSnapshot(
         allowed=allowed,
@@ -345,6 +378,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         nested_tool_names=nested,
         research_scope=scope,
         ignore_runtime_claims=purpose == "chat",
+        browser_copy=browser_copy,
     )
 
 
@@ -571,6 +605,8 @@ def _validate_tool_args(
     if name == "done":
         # ``done`` is a control tool with no runtime executor. Its
         # canonical ToolSpec validation above is the complete contract.
+        return dict(args), ""
+    if name == "edit" and "browser_source" in args and any(key == "browser_source" for key, _ in spec.parameters):
         return dict(args), ""
     if name == "codemode":
         try:
@@ -825,6 +861,9 @@ def normalize_turn(
         allowed = None if controller_allowed is None else {(n or "").strip().lower() for n in controller_allowed}
     items = _response_objects(reply)
     if isinstance(items, ToolPlan):
+        if (snapshot is not None and snapshot.browser_copy is not None and items.control is not None
+                and items.control.kind == "done" and "done" not in snapshot.tool_names):
+            return _invalid_plan("Finish the browser copy before reporting completion.", tool="done")
         if snapshot is not None and snapshot.research_scope is not None and items.control is not None and items.control.kind == "done":
             return _invalid_plan("Submit the answer with submit_research_answer under the frozen contract; global done is not allowed")
         done_spec = frozen.get("done") if frozen is not None else None
@@ -833,6 +872,18 @@ def normalize_turn(
             return _invalid_plan("Research completion requires done.report_sections.coverage under the frozen contract; "
                                  "plain text and summary-only reports are not accepted.", tool="done")
         return items
+    if snapshot is not None and snapshot.browser_copy is not None:
+        if len(items) != 1:
+            return _invalid_plan("Submit one browser copy action per turn.")
+        raw, args, call_id = items[0]
+        if _canonical_name(raw) == "codemode" and "codemode" in snapshot.tool_names:
+            spec = next(spec for spec in snapshot.model_specs if spec.name == "codemode")
+            if error := validate_args_with_spec(spec, args):
+                return _invalid_plan(error, tool="codemode")
+            try:
+                items = [(raw, snapshot.browser_copy.lower(args), call_id)]
+            except (KeyError, TypeError, ValueError) as exc:
+                return _invalid_plan(str(exc), tool="codemode")
     return _plan_from_tool_objects(
         items, policy=policy, controller_allowed=allowed,
         snapshot_names=snapshot_names, frozen_specs=frozen,

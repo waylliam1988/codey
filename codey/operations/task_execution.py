@@ -24,7 +24,14 @@ from codey.runtime.core import cancellation
 from codey.runtime.core.execution_record import HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG, SOURCE_READ_TOOL_NAMES, is_source_read_tool
-from codey.types.json_value import JsonObject, JsonValue, ToolArgs, require_json_integer
+from codey.types.json_value import (
+    JsonObject,
+    JsonValue,
+    ToolArgs,
+    decode_json_object,
+    require_json_integer,
+    require_json_string,
+)
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
@@ -278,7 +285,10 @@ class ExecutionDelegate:
             with self.session.projection_lock:
                 browser.prepare_from_receipts(tuple(self.session._memory_results.values()))
             checks = self.session.policy.required_checks
-            trace_document = (call.name in browser_receipt_tools(checks) or
+            from codey.operations.browser_copy import CAPTURE
+
+            trace_document = (call.name in browser_receipt_tools(checks)
+                              or (call.name == "browser_eval" and call.args.get("code") == CAPTURE) or
                               (call.name in {"browser_eval", "browser_read"} and has_browser_field_bindings(checks, tool=call.name)))
             transition = call.name in PAGE_TRANSITIONS
             before = browser.document_identity() if trace_document and not transition else None
@@ -514,20 +524,17 @@ class ExecutionDelegate:
             safe_join(project_path, canonical)
         except ValueError:
             return ToolOutcome.error("workspace_escape: path escapes project root")
-        if "content" in args:
-            from codey.operations.edit_base import content_edit_version
+        if "browser_source" in args:
+            prepared = self._browser_copy_content(path, canonical, args)
+            if isinstance(prepared, ToolOutcome):
+                return prepared
+            from codey.workspace.paths import content_hash
 
-            version = content_edit_version(self.session, project_path, canonical, args)
-            if self.change_tracker is not None:
-                self.change_tracker.capture_before(path)
-            content = str(args.get("content") or "")
-            if version is None:
-                outcome = self.tool_fns.write_file(project_path, path, content)
-            else:
-                outcome = self.tool_fns.write_file(project_path, path, content, expected_version=version)
-            if outcome.ok and outcome.changed and self.change_tracker is not None:
-                self.change_tracker.capture_after(path)
-            return outcome
+            outcome = self._write_content(project_path, path, canonical, {**args, "content": prepared})
+            return (replace(outcome, audit={**outcome.audit, "browser_copy_content_hash": content_hash(prepared)})
+                    if outcome.ok else outcome)
+        if "content" in args:
+            return self._write_content(project_path, path, canonical, args)
         guard = read_before_edit_outcome(
             project_path, path, set(getattr(self.session, "read_files", set()) or set()),
         )
@@ -548,10 +555,10 @@ class ExecutionDelegate:
             if set(item) != {"old_string", "new_string"}:
                 return ToolOutcome.error("edit replacement must be exactly old_string/new_string")
             search = str(item.get("old_string") or "")
-            replace = str(item.get("new_string") or "")
+            replacement = str(item.get("new_string") or "")
             if not search:
                 return ToolOutcome.error("edit replacement search must be non-empty")
-            blocks.append({"old_string": search, "new_string": replace})
+            blocks.append({"old_string": search, "new_string": replacement})
         if not blocks:
             return ToolOutcome.error("edit needs content or exact replacements")
         edit_blocks = [EditBlock(old_string=b["old_string"], new_string=b["new_string"]) for b in blocks]
@@ -561,6 +568,59 @@ class ExecutionDelegate:
         if outcome.ok and outcome.changed and self.change_tracker is not None:
             self.change_tracker.capture_after(path)
         return outcome
+
+    def _write_content(self, project: Path, path: str, canonical: str, args: ToolArgs) -> ToolOutcome:
+        from codey.operations.edit_base import content_edit_version
+
+        assert self.tool_fns is not None
+        version = content_edit_version(self.session, project, canonical, args)
+        if self.change_tracker is not None:
+            self.change_tracker.capture_before(path)
+        content = str(args.get("content") or "")
+        outcome = (self.tool_fns.write_file(project, path, content) if version is None else
+                   self.tool_fns.write_file(project, path, content, expected_version=version))
+        if outcome.ok and outcome.changed and self.change_tracker is not None:
+            self.change_tracker.capture_after(path)
+        return outcome
+
+    def _browser_copy_content(self, path: str, canonical: str, args: ToolArgs) -> str | ToolOutcome:
+        from codey.codemode.json_edit import replace_json_fields
+        from codey.operations.browser_copy import CAPTURE, EXPIRED, captured_data, copy_target, copy_turn, select_source
+        from codey.operations.edit_base import edit_base_text
+        from codey.task.web_intent import source_url_key
+        from codey.toolchain.runtime import ToolOutcome
+
+        session, browser, project = self.session, self.browser_session, self.project_path
+        if session is None or browser is None or project is None:
+            return ToolOutcome.error("Browser copy requires a project and an authorized browser.")
+        target = copy_target(session.task_text)
+        if target is None or path != target.path or canonical != target.path:
+            return ToolOutcome.error("Browser copy cannot write outside the task's target.")
+        source = decode_json_object(args["browser_source"])
+        ref = require_json_string(source.get("ref"), "browser source reference")
+        with session.projection_lock:
+            results = dict(session._memory_results)
+        browser.prepare_from_receipts(results.values())
+        current = copy_turn(target, session.task_text, results)
+        receipt = results.get(ref)
+        document = browser.document_identity()
+        if (current.ref != ref or current.phase != "edit" or receipt is None or document is None
+                or source_url_key(str(document.get("url") or "")) != source_url_key(target.url)
+                or receipt.audit.get("browser_document") != document):
+            return ToolOutcome.error("The browser observation is no longer current. Observe the authorized page again.", error_code=EXPIRED)
+        data = captured_data(receipt)
+        if data is None:
+            return ToolOutcome.error("The browser observation is incomplete. Observe the page again.", error_code=EXPIRED)
+        fresh = browser.evaluate(CAPTURE)
+        if (not fresh.ok or fresh.observation.get("truncated") is not False
+                or fresh.observation.get("value") != data or browser.document_identity() != document):
+            return ToolOutcome.error("The webpage data changed. Observe the authorized page again.", error_code=EXPIRED)
+        selector = decode_json_object(source["selector"])
+        if current.business_key and "key" in selector and selector["key"] != current.business_key:
+            return ToolOutcome.error("Select the row key specified by the task.")
+        value = select_source(data, selector, target.value_type)
+        baseline = edit_base_text(session, project, canonical, require_json_string(args["base_result_ref"], "base_result_ref"))
+        return replace_json_fields(baseline, {target.field: value})
 
     def _opened_result(self, call: ToolCall, opened: ResearchToolOutput, url: str, *, ledger: ResearchLedger, turn: int,
                        tool_index: int) -> tuple[ToolResult, bool, int | None]:

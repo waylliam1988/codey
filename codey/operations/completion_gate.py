@@ -28,9 +28,9 @@ from codey.completion.contract import (
 )
 from codey.operations.browser_completion import evaluate_page_rounds, evaluate_research_sequence
 from codey.operations.completion_context import CompletionContext
-from codey.operations.completion_inputs import CompletionCheckInput, ProjectCompletionFacts
+from codey.operations.completion_inputs import CompletionCheckInput
 from codey.operations.completion_output import tool_facts
-from codey.operations.project_completion_checks import collect_completion_workspace, evaluate_project_completion
+from codey.operations.project_completion_checks import collect_completion_workspace
 from codey.operations.research_completion_checks import (
     citation_requirement_checks,
     prepare_research_completion,
@@ -462,7 +462,9 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     checks: list[CompletionCheck] = []
     if execution_check is not None:
         checks.append(execution_check)
-    checks.extend(evaluate_project_completion(ProjectCompletionFacts.capture(session), context))
+    from codey.operations.project_completion_checks import project_evidence_checks
+
+    checks.extend(project_evidence_checks(session, context))
     from codey.operations.explicit_execution_requirements import requested_output_read_check
 
     requested_read = requested_output_read_check(session, context.task or session.task_text)
