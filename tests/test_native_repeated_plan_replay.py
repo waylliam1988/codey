@@ -35,8 +35,10 @@ def test_native_wire_replay_preserves_results_thinking_and_bounded_recovery(monk
         wire.append(payload)
         corrected = obeys_feedback and any("already succeeded" in str(row.get("content", ""))
                                           for row in payload["messages"] if row.get("role") == "user")
-        name = "done" if corrected else "research_plan"
-        args = {"summary": "The plan is recorded. Investigation remains incomplete."} if corrected else {"questions": QUESTIONS}
+        # Preserve the Qwen wire/reasoning shape while exercising a live tool;
+        # research_plan is retired and correctly rejected before execution.
+        name = "done" if corrected else "knowledge_search"
+        args = {"summary": "The plan is recorded. Investigation remains incomplete."} if corrected else {"query": "website API authentication security"}
         message = {"content": "\n\n", "reasoning_content": THOUGHT, "tool_calls": [{
             "id": f"call_{len(wire)}", "type": "function",
             "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)},
@@ -46,14 +48,14 @@ def test_native_wire_replay_preserves_results_thinking_and_bounded_recovery(monk
     def execute(call):
         executed.append(call)
         return ToolResult(call, json.dumps({"questions": QUESTIONS, "next": "Investigate the questions."}), ok=True,
-                          canonical={"research_observation": {"questions": QUESTIONS}})
+                          canonical={"knowledge_search_empty": True})
 
     monkeypatch.setattr(api_transport, "open_request", respond)
     provider = ApiProvider("http://fixture.invalid/v1", "qwen-replay", native_tools=True)
     try:
         result = run_task_kernel(TaskSession(TaskPolicy(frozenset({"knowledge.read", "control"})), max_turns=8),
             request=KernelRunRequest(transport=KernelTransportDeps(provider, user_task="Register a plan and explain the gaps."),
-                execution=KernelExecutionDeps(executors={"research_plan": execute}),
+                execution=KernelExecutionDeps(executors={"knowledge_search": execute}),
                 observation=KernelObservationDeps(on_event=events.append)))
         assert result.stop_reason == ("done" if obeys_feedback else "no_progress"), result.summary
         assert len(executed) == (2 if obeys_feedback else 3)

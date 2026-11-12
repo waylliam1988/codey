@@ -4375,10 +4375,6 @@
         [
           "fetch",
           "https://example.com/helium"
-        ],
-        [
-          "fetch",
-          "https://example.com/helium"
         ]
       ],
       "source_urls": [
@@ -4386,7 +4382,7 @@
       ],
       "stop_reason": "done"
     },
-    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json.",
+    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json. Reopening a source or a hit reads its existing pinned source snapshot, so it does not perform a second network fetch.",
     "tests": [
       "tests/test_research_convergence.py",
       "tests/test_research_whole_kernel.py",
@@ -8173,10 +8169,6 @@
         [
           "fetch",
           "https://example.com/helium"
-        ],
-        [
-          "fetch",
-          "https://example.com/helium"
         ]
       ],
       "source_urls": [
@@ -8184,7 +8176,7 @@
       ],
       "stop_reason": "done"
     },
-    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json.",
+    "reason": "Research now uses one whole-answer submission with optional candidate knowledge_updates; standalone knowledge_write and local finding selection are no longer Research actions. Acquisition actions and budget stops remain explicit in current_research_scripts.json. Reopening a source or a hit reads its existing pinned source snapshot, so it does not perform a second network fetch.",
     "tests": [
       "tests/test_research_convergence.py",
       "tests/test_research_whole_kernel.py",

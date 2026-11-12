@@ -29,7 +29,7 @@ def test_multibyte_capture_truncation_is_explicit_and_does_not_split_characters(
 
 
 def test_non_utf8_process_output_is_explicitly_lossy_instead_of_guessed():
-    capture = BoundedByteCapture(head_limit=4, tail_limit=4)
+    capture = BoundedByteCapture(head_limit=4, tail_limit=4, fallback_encoding="utf-8")
     capture.feed(b"ok\xff" + b"x" * 100 + b"tail")
     result = capture.finish()
     assert result.decoding_errors is True

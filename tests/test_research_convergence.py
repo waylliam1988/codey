@@ -69,15 +69,15 @@ def test_old_frozen_local_request_fails_explicitly_instead_of_becoming_whole_ans
         store.close()
 
 
-def test_direct_old_scope_is_rejected_before_any_acquisition(tmp_path, monkeypatch):
+def test_scope_for_another_task_is_rejected_before_any_acquisition(tmp_path, monkeypatch):
     store, tools, session, _ = setup(tmp_path)
     try:
         session.policy = TaskPolicy(session.policy.grants, strict_research=True)
         monkeypatch.setattr(tools.search, "search", lambda *_: pytest.fail("retired request acquired new sources"))
         delegate = ExecutionDelegate(session=session, research_tools=tools,
-                                     research_scope=SimpleNamespace(plan_digest="a" * 64))
+                                     research_scope=AnswerScope("a" * 64, (), ()))
         result, ok, _ = delegate._execute_research(ToolCall("web_search", {"query": "writer"}))
-        assert not ok and "legacy local Research scope" in result.model_text
+        assert not ok and "another task" in result.model_text
         assert not tools.ledger.searches
     finally:
         store.close()

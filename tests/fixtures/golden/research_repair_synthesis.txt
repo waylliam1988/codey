@@ -15,9 +15,9 @@ Research controller current allowed actions:
 - done is allowed only to report insufficient/no citable evidence and what was searched.
 
 Allowed JSON shapes for this turn (choose exactly one):
-- {"tool":"knowledge_search","args":{"query":"...","question_ref":"q1"}}
-- {"tool":"knowledge_read","args":{"id":"<note id>","question_ref":"q1"}}
-- {"tool":"web_search","args":{"query":"...","question_ref":"q1"}}
+- {"tool":"knowledge_search","args":{"query":"..."}}
+- {"tool":"knowledge_read","args":{"id":"<note id>"}}
+- {"tool":"web_search","args":{"query":"..."}}
 - {"tool":"open_result","args":{"result_id":"r1"}}
 - {"tool":"done","args":{"summary":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}
 

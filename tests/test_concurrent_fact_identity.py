@@ -29,6 +29,7 @@ def test_serial_source_children_survive_receipt_restart(tmp_path, pdf):
     class Tools:
         def __init__(self):
             self.ledger = ledger
+            self.browser_session = None
             self.sources_read: set[str] = set()
             self.search_result_urls: set[str] = set()
 

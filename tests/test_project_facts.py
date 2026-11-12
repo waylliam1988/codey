@@ -292,23 +292,24 @@ class ProjectFactsTests(unittest.TestCase):
             )
             (backend / "app.js").write_text("before\n", encoding="utf-8")
             state = server.AppContext(root / "state")
-            provider = mock.Mock()
+            from dataclasses import replace
+
+            provider = FakeProvider("")
             provider.name = "DeepSeek Web"
+            replies = iter([
+                '{"tool":"read_file","args":{"path":"backend/app.js"}}',
+                '{"tool":"edit","args":{"path":"backend/app.js","replacements":[{"old_string":"before\\n","new_string":"after\\n"}]}}',
+                '{"tool":"run","args":{"path":"backend","command":"npm test"}}',
+                '{"tool":"done","args":{"summary":"Updated backend and checked it."}}',
+            ])
+            provider.send = lambda _text, timeout=None: next(replies)
 
             def fake_agent_run(request: AgentRequest):
-                target = request.project / "backend" / "app.js"
-                target.write_text("after\n", encoding="utf-8")
-                request.on_event(RunEvent.tool_finished(
-                    1,
-                    ToolCall("edit", {"path": "backend/app.js"}),
-                    ToolOutcome("edited", True, changed=True),
-                ))
-                request.on_event(RunEvent.tool_finished(
-                    2,
-                    ToolCall("run", {"path": "backend", "command": "npm test"}),
-                    ToolOutcome("ok", True, exit_code=0),
-                ))
-                return RunResult("complete", "done", 2, True, True, True)
+                # Keep kernel-owned workspace proofs and completion facts.
+                # Only the external npm process is scripted in this fixture.
+                tools = replace(request.tool_fns, run_command_with_context=None,
+                    run_command=lambda *_args, **_kwargs: ToolOutcome("ok", True, exit_code=0))
+                return _agent_kernel_request(replace(request, tool_fns=tools))
 
             changes = {
                 "ok": True,

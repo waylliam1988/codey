@@ -101,13 +101,13 @@ def test_completion_rejection_and_check_failure_continue_with_original_receipt(t
     evaluate = completion_gate.evaluate
     evaluations = []
 
-    def gate(session, summary, *, context=None):
+    def gate(session, summary, *, context=None, observations=None):
         evaluations.append(summary)
         if len(evaluations) == 1:
             if check_failure:
                 raise RuntimeError("trace completion check unavailable")
             return completion_gate.GateVerdict(False, "trace check not satisfied")
-        return evaluate(session, summary, context=context)
+        return evaluate(session, summary, context=context, observations=observations)
 
     monkeypatch.setattr(completion_gate, "evaluate", gate)
     report = observe_trace(tmp_path, [DONE, DONE], native=native)

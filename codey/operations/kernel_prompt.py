@@ -316,7 +316,7 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
             receipt_handle = ReferenceHandleResolver(session).handle_for(result_ref)
         except ReferenceHandleError:
             receipt_handle = ""
-        if receipt_handle:
+        if receipt_handle and receipt_recovery:
             text += (f"Receipt display handle: {receipt_handle}. You may pass this short handle to "
                      "read_tool_result; the program resolves it to this task's committed receipt.\n")
         if source_result and receipt_recovery:

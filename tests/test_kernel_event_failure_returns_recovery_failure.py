@@ -72,7 +72,10 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
         from types import SimpleNamespace
 
         from codey.app.context import AppContext
+        from codey.operations.context import RunWork
         from codey.operations.kernel_errors import RecoveryFailed
+        from codey.policies.task_policy import TaskPolicy
+        from codey.runtime.observe.execution_evidence import ExecutionEvidence
         from codey.task.model import TaskSubmission
         from tests.support.kernel_runtime import run_entry_kernel
 
@@ -89,6 +92,8 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
             recovered_tool_result_batch_id="",
             entry_initial_turn=None,
             window_action=None,
+            entry_policy=TaskPolicy(frozenset({"control", "project.read"})),
+            entry_session=None,
         )
         hooks = SimpleNamespace(on_event=lambda _event: None, on_shell_request=None)
         deps = SimpleNamespace(knowledge_store=None, search_factory=None, runtime_mutations=None, state=None)
@@ -98,12 +103,12 @@ class KernelEventFailureReturnsRecoveryFailureTests(unittest.TestCase):
                        side_effect=RecoveryFailed("event proof unavailable")) as kernel,
         ):
             deps.state = AppContext(state_home)
-            result = run_entry_kernel(
-                frame,
-                SimpleNamespace(evidence=None, analysis_run_payloads=[]),
-                hooks,
-                deps,
-            )
+            try:
+                result = run_entry_kernel(
+                    frame, RunWork(recent_events=[], evidence=ExecutionEvidence()), hooks, deps,
+                )
+            finally:
+                deps.state.close()
 
         self.assertEqual(result.event["type"], "task_done")
         self.assertEqual(result.event["stop_reason"], "recovery_failure")

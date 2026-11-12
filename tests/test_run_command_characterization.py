@@ -35,13 +35,17 @@ class RunCommandProjectionCharacterizationTests(unittest.TestCase):
         )
         outcome = project_run_command_result(root=None, raw=raw)
 
-        self.assertEqual(outcome.model_text, "exit 0: pytest -q\n1 passed")
+        self.assertEqual(outcome.model_text, "exit 0: pytest -q\nExit code scope: process\nFull execution output recoverable: true\n1 passed")
         self.assertTrue(outcome.ok)
         self.assertFalse(outcome.truncated)
         self.assertEqual(
             sorted(outcome.audit),
             [
+                "capture_truncated",
+                "execution_id",
                 "exit_code",
+                "exit_code_scope",
+                "full_output_retained",
                 "process_bytes",
                 "process_stderr_bytes",
                 "process_stdout_bytes",
@@ -67,7 +71,7 @@ class RunCommandProjectionCharacterizationTests(unittest.TestCase):
         )
         outcome = project_run_command_result(root=None, raw=raw)
 
-        self.assertEqual(outcome.model_text, "exit 1: pytest -q\n1 failed")
+        self.assertEqual(outcome.model_text, "exit 1: pytest -q\nExit code scope: process\nFull execution output recoverable: true\n1 failed")
         self.assertFalse(outcome.ok)
         self.assertEqual(outcome.audit.get("exit_code"), 1)
 
@@ -102,10 +106,14 @@ class RunCommandProjectionCharacterizationTests(unittest.TestCase):
         self.assertEqual(
             sorted(timed.audit),
             [
+                "capture_truncated",
                 "command_duration_ms",
                 "command_finished_at",
                 "command_started_at",
+                "execution_id",
                 "exit_code",
+                "exit_code_scope",
+                "full_output_retained",
                 "process_bytes",
                 "process_stderr_bytes",
                 "process_stdout_bytes",

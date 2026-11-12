@@ -155,7 +155,7 @@ def test_result_encoding_repair_replays_all_receipts_without_second_upload(
     code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
             "unwrap(await tools.browser_upload_named({name:'Attachment',attachment_id:inputs.attachment}));"
             "unwrap(await tools.browser_wait({condition:'text',value:'UPLOAD_BYTES_82',timeout_ms:5000}));"
-            "return {body:unwrap(await tools.browser_read({})).missing};")
+            "unwrap(await tools.browser_read({})); return {body:undefined};")
     install_http(monkeypatch, [
         {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL, "attachment": str(attachment["id"])}}},
         {"tool": "done", "args": {"summary": "已选择附件；服务器接收尚未核验。"}},

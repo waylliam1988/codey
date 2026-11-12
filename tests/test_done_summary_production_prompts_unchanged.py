@@ -73,12 +73,11 @@ def test_initial_result_and_repair_prompt_surfaces_have_frozen_hashes() -> None:
 
     assert "obtain actual source data using the authorized tools" in initial
     assert "not evidence that the host has no network access" in initial
-    assert _sha256(initial) == "c56b7f57796bc20e5ec1b896e682904de23ac951e714818c257977532bca381f"
+    assert _sha256(initial) == "dffdc984840170210a6b9f0f2568a04a8e6de9b33102cd96e588a06ebbee6613"
     assert _sha256(result) == "591c80828028a2103608e4d5a081bfd484d6d0fb755950c423cf8241b9876522"
-    # Reviewed: JSON Schema keys now use canonical sorted order. Ordinary done
-    # repair preserves its task format; structured report
-    # examples are supplied only by the frozen report task contract.
-    assert _sha256(repair) == "575bf736319b09d736d2ed999055392e33b1f7cf2043b0ff8dbf11646e7e841f"
+    # Reviewed: the current done schema carries execution and source-coverage
+    # guidance; ordinary done repair still preserves the task's own format.
+    assert _sha256(repair) == "847d35bd8bcf6c31b385b2b149431e78826782dca86cba00443ee578553f552e"
 
 
 @dataclass(frozen=True)
@@ -119,13 +118,13 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path, monkey
     assert len(provider.prompts) == 1
     prompt = (provider.prompts[0].replace(str(project), "<PROJECT>")
               .replace(json.dumps(str(project))[1:-1], "<PROJECT>"))
-    # Reviewed after whole-answer convergence removed the retired assessment tool.
-    # Knowledge references remain pinned; CodeMode still uses the frozen tools.
+    # Reviewed: CodeMode uses Result<T> and declared fields instead of assuming
+    # arbitrary properties exist on successful tool values.
     # The live prompt is hashed as one canonical surface so CodeMode/tool
     # contract changes cannot be silently accepted by a stale fixture.
     assert "ask_user" in prompt
     assert "submit_research_review" not in prompt
-    assert "Calls return {ok:true, value}" in prompt
+    assert "Calls return Result<T>" in prompt
     assert "Only frozen read-only tools" not in prompt
     # Reviewed: only the interpreter path/version above became fixed inputs.
-    assert _sha256(prompt) == "a8efb12fd24924da7f5dafd2047906236e85e375d8b1760a5d0ac5798458cab2"
+    assert _sha256(prompt) == "376a768554a911ca7edefa69360ea8815e3ec3d812a770d0d8f02dfa2bbff66d"

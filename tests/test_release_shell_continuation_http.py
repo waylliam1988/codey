@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import faulthandler
+import hashlib
 import inspect
 import json
 import sys
@@ -172,13 +173,15 @@ def test_http_denial_refuses_model_retry_without_another_approval(tmp_path, prot
 
 @pytest.mark.parametrize('protocol', ['openai-completions', 'openai-responses'])
 def test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_path):
+    # Worker lanes are process-wide; separate parametrized app instances must not share one.
+    session_id = 'remembered-' + hashlib.sha256(str(tmp_path).encode()).hexdigest()[:12]
     with model_peer(protocol, 'shell_approve', 'run', repeat=True) as (url, requests, errors):
         target = GateTarget(url, 'shell-fixture', 32768, 8192, 12000, api_protocol=protocol, request_timeout=10)
         with gate_application(target, tmp_path) as (httpd, ctx, events):
             client = GateHTTPClient(httpd)
             for attempt in range(2):
                 submitted = client.post('/api/run', {
-                    'session_id': 'remembered-chat', 'input': {'kind': 'start_task', 'text': 'Run the same harmless command'},
+                    'session_id': session_id, 'input': {'kind': 'start_task', 'text': 'Run the same harmless command'},
                     'provider': 'local', 'model_selection': {'model': target.model, 'base_url': url},
                     'intent': 'chat', 'max_turns': 6,
                 })
@@ -188,7 +191,7 @@ def test_remembered_run_approval_automatically_resumes_next_task(protocol, tmp_p
                     approval_id = next(iter(ctx.pending_shell_approvals()))
                     client.post('/api/shell_approval', {'id': approval_id, 'approved': True, 'scope': 'session'})
                 wait_for_completed_task(ctx, events, run_id, requests, errors)
-                assert ctx.shell_approval_workflow.for_source('remembered-chat', run_id)['execution'] == 'settled'
+                assert ctx.shell_approval_workflow.for_source(session_id, run_id)['execution'] == 'settled'
             assert len(requests) == 4 and not errors
 
 

@@ -263,7 +263,10 @@ def test_reference_check_is_mechanical_and_does_not_prove_interpretation(tmp_pat
     store = KnowledgeStore(tmp_path)
     try:
         store.repository.commit("initial", example())
-        session = SimpleNamespace(last_done_args={"knowledge_refs": [{"id": "claim", "revision": 1}]})
+        from codey.operations.task_session import TaskSession
+
+        session = TaskSession(TaskPolicy(frozenset({"control", "knowledge.read"})))
+        session.last_done_args = {"knowledge_refs": [{"id": "claim", "revision": 1}]}
         assert knowledge_reference_checks(session, {"knowledge_store": store})[0].status == "pass"
         session.last_done_args["knowledge_refs"][0]["revision"] = 99
         assert knowledge_reference_checks(session, {"knowledge_store": store})[0].status == "fail"
@@ -307,7 +310,7 @@ def test_shared_driver_bounds_parallel_source_calls(tmp_path):
         native_tools = False
 
         def send(self, prompt):
-            return "\n".join(json.dumps({"tool": "web_search", "args": {"query": query, "question_ref": "q1"}})
+            return "\n".join(json.dumps({"tool": "web_search", "args": {"query": query}})
                              for query in ("first", "second"))
 
     store = KnowledgeStore(tmp_path)

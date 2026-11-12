@@ -213,68 +213,17 @@ class ProjectChangesRequiredChainTests(unittest.TestCase):
 
     def test_requires_changes_without_write_is_config_conflict(self) -> None:
         """Entry declaring must-change without write permission must fail fast."""
-        import tempfile
-        from pathlib import Path as _Path
-
+        from codey.operations import task_entry as um
         from codey.task.model import TaskSubmission
 
-        _tmp = tempfile.mkdtemp()
-        _proj_for_req = str(_Path(_tmp) / "p")
-        _Path(_proj_for_req).mkdir(parents=True, exist_ok=True)
         submission = TaskSubmission(
-            session_id="s1",
-            project=_proj_for_req,
-            task="修复登录 bug",
-            max_turns=4,
-            continue_task=False,
-            provider_id="local",
-            intent="hybrid",
-            requested_capabilities=(),
-            strict_research=True,
-            project_changes_required=True,
+            session_id="s1", project=".", task="修复登录 bug", max_turns=4,
+            continue_task=False, provider_id="local", intent="hybrid",
+            requested_capabilities=(), strict_research=True, project_changes_required=True,
         )
-        # Building the session/policy must surface a config conflict when
-        # requires-changes has no project.write grant.
-        import tempfile
-        from pathlib import Path
-
-        from codey.operations import task_entry as um
-        from codey.operations.context import RunFrame, RunHooks, RunWork
-        from codey.runtime.observe.execution_evidence import ExecutionEvidence
-
-        with tempfile.TemporaryDirectory() as tmp:
-            proj = str(Path(tmp) / "p")
-            Path(proj).mkdir(parents=True, exist_ok=True)
-            frame = RunFrame(
-                request=submission,
-                run_id="r-conflict",
-                task_kind="hybrid",
-                provider=None,
-                provider_id="local",
-                project_text=proj,
-                conversation=None,  # type: ignore[arg-type]
-                fresh_chat=False,
-                handoff="",
-                research_handoff="",
-                prior_snapshot=None,  # type: ignore[arg-type]
-                recovered_owner_prompt="",
-                provider_session_changed=False,
-                preflight_tried=set(),
-                preflight_switches=0,
-            )
-            work = RunWork(recent_events=[], evidence=ExecutionEvidence())
-            hooks = RunHooks(
-                on_event=lambda e: None,
-                on_shell_request=lambda a: None,
-                update_checkpoint=lambda a: None,
-                record_provider_failure=lambda a, b: None,
-                append_ledger=lambda a: None,
-                provider_failover_order=lambda: (),
-                supervisor=None,
-            )
-            deps = type("D", (), {"workspace_revisions": None, "knowledge_store": None, "managed_outputs": None, "runtime_mutations": None, "state": None})()
-            with self.assertRaises(RuntimeError, msg="must-change without write must be config conflict"):
-                um.run_entry_kernel(frame, work, hooks, deps, task_kind="hybrid")
+        policy = um.build_task_policy_for_entry(submission, "hybrid")
+        with self.assertRaisesRegex(RuntimeError, "without project.write"):
+            um._entry_check_conflict(policy, submission, "hybrid")
 
 
 class ToolSpecValidationTests(unittest.TestCase):

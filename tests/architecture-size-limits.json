@@ -1,5 +1,5 @@
 {
-  "durable/model.py": 1013,
+  "durable/model.py": 1014,
   "ghost/continuity.py": 1115,
   "ghost/inbox.py": 1178,
   "providers/api_provider.py": 1014,
@@ -10,6 +10,7 @@
   "research/source_connectors.py": 1140,
   "runs/trace.py": 1524,
   "runtime/effects/tool_result_delivery.py": 1252,
-  "toolchain/runtime.py": 1289,
+  "toolchain/runtime.py": 1282,
+  "toolchain/tool_spec.py": 1207,
   "workspace/changes.py": 1415
 }

@@ -76,7 +76,7 @@ def test_oversized_json_integer_rejects_without_crashing_the_kernel():
 
 
 def test_decoder_recursion_limit_is_a_rejected_turn(monkeypatch):
-    def exhausted(_source):
+    def exhausted(_source, **_kwargs):
         raise RecursionError("decoder recursion limit")
 
     monkeypatch.setattr("codey.operations.kernel_protocol.json.loads", exhausted)

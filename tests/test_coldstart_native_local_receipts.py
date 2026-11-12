@@ -52,12 +52,12 @@ def test_native_codec_hash_is_native_not_json() -> None:
 
 
 def test_native_done_parses_and_respects_permissions() -> None:
-    from types import SimpleNamespace
-
+    from codey.policies.capabilities import KNOWN_TASK_GRANTS
+    from codey.policies.task_policy import TaskPolicy
     from codey.providers.base import AssistantTurn, ProviderToolCall
     from tests.support.kernel_protocol_test_helpers import normalize_turn
 
-    policy = SimpleNamespace(allows=lambda g: True)
+    policy = TaskPolicy(frozenset(KNOWN_TASK_GRANTS))
     plan = normalize_turn(
         AssistantTurn(
             text="",
@@ -69,7 +69,7 @@ def test_native_done_parses_and_respects_permissions() -> None:
     assert plan.control.body == "ok"
 
     # Disallowed tool for a read-only policy fails as disallowed.
-    readonly = SimpleNamespace(allows=lambda g: g != "project.write")
+    readonly = TaskPolicy(policy.grants - {"project.write"})
     bad = normalize_turn(
         AssistantTurn(
             text="",

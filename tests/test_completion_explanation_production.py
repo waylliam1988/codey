@@ -44,6 +44,8 @@ from codey.types.json_value import JsonObject, decode_json_object
 from tests.support.real_cdp import chromium_executable
 from tools.completion_artifact_audit import rejection_audit, tool_receipts
 
+pytestmark = pytest.mark.usefixtures("scripted_local_api_connection")
+
 
 def session_for(*bindings: str, strict: bool = False) -> TaskSession:
     return TaskSession(policy=TaskPolicy(frozenset({"control", "project.read"}), strict_research=strict,

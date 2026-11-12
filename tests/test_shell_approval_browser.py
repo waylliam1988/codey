@@ -103,6 +103,10 @@ def test_response_loss_and_retries_preserve_original_task_and_single_execution(t
                 assert checked_response.value.status == 200
                 expect(page.get_by_role("button", name="Allow once", exact=True)).to_have_count(0)
                 expect(page.get_by_role("button", name="Deny", exact=True)).to_have_count(0)
+                # HTTP acknowledgement confirms the decision, not process settlement.
+                assert ctx.shell_approval_workflow.wait(60)
+                settled = ctx.shell_approval_workflow.status("approval")
+                assert settled["execution"] == ("settled" if approved else "not_required"), settled
                 expect(page.locator(".shell-stdout")).to_contain_text(
                     'Ran 0 tests' if scope == 'project' else "BROWSER_SHELL_RESULT" if approved else "Denied by user"
                 )

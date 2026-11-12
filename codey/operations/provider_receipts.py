@@ -132,11 +132,17 @@ def runtime_implementation_id() -> str:
     return digest.hexdigest()
 
 
-def _restore_spec(value: object) -> ToolSpec:
+def _restore_spec(value: object, *, snapshot_version: int) -> ToolSpec:
     from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
 
     row = decode_json_object(value)
-    if set(row) != {field.name for field in fields(ToolSpec)}:
+    expected = {field.name for field in fields(ToolSpec)}
+    legacy_metadata: JsonObject = {"namespace": "core", "effect": "read", "evidence_route": "none", "preconditions": []}
+    if snapshot_version <= 3 and set(row) == expected - legacy_metadata.keys():
+        # Original snapshots predate catalog metadata. Decode for inspection;
+        # restore_snapshot keeps these contracts incompatible with execution.
+        row.update(legacy_metadata)
+    if set(row) != expected:
         raise ValueError("invalid captured tool specification")
     parameters = row["parameters"]
     if not isinstance(parameters, list):
@@ -190,7 +196,8 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     raw_specs, raw_executors = payload["specs"], payload["executors"]
     if not isinstance(raw_specs, list) or not isinstance(raw_executors, list):
         raise ValueError("invalid captured turn definitions")
-    specs = [_restore_spec(raw) for raw in raw_specs]
+    legacy_specs = any(isinstance(raw, dict) and "namespace" not in raw for raw in raw_specs)
+    specs = [_restore_spec(raw, snapshot_version=version) for raw in raw_specs]
     inventory = list(dict.fromkeys([*names, *nested]))
     if [spec.name for spec in specs] != inventory:
         raise ValueError("captured definitions do not match tool names")
@@ -206,7 +213,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         )
         if "codemode" not in names or not set(nested) <= {entry.name for entry in catalog.entries}:
             raise ValueError("captured nested capabilities exceed the frozen CodeMode inventory")
-    compatible = payload["implementation_id"] == runtime_implementation_id()
+    compatible = not legacy_specs and payload["implementation_id"] == runtime_implementation_id()
     bindings: list[tuple[str, ToolExecutor | None]] = []
     for raw in raw_executors:
         row = decode_json_object(raw)

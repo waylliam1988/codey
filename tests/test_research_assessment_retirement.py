@@ -39,6 +39,16 @@ def test_archived_review_snapshot_and_replay_arguments_still_decode_without_auth
     assert snapshot.tool_names == ("submit_research_review",)
     assert not snapshot.implementation_compatible
     assert snapshot.frozen_specs[0].required == ("assessment",)
+    # A matching implementation id must not authorize metadata synthesized
+    # solely for inspecting a historical contract.
+    from codey.operations.provider_receipts import runtime_implementation_id
+
+    raw = json.loads(source.read_text(encoding="utf-8"))
+    raw["implementation_id"] = runtime_implementation_id()
+    assert not restore_snapshot(raw).implementation_compatible
+    raw["specs"][0]["namespace"] = "core"
+    with pytest.raises(ValueError, match="invalid captured tool specification"):
+        restore_snapshot(raw)
     args = {"basis_digest": "a" * 64, "assessment": {"claims": [], "paragraphs": []}}
     assert validate_replay_args_shape("submit_research_review", args) == args
     with pytest.raises(ValueError, match="original basis"):

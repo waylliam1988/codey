@@ -577,6 +577,7 @@ class BrowserFetchAbandonTests(unittest.TestCase):
 
         def _slow_fetch(url):
             provider._fetch_page = fake_page
+            provider._owned_pages[id(fake_page)] = fake_page
             self.assertTrue(release.wait(10))
             return {"status": "ok", "url": url, "title": "", "text": "late", "truncated": False}
 

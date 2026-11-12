@@ -94,6 +94,8 @@ def test_every_capability_subset_has_same_json_native_boundary_and_exact_roundtr
             assert TaskPolicy.from_payload(policy.to_payload()) == policy
             snapshot = build_turn_snapshot(TaskSession(policy=policy), native=True)
             assert all(spec.grant in grants - denied for spec in snapshot.frozen_specs)
-            native_names = {row.name for row in tools_from_specs(snapshot.frozen_specs)}
+            native_names = {row.name for row in tools_from_specs(snapshot.model_specs)}
             assert native_names == set(snapshot.tool_names)
+            assert {spec.name for spec in snapshot.frozen_specs} == set(snapshot.inventory_names)
+            assert set(snapshot.nested_tool_names) <= set(snapshot.inventory_names)
     print(f"capability enumeration: {2 ** len(vocabulary)} subsets x 2 denial states")

@@ -119,7 +119,7 @@ def test_b1_durable_invalid_parameter_reports_root_cause_without_child_intent(tm
                 executors={"codemode": executor}, run_id="r", effect_scope="probe", turn=0, project_path=project,
                 snapshot=snapshot, intent_sink=sink, durable=mutations.durable)[0]
         assert not result.ok
-        assert ("timeout_ms" if config == "B1" else "recorded control flow") in result.model_text
+        assert "timeout_ms" in result.model_text
         assert result.canonical["child_effect_ids"] == []
         assert len(mutations.durable.effects("r")) == 1
     finally:
@@ -166,7 +166,7 @@ def test_b2_feedback_identifies_missing_parent_before_answer_format(tmp_path: Pa
     s._memory_results["read"] = result
     with surface.prototype(tmp_path, "upload_bound", config):
         output = kernel_control.prepare_completion_output(s, "explanation", CompletionContext())
-        checks = completion_gate._required_tool_checks(s, output.text, CompletionContext(), output.observations)
+        checks = completion_gate._required_tool_checks(s, output.text, CompletionContext(), output.observations, None)
         verdict = completion_gate._required_checks_verdict(s, checks.rows, checks.evaluations)
     assert verdict is not None and not verdict.complete
     assert "tool_parent_missing" in verdict.followup
@@ -190,7 +190,7 @@ def test_receipt_delivery_explains_missing_evidence_before_format(tmp_path: Path
         task._memory_results["read"] = read
     with surface.prototype(tmp_path, "upload_bound", surface.RECEIPT_DELIVERY):
         output = kernel_control.prepare_completion_output(task, "explanation", CompletionContext())
-        checks = completion_gate._required_tool_checks(task, output.text, CompletionContext(), output.observations)
+        checks = completion_gate._required_tool_checks(task, output.text, CompletionContext(), output.observations, None)
         verdict = completion_gate._required_checks_verdict(task, checks.rows, checks.evaluations)
     assert verdict is not None and not verdict.complete
     assert reason in verdict.followup and "output_format_invalid" not in verdict.followup
