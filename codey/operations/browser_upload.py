@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING
 from codey.automation.browser_session import BrowserToolOutput
 from codey.operations.browser_completion import committed_results
 from codey.operations.task_session import TaskSession
-from codey.policies.tool_requirement import _browser_body, require_tool_success
+from codey.policies.output_requirement import has_explanation
+from codey.policies.tool_requirement import _browser_body, parse_tool_success_check, require_tool_success
 from codey.runtime.core.models import ToolResult
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.task.web_intent import source_url_key
@@ -53,6 +54,22 @@ class UploadScope:
 
 def upload_scope(session: TaskSession) -> UploadScope | None:
     return task_upload_scope(session.task_kind, session.task_text, session.required_source_urls, session.policy)
+
+
+def bound_upload_explanation(checks: tuple[str, ...]) -> bool:
+    if not has_explanation(checks):
+        return False
+    selectors = {requirement.result_pointer for check in checks
+                 if (requirement := parse_tool_success_check(check)) is not None
+                 and requirement.tool == "browser_upload" and requirement.answer_pointer is not None}
+    return selectors >= {"/name", "/sha256"}
+
+
+def upload_completion_scope(session: TaskSession) -> UploadScope | None:
+    scope = upload_scope(session)
+    if scope is not None and (scope.report_hash or bound_upload_explanation(session.policy.required_checks)):
+        return scope
+    return None
 
 
 def task_upload_scope(task_kind: str, task: str, urls: frozenset[str], policy: TaskPolicy) -> UploadScope | None:
@@ -237,6 +254,17 @@ class UploadEvidence:
     name: str
     sha256: str
     text: str
+    selection_ref: str
+    page_ref: str
+
+    def status(self, *, chinese: bool) -> str:
+        # browser_upload verifies input selection. A subsequent browser_read
+        # observes the page and does not establish server acceptance.
+        if chinese:
+            page = "已读取选择后的页面。" if self.text else ""
+            return f"已在网页选中附件。{page}服务器接收状态未核验。"
+        page = " The page was read after selection." if self.text else ""
+        return f"The attachment was selected on the page.{page} Server acceptance was not verified."
 
     def render(self, *, chinese: bool) -> str:
         lines = ([f"已选择附件：{self.name}", f"选择回执 SHA256：{self.sha256}"] if chinese else
@@ -251,7 +279,8 @@ def upload_evidence(session: TaskSession, scope: UploadScope, document: JsonObje
         return "Return to the target upload page and verify its state before completing."
     selection: tuple[str, str] | None = None
     body = ""
-    for _, result in committed_results(session.executed, session._memory_results, _SELECTION_RECEIPTS):
+    selection_ref = page_ref = ""
+    for ref, result in committed_results(session.executed, session._memory_results, _SELECTION_RECEIPTS):
         if result.audit.get("browser_document") != document:
             continue
         if result.call.name == "browser_upload":
@@ -260,14 +289,15 @@ def upload_evidence(session: TaskSession, scope: UploadScope, document: JsonObje
                     and (not scope.attachment or value.get("attachment_id") == scope.attachment)
                     and isinstance(name := value.get("name"), str) and name
                     and isinstance(digest := value.get("sha256"), str) and re.fullmatch(r"[a-f0-9]{64}", digest)):
-                selection, body = (name, digest), ""
+                selection, body, selection_ref, page_ref = (name, digest), "", ref, ""
         elif result.call.name == "browser_read" and selection is not None:
             try:
                 body = _browser_body(result) or ""
             except (KeyError, TypeError, ValueError):
                 body = ""
+            page_ref = ref if body else ""
     if selection is None:
         return "Select the requested attachment on the target page and obtain its successful upload receipt."
     if scope.read_page and not body:
         return "Read the complete target page after selecting the attachment. Reuse the existing upload receipt."
-    return UploadEvidence(*selection, body if scope.read_page else "")
+    return UploadEvidence(*selection, body if scope.read_page else "", selection_ref, page_ref)

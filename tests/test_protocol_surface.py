@@ -366,7 +366,8 @@ def test_receipt_delivery_uses_original_file_and_page_data(
         if scenario == "upload":
             assert facts["effect_verified"] is False and surface.UPLOAD_SCOPE_NOTE in answer
         else:
-            assert facts["explanation"] == summary + "\n\n" + surface.UPLOAD_SCOPE_NOTE
+            assert facts["explanation"] == ("已在网页选中附件。已读取选择后的页面。服务器接收状态未核验。\n\n"
+                                            + surface.UPLOAD_SCOPE_NOTE)
     else:
         assert facts["bytes"] == len(data) and facts["path"] == value["path"]
     if scenario == "return_failure":

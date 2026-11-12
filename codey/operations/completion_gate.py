@@ -429,7 +429,7 @@ def _proof_capacity_verdict(checks: list[CompletionCheck], *, publication: bool)
 
 def _browser_completion_block(session: TaskSession, text: str, context: CompletionContext) -> GateVerdict | None:
     from codey.operations.browser_text_report import observe_metadata, report_scope
-    from codey.operations.browser_upload import upload_evidence, upload_scope
+    from codey.operations.browser_upload import upload_completion_scope, upload_evidence
     from codey.operations.source_gaps import source_read_required, task_source_coverage
 
     coverage = task_source_coverage(session, context.research_execution_ledger or context.research_ledger)
@@ -441,8 +441,8 @@ def _browser_completion_block(session: TaskSession, text: str, context: Completi
         metadata = observe_metadata(report, records, results, context.browser_document)
         if isinstance(metadata, str):
             return GateVerdict(False, metadata, None)
-    upload = upload_scope(session)
-    if upload is not None and upload.report_hash:
+    upload = upload_completion_scope(session)
+    if upload is not None:
         evidence = upload_evidence(session, upload, context.browser_document)
         if isinstance(evidence, str):
             return GateVerdict(False, evidence, None)

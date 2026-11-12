@@ -43,7 +43,7 @@ def run_prefetched_upload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, st
             "unwrap(await tools.browser_upload({ref,attachment_id:inputs.attachment}));"
             "unwrap(await tools.browser_wait({condition:'text',value:'UPLOAD_BYTES_82',timeout_ms:5000}));")
     code = "unwrap(await tools.browser_read({}));" + code + "return null;" if read_before_upload else code + read
-    summary: JsonObject = {"tool": "done", "args": {"summary": "页面显示已选择附件。" if strict else
+    summary: JsonObject = {"tool": "done", "args": {"summary": "已成功上传，服务器确认接收。" if strict else
                                                     f"文件名：fixture.txt\n内容标记：UPLOAD_BYTES_82\nSHA256：{identity}"}}
     replies: list[JsonObject] = [
         {"tool": "codemode", "args": {"code": code, "inputs": {"attachment": identity}}}, summary,
@@ -91,13 +91,17 @@ def test_required_navigation_commits_before_the_first_upload_on_a_prefetched_pag
     assert documents[0] == documents[1] == documents[2]
     output = json.loads(str(row["answer"]))
     assert output["sha256"] == hashlib.sha256(b"UPLOAD_BYTES_82\n").hexdigest()
+    assert set(output) == {"explanation", "filename", "sha256", "page_text"}
+    assert output["filename"] == "fixture.txt" and "UPLOAD_BYTES_82" in output["page_text"]
+    assert output["explanation"] == "已在网页选中附件。已读取选择后的页面。服务器接收状态未核验。"
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("strict", [False, True])
 def test_upload_report_requires_a_post_selection_read_without_repeating_the_upload(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, strict: bool,
 ) -> None:
-    row = run_prefetched_upload(tmp_path, monkeypatch, strict=False, read_before_upload=True)
+    row = run_prefetched_upload(tmp_path, monkeypatch, strict=strict, read_before_upload=True)
     assert row["passed"] is True and row["stop_reason"] == "done", row
     rejection = row["first_rejection"]
     assert isinstance(rejection, dict) and "after selecting the attachment" in str(rejection["reason"])

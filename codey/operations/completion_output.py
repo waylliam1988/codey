@@ -6,12 +6,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from codey.operations.browser_text_report import BrowserMetadata, observe_metadata, report_scope
-from codey.operations.browser_upload import UploadEvidence, upload_evidence, upload_scope
+from codey.operations.browser_upload import UploadEvidence, bound_upload_explanation, upload_evidence, upload_scope
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import has_explanation, is_output_check, schema_for
 from codey.policies.requirement import RequirementEvaluation
-from codey.policies.tool_requirement import ToolObservation, argument_digest, decode_answer, parse_tool_success_check
+from codey.policies.tool_requirement import (
+    ToolObservation,
+    ToolSuccessRequirement,
+    argument_digest,
+    decode_answer,
+    parse_tool_success_check,
+)
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.result_schema import validate_output
@@ -48,6 +54,9 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
     if explanation and session.policy.strict_research:
         raise OutputBindingError("json_explanation cannot replace the strict Research answer contract.")
     schema = next((schema_for(check) for check in session.policy.required_checks if is_output_check(check)), None)
+    scope = upload_scope(session)
+    bound_upload = (upload_evidence(session, scope, context.browser_document)
+                    if scope is not None and bound_upload_explanation(session.policy.required_checks) else None)
     for declaration in session.policy.required_checks:
         try:
             requirement = parse_tool_success_check(declaration)
@@ -60,8 +69,9 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
         if explanation and requirement.answer_pointer is not None and (
                 requirement.answer_pointer == "" or requirement.answer_pointer.split("/")[1] == "explanation"):
             raise OutputBindingError("A receipt binding overlaps the declared /explanation text destination.")
-        observation = (requirement.observe(records, results=results, browser_document=context.browser_document)
-                       if requirement.binds_browser_fields else requirement.observe(records, results=results))
+        binding_records = _upload_binding_records(requirement, records, bound_upload)
+        observation = (requirement.observe(binding_records, results=results, browser_document=context.browser_document)
+                       if requirement.binds_browser_fields else requirement.observe(binding_records, results=results))
         if requirement.answer_pointer is not None and observation.evaluation.passed:
             pointer = requirement.answer_pointer
             path = tuple(part.replace("~1", "/").replace("~0", "~") for part in pointer[1:].split("/")) if pointer else ()
@@ -81,13 +91,14 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
         if (report is not None
                 and isinstance(metadata := observe_metadata(report, records, results, context.browser_document), BrowserMetadata)):
             return CompletionOutput(metadata.render(text, chinese=report.chinese), observations)
-        scope = upload_scope(session)
         if (schema is None and scope is not None and scope.report_hash
                 and isinstance(evidence := upload_evidence(session, scope, context.browser_document), UploadEvidence)):
             text = evidence.render(chinese=scope.chinese)
         return CompletionOutput(text, observations)
     proposed: JsonValue
     if explanation:
+        if scope is not None and bound_upload is not None:
+            text = bound_upload.status(chinese=scope.chinese) if isinstance(bound_upload, UploadEvidence) else ""
         proposed = {"explanation": text}
     else:
         try:
@@ -97,6 +108,19 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
     assembled = _assemble(proposed, schema, fields)
     return CompletionOutput(json.dumps(assembled, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                                        allow_nan=False), observations)
+
+
+def _upload_binding_records(requirement: ToolSuccessRequirement, records: dict[str, ExecutionRecord],
+                            evidence: UploadEvidence | str | None) -> dict[str, ExecutionRecord]:
+    if not isinstance(evidence, UploadEvidence) or requirement.answer_pointer is None:
+        return records
+    if requirement.tool == "browser_upload":
+        ref = evidence.selection_ref
+    elif requirement.tool == "browser_read" and requirement.result_pointer in {"", "/text"}:
+        ref = evidence.page_ref
+    else:
+        return records
+    return {identity: row for identity, row in records.items() if row["name"] != requirement.tool or identity == ref}
 
 
 def _field_schema(schema: JsonValue, path: tuple[str, ...]) -> Mapping[str, object] | None:
