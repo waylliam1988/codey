@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import contextlib
 import time
-from collections.abc import Callable
 
 from playwright.sync_api import Error as BrowserError
 from playwright.sync_api import Page, Request, Response
 
 from codey.research import source_download
-from codey.research.extract import _fetch_page_failure_kind, _usable_fetch_page_text, extract_title
+from codey.research.extract import _fetch_page_failure_kind, _usable_fetch_page_text, extract_text, extract_title
 from codey.research.source_acquisition import SourceFailureCode, http_failure_code
 from codey.runtime.core import cancellation
 
@@ -17,9 +16,9 @@ _CONTENT_RETRY_TIMEOUT = 3.0
 _CONTENT_RETRY_TICK = 0.2
 
 
-def rendered_browser_text(page: Page, html: str, extract: Callable[[str], str]) -> str:
+def rendered_browser_text(page: Page, html: str) -> str:
     # Closed native disclosures may already contain text in the markup.
-    return page.locator("body").inner_text(timeout=2000) if "<details" in html.casefold() else extract(html)
+    return page.locator("body").inner_text(timeout=2000) if "<details" in html.casefold() else extract_text(html)
 
 
 class _PageFailures:

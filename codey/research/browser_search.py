@@ -35,7 +35,6 @@ from codey.research.extract import (
     _MAX_PAGE_CHARS,
     _clean_space,
     _usable_fetch_page_text,
-    extract_text,
     extract_title,
 )
 from codey.research.source_acquisition import with_attempt
@@ -723,7 +722,7 @@ class BrowserSearchProvider:
 
 def _fetch_page_content_after_settle(page: Page) -> tuple[str, str]:
     html = _page_content_after_navigation(page)
-    text = rendered_browser_text(page, html, extract_text)
+    text = rendered_browser_text(page, html)
     if _usable_fetch_page_text(text) and not _application_content_pending(page):
         return html, text
     stop_at = time.monotonic() + _FETCH_SETTLE_TIMEOUT_SECONDS
@@ -735,7 +734,7 @@ def _fetch_page_content_after_settle(page: Page) -> tuple[str, str]:
             page.wait_for_load_state("networkidle", timeout=500)
         cancellation.wait(_FETCH_SETTLE_TICK)
         html = _page_content_after_navigation(page)
-        text = rendered_browser_text(page, html, extract_text)
+        text = rendered_browser_text(page, html)
         if len(text) > len(best_text):
             best_html = html
             best_text = text

@@ -49,7 +49,8 @@ def test_failed_acquisition_is_error_and_never_records_evidence(monkeypatch, tra
     if transport != "http":
         _retain_fetch_page(provider, page, owned=transport == "browser")
         monkeypatch.setattr(provider, "_ensure_fetch_page_on_browser_thread", lambda _: page)
-        monkeypatch.setattr(browser_search, "_fetch_page_content_after_settle", lambda _: (html, browser_search.extract_text(html)))
+        page.content.return_value = html
+        monkeypatch.setattr(browser_search, "_FETCH_SETTLE_TIMEOUT_SECONDS", 0)
     fetch = (source_download._download_text_fallback if transport == "http"
              else provider._fetch_on_browser_thread)
     ledger = ResearchLedger()
