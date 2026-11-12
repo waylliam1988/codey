@@ -83,6 +83,9 @@ class BrowserSession:
         self._reference_scope = uuid4().hex
         self._generation = 0
         self._refs: dict[str, _ElementRef] = {}
+        self._file_controls: dict[str, tuple[str, JsonObject]] = {}
+        self._file_document: JsonObject | None = None
+        self._file_controls_truncated = False
         self._page_ids: dict[Page, str] = {}
         self._navigation_facts: dict[int, tuple[int | None, str]] = {}
         self._recovery_checked = False
@@ -134,8 +137,9 @@ class BrowserSession:
         return self._generation
 
     def snapshot(self, *, max_elements: int = MAX_SNAPSHOT_ELEMENTS,
-                 max_text: int = MAX_SNAPSHOT_TEXT) -> BrowserToolOutput:
-        return _browser_call(self._snapshot_on_browser_thread, max_elements, max_text)
+                 max_text: int = MAX_SNAPSHOT_TEXT, file_inputs_only: bool = False) -> BrowserToolOutput:
+        return _browser_call(self._file_snapshot_on_browser_thread, max_elements) if file_inputs_only else _browser_call(
+            self._snapshot_on_browser_thread, max_elements, max_text)
 
     def click(self, ref: str) -> BrowserToolOutput:
         return _browser_call(self._click_on_browser_thread, ref)
@@ -164,8 +168,9 @@ class BrowserSession:
     def tab_switch(self, index: int) -> BrowserToolOutput:
         return _browser_call(self._tab_switch_on_browser_thread, index)
 
-    def upload(self, ref: str, file: FilePayload, *, expected_document: JsonObject | None = None) -> BrowserToolOutput:
-        return _browser_call(self._upload_on_browser_thread, ref, file, expected_document)
+    def upload(self, ref: str, file: FilePayload, *, expected_document: JsonObject | None = None,
+               target: JsonObject | None = None) -> BrowserToolOutput:
+        return _browser_call(self._upload_on_browser_thread, ref, file, expected_document, target)
 
     def download(self, ref: str) -> BrowserToolOutput:
         return _browser_call(self._download_on_browser_thread, ref)
@@ -191,8 +196,7 @@ class BrowserSession:
 
     def _snapshot_on_browser_thread(self, max_elements: int, max_text: int) -> BrowserToolOutput:
         page = self._page_on_browser_thread()
-        self._generation += 1
-        self._refs.clear()
+        self._invalidate_refs()
         full_text = page.locator("body").inner_text(timeout=2_000)
         body = full_text[:max(1, min(max_text, MAX_SNAPSHOT_TEXT))]
         handles = page.query_selector_all(
@@ -238,6 +242,35 @@ class BrowserSession:
             "elements_truncated": elements_truncated, "text": body,
             "elements": elements_value,
         })
+
+    def _file_snapshot_on_browser_thread(self, max_elements: int) -> BrowserToolOutput:
+        page = self._page_on_browser_thread()
+        self._invalidate_refs()
+        document = self._document_identity_on_browser_thread()
+        if document is None:
+            raise RuntimeError("Cannot verify the current upload document.")
+        for handle in page.query_selector_all("input[type=file]"):
+            if not handle.is_visible():
+                continue
+            if len(self._file_controls) >= max(1, min(max_elements, MAX_SNAPSHOT_ELEMENTS)):
+                self._file_controls_truncated = True
+                break
+            index = len(self._file_controls) + 1
+            ref = f"b{self._reference_scope}g{self._generation}e{index}"
+            identity = f"file-{index}-{self._reference_scope[:8]}-{self._generation}"
+            details = _file_control_details(handle)
+            self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url)
+            self._file_controls[identity] = (ref, {"id": identity, **details})
+        if self._document_identity_on_browser_thread() != document:
+            self._invalidate_refs()
+            raise RuntimeError("The upload page changed while observing its file controls.")
+        self._file_document = document
+        candidates: list[JsonValue] = [row for _, row in self._file_controls.values()]
+        text = "Observed file inputs: " + json.dumps(candidates, ensure_ascii=False)
+        return BrowserToolOutput(text, True, {"page_id": self._page_id(page), "page_url": page.url,
+            "generation": self._generation, "complete": not self._file_controls_truncated, "scope": "file_inputs",
+            "text_truncated": False, "elements_truncated": self._file_controls_truncated,
+            "text": text, "elements": [], "file_controls": candidates})
 
     def _click_on_browser_thread(self, ref: str) -> BrowserToolOutput:
         cancellation.check()
@@ -432,14 +465,22 @@ class BrowserSession:
                                  {"action": "tab_switch", "index": index, "url": pages[index].url,
                                   "delivery": "delivered"})
 
-    def _upload_on_browser_thread(self, ref: str, file: FilePayload, expected_document: JsonObject | None = None) -> BrowserToolOutput:
+    def _upload_on_browser_thread(self, ref: str, file: FilePayload, expected_document: JsonObject | None = None,
+                                  target: JsonObject | None = None) -> BrowserToolOutput:
         cancellation.check()
-        if expected_document is not None and self._document_identity_on_browser_thread() != expected_document:
-            return self._stale_ref_output("upload", ref, RuntimeError("upload page changed; take a fresh snapshot"))
+        stale_reason = "file_observation_expired" if target is not None else "stale_ref"
+        if ((expected_document is not None and self._document_identity_on_browser_thread() != expected_document)
+                or (target is not None and (expected_document is None or self._file_document != expected_document))):
+            return self._stale_ref_output("upload", ref, RuntimeError("upload page changed; take a fresh snapshot"), reason=stale_reason)
         try:
+            if target is not None:
+                ref = self._file_control_ref(target)
             _, handle = self._resolve_ref(ref)
         except RuntimeError as exc:
-            return self._stale_ref_output("upload", ref, exc)
+            return self._stale_ref_output("upload", ref, exc, reason=stale_reason)
+        except ValueError as exc:
+            return BrowserToolOutput(f"ERROR: {exc}", False,
+                                     {"action": "upload", "ref": ref, "delivery": "not_delivered", "reason": "file_target_unavailable"})
         try:
             handle.set_input_files(file)
             selected: object = handle.evaluate("el => Array.from(el.files, f => ({name:f.name,size:f.size,type:f.type}))")
@@ -457,6 +498,26 @@ class BrowserSession:
                                   "delivery": "verified" if verified else "unverified", "effect_verified": False,
                                   "name": file["name"], "media_type": file["mimeType"],
                                   "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+
+    def _file_control_ref(self, target: JsonObject) -> str:
+        controls = tuple(self._file_controls.values())
+        selector, key = ("id", target["id"]) if "id" in target else ("name", target["name"])
+        matches = [(ref, row) for ref, row in controls if row[selector] == key]
+        if len(matches) != 1 or (selector == "name" and self._file_controls_truncated):
+            candidates = [row for _, row in matches or controls]
+            raise ValueError("Choose one file input using a current observed ID. Candidates: "
+                             + json.dumps(candidates, ensure_ascii=False))
+        ref, observed = matches[0]
+        _, handle = self._resolve_ref(ref)
+        try:
+            current = _file_control_details(handle)
+        except Error as exc:
+            raise RuntimeError("The observed file input changed. Observe the page again.") from exc
+        if not handle.is_visible() or current != {field: value for field, value in observed.items() if field != "id"}:
+            raise RuntimeError("The observed file input changed. Observe the page again.")
+        if current["disabled"] is True:
+            raise ValueError("The selected file input is disabled. Choose an enabled observed control.")
+        return ref
 
     def _download_on_browser_thread(self, ref: str) -> BrowserToolOutput:
         cancellation.check()
@@ -526,12 +587,15 @@ class BrowserSession:
     def _invalidate_refs(self) -> None:
         self._generation += 1
         self._refs.clear()
+        self._file_controls.clear()
+        self._file_document = None
+        self._file_controls_truncated = False
 
     @staticmethod
-    def _stale_ref_output(action: str, ref: str, error: RuntimeError) -> BrowserToolOutput:
+    def _stale_ref_output(action: str, ref: str, error: RuntimeError, *, reason: str = "stale_ref") -> BrowserToolOutput:
         return BrowserToolOutput(
             f"ERROR: {error}", False,
-            {"action": action, "ref": ref, "delivery": "not_delivered", "reason": "stale_ref"},
+            {"action": action, "ref": ref, "delivery": "not_delivered", "reason": reason},
         )
 
     @staticmethod
@@ -546,6 +610,17 @@ class BrowserSession:
                                  {"action": action, "ref": ref, "delivery": "delivered",
                                   "observation": "observed", "effect_verified": False,
                                   "page_url": page.url, "text": text})
+
+
+def _file_control_details(handle: ElementHandle) -> JsonObject:
+    row = canonical_json_object(handle.evaluate("""el => ({
+        name: el.getAttribute('aria-label') || Array.from(el.labels || [], label => label.innerText).join(' ') || el.title,
+        dom_id: el.id, field_name: el.name,
+        group: el.closest('fieldset')?.querySelector('legend')?.innerText || el.form?.getAttribute('aria-label') || '',
+        disabled: el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true' || el.type !== 'file'
+    })"""))
+    return {"disabled": row["disabled"], **{key: " ".join(str(row[key]).split())[:240]
+            for key in ("name", "dom_id", "field_name", "group")}}
 
 
 def _element_role(metadata: JsonObject) -> str:

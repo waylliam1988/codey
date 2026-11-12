@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,7 @@ from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import Target
 
 
-def install_http(monkeypatch: pytest.MonkeyPatch, replies: list[JsonObject]) -> None:
+def install_http(monkeypatch: pytest.MonkeyPatch, replies: Iterable[JsonObject]) -> None:
     remaining = iter(replies)
 
     def scripted(url: str, payload: dict[str, object], headers: dict[str, str], **kwargs: object) -> dict[str, object]:

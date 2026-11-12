@@ -13,6 +13,15 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol
 
 from codey.operations.browser_copy import CopyTurn, copy_target, copy_turn
+from codey.operations.browser_upload import (
+    STRUCTURED_UPLOAD_TOOLS,
+    UPLOAD_ACTION,
+    lower_upload_action,
+    structured_upload_spec,
+    task_upload_scope,
+    upload_model_spec,
+    upload_phase,
+)
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
@@ -51,6 +60,9 @@ class KernelSessionView(Protocol):
 
     @property
     def task_text(self) -> str: ...
+
+    @property
+    def required_source_urls(self) -> frozenset[str]: ...
 
     @property
     def controller_denied(self) -> tuple[str, ...]: ...
@@ -109,7 +121,7 @@ class TurnSnapshot:
 
     @property
     def model_specs(self) -> tuple[ToolSpec, ...]:
-        return tuple(self.browser_copy.spec(spec) if self.browser_copy is not None and spec.name == "codemode" else spec
+        return tuple(self.browser_copy.spec(spec) if self.browser_copy is not None and spec.name == "codemode" else upload_model_spec(spec)
                      for spec in self.frozen_specs if spec.name in self.tool_names)
 
 
@@ -336,6 +348,10 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         declarations = render_declarations(catalog)
         frozen = tuple(replace(spec, declarations=declarations)
                        if spec.name == "codemode" else spec for spec in frozen)
+        upload = task_upload_scope(session.task_kind, session.task_text, session.required_source_urls, session.policy)
+        if upload is not None and set(nested) >= STRUCTURED_UPLOAD_TOOLS:
+            phase = upload_phase(session._memory_results)
+            frozen = tuple(structured_upload_spec(spec, upload, phase) for spec in frozen)
     browser_copy = None
     copy_tools = {"browser_navigate", "browser_eval", "read_file", "edit"}
     if (not session.policy.strict_research and "codemode" in names and "done" in names
@@ -364,7 +380,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     by_name = {spec.name: spec for spec in frozen}
     frozen = tuple(by_name[name] for name in inventory)
     contract_now = _contract(tuple(browser_copy.spec(by_name[name])
-                                   if browser_copy is not None and name == "codemode" else by_name[name] for name in names))
+                                   if browser_copy is not None and name == "codemode" else upload_model_spec(by_name[name]) for name in names))
     if browser_copy is not None and browser_copy.phase == "question":
         contract_now += "\nAsk which webpage source to use. The observation has no unique supported data format."
     executors = _frozen_custom_executors(inventory)
@@ -612,6 +628,8 @@ def _validate_tool_args(
         try:
             from codey.codemode.protocol import parse_codemode_args
 
+            if UPLOAD_ACTION in args and any(key == UPLOAD_ACTION for key, _ in spec.parameters):
+                args = lower_upload_action(args)
             program = parse_codemode_args(args if isinstance(args, dict) else {})
             from codey.runtime.core.models import canonical_json_mapping
 

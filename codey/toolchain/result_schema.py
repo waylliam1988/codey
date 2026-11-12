@@ -12,9 +12,9 @@ def browser_output_schema(name: str) -> dict[str, object]:
     integer: dict[str, object] = {"type": "integer"}
     boolean: dict[str, object] = {"type": "boolean"}
 
-    def record(properties: dict[str, object]) -> dict[str, object]:
+    def record(properties: dict[str, object], *, optional: tuple[str, ...] = ()) -> dict[str, object]:
         return {"type": "object", "additionalProperties": False, "properties": properties,
-                "required": list(properties)}
+                "required": [key for key in properties if key not in optional]}
 
     action: dict[str, object] = {"action": string, "delivery": string, "text": string}
     page = {"url": string, "page_id": string, "generation": integer,
@@ -29,7 +29,10 @@ def browser_output_schema(name: str) -> dict[str, object]:
                 "value": {"anyOf": [string, {"type": "null"}]},
                 "checked": {"anyOf": [boolean, {"type": "null"}]},
             })},
-        }),
+            "file_controls": {"type": "array", "items": record({
+                "id": string, "name": string, "dom_id": string, "field_name": string, "group": string, "disabled": boolean,
+            })},
+        }, optional=("file_controls",)),
         "browser_click": record(observed),
         "browser_scroll": record(observed),
         "browser_fill": record({**action, "ref": string, "value_length": integer}),
