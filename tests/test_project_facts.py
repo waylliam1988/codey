@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -326,6 +327,7 @@ class ProjectFactsTests(unittest.TestCase):
                 ),
             }
 
+            real_which = shutil.which
             with (
                 mock.patch.object(server.CodeyHTTPServer, "app_context", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
@@ -335,7 +337,7 @@ class ProjectFactsTests(unittest.TestCase):
                 mock.patch.object(review_service, "run_review", return_value=None),
                 mock.patch(
                     "codey.completion.verification_policy.shutil.which",
-                    return_value="npm",
+                    side_effect=lambda name, *args, **kwargs: "npm" if name == "npm" else real_which(name, *args, **kwargs),
                 ),
             ):
                 task_submit.run_task("session-1", str(project), "Update backend", 8, False, "deepseek", "project", get_state=http_context.get_context)
@@ -343,8 +345,11 @@ class ProjectFactsTests(unittest.TestCase):
             state.wait_for_ghost_sleep(timeout=30)
             facts = state.project_facts.load(project)
             rendered = state.project_facts.render(project)
+            stop_reason = state.run_registry.last_stop_reason()
             state.close()
 
+        self.assertEqual(stop_reason, "done")
+        self.assertTrue(facts.successful_changes, rendered)
         self.assertEqual(facts.successful_changes[-1].checks[0].command, "npm test")
         self.assertEqual(facts.successful_changes[-1].checks[0].cwd, "backend")
         self.assertIn("checks: backend/: npm test", rendered)

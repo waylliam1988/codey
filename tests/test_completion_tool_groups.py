@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -54,7 +55,9 @@ def test_sixteen_tool_predicates_publish_once_and_replay_without_new_io(tmp_path
     assert run_grouped(tmp_path, native=native, resume=True) == result
     assert (tmp_path / "calls.jsonl").read_bytes() == before
     rows = [json.loads(line) for line in before.splitlines()]
-    assert sum("fetch" in row for row in rows) == MAX_REQUIRED_TOOLS
+    # The explicit first source is prefetched once before the model's reads.
+    assert Counter(row["fetch"] for row in rows if "fetch" in row) == Counter(
+        [f"{URL}?read=1", *(f"{URL}?read={i}" for i in range(1, MAX_REQUIRED_TOOLS + 1))])
     assert sum("publication" in row for row in rows) == 1
 
 
@@ -71,7 +74,8 @@ def test_tool_group_cold_restart_preserves_original_receipts(tmp_path, boundary)
     validate_accepted_projection(result, run_id="r", session_id="s", project="")
     rows = [json.loads(line) for line in (tmp_path / "calls.jsonl").read_text().splitlines()]
     assert sum("grouped_request" in row for row in rows) == MAX_REQUIRED_TOOLS + 1
-    assert sum("fetch" in row for row in rows) == MAX_REQUIRED_TOOLS
+    assert Counter(row["fetch"] for row in rows if "fetch" in row) == Counter(
+        [f"{URL}?read=1", *(f"{URL}?read={i}" for i in range(1, MAX_REQUIRED_TOOLS + 1))])
     assert sum("publication" in row for row in rows) == 1
 
 

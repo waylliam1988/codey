@@ -36,15 +36,19 @@ def test_serial_source_children_survive_receipt_restart(tmp_path, pdf):
         def open_url(self, url, **kwargs):
             page = int(kwargs.get("pages") or 1)
             if pdf:
-                self.ledger.record_open_document(SourceDocument(
+                from codey.research.source_snapshots import document_snapshot
+
+                observation = document_snapshot(SourceDocument(
                     url, url, "Report", "pdf", "application/pdf", f"page {page}",
                     False, 2, (page,), (SourcePage(page, f"page {page}"),)))
             else:
                 self.ledger.record_open(url, url, "Page", url)
-            from codey.research.ledger_receipts import ledger_observation
+                from codey.research.ledger_receipts import ledger_observation
+
+                observation = ledger_observation(self.ledger, "open", url=url)
             completed.append(url)
             return ResearchTools(None, None, None, ledger=self.ledger).read_source(
-                ledger_observation(self.ledger, "open", url=url), pages=str(page) if pdf else "")
+                observation, pages=str(page) if pdf else "")
 
     tools = Tools()
 
@@ -63,6 +67,7 @@ def test_serial_source_children_survive_receipt_restart(tmp_path, pdf):
         effect_scope="parallel", managed_outputs=managed, session_id="s", intent_sink=sink,
         snapshot=snapshot, project_path=project, durable=deps.state.durable)[0]
     assert result.ok, result.model_text
+    assert all(session._memory_results[ref].ok for ref in result.canonical["child_effect_ids"])
     assert sorted(completed) == sorted([a, a if pdf else b])
     if pdf:
         assert ledger.pages_read_for_url(a) == {1, 2}

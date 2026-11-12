@@ -147,7 +147,7 @@ def test_upload_delivers_actual_receipt_facts_without_model_copying(
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
-def test_result_encoding_repair_replays_all_receipts_without_second_upload(
+def test_result_encoding_recovery_uses_receipts_without_second_upload(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     attachment = InputAttachmentStore(tmp_path / "inputs", "upload-test").put(
@@ -163,11 +163,16 @@ def test_result_encoding_repair_replays_all_receipts_without_second_upload(
     directory = tmp_path / "run"
     row = probe.run_arm(directory, "upload_bound", "B", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10),
                         max_turns=4, mechanical=True)
-    assert row["passed"] and row["mechanical_repairs"] == 1 and row["model_calls"] == 2, row
+    # Production recovers a failed return directly from successful child
+    # receipts, before the experiment provider can propose a replay repair.
+    assert row["passed"] and row["mechanical_repairs"] == 0 and row["model_calls"] == 2, row
     receipts = tool_receipts(directory / "state")
     assert len([r for r in receipts if r.result.call.name == "browser_upload"]) == 1
-    assert any(r.result.ok and r.result.canonical.get("repaired_from") for r in receipts)
-    assert row["first_tool_rejection"] is not None
+    parent, = [r.result for r in receipts if r.result.call.name == "codemode"]
+    assert parent.ok and parent.canonical.get("recovered_return") is True
+    assert parent.audit["original_error_code"] == "result_encoding"
+    assert [item["receipt_ref"] for item in parent.canonical["value"]["replayed"]] == parent.canonical["child_effect_ids"]
+    assert row["first_tool_rejection"] is None
 
 
 @pytest.mark.parametrize("defect", ["runtime", "failed-child", "already-attempted", "missing-child", "edit"])

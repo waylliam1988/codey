@@ -105,9 +105,10 @@ def test_cold_done_replays_legacy_receipts_and_optional_claims(
         native_tools = native
 
         def reply(self) -> ToolCall:
-            if not executions:
+            # The required source is attempted by the runtime before this reply.
+            if "run" not in executions:
                 return ToolCall("run", {"command": "python -m pytest"}, "run-original")
-            if executions == ["run"] or (retry_success and executions == ["run", "open_url"]):
+            if retry_success and executions.count("open_url") == 1:
                 return ToolCall("open_url", {"url": URL}, "open-original")
             if historical_claims:
                 run_ref = next(ref for ref, result in session._memory_results.items() if result.call.name == "run")
@@ -164,7 +165,7 @@ def test_cold_done_replays_legacy_receipts_and_optional_claims(
     finally:
         durable.unclaim_task("r")
         durable.close()
-    expected_executions = ["run", "open_url"] + (["open_url"] if retry_success else [])
+    expected_executions = ["open_url", "run"] + (["open_url"] if retry_success else [])
     assert executions == expected_executions
 
     class NoRequests(Provider):
