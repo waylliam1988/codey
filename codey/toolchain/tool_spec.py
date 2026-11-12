@@ -16,7 +16,7 @@ from types import MappingProxyType
 from typing import Protocol
 
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE
+from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE, PAGE_DETAIL_TOOL
 from codey.toolchain.result_schema import text_output_schema
 from codey.toolchain.tool_prompt import json_contract_text as json_contract_text
 from codey.toolchain.tool_prompt import model_tool_description
@@ -223,6 +223,7 @@ def _research_specs() -> dict[str, ToolSpec]:
 
 
 def _browser_specs() -> dict[str, ToolSpec]:
+    from codey.toolchain.browser_read_specs import browser_read_specs
     """Canonical browser contracts; execution is supplied by the task runtime."""
     specs = {
         "browser_snapshot": ToolSpec(
@@ -234,15 +235,7 @@ def _browser_specs() -> dict[str, ToolSpec]:
             json_examples=('{"tool":"browser_snapshot","args":{}}',),
             preconditions=("browser_bound",),
         ),
-        "browser_read": ToolSpec(
-            name="browser_read", grant="browser.observe", executor="browser",
-            namespace="browser.read", effect="read", evidence_route="source_read",
-            parameters=(("offset", {"type": "integer", "minimum": 0}),
-                        ("limit", {"type": "integer", "minimum": 500, "maximum": 12000})),
-            description="Capture the currently bound page through the Research source and passage pipeline.",
-            json_examples=('{"tool":"browser_read","args":{}}',),
-            preconditions=("browser_bound",),
-        ),
+        **browser_read_specs(),
         "browser_click": ToolSpec(
             name="browser_click", grant="browser.interact", executor="browser",
             namespace="browser.interact", effect="page_mutation",
@@ -685,7 +678,7 @@ def visible_tool_names_for_snapshot(
     # Registered third-task tools advertise alongside built-ins; unregistered
     # names stay denied.
     for name in sorted(tool_specs()):
-        if name in names or name in order or name in _CONTROLLER_ALIAS_ID_ARG:
+        if name in names or name in order or name in _CONTROLLER_ALIAS_ID_ARG or name == PAGE_DETAIL_TOOL:
             continue
         spec = tool_specs()[name]
         if spec.grant and _policy_allows(policy, spec.grant):

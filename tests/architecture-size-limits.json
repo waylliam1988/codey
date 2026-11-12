@@ -11,6 +11,6 @@
   "runs/trace.py": 1524,
   "runtime/effects/tool_result_delivery.py": 1252,
   "toolchain/runtime.py": 1282,
-  "toolchain/tool_spec.py": 1207,
+  "toolchain/tool_spec.py": 1200,
   "workspace/changes.py": 1415
 }

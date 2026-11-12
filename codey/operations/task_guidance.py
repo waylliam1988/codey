@@ -82,8 +82,8 @@ def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
          "search for that target before editing. A related premise is not the inference being revised."
          if policy.allows("knowledge.read") and policy.allows("knowledge.write") and not policy.strict_research else ""),
         ("Browser actions in CodeMode are sequential: use refs from the latest snapshot and take a fresh snapshot "
-         "after page mutations. browser_read returns source text as a string and is the only browser result eligible "
-         "for citations; other action results are observations. If delivery is uncertain, inspect the current page "
+         "after page mutations. browser_read returns citable source text as a string; an offered inspect_page_detail "
+         "action also returns citable source text. Other browser actions are observations. If delivery is uncertain, inspect the current page "
          "before retrying."
          if any(policy.allows(grant) for grant in BROWSER_CAPABILITIES) else ""),
         guidance(policy.required_checks),

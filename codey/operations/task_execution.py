@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from codey.operations import browser_text_report, browser_upload
+from codey.operations.browser_detail import audit_browser_open, read_browser_source
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
 from codey.policies.tool_requirement import has_browser_field_bindings
 from codey.research.ledger import ResearchLedger
@@ -24,6 +25,7 @@ from codey.research.ledger_receipts import ledger_observation, source_search_obs
 from codey.runtime.core import cancellation
 from codey.runtime.core.execution_record import HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG, SOURCE_READ_TOOL_NAMES, is_source_read_tool
 from codey.types.json_value import (
     JsonObject,
@@ -289,6 +291,7 @@ class ExecutionDelegate:
             from codey.operations.browser_copy import CAPTURE
 
             trace_document = (call.name in browser_receipt_tools(checks)
+                              or (call.name == "browser_read" and self._research_scope is not None)
                               or (call.name in browser_text_report.METADATA_TOOLS and browser_text_report.report_scope(self.session) is not None)
                               or (call.name in browser_upload.UPLOAD_RECEIPTS and browser_upload.upload_scope(self.session) is not None)
                               or (call.name == "browser_snapshot" and call.args.get("file_inputs_only") is True)
@@ -318,23 +321,8 @@ class ExecutionDelegate:
     def _execute_browser_operation(self, browser: BrowserSession, call: ToolCall, *, turn: int,
                                    tool_index: int) -> tuple[ToolResult, bool, int | None]:
         try:
-            if call.name == "browser_read":
-                if not self._reserve_research_acquisition(call.name, turn, tool_index):
-                    return ToolResult(ok=False, call=call,
-                                      model_text="ERROR: research acquisition budget exhausted"), False, None
-                from codey.research.source_reading import render_source_read
-
-                tools = self._observation_tools(source_read=True)
-                page = browser.capture()
-                url = str(page.get("url") or "")
-                outcome = tools.gateway.capture(url, page)
-                opened = render_source_read(
-                    outcome, tools.ledger,
-                    offset=require_json_integer(call.args.get("offset", 0), "offset"),
-                    limit=require_json_integer(call.args.get("limit", 6000), "limit"),
-                    coherent=tools.coherent_passages,
-                )
-                return self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
+            if call.name in {"browser_read", PAGE_DETAIL_TOOL}:
+                return read_browser_source(self, browser, call, turn=turn, tool_index=tool_index)
             output = self._browser_action(browser, call)
             value = {**output.observation, "text": output.observation.get("text", output.model_text)}
             result = ToolResult(ok=output.ok, call=call, model_text=output.model_text,
@@ -820,8 +808,8 @@ class ExecutionDelegate:
         except SourceSnapshotUnavailable as exc:
             opened = ResearchToolOutput(f"ERROR: {exc}", ok=False, failure_code="snapshot_unavailable")
         result, ok, code = self._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
-        if ok and call.name == "open_url":
-            result = browser_upload.audit_upload_open(result, self.session, self.browser_session)
+        if ok:
+            result = audit_browser_open(result, self.session, self.browser_session, url)
         return result, ok, code
 
     def _commit_research_knowledge(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:

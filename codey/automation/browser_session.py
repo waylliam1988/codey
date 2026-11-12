@@ -200,7 +200,7 @@ class BrowserSession:
         full_text = page.locator("body").inner_text(timeout=2_000)
         body = full_text[:max(1, min(max_text, MAX_SNAPSHOT_TEXT))]
         handles = page.query_selector_all(
-            "button,a,input,textarea,select,[role=button],[role=link],[role=textbox],[role=combobox]"
+            "button,summary,a,input,textarea,select,[role=button],[role=link],[role=textbox],[role=combobox]"
         )
         elements: list[JsonObject] = []
         elements_truncated = False
@@ -630,7 +630,7 @@ def _element_role(metadata: JsonObject) -> str:
     tag = str(metadata.get("tag") or "").lower()
     if tag == "a":
         return "link"
-    if tag == "button":
+    if tag in {"button", "summary"}:
         return "button"
     if tag in {"textarea", "input"}:
         return "checkbox" if str(metadata.get("type") or "").lower() == "checkbox" else "textbox"

@@ -5,6 +5,8 @@ import json
 from collections.abc import Mapping
 from typing import cast
 
+from codey.toolchain.constants import PAGE_DETAIL_TOOL
+
 
 def browser_output_schema(name: str) -> dict[str, object]:
     """Browser success values, including the delegate's text projection."""
@@ -49,6 +51,7 @@ def browser_output_schema(name: str) -> dict[str, object]:
         "browser_download": record({**action, "ref": string, "path": string, "suggested_filename": string,
                                     "handle": string, "bytes": integer, "sha256": string}),
         "browser_read": text_output_schema(),
+        PAGE_DETAIL_TOOL: text_output_schema(),
     }
     return schemas[name]
 

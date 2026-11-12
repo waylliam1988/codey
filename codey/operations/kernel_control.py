@@ -25,6 +25,7 @@ from codey.runtime.core.operation_payload import (
     RuntimeOperationState,
 )
 from codey.runtime.log.session_view import SessionView
+from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.types.json_value import canonical_json_object, decode_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
@@ -215,7 +216,8 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
 
         # A submission handoff must recheck the current document on repair.
         # Other native rejection replies keep their original declarations.
-        if messages is None or (snapshot.tool_names == SUBMISSION_TOOLS and submission_sequence(context.session) is not None):
+        if (messages is None or PAGE_DETAIL_TOOL in snapshot.tool_names
+                or (snapshot.tool_names == SUBMISSION_TOOLS and submission_sequence(context.session) is not None)):
             from codey.operations.kernel_protocol import build_turn_snapshot
             snapshot = build_turn_snapshot(context.session, native=context.native)
         # Both request-scoped providers and text-only providers render the

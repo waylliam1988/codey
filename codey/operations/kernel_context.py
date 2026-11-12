@@ -370,11 +370,14 @@ class KernelContext:
         from codey.operations.provider_request import prepare_provider_request
 
         if not acknowledge and snapshot.research_scope is not None:
+            from codey.operations.browser_detail import offer_page_details
             from codey.operations.research_submission_handoff import research_submission_handoff
 
             research = self.execution.research_tools
-            snapshot, handoff = research_submission_handoff(
-                self.session, snapshot, self.completion_context, research.browser_session if research is not None else None)
+            browser = research.browser_session if research is not None else None
+            snapshot, handoff = research_submission_handoff(self.session, snapshot, self.completion_context, browser)
+            if not handoff:
+                snapshot, handoff = offer_page_details(self.session, snapshot, browser)
             if handoff:
                 if self.native and messages:
                     messages[-1] = replace(messages[-1], user_content="\n\n".join(

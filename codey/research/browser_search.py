@@ -26,6 +26,7 @@ from codey.research.browser_page import (
     _validate_page_content_type,
     _validate_page_observation,
     _validate_page_status,
+    rendered_browser_text,
 )
 from codey.research.browser_page import (
     _requires_login as _requires_login,
@@ -722,7 +723,7 @@ class BrowserSearchProvider:
 
 def _fetch_page_content_after_settle(page: Page) -> tuple[str, str]:
     html = _page_content_after_navigation(page)
-    text = extract_text(html)
+    text = rendered_browser_text(page, html, extract_text)
     if _usable_fetch_page_text(text) and not _application_content_pending(page):
         return html, text
     stop_at = time.monotonic() + _FETCH_SETTLE_TIMEOUT_SECONDS
@@ -734,7 +735,7 @@ def _fetch_page_content_after_settle(page: Page) -> tuple[str, str]:
             page.wait_for_load_state("networkidle", timeout=500)
         cancellation.wait(_FETCH_SETTLE_TICK)
         html = _page_content_after_navigation(page)
-        text = extract_text(html)
+        text = rendered_browser_text(page, html, extract_text)
         if len(text) > len(best_text):
             best_html = html
             best_text = text

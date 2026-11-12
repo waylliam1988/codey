@@ -167,11 +167,14 @@ def matches_document(document: object, url: str) -> bool:
 
 
 def browser_opened(result: ToolResult, url: str) -> bool:
+    requested = result.call.args.get("url")
+    return isinstance(requested, str) and source_url_key(requested) == url and browser_delivered_source(result, url)
+
+
+def browser_delivered_source(result: ToolResult, url: str) -> bool:
     acquisition = result.canonical.get("source_acquisition")
     attempts = acquisition.get("attempts") if isinstance(acquisition, dict) else None
-    requested = result.call.args.get("url")
-    if (not result.ok or not isinstance(requested, str) or source_url_key(requested) != url
-            or not isinstance(attempts, list) or not attempts or not isinstance(last := attempts[-1], dict)):
+    if not result.ok or not isinstance(attempts, list) or not attempts or not isinstance(last := attempts[-1], dict):
         return False
     return (last.get("backend") == "browser" and last.get("status") == "ok" and last.get("observation") == "content"
             and isinstance(final := last.get("final_url"), str) and source_url_key(final) == url)

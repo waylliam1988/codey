@@ -5,6 +5,7 @@ import json
 from collections.abc import Iterable, Mapping
 
 from codey.codemode.types import ToolCatalogEntry, ToolCatalogSnapshot
+from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.result_schema import schema_typescript
 from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
 from codey.types.json_value import canonical_json_object
@@ -23,7 +24,7 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, object] | ToolCatalogEntr
             parallel_safe=bool(row.get("parallel_safe", False)),
             output_schema=canonical_json_object(row["output_schema"]),
         )
-        if entry.name in {"codemode", "done", "ask_user", "submit_research_answer"}:
+        if entry.name in {"codemode", "done", "ask_user", "submit_research_answer", PAGE_DETAIL_TOOL}:
             continue
         entries.append(entry)
     entries.sort(key=lambda item: item.name)

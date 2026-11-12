@@ -9,6 +9,7 @@ from __future__ import annotations
 
 MAX_REPLACEMENTS = 8
 SEARCH_PAGE_MAX_RESULTS = 100
+PAGE_DETAIL_TOOL = "inspect_page_detail"
 ARGUMENT_CONTENT_GUIDANCE = "Preserve argument strings exactly, including whether quote characters are present."
 FULL_READ_REFERENCE_HINT = (
     "Use the latest complete read_file receipt reference. In CodeMode pass readResult.result_ref, "
