@@ -46,7 +46,7 @@ from codey.providers.requests import (
 )
 from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core import operation_payload
-from codey.runtime.core.models import ToolPlan, ToolResult
+from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.runtime.core.operation_reducer import RuntimeAction, RuntimeDecisionInputs
 from codey.runtime.effects.effect_records import RuntimeEffectProjection, RuntimeEffectStore
@@ -366,7 +366,7 @@ class KernelContext:
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None,
                text_result_spans: tuple[TextResultSpan, ...] = (),
-               coding_context_prepared: bool = False) -> None:
+               coding_context_prepared: bool = False, initial_source_batch: bool = False) -> None:
         from codey.operations.provider_request import prepare_provider_request
 
         scoped_contract = self.request_scoped_context
@@ -378,7 +378,7 @@ class KernelContext:
             effect_scope=self.effect_scope, close_reply=acknowledge,
             delivery_purpose=self.decision(state)["purpose"] if state.work_ref else "", work_ref=state.work_ref,
             source_response_ref=self.response_reference(state) if state.response_ref or state.work_ref
-                or state.leaf == operation_payload.LEAF_TOOL_DELIVERY_PENDING else "")
+                or (state.leaf == operation_payload.LEAF_TOOL_DELIVERY_PENDING and not initial_source_batch) else "")
         tools = tuple(tools_from_specs(snapshot.model_specs))
         options = ProviderRequestOptions()
         coding = ""
@@ -432,7 +432,7 @@ class KernelContext:
             request = SendTurnRequest(prompt, tools, options) if self.native else SendTextRequest(prompt, options)
         prepare_provider_request(self.sink, request, counters=(state.counters, counters or state.counters))
 
-    def prepare_turn(self, state: RuntimeOperationState) -> None:
+    def prepare_turn(self, state: RuntimeOperationState, *, prefetched: list[ToolResult] | None = None) -> None:
         self.restore_facts()
         turn = state.logical_turn + 1
         if turn > self.session.max_turns:
@@ -446,7 +446,14 @@ class KernelContext:
             native=self.native, task_guidance=self.request.task_guidance,
             completion_context=self.completion_context,
             request_scoped_contract=self.request_scoped_context)
+        if (prefetched is None and state.logical_turn == 0 and state.leaf == operation_payload.LEAF_WRITER_RUNNING
+                and self.prefetch_required_sources(prepared.snapshot)):
+            return
         prompt = prepared.prompt
+        if prefetched:
+            results = "\n\n".join(task_result_context(self.session, result, prepared.snapshot.research_scope)
+                                    for result in prefetched)
+            prompt += "\n\nRequired source results from the runtime's initial access:\n" + results
         question_raw = self.durable.task(self.sink.run_id).state.get("question")
         if question_raw is not None:
             question = decode_json_object(thaw_json(question_raw))
@@ -474,7 +481,27 @@ class KernelContext:
                 provider=self.provider)) if part)
         self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
                     counters=replace(state.counters, progress=progress.snapshot()),
-                    coding_context_prepared=True)
+                    coding_context_prepared=True, initial_source_batch=prefetched is not None)
+
+    def prefetch_required_sources(self, snapshot: TurnSnapshot) -> bool:
+        from codey.operations.source_gaps import task_source_coverage
+        from codey.task.web_intent import source_url_key
+
+        if not self.session.required_source_urls or "open_url" not in snapshot.inventory_names:
+            return False
+        coverage = task_source_coverage(self.session, self.completion_context.research_ledger)
+        attempted = {source_url_key(url) for result in self.session._memory_results.values()
+                     if result.call.name == "open_url" and isinstance(url := result.call.args.get("url"), str)}
+        urls = sorted(set(coverage.missing) - attempted)
+        if not urls:
+            return False
+        calls = [ToolCall("open_url", {"url": url}, call_id=f"required-source:{index}")
+                 for index, url in enumerate(urls)]
+        # CodeMode aggregation hides this leaf from the model's outer catalog,
+        # while the frozen inventory still authorizes it for the runtime.
+        runtime_snapshot = replace(snapshot, tool_names=tuple(dict.fromkeys((*snapshot.tool_names, "open_url"))))
+        self._execute_calls(calls, runtime_snapshot, turn=0)
+        return True
 
     def interpret(self, state: RuntimeOperationState) -> None:
         received = self.response(state)
@@ -582,18 +609,21 @@ class KernelContext:
                 self.close(state, KernelResult(False, f"workspace write blocked: {exc}", turn,
                     "project_write_busy" if isinstance(exc, ProjectWriteBusy) else "controller_failure"))
                 return None
+        self._execute_calls(calls, received.snapshot, turn=turn)
+        return None
+
+    def _execute_calls(self, calls: list[ToolCall], snapshot: TurnSnapshot, *, turn: int) -> None:
         kernel_events._emit_tool_starts(self.observation.on_event, self.session, turn, calls)
         result = wiring._call_execute_turn(self.session, calls, self.execution.executors, self.transport.run_id,
             self.effect_scope, turn, self.execution.project_path, self.execution.tool_fns,
             self.execution.research_tools, self.execution.change_tracker, self.sink.managed_outputs,
             self.sink.session_id, self.execution.permission_profile, self.session._memory_results,
-            self.sink, received.snapshot.allowed, wiring._outer_evidence_for_context(self.completion_context),
+            self.sink, snapshot.allowed, wiring._outer_evidence_for_context(self.completion_context),
             self.execution.workspace_ignored_paths, self.execution.workspace_revision_store,
-            turn, True, self.transport.stop_flag, durable=self.durable, snapshot=received.snapshot,
+            turn, True, self.transport.stop_flag, durable=self.durable, snapshot=snapshot,
             on_event=self.observation.on_event)
         if isinstance(result, KernelResult):
             raise RecoveryFailed(result.summary)
-        return None
 
     def observe_progress(self, view: SessionView, action: RuntimeAction) -> None:
         results = self.results(view, action.delivery_batch_id)
@@ -601,8 +631,8 @@ class KernelContext:
         if state is None:
             raise RecoveryFailed("progress observation requires operation state")
         self.session.turn = state.turn
-        progress = KernelProgress(self.transport.stagnant_turns, snapshot=state.counters.progress)
-        previous = progress.snapshot()
+        previous = state.counters.progress
+        progress = KernelProgress(self.transport.stagnant_turns, snapshot=previous)
         progress.observe(results, self.session, batch_id=action.delivery_batch_id)
         self.sink.delivery_batch_id = action.delivery_batch_id
         self.sink.record_progress(previous, progress.snapshot())
@@ -617,6 +647,10 @@ class KernelContext:
         kernel_events._emit_tool_results(self.observation.on_event, self.session, results,
             run_id=f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id,
             turn=turn)
+        if turn == 0 and results and all(result.call.name == "open_url" and result.call.call_id.startswith("required-source:")
+                                        for result in results) and not self.cancelled():
+            self.prepare_turn(state, prefetched=results)
+            return
         from codey.research.answer_contract import submitted_answer
 
         if (not self.cancelled() and len(results) == 1 and results[0].ok

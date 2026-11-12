@@ -129,10 +129,10 @@ class FailureProvider(PageProvider):
         self.url = url
 
     def send(self, text: str, timeout: float | None = None) -> str:
-        if not self.sent:
+        metadata = result_metadata_from_text(text)
+        if metadata is None and not self.sent:
             self.sent = True
             return json.dumps({"tool": "open_url", "args": {"url": self.url}})
-        metadata = result_metadata_from_text(text)
         assert metadata is not None
         return json.dumps({"tool": "done", "args": {"summary": "页面为空，无法验证网站内容。",
             "source_gaps": [{"result_ref": metadata.result_ref, "reason": "page_blank"}]}})
@@ -161,5 +161,6 @@ def test_real_entry_delivers_failed_page_answer_without_repeating_fetch(
         provider_id="local", max_turns=4, state_home=tmp_path), emit_jsonl=events.append,
         connect_provider=lambda *args, **kwargs: provider)
     assert result.stop_reason == "blocked" and calls == [target], events[-1].get("summary")
+    assert provider.sent is not explicit_url
     terminal = next(row for row in events if row.get("type") == "task_done")
     assert terminal["summary"] == "页面为空，无法验证网站内容。"

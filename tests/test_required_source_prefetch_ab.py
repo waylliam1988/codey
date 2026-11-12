@@ -10,7 +10,7 @@ from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import required_source_prefetch_ab as probe
-from tools.browser_production_live_gate import SOURCE_SUCCESS_MARKER, URL
+from tools.browser_production_live_gate import SOURCE_SUCCESS_MARKER, URL, run_case
 from tools.completion_artifact_audit import EffectReceipt, tool_receipts
 from tools.completion_explanation_ab import Target
 
@@ -66,3 +66,26 @@ def test_first_request_delivery_and_real_completion(
     assert row["model_calls"] == (1 if arm == "B" else 2)
     source, = [r.result for r in tool_receipts(directory / "state") if r.result.call.name == "open_url"]
     assert source.call.args["url"] == URL and source.ok is (status == 200)
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
+@pytest.mark.parametrize(("status", "multiple"), [(200, False), (403, False), (403, True)])
+def test_production_opens_required_source_before_first_model_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: int, multiple: bool,
+) -> None:
+    expected = SOURCE_SUCCESS_MARKER if status == 200 else "HTTP 403"
+    install_http(monkeypatch, [{"tool": "done", "args": {"summary": f"Source result: {expected}"}}])
+    directory = tmp_path / "production"
+    target = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
+    other = "https://example.com/second-required-source"
+    row = run_case(directory, "chat", target, max_turns=1, source_failure=True, source_attempt_only=True,
+                   source_status=status, task_transform=lambda task: task + (f" Also open {other}." if multiple else ""))
+    assert row["passed"] is True, row
+    sources = [r for r in tool_receipts(directory / "state") if r.result.call.name == "open_url"]
+    assert [source.result.call.args["url"] for source in sources] == ([URL, other] if multiple else [URL])
+    transcript = (directory / "provider.jsonl").read_text(encoding="utf-8")
+    request, = [line for line in transcript.splitlines() if '"phase": "request"' in line]
+    assert expected in request
+    for index, source in enumerate(sources):
+        assert source.result.ok is (status == 200) and source.result.call.call_id == f"required-source:{index}"
+        assert source.identity in request

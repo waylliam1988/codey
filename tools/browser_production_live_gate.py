@@ -231,6 +231,10 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             result_file.write_text('{"amount": 0, "code": "unknown"}\n', encoding="utf-8")
             stack.enter_context(patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}))
             stack.enter_context(patch("codey.app.provider_services.provider_availability", return_value={"local": True}))
+            if recording.fixed_acquisition:
+                from codey.operations.kernel_context import KernelContext
+
+                stack.enter_context(patch.object(KernelContext, "prefetch_required_sources", return_value=False))
             if restore_snapshots:
                 stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", restored_snapshot))
             if reread:

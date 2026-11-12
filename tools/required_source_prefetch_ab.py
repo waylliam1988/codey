@@ -11,6 +11,7 @@ from subprocess import TimeoutExpired
 from unittest.mock import patch
 
 from codey.operations import kernel_protocol
+from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.operations.source_gaps import task_source_coverage
 from codey.operations.task_session import TaskSession
@@ -70,6 +71,7 @@ def run_arm(directory: Path, arm: str, status: int, target: Target, *, max_turns
 
     schedule = first_attempt(lambda: current) if arm == "B" else None
     with (patch.object(kernel_protocol, "build_turn_snapshot", capture),
+          patch.object(KernelContext, "prefetch_required_sources", return_value=False),
           protocol_surface.prototype(directory, "source_failure", "A", runtime_action=schedule),
           patch("codey.app.provider_services.provider_tab_availability", return_value={}),
           patch("codey.app.review_service.run_review", return_value=None)):
