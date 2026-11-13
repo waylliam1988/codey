@@ -1,0 +1,632 @@
+{
+  "date": "2026-11-13",
+  "scope": "production_code_mode_bound_arguments",
+  "batches": [
+    {
+      "label": "first",
+      "artifact_directory": "production-bound-arguments-full-surface-20261113-first",
+      "passed": 10,
+      "runs": 12,
+      "source_before": "219a8c844ff991f5ed601e058bc30b535bc6658170defd3c475f96f68addc704",
+      "source_after": "219a8c844ff991f5ed601e058bc30b535bc6658170defd3c475f96f68addc704",
+      "results": [
+        {
+          "mode": "chat",
+          "passed": false,
+          "stop_reason": "no_progress",
+          "source_reads": 0,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": null,
+          "successful_tools": [
+            "open_url"
+          ],
+          "scenario": "basic"
+        },
+        {
+          "mode": "chat",
+          "passed": true,
+          "stop_reason": "done",
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": null,
+          "successful_tools": [
+            "browser_click",
+            "browser_eval",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_tab_list",
+            "browser_wait",
+            "codemode",
+            "open_url"
+          ],
+          "scenario": "structured"
+        },
+        {
+          "mode": "chat",
+          "passed": true,
+          "stop_reason": "done",
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": null,
+          "successful_tools": [
+            "browser_click",
+            "browser_eval",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_tab_list",
+            "browser_wait",
+            "codemode",
+            "open_url"
+          ],
+          "scenario": "legacy_structured"
+        },
+        {
+          "mode": "chat",
+          "passed": true,
+          "stop_reason": "done",
+          "source_reads": 2,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": null,
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "open_url"
+          ],
+          "scenario": "reread"
+        },
+        {
+          "mode": "chat",
+          "passed": true,
+          "stop_reason": "done",
+          "source_reads": 1,
+          "failed_stale_refs": 1,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": null,
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "open_url"
+          ],
+          "scenario": "stale_ref"
+        },
+        {
+          "mode": "hybrid",
+          "passed": false,
+          "stop_reason": "no_progress",
+          "source_reads": 0,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": false,
+          "conflict_recovery_covered": false,
+          "final_file_correct": false,
+          "submission_only_request": null,
+          "successful_tools": [
+            "browser_navigate",
+            "browser_snapshot",
+            "codemode",
+            "open_url"
+          ],
+          "scenario": "stale_edit"
+        },
+        {
+          "mode": "chat",
+          "passed": true,
+          "stop_reason": "done",
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": null,
+          "successful_tools": [
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_upload",
+            "browser_wait",
+            "codemode",
+            "open_url"
+          ],
+          "scenario": "upload"
+        },
+        {
+          "mode": "chat",
+          "passed": true,
+          "stop_reason": "done",
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": null,
+          "successful_tools": [
+            "browser_download",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "codemode"
+          ],
+          "scenario": "download"
+        },
+        {
+          "mode": "research",
+          "passed": true,
+          "stop_reason": "done",
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": false,
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "open_url",
+            "submit_research_answer"
+          ],
+          "scenario": "research"
+        },
+        {
+          "mode": "research",
+          "passed": true,
+          "stop_reason": "done",
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": true,
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "open_url",
+            "submit_research_answer"
+          ],
+          "scenario": "research_sequence"
+        },
+        {
+          "mode": "chat",
+          "passed": true,
+          "stop_reason": "blocked",
+          "source_reads": 0,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": null,
+          "successful_tools": [],
+          "scenario": "source_failure"
+        },
+        {
+          "mode": "chat",
+          "passed": true,
+          "stop_reason": "blocked",
+          "source_reads": 0,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": null,
+          "successful_tools": [
+            "browser_navigate",
+            "codemode"
+          ],
+          "scenario": "fixed_failure"
+        }
+      ]
+    },
+    {
+      "label": "rerun_basic",
+      "artifact_directory": "production-bound-arguments-full-surface-20261113-rerun-basic",
+      "passed": 0,
+      "runs": 1,
+      "source_before": "219a8c844ff991f5ed601e058bc30b535bc6658170defd3c475f96f68addc704",
+      "source_after": "219a8c844ff991f5ed601e058bc30b535bc6658170defd3c475f96f68addc704",
+      "results": [
+        {
+          "mode": "chat",
+          "passed": false,
+          "stop_reason": "no_progress",
+          "source_reads": 0,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": null,
+          "conflict_recovery_covered": null,
+          "final_file_correct": null,
+          "submission_only_request": null,
+          "successful_tools": [
+            "open_url"
+          ],
+          "scenario": "basic"
+        }
+      ],
+      "diagnostics": {
+        "parent_errors": {
+          "syntax_error": 4
+        },
+        "browser_calls": {},
+        "file_read_calls": 0,
+        "edit_calls": 0,
+        "parent_programs": 4,
+        "parent_programs_matching_raw_reply": 4
+      }
+    },
+    {
+      "label": "rerun_hybrid",
+      "artifact_directory": "production-bound-arguments-full-surface-20261113-rerun-hybrid",
+      "passed": 0,
+      "runs": 1,
+      "source_before": "219a8c844ff991f5ed601e058bc30b535bc6658170defd3c475f96f68addc704",
+      "source_after": "219a8c844ff991f5ed601e058bc30b535bc6658170defd3c475f96f68addc704",
+      "results": [
+        {
+          "mode": "hybrid",
+          "passed": false,
+          "stop_reason": "no_progress",
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "true_stale_conflicts": 0,
+          "version_check_reached": false,
+          "conflict_recovery_covered": false,
+          "final_file_correct": false,
+          "submission_only_request": null,
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "open_url"
+          ],
+          "scenario": "stale_edit"
+        }
+      ],
+      "diagnostics": {
+        "parent_errors": {
+          "syntax_error": 2,
+          "repair_rejected": 2
+        },
+        "browser_calls": {
+          "browser_navigate": 1,
+          "browser_snapshot": 2,
+          "browser_fill": 1,
+          "browser_click": 1,
+          "browser_wait": 1,
+          "browser_read": 1
+        },
+        "file_read_calls": 0,
+        "edit_calls": 0,
+        "parent_programs": 5,
+        "parent_programs_matching_raw_reply": 5
+      }
+    }
+  ],
+  "first_matrix_diagnostics": [
+    {
+      "scenario": "basic",
+      "passed": false,
+      "stop_reason": "no_progress",
+      "parent_errors": {
+        "syntax_error": 4
+      },
+      "browser_calls": {},
+      "navigation_args": [],
+      "failed_stale_refs": 0,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": null
+    },
+    {
+      "scenario": "structured",
+      "passed": true,
+      "stop_reason": "done",
+      "parent_errors": {},
+      "browser_calls": {
+        "browser_navigate": 1,
+        "browser_snapshot": 2,
+        "browser_fill": 1,
+        "browser_click": 1,
+        "browser_wait": 1,
+        "browser_read": 1,
+        "browser_tab_list": 1,
+        "browser_eval": 1
+      },
+      "navigation_args": [
+        {
+          "url": "https://example.com/production-browser-record"
+        }
+      ],
+      "failed_stale_refs": 0,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": null
+    },
+    {
+      "scenario": "legacy_structured",
+      "passed": true,
+      "stop_reason": "done",
+      "parent_errors": {
+        "missing_return": 1
+      },
+      "browser_calls": {
+        "browser_navigate": 1,
+        "browser_snapshot": 2,
+        "browser_fill": 1,
+        "browser_click": 1,
+        "browser_wait": 1,
+        "browser_read": 1,
+        "browser_eval": 1,
+        "browser_tab_list": 1
+      },
+      "navigation_args": [
+        {
+          "url": "https://example.com/production-browser-record"
+        }
+      ],
+      "failed_stale_refs": 0,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": null
+    },
+    {
+      "scenario": "reread",
+      "passed": true,
+      "stop_reason": "done",
+      "parent_errors": {
+        "missing_return": 1
+      },
+      "browser_calls": {
+        "browser_navigate": 1,
+        "browser_read": 2,
+        "browser_snapshot": 2,
+        "browser_fill": 1,
+        "browser_click": 1,
+        "browser_wait": 1
+      },
+      "navigation_args": [
+        {
+          "url": "https://example.com/production-browser-record"
+        }
+      ],
+      "failed_stale_refs": 0,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": null
+    },
+    {
+      "scenario": "stale_ref",
+      "passed": true,
+      "stop_reason": "done",
+      "parent_errors": {
+        "missing_return": 1
+      },
+      "browser_calls": {
+        "browser_navigate": 1,
+        "browser_snapshot": 2,
+        "browser_fill": 1,
+        "browser_click": 2,
+        "browser_wait": 1,
+        "browser_read": 1
+      },
+      "navigation_args": [
+        {
+          "url": "https://example.com/production-browser-record"
+        }
+      ],
+      "failed_stale_refs": 1,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": null
+    },
+    {
+      "scenario": "stale_edit",
+      "passed": false,
+      "stop_reason": "no_progress",
+      "parent_errors": {
+        "syntax_error": 3
+      },
+      "browser_calls": {
+        "browser_navigate": 1,
+        "browser_snapshot": 1
+      },
+      "navigation_args": [
+        {
+          "url": "https://example.com/production-browser-record"
+        }
+      ],
+      "failed_stale_refs": 0,
+      "version_check_reached": false,
+      "true_stale_conflicts": 0,
+      "submission_only_request": null
+    },
+    {
+      "scenario": "upload",
+      "passed": true,
+      "stop_reason": "done",
+      "parent_errors": {},
+      "browser_calls": {
+        "browser_navigate": 2,
+        "browser_snapshot": 1,
+        "browser_upload": 1,
+        "browser_wait": 1,
+        "browser_read": 1
+      },
+      "navigation_args": [
+        {
+          "url": "https://example.com/production-browser-record"
+        },
+        {
+          "url": "https://example.com/production-browser-record"
+        }
+      ],
+      "failed_stale_refs": 0,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": null
+    },
+    {
+      "scenario": "download",
+      "passed": true,
+      "stop_reason": "done",
+      "parent_errors": {
+        "result_contract": 2
+      },
+      "browser_calls": {
+        "browser_snapshot": 3,
+        "browser_navigate": 1,
+        "browser_download": 1,
+        "browser_read": 1
+      },
+      "navigation_args": [
+        {
+          "url": "https://example.com/production-browser-record"
+        }
+      ],
+      "failed_stale_refs": 0,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": null
+    },
+    {
+      "scenario": "research",
+      "passed": true,
+      "stop_reason": "done",
+      "parent_errors": {},
+      "browser_calls": {
+        "browser_navigate": 1,
+        "browser_snapshot": 2,
+        "browser_fill": 1,
+        "browser_click": 1,
+        "browser_wait": 1,
+        "browser_read": 1
+      },
+      "navigation_args": [
+        {
+          "url": "https://example.com/production-browser-record"
+        }
+      ],
+      "failed_stale_refs": 0,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": false
+    },
+    {
+      "scenario": "research_sequence",
+      "passed": true,
+      "stop_reason": "done",
+      "parent_errors": {},
+      "browser_calls": {
+        "browser_navigate": 1,
+        "browser_snapshot": 2,
+        "browser_fill": 1,
+        "browser_click": 1,
+        "browser_wait": 1,
+        "browser_read": 1
+      },
+      "navigation_args": [
+        {
+          "url": "https://example.com/production-browser-record"
+        }
+      ],
+      "failed_stale_refs": 0,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": true
+    },
+    {
+      "scenario": "source_failure",
+      "passed": true,
+      "stop_reason": "blocked",
+      "parent_errors": {},
+      "browser_calls": {},
+      "navigation_args": [],
+      "failed_stale_refs": 0,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": null
+    },
+    {
+      "scenario": "fixed_failure",
+      "passed": true,
+      "stop_reason": "blocked",
+      "parent_errors": {},
+      "browser_calls": {
+        "browser_navigate": 1,
+        "browser_read": 1
+      },
+      "navigation_args": [
+        {
+          "url": "https://example.com/production-browser-record"
+        }
+      ],
+      "failed_stale_refs": 0,
+      "version_check_reached": null,
+      "true_stale_conflicts": 0,
+      "submission_only_request": null
+    }
+  ],
+  "validation": {
+    "first_host_replay_tests": 25,
+    "initial_production_regressions": 285,
+    "negated_url_and_source_regressions": 82,
+    "final_production_regressions": 259,
+    "counts_overlap": true,
+    "ruff": "passed",
+    "mypy_source_files": 683,
+    "mypy_scoped_disallow_any_expr": "passed",
+    "kernel_type_precision_gate": "passed",
+    "full_pytest_run": false,
+    "worktree_copied": false
+  }
+}

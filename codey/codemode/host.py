@@ -50,6 +50,7 @@ class CodeModeHost:
         execute: Callable[[ToolCall], ToolResult],
         allow_writes: bool = False,
         replay: Callable[[int, str, JsonObject], ToolResult] | None = None,
+        task_navigation_url: str | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -65,6 +66,7 @@ class CodeModeHost:
         self._catalog = {entry.name: entry for entry in catalog}
         self._execute = execute
         self._replay = replay
+        self._task_navigation_url = task_navigation_url
         self._next_child = 0
         self._complete_reads: dict[str, tuple[str, str]] = {}
 
@@ -83,6 +85,12 @@ class CodeModeHost:
         decoded_args = decode_json_object(args)
         if tool_name == "open_result":
             decoded_args = _normalize_open_result_args(decoded_args)
+        if tool_name == "browser_navigate" and "target" in decoded_args:
+            if set(decoded_args) != {"target"} or decoded_args["target"] != "task":
+                raise ValueError('Use either {target: "task"} or {url: "..."}')
+            if self._task_navigation_url is None:
+                raise ValueError("This turn has no bound task URL")
+            decoded_args = {"url": self._task_navigation_url}
         json_edit = tool_name == "edit" and "changes" in decoded_args
         if json_edit:
             try:

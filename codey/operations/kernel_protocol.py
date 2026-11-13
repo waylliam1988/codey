@@ -129,6 +129,7 @@ class TurnSnapshot:
     ignore_runtime_claims: bool = False
     browser_copy: CopyTurn | None = None
     input_binding: ModelInputBinding | None = None
+    task_navigation_url: str | None = None
 
     @property
     def inventory_names(self) -> tuple[str, ...]:
@@ -335,6 +336,10 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         raise ValueError("model exposure must narrow the authorized tool inventory")
     names = tuple(name for name in authorized if exposure is None or name in exposure)
     frozen = _frozen_specs_for_names(authorized)
+    denied = {name.strip().lower() for name in session.controller_denied}
+    denied_browser = {spec.name for spec in frozen if spec.executor == "browser" and spec.name in denied}
+    names = tuple(name for name in names if name not in denied_browser)
+    frozen = tuple(spec for spec in frozen if spec.name not in denied_browser)
     from codey.research.tool_contract import done_spec_for_purpose, question_bound_spec
 
     purpose = ("evidence" if session.task_kind == "evidence_followup" else
@@ -362,6 +367,8 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         frozen = tuple(answer_spec(spec, scope) for spec in frozen)
     nested: tuple[str, ...] = ()
     binding = None
+    task_navigation_url = None
+    target = copy_target(session.task_text)
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
 
@@ -371,7 +378,11 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         # still not a write; only the nested kernel edit receipt can satisfy
         # project completion. Project verification remains outside this
         # composable surface.
-        catalog = build_codemode_catalog(frozen,
+        upload = task_upload_scope(session.task_kind, session.task_text, session.required_source_urls, session.policy)
+        if (purpose == "chat" and upload is None and target is None
+                and any(spec.name == "browser_navigate" for spec in frozen)):
+            task_navigation_url = _task_navigation_url(session)
+        catalog = build_codemode_catalog(frozen, task_navigation_url=task_navigation_url,
             allow_writes=session.policy.allows("project.write"),
             allow_project_run=session.policy.allows("project.write") and not aggregate_browser)
         nested = tuple(entry.name for entry in catalog.entries)
@@ -386,7 +397,6 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         declarations = render_declarations(catalog)
         frozen = tuple(replace(spec, declarations=declarations)
                        if spec.name == "codemode" else spec for spec in frozen)
-        upload = task_upload_scope(session.task_kind, session.task_text, session.required_source_urls, session.policy)
         if upload is not None and set(nested) >= STRUCTURED_UPLOAD_TOOLS:
             phase = upload_phase(session._memory_results)
             binding = ModelInputBinding("upload", upload_model_spec(structured_upload_spec(
@@ -396,7 +406,7 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     browser_copy = None
     copy_tools = {"browser_navigate", "browser_eval", "read_file", "edit"}
     if (not session.policy.strict_research and "codemode" in names and "done" in names
-            and copy_tools <= set(nested) and (target := copy_target(session.task_text)) is not None):
+            and copy_tools <= set(nested) and target is not None):
         browser_copy = copy_turn(target, session.task_text, session._memory_results)
         if browser_copy.phase == "done":
             names, nested = ("done",), ()
@@ -434,7 +444,21 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         ignore_runtime_claims=purpose == "chat",
         browser_copy=browser_copy,
         input_binding=binding,
+        task_navigation_url=task_navigation_url,
     ))
+
+
+def _task_navigation_url(session: KernelSessionView) -> str | None:
+    from codey.policies.network import check_fetch_url
+    from codey.task.web_intent import explicit_web_intent, source_url_key
+
+    intent = explicit_web_intent(session.task_text)
+    if len(intent.original_urls) != 1 or len(session.required_source_urls) != 1:
+        return None
+    url = next(iter(intent.original_urls))
+    if intent.urls != session.required_source_urls or source_url_key(url) not in session.required_source_urls:
+        return None
+    return url if check_fetch_url(url, resolve=False) is None else None
 
 
 _CONTROLLER_ALIASES = frozenset(_ALIAS_ARGS)

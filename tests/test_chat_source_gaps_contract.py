@@ -206,7 +206,7 @@ def test_legacy_snapshots_preserve_claim_validation(version: int) -> None:
 @pytest.mark.parametrize("marker", [None, 0, 1, "true", []])
 def test_snapshot_compatibility_marker_requires_a_boolean(marker: JsonValue) -> None:
     payload = snapshot_description(build_turn_snapshot(TaskSession(TaskPolicy(frozenset({"control"})), task_kind="chat")))
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == 7
     payload["ignore_runtime_claims"] = marker
     with pytest.raises(ValueError, match="boolean"):
         restore_snapshot(payload)

@@ -101,6 +101,7 @@ class CodeModeKernelExecutor:
         state_store: CodeModeStateStore | None = None,
         replay: CodeModeReplay | None = None,
         replay_child: Callable[[int, str, JsonObject], ToolResult] | None = None,
+        task_navigation_url: str | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -121,6 +122,7 @@ class CodeModeKernelExecutor:
         self.state_store = state_store
         self.replay = replay
         self.replay_child = replay_child
+        self.task_navigation_url = task_navigation_url
 
     def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -139,6 +141,7 @@ class CodeModeKernelExecutor:
             execute=self.execute_child,
             allow_writes=self.allow_writes,
             replay=self.replay_child,
+            task_navigation_url=self.task_navigation_url,
         )
         try:
             state_store = self.state_store if self.state_store is not None else self.replay
@@ -222,6 +225,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                             and "edit" in nested_names),
         allow_project_run=(allow_writes and session.policy.allows("project.write")
                            and "run" in nested_names),
+        task_navigation_url=snapshot.task_navigation_url,
     )
     # The catalog has already selected project writes and browser capabilities
     # independently. Host mutation support is not a project permission grant.
@@ -273,6 +277,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             limit_payload: dict[str, int] = asdict(limits or CodeModeLimits())
             replay = DurableCodeModeReplay(durable, str(run_id), parent_id,
                 digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
+                        "task_navigation_url": snapshot.task_navigation_url,
                         "limits": limit_payload,
                         "runtime": runtime.contract_digest()}),
                 parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_mutations)
@@ -368,6 +373,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             artifact_store=managed_outputs,
             session_id=session_id,
             run_id=str(run_id or ""),
+            task_navigation_url=snapshot.task_navigation_url,
         ).execute(call)
         if repair_context is not None:
             try:

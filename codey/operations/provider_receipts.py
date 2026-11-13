@@ -113,7 +113,8 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
     """Persist the captured contract, never Python callables or a live registry."""
     if snapshot.policy is None:
         raise ValueError("captured turn has no authorization policy")
-    return decode_json_object(json_value({"schema_version": 6,
+    return decode_json_object(json_value({"schema_version": 7,
+            "task_navigation_url": snapshot.task_navigation_url,
             "browser_copy": snapshot.browser_copy.payload() if snapshot.browser_copy is not None else None,
             "input_binding": json_value(snapshot.input_binding),
             "implementation_id": runtime_implementation_id(), "allowed": json_value(snapshot.allowed),
@@ -233,8 +234,10 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors",
                 "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding"}
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version != 6:
+    if version not in {6, 7}:
         raise ValueError("unsupported captured turn snapshot version; start a new request")
+    if version == 7:
+        expected.add("task_navigation_url")
     if set(payload) != expected:
         raise ValueError("invalid captured turn snapshot version/shape")
     names = require_json_strings(payload["tool_names"], "tool_names")
@@ -252,6 +255,17 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     if [spec.name for spec in specs] != inventory:
         raise ValueError("captured definitions do not match tool names")
     policy = TaskPolicy.from_payload(payload["policy"])
+    navigation_url = payload.get("task_navigation_url")
+    if navigation_url is not None:
+        from codey.policies.network import check_fetch_url
+
+        navigation_url = require_json_string(navigation_url, "task_navigation_url")
+        navigation = next((spec for spec in specs if spec.name == "browser_navigate"), None)
+        if (not navigation_url or check_fetch_url(navigation_url, resolve=False) is not None
+                or "codemode" not in names or "browser_navigate" not in nested
+                or navigation is None or not policy.allows(navigation.grant) or policy.strict_research
+                or payload["input_binding"] is not None or payload["browser_copy"] is not None):
+            raise ValueError("invalid captured task navigation binding")
     ignore_runtime_claims = require_json_boolean(payload["ignore_runtime_claims"], "ignore_runtime_claims")
     if nested:
         from codey.codemode.catalog import build_codemode_catalog
@@ -260,6 +274,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
             specs, allow_writes=policy.allows("project.write"),
             allow_project_edit="edit" in nested,
             allow_project_run="run" in nested,
+            task_navigation_url=navigation_url,
         )
         if "codemode" not in names or not set(nested) <= {entry.name for entry in catalog.entries}:
             raise ValueError("captured nested capabilities exceed the frozen CodeMode inventory")
@@ -294,7 +309,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
-        browser_copy=copy, input_binding=input_binding)
+        browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url)
     from codey.toolchain.tool_prompt import contract_semantics
 
     if contract_semantics(contract) != contract_semantics(render_snapshot_contract(snapshot)):

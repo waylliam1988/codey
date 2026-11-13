@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from itertools import groupby
 from urllib.parse import urlsplit, urlunsplit
 
+from codey.types.json_value import canonical_json_object
+
 _CODE = re.compile(r"```[\s\S]*?```|`[^`\n]*`")
 _URL = re.compile(r"https?://[^\s<>`\"'、，。；！？（）\[\]]+", re.IGNORECASE)
 _CLAUSES = re.compile(r"[，。；;!?！？]|\.\s+|\.$")
@@ -25,6 +27,7 @@ _NEGATED = re.compile(r"(?:不要|勿|禁止|无需|不需要|不用|不必|do n
 class WebIntent:
     requested: bool
     urls: frozenset[str]
+    original_urls: frozenset[str] = frozenset()
 
 
 def source_url_key(url: str) -> str:
@@ -42,8 +45,17 @@ def _open_clause(clause: str) -> bool:
 
 def _request_clauses(text: str) -> list[str]:
     lines = [line for line in text.splitlines() if line.strip()]
-    clauses = [[part.strip() for part in _CLAUSES.split(line) if part.strip()] for line in lines]
-    for links, group in groupby(range(len(lines)), key=lambda i: _URL_LINE.fullmatch(lines[i]) is not None):
+    clauses: list[list[str]] = []
+    for text_line in lines:
+        boundaries = [0, *(match.end() for match in _CLAUSES.finditer(text_line))]
+        ends = [*(match.start() for match in _CLAUSES.finditer(text_line)), len(text_line)]
+        clauses.append([text_line[start:end].strip() for start, end in zip(boundaries, ends, strict=True)
+                        if text_line[start:end].strip()])
+
+    def url_line(index: int) -> bool:
+        return _URL_LINE.fullmatch(lines[index]) is not None
+
+    for links, group in groupby(range(len(lines)), key=url_line):
         if not links:
             continue
         rows = tuple(group)
@@ -51,7 +63,7 @@ def _request_clauses(text: str) -> list[str]:
         targets = [(before, -1), (after, 0)]
         for line, index in targets:
             if 0 <= line < len(lines) and clauses[line] and _open_clause(clauses[line][index]):
-                tokens = [token for row in rows for token in _URL_TOKEN.findall(lines[row])]
+                tokens = [match[0] for row in rows for match in _URL_TOKEN.finditer(lines[row])]
                 clauses[line][index] += " " + " ".join(tokens)
                 break
         for row in rows:
@@ -61,27 +73,49 @@ def _request_clauses(text: str) -> list[str]:
 
 def explicit_web_intent(task: str) -> WebIntent:
     text = _CODE.sub("", task)
-    url_tokens: dict[str, str] = {}
+    url_tokens: dict[str, tuple[str, str | None]] = {}
 
     def protect_url(match: re.Match[str]) -> str:
         token = f"\x00{len(url_tokens)}\x00"
         value = match[0]
         address = value.rstrip(").,:;!?")
-        url_tokens[token] = source_url_key(address)
+        # A closing Markdown parenthesis has an explicit boundary. Other
+        # stripped ASCII punctuation may belong to the URL; do not bind it.
+        markdown = value == address + ")" and re.search(r"\[[^\]\n]+\]\($", text[:match.start()]) is not None
+        original = address if value == address or markdown else None
+        url_tokens[token] = (source_url_key(address), original)
         return token + value[len(address):]
 
     text = _URL.sub(protect_url, text)
     requested = False
     direct: set[str] = set()
+    denied: set[str] = set()
+    originals: set[str] = set()
+    unambiguous = True
     for clause in _request_clauses(text):
-        clause_urls = {url_tokens[token] for token in _URL_TOKEN.findall(clause) if token in url_tokens}
+        targets = list(_URL_TOKEN.finditer(clause))
         actions = list(_ACTION.finditer(clause))
-        if clause_urls:
+        if targets:
             actions.extend(_OPEN.finditer(clause))
-        if any(_NEGATED.search(clause[:match.start()]) is None for match in actions):
-            requested = True
-            direct.update(clause_urls)
-    return WebIntent(requested, frozenset(direct))
+        actions.sort(key=lambda match: match.start())
+        permissions = [(action.start(), _NEGATED.search(clause[:action.start()]) is None) for action in actions]
+        requested = requested or any(positive for _, positive in permissions)
+        for target in targets:
+            if target[0] not in url_tokens or not permissions:
+                continue
+            preceding = [positive for position, positive in permissions if position < target.start()]
+            positive = preceding[-1] if preceding else permissions[0][1]
+            key, original = url_tokens[target[0]]
+            if not positive:
+                denied.add(key)
+                continue
+            direct.add(key)
+            unambiguous = unambiguous and original is not None
+            if original is not None:
+                originals.add(original)
+    direct.difference_update(denied)
+    originals = {url for url in originals if source_url_key(url) in direct}
+    return WebIntent(requested, frozenset(direct), frozenset(originals) if unambiguous else frozenset())
 
 
 def source_requirements(task: str) -> dict[str, object]:
@@ -96,12 +130,16 @@ def restored_source_requirements(state: Mapping[str, object]) -> frozenset[str]:
         if not isinstance(task, str):
             raise ValueError("original source requirement input must be text")
         return explicit_web_intent(task).urls
-    payload = state["source_requirements"]
-    if (not isinstance(payload, Mapping) or set(payload) != {"version", "required_urls"}
+    payload = canonical_json_object(state["source_requirements"])
+    if (set(payload) != {"version", "required_urls"}
             or type(payload["version"]) is not int or payload["version"] != 1):
         raise ValueError("invalid source requirement snapshot")
     urls = payload["required_urls"]
-    if (not isinstance(urls, (list, tuple)) or any(not isinstance(url, str) or not url
-            or source_url_key(url) != url for url in urls)):
+    if not isinstance(urls, (list, tuple)):
         raise ValueError("invalid required source URLs")
-    return frozenset(urls)
+    restored: set[str] = set()
+    for url in urls:
+        if not isinstance(url, str) or not url or source_url_key(url) != url:
+            raise ValueError("invalid required source URLs")
+        restored.add(url)
+    return frozenset(restored)

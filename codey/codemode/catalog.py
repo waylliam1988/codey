@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Iterable, Mapping
+from dataclasses import replace
 
 from codey.codemode.types import ToolCatalogEntry, ToolCatalogSnapshot
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
@@ -55,7 +56,7 @@ def build_catalog_snapshot(rows: Iterable[Mapping[str, object] | ToolCatalogEntr
 
 def build_catalog_from_specs(specs: Mapping[str, ToolSpec] | Iterable[ToolSpec]) -> ToolCatalogSnapshot:
     rows: list[dict[str, object]] = []
-    values = specs.values() if isinstance(specs, Mapping) else specs
+    values: Iterable[ToolSpec] = specs.values() if isinstance(specs, Mapping) else specs
     for spec in values:
         name = spec.name.strip()
         if not name:
@@ -67,7 +68,7 @@ def build_catalog_from_specs(specs: Mapping[str, ToolSpec] | Iterable[ToolSpec])
             "parameters": {
                 "type": "object",
                 "properties": {
-                    key: dict(schema) if isinstance(schema, Mapping) else {"type": "string"}
+                    key: canonical_json_object(schema) if isinstance(schema, Mapping) else {"type": "string"}
                     for key, schema in spec.parameters
                 },
                 "required": list(spec.required),
@@ -85,6 +86,7 @@ def build_catalog_from_specs(specs: Mapping[str, ToolSpec] | Iterable[ToolSpec])
 def build_codemode_catalog(
     specs: Mapping[str, ToolSpec] | Iterable[ToolSpec], *, allow_writes: bool = False,
     allow_project_edit: bool | None = None, allow_project_run: bool | None = None,
+    task_navigation_url: str | None = None,
 ) -> ToolCatalogSnapshot:
     """Build the frozen CodeMode catalog for one permission snapshot.
 
@@ -117,6 +119,14 @@ def build_codemode_catalog(
                      or (allow_project_run and entry.name == "run"))
             )
         ):
+            if entry.name == "browser_navigate" and task_navigation_url is not None:
+                entry = replace(entry, description='Use {target: "task"} to open the task URL at the chosen time. '
+                    'Use {url: "..."} for other authorized pages. ' + entry.description,
+                    parameters={"anyOf": [
+                        {"type": "object", "properties": {"target": {"type": "string", "enum": ["task"]}},
+                         "required": ["target"], "additionalProperties": False},
+                        canonical_json_object(entry.parameters),
+                    ]})
             allowed.append(entry)
     return build_catalog_snapshot(allowed)
 
