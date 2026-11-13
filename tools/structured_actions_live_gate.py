@@ -10,12 +10,14 @@ from codey.policies.tool_requirement import (
     parse_tool_success_check,
     require_browser_read_field,
     require_structured_actions,
+    require_tool_success,
 )
 from codey.types.json_value import JsonObject, decode_json_object
 from tools.browser_production_live_gate import URL, run_case, select_target
 from tools.completion_explanation_ab import BINDINGS, SCHEMA, Target, production_source_digest
 
 NO_URL = r"\A(?![\s\S]*[Hh][Tt][Tt][Pp][Ss]?://)[\s\S]*\Z"
+WAIT_ARGS: JsonObject = {"condition": "text", "value": "鱼丸", "timeout_ms": 5000}
 
 
 def bindings() -> tuple[str, ...]:
@@ -37,6 +39,7 @@ def schema() -> JsonObject:
 
 def checks() -> tuple[str, ...]:
     return (require_structured_actions(),
+        require_tool_success("browser_wait", via="codemode", arguments=WAIT_ARGS),
         require_browser_read_field(url=URL, prefix="净重为 ", suffix=" 克", answer_pointer="/explanation", answer_contains=True),
         require_browser_read_field(url=URL, prefix="记录校验码 ", suffix="。", answer_pointer="/explanation", answer_contains=True))
 
@@ -44,7 +47,8 @@ def checks() -> tuple[str, ...]:
 def task(mode: str) -> str:
     return (f"用户授权：打开 <{URL}>。通过 codemode 的 action 接口完成操作，不提交 JavaScript 程序。"
         "先 navigate(target=task)，观察 snapshot；用 fill(target={role:textbox,name:Locality},value=福州)，"
-        "再 click(target={role:button,name:Load record})，wait(condition=text,value=鱼丸,timeout_ms=5000)，"
+        "再 click(target={role:button,name:Load record})，"
+        f"wait(condition={WAIT_ARGS['condition']},value={WAIT_ARGS['value']},timeout_ms={WAIT_ARGS['timeout_ms']})，"
         "然后 read 当前页。用 eval(code=window.__contractToken) 取得 token，用 tabs 取得当前页面 URL。"
         + ("将实测净重和校验码通过 edit_json(path=result.json,changes={amount:实测数字,code:实测校验码}) 写入项目。"
            "版本冲突时重交相同 edit_json 动作，它会重新读取并保留其他字段。" if mode == "hybrid" else "")

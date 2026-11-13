@@ -280,6 +280,11 @@ def _required_checks_verdict(
                                "Request additional evidence only if the reported defect requires it.")
             if requirement is not None or browser is not None:
                 instruction = tool_evaluations[req].feedback
+                if requirement is not None and any(
+                    rule is not None and rule.structured_actions
+                    for check in session.policy.required_checks if (rule := parse_tool_success_check(check)) is not None
+                ):
+                    instruction = requirement.feedback_reason(tool_evaluations[req])
             if is_output_check(declaration):
                 instruction = tool_evaluations[req].feedback
             return GateVerdict(

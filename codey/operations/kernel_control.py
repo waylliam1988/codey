@@ -114,8 +114,8 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         blocked = verdict.blocked
         compiled = verdict.research_report
         domain_issue = verdict.research_issue
-        error_source = getattr(verdict, "error_source", "")
-        error_type = getattr(verdict, "error_type", "")
+        error_source = verdict.error_source
+        error_type = verdict.error_type
         final_text = verdict.final_text or context.session.last_done_text
     except OutputBindingError as exc:
         context.close(state, KernelResult(False, str(exc), context.session.turn, "error"))
@@ -222,11 +222,13 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             snapshot = build_turn_snapshot(context.session, native=context.native)
         # Both request-scoped providers and text-only providers render the
         # same frozen repair basis, including after a successful local write.
+        research = context.execution.research_tools
         observations = "" if context.request_scoped_observations else task_working_context(
-            context.session, getattr(context.execution.research_tools, "ledger", None),
-                getattr(context.execution.research_tools, "store", None),
-                str(getattr(context.execution.research_tools, "session_id", "")), research_scope=snapshot.research_scope,
-                tool_names=snapshot.tool_names)
+            context.session, research.ledger if research is not None else None,
+                research.store if research is not None else None,
+                research.session_id if research is not None else "", research_scope=snapshot.research_scope,
+                tool_names=snapshot.tool_names, snapshot=snapshot, native=context.native,
+                browser_document=context.browser_document(snapshot))
         prompt = "\n\n".join(part for part in (observations, decision["prompt"]) if part)
         if messages is not None:
             messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]

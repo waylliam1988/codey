@@ -2,12 +2,27 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Any
+from collections.abc import Mapping, Sequence
+from typing import Protocol
 
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.agents.state import SeenInfoLRU, ToolAttemptRecord, seen_info_key
+from codey.operations.kernel_protocol import TurnSnapshot
+from codey.operations.progress_comparison import EFFECT_OBSERVATIONS, progress_comparison
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.progress import ProgressSnapshot
+from codey.types.json_value import JsonObject
+
+
+class ProgressSession(Protocol):
+    @property
+    def turn(self) -> int: ...
+
+    @property
+    def edited_files(self) -> Mapping[str, int]: ...
+
+    @property
+    def _memory_results(self) -> Mapping[str, ToolResult]: ...
 
 
 class KernelProgress:
@@ -33,18 +48,35 @@ class KernelProgress:
 
     @property
     def stopped(self) -> bool:
-        return (self.repair_rejections >= self.limit
-                or self.idle > 0 and (self.idle >= self.limit or should_block_or_remind(self.attempts).block))
+        if self.repair_rejections >= self.limit:
+            return True
+        safe: list[ToolAttemptRecord] = []
+        for record in reversed(self.attempts):
+            if record.tool in EFFECT_OBSERVATIONS:
+                break
+            safe.insert(0, record)
+        # Once an effect has left the bounded history, all retained attempts
+        # are observations again. Large admitted budgets still use full idle.
+        idle = min(self.idle, len(safe)) if len(safe) < len(self.attempts) else self.idle
+        return idle > 0 and (idle >= self.limit or should_block_or_remind(safe).block)
 
     def repeat_feedback(self) -> str:
         """Give the model a correction before the existing repeat limit wins."""
         if not self.idle or self.stopped or len(self.attempts) < 2:
             return ""
         previous, latest = list(self.attempts)[-2:]
-        if (previous.call_fp != latest.call_fp or previous.result_fp != latest.result_fp
+        # Read-only repeats already stop above. A detected cycle that remains
+        # runnable contains an effect and needs a reminder rather than a stop.
+        effect_cycle = should_block_or_remind(self.attempts).block
+        if not effect_cycle and (previous.call_fp != latest.call_fp or previous.result_fp != latest.result_fp
                 or previous.changed or latest.changed or previous.edit_epoch != latest.edit_epoch):
             return ""
         status = "already succeeded" if latest.ok else "already failed"
+        if latest.tool in EFFECT_OBSERVATIONS or effect_cycle:
+            return ("Repeated browser operations have not provided new visible information. This does not establish "
+                    "whether an effect occurred. Observe the current page before deciding another effect; use an "
+                    "available snapshot or read action. Continue with outstanding requirements when the recorded "
+                    "observations suffice. Repeat an effect only when the task and current observations justify it.")
         reminder = (f"The {latest.tool} call {status}; you repeated the same arguments and received the same result. "
                 "Do not call it again with identical arguments. Continue from the recorded result with the next "
                 "required action, change the request to address the observed problem, or explain the specific blocker.")
@@ -52,8 +84,9 @@ class KernelProgress:
             reminder += " Recording a plan is not completed investigation. Repeating it is not progress."
         return reminder
 
-    def observe(self, results: Any, session: Any, *, batch_id: str = "") -> bool:
-        """Stop only after unchanged observations; successful mutations reset it.
+    def observe(self, results: Sequence[ToolResult], session: ProgressSession, *, batch_id: str = "",
+                snapshot: TurnSnapshot | None = None) -> bool:
+        """Compare observations without treating repeated effects as safe to stop.
 
         Progress accounting never crashes the loop: a telemetry fault for one
         result counts as no-progress for that result (safe direction: the
@@ -64,17 +97,21 @@ class KernelProgress:
         progress = False
         epoch = max([0, *session.edited_files.values()])
         for result in results:
-            call = result.call
             try:
-                record = attempt_record(call, result, turn=session.turn, edit_epoch=epoch)
+                comparison = progress_comparison(result, session._memory_results, snapshot)
+                call = comparison.call
+                record = attempt_record(call, comparison.result, turn=session.turn, edit_epoch=epoch)
             except Exception:
                 continue
             self.attempts.append(record)
             changed = result.audit.get("changed") is True
             key = seen_info_key(call.name, str(call.args.get("path") or call.args.get("url") or
-                                             call.args.get("id") or ""), result.model_text)
+                                             call.args.get("id") or ""), comparison.information)
             novel = self.seen.add(key)
-            if changed or (record.ok and novel):
+            prior = next((item for item in reversed(list(self.attempts)[:-1]) if item.call_fp == record.call_fp), None)
+            observed_transition = (call.name.startswith("browser_") and prior is not None
+                                   and prior.result_fp != record.result_fp)
+            if changed or (record.ok and (novel or observed_transition)):
                 progress = True
         self.idle = 0 if progress else self.idle + 1
         self.last_batch_id = batch_id
@@ -82,7 +119,7 @@ class KernelProgress:
         # merely because its call arguments appeared earlier in the session.
         return self.stopped
 
-    def reject_completion(self, args: dict[str, Any], feedback: str, session: Any, *, failure_key: str = "") -> None:
+    def reject_completion(self, args: JsonObject, feedback: str, session: ProgressSession, *, failure_key: str = "") -> None:
         """Account for a rejected proposal without inventing a tool execution.
 
         Unkeyed proposals retain ordinary exact-repeat/cycle accounting. A

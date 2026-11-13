@@ -181,8 +181,8 @@ class ToolSuccessRequirement:
     def guidance(self) -> str:
         return self.model_guidance()
 
-    def model_guidance(self, *, explanation: bool = False) -> str:
-        execution = self.execution_guidance
+    def model_guidance(self, *, explanation: bool = False, execution: str | None = None) -> str:
+        execution = self.execution_guidance if execution is None else execution
         if self.structured_actions:
             return execution + " Use the declared structured action input; the application supplies the fixed program."
         if self.answer_pointer is None:
@@ -208,6 +208,14 @@ class ToolSuccessRequirement:
                 f"from the committed {selected}, preserving its JSON type and complete value. "
                 + content + evidence + (" Do not repeat this selected value in /explanation."
                                         if self.omit_from_explanation else ""))
+
+    def feedback_reason(self, evaluation: RequirementEvaluation) -> str:
+        """Keep evidence diagnostics when the request renders another input binding.
+
+        Execution repair is appended by this rule, so remove only that exact
+        suffix. Answer repairs, including their committed evidence, stay intact.
+        """
+        return evaluation.feedback.removesuffix(self.execution_guidance).rstrip()
 
     def evaluate(
         self, records: Mapping[str, ExecutionRecord], *, final_text: str = "", results: Mapping[str, ToolResult] | None = None,

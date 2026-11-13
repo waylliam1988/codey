@@ -542,7 +542,8 @@ def operation_receipts(session: TaskSession) -> list[JsonObject]:
     return rows[-12:]
 
 
-def working_context(session: TaskSession) -> str:
+def working_context(session: TaskSession, *, snapshot: TurnSnapshot | None = None, native: bool = False,
+                    browser_document: JsonObject | None = None) -> str:
     """Fresh execution facts; narrative checkpoints cannot amend these observations."""
     import json
 
@@ -588,7 +589,12 @@ def working_context(session: TaskSession) -> str:
         "If the user's requirements are satisfied and required verification is current and passing, call done. "
         "Do not change correct files merely to make progress. "
     )
-    pending = _pending_execution_guidance(session)
+    if snapshot is not None and snapshot.input_binding is not None and snapshot.input_binding.kind == "actions":
+        from codey.operations.action_guidance import action_guidance
+
+        pending = action_guidance(session, snapshot, native=native, browser_document=browser_document)
+    else:
+        pending = _pending_execution_guidance(session)
     if pending:
         finish_guidance = ("Outstanding declared executions (runtime receipts, not assistant narrative):\n" + pending
                            + "\nExecute the outstanding requirements before delivering the final answer. ")
