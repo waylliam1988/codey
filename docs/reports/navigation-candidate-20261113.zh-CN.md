@@ -1,5 +1,7 @@
 # 搜索候选与详情链接导航：定向实机 A/B（2026-11-13）
 
+后续已完成[生产入口与真实点击复测](production-navigation-20261113.zh-CN.md)。本文详情组是取 `href` 后导航，不是 `browser_click`，其 4/4 不构成生产点击或事件处理的验收证据。
+
 正式重跑结果：搜索选择 **A 4/4、B 4/4**；详情链接 **A 4/4、B 4/4**。B 能从实际观察中选候选引用，程序按该候选的原地址导航，并读到、回答用户所需信息。A 也全部选对并传对地址，本轮没有完成率收益。保持实验状态，未修改生产代码。
 
 [实验脚本](../../tools/navigation_candidate_ab.py)、[测试](../../tests/test_navigation_candidate_ab.py)、[机器结果](navigation-candidate-20261113.json)、[原始记录包](navigation-candidate-20261113.zip)。本次在 `master` 工作并提交，不合并或推送。

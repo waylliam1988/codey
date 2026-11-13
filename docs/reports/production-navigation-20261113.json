@@ -1,0 +1,1438 @@
+{
+  "scope": "production_chat_kernel_existing_open_url_vs_open_result_and_native_clicks",
+  "formal_source_selection_live": true,
+  "ab_difference": "existing source interface and matching task requirement; same native click path in both arms",
+  "click_probe_source_selection_live": false,
+  "click_probe_included_in_ab": false,
+  "script_sha256": {
+    "tools\\production_navigation_ab.py": "3c055354c967bd331ef629ea7e323e7b3cbaf2995395fe33c764971c87688a53",
+    "tools\\production_click_probe.py": "aee8161921d11bfc9e25bd7e16d78fd304024c78b44de53f1be81b4231fe236c"
+  },
+  "aggregates": [
+    {
+      "group": "search",
+      "arm": "A",
+      "runs": 4,
+      "passed": 2,
+      "verified_entries": 2,
+      "trusted_target_clicks": 0,
+      "click_chains": 0,
+      "model_calls": 14,
+      "prompt_tokens": 82616,
+      "completion_tokens": 753,
+      "inference_seconds": 58.688
+    },
+    {
+      "group": "search",
+      "arm": "B",
+      "runs": 4,
+      "passed": 4,
+      "verified_entries": 4,
+      "trusted_target_clicks": 0,
+      "click_chains": 0,
+      "model_calls": 12,
+      "prompt_tokens": 66802,
+      "completion_tokens": 574,
+      "inference_seconds": 49.75
+    },
+    {
+      "group": "detail",
+      "arm": "A",
+      "runs": 4,
+      "passed": 0,
+      "verified_entries": 0,
+      "trusted_target_clicks": 0,
+      "click_chains": 0,
+      "model_calls": 20,
+      "prompt_tokens": 129506,
+      "completion_tokens": 1302,
+      "inference_seconds": 80.862
+    },
+    {
+      "group": "detail",
+      "arm": "B",
+      "runs": 4,
+      "passed": 1,
+      "verified_entries": 1,
+      "trusted_target_clicks": 1,
+      "click_chains": 1,
+      "model_calls": 26,
+      "prompt_tokens": 188716,
+      "completion_tokens": 1171,
+      "inference_seconds": 94.39
+    },
+    {
+      "group": "all",
+      "arm": "A",
+      "runs": 8,
+      "passed": 2,
+      "verified_entries": 2,
+      "trusted_target_clicks": 0,
+      "click_chains": 0,
+      "model_calls": 34,
+      "prompt_tokens": 212122,
+      "completion_tokens": 2055,
+      "inference_seconds": 139.55
+    },
+    {
+      "group": "all",
+      "arm": "B",
+      "runs": 8,
+      "passed": 5,
+      "verified_entries": 5,
+      "trusted_target_clicks": 1,
+      "click_chains": 1,
+      "model_calls": 38,
+      "prompt_tokens": 255518,
+      "completion_tokens": 1745,
+      "inference_seconds": 144.14
+    }
+  ],
+  "ab": {
+    "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+    "production_before": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+    "production_after": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+    "production_unchanged": true,
+    "results": [
+      {
+        "case": "food",
+        "kind": "search",
+        "arm": "A",
+        "seed": 123456789,
+        "stop_reason": "done",
+        "answer": "根据榕城检验站 2026 秋检的福州鱼丸记录，其净重为 173 克，记录校验码为 QUARTZ_851。",
+        "error": "",
+        "passed": true,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:7722871193ed9885"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_952e7b5979a0413389d73b0538290efe:turn:2:codemode:ab912688a5a3b940:child:0",
+              "tool": "open_url",
+              "args": {
+                "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full"
+              },
+              "resolved_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+              "observed_search_results": {
+                "r1": "https://example.com/lab/archive-2025",
+                "r2": "https://example.com/lab/QZ-fish-ball",
+                "r3": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "r4": "https://example.com/forum/fish-ball"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:7722871193ed9885"
+        ],
+        "facts_delivered": true,
+        "model_calls": 3,
+        "usage_complete": true,
+        "inference_seconds": 15.125,
+        "prompt_tokens": 16725,
+        "completion_tokens": 174
+      },
+      {
+        "case": "food",
+        "kind": "search",
+        "arm": "B",
+        "seed": 123456789,
+        "stop_reason": "done",
+        "answer": "根据榕城检验站 2026 秋检的福州鱼丸记录，其净重为 173 克，记录校验码为 QUARTZ_851。",
+        "error": "",
+        "passed": true,
+        "sources": {
+          "expected_interface": "open_result",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:6311f5a6d1ca45e5"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_d40fc7c0d7d44c47b5aeb33b0f42ec10:turn:2:codemode:4521400dde60e2a2:child:0",
+              "tool": "open_result",
+              "args": {
+                "result_id": "r3"
+              },
+              "resolved_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+              "observed_search_results": {
+                "r1": "https://example.com/lab/archive-2025",
+                "r2": "https://example.com/lab/QZ-fish-ball",
+                "r3": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "r4": "https://example.com/forum/fish-ball"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:6311f5a6d1ca45e5"
+        ],
+        "facts_delivered": true,
+        "model_calls": 3,
+        "usage_complete": true,
+        "inference_seconds": 12.5,
+        "prompt_tokens": 16776,
+        "completion_tokens": 147
+      },
+      {
+        "case": "museum",
+        "kind": "search",
+        "arm": "B",
+        "seed": 123456789,
+        "stop_reason": "done",
+        "answer": "澄川博物馆今年秋季周五夜场的闭馆时间为 21:40，最晚入场时间为 20:55。",
+        "error": "",
+        "passed": true,
+        "sources": {
+          "expected_interface": "open_result",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:6e0c01d7de826bce"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_a97ac31e04894cd8ba39ffafec33b05b:turn:2:codemode:a09d89e85e7d1524:child:0",
+              "tool": "open_result",
+              "args": {
+                "result_id": "r1"
+              },
+              "resolved_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+              "observed_search_results": {
+                "r1": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "r2": "https://example.com/museum/day-time",
+                "r3": "https://example.com/gallery/Friday-night",
+                "r4": "https://example.com/museum/archive-2025"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:6e0c01d7de826bce"
+        ],
+        "facts_delivered": true,
+        "model_calls": 3,
+        "usage_complete": true,
+        "inference_seconds": 12.297,
+        "prompt_tokens": 16628,
+        "completion_tokens": 140
+      },
+      {
+        "case": "museum",
+        "kind": "search",
+        "arm": "A",
+        "seed": 123456789,
+        "stop_reason": "no_progress",
+        "answer": "stopped after repeated tool results without progress",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 4,
+          "verified_open_refs": [],
+          "entry_from_observed_candidate": false,
+          "source_intents": []
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [],
+        "facts_delivered": false,
+        "model_calls": 4,
+        "usage_complete": true,
+        "inference_seconds": 14.876,
+        "prompt_tokens": 24587,
+        "completion_tokens": 196
+      },
+      {
+        "case": "orders",
+        "kind": "plain_click",
+        "arm": "A",
+        "seed": 123456789,
+        "stop_reason": "no_progress",
+        "answer": "stopped after repeated tool results without progress",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 5,
+          "verified_open_refs": [],
+          "entry_from_observed_candidate": false,
+          "source_intents": []
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [],
+        "facts_delivered": false,
+        "model_calls": 5,
+        "usage_complete": true,
+        "inference_seconds": 20.126,
+        "prompt_tokens": 32385,
+        "completion_tokens": 328
+      },
+      {
+        "case": "orders",
+        "kind": "plain_click",
+        "arm": "B",
+        "seed": 123456789,
+        "stop_reason": "done",
+        "answer": "订单 A-173 的送达信息如下：\n\n- **预计送达时间**：2026-11-18\n- **追踪号**：0042091",
+        "error": "",
+        "passed": true,
+        "sources": {
+          "expected_interface": "open_result",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:b624045b2c901fe3"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_45394469b91e4488b8170f036e027ba6:turn:3:codemode:123ab2c52abc062a:child:0",
+              "tool": "open_result",
+              "args": {
+                "result_id": "r2"
+              },
+              "resolved_url": "https://example.com/account/orders",
+              "observed_search_results": {
+                "r1": "https://example.com/orders/A-174/delivery-detail",
+                "r2": "https://example.com/account/orders",
+                "r3": "https://example.com/help/navigation"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [
+            "task_turn_effect:2bf152f0cedbb22d"
+          ],
+          "snapshot_click_wait_read_chains": [
+            [
+              "task_turn_effect:56078cddf3f09e18",
+              "task_turn_effect:2bf152f0cedbb22d",
+              "task_turn_effect:acff7d0b364ba5da",
+              "task_turn_effect:cf03ae2adac267d2"
+            ]
+          ],
+          "click_chain_complete": true
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:cf03ae2adac267d2"
+        ],
+        "facts_delivered": true,
+        "model_calls": 8,
+        "usage_complete": true,
+        "inference_seconds": 29.61,
+        "prompt_tokens": 58380,
+        "completion_tokens": 387
+      },
+      {
+        "case": "inventory",
+        "kind": "event_click",
+        "arm": "B",
+        "seed": 123456789,
+        "stop_reason": "no_progress",
+        "answer": "stopped after repeated tool results without progress",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_result",
+          "search_count": 1,
+          "verified_open_refs": [],
+          "entry_from_observed_candidate": false,
+          "source_intents": []
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [],
+        "facts_delivered": false,
+        "model_calls": 4,
+        "usage_complete": true,
+        "inference_seconds": 13.78,
+        "prompt_tokens": 24731,
+        "completion_tokens": 165
+      },
+      {
+        "case": "inventory",
+        "kind": "event_click",
+        "arm": "A",
+        "seed": 123456789,
+        "stop_reason": "no_progress",
+        "answer": "stopped after repeated tool results without progress",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 5,
+          "verified_open_refs": [],
+          "entry_from_observed_candidate": false,
+          "source_intents": []
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [],
+        "facts_delivered": false,
+        "model_calls": 5,
+        "usage_complete": true,
+        "inference_seconds": 20.172,
+        "prompt_tokens": 32386,
+        "completion_tokens": 323
+      },
+      {
+        "case": "food",
+        "kind": "search",
+        "arm": "B",
+        "seed": 123456790,
+        "stop_reason": "done",
+        "answer": "根据榕城检验站 2026 秋检的福州鱼丸记录，其净重为 173 克，记录校验码为 QUARTZ_851。",
+        "error": "",
+        "passed": true,
+        "sources": {
+          "expected_interface": "open_result",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:3844609ba8f96726"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_583fec6f34be472dab81acaf4d40091f:turn:2:codemode:4521400dde60e2a2:child:0",
+              "tool": "open_result",
+              "args": {
+                "result_id": "r3"
+              },
+              "resolved_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+              "observed_search_results": {
+                "r1": "https://example.com/lab/archive-2025",
+                "r2": "https://example.com/lab/QZ-fish-ball",
+                "r3": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "r4": "https://example.com/forum/fish-ball"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:3844609ba8f96726"
+        ],
+        "facts_delivered": true,
+        "model_calls": 3,
+        "usage_complete": true,
+        "inference_seconds": 12.688,
+        "prompt_tokens": 16760,
+        "completion_tokens": 147
+      },
+      {
+        "case": "food",
+        "kind": "search",
+        "arm": "A",
+        "seed": 123456790,
+        "stop_reason": "no_progress",
+        "answer": "stopped after repeated tool results without progress",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 4,
+          "verified_open_refs": [],
+          "entry_from_observed_candidate": false,
+          "source_intents": []
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [],
+        "facts_delivered": false,
+        "model_calls": 4,
+        "usage_complete": true,
+        "inference_seconds": 15.704,
+        "prompt_tokens": 24733,
+        "completion_tokens": 220
+      },
+      {
+        "case": "museum",
+        "kind": "search",
+        "arm": "A",
+        "seed": 123456790,
+        "stop_reason": "done",
+        "answer": "澄川博物馆今年秋季周五夜场的闭馆时间为 21:40，最晚入场时间为 20:55。",
+        "error": "",
+        "passed": true,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:f6388f280f56e813"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_f948e241374c4ec0801fef4bdf2891e1:turn:2:codemode:df2245ca48206b2f:child:0",
+              "tool": "open_url",
+              "args": {
+                "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07"
+              },
+              "resolved_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+              "observed_search_results": {
+                "r1": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "r2": "https://example.com/museum/day-time",
+                "r3": "https://example.com/gallery/Friday-night",
+                "r4": "https://example.com/museum/archive-2025"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:f6388f280f56e813"
+        ],
+        "facts_delivered": true,
+        "model_calls": 3,
+        "usage_complete": true,
+        "inference_seconds": 12.983,
+        "prompt_tokens": 16571,
+        "completion_tokens": 163
+      },
+      {
+        "case": "museum",
+        "kind": "search",
+        "arm": "B",
+        "seed": 123456790,
+        "stop_reason": "done",
+        "answer": "澄川博物馆今年秋季周五夜场的闭馆时间为 21:40，最晚入场时间为 20:55。",
+        "error": "",
+        "passed": true,
+        "sources": {
+          "expected_interface": "open_result",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:b3ada8a13b2828ae"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_b948160fce1444a2b47cc9f64d1c6ff2:turn:2:codemode:a09d89e85e7d1524:child:0",
+              "tool": "open_result",
+              "args": {
+                "result_id": "r1"
+              },
+              "resolved_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+              "observed_search_results": {
+                "r1": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "r2": "https://example.com/museum/day-time",
+                "r3": "https://example.com/gallery/Friday-night",
+                "r4": "https://example.com/museum/archive-2025"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:b3ada8a13b2828ae"
+        ],
+        "facts_delivered": true,
+        "model_calls": 3,
+        "usage_complete": true,
+        "inference_seconds": 12.265,
+        "prompt_tokens": 16638,
+        "completion_tokens": 140
+      },
+      {
+        "case": "orders",
+        "kind": "plain_click",
+        "arm": "B",
+        "seed": 123456790,
+        "stop_reason": "no_progress",
+        "answer": "stopped after repeated tool results without progress",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_result",
+          "search_count": 4,
+          "verified_open_refs": [],
+          "entry_from_observed_candidate": false,
+          "source_intents": []
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [],
+        "facts_delivered": false,
+        "model_calls": 4,
+        "usage_complete": true,
+        "inference_seconds": 15.97,
+        "prompt_tokens": 25915,
+        "completion_tokens": 206
+      },
+      {
+        "case": "orders",
+        "kind": "plain_click",
+        "arm": "A",
+        "seed": 123456790,
+        "stop_reason": "no_progress",
+        "answer": "stopped after repeated tool results without progress",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 5,
+          "verified_open_refs": [],
+          "entry_from_observed_candidate": false,
+          "source_intents": []
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [],
+        "facts_delivered": false,
+        "model_calls": 5,
+        "usage_complete": true,
+        "inference_seconds": 20.469,
+        "prompt_tokens": 32367,
+        "completion_tokens": 328
+      },
+      {
+        "case": "inventory",
+        "kind": "event_click",
+        "arm": "A",
+        "seed": 123456790,
+        "stop_reason": "no_progress",
+        "answer": "stopped after repeated tool results without progress",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 5,
+          "verified_open_refs": [],
+          "entry_from_observed_candidate": false,
+          "source_intents": []
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [],
+        "facts_delivered": false,
+        "model_calls": 5,
+        "usage_complete": true,
+        "inference_seconds": 20.095,
+        "prompt_tokens": 32368,
+        "completion_tokens": 323
+      },
+      {
+        "case": "inventory",
+        "kind": "event_click",
+        "arm": "B",
+        "seed": 123456790,
+        "stop_reason": "max_turns",
+        "answer": "max turns reached",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_result",
+          "search_count": 1,
+          "verified_open_refs": [],
+          "entry_from_observed_candidate": false,
+          "source_intents": [
+            {
+              "call_id": "run_f5171953b1594f6eb3e21180862312a7:turn:4:codemode:a09d89e85e7d1524:child:0",
+              "tool": "open_result",
+              "args": {
+                "result_id": "r1"
+              },
+              "resolved_url": "https://example.com/warehouse/north-store/available-stock",
+              "observed_search_results": {
+                "r1": "https://example.com/warehouse/north-store/available-stock",
+                "r2": "https://example.com/warehouse/stock-index",
+                "r3": "https://example.com/help/navigation"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [],
+          "snapshot_click_wait_read_chains": [],
+          "click_chain_complete": false
+        },
+        "complete_fact_read_refs": [],
+        "facts_delivered": false,
+        "model_calls": 10,
+        "usage_complete": true,
+        "inference_seconds": 35.03,
+        "prompt_tokens": 79690,
+        "completion_tokens": 413
+      }
+    ]
+  },
+  "click_regression": {
+    "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+    "production_before": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+    "production_after": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+    "production_unchanged": true,
+    "results": [
+      {
+        "case": "orders",
+        "kind": "plain_click",
+        "arm": "production_click_regression",
+        "seed": 123456789,
+        "stop_reason": "done",
+        "answer": "订单 A-173 的送达信息如下：\n\n- **送达时间**：2026年11月20日\n- **追踪号**：TRK88293041\n\n这些信息是从订单 A-173 的配送详情页面中获取的。",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:e60226e686775446"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_397d2cb7a3b945edb036fa4bd86f9b37:turn:1:codemode:50461dfb1c643798:child:1",
+              "tool": "open_url",
+              "args": {
+                "url": "https://example.com/account/orders"
+              },
+              "resolved_url": "https://example.com/account/orders",
+              "observed_search_results": {
+                "r1": "https://example.com/orders/A-174/delivery-detail",
+                "r2": "https://example.com/account/orders",
+                "r3": "https://example.com/help/navigation"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [
+            "task_turn_effect:5d57fb70a912f6bb"
+          ],
+          "snapshot_click_wait_read_chains": [
+            [
+              "task_turn_effect:e5e03eef11d81a41",
+              "task_turn_effect:5d57fb70a912f6bb",
+              "task_turn_effect:5a90f2e6addb979e",
+              "task_turn_effect:0d7295a60566f0c5"
+            ]
+          ],
+          "click_chain_complete": true
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:0d7295a60566f0c5"
+        ],
+        "facts_delivered": false,
+        "model_calls": 4,
+        "usage_complete": true,
+        "inference_seconds": 26.266,
+        "prompt_tokens": 32606,
+        "completion_tokens": 505,
+        "scope": "fixed_source_acquisition_live_production_click_regression",
+        "source_selection_live": false,
+        "scripted_prefix": {
+          "tool": "codemode",
+          "args": {
+            "code": "unwrap(await tools.web_search({query:inputs.query}));return unwrap(await tools.open_url({url:inputs.url}));",
+            "inputs": {
+              "query": "帮我看看订单 A-173 什么时候送达，追踪号是多少？",
+              "url": "https://example.com/account/orders"
+            }
+          }
+        },
+        "source_interface_arm": "A"
+      },
+      {
+        "case": "inventory",
+        "kind": "event_click",
+        "arm": "production_click_regression",
+        "seed": 123456789,
+        "stop_reason": "no_progress",
+        "answer": "stopped after repeated tool results without progress",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:65d7f507cfb77b3d"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_9faeab73aeae438894165bf4df136571:turn:1:codemode:df451fa762b2cbbb:child:1",
+              "tool": "open_url",
+              "args": {
+                "url": "https://example.com/warehouse/stock-index"
+              },
+              "resolved_url": "https://example.com/warehouse/stock-index",
+              "observed_search_results": {
+                "r1": "https://example.com/warehouse/north-store/available-stock",
+                "r2": "https://example.com/warehouse/stock-index",
+                "r3": "https://example.com/help/navigation"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [
+            "task_turn_effect:00fe7b38567cbef6"
+          ],
+          "snapshot_click_wait_read_chains": [
+            [
+              "task_turn_effect:cf27713a3ea482ff",
+              "task_turn_effect:00fe7b38567cbef6",
+              "task_turn_effect:8e5b19b416833e43",
+              "task_turn_effect:53da0a01ae2466d6"
+            ]
+          ],
+          "click_chain_complete": true
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:53da0a01ae2466d6"
+        ],
+        "facts_delivered": false,
+        "model_calls": 4,
+        "usage_complete": true,
+        "inference_seconds": 37.342,
+        "prompt_tokens": 33842,
+        "completion_tokens": 818,
+        "scope": "fixed_source_acquisition_live_production_click_regression",
+        "source_selection_live": false,
+        "scripted_prefix": {
+          "tool": "codemode",
+          "args": {
+            "code": "unwrap(await tools.web_search({query:inputs.query}));return unwrap(await tools.open_url({url:inputs.url}));",
+            "inputs": {
+              "query": "西仓的 RX-08 现在有多少可用库存，库存记录是哪一版？",
+              "url": "https://example.com/warehouse/stock-index"
+            }
+          }
+        },
+        "source_interface_arm": "A"
+      },
+      {
+        "case": "orders",
+        "kind": "plain_click",
+        "arm": "production_click_regression",
+        "seed": 123456790,
+        "stop_reason": "done",
+        "answer": "订单 A-173 的送达时间为 2026年11月20日，追踪号为 0042091。",
+        "error": "",
+        "passed": false,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:ac4a71907e630baa"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_eb2ec8370fb84945aed4d04dce298a55:turn:1:codemode:50461dfb1c643798:child:1",
+              "tool": "open_url",
+              "args": {
+                "url": "https://example.com/account/orders"
+              },
+              "resolved_url": "https://example.com/account/orders",
+              "observed_search_results": {
+                "r1": "https://example.com/orders/A-174/delivery-detail",
+                "r2": "https://example.com/account/orders",
+                "r3": "https://example.com/help/navigation"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [
+            "task_turn_effect:d212fd2f19baad63"
+          ],
+          "snapshot_click_wait_read_chains": [
+            [
+              "task_turn_effect:16b02c98b713d98a",
+              "task_turn_effect:d212fd2f19baad63",
+              "task_turn_effect:b316ab3f5632e2fc",
+              "task_turn_effect:6b1b2c6a1e30a9b6"
+            ]
+          ],
+          "click_chain_complete": true
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:6b1b2c6a1e30a9b6",
+          "task_turn_effect:f45da59e0e338f73"
+        ],
+        "facts_delivered": false,
+        "model_calls": 4,
+        "usage_complete": true,
+        "inference_seconds": 17.985,
+        "prompt_tokens": 29366,
+        "completion_tokens": 316,
+        "scope": "fixed_source_acquisition_live_production_click_regression",
+        "source_selection_live": false,
+        "scripted_prefix": {
+          "tool": "codemode",
+          "args": {
+            "code": "unwrap(await tools.web_search({query:inputs.query}));return unwrap(await tools.open_url({url:inputs.url}));",
+            "inputs": {
+              "query": "帮我看看订单 A-173 什么时候送达，追踪号是多少？",
+              "url": "https://example.com/account/orders"
+            }
+          }
+        },
+        "source_interface_arm": "A"
+      },
+      {
+        "case": "inventory",
+        "kind": "event_click",
+        "arm": "production_click_regression",
+        "seed": 123456790,
+        "stop_reason": "done",
+        "answer": "根据查询结果，西仓的 RX-08 目前共有 37 件可用库存，对应的库存记录版本为 WEST_0037。",
+        "error": "",
+        "passed": true,
+        "sources": {
+          "expected_interface": "open_url",
+          "search_count": 1,
+          "verified_open_refs": [
+            "task_turn_effect:ea5f8ae596539710"
+          ],
+          "entry_from_observed_candidate": true,
+          "source_intents": [
+            {
+              "call_id": "run_88ecbc37b3d8458eab4ede28adee6e1d:turn:1:codemode:df451fa762b2cbbb:child:1",
+              "tool": "open_url",
+              "args": {
+                "url": "https://example.com/warehouse/stock-index"
+              },
+              "resolved_url": "https://example.com/warehouse/stock-index",
+              "observed_search_results": {
+                "r1": "https://example.com/warehouse/north-store/available-stock",
+                "r2": "https://example.com/warehouse/stock-index",
+                "r3": "https://example.com/help/navigation"
+              }
+            }
+          ]
+        },
+        "clicks": {
+          "trusted_target_click_refs": [
+            "task_turn_effect:33821a9a88f4fd93"
+          ],
+          "snapshot_click_wait_read_chains": [
+            [
+              "task_turn_effect:212469c39905c86f",
+              "task_turn_effect:33821a9a88f4fd93",
+              "task_turn_effect:9df5c983006603f3",
+              "task_turn_effect:64d6b03cef6562c9"
+            ]
+          ],
+          "click_chain_complete": true
+        },
+        "complete_fact_read_refs": [
+          "task_turn_effect:64d6b03cef6562c9"
+        ],
+        "facts_delivered": true,
+        "model_calls": 5,
+        "usage_complete": true,
+        "inference_seconds": 16.764,
+        "prompt_tokens": 36050,
+        "completion_tokens": 266,
+        "scope": "fixed_source_acquisition_live_production_click_regression",
+        "source_selection_live": false,
+        "scripted_prefix": {
+          "tool": "codemode",
+          "args": {
+            "code": "unwrap(await tools.web_search({query:inputs.query}));return unwrap(await tools.open_url({url:inputs.url}));",
+            "inputs": {
+              "query": "西仓的 RX-08 现在有多少可用库存，库存记录是哪一版？",
+              "url": "https://example.com/warehouse/stock-index"
+            }
+          }
+        },
+        "source_interface_arm": "A"
+      }
+    ]
+  },
+  "diagnostics": [
+    {
+      "run": "live/pair-1/food/A",
+      "stage": "none",
+      "errors": [],
+      "source_attempts": [
+        {
+          "tool": "open_url",
+          "resolved_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "live/pair-1/food/B",
+      "stage": "none",
+      "errors": [],
+      "source_attempts": [
+        {
+          "tool": "open_result",
+          "resolved_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "live/pair-1/museum/B",
+      "stage": "none",
+      "errors": [],
+      "source_attempts": [
+        {
+          "tool": "open_result",
+          "resolved_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "live/pair-1/museum/A",
+      "stage": "source_selection_or_generation",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "CodeMode returned undefined. A missing return OR returning a nonexistent property produces undefined. Check the declared Result<T> shape: successful tool data is inside result.value. Return an explicit JSON value; use return null only for an intentional empty result.",
+          "args": {
+            "code": "const result = await tools.web_search({query: \"澄川博物馆 秋季 周五 夜场\"}); return unwrap(result).text;",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": []
+    },
+    {
+      "run": "live/pair-1/orders/A",
+      "stage": "source_selection_or_generation",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "cannot read property '0' of undefined",
+          "args": {
+            "code": "const result = await tools.web_search({query: \"订单 A-173 详情\"}); return unwrap(result).matches[0].path;",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": []
+    },
+    {
+      "run": "live/pair-1/orders/B",
+      "stage": "none",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "open_result missing required arg 'result_id'",
+          "args": {
+            "code": "const result = await tools.open_result({id: \"r2\"}); return unwrap(result);",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": [
+        {
+          "tool": "open_result",
+          "resolved_url": "https://example.com/account/orders",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/account/orders",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "live/pair-1/inventory/B",
+      "stage": "source_selection_or_generation",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "open_result missing required arg 'result_id'",
+          "args": {
+            "code": "const result = await tools.open_result({id: \"r1\"}); return unwrap(result);",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": []
+    },
+    {
+      "run": "live/pair-1/inventory/A",
+      "stage": "source_selection_or_generation",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "cannot read property '0' of undefined",
+          "args": {
+            "code": "const result = await tools.web_search({query: \"西仓 RX-08 库存\"}); return unwrap(result).matches[0].path;",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": []
+    },
+    {
+      "run": "live/pair-2/food/B",
+      "stage": "none",
+      "errors": [],
+      "source_attempts": [
+        {
+          "tool": "open_result",
+          "resolved_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "live/pair-2/food/A",
+      "stage": "source_selection_or_generation",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "CodeMode returned undefined. A missing return OR returning a nonexistent property produces undefined. Check the declared Result<T> shape: successful tool data is inside result.value. Return an explicit JSON value; use return null only for an intentional empty result.",
+          "args": {
+            "code": "const result = await tools.web_search({query: \"榕城检验站 2026 秋检 福州鱼丸\"}); return unwrap(result).text;",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": []
+    },
+    {
+      "run": "live/pair-2/museum/A",
+      "stage": "none",
+      "errors": [],
+      "source_attempts": [
+        {
+          "tool": "open_url",
+          "resolved_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "live/pair-2/museum/B",
+      "stage": "none",
+      "errors": [],
+      "source_attempts": [
+        {
+          "tool": "open_result",
+          "resolved_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "live/pair-2/orders/B",
+      "stage": "source_selection_or_generation",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "cannot read property '0' of undefined",
+          "args": {
+            "code": "const result = await tools.web_search({query: \"订单 A-173 详情\"}); return unwrap(result).matches[0].text;",
+            "inputs": {},
+            "language": "javascript"
+          }
+        },
+        {
+          "tool": "codemode",
+          "message": "CodeMode returned undefined. A missing return OR returning a nonexistent property produces undefined. Check the declared Result<T> shape: successful tool data is inside result.value. Return an explicit JSON value; use return null only for an intentional empty result.",
+          "args": {
+            "code": "const result = await tools.web_search({query: \"订单 A-173 详情\"}); return unwrap(result).matches;",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": []
+    },
+    {
+      "run": "live/pair-2/orders/A",
+      "stage": "source_selection_or_generation",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "cannot read property '0' of undefined",
+          "args": {
+            "code": "const result = await tools.web_search({query: \"订单 A-173 详情\"}); return unwrap(result).matches[0].path;",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": []
+    },
+    {
+      "run": "live/pair-2/inventory/A",
+      "stage": "source_selection_or_generation",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "cannot read property '0' of undefined",
+          "args": {
+            "code": "const result = await tools.web_search({query: \"西仓 RX-08 库存\"}); return unwrap(result).matches[0].url;",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": []
+    },
+    {
+      "run": "live/pair-2/inventory/B",
+      "stage": "source_selection_or_generation",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "open_result missing required arg 'result_id'",
+          "args": {
+            "code": "const result = await tools.open_result({id: \"r1\"}); return unwrap(result);",
+            "inputs": {},
+            "language": "javascript"
+          }
+        },
+        {
+          "tool": "codemode",
+          "message": "ERROR: stale browser element reference; take a fresh browser_snapshot",
+          "args": {
+            "code": "const result = await tools.browser_click({ref: \"details_link\"}); return unwrap(result);",
+            "inputs": {},
+            "language": "javascript"
+          }
+        },
+        {
+          "tool": "browser_click",
+          "message": "ERROR: stale browser element reference; take a fresh browser_snapshot",
+          "args": {
+            "ref": "details_link"
+          }
+        }
+      ],
+      "source_attempts": [
+        {
+          "tool": "open_result",
+          "resolved_url": "https://example.com/warehouse/north-store/available-stock",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/warehouse/north-store/available-stock",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "click-live/pair-1/orders",
+      "stage": "final_delivery",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "tools.browser_snapshot returned Result<T>, not its data. Undeclared result field \"elements\"; use unwrap(result).elements or result.value.elements. Receipt metadata result_ref stays on result.",
+          "args": {
+            "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = snapshot.elements;\nconst order173Detail = elements.find(e => e.name === '订单 A-173 配送详情');\nif (order173Detail) {\n  const clickResult = await tools.browser_click({ref: order173Detail.ref});\n  const waitResult = await tools.browser_wait({condition: 'text', value: '记录已就绪', timeout_ms: 5000});\n  const readResult = await tools.browser_read({});\n  return unwrap(readResult).text;\n} else {\n  return '订单 A-173 配送详情 链接未找到';\n}",
+            "inputs": {},
+            "language": "javascript"
+          }
+        },
+        {
+          "tool": "codemode",
+          "message": "CodeMode returned undefined. A missing return OR returning a nonexistent property produces undefined. Check the declared Result<T> shape: successful tool data is inside result.value. Return an explicit JSON value; use return null only for an intentional empty result.",
+          "args": {
+            "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = unwrap(snapshot).elements;\nconst order173Detail = elements.find(e => e.name === '订单 A-173 配送详情');\nif (order173Detail) {\n  await tools.browser_click({ref: order173Detail.ref});\n  await tools.browser_wait({condition: 'text', value: '记录已就绪', timeout_ms: 5000});\n  const readResult = await tools.browser_read({});\n  return unwrap(readResult).text;\n} else {\n  return '订单 A-173 配送详情 链接未找到';\n}",
+            "inputs": {},
+            "language": "javascript"
+          }
+        },
+        {
+          "tool": "codemode",
+          "message": "repair did not consume the original child sequence",
+          "args": {
+            "code": "return unwrap(await tools.browser_read({}));",
+            "inputs": {},
+            "language": "javascript",
+            "repair_of": "cmr_9cd4fc3c9ddb4052"
+          }
+        }
+      ],
+      "source_attempts": [
+        {
+          "tool": "open_url",
+          "resolved_url": "https://example.com/account/orders",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/account/orders",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "click-live/pair-1/inventory",
+      "stage": "post_read_return_or_recovery",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "tools.browser_snapshot returned Result<T>, not its data. Undeclared result field \"elements\"; use unwrap(result).elements or result.value.elements. Receipt metadata result_ref stays on result.",
+          "args": {
+            "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = snapshot.elements;\nconst rx08Detail = elements.find(e => e.name === '西仓 RX-08 可用库存详情');\nif (rx08Detail) {\n  const clickResult = await tools.browser_click({ref: rx08Detail.ref});\n  const waitResult = await tools.browser_wait({condition: 'text', value: '记录已就绪', timeout_ms: 5000});\n  const finalSnapshot = await tools.browser_snapshot({});\n  const readResult = await tools.browser_read({});\n  return unwrap(readResult).text;\n} else {\n  return '西仓 RX-08 详情链接未找到';\n}",
+            "inputs": {},
+            "language": "javascript"
+          }
+        },
+        {
+          "tool": "codemode",
+          "message": "CodeMode returned undefined. A missing return OR returning a nonexistent property produces undefined. Check the declared Result<T> shape: successful tool data is inside result.value. Return an explicit JSON value; use return null only for an intentional empty result.",
+          "args": {
+            "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = unwrap(snapshot).elements;\nconst rx08Detail = elements.find(e => e.name === '西仓 RX-08 可用库存详情');\nif (rx08Detail) {\n  await tools.browser_click({ref: rx08Detail.ref});\n  await tools.browser_wait({condition: 'text', value: '记录已就绪', timeout_ms: 5000});\n  const finalSnapshot = await tools.browser_snapshot({});\n  const readResult = await tools.browser_read({});\n  return unwrap(readResult).text;\n} else {\n  return '西仓 RX-08 详情链接未找到';\n}",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": [
+        {
+          "tool": "open_url",
+          "resolved_url": "https://example.com/warehouse/stock-index",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/warehouse/stock-index",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "click-live/pair-2/orders",
+      "stage": "final_delivery",
+      "errors": [
+        {
+          "tool": "codemode",
+          "message": "CodeMode returned undefined. A missing return OR returning a nonexistent property produces undefined. Check the declared Result<T> shape: successful tool data is inside result.value. Return an explicit JSON value; use return null only for an intentional empty result.",
+          "args": {
+            "code": "const waitResult = await tools.browser_wait({condition: 'text', value: '记录已就绪', timeout_ms: 5000});\nconst readResult = await tools.browser_read({});\nconst content = unwrap(readResult).text;\nreturn content;",
+            "inputs": {},
+            "language": "javascript"
+          }
+        }
+      ],
+      "source_attempts": [
+        {
+          "tool": "open_url",
+          "resolved_url": "https://example.com/account/orders",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/account/orders",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    },
+    {
+      "run": "click-live/pair-2/inventory",
+      "stage": "none",
+      "errors": [],
+      "source_attempts": [
+        {
+          "tool": "open_url",
+          "resolved_url": "https://example.com/warehouse/stock-index",
+          "in_observed_candidates": true,
+          "requested_url": "https://example.com/warehouse/stock-index",
+          "original_url_passed": true,
+          "ok": true
+        }
+      ]
+    }
+  ],
+  "tests": {
+    "production_navigation": 16,
+    "prior_and_production_combined": 63,
+    "click_probe_additional": 2,
+    "total_distinct": 65
+  },
+  "click_regression_aggregates": [
+    {
+      "kind": "plain_click",
+      "runs": 2,
+      "click_chains": 2,
+      "passed": 0,
+      "model_calls": 8
+    },
+    {
+      "kind": "event_click",
+      "runs": 2,
+      "click_chains": 2,
+      "passed": 1,
+      "model_calls": 9
+    }
+  ]
+}
