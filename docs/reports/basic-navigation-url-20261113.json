@@ -1,0 +1,599 @@
+{
+  "scope": "guest_navigation_selector_production_basic_gate",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "production_before": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+  "production_after": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+  "production_unchanged": true,
+  "results": [
+    {
+      "mode": "chat",
+      "passed": true,
+      "stop_reason": "done",
+      "successful_tools": [
+        "browser_click",
+        "browser_fill",
+        "browser_navigate",
+        "browser_read",
+        "browser_snapshot",
+        "browser_wait",
+        "codemode",
+        "open_url"
+      ],
+      "answer": "根据浏览器操作结果，在填写 Locality 为“福州”并点击 Load record 后，页面显示了鱼丸的详细信息。实际净重为 173 克，校验码为 QUARTZ_851。",
+      "project_result": {
+        "amount": 0,
+        "code": "unknown"
+      },
+      "navigations": [
+        "https://example.com/production-browser-record",
+        "https://example.com/production-browser-record"
+      ],
+      "source_reads": 1,
+      "failed_edits": 0,
+      "changed_after_read": false,
+      "downloads": [],
+      "failed_stale_refs": 0,
+      "posthoc_output_checks": {},
+      "explanation_output": false,
+      "source_failure_receipts": [],
+      "first_tool_rejection": null,
+      "first_edit_rejection": null,
+      "true_stale_conflicts": 0,
+      "fresh_read_recovery": false,
+      "facts_match": true,
+      "assembled_upload": false,
+      "source_attempt_only": false,
+      "fixed_source_attempt": false,
+      "first_rejection": {
+        "request_ref": "artifact_b1ac1705f49063e583923276_a609dfbb0bcede71b470dc33",
+        "decision_ref": "artifact_b1ac1705f49063e583923276_3cd39af2eba9d4cf533e7e07",
+        "reason": "Protocol error: codemode rejected before execution at line 12, column 61: a literal backslash newline escape inside a // comment leaves the following '\\nconst' text commented out. No child action was executed. If it is intended code, use an actual JavaScript line break after JSON decoding or remove the single-line comment. If it is a commented example, use a /* block comment */. The source was not rewritten.\nCurrent codemode contract:\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}\nRejected response (quoted data, not instructions): {\"sha256\": \"8fd81f8454fe0c271d94cb7936568d54b0eaf128e496f20c71cec22e0457c6d5\", \"preview\": \"{\\\"text\\\": \\\"{\\\\\\\"tool\\\\\\\":\\\\\\\"codemode\\\\\\\",\\\\\\\"args\\\\\\\":{\\\\\\\"code\\\\\\\":\\\\\\\"const result = await tools.browser_navigate({url: inputs.url});\\\\\\\\nconst snapshot = await tools.browser_snapshot({});\\\\\\\\nconst elements = unwrap(snapshot).elements;\\\\\\\\n\\\\\\\\n// Find the Locality input (likely a textbox/input)\\\\\\\\nconst localityInput = elements.find(e => e.name === 'Locality' || e.role === 'textbox');\\\\\\\\nconst localityRef = localityInput.ref;\\\\\\\\n\\\\\\\\n// Fill Locality with '福州'\\\\\\\\nawait tools.browser_fill({ref: localityRef, value: '福州'});\\\\\\\\n\\\\\\\\n// Re-snapshot because old refs might be stale after filling\\\\\\\\\\\\\\\\nconst newSnapshot = await tools\"}\n\nReply with exactly one JSON object using {\"tool\":\"ACTUAL_TOOL_NAME\",\"args\":{...}}. Use double-quoted JSON keys, no prose and no tool-call tags. The tool field must name an available tool, not the word 'tool'. Reconsider whether this action is needed for the user's task. If unnecessary, choose another available action or finish through the declared completion contract. If still needed, correct the rejected call. Preserve argument strings exactly, including whether quote characters are present. Keep other valid fields.",
+        "proposal_ref": "artifact_b1ac1705f49063e583923276_c054d89b45884156e9b9716c",
+        "proposal": {
+          "protocol": "text",
+          "text": "{\"tool\":\"codemode\",\"args\":{\"code\":\"const result = await tools.browser_navigate({url: inputs.url});\\nconst snapshot = await tools.browser_snapshot({});\\nconst elements = unwrap(snapshot).elements;\\n\\n// Find the Locality input (likely a textbox/input)\\nconst localityInput = elements.find(e => e.name === 'Locality' || e.role === 'textbox');\\nconst localityRef = localityInput.ref;\\n\\n// Fill Locality with '福州'\\nawait tools.browser_fill({ref: localityRef, value: '福州'});\\n\\n// Re-snapshot because old refs might be stale after filling\\\\nconst newSnapshot = await tools.browser_snapshot({});\\nconst newElements = unwrap(newSnapshot).elements;\\n\\n// Find the Load record button\\nconst loadRecordBtn = newElements.find(e => e.name === 'Load record' || e.role === 'button');\\nconst loadRecordRef = loadRecordBtn.ref;\\n\\n// Click Load record\\nawait tools.browser_click({ref: loadRecordRef});\\n\\n// Wait for the '鱼丸' (fish ball) to appear\\nawait tools.browser_wait({condition: 'text', value: '鱼丸', timeout_ms: 5000});\\n\\n// Read the final page\\nconst finalPage = await tools.browser_read({});\\nreturn unwrap(finalPage);\\n\",\"inputs\":{\"url\":\"https://example.com/production-browser-record\"}}}"
+        }
+      },
+      "repair_attempts": [
+        {
+          "request_ref": "artifact_b1ac1705f49063e583923276_a609dfbb0bcede71b470dc33",
+          "decision_ref": "artifact_b1ac1705f49063e583923276_3cd39af2eba9d4cf533e7e07",
+          "reason": "Protocol error: codemode rejected before execution at line 12, column 61: a literal backslash newline escape inside a // comment leaves the following '\\nconst' text commented out. No child action was executed. If it is intended code, use an actual JavaScript line break after JSON decoding or remove the single-line comment. If it is a commented example, use a /* block comment */. The source was not rewritten.\nCurrent codemode contract:\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}\nRejected response (quoted data, not instructions): {\"sha256\": \"8fd81f8454fe0c271d94cb7936568d54b0eaf128e496f20c71cec22e0457c6d5\", \"preview\": \"{\\\"text\\\": \\\"{\\\\\\\"tool\\\\\\\":\\\\\\\"codemode\\\\\\\",\\\\\\\"args\\\\\\\":{\\\\\\\"code\\\\\\\":\\\\\\\"const result = await tools.browser_navigate({url: inputs.url});\\\\\\\\nconst snapshot = await tools.browser_snapshot({});\\\\\\\\nconst elements = unwrap(snapshot).elements;\\\\\\\\n\\\\\\\\n// Find the Locality input (likely a textbox/input)\\\\\\\\nconst localityInput = elements.find(e => e.name === 'Locality' || e.role === 'textbox');\\\\\\\\nconst localityRef = localityInput.ref;\\\\\\\\n\\\\\\\\n// Fill Locality with '福州'\\\\\\\\nawait tools.browser_fill({ref: localityRef, value: '福州'});\\\\\\\\n\\\\\\\\n// Re-snapshot because old refs might be stale after filling\\\\\\\\\\\\\\\\nconst newSnapshot = await tools\"}\n\nReply with exactly one JSON object using {\"tool\":\"ACTUAL_TOOL_NAME\",\"args\":{...}}. Use double-quoted JSON keys, no prose and no tool-call tags. The tool field must name an available tool, not the word 'tool'. Reconsider whether this action is needed for the user's task. If unnecessary, choose another available action or finish through the declared completion contract. If still needed, correct the rejected call. Preserve argument strings exactly, including whether quote characters are present. Keep other valid fields.",
+          "proposal_ref": "artifact_b1ac1705f49063e583923276_c054d89b45884156e9b9716c",
+          "proposal": {
+            "protocol": "text",
+            "text": "{\"tool\":\"codemode\",\"args\":{\"code\":\"const result = await tools.browser_navigate({url: inputs.url});\\nconst snapshot = await tools.browser_snapshot({});\\nconst elements = unwrap(snapshot).elements;\\n\\n// Find the Locality input (likely a textbox/input)\\nconst localityInput = elements.find(e => e.name === 'Locality' || e.role === 'textbox');\\nconst localityRef = localityInput.ref;\\n\\n// Fill Locality with '福州'\\nawait tools.browser_fill({ref: localityRef, value: '福州'});\\n\\n// Re-snapshot because old refs might be stale after filling\\\\nconst newSnapshot = await tools.browser_snapshot({});\\nconst newElements = unwrap(newSnapshot).elements;\\n\\n// Find the Load record button\\nconst loadRecordBtn = newElements.find(e => e.name === 'Load record' || e.role === 'button');\\nconst loadRecordRef = loadRecordBtn.ref;\\n\\n// Click Load record\\nawait tools.browser_click({ref: loadRecordRef});\\n\\n// Wait for the '鱼丸' (fish ball) to appear\\nawait tools.browser_wait({condition: 'text', value: '鱼丸', timeout_ms: 5000});\\n\\n// Read the final page\\nconst finalPage = await tools.browser_read({});\\nreturn unwrap(finalPage);\\n\",\"inputs\":{\"url\":\"https://example.com/production-browser-record\"}}}"
+          }
+        }
+      ],
+      "seconds": 38.547,
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "restored_snapshots": 0,
+      "scope": "controlled_fixture_production_entry_and_kernel",
+      "gate_passed": true,
+      "arm": "A",
+      "seed": 123456789,
+      "navigation": {
+        "formal_navigations": [
+          {
+            "ref": "task_turn_effect:1e97fb5fcde035bc",
+            "ok": true,
+            "args": {
+              "url": "https://example.com/production-browser-record"
+            },
+            "http_status": 200,
+            "observed_url": "https://example.com/production-browser-record",
+            "exact_task_url": true
+          }
+        ],
+        "all_navigations_exact": true,
+        "target_loaded": true,
+        "wrong_navigation_count": 0,
+        "successful_stage_refs": {
+          "browser_snapshot": [
+            "task_turn_effect:da2123f049ee327e",
+            "task_turn_effect:b525f1113a4a4ff9"
+          ],
+          "browser_fill": [
+            "task_turn_effect:98d368d8a8840320"
+          ],
+          "browser_click": [
+            "task_turn_effect:e56ca90e0b080157"
+          ],
+          "browser_wait": [
+            "task_turn_effect:0b64c8b055ca5f09"
+          ],
+          "browser_read": [
+            "task_turn_effect:d0a114ffb314c49d"
+          ]
+        },
+        "completed_chain_refs": [
+          [
+            "task_turn_effect:1e97fb5fcde035bc",
+            "task_turn_effect:da2123f049ee327e",
+            "task_turn_effect:98d368d8a8840320",
+            "task_turn_effect:b525f1113a4a4ff9",
+            "task_turn_effect:e56ca90e0b080157",
+            "task_turn_effect:0b64c8b055ca5f09",
+            "task_turn_effect:d0a114ffb314c49d"
+          ]
+        ],
+        "browser_chain_reached": true
+      },
+      "model_calls": 3,
+      "usage_complete": true,
+      "inference_seconds": 31.141,
+      "prompt_tokens": 21476,
+      "completion_tokens": 697
+    },
+    {
+      "mode": "chat",
+      "passed": true,
+      "stop_reason": "done",
+      "successful_tools": [
+        "browser_click",
+        "browser_fill",
+        "browser_navigate",
+        "browser_read",
+        "browser_snapshot",
+        "browser_wait",
+        "codemode",
+        "open_url"
+      ],
+      "answer": "实际净重为 173 克，校验码为 QUARTZ_851。",
+      "project_result": {
+        "amount": 0,
+        "code": "unknown"
+      },
+      "navigations": [
+        "https://example.com/production-browser-record",
+        "https://example.com/production-browser-record"
+      ],
+      "source_reads": 1,
+      "failed_edits": 0,
+      "changed_after_read": false,
+      "downloads": [],
+      "failed_stale_refs": 0,
+      "posthoc_output_checks": {},
+      "explanation_output": false,
+      "source_failure_receipts": [],
+      "first_tool_rejection": null,
+      "first_edit_rejection": null,
+      "true_stale_conflicts": 0,
+      "fresh_read_recovery": false,
+      "facts_match": true,
+      "assembled_upload": false,
+      "source_attempt_only": false,
+      "fixed_source_attempt": false,
+      "first_rejection": null,
+      "repair_attempts": [],
+      "seconds": 23.796,
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "restored_snapshots": 0,
+      "scope": "controlled_fixture_production_entry_and_kernel",
+      "gate_passed": true,
+      "arm": "B",
+      "seed": 123456789,
+      "navigation": {
+        "formal_navigations": [
+          {
+            "ref": "task_turn_effect:e42e309f92c05938",
+            "ok": true,
+            "args": {
+              "url": "https://example.com/production-browser-record"
+            },
+            "http_status": 200,
+            "observed_url": "https://example.com/production-browser-record",
+            "exact_task_url": true
+          }
+        ],
+        "all_navigations_exact": true,
+        "target_loaded": true,
+        "wrong_navigation_count": 0,
+        "successful_stage_refs": {
+          "browser_snapshot": [
+            "task_turn_effect:9f2e47f760199708",
+            "task_turn_effect:e1d2481f37efe767"
+          ],
+          "browser_fill": [
+            "task_turn_effect:80bcd954a4120fa6"
+          ],
+          "browser_click": [
+            "task_turn_effect:8379d58dbab7b159"
+          ],
+          "browser_wait": [
+            "task_turn_effect:3ccbf7d50dcfd823"
+          ],
+          "browser_read": [
+            "task_turn_effect:73edeabc64ca076b"
+          ]
+        },
+        "completed_chain_refs": [
+          [
+            "task_turn_effect:e42e309f92c05938",
+            "task_turn_effect:9f2e47f760199708",
+            "task_turn_effect:80bcd954a4120fa6",
+            "task_turn_effect:e1d2481f37efe767",
+            "task_turn_effect:8379d58dbab7b159",
+            "task_turn_effect:3ccbf7d50dcfd823",
+            "task_turn_effect:73edeabc64ca076b"
+          ]
+        ],
+        "browser_chain_reached": true
+      },
+      "model_calls": 2,
+      "usage_complete": true,
+      "inference_seconds": 17.5,
+      "prompt_tokens": 13285,
+      "completion_tokens": 311
+    },
+    {
+      "mode": "chat",
+      "passed": true,
+      "stop_reason": "done",
+      "successful_tools": [
+        "browser_click",
+        "browser_fill",
+        "browser_navigate",
+        "browser_read",
+        "browser_snapshot",
+        "browser_wait",
+        "codemode",
+        "open_url"
+      ],
+      "answer": "实际净重为 173 克，校验码为 QUARTZ_851。",
+      "project_result": {
+        "amount": 0,
+        "code": "unknown"
+      },
+      "navigations": [
+        "https://example.com/production-browser-record",
+        "https://example.com/production-browser-record"
+      ],
+      "source_reads": 1,
+      "failed_edits": 0,
+      "changed_after_read": false,
+      "downloads": [],
+      "failed_stale_refs": 0,
+      "posthoc_output_checks": {},
+      "explanation_output": false,
+      "source_failure_receipts": [],
+      "first_tool_rejection": null,
+      "first_edit_rejection": null,
+      "true_stale_conflicts": 0,
+      "fresh_read_recovery": false,
+      "facts_match": true,
+      "assembled_upload": false,
+      "source_attempt_only": false,
+      "fixed_source_attempt": false,
+      "first_rejection": null,
+      "repair_attempts": [],
+      "seconds": 23.89,
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "restored_snapshots": 0,
+      "scope": "controlled_fixture_production_entry_and_kernel",
+      "gate_passed": true,
+      "arm": "B",
+      "seed": 123456790,
+      "navigation": {
+        "formal_navigations": [
+          {
+            "ref": "task_turn_effect:6b4801c720a9a2f9",
+            "ok": true,
+            "args": {
+              "url": "https://example.com/production-browser-record"
+            },
+            "http_status": 200,
+            "observed_url": "https://example.com/production-browser-record",
+            "exact_task_url": true
+          }
+        ],
+        "all_navigations_exact": true,
+        "target_loaded": true,
+        "wrong_navigation_count": 0,
+        "successful_stage_refs": {
+          "browser_snapshot": [
+            "task_turn_effect:736c643e9a8f755e",
+            "task_turn_effect:375bef1c20aaf580"
+          ],
+          "browser_fill": [
+            "task_turn_effect:f9b5ca4dbf9a88fd"
+          ],
+          "browser_click": [
+            "task_turn_effect:f0e78741a51602ff"
+          ],
+          "browser_wait": [
+            "task_turn_effect:a417a9e876ff404c"
+          ],
+          "browser_read": [
+            "task_turn_effect:790fb0148911a6ed"
+          ]
+        },
+        "completed_chain_refs": [
+          [
+            "task_turn_effect:6b4801c720a9a2f9",
+            "task_turn_effect:736c643e9a8f755e",
+            "task_turn_effect:f9b5ca4dbf9a88fd",
+            "task_turn_effect:375bef1c20aaf580",
+            "task_turn_effect:f0e78741a51602ff",
+            "task_turn_effect:a417a9e876ff404c",
+            "task_turn_effect:790fb0148911a6ed"
+          ]
+        ],
+        "browser_chain_reached": true
+      },
+      "model_calls": 2,
+      "usage_complete": true,
+      "inference_seconds": 17.703,
+      "prompt_tokens": 13353,
+      "completion_tokens": 378
+    },
+    {
+      "mode": "chat",
+      "passed": false,
+      "stop_reason": "no_progress",
+      "successful_tools": [
+        "open_url"
+      ],
+      "answer": "stopped after repeated tool results without progress",
+      "project_result": {
+        "amount": 0,
+        "code": "unknown"
+      },
+      "navigations": [
+        "https://example.com/production-browser-record"
+      ],
+      "source_reads": 0,
+      "failed_edits": 0,
+      "changed_after_read": false,
+      "downloads": [],
+      "failed_stale_refs": 0,
+      "posthoc_output_checks": {},
+      "explanation_output": false,
+      "source_failure_receipts": [],
+      "first_tool_rejection": {
+        "identity": "task_turn_effect:b68dd22b63e5d1d9",
+        "tool": "codemode",
+        "ok": false,
+        "args": {
+          "code": "const result = await tools.browser_navigate({url: 'https://example.com/production-browser-record'});\nconst snapshot = unwrap(await tools.browser_snapshot({}));\n\n// Find the Locality input field\nlet locality_ref = '';\nfor (const el of snapshot.elements) {\n  if (el.name === 'Locality' || el.role === 'textbox' && el.name === 'Locality') {\n    locality_ref = el.ref;\n    break;\n  }\n}\n\n// Fill Locality with '福州'\nawait tools.browser_fill({ref: locality_ref, value: '福州'});\n\n// Re-snapshot because old ref might be stale\return unwrap(await tools.browser_snapshot({}));",
+          "inputs": {},
+          "language": "javascript"
+        },
+        "model_text": "JavaScript compilation failed after successful outer JSON decoding. No child tool was executed.\nSyntaxError: expecting ';'\n    at codemode-program.js:17:7\n    at eval (native)\n    at execute (codemode-prelude.js:255:49)\n    at <anonymous> (codemode-prelude.js:315:49)\nSource excerpt (JSON-escaped lines):\n16: \"// Re-snapshot because old ref might be stale\"\n17: \"eturn unwrap(await tools.browser_snapshot({}));\"\nPut multiline or quoted task text in inputs and reference inputs.<field> in code. Raw line breaks inside JS single/double-quoted literals are invalid.\nSyntax repair required: submit one new syntactically valid CodeMode program; do not repeat the rejected source.\nCurrent codemode contract:\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}",
+        "canonical": {
+          "child_effect_ids": []
+        },
+        "audit": {
+          "catalog_digest": "sha256:e71a26ef598cc58424669ff2fc911930f5f4cd4a30607882fefe5ea945e26f0b",
+          "child_calls": 0,
+          "codemode_execution_id": "run_6107016d959f4fff9e961a7a1c6dbb47:turn:1:codemode:692e2ef000ffbf99",
+          "error_code": "syntax_error"
+        }
+      },
+      "first_edit_rejection": null,
+      "true_stale_conflicts": 0,
+      "fresh_read_recovery": false,
+      "facts_match": false,
+      "assembled_upload": false,
+      "source_attempt_only": false,
+      "fixed_source_attempt": false,
+      "first_rejection": null,
+      "repair_attempts": [],
+      "seconds": 45.219,
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "restored_snapshots": 0,
+      "scope": "controlled_fixture_production_entry_and_kernel",
+      "gate_passed": false,
+      "arm": "A",
+      "seed": 123456790,
+      "navigation": {
+        "formal_navigations": [],
+        "all_navigations_exact": false,
+        "target_loaded": false,
+        "wrong_navigation_count": 0,
+        "successful_stage_refs": {
+          "browser_snapshot": [],
+          "browser_fill": [],
+          "browser_click": [],
+          "browser_wait": [],
+          "browser_read": []
+        },
+        "completed_chain_refs": [],
+        "browser_chain_reached": false
+      },
+      "model_calls": 4,
+      "usage_complete": true,
+      "inference_seconds": 37.702,
+      "prompt_tokens": 29863,
+      "completion_tokens": 807
+    }
+  ],
+  "model_calls": 11,
+  "date": "2026-11-13",
+  "branch": "master",
+  "production_base": "0ffe1912",
+  "command": "python -u -m tools.basic_navigation_url_ab --run-dir .e2e-artifacts/basic-navigation-url-20261113/live --pairs 2 --max-turns 6",
+  "run_order": [
+    [
+      "A",
+      "B"
+    ],
+    [
+      "B",
+      "A"
+    ]
+  ],
+  "seeds": [
+    123456789,
+    123456790
+  ],
+  "totals": {
+    "A": {
+      "passed": 1,
+      "runs": 2,
+      "formal_navigation_calls": 1,
+      "wrong_navigation_calls": 0,
+      "model_calls": 7,
+      "prompt_tokens": 51339,
+      "completion_tokens": 1504,
+      "inference_seconds": 68.843
+    },
+    "B": {
+      "passed": 2,
+      "runs": 2,
+      "formal_navigation_calls": 2,
+      "wrong_navigation_calls": 0,
+      "model_calls": 4,
+      "prompt_tokens": 26638,
+      "completion_tokens": 689,
+      "inference_seconds": 35.203
+    }
+  },
+  "fixed_comparison": [
+    {
+      "arm": "A",
+      "passed": false,
+      "navigation": {
+        "formal_navigations": [
+          {
+            "ref": "task_turn_effect:4f5421a461424ccd",
+            "ok": true,
+            "args": {
+              "url": "https://example.com/production_browser_record"
+            },
+            "http_status": 404,
+            "observed_url": "https://example.com/production_browser_record",
+            "exact_task_url": false
+          }
+        ],
+        "all_navigations_exact": false,
+        "target_loaded": false,
+        "wrong_navigation_count": 1,
+        "successful_stage_refs": {
+          "browser_snapshot": [
+            "task_turn_effect:24b89f8ac5c66785"
+          ],
+          "browser_fill": [],
+          "browser_click": [],
+          "browser_wait": [],
+          "browser_read": []
+        },
+        "completed_chain_refs": [],
+        "browser_chain_reached": false
+      }
+    },
+    {
+      "arm": "B",
+      "passed": true,
+      "navigation": {
+        "formal_navigations": [
+          {
+            "ref": "task_turn_effect:462afe5c9295f1d2",
+            "ok": true,
+            "args": {
+              "url": "https://example.com/production-browser-record"
+            },
+            "http_status": 200,
+            "observed_url": "https://example.com/production-browser-record",
+            "exact_task_url": true
+          }
+        ],
+        "all_navigations_exact": true,
+        "target_loaded": true,
+        "wrong_navigation_count": 0,
+        "successful_stage_refs": {
+          "browser_snapshot": [
+            "task_turn_effect:792cab5894bbb0d2",
+            "task_turn_effect:54a3aee61758b59a"
+          ],
+          "browser_fill": [
+            "task_turn_effect:06522967bf0bc783"
+          ],
+          "browser_click": [
+            "task_turn_effect:7e78423219f8c9a5"
+          ],
+          "browser_wait": [
+            "task_turn_effect:53be0ff1b8b2a604"
+          ],
+          "browser_read": [
+            "task_turn_effect:850164966fe8255e"
+          ]
+        },
+        "completed_chain_refs": [
+          [
+            "task_turn_effect:462afe5c9295f1d2",
+            "task_turn_effect:792cab5894bbb0d2",
+            "task_turn_effect:06522967bf0bc783",
+            "task_turn_effect:54a3aee61758b59a",
+            "task_turn_effect:7e78423219f8c9a5",
+            "task_turn_effect:53be0ff1b8b2a604",
+            "task_turn_effect:850164966fe8255e"
+          ]
+        ],
+        "browser_chain_reached": true
+      }
+    }
+  ],
+  "audit": {
+    "task_source_equal_per_pair": true,
+    "live_model_code_unmodified": true,
+    "original_url_in_real_receipts": true,
+    "scores_unchanged_after_diagnostic_fix": true,
+    "execution_core_unchanged": true,
+    "fixed_only_changes_navigation_argument": true
+  },
+  "diagnostic_revision": "Export observed URL from browser_navigate canonical value.url instead of nonexistent page_url; all verdicts unchanged, original run preserved.",
+  "validation": {
+    "pytest-final": {
+      "command": "python -m pytest tests/test_basic_navigation_url_ab.py tests/test_task_contract_fixed_replies.py -q --basetemp=.e2e-artifacts/basic-navigation-url-20261113/fixed-final",
+      "exit_code": 0,
+      "log": "checks/pytest-final.txt"
+    },
+    "pytest-audit-final": {
+      "command": "python -m pytest tests/test_basic_navigation_url_ab.py -q --basetemp=.e2e-artifacts/basic-navigation-url-20261113/audit-final",
+      "exit_code": 0,
+      "log": "checks/pytest-audit-final.txt"
+    },
+    "ruff": {
+      "command": "python -m ruff check .",
+      "exit_code": 0,
+      "log": "checks/ruff.txt"
+    },
+    "mypy-production": {
+      "command": "python -m mypy codey --python-version 3.11",
+      "exit_code": 0,
+      "log": "checks/mypy-production.txt"
+    },
+    "mypy-experiment": {
+      "command": "python -m mypy tools/basic_navigation_url_ab.py tests/test_basic_navigation_url_ab.py --explicit-package-bases --python-version 3.11 --follow-imports=silent --disallow-any-expr",
+      "exit_code": 0,
+      "log": "checks/mypy-experiment.txt"
+    },
+    "pyrefly": {
+      "command": "python -m pyrefly check codey tools/basic_navigation_url_ab.py tests/test_basic_navigation_url_ab.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "checks/pyrefly.txt"
+    },
+    "ty": {
+      "command": "python -m ty check codey tools/basic_navigation_url_ab.py tests/test_basic_navigation_url_ab.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "checks/ty.txt"
+    },
+    "precision": {
+      "command": "python -m tools.kernel_type_precision_gate",
+      "exit_code": 0,
+      "log": "checks/precision.txt"
+    }
+  },
+  "experimental_tests": 16,
+  "combined_regressions": 27,
+  "decision": "Keep experimental. Fixed transcription error eliminated and live selector adopted; A live failure was compilation, not URL transcription, so no causal reliability claim.",
+  "limitations": [
+    "Two paired seeds on a controlled fixture; request clock contexts differ.",
+    "A also failed compilation before navigation; live URL-transcription failure was not observed.",
+    "Production source prefetch remains; formal navigation counts use browser_navigate receipts only.",
+    "Multiple source selection, intermediate navigation, redirects and general websites not tested."
+  ],
+  "archive_sha256": "6a2275122c0443321fcd228abb2beca34f9ebf70ad24f27247d56e178e2cc66e"
+}
