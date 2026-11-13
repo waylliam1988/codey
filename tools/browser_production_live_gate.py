@@ -129,6 +129,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              model_reports_metadata: bool = False,
              expected_amount: int = 173, expected_code: str = "QUARTZ_851",
              additional_required_tools: tuple[str, ...] = (),
+             explanation_bindings: tuple[str, ...] = BINDINGS,
              explanation_schema: JsonObject | None = None) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
@@ -236,7 +237,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             "点击 Load record，再用 browser_read 读取本次加载后的完整记录。")
     if structured or explanation_output:
         required.update({"browser_eval", "browser_tab_list"})
-    bindings: tuple[str, ...] = BINDINGS if explanation_output else ()
+    bindings: tuple[str, ...] = explanation_bindings if explanation_output else ()
     if explanation_output:
         task += "最终 done.summary 只填自然语言解释，分两段，不重复 URL 或 token；应用从正式回执填入精确 JSON 字段。"
     if bound_output:

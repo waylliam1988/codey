@@ -20,8 +20,8 @@ _ACTION = re.compile(
     r"web_search|open_url|上网|联网查询|在线查找|查网页|查资料|官方文档|浏览网页|读取网页|"
     r"\b(?:browse|search the web|look online)\b", re.IGNORECASE)
 _OPEN = re.compile(r"打开|访问|读取|浏览|看看|查看|分析|了解|\b(?:open|visit|inspect|read|look at)\b", re.IGNORECASE)
-_NEGATED = re.compile(r"(?:不要|勿|禁止|无需|不需要|不用|不必|do not|don't|never|without)"
-                      r"(?:\s|使用|用|再|去|帮我|请)*$", re.IGNORECASE)
+_NEGATED = re.compile(r"(?:不要|勿|禁止|不允许|无需|不需要|不用|不必|do not|don't|never|without)"
+                      r"(?:\s|直接|使用|用|再|去|帮我|请|directly\b)*$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)

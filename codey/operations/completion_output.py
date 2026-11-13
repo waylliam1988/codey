@@ -64,8 +64,8 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
             raise OutputBindingError("Invalid declared tool requirement.") from exc
         if requirement is None:
             continue
-        if requirement.answer_contains and not explanation:
-            raise OutputBindingError("Explanation containment requires json_explanation.")
+        if (requirement.answer_contains or requirement.omit_from_explanation) and not explanation:
+            raise OutputBindingError("An explanation occurrence rule requires json_explanation.")
         if requirement.browser_text is not None and not explanation:
             raise OutputBindingError("Browser text fields require json_explanation.")
         if explanation and not requirement.answer_contains and requirement.answer_pointer is not None and (

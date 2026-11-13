@@ -74,9 +74,13 @@ def test_ambiguous_or_unrequested_addresses_have_no_binding(task: str) -> None:
     assert not result.ok and not calls
 
 
-@pytest.mark.parametrize("kind", ["research", "hybrid", "project"])
-def test_initial_binding_is_scoped_to_ordinary_chat(kind: str) -> None:
+@pytest.mark.parametrize("kind", ["research", "project"])
+def test_initial_binding_is_scoped_to_ordinary_chat_and_hybrid(kind: str) -> None:
     assert build_turn_snapshot(session_for(f"打开 {URL}", kind=kind)).task_navigation_url is None
+
+
+def test_hybrid_uses_the_original_task_address() -> None:
+    assert build_turn_snapshot(session_for(f"打开 <{ORIGINAL}>", kind="hybrid")).task_navigation_url == ORIGINAL
 
 
 def test_authorization_and_frozen_required_source_must_match() -> None:
@@ -116,6 +120,10 @@ def test_composed_model_exposure_can_use_its_authorized_nested_navigation() -> N
     (f"Open {URL} and do not visit {URL}", None),
     (f"Do not visit {URL}. I changed my mind: please open {URL}", URL),
     (f"不要打开 {URL}。我改主意了，请打开 {URL}。", URL),
+    (f"禁止直接打开 {URL}", None),
+    (f"不允许访问 <{URL}>", None),
+    (f"Never directly open {URL}", None),
+    (f"Never directly open {URL}. Please read {URL}", URL),
     (f"Do not visit {URL} and open {URL}", URL),
     (f"Open {URL}. Do not visit {URL}. Please open {URL}", URL),
     (f"Do not visit {URL}. Please open {URL}. Do not visit {URL}", None),

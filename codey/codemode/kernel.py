@@ -37,6 +37,10 @@ if TYPE_CHECKING:
 
 
 def _simplified_failure(result: ToolResult, spec: ToolSpec, children: Mapping[str, ToolResult]) -> ToolResult:
+    if "action" in dict(spec.parameters):
+        from codey.operations.structured_actions import action_failure
+
+        return action_failure(result, spec, children)
     from codey.operations.browser_copy import EXPIRED, captured_data, write_unconfirmed
     from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
     from codey.toolchain.tool_prompt import tool_repair_text

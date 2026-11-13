@@ -47,11 +47,12 @@ def _normalize_kind(value: object) -> str:
 
 
 def _has_project(submission: object) -> bool:
-    return bool(str(getattr(submission, "project", "") or "").strip())
+    project: object = getattr(submission, "project", "")
+    return bool(str(project or "").strip())
 
 
 def _requested_grants(submission: object) -> frozenset[str]:
-    raw = getattr(submission, "requested_capabilities", ())
+    raw: object = getattr(submission, "requested_capabilities", ())
     if isinstance(raw, str):
         raw = (raw,)
     items: Iterable[object] = raw if isinstance(raw, Iterable) else ()
@@ -65,7 +66,7 @@ def _requested_grants(submission: object) -> frozenset[str]:
 
 def _denied_grants(submission: object) -> set[str]:
     """Entry-generated explicit denials; control can never be denied."""
-    raw = getattr(submission, "denied_capabilities", ())
+    raw: object = getattr(submission, "denied_capabilities", ())
     if isinstance(raw, str):
         raw = (raw,)
     items: Iterable[object] = raw if isinstance(raw, Iterable) else ()
@@ -90,9 +91,9 @@ class TaskPolicy:
     denied_capabilities: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "grants", frozenset(self.grants))
-        object.__setattr__(self, "denied_capabilities", frozenset(self.denied_capabilities))
-        object.__setattr__(self, "required_checks", tuple(self.required_checks))
+        object.__setattr__(self, "grants", frozenset[str](self.grants))
+        object.__setattr__(self, "denied_capabilities", frozenset[str](self.denied_capabilities))
+        object.__setattr__(self, "required_checks", tuple[str, ...](self.required_checks))
 
     def allows(self, grant: object) -> bool:
         text = _normalize_grant(grant)
@@ -117,25 +118,29 @@ class TaskPolicy:
     def from_payload(payload: object) -> TaskPolicy:
         if not isinstance(payload, dict):
             raise ValueError("task policy must be an object")
-        if set(payload) != _TASK_POLICY_FIELDS:
-            raise ValueError(f"task policy fields differ: {set(payload) ^ _TASK_POLICY_FIELDS}")
-        version = payload["version"]
+        row: dict[object, object] = payload
+        if set(row) != _TASK_POLICY_FIELDS:
+            raise ValueError(f"task policy fields differ: {set(row) ^ _TASK_POLICY_FIELDS}")
+        version = row["version"]
         if type(version) is not int or version != TASK_POLICY_VERSION:
             # 冷启动无兼容负担：未知版本直接拒绝，由调用方 fail-closed，
             # 绝不按当前格式继续解释。
             raise ValueError(f"unsupported task policy version: {version!r}")
-        grants = _restored_grants(payload["grants"], "grants")
-        denied = _restored_grants(payload["denied_capabilities"], "denied_capabilities")
-        raw_checks = payload["required_checks"]
-        if not isinstance(raw_checks, (list, tuple)) or any(
-            not isinstance(item, str) or not item.strip() for item in raw_checks
-        ):
+        grants = _restored_grants(row["grants"], "grants")
+        denied = _restored_grants(row["denied_capabilities"], "denied_capabilities")
+        raw_checks = row["required_checks"]
+        if not isinstance(raw_checks, (list, tuple)):
             raise ValueError("required_checks must contain nonempty strings")
-        checks = tuple(raw_checks)
+        items: Iterable[object] = raw_checks
+        checks: list[str] = []
+        for item in items:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError("required_checks must contain nonempty strings")
+            checks.append(item)
         # Preserve every requirement; the completion gate rejects overflow.
-        strict = _restored_bool(payload["strict_research"], "strict_research")
-        sources_open_required = _restored_bool(payload["sources_open_required"], "sources_open_required")
-        source = payload["source"]
+        strict = _restored_bool(row["strict_research"], "strict_research")
+        sources_open_required = _restored_bool(row["sources_open_required"], "sources_open_required")
+        source = row["source"]
         if not isinstance(source, str):
             raise ValueError("source must be a string")
         return TaskPolicy(
@@ -150,11 +155,15 @@ class TaskPolicy:
 
 
 def _restored_grants(value: object, field: str) -> set[str]:
-    if not isinstance(value, (list, tuple, set, frozenset)) or any(
-        not isinstance(item, str) or item not in KNOWN_TASK_GRANTS for item in value
-    ):
+    if not isinstance(value, (list, tuple, set, frozenset)):
         raise ValueError(f"{field} must contain known capability names")
-    return set(value)
+    items: Iterable[object] = value
+    grants: set[str] = set()
+    for item in items:
+        if not isinstance(item, str) or item not in KNOWN_TASK_GRANTS:
+            raise ValueError(f"{field} must contain known capability names")
+        grants.add(item)
+    return grants
 
 
 def _restored_bool(value: object, field: str) -> bool:
@@ -176,6 +185,7 @@ def _entry_tool_checks(raw: object, *, kind: str, strict: bool, explanation: boo
     from codey.policies.tool_requirement import ToolSuccessRequirement, parse_tool_success_check, required_tool_names
 
     declared: list[str] = []
+    occurrences: dict[ToolSuccessRequirement, set[bool]] = {}
     for name in required_tool_names(raw):
         if (browser := parse_browser_requirement(name)) is not None:
             if isinstance(browser, BrowserPageRounds):
@@ -186,10 +196,32 @@ def _entry_tool_checks(raw: object, *, kind: str, strict: bool, explanation: boo
             declared.append(browser.declaration)
         else:
             requirement = parse_tool_success_check(name) or ToolSuccessRequirement(name)
-            if requirement.browser_text is not None and not explanation:
-                raise ValueError("browser text fields require json_explanation")
+            if (requirement.browser_text is not None or requirement.answer_contains
+                    or requirement.omit_from_explanation) and not explanation:
+                raise ValueError("browser text fields and explanation occurrence rules require json_explanation")
+            if requirement.structured_actions and (strict or kind not in {"chat", "hybrid"}):
+                raise ValueError("structured actions require ordinary Chat or Hybrid")
+            if requirement.answer_contains or requirement.omit_from_explanation:
+                from dataclasses import replace
+
+                selector = replace(requirement, answer_pointer="/explanation", answer_contains=True,
+                                   omit_from_explanation=False)
+                modes = occurrences.setdefault(selector, set())
+                modes.add(requirement.answer_contains)
+                if len(modes) > 1:
+                    raise ValueError("the same selected value cannot be required and forbidden in explanation")
             declared.append(requirement.declaration)
     return tuple(declared)
+
+
+def _entry_output_check(submission: object, *, strict: bool) -> str:
+    from codey.policies.output_requirement import declaration
+
+    output_format: object = getattr(submission, "output_format", "text")
+    output_schema: object = getattr(submission, "output_schema", "")
+    if not isinstance(output_format, str) or not isinstance(output_schema, str):
+        raise ValueError("output format and schema must be strings")
+    return declaration(output_format, output_schema, strict_research=strict)
 
 
 def build_task_policy(
@@ -201,8 +233,10 @@ def build_task_policy(
     """Build the immutable policy for one task from user intent only."""
     kind = _normalize_kind(task_kind)
     # The Research button is user intent; model output is never consulted here.
-    strict = (strict_research is True) or bool(getattr(submission, "strict_research", False) is True)
-    sources_open_required = bool(getattr(submission, "sources_open_required", False) is True)
+    requested_strict: object = getattr(submission, "strict_research", False)
+    requested_sources: object = getattr(submission, "sources_open_required", False)
+    strict = (strict_research is True) or requested_strict is True
+    sources_open_required = requested_sources is True
     has_project = _has_project(submission)
     requested = _requested_grants(submission)
 
@@ -272,19 +306,19 @@ def build_task_policy(
     grants.update(_browser_grants(kind, requested))
 
     # Unknown requested capabilities are ignored (denied); they never widen grants.
-    grants.intersection_update(KNOWN_TASK_GRANTS | {"control"})
+    grants.intersection_update(KNOWN_TASK_GRANTS)
     # 入口显式否决最后统一扣除：默认授权、requested、strict 分支都不能加回。
     denied = _denied_grants(submission)
     grants -= denied
 
     strict_checks = RESEARCH_ANSWER_REQUIRED_CHECKS if kind == "research" else STRICT_RESEARCH_REQUIRED_CHECKS
     required_checks = strict_checks if strict else (("research_sources_opened",) if sources_open_required else ())
-    if getattr(submission, "project_changes_required", False) is True:
+    changes_required: object = getattr(submission, "project_changes_required", False)
+    if changes_required is True:
         required_checks = (*required_checks, "project_changes_required")
-    from codey.policies.output_requirement import declaration, has_explanation
+    from codey.policies.output_requirement import has_explanation
 
-    output = declaration(getattr(submission, "output_format", "text"), getattr(submission, "output_schema", ""),
-                         strict_research=strict)
+    output = _entry_output_check(submission, strict=strict)
     required_checks = (*required_checks, *((output,) if output else ()))
     required_checks = (*required_checks, *_entry_tool_checks(getattr(submission, "required_tools", ()), kind=kind,
                                                             strict=strict, explanation=has_explanation(required_checks)))
