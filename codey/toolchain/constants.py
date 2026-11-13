@@ -15,6 +15,7 @@ FULL_READ_REFERENCE_HINT = (
     "Use the latest complete read_file receipt reference. In CodeMode pass readResult.result_ref, "
     "not readResult.value.result_ref; value contains file data."
 )
+STALE_READ_REFERENCE_CODE = "stale_read_reference"
 STALE_READ_REFERENCE_ERROR = (
     "file version changed since the referenced full read. Read the current file again with read_file "
     "before retrying; the old receipt cannot authorize this write. " + FULL_READ_REFERENCE_HINT

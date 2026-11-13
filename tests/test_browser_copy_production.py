@@ -48,7 +48,7 @@ def test_copy_scope_is_explicit_and_narrow() -> None:
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 @pytest.mark.parametrize("case", [
-    "table", "json", "expired", "changed_data", "changed_file", "wrong_selector", "wrong_target", "raw_code", "duplicate", "parent_return", "observe_return",
+    "table", "json", "expired", "changed_data", "changed_file", "wrong_selector", "wrong_target", "raw_code", "duplicate", "parent_return", "observe_return", "unconfirmed",
 ])
 def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str) -> None:
     table = case in {"table", "wrong_selector", "duplicate"}
@@ -56,6 +56,11 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     task = (f"打开 {URL}，把 Retail 表中 B-17 的 Due 以整数原样写入 ledger.json 的 payable。"
             if table else f"打开 {URL}，把运单号原样写入 dispatch.json 的 carrier_label，保留前导零。")
     task += "保留其他字段。"
+    if case == "unconfirmed":
+        def fail_identity(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            raise RuntimeError("injected post-write identity failure")
+
+        monkeypatch.setattr("codey.operations.kernel_execution.sync_workspace_state_after_edit", fail_identity)
     if case in {"parent_return", "observe_return"}:
         original_lower = CopyTurn.lower
 
@@ -163,6 +168,15 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     if case == "duplicate":
         assert result.stop_reason == "question" and not edits and injected is None
         return
+    if case == "unconfirmed":
+        assert result.stop_reason == "controller_failure"
+        assert any(row.result.call.name == "codemode" and "already occurred" in row.result.model_text
+                   for row in receipts)
+        assert len(edits) == 2 and not edits[-1].ok and edits[-1].canonical["mutation_applied"] is True
+        assert len(snapshots) == 2
+        assert parse_json_object(file.read_text(encoding="utf-8"))[field] == "000783"
+        assert injected == snapshots[0] and snapshots[0] != snapshots[1]
+        return
     if case == "changed_file":
         assert result.stop_reason != "done"
         assert len(edits) == 2 and edits[-1].ok
@@ -187,6 +201,7 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
                         and conflict_ref in children)
         assert "Retry with the same source;" in conflict.model_text
         assert "Do not replay the whole operation" not in conflict.model_text
+        assert "readResult" not in conflict.model_text and "base_result_ref" not in conflict.model_text
     if case == "parent_return":
         failures = [row.result for row in receipts if row.result.call.name == "codemode" and not row.result.ok
                     and row.result.audit.get("error_code") == "missing_return"]

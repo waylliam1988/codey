@@ -23,7 +23,7 @@ from codey.providers.error_classification import ContextOverflowError
 from codey.providers.text_result_views import TEXT_RESULTS_KEY, TextResultSpan
 from codey.providers.token_accounting import RequestContextCount
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.constants import STALE_READ_REFERENCE_ERROR
+from codey.toolchain.constants import STALE_READ_REFERENCE_CODE, STALE_READ_REFERENCE_ERROR
 from codey.toolchain.tool_prompt import contract_semantics
 from codey.types.json_value import JsonObject, parse_json_object
 from tests.test_model_input_binding import copy_snapshot, upload_snapshot
@@ -75,7 +75,7 @@ def test_simplified_failure_guidance_matches_write_facts(state: str) -> None:
     binding = copy_snapshot().input_binding
     assert binding is not None
     child = ToolResult(ToolCall("edit", {}), STALE_READ_REFERENCE_ERROR if state == "conflict" else "write outcome",
-                       ok=state == "written")
+                       ok=state == "written", audit={"error_code": STALE_READ_REFERENCE_CODE} if state == "conflict" else {})
     result = _simplified_failure(ToolResult(ToolCall("codemode", {}), "failed", ok=False), binding.model_spec, {"edit": child})
     if state == "written":
         assert "file write completed" in result.model_text and "Do not repeat the write" in result.model_text

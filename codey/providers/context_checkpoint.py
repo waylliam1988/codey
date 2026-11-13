@@ -170,14 +170,22 @@ def reduce_old_outputs(codec: ApiCodec, items: list[dict[str, object]], result_r
             item[key] = ("[Stored body omitted from this view]\n" + metadata.render() + "\n"
                          + "Read it with read_tool_result. Do not execute it again.")
         else:
-            encoded = summary_source(text)
-            if not isinstance(encoded, str):
-                item[key] = _source_json(encoded)
+            item[key] = _encode_retained_output(text)
     from codey.providers.text_result_views import reduce_text_results
 
     for index in _old_text_indices(codec, result):
         result[index] = dict[str, object](reduce_text_results(decode_json_object(result[index]), result_refs))
     return result
+
+
+def _encode_retained_output(text: str) -> str:
+    metadata = result_metadata_from_text(text)
+    body, footer = text, ""
+    if metadata is not None:
+        body, marker, tail = text.rpartition(metadata.render())
+        footer = "\n" + marker + tail
+    encoded = summary_source(body)
+    return text if isinstance(encoded, str) else _source_json(encoded) + footer
 
 
 def validate_summary(text: str) -> str:

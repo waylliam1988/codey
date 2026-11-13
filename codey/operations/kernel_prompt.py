@@ -273,7 +273,7 @@ def _completion_followup(feedback: str, *, native: bool, structured_report: bool
 
 
 def _child_failure_context(result: ToolResult, session: TaskSession) -> str:
-    from codey.operations.browser_copy import captured_data, committed_children
+    from codey.operations.browser_copy import captured_data, committed_children, write_unconfirmed
 
     references = result.canonical.get("child_effect_ids")
     failures: list[JsonObject] = []
@@ -284,8 +284,14 @@ def _child_failure_context(result: ToolResult, session: TaskSession) -> str:
         for reference in references:
             child = session._memory_results.get(reference) if isinstance(reference, str) else None
             if child is not None and not child.ok:
-                failures.append({"result_ref": reference, "tool": child.call.name,
-                                 "ok": False, "error": child.model_text[:2_000]})
+                failure: JsonObject = {"result_ref": reference, "tool": child.call.name, "ok": False}
+                if result.audit.get("simplified_input") is True:
+                    failure["error_code"] = str(child.audit.get("error_code", "error"))
+                    if write_unconfirmed(child):
+                        failure["mutation_applied"] = True
+                else:
+                    failure["error"] = child.model_text[:2_000]
+                failures.append(failure)
             elif child is not None and child.call.name == "read_file":
                 reads.append({"result_ref": reference, "tool": child.call.name,
                               "path": child.call.args.get("path"), "ok": True})

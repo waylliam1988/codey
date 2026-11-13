@@ -37,22 +37,27 @@ if TYPE_CHECKING:
 
 
 def _simplified_failure(result: ToolResult, spec: ToolSpec, children: Mapping[str, ToolResult]) -> ToolResult:
-    from codey.operations.browser_copy import EXPIRED, captured_data
-    from codey.toolchain.constants import STALE_READ_REFERENCE_ERROR
+    from codey.operations.browser_copy import EXPIRED, captured_data, write_unconfirmed
+    from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
     from codey.toolchain.tool_prompt import tool_repair_text
 
-    detail = result.model_text
-    audit = result.audit
+    detail = "The fixed operation did not complete."
+    audit = {**result.audit, "simplified_input": True}
     error_code = audit.get("error_code")
     if error_code in {"syntax_error", "missing_return", "result_encoding", "result_contract"}:
-        audit = {**audit, "template_error": detail}
+        audit["template_error"] = result.model_text
         detail = f"The fixed runtime template failed ({error_code}); the model cannot repair its JavaScript."
+    else:
+        audit["runtime_error"] = result.model_text
     if children:
         detail += "\nSettled child receipts (the parent failure does not undo their effects): " + ", ".join(children)
         edits = [child for child in children.values() if child.call.name == "edit"]
-        if any(child.ok for child in edits):
+        if any(write_unconfirmed(child) for child in edits):
+            detail += ("\nThe file write already occurred, but workspace identity is unconfirmed. "
+                       "Do not repeat the write. Copying is blocked pending a check of the file and workspace identity.")
+        elif any(child.ok for child in edits):
             detail += "\nThe file write completed. Do not repeat the write."
-        elif edits and all(not child.ok and STALE_READ_REFERENCE_ERROR in child.model_text for child in edits):
+        elif edits and all(not child.ok and child.audit.get("error_code") == STALE_READ_REFERENCE_CODE for child in edits):
             detail += ("\nThe file write was rejected before writing because its file version changed. "
                        "Retry with the same source; the fixed program reads the current file before editing.")
         elif edits and all(not child.ok and child.audit.get("error_code") == EXPIRED for child in edits):

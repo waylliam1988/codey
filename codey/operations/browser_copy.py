@@ -165,6 +165,11 @@ def committed_children(results: Mapping[str, ToolResult]) -> set[str]:
     return committed
 
 
+def write_unconfirmed(result: ToolResult) -> bool:
+    return result.call.name == "edit" and not result.ok and (
+        result.canonical.get("mutation_applied") is True or result.audit.get("mutation_applied") is True)
+
+
 @dataclass(frozen=True)
 class CopyTurn:
     target: CopyTarget
@@ -236,6 +241,11 @@ def _object(properties: dict[str, dict[str, object]]) -> dict[str, object]:
 
 
 def copy_turn(target: CopyTarget, task: str, results: Mapping[str, ToolResult]) -> CopyTurn:
+    for ref, result in results.items():
+        if result.call.args.get("path") == target.path and write_unconfirmed(result):
+            raise ValueError(f"The file write already occurred ({ref}, {target.path}), but workspace identity "
+                             "is unconfirmed. Do not repeat the write. This copy operation is blocked. Check the "
+                             "current file and workspace identity before starting another operation.")
     keys = {match.group(0) for match in re.finditer(r"(?<![\w-])[A-Z]+-\d+(?![\w-])", _URL.sub("", task))}
     key = next(iter(keys)) if len(keys) == 1 else ""
     committed = committed_children(results)

@@ -7,7 +7,7 @@ from codey.codemode.identity import rpc_child_index
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE, replace_json_fields
 from codey.codemode.types import ToolCatalogEntry
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.constants import STALE_READ_REFERENCE_ERROR
+from codey.toolchain.constants import STALE_READ_REFERENCE_CODE, STALE_READ_REFERENCE_ERROR
 from codey.toolchain.result_schema import validate_output
 from codey.types.json_value import JsonObject, decode_json_object
 
@@ -86,7 +86,7 @@ class CodeModeHost:
             raise TypeError("host executor must return a ToolResult")
         if not raw.ok:
             error = raw.model_text
-            if json_edit and STALE_READ_REFERENCE_ERROR in error:
+            if json_edit and raw.audit.get("error_code") == STALE_READ_REFERENCE_CODE:
                 error = f"{STALE_READ_REFERENCE_ERROR} {JSON_FIELD_EDIT_GUIDANCE}"
             return {"ok": False, "error": error}
         value = successful_tool_value(raw, self._catalog[tool_name])
@@ -95,10 +95,11 @@ class CodeModeHost:
             output["result_ref"] = ref
             if (tool_name == "read_file" and "edit" in self._catalog
                     and isinstance(ref, str) and isinstance(value, dict) and not raw.truncated):
-                path, text = decoded_args.get("path"), value.get("text")
-                if (isinstance(path, str) and isinstance(text, str) and value.get("text_complete") is True
-                        and value.get("start_line") == 1 and value.get("next_offset") == 0
-                        and value.get("end_line") == value.get("total_lines")):
+                data = decode_json_object(value)
+                path, text = decoded_args.get("path"), data.get("text")
+                if (isinstance(path, str) and isinstance(text, str) and data.get("text_complete") is True
+                        and data.get("start_line") == 1 and data.get("next_offset") == 0
+                        and data.get("end_line") == data.get("total_lines")):
                     self._complete_reads[ref] = (path, text)
         return output
 

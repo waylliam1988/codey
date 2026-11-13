@@ -37,7 +37,12 @@ from codey.runtime.core.models import (
 from codey.runtime.core.output_capture import CAPTURE_LIMIT_BYTES
 from codey.storage.atomic_io import write_text_atomic
 from codey.storage.execution_output_store import ExecutionOutputStore
-from codey.toolchain.constants import EXACT_REPLACEMENT_CONTEXT_HINT, MAX_REPLACEMENTS, STALE_READ_REFERENCE_ERROR
+from codey.toolchain.constants import (
+    EXACT_REPLACEMENT_CONTEXT_HINT,
+    MAX_REPLACEMENTS,
+    STALE_READ_REFERENCE_CODE,
+    STALE_READ_REFERENCE_ERROR,
+)
 from codey.toolchain.line_prefix import strip_line_number_prefixes as _strip_line_number_prefixes
 from codey.toolchain.presentation import edit_preview
 from codey.utils.references import find_reference_hints
@@ -406,7 +411,7 @@ def _write_text_after_final_path_check(
         from codey.workspace.paths import path_hash
 
         if path_hash(path) != expected_version:
-            return ToolOutcome.error(STALE_READ_REFERENCE_ERROR)
+            return ToolOutcome.error(STALE_READ_REFERENCE_ERROR, error_code=STALE_READ_REFERENCE_CODE)
     write_text_atomic(path, content)
     return None
 
@@ -427,7 +432,7 @@ def write_file(root: Path, rel: str, content: str, *, expected_version: str | No
                         from codey.workspace.paths import content_hash
 
                         if content_hash(before) != expected_version:
-                            return ToolOutcome.error(STALE_READ_REFERENCE_ERROR)
+                            return ToolOutcome.error(STALE_READ_REFERENCE_ERROR, error_code=STALE_READ_REFERENCE_CODE)
                     return ToolOutcome(f"wrote {rel} (no changes)", True)
             except (OSError, UnicodeDecodeError, ValueError):
                 # Best-effort hint only: the authoritative path check
@@ -503,8 +508,8 @@ def _edit_anchor(content: str, search: str) -> tuple[str, str, int] | None:
     candidates: list[tuple[str, str]] = []
     seen: set[str] = set()
     for match in EDIT_ANCHOR_RE.finditer(search):
-        literal = match.group("literal")
-        identifier = match.group("identifier")
+        literal: str | None = match.group("literal")
+        identifier: str | None = match.group("identifier")
         value = literal or identifier or ""
         if (
             not value
@@ -516,7 +521,10 @@ def _edit_anchor(content: str, search: str) -> tuple[str, str, int] | None:
         seen.add(value)
         kind = "literal" if literal is not None else "identifier"
         candidates.append((value, kind))
-    candidates.sort(key=lambda item: -len(item[0]))
+    def descending_length(item: tuple[str, str]) -> int:
+        return -len(item[0])
+
+    candidates.sort(key=descending_length)
     for value, kind in candidates[:EDIT_FAILURE_MAX_ANCHOR_CANDIDATES]:
         position = _unique_anchor_position(content, value, kind)
         if position is not None:
@@ -797,15 +805,9 @@ def _append_page_metadata(content: str, metadata: str) -> str:
 
 
 def _read_file_next_call(rel: str, offset: int, limit: int) -> str:
+    payload: dict[str, object] = {"tool": "read_file", "args": {"path": rel, "offset": offset, "limit": limit}}
     return json.dumps(
-        {
-            "tool": "read_file",
-            "args": {
-                "path": rel,
-                "offset": offset,
-                "limit": limit,
-            },
-        },
+        payload,
         ensure_ascii=False,
         separators=(",", ":"),
     )
