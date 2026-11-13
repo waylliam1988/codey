@@ -1,0 +1,1449 @@
+{
+  "scope": "bounded_selector_controlled_search_and_detail_sources_real_local_model_and_chromium",
+  "formal_directory": ".e2e-artifacts\\navigation-candidate-20261113\\formal",
+  "formal_sampling_script_sha256": "23d09af924577063059c77936c2323860d7bd128b13d6c0276b0ef1e192709c8",
+  "development_directory_excluded_from_results": ".e2e-artifacts\\navigation-candidate-20261113\\live",
+  "scoring_correction": "Before formal sampling, removed missing==empty-string from passed; required actual source and all requested facts instead. Added tests for empty, none and Chinese no-missing; reran the full live matrix after tests passed. No rescoring of development runs is used here.",
+  "aggregates": [
+    {
+      "group": "search",
+      "arm": "A",
+      "runs": 4,
+      "passed": 4,
+      "target_selected": 4,
+      "original_url_passed": 4,
+      "target_loaded": 4,
+      "facts_read": 4,
+      "facts_delivered": 4,
+      "model_calls": 12,
+      "prompt_tokens": 6252,
+      "completion_tokens": 724,
+      "inference_seconds": 26.985
+    },
+    {
+      "group": "search",
+      "arm": "B",
+      "runs": 4,
+      "passed": 4,
+      "target_selected": 4,
+      "original_url_passed": 4,
+      "target_loaded": 4,
+      "facts_read": 4,
+      "facts_delivered": 4,
+      "model_calls": 12,
+      "prompt_tokens": 6264,
+      "completion_tokens": 572,
+      "inference_seconds": 22.125
+    },
+    {
+      "group": "detail",
+      "arm": "A",
+      "runs": 4,
+      "passed": 4,
+      "target_selected": 4,
+      "original_url_passed": 4,
+      "target_loaded": 4,
+      "facts_read": 4,
+      "facts_delivered": 4,
+      "model_calls": 8,
+      "prompt_tokens": 4990,
+      "completion_tokens": 543,
+      "inference_seconds": 20.235
+    },
+    {
+      "group": "detail",
+      "arm": "B",
+      "runs": 4,
+      "passed": 4,
+      "target_selected": 4,
+      "original_url_passed": 4,
+      "target_loaded": 4,
+      "facts_read": 4,
+      "facts_delivered": 4,
+      "model_calls": 8,
+      "prompt_tokens": 5016,
+      "completion_tokens": 407,
+      "inference_seconds": 16.188
+    },
+    {
+      "group": "all",
+      "arm": "A",
+      "runs": 8,
+      "passed": 8,
+      "target_selected": 8,
+      "original_url_passed": 8,
+      "target_loaded": 8,
+      "facts_read": 8,
+      "facts_delivered": 8,
+      "model_calls": 20,
+      "prompt_tokens": 11242,
+      "completion_tokens": 1267,
+      "inference_seconds": 47.22
+    },
+    {
+      "group": "all",
+      "arm": "B",
+      "runs": 8,
+      "passed": 8,
+      "target_selected": 8,
+      "original_url_passed": 8,
+      "target_loaded": 8,
+      "facts_read": 8,
+      "facts_delivered": 8,
+      "model_calls": 20,
+      "prompt_tokens": 11280,
+      "completion_tokens": 979,
+      "inference_seconds": 38.313
+    }
+  ],
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "production_before": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+  "production_after": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+  "production_unchanged": true,
+  "results": [
+    {
+      "case": "food",
+      "group": "search",
+      "arm": "A",
+      "seed": 123456789,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o14d269aac019c3",
+          "reason": "该候选直接对应用户查询的“榕城检验站”、“2026 秋检”以及“福州鱼丸”，且摘要明确提到包含“净重与记录校验码”。",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full"
+        },
+        "selected": {
+          "title": "榕城检验站｜2026 秋检福州鱼丸",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "snippet": "本年度福州样本净重与记录校验码，查看完整记录",
+          "candidate_id": "o14d269aac019c3"
+        },
+        "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "previous_url": "about:blank",
+          "page_id": "2ed00580f6334fc79aef4aa1d50219a4",
+          "generation": 1,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "title": "记录查询",
+          "text": "## 榕城检验站 2026 秋检：福州鱼丸\n\n净重 173 克，记录校验码 QUARTZ_851。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "final_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "榕城检验站 2026 秋检的福州鱼丸，净重为 173 克，记录校验码是 QUARTZ_851。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 3,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.422,
+          "prompt_tokens": 257,
+          "completion_tokens": 28
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 3.594,
+          "prompt_tokens": 834,
+          "completion_tokens": 102
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.093,
+          "prompt_tokens": 511,
+          "completion_tokens": 57
+        }
+      ]
+    },
+    {
+      "case": "food",
+      "group": "search",
+      "arm": "B",
+      "seed": 123456789,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o14d269aac019c3",
+          "reason": "该候选直接对应用户查询的“榕城检验站 2026 秋检福州鱼丸”，且摘要明确提到包含“净重与记录校验码”。"
+        },
+        "selected": {
+          "title": "榕城检验站｜2026 秋检福州鱼丸",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "snippet": "本年度福州样本净重与记录校验码，查看完整记录",
+          "candidate_id": "o14d269aac019c3"
+        },
+        "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "previous_url": "about:blank",
+          "page_id": "aa65c3ed4d4d4d35a606b1cf5fb1ecfd",
+          "generation": 1,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "title": "记录查询",
+          "text": "## 榕城检验站 2026 秋检：福州鱼丸\n\n净重 173 克，记录校验码 QUARTZ_851。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "final_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "榕城检验站 2026 秋检的福州鱼丸，净重为 173 克，记录校验码是 QUARTZ_851。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 3,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.078,
+          "prompt_tokens": 257,
+          "completion_tokens": 28
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.453,
+          "prompt_tokens": 837,
+          "completion_tokens": 63
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.109,
+          "prompt_tokens": 511,
+          "completion_tokens": 57
+        }
+      ]
+    },
+    {
+      "case": "museum",
+      "group": "search",
+      "arm": "B",
+      "seed": 123456789,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o7b3af4609ffec1",
+          "reason": "该页面明确包含 2026 年秋季周五夜场的闭馆时间和最后入场时间，与用户问题高度匹配。"
+        },
+        "selected": {
+          "title": "澄川博物馆｜2026 秋季周五夜场参观须知",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "snippet": "本季夜场闭馆时间和最后入场时间",
+          "candidate_id": "o7b3af4609ffec1"
+        },
+        "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "previous_url": "about:blank",
+          "page_id": "46a1792b845c4bbcb295ee4666238f6f",
+          "generation": 1,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "title": "记录查询",
+          "text": "## 澄川博物馆 2026 秋季周五夜场\n\n闭馆时间 21:40，最后入场时间 20:55。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "final_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "澄川博物馆今年秋季周五夜场闭馆时间为 21:40，最晚入场时间为 20:55。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 3,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.141,
+          "prompt_tokens": 249,
+          "completion_tokens": 30
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.234,
+          "prompt_tokens": 787,
+          "completion_tokens": 55
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.969,
+          "prompt_tokens": 491,
+          "completion_tokens": 53
+        }
+      ]
+    },
+    {
+      "case": "museum",
+      "group": "search",
+      "arm": "A",
+      "seed": 123456789,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o7b3af4609ffec1",
+          "reason": "该候选直接对应用户查询的“2026年秋季周五夜场”，且摘要明确包含“闭馆时间”和“最后入场时间”。",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07"
+        },
+        "selected": {
+          "title": "澄川博物馆｜2026 秋季周五夜场参观须知",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "snippet": "本季夜场闭馆时间和最后入场时间",
+          "candidate_id": "o7b3af4609ffec1"
+        },
+        "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "previous_url": "about:blank",
+          "page_id": "63569cfeaf514877b619ef1afa2a0c4e",
+          "generation": 1,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "title": "记录查询",
+          "text": "## 澄川博物馆 2026 秋季周五夜场\n\n闭馆时间 21:40，最后入场时间 20:55。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "final_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "澄川博物馆今年秋季周五夜场闭馆时间为 21:40，最晚入场时间为 20:55。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 3,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.125,
+          "prompt_tokens": 249,
+          "completion_tokens": 30
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 3.422,
+          "prompt_tokens": 784,
+          "completion_tokens": 93
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.953,
+          "prompt_tokens": 491,
+          "completion_tokens": 53
+        }
+      ]
+    },
+    {
+      "case": "orders",
+      "group": "detail",
+      "arm": "A",
+      "seed": 123456789,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o1531ad3e9c8ac3",
+          "reason": "用户询问订单 A-173 的送达时间和追踪号，'配送详情'（delivery-detail）页面最可能包含这些信息。",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full"
+        },
+        "selected": {
+          "title": "配送详情",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "snippet": "订单 A-173 配送详情",
+          "candidate_id": "o1531ad3e9c8ac3"
+        },
+        "requested_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "previous_url": "https://example.com/account/orders",
+          "page_id": "90aefcf7cd85435eb1ff5ec3ffabc6d8",
+          "generation": 2,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "title": "记录查询",
+          "text": "## 订单 A-173 配送详情\n\n预计 2026-11-18 送达，追踪号 0042091。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+                "final_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "订单 A-173 预计 2026-11-18 送达，追踪号是 0042091。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 2,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 3.375,
+          "prompt_tokens": 747,
+          "completion_tokens": 93
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.0,
+          "prompt_tokens": 499,
+          "completion_tokens": 53
+        }
+      ]
+    },
+    {
+      "case": "orders",
+      "group": "detail",
+      "arm": "B",
+      "seed": 123456789,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o063bb702e7b4c3",
+          "reason": "用户询问订单 A-173 的送达时间和追踪号，'配送详情'（delivery-detail）页面最可能包含这两个信息。"
+        },
+        "selected": {
+          "title": "配送详情",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "snippet": "订单 A-173 配送详情",
+          "candidate_id": "o063bb702e7b4c3"
+        },
+        "requested_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "previous_url": "https://example.com/account/orders",
+          "page_id": "ae885892728349c483b661ba980f50d0",
+          "generation": 2,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "title": "记录查询",
+          "text": "## 订单 A-173 配送详情\n\n预计 2026-11-18 送达，追踪号 0042091。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+                "final_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "订单 A-173 预计 2026-11-18 送达，追踪号是 0042091。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 2,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.375,
+          "prompt_tokens": 760,
+          "completion_tokens": 59
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.031,
+          "prompt_tokens": 499,
+          "completion_tokens": 53
+        }
+      ]
+    },
+    {
+      "case": "inventory",
+      "group": "detail",
+      "arm": "B",
+      "seed": 123456789,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o7a22dabe733fc1",
+          "reason": "该候选直接对应用户查询的“西仓 RX-08 可用库存详情”。"
+        },
+        "selected": {
+          "title": "可用库存详情",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "snippet": "西仓 RX-08 可用库存详情",
+          "candidate_id": "o7a22dabe733fc1"
+        },
+        "requested_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "previous_url": "https://example.com/warehouse/stock-index",
+          "page_id": "583a34b4b080460781400f56a792a196",
+          "generation": 2,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "title": "记录查询",
+          "text": "## 西仓 RX-08 库存详情\n\n可用库存 37 件，记录版本 WEST_0037。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+                "final_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "西仓的 RX-08 现在有 37 件可用库存，库存记录是 WEST_0037 版。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 2,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.891,
+          "prompt_tokens": 767,
+          "completion_tokens": 44
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.75,
+          "prompt_tokens": 482,
+          "completion_tokens": 46
+        }
+      ]
+    },
+    {
+      "case": "inventory",
+      "group": "detail",
+      "arm": "A",
+      "seed": 123456789,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o3959251729acc1",
+          "reason": "该候选直接对应用户查询的“西仓 RX-08 可用库存详情”。",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037"
+        },
+        "selected": {
+          "title": "可用库存详情",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "snippet": "西仓 RX-08 可用库存详情",
+          "candidate_id": "o3959251729acc1"
+        },
+        "requested_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "previous_url": "https://example.com/warehouse/stock-index",
+          "page_id": "ab8686bf1c0047d2985d55e5a3bec76f",
+          "generation": 2,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "title": "记录查询",
+          "text": "## 西仓 RX-08 库存详情\n\n可用库存 37 件，记录版本 WEST_0037。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+                "final_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "西仓的 RX-08 现在有 37 件可用库存，库存记录是 WEST_0037 版。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 2,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.953,
+          "prompt_tokens": 763,
+          "completion_tokens": 79
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.75,
+          "prompt_tokens": 482,
+          "completion_tokens": 46
+        }
+      ]
+    },
+    {
+      "case": "food",
+      "group": "search",
+      "arm": "B",
+      "seed": 123456790,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o14d269aac019c3",
+          "reason": "该候选直接对应用户查询的“榕城检验站 2026 秋检福州鱼丸”，且摘要明确提到包含“净重与记录校验码”。"
+        },
+        "selected": {
+          "title": "榕城检验站｜2026 秋检福州鱼丸",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "snippet": "本年度福州样本净重与记录校验码，查看完整记录",
+          "candidate_id": "o14d269aac019c3"
+        },
+        "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "previous_url": "about:blank",
+          "page_id": "e5885ee194a044bbb9fc9c7e371ff321",
+          "generation": 1,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "title": "记录查询",
+          "text": "## 榕城检验站 2026 秋检：福州鱼丸\n\n净重 173 克，记录校验码 QUARTZ_851。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "final_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "榕城检验站 2026 秋检的福州鱼丸，净重为 173 克，记录校验码是 QUARTZ_851。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 3,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.078,
+          "prompt_tokens": 257,
+          "completion_tokens": 28
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.5,
+          "prompt_tokens": 837,
+          "completion_tokens": 63
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.125,
+          "prompt_tokens": 511,
+          "completion_tokens": 57
+        }
+      ]
+    },
+    {
+      "case": "food",
+      "group": "search",
+      "arm": "A",
+      "seed": 123456790,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o14d269aac019c3",
+          "reason": "该候选直接对应用户查询的“榕城检验站”、“2026 秋检”以及“福州鱼丸”，且摘要明确提到包含“净重与记录校验码”。",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full"
+        },
+        "selected": {
+          "title": "榕城检验站｜2026 秋检福州鱼丸",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "snippet": "本年度福州样本净重与记录校验码，查看完整记录",
+          "candidate_id": "o14d269aac019c3"
+        },
+        "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "previous_url": "about:blank",
+          "page_id": "38647dbcd8bb4512abd034b315a33f5f",
+          "generation": 1,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+          "title": "记录查询",
+          "text": "## 榕城检验站 2026 秋检：福州鱼丸\n\n净重 173 克，记录校验码 QUARTZ_851。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "final_url": "https://example.com/lab/autumn-2026/FZ-fish_ball?batch=0042&view=full",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "榕城检验站 2026 秋检的福州鱼丸，净重为 173 克，记录校验码是 QUARTZ_851。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 3,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.079,
+          "prompt_tokens": 257,
+          "completion_tokens": 28
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 3.718,
+          "prompt_tokens": 834,
+          "completion_tokens": 102
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.11,
+          "prompt_tokens": 511,
+          "completion_tokens": 57
+        }
+      ]
+    },
+    {
+      "case": "museum",
+      "group": "search",
+      "arm": "A",
+      "seed": 123456790,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o7b3af4609ffec1",
+          "reason": "该候选直接对应用户查询的‘2026年秋季周五夜场’，且摘要明确包含‘闭馆时间’和‘最后入场时间’。",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07"
+        },
+        "selected": {
+          "title": "澄川博物馆｜2026 秋季周五夜场参观须知",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "snippet": "本季夜场闭馆时间和最后入场时间",
+          "candidate_id": "o7b3af4609ffec1"
+        },
+        "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "previous_url": "about:blank",
+          "page_id": "1789ea20caf14acdac17447cf8730e94",
+          "generation": 1,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "title": "记录查询",
+          "text": "## 澄川博物馆 2026 秋季周五夜场\n\n闭馆时间 21:40，最后入场时间 20:55。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "final_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "澄川博物馆今年秋季周五夜场 21:40 闭馆，最晚 20:55 能进。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 3,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.11,
+          "prompt_tokens": 249,
+          "completion_tokens": 30
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 3.453,
+          "prompt_tokens": 784,
+          "completion_tokens": 94
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.906,
+          "prompt_tokens": 491,
+          "completion_tokens": 50
+        }
+      ]
+    },
+    {
+      "case": "museum",
+      "group": "search",
+      "arm": "B",
+      "seed": 123456790,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o7b3af4609ffec1",
+          "reason": "该页面明确包含 2026 年秋季周五夜场的闭馆时间和最后入场时间，与用户问题高度匹配。"
+        },
+        "selected": {
+          "title": "澄川博物馆｜2026 秋季周五夜场参观须知",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "snippet": "本季夜场闭馆时间和最后入场时间",
+          "candidate_id": "o7b3af4609ffec1"
+        },
+        "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "previous_url": "about:blank",
+          "page_id": "8424659642d242b5a4c90bd8242e8367",
+          "generation": 1,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+          "title": "记录查询",
+          "text": "## 澄川博物馆 2026 秋季周五夜场\n\n闭馆时间 21:40，最后入场时间 20:55。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "final_url": "https://example.com/museum/2026-autumn/Friday-night?lang=zh&rev=07",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "澄川博物馆今年秋季周五夜场闭馆时间为 21:40，最晚入场时间为 20:55。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 3,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.172,
+          "prompt_tokens": 249,
+          "completion_tokens": 30
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.266,
+          "prompt_tokens": 787,
+          "completion_tokens": 55
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.0,
+          "prompt_tokens": 491,
+          "completion_tokens": 53
+        }
+      ]
+    },
+    {
+      "case": "orders",
+      "group": "detail",
+      "arm": "B",
+      "seed": 123456790,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o8733f95277a0c3",
+          "reason": "用户询问订单 A-173 的送达时间和追踪号，'配送详情'（delivery-detail）页面最可能包含这些物流信息。"
+        },
+        "selected": {
+          "title": "配送详情",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "snippet": "订单 A-173 配送详情",
+          "candidate_id": "o8733f95277a0c3"
+        },
+        "requested_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "previous_url": "https://example.com/account/orders",
+          "page_id": "eba6a8e66259447d955f5655463c1aea",
+          "generation": 2,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "title": "记录查询",
+          "text": "## 订单 A-173 配送详情\n\n预计 2026-11-18 送达，追踪号 0042091。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+                "final_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "订单 A-173 预计 2026-11-18 送达，追踪号是 0042091。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 2,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.422,
+          "prompt_tokens": 761,
+          "completion_tokens": 61
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.0,
+          "prompt_tokens": 499,
+          "completion_tokens": 53
+        }
+      ]
+    },
+    {
+      "case": "orders",
+      "group": "detail",
+      "arm": "A",
+      "seed": 123456790,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o17ffffd4e594c3",
+          "reason": "用户询问订单 A-173 的送达时间和追踪号，'配送详情'（delivery-detail）页面最可能包含这些信息。",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full"
+        },
+        "selected": {
+          "title": "配送详情",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "snippet": "订单 A-173 配送详情",
+          "candidate_id": "o17ffffd4e594c3"
+        },
+        "requested_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "previous_url": "https://example.com/account/orders",
+          "page_id": "c725e5f70acc4078b09ca3244d359cc9",
+          "generation": 2,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+          "title": "记录查询",
+          "text": "## 订单 A-173 配送详情\n\n预计 2026-11-18 送达，追踪号 0042091。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+                "final_url": "https://example.com/orders/A-173/delivery-detail?ticket=0042091&view=full",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "订单 A-173 预计 2026-11-18 送达，追踪号是 0042091。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 2,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 3.36,
+          "prompt_tokens": 749,
+          "completion_tokens": 92
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 2.016,
+          "prompt_tokens": 499,
+          "completion_tokens": 53
+        }
+      ]
+    },
+    {
+      "case": "inventory",
+      "group": "detail",
+      "arm": "A",
+      "seed": 123456790,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o3b2c76145f74c1",
+          "reason": "该候选直接对应用户查询的“西仓 RX-08 可用库存详情”。",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037"
+        },
+        "selected": {
+          "title": "可用库存详情",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "snippet": "西仓 RX-08 可用库存详情",
+          "candidate_id": "o3b2c76145f74c1"
+        },
+        "requested_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "previous_url": "https://example.com/warehouse/stock-index",
+          "page_id": "330e66fa925744f8b2a54724cbd47cf4",
+          "generation": 2,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "title": "记录查询",
+          "text": "## 西仓 RX-08 库存详情\n\n可用库存 37 件，记录版本 WEST_0037。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+                "final_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "西仓的 RX-08 现在有 37 件可用库存，库存记录是 WEST_0037 版。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 2,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 3.031,
+          "prompt_tokens": 769,
+          "completion_tokens": 81
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.75,
+          "prompt_tokens": 482,
+          "completion_tokens": 46
+        }
+      ]
+    },
+    {
+      "case": "inventory",
+      "group": "detail",
+      "arm": "B",
+      "seed": 123456790,
+      "outcome": {
+        "selection": {
+          "candidate_id": "o35f612c77dccc1",
+          "reason": "该候选直接对应用户查询的“西仓 RX-08 可用库存详情”。"
+        },
+        "selected": {
+          "title": "可用库存详情",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "snippet": "西仓 RX-08 可用库存详情",
+          "candidate_id": "o35f612c77dccc1"
+        },
+        "requested_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+        "navigation_ok": true,
+        "navigation": {
+          "action": "navigate",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "previous_url": "https://example.com/warehouse/stock-index",
+          "page_id": "1565a8dacc7148cb9f3cce6446081629",
+          "generation": 2,
+          "delivery": "delivered",
+          "http_status": 200,
+          "content_type": "text/html"
+        },
+        "read": {
+          "status": "ok",
+          "url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+          "title": "记录查询",
+          "text": "## 西仓 RX-08 库存详情\n\n可用库存 37 件，记录版本 WEST_0037。",
+          "truncated": false,
+          "observation": "current_page",
+          "acquisition": {
+            "version": 1,
+            "attempts": [
+              {
+                "backend": "browser",
+                "requested_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+                "final_url": "https://example.com/warehouse/west-store/available-stock?sku=RX-08&lot=0037",
+                "status": "ok",
+                "delivery": "confirmed",
+                "observation": "content",
+                "failure_code": "",
+                "detail": ""
+              }
+            ]
+          }
+        },
+        "answer": {
+          "answer": "西仓的 RX-08 现在有 37 件可用库存，库存记录是 WEST_0037 版。",
+          "missing": "none"
+        }
+      },
+      "target_selected": true,
+      "original_url_passed": true,
+      "target_loaded": true,
+      "facts_read": true,
+      "facts_delivered": true,
+      "passed": true,
+      "model_calls": 2,
+      "provider_metrics": [
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.953,
+          "prompt_tokens": 766,
+          "completion_tokens": 45
+        },
+        {
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 1.766,
+          "prompt_tokens": 482,
+          "completion_tokens": 46
+        }
+      ]
+    }
+  ]
+}
