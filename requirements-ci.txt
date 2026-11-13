@@ -1103,6 +1103,17 @@ tree-sitter-bash==0.25.1 \
     --hash=sha256:e76c4cfb20b076552406782b7f8c2a3946835993df0a44df006de54b7030c7dc \
     --hash=sha256:f4a34a6504c7c5b2a9b8c5c4065531dea19ca2c35026e706cf2eeeebe2c92512
     # via codey (pyproject.toml)
+tree-sitter-javascript==0.25.0 \
+    --hash=sha256:199d09985190852e0912da2b8d26c932159be314bc04952cf917ed0e4c633e6b \
+    --hash=sha256:1b852d3aee8a36186dbcc32c798b11b4869f9b5041743b63b65c2ef793db7a54 \
+    --hash=sha256:329b5414874f0588a98f1c291f1b28138286617aa907746ffe55adfdcf963f38 \
+    --hash=sha256:622a69d677aa7f6ee2931d8c77c981a33f0ebb6d275aa9d43d3397c879a9bb0b \
+    --hash=sha256:8264a996b8845cfce06965152a013b5d9cbb7d199bc3503e12b5682e62bb1de1 \
+    --hash=sha256:9dc04ba91fc8583344e57c1f1ed5b2c97ecaaf47480011b92fbeab8dda96db75 \
+    --hash=sha256:b70f887fb269d6e58c349d683f59fa647140c410cfe2bee44a883b20ec92e3dc \
+    --hash=sha256:dfcf789064c58dc13c0a4edb550acacfc6f0f280577f1e7a00de3e89fc7f8ddc \
+    --hash=sha256:e5ed840f5bd4a3f0272e441d19429b26eedc257abe5574c8546da6b556865e3c
+    # via codey (pyproject.toml)
 truststore==0.10.5 ; sys_platform != 'emscripten' \
     --hash=sha256:30d36967ccaded5cbb38d602c433f53600036c79d502f4533a49b60a03bbefcd \
     --hash=sha256:9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c

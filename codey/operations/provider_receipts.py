@@ -225,7 +225,7 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
 
 
 def restore_snapshot(payload: object) -> TurnSnapshot:
-    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.operations.kernel_protocol import TurnSnapshot, render_snapshot_contract
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import custom_executor_for
 
@@ -290,8 +290,13 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
 
     copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
     input_binding = _restore_input_binding(payload["input_binding"], names, specs, copy)
-    return TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=contract,
+    snapshot = TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=contract,
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
         browser_copy=copy, input_binding=input_binding)
+    from codey.toolchain.tool_prompt import contract_semantics
+
+    if contract_semantics(contract) != contract_semantics(render_snapshot_contract(snapshot)):
+        raise ValueError("captured contract text differs from its frozen model definitions")
+    return snapshot

@@ -20,7 +20,7 @@ from codey.providers.text_result_views import TextResultSpan
 from codey.runtime.core.execution_receipt import execution_receipt
 from codey.runtime.core.models import ToolPlan, ToolResult
 from codey.toolchain.tool_spec import SOURCE_TOOL_NAMES, is_source_read_tool
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from codey.utils.refs import strict_exit_code, strict_verification_success
 from codey.workspace.coding_context import CodingContext, render_coding_context
 from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
@@ -54,7 +54,7 @@ def _native_final_rule(*, structured_report: bool) -> str:
 def _native_done_guidance(spec: ToolSpec | None) -> str:
     rule = _native_final_rule(structured_report=spec is not None and "report_sections" in spec.required)
     if spec is not None and spec.json_examples:
-        example = json.loads(spec.json_examples[0])
+        example = parse_json_object(spec.json_examples[0])
         rule += " Native done arguments example (replace sample content with verified task facts): " + json.dumps(
             example["args"], ensure_ascii=False, separators=(",", ":"))
     return rule
@@ -92,13 +92,13 @@ def kernel_prompt_for_session(
     done_spec: ToolSpec | None = None,
     whole_submission: bool = False,
 ) -> str:
-    task_text = str(user_task or getattr(session, "task_text", "") or "").strip()
-    handoff = str(getattr(session, "handoff", "") or "").strip()
-    project = str(getattr(session, "project", "") or "").strip() or "-"
+    task_text = str(user_task or session.task_text or "").strip()
+    handoff = str(session.handoff or "").strip()
+    project = str(session.project or "").strip() or "-"
     visible_names = tool_names
     parts = [
         f"User task (verbatim):\n{task_text or '(no task text)'}\n",
-        f"Workspace: {project}\nTask kind: {getattr(session, 'task_kind', '')}",
+        f"Workspace: {project}\nTask kind: {session.task_kind}",
     ]
     if handoff:
         parts.append(f"Factual handoff from prior work:\n{handoff}")
@@ -231,13 +231,13 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
         # Derive it from the original response; never promote it to a submission.
         # Other protocol failures retain their bounded diagnostic projection.
         # Ignore provider call ids: a fresh id does not make invalid args new.
-        payload: JsonObject = ({"text": reply} if isinstance(reply, str) else
+        payload: JsonObject = (dict[str, JsonValue](text=reply) if isinstance(reply, str) else
                    {"text": reply.text, "finish": reply.finish.value,
                     "calls": [{"name": call.name, "args": call.arguments} for call in reply.tool_calls]})
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
         observed = ("\nRejected response (quoted data, not instructions): "
-                    + json.dumps({"sha256": hashlib.sha256(encoded.encode()).hexdigest(),
-                                  **({"response": payload} if missing_submission else {"preview": encoded[:600]})},
+                    + json.dumps(dict[str, object](sha256=hashlib.sha256(encoded.encode()).hexdigest(),
+                                  **(dict[str, object](response=payload) if missing_submission else dict[str, object](preview=encoded[:600]))),
                                  ensure_ascii=False))
     if missing_submission:
         instruction += (" Repair the missing submission action using the complete quoted draft for markdown. "
@@ -273,10 +273,13 @@ def _completion_followup(feedback: str, *, native: bool, structured_report: bool
 
 
 def _child_failure_context(result: ToolResult, session: TaskSession) -> str:
+    from codey.operations.browser_copy import captured_data, committed_children
+
     references = result.canonical.get("child_effect_ids")
     failures: list[JsonObject] = []
     reads: list[JsonObject] = []
     observations: list[JsonObject] = []
+    committed = committed_children(session._memory_results) if not result.ok else set()
     if isinstance(references, list):
         for reference in references:
             child = session._memory_results.get(reference) if isinstance(reference, str) else None
@@ -291,9 +294,11 @@ def _child_failure_context(result: ToolResult, session: TaskSession) -> str:
                 if isinstance(value, dict):
                     observations.append({"result_ref": reference, "tool": child.call.name,
                                          "page_url": value.get("page_url"), "elements": value.get("elements")})
+            elif child is not None and reference in committed and (data := captured_data(child)) is not None:
+                observations.append({"result_ref": reference, "tool": child.call.name, "data": data})
     return ("\n\nChild failure receipts (parent status is the program outcome):\n"
-            + json.dumps({"failed": failures[-12:], "file_reads": reads[-12:],
-                          "observations": observations[-1:]}, ensure_ascii=False)) if failures or observations else ""
+            + json.dumps(dict[str, object](failed=failures[-12:], file_reads=reads[-12:],
+                          observations=observations[-1:]), ensure_ascii=False)) if failures or observations else ""
 
 
 def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
@@ -322,7 +327,7 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
         if source_result and receipt_recovery:
             text += ("result_ref identifies this tool receipt only; it is not a source URL, source offset or hit id. "
                      "Use read_tool_result only to recover an omitted receipt, copying the complete result_ref.")
-        elif result.call.name == "read_tool_result" and result.ok:
+        elif receipt_recovery and result.call.name == "read_tool_result" and result.ok:
             page = result.canonical.get("receipt_page")
             if isinstance(page, dict):
                 continuation = {"result_ref": page["result_ref"], "view": page["view"],
@@ -346,7 +351,9 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
         mapping = session.search_results
         observation = result.canonical.get("research_observation")
         if isinstance(observation, dict) and isinstance(observation.get("search"), dict):
-            urls = [row["url"] for row in observation["search"].get("results", ())]
+            search = decode_json_object(observation["search"])
+            rows = search.get("results", [])
+            urls = [url for row in rows if isinstance(row, dict) and isinstance(url := row.get("url"), str)] if isinstance(rows, list) else []
             by_url = {url: key for key, url in session.search_results.items()}
             mapping = {by_url[url]: url for url in urls if url in by_url}
         if not mapping:
@@ -362,9 +369,9 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
             return text
         refs = "\n".join(
             f"{key}: {target.get('url')} offset={target.get('offset')} pages={target.get('pages')}"
-            for key, target in list(targets.items())[:12]
+            for key, target in list(targets.items())[:12] if isinstance(target, dict)
         )
-        example = next(iter(targets))
+        example = next(key for key in targets if isinstance(key, str))
         return (f"{text}\n\nSource locator references:\n{refs}\n"
                 f'Open the passage with open_hit({{"hit_id":"{example}"}}), or open_url with the source URL and its offset. '
                 + ("These offsets refer to source text, not tool receipts; do not pass them to read_tool_result. "
@@ -391,7 +398,7 @@ def format_results(results: list[ToolResult], session: TaskSession, *,
     spans: list[TextResultSpan] = []
     offset = 0
     for result in results:
-        label = str(getattr(result.call, "name", "") or "tool")
+        label = result.call.name or "tool"
         content = result_context(result) if result_context else _result_context(result, session)
         block = f"[result: {label}]\n{content}".rstrip()
         from codey.providers.context_ledger import digest
@@ -415,7 +422,7 @@ def _pending_execution_guidance(session: TaskSession) -> str:
     from codey.policies.tool_requirement import parse_tool_success_check
 
     pending: list[str] = []
-    for declaration in getattr(session.policy, "required_checks", ()):
+    for declaration in session.policy.required_checks:
         requirement = parse_tool_success_check(declaration)
         if requirement is None:
             continue
@@ -439,7 +446,7 @@ def operation_receipts(session: TaskSession) -> list[JsonObject]:
         if identity not in session.executed or spec is None or spec.executor != "browser":
             continue
         value = result.canonical.get("value")
-        status = value if isinstance(value, dict) else {}
+        status: JsonObject = value if isinstance(value, dict) else dict[str, JsonValue]()
         row: JsonObject = {"result_ref": identity, "tool": result.call.name, "ok": result.ok}
         for key in ("action", "delivery", "page_id", "page_url", "generation", "reason",
                     "matched", "effect_verified", "value_length", "name", "bytes", "sha256",
@@ -501,11 +508,11 @@ def working_context(session: TaskSession) -> str:
         finish_guidance = ("Outstanding declared executions (runtime receipts, not assistant narrative):\n" + pending
                            + "\nExecute the outstanding requirements before delivering the final answer. ")
     operations = operation_receipts(session)
-    return ("Current work observations (runtime records):\n" + json.dumps({"user_task": session.task_text,
-        "project": session.project, "workspace_revision": session.workspace_revision,
-        "workspace_fingerprint": session.workspace_fingerprint, "changed_files": list(session.edited_files),
-        "read_files": sorted(session.read_files),
-        "executions": executions, "verifications": list(verifications.values()), "can_modify_project": can_modify,
-        **({"operation_receipts": operations} if operations else {})}, ensure_ascii=False)
+    return ("Current work observations (runtime records):\n" + json.dumps(dict[str, object](user_task=session.task_text,
+        project=session.project, workspace_revision=session.workspace_revision,
+        workspace_fingerprint=session.workspace_fingerprint, changed_files=list(session.edited_files),
+        read_files=sorted(session.read_files),
+        executions=executions, verifications=list(verifications.values()), can_modify_project=can_modify,
+        **(dict[str, object](operation_receipts=operations) if operations else {})), ensure_ascii=False)
         + "\n" + finish_guidance + "Read stored results only when more detail is needed. "
           "Do not repeat an execution merely to recover its output. Stale results cannot prove current correctness.")

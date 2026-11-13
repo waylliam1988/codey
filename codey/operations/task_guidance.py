@@ -52,8 +52,9 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
             from codey.knowledge.model import canonical_json
             from codey.research.task_requirements import task_requirement_context
 
+            requirements: object = task_requirement_context(session.task_text)
             parts.append("Original task requirements (text accounting, not semantic verification):\n"
-                         + canonical_json(task_requirement_context(session.task_text)))
+                         + canonical_json(requirements))
     return "\n\n".join(parts)
 
 
@@ -90,7 +91,8 @@ def task_guidance_for_policy(policy: TaskPolicy, *, task_kind: str) -> str:
     ) if part)
 
 
-def task_result_context(session: TaskSession, result: ToolResult, research_scope: AnswerScope | None) -> str:
+def task_result_context(session: TaskSession, result: ToolResult, research_scope: AnswerScope | None, *,
+                        tool_names: tuple[str, ...] | None = None) -> str:
     """Reuse complete reads and errors already present in the frozen work view."""
     from codey.operations.kernel_prompt import _result_context
     from codey.providers.base import render_result_metadata
@@ -112,4 +114,5 @@ def task_result_context(session: TaskSession, result: ToolResult, research_scope
                 return ("Read succeeded. The original window is pinned for citation as "
                         + ", ".join(f"[{labels[ref]}]" for ref in rows) + ".\n"
                         + render_result_metadata(identity, tool=result.call.name, ok=True))
-    return _result_context(result, session, receipt_recovery=not isinstance(research_scope, AnswerScope))
+    return _result_context(result, session, receipt_recovery=(not isinstance(research_scope, AnswerScope)
+                           and (tool_names is None or "read_tool_result" in tool_names)))

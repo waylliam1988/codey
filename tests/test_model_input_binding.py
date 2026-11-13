@@ -41,10 +41,10 @@ def copy_snapshot() -> TurnSnapshot:
                           task_text=f"把 {URL} 的运单号原样写入 dispatch.json 的 carrier_label，保留前导零。")
     data: JsonObject = {"tables": [], "records": [{"id": "json-1", "title": "shipment",
                          "text": '{"parcel":{"label":"000783"}}'}]}
-    session._memory_results["capture"] = ToolResult(ToolCall("browser_eval", {"code": CAPTURE}), "captured",
+    session._memory_results["capture"] = ToolResult(ToolCall("browser_eval", {"code": CAPTURE}, call_id="observation:child:0"), "captured",
         ok=True, canonical={"value": {"value": data, "truncated": False}})
     session._memory_results["parent"] = ToolResult(ToolCall("codemode", {}), "observed", ok=True,
-                                                  canonical={"child_effect_ids": ["capture"]})
+        canonical={"child_effect_ids": ["capture"]}, audit={"codemode_execution_id": "observation"})
     return build_turn_snapshot(session)
 
 

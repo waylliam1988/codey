@@ -4,16 +4,60 @@ from __future__ import annotations
 import copy
 import json
 import time
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, TypeGuard
 
 from codey.providers.base import ProviderToolDefinition
 from codey.providers.compaction import ContextSnapshot
-from codey.providers.context_checkpoint import ContextRange, output_reduction_ready, replace_range
+from codey.providers.context_checkpoint import (
+    ContextRange,
+    output_reduction_ready,
+    replace_range,
+    restore_result_bodies,
+)
 from codey.providers.context_ledger import digest
 from codey.providers.token_accounting import RequestContextCount
 
 if TYPE_CHECKING:
+    from codey.durable.session import DurableSession
     from codey.providers.api_provider import ApiProvider
+
+
+def _is_api_provider(value: object) -> TypeGuard[ApiProvider]:
+    from codey.providers.api_provider import ApiProvider
+
+    provider_type: type[object] = ApiProvider
+    return isinstance(value, provider_type)
+
+
+def bind_result_recovery(provider: object, refs: tuple[str, ...]) -> None:
+    """Bind the final request's reread capability before compaction or sending."""
+    from codey.providers.compat_transport import optional_callable, unwrap_provider
+    from codey.providers.error_classification import RequestPrepError
+
+    client = unwrap_provider(provider)
+    if not _is_api_provider(client):
+        binder: Callable[[tuple[str, ...]], object] | None = optional_callable(client, "set_result_refs")
+        if binder is not None:
+            binder(refs)
+        return
+    with client._state_lock:
+        client.set_result_refs(refs)
+        # Both work-state summaries and deterministic views already archive
+        # their source. Expand that lineage; never reread a changing webpage.
+        messages: list[dict[str, object]] = client._messages
+        checkpoints: list[dict[str, object]] = client.context_ledger.checkpoints()
+        try:
+            restored = restore_result_bodies(messages, checkpoints, frozenset(refs))
+        except ValueError as exc:
+            raise RequestPrepError(f"cannot restore retained receipt bodies: {exc}") from exc
+        if restored != messages:
+            if len(restored) != len(messages):
+                entry_ids = {digest(item): identity for item, identity in
+                             zip(messages, client._durable_source_entry_ids, strict=False)}
+                client._durable_source_entry_ids = tuple(entry_ids.get(digest(item)) for item in restored)
+            client._messages = restored
+            client._history_revision += 1
 
 
 def fork_auxiliary(self: ApiProvider) -> ApiProvider:
@@ -21,28 +65,35 @@ def fork_auxiliary(self: ApiProvider) -> ApiProvider:
 
     budget = self.context_budget
     generation = self._generation
+    headers: object = self.request_headers
+    configure: Callable[[dict[str, object]], None] = self.configure_request
     client = ApiProvider(self.base_url, self.model, api_key=self.api_key, timeout=min(120.0, self.timeout),
         temperature=0.0, api_protocol=self.api_protocol, stream=self.stream,
         context_window_tokens=budget.window_tokens, context_reserve_tokens=budget.output_tokens + budget.safety_tokens,
         context_keep_recent_tokens=budget.keep_recent_tokens, output_tokens=min(2048, budget.output_tokens),
         input_limit_tokens=budget.input_limit_tokens, reasoning_effort=self.reasoning_effort,
-        thinking_enabled=self.thinking_enabled, tool_choice="auto", request_headers=self.request_headers,
+        thinking_enabled=self.thinking_enabled, tool_choice="auto", request_headers=headers,
         request_counter=self.request_counter, usage_parser=self.usage_parser,
-        configure_request=self.configure_request, budget_source=budget.source, purpose="compaction",
+        configure_request=configure, budget_source=budget.source, purpose="compaction",
         request_context_headers=self.request_context_headers, codec=self._codec if self.codec_revision else None,
         codec_revision=self.codec_revision, connection_revision=self.connection_revision)
     client.request_policy = self.request_policy
-    client.transport_options = self.transport_options
-    client.http_session = self.http_session
-    if client.http_session is not None and hasattr(client.http_session, "retain"):
-        client.http_session.retain()
+    options: object = self.transport_options
+    client.transport_options = options
+    http_session: object = self.http_session
+    client.http_session = http_session
+    from codey.providers.compat_transport import optional_callable
+
+    retain: Callable[[], object] | None = optional_callable(http_session, "retain")
+    if retain is not None:
+        retain()
     client._parent_cancelled = lambda: generation != self._generation
     client._attempt_gate = self._attempt_gate
     client._attempt_gate_prompt = self._attempt_gate_prompt
     client.bind_usage(self.connection_id, self.on_usage)
     return client
 
-def summarize_context(self: ApiProvider, source: list[dict[str, Any]], deadline: float) -> str:
+def summarize_context(self: ApiProvider, source: list[dict[str, object]], deadline: float) -> str:
     from codey.providers.context_checkpoint import summary_source, validate_summary
 
     client = fork_auxiliary(self)
@@ -99,26 +150,30 @@ def context_snapshot(self: ApiProvider) -> ContextSnapshot:
     with self._state_lock:
         revision = head = None
         durable_entry_ids = self._durable_source_entry_ids
-        if self._durable is not None and self._durable_session_id:
-            _head, revision = self._durable.head(self._durable_session_id)
+        durable: DurableSession | None = self._durable
+        if durable is not None and self._durable_session_id:
+            _head, revision = durable.head(self._durable_session_id)
             head = _head
-        return ContextSnapshot(copy.deepcopy(self._messages), self._generation, self.model_identity, self._result_refs,
+        messages: list[dict[str, object]] = self._messages
+        return ContextSnapshot(copy.deepcopy(messages), self._generation, self.model_identity, self._result_refs,
                                self.context_ledger.checkpoint_digests(), revision, head, durable_entry_ids)
 
-def count_context(self: ApiProvider, items: list[dict[str, Any]], tools: list[ProviderToolDefinition] | None,
+def count_context(self: ApiProvider, items: list[dict[str, object]], tools: list[ProviderToolDefinition] | None,
                    deadline: float) -> RequestContextCount:
-    return self.request_counter(self._payload(items, tools, self._settings()), deadline=deadline)
+    payload: dict[str, object] = self._payload(items, tools, self._settings())
+    return self.request_counter(payload, deadline=deadline)
 
-def commit_context(self: ApiProvider, selected: ContextRange, replacement: list[dict[str, Any]], checkpoint: dict[str, Any],
+def commit_context(self: ApiProvider, selected: ContextRange, replacement: list[dict[str, object]], checkpoint: dict[str, object],
                     snapshot: ContextSnapshot, tools: list[ProviderToolDefinition] | None, deadline: float) -> bool:
-    durable = self._durable
+    durable: DurableSession | None = self._durable
+    messages: list[dict[str, object]] = self._messages
     durable_ids = snapshot.durable_entry_ids
     durable_revision = snapshot.durable_revision
     durable_head = snapshot.durable_head
-    durable_edit = None
+    durable_edit: Callable[[], object] | None = None
     if durable is not None:
         if (not durable_ids or durable_revision is None or durable_head is None
-                or len(durable_ids) != len(self._messages)):
+                or len(durable_ids) != len(messages)):
             return False
         source_ids = durable_ids[selected.start:selected.end]
         if not source_ids or any(not isinstance(entry_id, str) or not entry_id for entry_id in source_ids):
@@ -126,40 +181,43 @@ def commit_context(self: ApiProvider, selected: ContextRange, replacement: list[
         summary = checkpoint.get("text")
         if not isinstance(summary, str) or not summary.strip():
             return False
-        durable_edit = {
-            "conversation_id": self._durable_session_id,
-            "request_id": f"context-edit:{selected.source_digest}",
-            "kind": "context_edit",
-            "data": {"source_digest": selected.source_digest, "source_entry_ids": list(source_ids),
-                     "captured_revision": durable_revision, "model_identity": snapshot.identity},
-            "display_only": False,
-            "edits": [{"target": source_ids[0], "action": "replace",
+        def write_edit() -> object:
+            assert durable is not None
+            return durable.admit_write(conversation_id=self._durable_session_id,
+                request_id=f"context-edit:{selected.source_digest}", kind="context_edit",
+                data={"source_digest": selected.source_digest, "source_entry_ids": list(source_ids),
+                      "captured_revision": durable_revision, "model_identity": snapshot.identity}, display_only=False,
+                edits=[{"target": source_ids[0], "action": "replace",
                         "messages": [{"role": "assistant", "content": summary}]}]
-            + [{"target": entry_id, "action": "omit"} for entry_id in source_ids[1:]],
-            "expected_revision": durable_revision,
-            "expected_head": durable_head,
-        }
+                + [{"target": entry_id, "action": "omit"} for entry_id in source_ids[1:]],
+                expected_revision=durable_revision, expected_head=durable_head)
+
+        durable_edit = write_edit
     with self._state_lock:
+        messages = self._messages
         if (snapshot.generation != self._generation or snapshot.identity != self.model_identity
-                or digest(self._messages[selected.start:selected.end]) != selected.source_digest):
+                or snapshot.result_refs != self._result_refs
+                or digest(messages[selected.start:selected.end]) != selected.source_digest):
             return False
         revision = self._history_revision
-        live = replace_range(self._messages, selected, replacement)
+        live = replace_range(messages, selected, replacement)
     self._codec.validate_view(live)
     count = count_context(self, live, tools, deadline)
     if count.value is None or count.value > self.context_budget.input_limit:
         return False
     with self._state_lock:
-        if revision != self._history_revision or snapshot.generation != self._generation:
+        if (revision != self._history_revision or snapshot.generation != self._generation
+                or snapshot.result_refs != self._result_refs):
             return False
         if durable_edit is not None:
-            durable.admit_write(**durable_edit)
+            durable_edit()
         if self._window_ref is not None:
+            committed_checkpoints: list[dict[str, object]] = [checkpoint]
             self.context_ledger.commit_exchange(
                 self._window_ref,
                 live,
                 expected_revision=self.context_ledger.revision,
-                checkpoints=[checkpoint],
+                checkpoints=committed_checkpoints,
             )
         else:
             self.context_ledger.commit(live, checkpoint=checkpoint)
@@ -171,12 +229,13 @@ def schedule_maintenance(self: ApiProvider) -> None:
     # Growth estimates schedule work only; final admission still uses the
     # connection's actual request counter and never silently substitutes it.
     pressure = (self.last_context_count.value or 0) + self._last_output_estimate
+    messages: list[dict[str, object]] = self._messages
     if self.last_context_count.value is not None and pressure >= self.context_budget.input_limit * 0.80:
         try:
             self.maintain_context()
         except RuntimeError as exc:
             self._compaction.diagnostics.append({"committed": False, "error": str(exc)[:300]})
-    elif output_reduction_ready(self._codec, self._messages, self._result_refs,
+    elif output_reduction_ready(self._codec, messages, self._result_refs,
                                 batch_receipts=pressure >= self.context_budget.input_limit * 0.60):
         # Cheap reversible views save every subsequent input; they do not
         # spend a semantic generation. Batch backed bodies to preserve

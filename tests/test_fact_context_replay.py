@@ -38,8 +38,8 @@ from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.managed_outputs import ManagedOutputStore
 from codey.toolchain.tool_spec import ToolSpec
-from codey.types.json_value import JsonObject, decode_json_object
-from tests.test_chat_source_gaps_contract import legacy_snapshot
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from tests.test_chat_source_gaps_contract import claim_snapshot
 
 URL = "https://example.com/"
 ANSWER = '{"verified":false,"exit_code":7,"reason":"页面不可读"}'
@@ -91,7 +91,7 @@ def test_cold_done_replays_legacy_receipts_and_optional_claims(
         build = kernel_protocol.build_turn_snapshot
 
         def captured(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
-            return legacy_snapshot(build(session, native=native))
+            return claim_snapshot(build(session, native=native))
 
         monkeypatch.setattr(kernel_protocol, "build_turn_snapshot", captured)
     durable, outputs, sink = runtime(tmp_path)
@@ -120,7 +120,7 @@ def test_cold_done_replays_legacy_receipts_and_optional_claims(
 
         def send(self, text: str) -> str:
             call = self.reply()
-            return json.dumps({"tool": call.name, "args": call.args}, ensure_ascii=False)
+            return json.dumps(dict[str, JsonValue](tool=call.name, args=call.args), ensure_ascii=False)
 
         def send_turn(self, text: str, tools: list[ToolSpec]) -> AssistantTurn:
             call = self.reply()
@@ -236,7 +236,8 @@ def test_context_queries_are_pure_and_use_receipt_state(
     ledger.record_open_document(SourceDocument(URL, URL, "Readable", "html", "text/html", "observed body"))
     before_session, before_ledger = session.clone_projection(), ledger.clone()
     rendered = task_working_context(session, ledger)
-    facts = decode_json_object(json.JSONDecoder().raw_decode(rendered.split("Current work observations (runtime records):\n")[1])[0])
+    decoded: tuple[object, int] = json.JSONDecoder().raw_decode(rendered.split("Current work observations (runtime records):\n")[1])
+    facts = decode_json_object(decoded[0])
     executions = facts["executions"]
     assert isinstance(executions, list)
     observed = decode_json_object(executions[0])
@@ -247,7 +248,9 @@ def test_context_queries_are_pure_and_use_receipt_state(
     assert recovered_output.ok and "output" in recovered_output.model_text
     assert task_working_context(session, ledger) == rendered
     assert session == before_session and session._memory_results == before_session._memory_results
-    assert vars(ledger) == vars(before_ledger)
+    after_fields: dict[str, object] = vars(ledger)
+    before_fields: dict[str, object] = vars(before_ledger)
+    assert after_fields == before_fields
 
 
 def test_chat_source_view_uses_ledger_aliases_without_duplicate_session_summary() -> None:
@@ -258,8 +261,11 @@ def test_chat_source_view_uses_ledger_aliases_without_duplicate_session_summary(
     before = ledger.clone()
     rendered = task_working_context(session, ledger)
     marker = "Source coverage (verified runtime observations):\n"
-    facts = decode_json_object(json.JSONDecoder().raw_decode(rendered.split(marker)[1])[0])
+    decoded: tuple[object, int] = json.JSONDecoder().raw_decode(rendered.split(marker)[1])
+    facts = decode_json_object(decoded[0])
     assert facts["opened_urls"] == sorted([URL, final])
     assert facts["required_urls"] == []
     assert rendered.count(marker) == 1 and "Opened external sources" not in rendered
-    assert not session.opened_sources and vars(ledger) == vars(before)
+    after_fields: dict[str, object] = vars(ledger)
+    before_fields: dict[str, object] = vars(before)
+    assert not session.opened_sources and after_fields == before_fields

@@ -11,7 +11,7 @@ from codey.codemode.catalog import build_catalog_snapshot, build_codemode_catalo
 from codey.codemode.host import CodeModeHost
 from codey.codemode.identity import parent_execution_id
 from codey.codemode.output import externalize_value
-from codey.codemode.protocol import parse_codemode_args
+from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.runtime.core import cancellation
@@ -36,7 +36,9 @@ if TYPE_CHECKING:
     from codey.workspace.revision import WorkspaceRevisionStore
 
 
-def _simplified_failure(result: ToolResult, spec: ToolSpec, child_refs: list[str]) -> ToolResult:
+def _simplified_failure(result: ToolResult, spec: ToolSpec, children: Mapping[str, ToolResult]) -> ToolResult:
+    from codey.operations.browser_copy import EXPIRED, captured_data
+    from codey.toolchain.constants import STALE_READ_REFERENCE_ERROR
     from codey.toolchain.tool_prompt import tool_repair_text
 
     detail = result.model_text
@@ -45,9 +47,22 @@ def _simplified_failure(result: ToolResult, spec: ToolSpec, child_refs: list[str
     if error_code in {"syntax_error", "missing_return", "result_encoding", "result_contract"}:
         audit = {**audit, "template_error": detail}
         detail = f"The fixed runtime template failed ({error_code}); the model cannot repair its JavaScript."
-    if child_refs:
-        detail += "\nSettled child receipts (the parent failure does not undo their effects): " + ", ".join(child_refs)
-        detail += "\nDo not replay the whole operation. The next request uses committed receipts to determine the available action."
+    if children:
+        detail += "\nSettled child receipts (the parent failure does not undo their effects): " + ", ".join(children)
+        edits = [child for child in children.values() if child.call.name == "edit"]
+        if any(child.ok for child in edits):
+            detail += "\nThe file write completed. Do not repeat the write."
+        elif edits and all(not child.ok and STALE_READ_REFERENCE_ERROR in child.model_text for child in edits):
+            detail += ("\nThe file write was rejected before writing because its file version changed. "
+                       "Retry with the same source; the fixed program reads the current file before editing.")
+        elif edits and all(not child.ok and child.audit.get("error_code") == EXPIRED for child in edits):
+            detail += "\nThe file write was rejected: the browser source expired. Observe the authorized page again."
+        elif any(captured_data(child) is not None for child in children.values()):
+            detail += "\nThe observation completed. Continue from the committed observation; do not fetch the source again."
+        else:
+            detail += ("\nThe receipts do not establish a completed write or a safely retryable rejection. "
+                       "Do not replay the whole operation while delivery is uncertain.")
+        detail += "\nThe next request derives its available action from these committed receipts."
     else:
         detail += "\nNo settled child receipt is available; this alone does not prove that no effect occurred."
     return replace(result, model_text=tool_repair_text(detail, spec), audit=audit)
@@ -106,7 +121,9 @@ class CodeModeKernelExecutor:
         try:
             program = parse_codemode_args(call.args, limits=self.limits)
         except ValueError as exc:
-            return ToolResult(ok=False, call=call, model_text=str(exc), canonical={"error": str(exc)})
+            return ToolResult(ok=False, call=call, model_text=str(exc), canonical={"error": str(exc)},
+                              audit={"error_code": exc.code if isinstance(exc, CodeModeInputError) else "invalid_args",
+                                     "child_calls": 0})
         audit: dict[str, object] = {
             "codemode_execution_id": self.execution_id,
             "catalog_digest": self.catalog.digest,
@@ -408,7 +425,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                                        "recovered_return": True})
                 detail += ". Correct only the return expression. Use repair_of=" + str(metadata["token"])
                 detail += " to replay these settled child receipts; do not repeat the child calls."
-            result = (_simplified_failure(result, snapshot.input_binding.model_spec, ordered_child_effect_ids)
+            result = (_simplified_failure(result, snapshot.input_binding.model_spec,
+                                         {ref: session._memory_results[ref] for ref in ordered_child_effect_ids})
                       if snapshot.input_binding is not None
                       else replace(result, model_text=tool_repair_text(detail, specs["codemode"])))
         return result

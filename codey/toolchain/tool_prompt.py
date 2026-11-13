@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
@@ -39,6 +40,40 @@ def json_contract_text(specs: Iterable[ToolSpec]) -> str:
             lines.append(spec.declarations)
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks)
+
+
+def contract_semantics(text: str) -> tuple[str, ...]:
+    """Compare generated contracts while ignoring object field display order.
+
+    Only signature lines are normalized. Descriptions, examples, declarations,
+    field names, types, optionality and constraints retain their associations.
+    Quoted strings and constraint comments are indivisible tokens.
+    """
+    token_pattern = r'"(?:\\.|[^"\\])*"|/\*.*?\*/|\w+|[^\s]'
+
+    def signature_tokens(signature: str) -> str:
+        tokens = (match.group(0) for match in re.finditer(token_pattern, signature))
+
+        def group(*, object_fields: bool = False) -> str:
+            fields: list[str] = []
+            current: list[str] = []
+            for token in tokens:
+                if token == "{":
+                    current.append("{" + group(object_fields=True) + "}")
+                elif token == "}" and object_fields:
+                    break
+                elif token == ";" and object_fields:
+                    fields.append(" ".join(current))
+                    current = []
+                else:
+                    current.append(token)
+            fields.append(" ".join(current))
+            return ";".join(sorted(fields)) if object_fields else " ".join(fields)
+
+        return group()
+
+    return tuple(signature_tokens(line) if re.fullmatch(r"  \w+\(args: .*\)", line) else line
+                 for line in text.splitlines())
 
 
 def tool_repair_text(error: str, spec: ToolSpec) -> str:
@@ -128,7 +163,7 @@ _RULE_JSON_ESCAPE = (
     "    difficult, read the exact current lines and escape them; never use content",
     "    to overwrite an existing file without its complete read_file base_result_ref.",
 )
-_RULE_EDIT_BLOCK = _RULE_EDIT_MODES + _RULE_OLD_STRING + _RULE_JSON_ESCAPE
+_RULE_EDIT_BLOCK: tuple[str, ...] = (*_RULE_EDIT_MODES, *_RULE_OLD_STRING, *_RULE_JSON_ESCAPE)
 _RULE_PATHS = (
     "  - Paths are relative to the project root. No absolute paths or parent traversal.",
 )
@@ -225,7 +260,8 @@ def _normalize_tool_names(names: set[str] | frozenset[str]) -> set[str]:
 def _defined_tool_names(definitions: tuple[object, ...]) -> set[str]:
     defined: set[str] = set()
     for definition in definitions:
-        name = str(getattr(definition, "name", "") or "").strip().lower()
+        raw_name: object = getattr(definition, "name", "")
+        name = str(raw_name or "").strip().lower()
         if name:
             defined.add(name)
     return defined

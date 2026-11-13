@@ -22,8 +22,9 @@ class PreparedKernelTurn:
 
 def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: str,
                         task_guidance: str, native: bool, completion_context: CompletionContextInput | None = None,
-                        request_scoped_contract: bool = False) -> PreparedKernelTurn:
-    snapshot = kernel_protocol.build_turn_snapshot(session, native=native)
+                        request_scoped_contract: bool = False, snapshot: TurnSnapshot | None = None) -> PreparedKernelTurn:
+    if snapshot is None:
+        snapshot = kernel_protocol.build_turn_snapshot(session, native=native)
     from codey.research.answer_contract import AnswerScope
 
     if snapshot.policy is None:

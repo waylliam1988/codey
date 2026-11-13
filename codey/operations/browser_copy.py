@@ -146,9 +146,23 @@ def _table_value(table: JsonObject, selector: JsonObject) -> JsonValue:
 
 
 def committed_children(results: Mapping[str, ToolResult]) -> set[str]:
-    return {ref for result in results.values() if result.ok and result.call.name == "codemode"
-            and isinstance(children := result.canonical.get("child_effect_ids"), list)
-            for ref in children if isinstance(ref, str)}
+    """Parent failure does not undo children; require a complete owned sequence."""
+    committed: set[str] = set()
+    for parent in results.values():
+        execution = parent.audit.get("codemode_execution_id")
+        refs = parent.canonical.get("child_effect_ids")
+        if (parent.call.name != "codemode" or not isinstance(execution, str) or not execution
+                or not isinstance(refs, list) or any(not isinstance(ref, str) for ref in refs)):
+            continue
+        children = [results[ref] for ref in refs if isinstance(ref, str) and ref in results]
+        references = {ref for ref in refs if isinstance(ref, str)}
+        owned = {ref for ref, child in results.items() if child.call.call_id.startswith(f"{execution}:child:")}
+        if (len(children) != len(refs) or len(references) != len(refs)
+                or owned != references
+                or any(child.call.call_id != f"{execution}:child:{index}" for index, child in enumerate(children))):
+            continue
+        committed.update(references)
+    return committed
 
 
 @dataclass(frozen=True)
@@ -227,10 +241,15 @@ def copy_turn(target: CopyTarget, task: str, results: Mapping[str, ToolResult]) 
     committed = committed_children(results)
     turn = CopyTurn(target, business_key=key)
     for ref, result in results.items():
-        if ref in committed and (data := captured_data(result)) is not None:
+        data = captured_data(result)
+        capture = result.ok and result.call.name == "browser_eval" and result.call.args.get("code") == CAPTURE
+        if capture and (data is None or ref not in committed):
+            raise ValueError("Cannot recover the browser observation: its parent/child receipt sequence is incomplete "
+                             "or belongs to another execution. The source must not be fetched again automatically.")
+        if data is not None:
             turn = CopyTurn(target, "edit" if observation_kind(data) else "question", ref,
                             json.dumps(data, ensure_ascii=False, sort_keys=True), key)
-        if result.call.name != "edit" or result.call.args.get("path") != target.path:
+        if ref not in committed or result.call.name != "edit" or result.call.args.get("path") != target.path:
             continue
         if result.ok and "browser_source" in result.call.args:
             return CopyTurn(target, "done")

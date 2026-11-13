@@ -6,9 +6,9 @@ This object contains dependencies and rebuildable caches only.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from codey.durable.checkpoint import checkpoint_entries
 from codey.durable.model import thaw_json
@@ -33,7 +33,7 @@ from codey.operations.provider_request_context import ProviderRequestContext
 from codey.operations.task_guidance import task_result_context, task_working_context
 from codey.operations.task_session import TaskSession
 from codey.protocols.text_turn import decode_text_turn
-from codey.providers.base import AssistantTurn, ProviderToolResult, TurnFinish, tools_from_specs
+from codey.providers.base import AssistantTurn, ProviderToolDefinition, ProviderToolResult, TurnFinish, tools_from_specs
 from codey.providers.requests import (
     AcknowledgeToolResultsBoundRequest,
     AcknowledgeToolResultsRequest,
@@ -63,6 +63,11 @@ from codey.workspace.context_admission import admit_ghost_context
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
     from codey.operations.task_effects import KernelEffectSink
+    from codey.research.tools import ResearchTools
+
+
+class _ResearchProjector(Protocol):
+    def project_urls(self, tools: ResearchTools) -> None: ...
 
 
 class KernelContext:
@@ -142,10 +147,10 @@ class KernelContext:
         state = view.state
         if state is None:
             raise RecoveryFailed("kernel operation has no checkpoint state")
-        question_raw = task.state.get("question", {})
-        question: Mapping[str, object] = question_raw if isinstance(question_raw, Mapping) else {}
-        approvals_raw = task.state.get("approvals", {})
-        approvals: Mapping[str, object] = approvals_raw if isinstance(approvals_raw, Mapping) else {}
+        question_raw = task.state.get("question")
+        question: Mapping[str, object] = question_raw if isinstance(question_raw, Mapping) else dict[str, object]()
+        approvals_raw = task.state.get("approvals")
+        approvals: Mapping[str, object] = approvals_raw if isinstance(approvals_raw, Mapping) else dict[str, object]()
         decision = self.decision(state) if state.work_ref else None
         approval = None
         if state.leaf == operation_payload.LEAF_TOOL_EFFECT_PENDING:
@@ -228,10 +233,11 @@ class KernelContext:
         if (artifact.owner_task_id != self.sink.run_id or artifact.owner_effect_id is not None
                 or artifact.metadata.get("kind") != "kernel_decision"):
             raise RecoveryFailed("kernel decision ownership mismatch")
-        raw = thaw_json(artifact.metadata["ref"])
+        raw = decode_json_object(thaw_json(artifact.metadata["ref"]))
         if not isinstance(raw, dict) or raw.get("handle") != artifact.handle or raw.get("sha256") != artifact.sha256:
             raise RecoveryFailed("kernel decision digest reference mismatch")
-        envelope = self.sink.managed_outputs.read_json_artifact(raw)
+        raw_envelope: object = self.sink.managed_outputs.read_json_artifact(dict[str, object](raw))
+        envelope = decode_json_object(raw_envelope)
         if (not isinstance(envelope, dict) or set(envelope) != {"schema_version", "kind", "data"}
                 or type(envelope["schema_version"]) is not int or envelope["schema_version"] not in (1, 2)
                 or envelope["kind"] != "kernel_decision"
@@ -313,7 +319,8 @@ class KernelContext:
         tools = self.execution.research_tools
         if tools is not None:
             from codey.operations.research_continuation import ResearchContinuation
-            ResearchContinuation.project_urls(tools)
+            projector: _ResearchProjector = ResearchContinuation
+            projector.project_urls(tools)
             if tools.browser_session is not None:
                 tools.browser_session.prepare_from_receipts(tuple(self.session._memory_results.values()))
 
@@ -362,28 +369,34 @@ class KernelContext:
         batch = next(batch for batch in view.batches if batch.intent.batch_id == batch_id)
         return [self.session._memory_results[identity] for identity in batch.intent.tool_refs]
 
+    def request_snapshot(self, snapshot: TurnSnapshot) -> tuple[TurnSnapshot, str]:
+        """Finish tool narrowing before rendering results or request options."""
+        if snapshot.research_scope is None:
+            return snapshot, ""
+        from codey.operations.browser_detail import offer_page_details
+        from codey.operations.research_submission_handoff import research_submission_handoff
+
+        research = self.execution.research_tools
+        browser = research.browser_session if research is not None else None
+        snapshot, handoff = research_submission_handoff(self.session, snapshot, self.completion_context, browser)
+        return (snapshot, handoff) if handoff else offer_page_details(self.session, snapshot, browser)
+
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None,
                text_result_spans: tuple[TextResultSpan, ...] = (),
-               coding_context_prepared: bool = False, initial_source_batch: bool = False) -> None:
+               coding_context_prepared: bool = False, initial_source_batch: bool = False,
+               handoff: str | None = None) -> None:
         from codey.operations.provider_request import prepare_provider_request
 
-        if not acknowledge and snapshot.research_scope is not None:
-            from codey.operations.browser_detail import offer_page_details
-            from codey.operations.research_submission_handoff import research_submission_handoff
-
-            research = self.execution.research_tools
-            browser = research.browser_session if research is not None else None
-            snapshot, handoff = research_submission_handoff(self.session, snapshot, self.completion_context, browser)
-            if not handoff:
-                snapshot, handoff = offer_page_details(self.session, snapshot, browser)
-            if handoff:
-                if self.native and messages:
-                    messages[-1] = replace(messages[-1], user_content="\n\n".join(
-                        part for part in (messages[-1].user_content, handoff) if part))
-                else:
-                    prompt = "\n\n".join(part for part in (prompt, handoff) if part)
+        if handoff is None and not acknowledge:
+            snapshot, handoff = self.request_snapshot(snapshot)
+        if handoff:
+            if self.native and messages:
+                messages[-1] = replace(messages[-1], user_content="\n\n".join(
+                    part for part in (messages[-1].user_content, handoff) if part))
+            else:
+                prompt = "\n\n".join(part for part in (prompt, handoff) if part)
         scoped_contract = self.request_scoped_context
         if not self.native and not scoped_contract and state.leaf not in {operation_payload.LEAF_WRITER_RUNNING, operation_payload.LEAF_REPAIR_RUNNING}:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
@@ -433,7 +446,9 @@ class KernelContext:
         if scoped_contract and self.capabilities.text_tool_format == "json_schema":
             from codey.providers.text_tool_schema import text_tool_schema
 
-            options = replace(options, tool_call_json=True, tool_call_schema=decode_json_object(text_tool_schema(list(tools))))
+            _text_tool_schema: Callable[[list[ProviderToolDefinition]], object] = text_tool_schema
+
+            options = replace(options, tool_call_json=True, tool_call_schema=decode_json_object(_text_tool_schema(list(tools))))
         request: ProviderRequest
         if self.native and messages:
             results = tuple(messages)
@@ -456,17 +471,20 @@ class KernelContext:
         from codey.operations.knowledge_context import knowledge_background
 
         recalled = knowledge_background(self.execution.research_tools, self.session, str(self.transport.user_task or ""))
+        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
+        if (prefetched is None and state.logical_turn == 0 and state.leaf == operation_payload.LEAF_WRITER_RUNNING
+                and self.prefetch_required_sources(snapshot)):
+            return
+        snapshot, handoff = self.request_snapshot(snapshot)
         prepared = prepare_kernel_turn(self.session, user_task=str(self.transport.user_task or ""),
             context_text="\n\n".join(part for part in (self.transport.context_text, recalled) if part),
             native=self.native, task_guidance=self.request.task_guidance,
             completion_context=self.completion_context,
-            request_scoped_contract=self.request_scoped_context)
-        if (prefetched is None and state.logical_turn == 0 and state.leaf == operation_payload.LEAF_WRITER_RUNNING
-                and self.prefetch_required_sources(prepared.snapshot)):
-            return
+            request_scoped_contract=self.request_scoped_context, snapshot=snapshot)
         prompt = prepared.prompt
         if prefetched:
-            results = "\n\n".join(task_result_context(self.session, result, prepared.snapshot.research_scope)
+            results = "\n\n".join(task_result_context(self.session, result, snapshot.research_scope,
+                                                     tool_names=snapshot.tool_names)
                                     for result in prefetched)
             prompt += "\n\nRequired source results from the runtime's initial access:\n" + results
         question_raw = self.durable.task(self.sink.run_id).state.get("question")
@@ -492,9 +510,9 @@ class KernelContext:
                 self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "",
-                research_scope=prepared.snapshot.research_scope, tool_names=prepared.snapshot.tool_names,
+                research_scope=snapshot.research_scope, tool_names=snapshot.tool_names,
                 provider=self.provider)) if part)
-        self.freeze(state, prepared.snapshot, turn=turn, prompt=prompt,
+        self.freeze(state, snapshot, turn=turn, prompt=prompt, handoff=handoff,
                     counters=replace(state.counters, progress=progress.snapshot()),
                     coding_context_prepared=True, initial_source_batch=prefetched is not None)
 
@@ -518,7 +536,8 @@ class KernelContext:
             calls.append(ToolCall("browser_navigate", {"url": upload.url}, call_id="required-source:upload-page"))
         # CodeMode aggregation hides this leaf from the model's outer catalog,
         # while the frozen inventory still authorizes it for the runtime.
-        runtime_snapshot = replace(snapshot, tool_names=tuple(dict.fromkeys((*snapshot.tool_names, *(call.name for call in calls)))))
+        names: dict[str, None] = dict.fromkeys([*snapshot.tool_names, *[call.name for call in calls]])
+        runtime_snapshot = replace(snapshot, tool_names=tuple(names))
         self._execute_calls(calls, runtime_snapshot, turn=0)
         return True
 
@@ -686,10 +705,10 @@ class KernelContext:
             self.close(state, no_progress_result(self.session, turn) if reason == "no_progress"
                        else KernelResult(False, summary, turn, reason))
             return
-        snapshot = kernel_protocol.build_turn_snapshot(self.session, native=self.native)
+        snapshot, handoff = self.request_snapshot(kernel_protocol.build_turn_snapshot(self.session, native=self.native))
 
         def result_context(result: ToolResult) -> str:
-            value: str = task_result_context(self.session, result, snapshot.research_scope)
+            value: str = task_result_context(self.session, result, snapshot.research_scope, tool_names=snapshot.tool_names)
             return value
 
         advance = wiring._advance_after_results(self.native, results, self.session, None,
@@ -713,12 +732,13 @@ class KernelContext:
             spans = tuple(replace(span, start=span.start + shift, end=span.end + shift) for span in spans)
             if reminder:
                 prompt += "\n\n" + reminder
-        self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages, text_result_spans=spans)
+        self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages, text_result_spans=spans,
+                    handoff=handoff)
 
     def boundary_text(self) -> str:
         task = self.durable.task(self.sink.run_id)
-        receipt_raw = task.state.get("generation_boundary_receipt", {})
-        receipt: Mapping[str, object] = receipt_raw if isinstance(receipt_raw, Mapping) else {}
+        receipt_raw = task.state.get("generation_boundary_receipt")
+        receipt: Mapping[str, object] = receipt_raw if isinstance(receipt_raw, Mapping) else dict[str, object]()
         submission_ids = receipt.get("submission_ids", ())
         ids = submission_ids if isinstance(submission_ids, (list, tuple)) else ()
         texts: list[str] = []

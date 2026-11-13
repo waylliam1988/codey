@@ -6,11 +6,11 @@ import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from os.path import commonprefix
-from typing import Any
 
 from codey.providers.api_codec import ApiCodec
 from codey.providers.base import ResultMetadata, result_metadata_from_text
 from codey.providers.context_ledger import digest
+from codey.types.json_value import JsonValue, decode_json_object, decode_json_value, require_json_strings
 
 
 @dataclass(frozen=True)
@@ -20,9 +20,25 @@ class ContextRange:
     source_digest: str
 
 
-def select_range(codec: ApiCodec, items: list[dict[str, Any]],
+def _unrecoverable_output(item: dict[str, object], result_refs: frozenset[str]) -> bool:
+    """A summary must not discard a body with no currently usable reread path."""
+    from codey.providers.text_result_views import TEXT_RESULTS_KEY, decode_text_result_spans
+
+    if item.get("role") == "tool" or item.get("type") == "function_call_output":
+        text = item.get("content") if item.get("role") == "tool" else item.get("output")
+        metadata = result_metadata_from_text(text) if isinstance(text, str) else None
+        return metadata is not None and metadata.result_ref not in result_refs
+    if TEXT_RESULTS_KEY in item:
+        text = item.get("content")
+        if not isinstance(text, str):
+            raise ValueError("text result view requires text content")
+        return any(span.result_ref not in result_refs for span in decode_text_result_spans(text, item[TEXT_RESULTS_KEY]))
+    return False
+
+
+def select_range(codec: ApiCodec, items: list[dict[str, object]],
                  checkpoints: frozenset[str] = frozenset(), *, merge_checkpoints: bool = False,
-                 recent_start: int | None = None) -> ContextRange | None:
+                 recent_start: int | None = None, result_refs: frozenset[str] | None = None) -> ContextRange | None:
     spans = codec.closed_spans(items)
     latest_user = max((i for i, item in enumerate(items) if item.get("role") == "user"), default=-1)
     latest_tool = next(((start, end) for start, end in reversed(spans)
@@ -32,7 +48,9 @@ def select_range(codec: ApiCodec, items: list[dict[str, Any]],
     eligible = [(start, end) for start, end in spans[:-1]
                 if not start <= latest_user < end and (start, end) != latest_tool
                 and (recent_start is None or end <= recent_start)
-                and not any(digest(item) in checkpoints for item in items[start:end])]
+                and not any(digest(item) in checkpoints for item in items[start:end])
+                and (result_refs is None or not any(_unrecoverable_output(item, result_refs)
+                                                    for item in items[start:end]))]
     runs: list[tuple[int, int]] = []
     for start, end in eligible:
         if runs and runs[-1][1] == start:
@@ -46,23 +64,56 @@ def select_range(codec: ApiCodec, items: list[dict[str, Any]],
             # Only a hard admission failure may merge old state. Re-read a
             # bounded pair of original segments, never repeatedly summarize all history.
             old = [(start, end) for start, end in spans[:-1]
-                   if end == start + 1 and digest(items[start]) in checkpoints]
+                   if end == start + 1 and digest(items[start]) in checkpoints
+                   and (result_refs is None or not _unrecoverable_output(items[start], result_refs))]
             for first, second in zip(old, old[1:], strict=False):
                 if first[1] == second[0]:
                     return ContextRange(first[0], second[1], digest(items[first[0]:second[1]]))
         return None
-    start, end = max(runs, key=lambda span: len(str(items[span[0]:span[1]])))
+    def span_size(span: tuple[int, int]) -> int:
+        return len(str(items[span[0]:span[1]]))
+
+    start, end = max(runs, key=span_size)
     return ContextRange(start, end, digest(items[start:end]))
 
 
-def replace_range(items: list[dict[str, Any]], selected: ContextRange,
-                  replacement: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def replace_range(items: list[dict[str, object]], selected: ContextRange,
+                  replacement: list[dict[str, object]]) -> list[dict[str, object]]:
     if digest(items[selected.start:selected.end]) != selected.source_digest:
         raise ValueError("context source range changed")
     return copy.deepcopy(items[:selected.start] + replacement + items[selected.end:])
 
 
-def _old_outputs(codec: ApiCodec, items: list[dict[str, Any]]) -> Iterator[tuple[dict[str, Any], str, str]]:
+def restore_result_bodies(items: list[dict[str, object]], checkpoints: list[dict[str, object]],
+                          result_refs: frozenset[str]) -> list[dict[str, object]]:
+    """Expand archived views only where a receipt has lost its reread path."""
+    originals: dict[str, list[dict[str, object]]] = {}
+
+    def expand(source: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [entry for item in source for entry in originals.get(digest(item), [item])]
+
+    for checkpoint in checkpoints:
+        raw_source = checkpoint.get("source")
+        if not isinstance(raw_source, list):
+            raise ValueError("context checkpoint has no original source")
+        source = [dict[str, object](decode_json_object(item)) for item in raw_source]
+        if checkpoint.get("kind") == "output_reduction":
+            raw_view = checkpoint.get("view_digests")
+            view = require_json_strings(raw_view, "output view digests")
+            if len(source) != len(view):
+                raise ValueError("output reduction has no complete original body index")
+            for identity, item in zip(view, source, strict=True):
+                restored = expand([item])
+                if isinstance(identity, str) and any(_unrecoverable_output(row, result_refs) for row in restored):
+                    originals[identity] = restored
+        elif isinstance(checkpoint_identity := checkpoint.get("item_digest"), str):
+            restored = expand(source)
+            if any(_unrecoverable_output(row, result_refs) for row in restored):
+                originals[checkpoint_identity] = restored
+    return copy.deepcopy(expand(items))
+
+
+def _old_outputs(codec: ApiCodec, items: list[dict[str, object]]) -> Iterator[tuple[dict[str, object], str, str]]:
     spans = codec.closed_spans(items)
     latest_tool = next(((start, end) for start, end in reversed(spans)
                         if any(item.get("tool_calls") or item.get("type") == "function_call"
@@ -84,7 +135,7 @@ def _available_metadata(text: str, result_refs: frozenset[str]) -> ResultMetadat
     return metadata if metadata is not None and metadata.result_ref in result_refs else None
 
 
-def _old_text_indices(codec: ApiCodec, items: list[dict[str, Any]]) -> Iterator[int]:
+def _old_text_indices(codec: ApiCodec, items: list[dict[str, object]]) -> Iterator[int]:
     from codey.providers.text_result_views import TEXT_RESULTS_KEY
 
     # A later repair/request without new output must not make the current
@@ -96,7 +147,7 @@ def _old_text_indices(codec: ApiCodec, items: list[dict[str, Any]]) -> Iterator[
                 yield index
 
 
-def output_reduction_ready(codec: ApiCodec, items: list[dict[str, Any]], result_refs: frozenset[str], *,
+def output_reduction_ready(codec: ApiCodec, items: list[dict[str, object]], result_refs: frozenset[str], *,
                            batch_receipts: bool) -> bool:
     """Treat unbacked old bodies losslessly; batch at least two backed bodies."""
     backed = 0
@@ -106,11 +157,11 @@ def output_reduction_ready(codec: ApiCodec, items: list[dict[str, Any]], result_
         backed += 1
     from codey.providers.text_result_views import reducible_text_result_count
 
-    backed += sum(reducible_text_result_count(items[index], result_refs) for index in _old_text_indices(codec, items))
+    backed += sum(reducible_text_result_count(decode_json_object(items[index]), result_refs) for index in _old_text_indices(codec, items))
     return batch_receipts and backed >= 2
 
 
-def reduce_old_outputs(codec: ApiCodec, items: list[dict[str, Any]], result_refs: frozenset[str]) -> list[dict[str, Any]]:
+def reduce_old_outputs(codec: ApiCodec, items: list[dict[str, object]], result_refs: frozenset[str]) -> list[dict[str, object]]:
     """Encode old structure losslessly; only omit bodies backed by a receipt."""
     result = copy.deepcopy(items)
     for item, key, text in _old_outputs(codec, result):
@@ -125,7 +176,7 @@ def reduce_old_outputs(codec: ApiCodec, items: list[dict[str, Any]], result_refs
     from codey.providers.text_result_views import reduce_text_results
 
     for index in _old_text_indices(codec, result):
-        result[index] = reduce_text_results(result[index], result_refs)
+        result[index] = dict[str, object](reduce_text_results(decode_json_object(result[index]), result_refs))
     return result
 
 
@@ -135,13 +186,17 @@ def validate_summary(text: str) -> str:
     return text.strip()
 
 
-def summary_source(value: Any) -> Any:
+def summary_source(value: object) -> JsonValue:
+    return _summary_source(decode_json_value(value))
+
+
+def _summary_source(value: JsonValue) -> JsonValue:
     """Encode repeated structure losslessly for model-facing sources and views."""
     if isinstance(value, str):
         if len(value) < 512:
             return value
         lines = value.splitlines(keepends=True)
-        parts: list[Any] = []
+        parts: list[JsonValue] = []
         pending: list[str] = []
         index = 0
         while index < len(lines):
@@ -160,7 +215,7 @@ def summary_source(value: Any) -> Any:
                     pending = []
             index = end
         parts.extend(_factor_lines(pending))
-        encoded = {"text_encoding": "Concatenate parts. Templates emit prefix+value+suffix for each value; repeats emit text count times.",
+        encoded: JsonValue = {"text_encoding": "Concatenate parts. Templates emit prefix+value+suffix for each value; repeats emit text count times.",
                    "parts": parts}
         return encoded if len(_source_json(encoded)) < len(_source_json(value)) * 0.8 else value
     if isinstance(value, list):
@@ -172,30 +227,33 @@ def summary_source(value: Any) -> Any:
     return value
 
 
-def _source_json(value: Any) -> str:
+def _source_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
-def _line_template(lines: list[str]) -> Any:
+def _line_template(lines: list[str]) -> JsonValue:
     if len(lines) < 4:
         return "".join(lines)
     prefix = commonprefix(lines)
     tails = [line[len(prefix):] for line in lines]
     suffix = commonprefix([tail[::-1] for tail in tails])[::-1]
     values = [tail[:-len(suffix)] if suffix else tail for tail in tails]
-    template = {"prefix": prefix, "values": values, "suffix": suffix}
+    template: JsonValue = {"prefix": prefix, "values": [value for value in values], "suffix": suffix}
     original = "".join(lines)
     return template if len(_source_json(template)) < len(_source_json(original)) else original
 
 
-def _factor_lines(lines: list[str]) -> list[Any]:
+def _factor_lines(lines: list[str]) -> list[JsonValue]:
     if not lines:
         return []
     # A final unterminated line must not defeat an otherwise shared suffix.
-    whole = [_line_template(lines)]
-    split = [_line_template(lines[:-1]), lines[-1]] if len(lines) >= 5 else whole
-    candidates: list[list[Any]] = [whole, split]
+    whole: list[JsonValue] = [_line_template(lines)]
+    split: list[JsonValue] = [_line_template(lines[:-1]), lines[-1]] if len(lines) >= 5 else whole
+    candidates: list[list[JsonValue]] = [whole, split]
     if len(lines) >= 8:
         middle = len(lines) // 2
         candidates.append(_factor_lines(lines[:middle]) + _factor_lines(lines[middle:]))
-    return min(candidates, key=lambda parts: len(_source_json(parts)))
+    def encoded_size(parts: list[JsonValue]) -> int:
+        return len(_source_json(parts))
+
+    return min(candidates, key=encoded_size)

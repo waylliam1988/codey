@@ -28,12 +28,16 @@ from codey.toolchain.tool_spec import freeze_spec_parameters, json_contract_text
 from codey.types.json_value import JsonObject, JsonValue
 
 
-def legacy_snapshot(snapshot: TurnSnapshot, version: int = 3) -> TurnSnapshot:
+def claim_snapshot(snapshot: TurnSnapshot) -> TurnSnapshot:
     done = spec_for_tool("done")
     assert done is not None
     specs = tuple(freeze_spec_parameters(done) if spec.name == "done" else spec for spec in snapshot.frozen_specs)
-    legacy = replace(snapshot, frozen_specs=specs, ignore_runtime_claims=False,
+    return replace(snapshot, frozen_specs=specs, ignore_runtime_claims=False,
                      contract_text=json_contract_text(tuple(spec for spec in specs if spec.name in snapshot.tool_names)))
+
+
+def legacy_snapshot(snapshot: TurnSnapshot, version: int = 3) -> TurnSnapshot:
+    legacy = claim_snapshot(snapshot)
     payload = snapshot_description(legacy)
     payload["schema_version"] = version
     payload.pop("ignore_runtime_claims")
@@ -46,7 +50,7 @@ def legacy_snapshot(snapshot: TurnSnapshot, version: int = 3) -> TurnSnapshot:
 
 def proposal(args: JsonObject, snapshot: TurnSnapshot, native: bool) -> ToolPlan:
     return normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("original", "done", args),)) if native else
-        decode_text_turn(json.dumps({"tool": "done", "args": args})), snapshot=snapshot)
+        decode_text_turn(json.dumps(dict[str, JsonValue](tool="done", args=args))), snapshot=snapshot)
 
 
 @pytest.mark.parametrize("format", ["text", "json", "json_explanation"])
@@ -140,9 +144,11 @@ def test_runtime_claim_omission_does_not_prove_required_process_success(state: s
 
 @pytest.mark.parametrize("version", [1, 2, 3])
 @pytest.mark.parametrize("native", [False, True])
-def test_old_snapshots_still_validate_false_process_claims(version: int, native: bool) -> None:
+def test_old_snapshots_are_rejected_before_validating_claims(version: int, native: bool) -> None:
     session = TaskSession(TaskPolicy(frozenset({"control"})), task_kind="chat")
-    snapshot = legacy_snapshot(build_turn_snapshot(session, native=native), version)
+    with pytest.raises(ValueError, match="unsupported captured turn snapshot version"):
+        legacy_snapshot(build_turn_snapshot(session, native=native), version)
+    snapshot = claim_snapshot(build_turn_snapshot(session, native=native))
     plan = proposal({"summary": "answer", "execution_claims": [{"result_ref": "browser", "status": "success",
         "exit_code_scope": "process"}]}, snapshot, native)
     assert not plan.protocol_error
@@ -184,7 +190,9 @@ def test_native_duplicate_arguments_cannot_be_hidden_by_compatibility(arguments:
 @pytest.mark.parametrize("version", [1, 2, 3])
 def test_legacy_snapshots_preserve_claim_validation(version: int) -> None:
     session = TaskSession(TaskPolicy(frozenset({"control"})), task_kind="chat")
-    snapshot = legacy_snapshot(build_turn_snapshot(session), version)
+    with pytest.raises(ValueError, match="unsupported captured turn snapshot version"):
+        legacy_snapshot(build_turn_snapshot(session), version)
+    snapshot = claim_snapshot(build_turn_snapshot(session))
     assert not snapshot.ignore_runtime_claims
     assert "source_gaps" in snapshot.contract_text
     plan = proposal({"summary": "done", "source_gaps": [{"reason": "None", "result_ref": "invented"}]}, snapshot, False)
@@ -197,7 +205,7 @@ def test_legacy_snapshots_preserve_claim_validation(version: int) -> None:
 @pytest.mark.parametrize("marker", [None, 0, 1, "true", []])
 def test_snapshot_compatibility_marker_requires_a_boolean(marker: JsonValue) -> None:
     payload = snapshot_description(build_turn_snapshot(TaskSession(TaskPolicy(frozenset({"control"})), task_kind="chat")))
-    assert payload["schema_version"] == 4
+    assert payload["schema_version"] == 6
     payload["ignore_runtime_claims"] = marker
     with pytest.raises(ValueError, match="boolean"):
         restore_snapshot(payload)

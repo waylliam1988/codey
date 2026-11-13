@@ -8,6 +8,7 @@ same executors and durable mutation line.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -20,7 +21,7 @@ from codey.operations.prepared_provider_request import PreparedProviderRequest
 from codey.operations.provider_receipts import REQUEST_KIND, read_provider_artifact
 from codey.operations.provider_request_context import ProviderRequestContext
 from codey.providers.transport import ProviderTransport
-from codey.types.json_value import decode_json_object
+from codey.types.json_value import decode_json_object, require_json_string
 
 if TYPE_CHECKING:
     from codey.operations.task_effects import KernelEffectSink
@@ -39,6 +40,7 @@ from codey.runtime.core.operation_reducer import (
     ACTION_SUBMIT_PROVIDER_REQUEST,
     RuntimeAction,
 )
+from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.runtime.effects.effect_records import (
     EFFECT_CATEGORY_PROVIDER_SEND,
     SENT_STATE_MAYBE_SENT,
@@ -64,11 +66,13 @@ def decode_provider_invocation(payload: object) -> ProviderRequest:
 
 def load_prepared_request(sink: KernelEffectSink, request_ref: str) -> PreparedProviderRequest:
     artifact = sink.durable.artifact(request_ref)
-    envelope = sink.managed_outputs.read_json_artifact(dict[str, object](decode_json_object(thaw_json(artifact.metadata["ref"]))))
+    raw_envelope: object = sink.managed_outputs.read_json_artifact(dict[str, object](decode_json_object(thaw_json(artifact.metadata["ref"]))))
+    envelope = decode_json_object(raw_envelope)
     if not isinstance(envelope, dict) or not isinstance(envelope.get("effect_id"), str):
         raise RuntimeEffectError("prepared request has no stable effect identity")
     payload = read_provider_artifact(sink.managed_outputs, artifact, kind=REQUEST_KIND,
-        session_id=sink.session_id, run_id=sink.run_id, effect_id=envelope["effect_id"])
+        session_id=sink.session_id, run_id=sink.run_id,
+        effect_id=require_json_string(envelope["effect_id"], "effect_id"))
     if not isinstance(payload, dict) or not isinstance(payload.get("admission"), dict):
         raise RuntimeEffectError("prepared request has no admission data")
     admission = decode_json_object(payload["admission"])
@@ -121,7 +125,7 @@ def _restore_window_context(provider: ProviderTransport, context: ProviderReques
     ref = context.window_ref
     if provider_window_ref(provider) == ref:
         return context
-    restore = optional_callable(provider, "restore_protocol_window")
+    restore: Callable[[ProtocolWindowRef], object] | None = optional_callable(provider, "restore_protocol_window")
     if restore is None:
         raise RecoveryFailed("provider cannot restore the original protocol window")
     restore(ref)
@@ -162,28 +166,34 @@ def drive_provider_request(sink: KernelEffectSink, provider: ProviderTransport, 
             # A lost admission acknowledgement conveys no execution right.
             # Loading that original pending effect must never resend it.
             raise RecoveryFailed("provider intent was already admitted; its external outcome requires reconciliation")
-        return _execute_provider(sink, transport, admitted.intent, invocation)
+        return _execute_provider(sink, transport, admitted.intent, invocation,
+            receipt_recovery=prepared.context is not None and "read_tool_result" in prepared.context.snapshot.tool_names)
 
 
 def _execute_provider(sink: KernelEffectSink, provider: ProviderTransport, intent: RuntimeEffectIntent,
-                      invocation: ProviderRequest) -> AssistantTurn | str:
+                      invocation: ProviderRequest, *, receipt_recovery: bool) -> AssistantTurn | str:
     try:
-        gate_prompt = optional_callable(provider, "set_attempt_gate_prompt")
+        gate_prompt: Callable[[str], object] | None = optional_callable(provider, "set_attempt_gate_prompt")
         if callable(gate_prompt):
             prompt = invocation.prompt if isinstance(invocation, (SendTextRequest, SendTurnRequest)) else ""
             gate_prompt(prompt if isinstance(prompt, str) else "")
-        result_refs = optional_callable(provider, "set_result_refs")
-        if callable(result_refs):
-            result_refs(tuple(effect.effect_id for effect in sink.durable.effects(sink.run_id)
-                              if effect.category == "tool_call" and effect.settlement is not None))
+        from codey.providers.api_context import bind_result_recovery
+
+        refs: list[str] = []
+        if receipt_recovery:
+            for effect in sink.durable.effects(sink.run_id):
+                if effect.category == "tool_call" and effect.settlement is not None:
+                    refs.append(effect.effect_id)
+        bind_result_recovery(provider, tuple(refs))
         reply = provider.execute_request(invocation)
         from codey.operations.provider_session import normalize_provider_reply
         reply = normalize_provider_reply(provider, reply)
     except Exception as exc:
         from codey.providers.error_classification import ContextOverflowError, RequestPrepError
 
+        failure_kind: object = getattr(exc, "provider_failure_kind", "")
         not_sent = (isinstance(exc, (ContextOverflowError, RequestPrepError, StopIteration))
-                    or getattr(exc, "provider_failure_kind", "") == "not_submitted")
+                    or failure_kind == "not_submitted")
         sink.mutations.settle_provider_effect(sink.session_id, sink.run_id, RuntimeEffectSettlement(
             effect_id=intent.effect_id, effect_category=EFFECT_CATEGORY_PROVIDER_SEND,
             session_id=sink.session_id, run_id=sink.run_id, status=SETTLEMENT_STATUS_ERROR,
@@ -246,11 +256,12 @@ def drive_kernel(session: TaskSession, request: KernelRunRequest) -> KernelResul
     except Exception as exc:
         # Reporting a failed commit must not read the failed store again or
         # mask its error. This is diagnostic data, never an execution fallback.
+        failure_kind: object = getattr(exc, "provider_failure_kind", "")
         if last_decision is not None and (last_decision["purpose"] == "done" or last_decision["purpose"] == "question"):
             original = result_from_payload(last_decision["result"])
             return KernelResult(False, f"protocol delivery failed [{type(exc).__name__}]: {exc}",
                 original.turns, "delivery_pending", proof=original.proof,
-                delivery="unknown" if getattr(exc, "provider_failure_kind", "") == "submission_uncertain" else "failed")
+                delivery="unknown" if failure_kind == "submission_uncertain" else "failed")
         if last_action in {rules.ACTION_PREPARE_TURN, rules.ACTION_REDELIVER_SETTLED_BATCH}:
             return KernelResult(False, f"controller failed [{type(exc).__name__}]: {exc}", session.turn, "controller_failure")
         failure: KernelResult = _provider_failure(

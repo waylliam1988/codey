@@ -48,7 +48,7 @@ def test_copy_scope_is_explicit_and_narrow() -> None:
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 @pytest.mark.parametrize("case", [
-    "table", "json", "expired", "changed_data", "changed_file", "wrong_selector", "wrong_target", "raw_code", "duplicate", "parent_return",
+    "table", "json", "expired", "changed_data", "changed_file", "wrong_selector", "wrong_target", "raw_code", "duplicate", "parent_return", "observe_return",
 ])
 def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str) -> None:
     table = case in {"table", "wrong_selector", "duplicate"}
@@ -56,13 +56,16 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     task = (f"打开 {URL}，把 Retail 表中 B-17 的 Due 以整数原样写入 ledger.json 的 payable。"
             if table else f"打开 {URL}，把运单号原样写入 dispatch.json 的 carrier_label，保留前导零。")
     task += "保留其他字段。"
-    if case == "parent_return":
+    if case in {"parent_return", "observe_return"}:
         original_lower = CopyTurn.lower
 
         def missing_return(copy: CopyTurn, args: JsonObject) -> JsonObject:
             converted = original_lower(copy, args)
             if copy.phase == "edit":
-                converted["code"] = str(converted["code"]).replace("return unwrap(await tools.edit", "unwrap(await tools.edit")
+                if case == "parent_return":
+                    converted["code"] = str(converted["code"]).replace("return unwrap(await tools.edit", "unwrap(await tools.edit")
+            elif case == "observe_return":
+                converted["code"] = str(converted["code"]).replace("return unwrap", "unwrap")
             return converted
 
         monkeypatch.setattr(CopyTurn, "lower", missing_return)
@@ -178,15 +181,28 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         audit = receipt_audit([(item.identity, item.result) for item in receipts])
         assert audit["true_stale_conflicts"] == 1 and audit["fresh_read_recovery"] is True
         assert previous["ref"] == final["ref"]
+        conflict_ref = next(row.identity for row in receipts if row.result is edits[0])
+        conflict = next(row.result for row in receipts if row.result.call.name == "codemode"
+                        and isinstance(children := row.result.canonical.get("child_effect_ids"), list)
+                        and conflict_ref in children)
+        assert "Retry with the same source;" in conflict.model_text
+        assert "Do not replay the whole operation" not in conflict.model_text
     if case == "parent_return":
         failures = [row.result for row in receipts if row.result.call.name == "codemode" and not row.result.ok
                     and row.result.audit.get("error_code") == "missing_return"]
         failed, = failures
         assert failed.canonical["child_effect_ids"]
-        assert "Do not replay the whole operation" in failed.model_text
+        assert "file write completed. Do not repeat the write" in failed.model_text
         assert "repair_of=" not in failed.model_text and "Correct only the return expression" not in failed.model_text
         assert "Return an explicit JSON value" not in failed.model_text
         assert "CodeMode returned undefined" in str(failed.audit["template_error"])
+    if case == "observe_return":
+        assert len([row for row in receipts if row.result.call.name == "browser_eval"]) == 1
+        assert len([row for row in receipts if row.result.call.name == "browser_navigate"]) == 1
+        failed, = [row.result for row in receipts if row.result.call.name == "codemode" and not row.result.ok
+                   and row.result.audit.get("error_code") == "missing_return"]
+        assert "observation completed" in failed.model_text
+        assert "do not fetch the source again" in failed.model_text
     requests = [parse_json_object(line) for line in (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
     schemas = [decode_json_object(decode_json_object(decode_json_object(row["payload"])["response_format"])["json_schema"])["schema"]
                for row in requests if row.get("phase") == "request"]

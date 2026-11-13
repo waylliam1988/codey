@@ -5,8 +5,7 @@ import copy
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
-from typing import Any
+from dataclasses import dataclass
 
 from codey.providers.api_codec import ApiCodec
 from codey.providers.base import ProviderToolDefinition
@@ -19,8 +18,9 @@ from codey.providers.context_checkpoint import (
 )
 from codey.providers.context_ledger import digest
 from codey.providers.token_accounting import RequestContextCount
+from codey.types.json_value import decode_json_object, encode_transport_value
 
-Items = list[dict[str, Any]]
+Items = list[dict[str, object]]
 Tools = list[ProviderToolDefinition] | None
 
 
@@ -42,28 +42,29 @@ class ContextSnapshot:
 class CompactionCoordinator:
     def __init__(self, *, codec: ApiCodec, snapshot: Callable[[], ContextSnapshot],
                  count: Callable[[Items, Tools, float], RequestContextCount],
-                 commit: Callable[[ContextRange, Items, dict[str, Any], ContextSnapshot, Tools, float], bool],
-                 originals: Callable[[Items, list[dict[str, Any]]], Items], summarize: Callable[[Items, float], str],
+                 commit: Callable[[ContextRange, Items, dict[str, object], ContextSnapshot, Tools, float], bool],
+                 originals: Callable[[Items, list[dict[str, object]]], Items], summarize: Callable[[Items, float], str],
                  recent_budget: Callable[[], int]) -> None:
         self.codec, self.snapshot, self.count = codec, snapshot, count
         self.commit, self.originals, self.summarize = commit, originals, summarize
         self.recent_budget = recent_budget
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
-        self.diagnostics: list[dict[str, Any]] = []
+        self.diagnostics: list[dict[str, object]] = []
 
     def compact(self, items: Items, tools: Tools, deadline: float, snapshot: ContextSnapshot, *,
-                merge_checkpoints: bool = False, staged: list[dict[str, Any]] | None = None,
+                merge_checkpoints: bool = False, staged: list[dict[str, object]] | None = None,
                 deterministic_only: bool = False) -> Items | None:
         if self.snapshot().generation != snapshot.generation:
             return None
         started = time.time()
         reduced, reduction_counts = self._reduce_outputs(items, tools, deadline, snapshot.result_refs)
-        checkpoint: dict[str, Any]
+        checkpoint: dict[str, object]
         if reduced != items:
             selected = ContextRange(0, len(items), digest(items))
             replacement = reduced
-            checkpoint = {"kind": "output_reduction", "source": items}
+            checkpoint = {"kind": "output_reduction", "source": items,
+                          "view_digests": [digest(item) for item in reduced]}
         else:
             if deterministic_only:
                 return None
@@ -80,14 +81,15 @@ class CompactionCoordinator:
                     low = middle + 1
             recent_start = starts[low] if low < len(starts) else len(items)
             span = select_range(self.codec, items, snapshot.checkpoints, merge_checkpoints=merge_checkpoints,
-                                recent_start=recent_start)
+                                recent_start=recent_start, result_refs=snapshot.result_refs)
             if span is None:
                 return None
             selected = span
             source = items[selected.start:selected.end]
             summary = validate_summary(self.summarize(self.originals(source, staged or []), deadline))
-            item = self.codec.checkpoint_item(f"State record: work-{selected.source_digest[:24]}\n{summary}")
-            replacement = [item]
+            raw_item: object = self.codec.checkpoint_item(f"State record: work-{selected.source_digest[:24]}\n{summary}")
+            item = decode_json_object(raw_item)
+            replacement = [dict[str, object](item)]
             checkpoint = {"kind": "work_state", "source": source, "item_digest": digest(item), "text": summary}
         candidate = replace_range(items, selected, replacement)
         self.codec.validate_view(candidate)
@@ -97,7 +99,7 @@ class CompactionCoordinator:
 
             raise ContextOverflowError("work state does not reduce request size")
         checkpoint.update(source_digest=selected.source_digest, start=selected.start, end=selected.end,
-                          before=asdict(before), after=asdict(after), model_identity=snapshot.identity,
+                          before=encode_transport_value(before), after=encode_transport_value(after), model_identity=snapshot.identity,
                           started_at=started, finished_at=time.time())
         committed = False
         if staged is None:
@@ -119,7 +121,7 @@ class CompactionCoordinator:
             raise ValueError("context view count is unavailable")
         return (items, None) if measured.value >= initial.value else (candidate, (initial, measured))
 
-    def accept(self, checkpoints: list[dict[str, Any]]) -> None:
+    def accept(self, checkpoints: list[dict[str, object]]) -> None:
         """Mark staged diagnostics only after their durable transaction commits."""
         accepted = {(row["source_digest"], row["started_at"]) for row in checkpoints}
         for row in self.diagnostics:
