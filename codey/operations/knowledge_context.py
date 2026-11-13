@@ -2,26 +2,36 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.knowledge.recall import render_recall
+from codey.types.json_value import decode_json_object, decode_json_value, require_json_integer, require_json_string
+
+if TYPE_CHECKING:
+    from codey.operations.task_session import TaskSession
+    from codey.research.tools import ResearchTools
 
 
-def knowledge_background(tools: Any, session: Any, question: str) -> str:
-    policy = getattr(session, "policy", None)
-    if tools is None or getattr(tools, "store", None) is None or session.task_kind == "evidence_followup":
+def knowledge_background(tools: ResearchTools | None, session: TaskSession, question: str) -> str:
+    policy = session.policy
+    if tools is None or tools.store is None or session.task_kind == "evidence_followup":
         return ""
-    allows = getattr(policy, "allows", None)
-    if not callable(allows) or not allows("knowledge.read"):
+    allows = policy.allows
+    if not allows("knowledge.read"):
         return ""
     # Reports remain available by explicit search/read, but automatic background
     # must not replay the current draft into its own synthesis or count previous
     # answers as fresh evidence. Filter before retrieval limits and expansion.
     current_ids: set[str] = set()
     if session.task_kind == "research":
-        for note_id in (*getattr(tools, "created_ids", ()), *getattr(tools, "updated_ids", ())):
-            for ref in tools.store.note_references(note_id):
-                value = tools.store.repository.read(str(ref["target"]), int(ref["revision"]))
+        for note_id in (*tools.created_ids, *tools.updated_ids):
+            raw_references: object = tools.store.note_references(note_id)
+            references = decode_json_value(raw_references)
+            assert isinstance(references, list)
+            for raw in references:
+                ref = decode_json_object(raw)
+                value = tools.store.repository.read(require_json_string(ref["target"], "knowledge id"),
+                                                    require_json_integer(ref["revision"], "knowledge revision"))
                 if value is not None and value.value.kind != "entity":
                     current_ids.add(value.value.id)
         # These versions already travel in the receipt-backed evidence handoff
@@ -33,7 +43,8 @@ def knowledge_background(tools: Any, session: Any, question: str) -> str:
         "scope=session is limited to the current conversation. Retain observation time and user_statement origin. "
         "Durable research defaults to personal scope without a project, or project scope with one. "
         "Global is explicitly public; temporary content uses session scope.\n") if allows("knowledge.write") else ""
-    if getattr(policy, "strict_research", False):
+    strict_research: object = getattr(policy, "strict_research", False)
+    if strict_research:
         from codey.research.answer_contract import whole_research
 
         # Whole-answer publication derives scope; its input accepts no scope fields.

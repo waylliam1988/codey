@@ -55,7 +55,8 @@ SOURCE_SUCCESS_MARKER = "REQUIRED_SOURCE_RECORD_418"
 
 
 def legacy_urls_match(answer: str) -> bool:
-    urls = [value.rstrip(".,;:!?") for value in re.findall(r'https?://[^\s`*<>"\[\]()，。；、！？）]+', answer)]
+    matches: list[str] = re.findall(r'https?://[^\s`*<>"\[\]()，。；、！？）]+', answer)
+    urls = [value.rstrip(".,;:!?") for value in matches]
     return bool(urls) and all(value == URL for value in urls)
 
 
@@ -126,7 +127,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              explicit_wait: bool = True, fixture_html: str = HTML,
              upload_navigation_required: bool = True, research_sequence: bool = False,
              model_reports_metadata: bool = False,
-             expected_amount: int = 173, expected_code: str = "QUARTZ_851") -> dict[str, object]:
+             expected_amount: int = 173, expected_code: str = "QUARTZ_851",
+             additional_required_tools: tuple[str, ...] = ()) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     recording = ExperimentProvider(target, directory,
@@ -152,8 +154,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             raise AssertionError("snapshot serialization changed the frozen contract")
         snapshot_count += 1
         with (directory / "snapshots.jsonl").open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps({"original": snapshot_description(original),
-                                     "restored": snapshot_description(restored)}) + "\n")
+            stream.write(json.dumps(dict[str, object](original=snapshot_description(original),
+                                     restored=snapshot_description(restored))) + "\n")
         return restored
 
     def observe(row: dict[str, object]) -> None:
@@ -178,9 +180,9 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             if preserve_external_field:
                 changed["external_revision"] = EXTERNAL_FIELD
             result_file.write_text(json.dumps(changed) + "\n", encoding="utf-8")
-            (directory / "injection.json").write_text(json.dumps({
-                "trigger": "before_version_check", "path": rel, "expected_version": expected_version,
-                "file": changed}), encoding="utf-8")
+            injection: dict[str, object] = {"trigger": "before_version_check", "path": rel,
+                "expected_version": expected_version, "file": changed}
+            (directory / "injection.json").write_text(json.dumps(injection), encoding="utf-8")
             changed_after_read = True
         return final_write_check(root, rel, content, tool=tool, expected_version=expected_version)
 
@@ -287,8 +289,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             project = Path(temporary)
             result_file = project / "result.json"
             result_file.write_text('{"amount": 0, "code": "unknown"}\n', encoding="utf-8")
-            stack.enter_context(patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}))
-            stack.enter_context(patch("codey.app.provider_services.provider_availability", return_value={"local": True}))
+            stack.enter_context(patch.dict(os.environ, dict[str, str]([(NATIVE_TOOLS_ENV, "1")])))
+            stack.enter_context(patch("codey.app.provider_services.provider_availability", return_value=dict[str, bool](local=True)))
             if recording.fixed_acquisition:
                 from codey.operations.kernel_context import KernelContext
 
@@ -305,6 +307,11 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             sequence = (require_browser_research_sequence(url=URL, condition="text", value="鱼丸"),) if research_sequence else ()
             waits = (require_tool_success("browser_wait", via="codemode", arguments={
                 "condition": "text", "value": "UPLOAD_BYTES_82"}),) if upload_file and explicit_wait else ()
+            raw_schema: object = SCHEMA
+            output_schema: object = (upload_schema if assembled_upload else raw_schema if explanation_output else
+                {"type": "object", "properties": {"amount": {"type": "integer"}, "code": {"type": "string"}},
+                 "required": ["amount", "code"], "additionalProperties": False})
+            selection: dict[str, str] = {"model": target.model, "base_url": target.base_url}
             request = HeadlessRequest(
                 project if mode == "hybrid" else None, task, intent=mode, provider_id="local", max_turns=max_turns,
                 session_id=session_id,
@@ -312,24 +319,24 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 requested_capabilities=("web.read", "browser.observe", "browser.interact", *(
                     ("browser.effect",) if structured or explanation_output or upload_file or download_file or bound_output else ())),
                 project_changes_required=mode == "hybrid",
-                required_tools=(*(() if source_failure and source_attempt_only else sorted(required)), *bindings, *sequence, *waits),
+                required_tools=(*(() if source_failure and source_attempt_only else sorted(required)),
+                                *bindings, *sequence, *waits, *additional_required_tools),
                 output_format="json_explanation" if explanation_output or assembled_upload else "json" if bound_output else "text",
                 sources_open_required=True if source_failure else None,
-                output_schema=json.dumps(upload_schema) if assembled_upload else json.dumps(SCHEMA) if explanation_output else json.dumps({"type": "object", "properties": {
-                    "amount": {"type": "integer"}, "code": {"type": "string"}},
-                    "required": ["amount", "code"], "additionalProperties": False}) if bound_output else "",
-                model_selection={"model": target.model, "base_url": target.base_url},
+                output_schema=json.dumps(output_schema) if assembled_upload or explanation_output or bound_output else "",
+                model_selection=selection,
                 strict_research=strict_research,
             )
-            (directory / "request.json").write_text(json.dumps({
+            request_record: dict[str, object] = {
                 "task": task, "mode": mode, "max_turns": max_turns, "required_tools": request.required_tools,
                 "sources_open_required": request.sources_open_required, "strict_research": strict_research,
                 "output_format": request.output_format, "output_schema": request.output_schema,
                 "model": target.model, "base_url": target.base_url, "seed": target.seed,
                 "source_attempt_only": source_attempt_only, "fixed_source_attempt": fixed_source_attempt,
-            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            }
+            (directory / "request.json").write_text(json.dumps(request_record, ensure_ascii=False, indent=2), encoding="utf-8")
             result = run_headless(request, emit_jsonl=observe, connect_provider=connect)
-            artifact = decode_json_object(json.loads(result_file.read_text(encoding="utf-8")))
+            artifact = parse_json_object(result_file.read_text(encoding="utf-8"))
             (directory / "project-result.json").write_text(json.dumps(artifact), encoding="utf-8")
         terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), None)
         answer = str(terminal.get("summary") or "") if terminal is not None else ""
@@ -350,7 +357,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         audit = receipt_audit([(row.identity, row.result) for row in receipts])
         (directory / "receipts.json").write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
         failed_refs = sum(not row.result.ok and isinstance(value := row.result.canonical.get("value"), dict)
-                          and value.get("reason") == "stale_ref" for row in receipts)
+                          and decode_json_object(value).get("reason") == "stale_ref" for row in receipts)
         source_failures = [dict(row.result.canonical) for row in receipts
                            if not row.result.ok and "source_failure" in row.result.canonical]
         metadata_matches = ("SCHEMA_TOKEN_74" in answer and legacy_urls_match(answer)
@@ -371,7 +378,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                   and (mode != "hybrid" or file_correct))
         if assembled_upload:
             try:
-                delivered = decode_json_object(json.loads(answer))
+                delivered = parse_json_object(answer)
                 passed = passed and delivered["filename"] == "fixture.txt" and delivered["sha256"] == hashlib.sha256(
                     b"UPLOAD_BYTES_82\n").hexdigest() and "UPLOAD_BYTES_82" in str(delivered["page_text"])
             except (ValueError, KeyError):
@@ -450,13 +457,13 @@ def main() -> int:
     modes = ("chat", "research", "hybrid") if args.mode == "all" else (args.mode,)
     rows = []
     for mode in modes:
-        print(json.dumps({"starting": mode}), flush=True)
+        print(json.dumps(dict[str, str](starting=mode)), flush=True)
         row = run_case(root / mode, mode, target, restore_snapshots=args.restore_snapshots, reread=args.reread,
                        stale_edit=args.stale_edit, structured=args.structured, upload_file=args.upload_file,
                        download_file=args.download_file, bound_output=args.bound_output)
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
-    summary = {"passed": sum(row["passed"] is True for row in rows), "runs": len(rows), "results": rows}
+    summary: dict[str, object] = {"passed": sum(row["passed"] is True for row in rows), "runs": len(rows), "results": rows}
     (root / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0 if summary["passed"] == len(rows) else 1
 

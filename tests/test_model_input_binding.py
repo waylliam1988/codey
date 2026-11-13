@@ -103,7 +103,7 @@ def test_fixed_template_syntax_failure_uses_the_model_contract(
     assert snapshot.policy is not None
     session = TaskSession(snapshot.policy, task_kind="chat", task_text=f"上传附件到 {URL}")
 
-    def broken_template(_args: JsonObject) -> JsonObject:
+    def broken_template(_args: JsonObject, _checks: tuple[str, ...] = ()) -> JsonObject:
         return {"code": "return (", "inputs": {}}
 
     monkeypatch.setattr(kernel_protocol, "lower_upload_action", broken_template)

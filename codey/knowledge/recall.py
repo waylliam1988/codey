@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Protocol
 
 from codey.knowledge.model import KnowledgeVersion, canonical_json
 from codey.knowledge.repository import KnowledgeRepository
 from codey.knowledge.search_text import query_terms
+from codey.types.json_value import JsonObject, canonical_json_object, require_json_integer, require_json_string
+
+
+class _KnowledgeRow(Protocol):
+    def __getitem__(self, index: int, /) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -36,8 +41,10 @@ class KnowledgeHit:
     reason: str
     path: tuple[str, ...] = ()
 
-    def to_dict(self) -> dict[str, Any]:
-        return {"knowledge": self.version.to_dict(), "recall_reason": self.reason, "path": list(self.path)}
+    def to_dict(self) -> JsonObject:
+        raw_knowledge: object = self.version.to_dict()
+        knowledge = canonical_json_object(raw_knowledge)
+        return {"knowledge": knowledge, "recall_reason": self.reason, "path": list(self.path)}
 
 
 class KnowledgeRecall:
@@ -66,25 +73,25 @@ class KnowledgeRecall:
             args += (canonical_json(exclude_ids),)
         seeds: list[tuple[str, int, str]] = []
         if re.fullmatch(r"[a-z][a-z0-9_-]{15,127}", query):
-            rows = conn.execute(head + "WHERE v.id GLOB ?" + where + "ORDER BY v.id LIMIT ?",
+            rows: list[_KnowledgeRow] = conn.execute(head + "WHERE v.id GLOB ?" + where + "ORDER BY v.id LIMIT ?",
                                 (query + "*", *args, limit)).fetchall()
-            seeds.extend((str(r[0]), int(r[1]), "literal id prefix; confirm the exact identity") for r in rows)
+            seeds.extend((require_json_string(r[0], "knowledge id"), require_json_integer(r[1], "revision"), "literal id prefix; confirm the exact identity") for r in rows)
         # Explicit aliases can be multilingual and ambiguous. Return all candidates;
         # do not merge them or invent semantic identity from proximity.
         rows = conn.execute(head + "WHERE EXISTS (SELECT 1 FROM knowledge_aliases a WHERE a.id=v.id "
                             "AND length(a.alias)>=2 AND instr(?,a.alias)>0)" + where + "LIMIT ?",
                             (query.casefold(), *args, limit)).fetchall()
-        seeds.extend((str(r[0]), int(r[1]), "explicit name or alias in question") for r in rows)
+        seeds.extend((require_json_string(r[0], "knowledge id"), require_json_integer(r[1], "revision"), "explicit name or alias in question") for r in rows)
         terms = query_terms(query)
         if self.repository.index.fts_enabled and terms:
             match = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
             rows = conn.execute(head + "JOIN knowledge_fts f ON f.id=v.id WHERE knowledge_fts MATCH ?" + where +
                                 "ORDER BY bm25(knowledge_fts,0,4,1,4),v.id LIMIT ?", (match, *args, limit)).fetchall()
-            seeds.extend((str(r[0]), int(r[1]), "text match; relevance is not evidence strength") for r in rows)
+            seeds.extend((require_json_string(r[0], "knowledge id"), require_json_integer(r[1], "revision"), "text match; relevance is not evidence strength") for r in rows)
         if not seeds:
             rows = conn.execute(head + "WHERE instr(v.payload,?)>0" + where + "LIMIT ?",
                                 (query, *args, limit)).fetchall()
-            seeds.extend((str(r[0]), int(r[1]), "literal content match") for r in rows)
+            seeds.extend((require_json_string(r[0], "knowledge id"), require_json_integer(r[1], "revision"), "literal content match") for r in rows)
         hits: dict[tuple[str, int], KnowledgeHit] = {}
         for identity, revision, reason in seeds[:limit * 2]:
             version = self.repository.read(identity, revision)
@@ -128,7 +135,7 @@ class KnowledgeRecall:
         if exclude_ids:
             excluded += " AND v.id NOT IN (SELECT value FROM json_each(?)) "
             args += (canonical_json(exclude_ids),)
-        rows = conn.execute(
+        rows: list[_KnowledgeRow] = conn.execute(
             "SELECT r.id,r.revision,r.relation FROM knowledge_refs r JOIN knowledge_heads h "
             "ON r.id=h.id AND r.revision=h.revision JOIN knowledge_versions v ON v.id=r.id AND v.revision=r.revision "
             f"WHERE r.target=? AND r.target_revision=? AND {scope} AND v.status NOT IN ('withdrawn','superseded') " + excluded +
@@ -136,7 +143,7 @@ class KnowledgeRecall:
             (version.value.id, version.revision, *args, limit),
         ).fetchall()
         outgoing = [(r.target, r.revision, r.relation) for r in version.value.references if r.target not in exclude_ids]
-        return list(dict.fromkeys(outgoing + [(str(r[0]), int(r[1]), str(r[2])) for r in rows]))[:limit]
+        return list({key: None for key in outgoing + [(require_json_string(r[0], "knowledge id"), require_json_integer(r[1], "revision"), require_json_string(r[2], "relation")) for r in rows]})[:limit]
 
 
 def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_answer_refs: bool = True,
@@ -150,8 +157,9 @@ def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_an
              "interpretation_review=unreviewed means no independent interpretation assessment exists; "
              "dependencies_changed=false only means pinned dependencies have not changed, not that a claim is true."]
     if include_answer_refs:
-        lines.append("When using saved versions, include knowledge_refs:[{id:...,revision:...}] in done "
-                     "to preserve the exact premises.")
+        lines.append("Before citing saved knowledge, use knowledge_read with the exact id and revision. "
+                     "Search and background recall do not establish a committed knowledge read. "
+                     "After a successful read, follow the next done contract for available knowledge_refs choices.")
     if compact:
         lines.append("This summary is a locator. Use knowledge_read with the exact id and revision. "
                      "Source/evidence reads enter the original passage citation channel. "
@@ -159,11 +167,13 @@ def render_recall(hits: list[KnowledgeHit], *, max_chars: int = 6000, include_an
     for hit in hits:
         version, value = hit.version, hit.version.value
         # Clip only at presentation, leaving full content and provenance in SQLite.
+        conditions: object = value.conditions
+        provenance: object = value.provenance
         row = {"id": value.id, "revision": version.revision, "kind": value.kind, "origin": value.origin,
                "status": value.status, "dependencies_changed": version.dependencies_changed,
                "interpretation_review": version.interpretation_review, "reason": hit.reason,
-               "path": list(hit.path), "content": value.content[:700], "conditions": value.conditions,
-               "provenance": value.provenance, "references": [
+               "path": list(hit.path), "content": value.content[:700], "conditions": canonical_json_object(conditions),
+               "provenance": canonical_json_object(provenance), "references": [
                    {"target": r.target, "revision": r.revision, "relation": r.relation} for r in value.references]}
         if compact:
             row = {key: row[key] for key in ("id", "revision", "kind", "status", "reason", "interpretation_review")}

@@ -58,8 +58,9 @@ def test_chat_done_contract_uses_only_committed_read_versions(tmp_path: Path, na
         assert ("knowledge_refs" in str(next(tool.parameters for tool in wire if tool.name == "done"))) is (read == "success")
         for identity, revision in (("saved-observation", 1), ("saved-observation", 2), ("s1", 1)):
             args: JsonObject = {"summary": "Observed result.", "knowledge_refs": [{"id": identity, "revision": revision}]}
+            reply_payload: JsonObject = {"tool": "done", "args": args}
             reply = (AssistantTurn(tool_calls=(ProviderToolCall("done-call", "done", args),)) if native else
-                     decode_text_turn(json.dumps({"tool": "done", "args": args})))
+                     decode_text_turn(json.dumps(reply_payload)))
             valid = read == "success" and identity == "saved-observation" and revision == 1
             assert bool(normalize_turn(reply, snapshot=snapshot).protocol_error) is not valid
             session.last_done_args = args
@@ -71,8 +72,9 @@ def test_chat_done_contract_uses_only_committed_read_versions(tmp_path: Path, na
 
 @pytest.mark.usefixtures("scripted_local_api_connection", "no_external_advisor_models")
 @pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("search_first", [False, True])
 def test_actual_chat_requests_and_durable_receipt_share_read_versions(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native: bool, search_first: bool,
 ) -> None:
     root = tmp_path / "knowledge"
     store = KnowledgeStore(root)
@@ -82,7 +84,8 @@ def test_actual_chat_requests_and_durable_receipt_share_read_versions(
     directory = tmp_path / "run"
     directory.mkdir()
     refs: JsonObject = {"id": "saved-observation", "revision": 1}
-    install_http(monkeypatch, iter([
+    search: list[JsonObject] = [{"tool": "knowledge_search", "args": {"query": "measured observation"}}] if search_first else []
+    install_http(monkeypatch, iter([*search,
         {"tool": "knowledge_read", "args": refs},
         {"tool": "done", "args": {"summary": "A measured observation.", "knowledge_refs": [refs]}},
     ]), native=native)
@@ -95,11 +98,17 @@ def test_actual_chat_requests_and_durable_receipt_share_read_versions(
 
     events: list[dict[str, object]] = []
     result = run_headless(HeadlessRequest(project=None, task="Read saved-observation revision 1 and report its observation.",
-        intent="chat", provider_id="local", max_turns=2, state_home=directory / "state", research_store_root=root,
+        intent="chat", provider_id="local", max_turns=3, state_home=directory / "state", research_store_root=root,
         requested_capabilities=("knowledge.read",), required_tools=("knowledge_read",)),
         emit_jsonl=events.append, connect_provider=connect)
     assert result.stop_reason == "done", events
-    first, second = requests(directory)
+    wire = requests(directory)
+    first, second = wire[0], wire[-1]
+    assert "knowledge_read" in json.dumps(first["messages"])
+    assert "When using saved versions, include knowledge_refs" not in json.dumps(first["messages"])
+    if search_first:
+        assert "knowledge_refs" not in json.dumps(wire[1].get("response_format", wire[1].get("tools")))
+        assert "When using saved versions, include knowledge_refs" not in json.dumps(wire[1]["messages"])
     assert "knowledge_refs" not in json.dumps(first.get("response_format", first.get("tools")))
     assert "saved-observation" in json.dumps(second.get("response_format", second.get("tools")))
     assert "knowledge_refs" in json.dumps(second.get("response_format", second.get("tools")))

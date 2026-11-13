@@ -7,7 +7,8 @@
     "pypdf>=6.0,<7",
     "sqlite-vec==0.1.6",
     "tree-sitter==0.25.2",
-    "tree-sitter-bash==0.25.1"
+    "tree-sitter-bash==0.25.1",
+    "tree-sitter-javascript==0.25.0"
   ],
   "files": [
     "codey/__init__.py",
@@ -249,6 +250,7 @@
     "codey/operations/browser_text_report.py",
     "codey/operations/browser_upload.py",
     "codey/operations/chat_citations.py",
+    "codey/operations/chat_knowledge.py",
     "codey/operations/completion_context.py",
     "codey/operations/completion_context_codec.py",
     "codey/operations/completion_gate.py",

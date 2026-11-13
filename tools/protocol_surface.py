@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
+from inspect import getattr_static
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,7 +30,7 @@ from codey.runtime.core.models import ToolResult
 from codey.toolchain import tool_prompt
 from codey.toolchain.result_schema import browser_output_schema, validate_output
 from codey.toolchain.tool_spec import ToolSpec, thaw_schema_value
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, unique_json_fields
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tools import mechanical_surface, structured_surface
 from tools.completion_artifact_audit import EffectReceipt, tool_receipts
 from tools.completion_explanation_ab import ExperimentProvider, Target, append_json
@@ -150,7 +151,7 @@ def entry_schemas(snapshot: TurnSnapshot, *, defaults: bool, stale_refs: bool,
         properties = decode_json_object(schema["properties"])
         required = list(schema["required"]) if isinstance(schema["required"], list) else []
         description = entry.description
-        output = thaw_schema_value(entry.output_schema)
+        output = decode_json_object(thaw_schema_value(entry.output_schema))
         if name in structured_surface.ACTION_TOOLS:
             properties.pop("ref", None)
             properties["target_name"] = {"type": "string", "minLength": 1,
@@ -231,9 +232,12 @@ def delivered_reads(results: Mapping[str, ToolResult]) -> tuple[JsonObject, Json
     observations: JsonObject = {}
     remaining = 12000
     for reference, result in reversed(list(results.items())):
-        data = result.canonical.get("value")
+        raw_data: object = result.canonical.get("value")
+        if not isinstance(raw_data, dict):
+            continue
+        data = decode_json_object(raw_data)
         if (reference not in committed or result.call.name != "read_file" or not result.ok or result.truncated
-                or not isinstance(data, dict) or data.get("text_complete") is not True
+                or data.get("text_complete") is not True
                 or data.get("start_line") != 1 or data.get("next_offset") != 0
                 or data.get("end_line") != data.get("total_lines")
                 or not isinstance(data.get("path"), str) or not isinstance(data.get("text"), str)):
@@ -277,7 +281,7 @@ def recovery_action(receipts: list[EffectReceipt], attempted: set[str]) -> tuple
     token, action = candidate
     args = decode_json_object(action["args"])
     parent = next(row.result for row in reversed(receipts)
-                  if isinstance(repair := row.result.canonical.get("repair"), dict) and repair.get("token") == token)
+                  if isinstance(repair := row.result.canonical.get("repair"), dict) and decode_json_object(repair).get("token") == token)
     references = parent.canonical["child_effect_ids"]
     assert isinstance(references, list)
     by_ref = {row.identity: row.result for row in receipts}
@@ -312,7 +316,7 @@ def transmitted_reads(payload: JsonObject, reads: JsonObject, observations: Json
         if not content.startswith(READ_OBSERVATIONS_PREFIX):
             continue
         try:
-            actual = decode_json_object(json.loads(content[len(READ_OBSERVATIONS_PREFIX):]))
+            actual = parse_json_object(content[len(READ_OBSERVATIONS_PREFIX):])
         except (ValueError, TypeError):
             continue
         for handle, read in reads.items():
@@ -332,7 +336,10 @@ def prototype(directory: Path, scenario: str, config: str, *,
     observe = ToolSuccessRequirement._observe_value
     evaluate = completion_gate.evaluate
     guidance = ToolSuccessRequirement.model_guidance
-    execution_guidance: Callable[[ToolSuccessRequirement], str] = vars(ToolSuccessRequirement)["execution_guidance"].fget
+    guidance_property: object = getattr_static(ToolSuccessRequirement, "execution_guidance")
+    guidance_getter: object = getattr(guidance_property, "fget", None)
+    assert callable(guidance_getter)
+    execution_guidance: Callable[[ToolSuccessRequirement], str] = guidance_getter
     required_verdict = completion_gate._required_checks_verdict
     repair_text = tool_prompt.tool_repair_text
     digest = NodeWorkerRuntime.contract_digest
@@ -373,7 +380,7 @@ def prototype(directory: Path, scenario: str, config: str, *,
             super()._observe_http_attempt(attempt=attempt, data=data, phase=phase,
                                           response_bytes=response_bytes, seconds=seconds)
             if features.structured and phase == "request":
-                self.reads = transmitted_reads(decode_json_object(json.loads(data)),
+                self.reads = transmitted_reads(parse_json_object(data.decode("utf-8")),
                                                self.pending_reads, self.pending_observations)
                 append_json(directory / "protocol-events.jsonl", {"kind": "transmitted_handles",
                     "exchange": self.exchange, "handles": list(self.reads)})
@@ -410,7 +417,7 @@ def prototype(directory: Path, scenario: str, config: str, *,
                     return body
                 messages.append({"role": "user", "content": "Runtime recovery facts (historical data):\n"
                                  + json.dumps(recovery_state(receipts), ensure_ascii=False)})
-            if features.structured:
+            if features.structured and (current is None or current.input_binding is None):
                 if current is None or session_view is None:
                     raise ValueError("missing frozen experiment contract")
                 self.schemas = entry_schemas(current, defaults=features.admission, stale_refs=scenario == "stale_ref",
@@ -437,15 +444,17 @@ def prototype(directory: Path, scenario: str, config: str, *,
 
         def normalize_reply(self, reply: str) -> object:
             normalized = super().normalize_reply(reply)
-            if (not features.structured or not isinstance(normalized, str) or self.scripted_exchange == self.exchange
+            if (not features.structured or current is not None and current.input_binding is not None
+                    or not isinstance(normalized, str) or self.scripted_exchange == self.exchange
                     or self.fixed_acquisition and self.exchange == 1):
                 return normalized
             try:
-                action = decode_json_object(json.loads(normalized, object_pairs_hook=unique_json_fields))
+                action = parse_json_object(normalized)
             except (ValueError, TypeError):
                 return normalized
             if action.get("tool") != "codemode":
                 return normalized
+            args: JsonObject
             try:
                 args = compile_plan(decode_json_object(action.get("args")), self.schemas, self.reads,
                                     defaults=features.admission, same_plan_edits=same_plan_edits)
@@ -454,7 +463,8 @@ def prototype(directory: Path, scenario: str, config: str, *,
                 args = {"code": "throw Error(inputs.error);", "inputs": {"error": "Plan rejected before effects: " + str(exc)}}
                 kind = "invalid_plan"
             append_json(directory / "protocol-events.jsonl", {"kind": kind, "original": action, "lowered": args})
-            return json.dumps({"tool": "codemode", "args": args}, ensure_ascii=False)
+            lowered_action: JsonObject = {"tool": "codemode", "args": args}
+            return json.dumps(lowered_action, ensure_ascii=False)
 
     def checked(host: CodeModeHost, name: str, args: dict[str, object]) -> object:
         effective = normalized_args(name, args)
@@ -512,7 +522,7 @@ def prototype(directory: Path, scenario: str, config: str, *,
                 scope = ToolSuccessRequirement("browser_upload", via="codemode", answer_pointer="/effect_verified",
                                                result_pointer="/effect_verified").observe(records, results=receipts)
                 if scope.evaluation.passed and scope.value is False:
-                    output = decode_json_object(json.loads(str(done_text)))
+                    output = parse_json_object(str(done_text))
                     explanation = output.get("explanation")
                     if isinstance(explanation, str):
                         output["explanation"] = explanation.rstrip() + "\n\n" + UPLOAD_SCOPE_NOTE
@@ -550,10 +560,9 @@ def prototype(directory: Path, scenario: str, config: str, *,
         nested = (requirement.via == "codemode" or not requirement.via and (
             requirement.tool.startswith("browser_") or requirement.tool in {"read_file", "edit", "open_url"}))
         if not nested:
-            assert execution_guidance is not None
             return execution_guidance(requirement)
         operation = "browser_property" if requirement.tool == "browser_eval" else requirement.tool
-        arguments = decode_json_object(json.loads(requirement.arguments_json))
+        arguments = parse_json_object(requirement.arguments_json)
         if operation == "browser_property" and isinstance(arguments.get("code"), str):
             code = str(arguments["code"])
             arguments = {"name": code[7:]} if code.startswith("window.") else arguments
@@ -563,10 +572,13 @@ def prototype(directory: Path, scenario: str, config: str, *,
                 + (f"Required argument values: {json.dumps(arguments)}. " if arguments else "")
                 + proof + "Use the declared step schema; a narrative claim cannot satisfy this requirement.")
 
+    def tool_check_first(key: str) -> bool:
+        return not key.startswith("tool_succeeded:")
+
     def causal_verdict(session: TaskSession, checks: list[CompletionCheck],
                        evaluations: dict[str, RequirementEvaluation]) -> completion_gate.GateVerdict | None:
         if any(key.startswith("tool_succeeded:") and not value.passed for key, value in evaluations.items()):
-            ordered = tuple(sorted(session.policy.required_checks, key=lambda key: not key.startswith("tool_succeeded:")))
+            ordered = tuple(sorted(session.policy.required_checks, key=tool_check_first))
             session = replace(session, policy=replace(session.policy, required_checks=ordered))
         return required_verdict(session, checks, evaluations)
 

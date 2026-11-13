@@ -35,7 +35,7 @@ def test_read_contract_requires_model_condition_only_when_task_has_none(conditio
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
-@pytest.mark.parametrize("case", ["declared", "supplied", "timeout", "direct"])
+@pytest.mark.parametrize("case", ["declared", "supplied", "timeout", "direct", "partial", "partial_timeout"])
 def test_upload_read_binds_task_wait_and_stops_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str,
 ) -> None:
@@ -45,7 +45,8 @@ def test_upload_read_binds_task_wait_and_stops_on_failure(
     def replies() -> Iterator[JsonObject]:
         yield action("observe")
         yield action("select", attachment_id=str(attachment["id"]), target={"name": "Attachment"})
-        yield action("read", **({"wait_for_text": "UPLOAD_BYTES_82"} if case == "supplied" else {}))
+        marker = "processed" if case in {"partial", "partial_timeout"} else "UPLOAD_BYTES_82"
+        yield action("read", **({"wait_for_text": marker} if case in {"supplied", "partial", "partial_timeout"} else {}))
         yield {"tool": "done", "args": {"summary": "已选择附件并读取页面。"}}
 
     install_http(monkeypatch, replies())
@@ -59,16 +60,22 @@ def test_upload_read_binds_task_wait_and_stops_on_failure(
     monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", no_tabs)
     monkeypatch.setattr("codey.app.review_service.run_review", no_review)
     html = HTML.replace("this.files[0].name+':'+t", "'Not ready'") if case == "timeout" else HTML
+    if case == "partial":
+        html = HTML.replace("this.files[0].name+':'+t", "this.files[0].name+':'+t+' processed'")
+    extra = (require_tool_success("browser_wait", via="codemode", arguments={"value": "processed"}),
+             ) if case in {"partial", "partial_timeout"} else ()
     directory = tmp_path / "run"
     result = run_case(directory, "chat", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10),
                       upload_file=True, explicit_wait=case != "direct", fixture_html=html, max_turns=4,
-                      restore_snapshots=True)
+                      restore_snapshots=True, additional_required_tools=extra)
     receipts = [row.result for row in tool_receipts(directory / "state")]
     waits = [row for row in receipts if row.call.name == "browser_wait"]
     reads = [row for row in receipts if row.call.name == "browser_read"]
-    assert len(waits) == (0 if case == "direct" else 1), result
-    if case == "timeout":
-        assert not waits[0].ok and not reads
+    assert len(waits) == (0 if case == "direct" else 2 if extra else 1), result
+    if case in {"timeout", "partial_timeout"}:
+        assert not waits[-1].ok and not reads
+        if extra:
+            assert waits[0].ok
         assert result["passed"] is False and result["stop_reason"] != "done"
     else:
         assert result["passed"] is True, result
