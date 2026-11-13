@@ -17,6 +17,8 @@ from codey.types.json_value import (
     JsonValue,
     decode_json_object,
     decode_json_value,
+    parse_json_object,
+    require_json_boolean,
     require_json_integer,
     require_json_string,
 )
@@ -47,7 +49,7 @@ def required_tool_names(raw: object) -> tuple[str, ...]:
             if requirement is None:
                 raise ValueError("required_tools must contain canonical tool names or predicates")
         declarations.append(name)
-    return tuple(dict.fromkeys(declarations))
+    return tuple({name: None for name in declarations})
 
 
 def _json(value: object) -> str:
@@ -102,17 +104,20 @@ class ToolSuccessRequirement:
     result_pointer: str = ""
     result_line: int | None = None
     browser_text: BrowserTextSelector | None = None
+    answer_contains: bool = False
 
     def __post_init__(self) -> None:
         if not _NAME.fullmatch(self.tool) or (self.via and not _NAME.fullmatch(self.via)):
             raise ValueError("tool requirement names must be canonical tool names")
-        args = decode_json_object(json.loads(self.arguments_json))
+        args = parse_json_object(self.arguments_json)
         object.__setattr__(self, "arguments_json", _json(args))
         if self.answer_pointer is not None:
             _validate_pointer(self.answer_pointer)
             _validate_pointer(self.result_pointer)
         elif self.result_pointer or self.result_line is not None:
             raise ValueError("result selectors require an answer pointer")
+        if type(self.answer_contains) is not bool or (self.answer_contains and self.answer_pointer != "/explanation"):
+            raise ValueError("answer containment requires the /explanation string destination")
         if self.result_line is not None and (
             type(self.result_line) is not int or self.result_line < 1
             or self.tool != "read_file" or self.result_pointer != "/text"
@@ -129,13 +134,15 @@ class ToolSuccessRequirement:
         if not self.via and self.arguments_json == "{}" and self.answer_pointer is None:
             return PREFIX + self.tool
         data: JsonObject = {"tool": self.tool, "via": self.via,
-                            "args": decode_json_object(json.loads(self.arguments_json))}
+                            "args": parse_json_object(self.arguments_json)}
         if self.answer_pointer is not None:
             answer: JsonObject = {"pointer": self.answer_pointer, "result_pointer": self.result_pointer,
                                   "line": self.result_line}
             if self.browser_text is not None:
                 answer["browser_text"] = {"url": self.browser_text.url, "prefix": self.browser_text.prefix,
                                           "suffix": self.browser_text.suffix}
+            if self.answer_contains:
+                answer["contains"] = True
             data["answer"] = answer
         return PREFIX + _json(data)
 
@@ -174,6 +181,11 @@ class ToolSuccessRequirement:
             selected += (f" on {self.browser_text.url}, between literal markers "
                          f"{self.browser_text.prefix!r} and {self.browser_text.suffix!r}")
         instruction = EXPLANATION_GUIDANCE if explanation else JSON_ANSWER_GUIDANCE
+        if self.answer_contains:
+            return (execution + " " + instruction + f" The explanation must include the complete text selected from {selected}. "
+                    "Match numbers as complete JSON numbers, not as parts of larger numbers or identifiers. "
+                    "The application checks this occurrence without rewriting your explanation. "
+                    "Reuse committed evidence when repairing only the answer.")
         content = ("In done.summary, supply only the natural-language explanation. " if explanation else
                    "In done.summary, supply only unbound JSON fields, or {} when none are needed. ")
         evidence = ("The latest matching receipt for the current browser document must be complete."
@@ -192,7 +204,7 @@ class ToolSuccessRequirement:
         browser_document: JsonObject | None = None,
     ) -> ToolObservation:
         expected = {key: argument_digest(value)
-                    for key, value in decode_json_object(json.loads(self.arguments_json)).items()}
+                    for key, value in parse_json_object(self.arguments_json).items()}
         eligible: list[tuple[str, ExecutionRecord]] = []
         witnesses: set[str] = set()
         matching_execution = False
@@ -261,7 +273,7 @@ class ToolSuccessRequirement:
                     "Restore the original verified receipt before proposing done; display text cannot prove the answer."
                     + (" " + self._evidence_guidance if self.binds_browser_fields else "")))
             if ((self._binds_browser_body and value is None)
-                    or (self.tool == "browser_upload" and receipt.truncated)
+                    or ((self.tool == "browser_upload" or self.answer_contains) and receipt.truncated)
                     or (self.binds_browser_fields and not self._binds_browser_body
                         and (receipt.truncated or not isinstance(value, dict)
                         or value.get("truncated") is not False))):
@@ -283,6 +295,9 @@ class ToolSuccessRequirement:
                         continue
                 else:
                     selected = json_pointer(value, self.result_pointer)
+                if self.answer_contains and not (
+                        isinstance(selected, str) and selected.strip() or type(selected) in {int, float}):
+                    raise ValueError("explanation containment requires nonempty text or a finite number")
                 observed.append((identity, selected, _json(selected)))
             except (KeyError, ValueError, TypeError, IndexError):
                 return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
@@ -333,6 +348,12 @@ class ToolSuccessRequirement:
             actual = json_pointer(answer, self.answer_pointer)
         except (KeyError, ValueError, TypeError, IndexError):
             return self._answer_failure("answer_pointer_missing", expected, refs)
+        if self.answer_contains:
+            if isinstance(actual, str) and _contains_value(actual, expected):
+                return RequirementEvaluation()
+            result = self._answer_failure("answer_text_missing", expected, refs)
+            return replace(result, feedback=result.feedback + "\n\nRejected explanation to revise:\n"
+                           + (actual if isinstance(actual, str) else _value_preview(actual)))
         if _json(actual) == _json(expected):
             return RequirementEvaluation()
         reason = "answer_type_mismatch" if type(actual) is not type(expected) else "answer_value_mismatch"
@@ -342,13 +363,28 @@ class ToolSuccessRequirement:
 
     def _answer_failure(self, reason: str, expected: JsonValue, refs: list[str]) -> RequirementEvaluation:
         view = "output" if self._binds_browser_body else "value"
+        instruction = (EXPLANATION_GUIDANCE + " Preserve the remaining analysis; include the selected text in "
+                       "done.summary and resubmit done. " if self.answer_contains else JSON_ANSWER_GUIDANCE + " ")
         return RequirementEvaluation(reason,
             "Execution and observation are already satisfied. Do not repeat the tool execution. "
-            + JSON_ANSWER_GUIDANCE + f" Repair only the answer at pointer {self.answer_pointer!r} "
+            + instruction + f" Repair only the answer at pointer {self.answer_pointer!r} "
             "using the committed selected value below. Preserve its JSON type and content, including literal quotes. "
             f'Do not copy a truncated preview; use read_tool_result with view="{view}" for omitted detail.\n'
             "Expected selected value (JSON): " + _value_preview(expected) + "\n"
             "Committed result references: " + _json(refs[:8]) + f" (total {len(refs)})")
+
+
+def _contains_value(text: str, value: JsonValue) -> bool:
+    if type(value) in {int, float}:
+        return re.search(r"(?<![A-Za-z0-9_.+-])" + re.escape(_json(value))
+                         + r"(?![A-Za-z0-9_]|\.[0-9])", text) is not None
+    if not isinstance(value, str) or not value.strip():
+        return False
+    selected = value
+    # Keep ASCII identifiers whole, while allowing surrounding Chinese prose.
+    left = r"(?<![A-Za-z0-9_])" if re.match(r"[A-Za-z0-9_]", selected) else ""
+    right = r"(?![A-Za-z0-9_])" if re.search(r"[A-Za-z0-9_]$", selected) else ""
+    return re.search(left + re.escape(selected) + right, text) is not None
 
 
 def _browser_body(receipt: ToolResult, *, url: str | None = None) -> str | None:
@@ -386,16 +422,19 @@ def _succeeded(row: ExecutionRecord, name: str) -> bool:
 def require_tool_success(
     tool: str, *, via: str = "", arguments: Mapping[str, object] | None = None,
     answer_pointer: str | None = None, result_pointer: str = "", result_line: int | None = None,
+    answer_contains: bool = False,
 ) -> str:
     """Declare exact argument selectors, optionally bound to a successful parent."""
     return ToolSuccessRequirement(tool, via, _json(dict(arguments or {})),
-                                  answer_pointer, result_pointer, result_line).declaration
+                                  answer_pointer, result_pointer, result_line, answer_contains=answer_contains).declaration
 
 
-def require_browser_read_field(*, url: str, prefix: str, suffix: str, answer_pointer: str) -> str:
+def require_browser_read_field(*, url: str, prefix: str, suffix: str, answer_pointer: str,
+                               answer_contains: bool = False) -> str:
     """Bind one literal text field from a complete current-page browser read."""
     return ToolSuccessRequirement("browser_read", "codemode", answer_pointer=answer_pointer,
-        result_pointer="/text", browser_text=BrowserTextSelector(url, prefix, suffix)).declaration
+        result_pointer="/text", browser_text=BrowserTextSelector(url, prefix, suffix),
+        answer_contains=answer_contains).declaration
 
 
 def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
@@ -404,12 +443,13 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
     expression = check_id.removeprefix(PREFIX)
     if _NAME.fullmatch(expression):
         return ToolSuccessRequirement(expression)
-    data = decode_json_object(json.loads(expression))
+    data = parse_json_object(expression)
     if set(data) not in ({"tool", "via", "args"}, {"tool", "via", "args", "answer"}):
         raise ValueError("invalid structured tool requirement")
     binding = data.get("answer")
     fields = {"pointer", "result_pointer", "line"}
-    if "answer" in data and (not isinstance(binding, dict) or set(binding) not in (fields, fields | {"browser_text"})):
+    if "answer" in data and (not isinstance(binding, dict) or set(binding) not in (
+            fields, fields | {"browser_text"}, fields | {"contains"}, fields | {"browser_text", "contains"})):
         raise ValueError("invalid answer observation binding")
     browser_text = None
     if isinstance(binding, dict) and "browser_text" in binding:
@@ -422,7 +462,8 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
         require_json_string(binding["pointer"], "pointer") if isinstance(binding, dict) else None,
         require_json_string(binding["result_pointer"], "result_pointer") if isinstance(binding, dict) else "",
         require_json_integer(binding["line"], "line")
-        if isinstance(binding, dict) and binding["line"] is not None else None, browser_text)
+        if isinstance(binding, dict) and binding["line"] is not None else None, browser_text,
+        require_json_boolean(binding.get("contains", False), "contains") if isinstance(binding, dict) else False)
     if requirement.declaration != check_id:
         raise ValueError("tool requirement must use its canonical check id")
     return requirement
@@ -461,7 +502,8 @@ def json_pointer(value: JsonValue, pointer: str) -> JsonValue:
 
 
 def decode_answer(text: str) -> JsonValue:
-    answer = decode_json_value(json.loads(text, object_pairs_hook=_unique_object, parse_constant=_reject_constant))
+    loaded: object = json.loads(text, object_pairs_hook=_unique_object, parse_constant=_reject_constant)
+    answer = decode_json_value(loaded)
     _json(answer)
     return answer
 

@@ -6,14 +6,14 @@ import json
 from collections.abc import Mapping
 from typing import NoReturn
 
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, decode_json_value, parse_json_object
 
 PREFIX = "output_json"
 EXPLANATION_PREFIX = "output_json_explanation"
 EXPLANATION_GUIDANCE = (
     "The application assembles the final JSON. In done.summary, supply only the natural-language explanation, "
     "not an inner JSON document. The application preserves that exact string in /explanation and fills declared "
-    "receipt-bound fields from committed tool results. Do not copy those fields into the explanation. "
+    "receipt-bound fields from committed tool results. Repeat selected values in the explanation only when explicitly required. "
     "The required JSON schema describes the application's final output."
 )
 JSON_ANSWER_GUIDANCE = (
@@ -48,7 +48,8 @@ def declaration(format: str, schema_json: str = "", *, strict_research: bool = F
         schema_json = '{"type":"object","properties":{"explanation":{"type":"string"}},"required":["explanation"]}'
     from codey.toolchain.tool_spec import _valid_custom_schema
 
-    schema: JsonValue = json.loads(schema_json, object_pairs_hook=_unique, parse_constant=_constant)
+    loaded: object = json.loads(schema_json, object_pairs_hook=_unique, parse_constant=_constant)
+    schema = decode_json_value(loaded)
     if not _valid_custom_schema(schema):
         raise ValueError("unsupported output JSON schema")
     if format == "json_explanation":
@@ -75,7 +76,7 @@ def has_explanation(checks: tuple[str, ...]) -> bool:
 
 
 def schema_for(check: str) -> JsonObject | None:
-    return decode_json_object(json.loads(check.partition(":")[2])) if ":" in check else None
+    return parse_json_object(check.partition(":")[2]) if ":" in check else None
 
 
 def check_id(check: str) -> str:
@@ -87,19 +88,23 @@ def evaluate(check: str, text: str) -> tuple[bool, str, str]:
     explanation = has_explanation((check,))
     if declaration("json_explanation" if explanation else "json", schema) != check:
         raise ValueError("noncanonical output requirement")
+    value: JsonValue = None
     try:
-        value: JsonValue = json.loads(text, object_pairs_hook=_unique, parse_constant=_constant)
+        loaded: object = json.loads(text, object_pairs_hook=_unique, parse_constant=_constant)
+        value = decode_json_value(loaded)
         json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
         if schema:
             from codey.toolchain.result_schema import validate_output
 
-            required_schema: JsonObject = json.loads(schema)
+            required_schema = parse_json_object(schema)
             validate_output("final_answer", required_schema, value)
     except (ValueError, TypeError, RecursionError) as exc:
+        draft = value.get("explanation") if explanation and isinstance(value, dict) else None
         return False, "output_format_invalid", (
             "Repair only the final answer. " + (EXPLANATION_GUIDANCE if explanation else JSON_ANSWER_GUIDANCE) + " "
             "Reuse committed tool results; do not repeat tools or tests for an answer-format repair. "
             f"Validation: {str(exc)[:240]}" + (f"\nRequired schema: {schema}" if schema else "")
+            + ("\n\nRejected explanation to revise:\n" + draft if isinstance(draft, str) else "")
         )
     return True, "", ""
 

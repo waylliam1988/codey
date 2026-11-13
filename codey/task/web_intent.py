@@ -19,7 +19,7 @@ _URL_LINE = re.compile(r"[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?"
 _ACTION = re.compile(
     r"web_search|open_url|上网|联网查询|在线查找|查网页|查资料|官方文档|浏览网页|读取网页|"
     r"\b(?:browse|search the web|look online)\b", re.IGNORECASE)
-_OPEN = re.compile(r"打开|访问|看看|查看|分析|了解|\b(?:open|visit|inspect|read|look at)\b", re.IGNORECASE)
+_OPEN = re.compile(r"打开|访问|读取|浏览|看看|查看|分析|了解|\b(?:open|visit|inspect|read|look at)\b", re.IGNORECASE)
 _NEGATED = re.compile(r"(?:不要|勿|禁止|无需|不需要|不用|不必|do not|don't|never|without)"
                       r"(?:\s|使用|用|再|去|帮我|请)*$", re.IGNORECASE)
 
@@ -63,7 +63,8 @@ def _request_clauses(text: str) -> list[str]:
         before, after = rows[0] - 1, rows[-1] + 1
         targets = [(before, -1), (after, 0)]
         for line, index in targets:
-            if 0 <= line < len(lines) and clauses[line] and _open_clause(clauses[line][index]):
+            if (0 <= line < len(lines) and clauses[line] and _open_clause(clauses[line][index])
+                    and _URL_TOKEN.search(clauses[line][index]) is None):
                 tokens = [match[0] for row in rows for match in _URL_TOKEN.finditer(lines[row])]
                 clauses[line][index] += " " + " ".join(tokens)
                 break
@@ -89,28 +90,36 @@ def explicit_web_intent(task: str) -> WebIntent:
 
     text = _URL.sub(protect_url, text)
     requested = False
-    direct: dict[str, set[str | None]] = {}
+    direct: dict[str, set[str | None] | None] = {}
     for clause in _request_clauses(text):
         targets = list(_URL_TOKEN.finditer(clause))
         actions = list(_ACTION.finditer(clause))
         if targets:
             actions.extend(_OPEN.finditer(clause))
         actions.sort(key=lambda match: match.start())
-        permissions = [(action.start(), _NEGATED.search(clause[:action.start()]) is None) for action in actions]
+        permissions = [(action, _NEGATED.search(clause[:action.start()]) is None) for action in actions]
         requested = requested or any(positive for _, positive in permissions)
         for target in targets:
             if target[0] not in url_tokens or not permissions:
                 continue
-            preceding = [positive for position, positive in permissions if position < target.start()]
-            positive = preceding[-1] if preceding else permissions[0][1]
+            preceding = [(action, positive) for action, positive in permissions if action.start() < target.start()]
+            action, positive = preceding[-1] if preceding else permissions[0]
             key, original = url_tokens[target[0]]
             if not positive:
-                direct.pop(key, None)
+                direct[key] = None
                 continue
-            direct.setdefault(key, set()).add(original)
-    originals = {url for candidates in direct.values() for url in candidates if url is not None}
-    unambiguous = all(None not in candidates for candidates in direct.values())
-    return WebIntent(requested, frozenset(direct), frozenset(originals) if unambiguous else frozenset())
+            candidates = direct.get(key)
+            if key in direct and candidates is None and (
+                    not _open_clause(action[0]) or action[0] in {"分析", "了解"}):
+                continue
+            if candidates is None:
+                direct[key] = {original}
+            else:
+                candidates.add(original)
+    allowed = {key: candidates for key, candidates in direct.items() if candidates is not None}
+    originals = {url for candidates in allowed.values() for url in candidates if url is not None}
+    unambiguous = all(None not in candidates for candidates in allowed.values())
+    return WebIntent(requested, frozenset(allowed), frozenset(originals) if unambiguous else frozenset())
 
 
 def source_requirements(task: str) -> dict[str, object]:

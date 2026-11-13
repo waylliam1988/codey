@@ -128,7 +128,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              upload_navigation_required: bool = True, research_sequence: bool = False,
              model_reports_metadata: bool = False,
              expected_amount: int = 173, expected_code: str = "QUARTZ_851",
-             additional_required_tools: tuple[str, ...] = ()) -> dict[str, object]:
+             additional_required_tools: tuple[str, ...] = (),
+             explanation_schema: JsonObject | None = None) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
     provider = BrowserSearchProvider(headless=True)
     recording = ExperimentProvider(target, directory,
@@ -307,8 +308,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             sequence = (require_browser_research_sequence(url=URL, condition="text", value="鱼丸"),) if research_sequence else ()
             waits = (require_tool_success("browser_wait", via="codemode", arguments={
                 "condition": "text", "value": "UPLOAD_BYTES_82"}),) if upload_file and explicit_wait else ()
-            raw_schema: object = SCHEMA
-            output_schema: object = (upload_schema if assembled_upload else raw_schema if explanation_output else
+            output_schema: object = (explanation_schema if explanation_schema is not None else
+                upload_schema if assembled_upload else SCHEMA if explanation_output else
                 {"type": "object", "properties": {"amount": {"type": "integer"}, "code": {"type": "string"}},
                  "required": ["amount", "code"], "additionalProperties": False})
             selection: dict[str, str] = {"model": target.model, "base_url": target.base_url}

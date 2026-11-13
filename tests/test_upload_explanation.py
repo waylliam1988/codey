@@ -41,12 +41,20 @@ def test_known_unsupported_status_assertions_require_a_retry(text: str) -> None:
     "无法确认服务器已接收。", "不能证明文件已成功上传。",
     "The server has not accepted the attachment.", "The attachment was not uploaded successfully.",
     "Cannot confirm that the server has accepted the attachment.",
+    "I cannot confirm whether the server has accepted the attachment.",
+    "I cannot verify if the server has received the attachment.",
     '页面显示“上传成功”，服务器接收尚未核验。', 'The page says "Upload complete"; acceptance is unverified.',
     "示例：`服务器已接收`。", "```text\nUpload complete\n```",
     "没有成功上传附件。", "未能成功上传附件。", "无法确认附件成功上传。",
 ])
 def test_negation_uncertainty_and_quoted_page_text_are_not_assertions(text: str) -> None:
     assert not EVIDENCE.explanation_issue(text, chinese=False)
+
+
+def test_uncertainty_does_not_exempt_a_later_success_assertion() -> None:
+    assert EVIDENCE.explanation_issue(
+        "I cannot confirm whether the server has accepted it, but the attachment was uploaded successfully.",
+        chinese=False)
 
 
 def upload_session() -> TaskSession:

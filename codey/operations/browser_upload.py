@@ -45,7 +45,7 @@ _UPLOAD_ASSERTION = re.compile(
     r"(?:the\s+)?server\s+(?:(?:has|had|already|successfully)\s+)*(?:received|accepted|confirmed\s+receipt))\b", re.I)
 _NEGATED_ASSERTION = re.compile(
     r"(?:没有|尚未|并未|未能|未|是否|不能确认|无法确认|不能证明|无法证明|不代表|不意味着)(?:文件|附件)?\s*$|"
-    r"\b(?:not(?:\s+yet)?(?:\s+been)?|never|(?:cannot|can't)\s+(?:confirm|verify|prove)(?:\s+that)?|"
+    r"\b(?:not(?:\s+yet)?(?:\s+been)?|never|(?:cannot|can't)\s+(?:confirm|verify|prove)(?:\s+(?:that|whether|if))?|"
     r"no\s+evidence\s+that)\s*$", re.I)
 _UNVERIFIED_ASSERTION = re.compile(r"^\s*(?:这一点|的状态)?(?:尚未|未经|未)(?:核验|验证|确认)")
 _NAVIGATE = require_tool_success("browser_navigate")
@@ -370,7 +370,7 @@ class UploadEvidence:
     def explanation_issue(self, explanation: str, *, chinese: bool) -> str:
         # Recognize explicit known claims, not arbitrary prose semantics or
         # quoted page content. Keep the draft intact for a completion retry.
-        for clause in _STATUS_CLAUSES.split(_QUOTED_STATUS.sub(" ", explanation)):
+        for clause in _STATUS_CLAUSES.sub("\n", _QUOTED_STATUS.sub(" ", explanation)).splitlines():
             for claim in _UPLOAD_ASSERTION.finditer(clause):
                 if (_NEGATED_ASSERTION.search(clause[:claim.start()])
                         or _UNVERIFIED_ASSERTION.search(clause[claim.end():])):

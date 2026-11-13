@@ -64,15 +64,17 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
             raise OutputBindingError("Invalid declared tool requirement.") from exc
         if requirement is None:
             continue
+        if requirement.answer_contains and not explanation:
+            raise OutputBindingError("Explanation containment requires json_explanation.")
         if requirement.browser_text is not None and not explanation:
             raise OutputBindingError("Browser text fields require json_explanation.")
-        if explanation and requirement.answer_pointer is not None and (
+        if explanation and not requirement.answer_contains and requirement.answer_pointer is not None and (
                 requirement.answer_pointer == "" or requirement.answer_pointer.split("/")[1] == "explanation"):
             raise OutputBindingError("A receipt binding overlaps the declared /explanation text destination.")
         binding_records = _upload_binding_records(requirement, records, bound_upload)
         observation = (requirement.observe(binding_records, results=results, browser_document=context.browser_document)
                        if requirement.binds_browser_fields else requirement.observe(binding_records, results=results))
-        if requirement.answer_pointer is not None and observation.evaluation.passed:
+        if requirement.answer_pointer is not None and not requirement.answer_contains and observation.evaluation.passed:
             pointer = requirement.answer_pointer
             path = tuple(part.replace("~1", "/").replace("~0", "~") for part in pointer[1:].split("/")) if pointer else ()
             selected_schema = _field_schema(schema, path) if requirement.binds_browser_fields else None
@@ -168,8 +170,8 @@ def _assemble_children(proposed: JsonValue, schema: JsonValue, children: dict[st
         if any(not key.isascii() or not key.isdecimal() or str(int(key)) != key for key in children):
             raise OutputBindingError("An array destination requires canonical integer indices.")
         items = schema.get("items") if isinstance(schema, dict) else None
-        for key, fields in sorted(children.items(), key=lambda item: int(item[0])):
-            index = int(key)
+        for index in sorted(int(key) for key in children):
+            fields = children[str(index)]
             if index > len(proposed):
                 raise ValueError("Supply the unbound preceding array elements in done.summary; "
                                  "the application fills receipt-bound elements.")

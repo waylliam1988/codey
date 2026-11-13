@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from codey.providers.token_accounting import ContextBudget
+from codey.providers.token_accounting import ApiExchangeUsage, ContextBudget
 from codey.research.ledger import ResearchLedger
 from codey.research.source_gateway import ResearchSourceGateway
 from codey.research.web_sources import WebSourceProvider
@@ -39,7 +39,7 @@ class PageProvider:
     def close(self) -> None:
         pass
 
-    def bind_usage(self, connection_id: str, sink: Callable[..., object]) -> None:
+    def bind_usage(self, connection_id: str, sink: Callable[[ApiExchangeUsage], None]) -> None:
         pass
 
     def send(self, text: str, timeout: float | None = None) -> str:
@@ -121,6 +121,29 @@ def test_search_does_not_reauthorize_a_negated_url() -> None:
     assert intent.requested and not intent.urls
 
 
+@pytest.mark.parametrize("search", [
+    f"Search the web for alternatives to <{URL}>.",
+    f"请上网搜索 <{URL}> 的替代资料。",
+    f"Analyze alternatives to <{URL}>.",
+])
+def test_search_mentions_do_not_restore_a_revoked_address(search: str) -> None:
+    intent = explicit_web_intent(f"Do not open <{URL}>. {search}")
+    assert not intent.urls and not intent.original_urls
+    restored = explicit_web_intent(f"Do not open <{URL}>. {search} Please read <{URL}>.")
+    assert restored.urls == {URL} and restored.original_urls == {URL}
+
+
+@pytest.mark.parametrize("task", [
+    f"Open only <{URL}>.\n\nSource: <https://example.com/background>",
+    f"Open <{URL}>.\nSource: <https://example.com/background>",
+    f"Source: <https://example.com/background>\nPlease read <{URL}>.",
+    f"请只打开 <{URL}>。\n来源：https://example.com/background",
+])
+def test_address_lines_do_not_extend_an_action_with_an_existing_target(task: str) -> None:
+    intent = explicit_web_intent(task)
+    assert intent.urls == {URL} and intent.original_urls == {URL}
+
+
 def test_malformed_tool_url_returns_policy_error() -> None:
     gateway = ResearchSourceGateway(Sources(), ResearchLedger())
     assert gateway.open("https://[bad").status == "error"
@@ -165,7 +188,10 @@ def test_direct_pdf_uses_existing_bounded_binary_download(monkeypatch: pytest.Mo
 
     monkeypatch.setattr("codey.research.source_download._download_text_fallback", fetch)
     monkeypatch.setattr("codey.research.source_download._download_pdf_streaming", binary)
-    monkeypatch.setattr("codey.research.source_gateway.extract_pdf_document", lambda *args, **kwargs: PdfSkipped("fixture"))
+    def skip_pdf(*args: object, **kwargs: object) -> PdfSkipped:
+        return PdfSkipped("fixture")
+
+    monkeypatch.setattr("codey.research.source_gateway.extract_pdf_document", skip_pdf)
     gateway = ResearchSourceGateway(Sources(), ResearchLedger(), direct_urls=frozenset({URL}))
     assert gateway.open(URL).status == "skipped"
     assert downloaded == [URL]
