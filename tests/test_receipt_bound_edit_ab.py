@@ -151,7 +151,12 @@ def test_outer_prompt_and_native_tools_never_advertise_a_second_edit_contract(tm
     assert "edit" in snapshot.nested_tool_names
     assert "edit" in snapshot.inventory_names
     assert "edit" not in {tool.name for tool in tools_from_specs(snapshot.model_specs)}
-    assert snapshot.contract_text.count("  edit(args:") == 1
+    # Production exposes a receipt-bound JSON field overload alongside the
+    # original low-level edit. The prototype replaces both with its helper.
+    assert snapshot.contract_text.count("  edit(args:") == (1 if enabled else 2)
+    if not enabled:
+        assert "changes: Record<string, JsonEditValue>" in snapshot.contract_text
+        assert '"base_result_ref"' in snapshot.contract_text
     assert '- edit:' not in snapshot.contract_text
     assert '"tool":"edit"' not in snapshot.contract_text
     if enabled:

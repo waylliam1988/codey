@@ -925,6 +925,53 @@ def _response_objects(reply: object) -> list[tuple[str, ToolArgs, str]] | ToolPl
     return _invalid_plan("unsupported provider reply type", kind="invalid_args")
 
 
+def _lower_bound_inputs(
+    items: list[tuple[str, ToolArgs, str]], snapshot: TurnSnapshot,
+) -> list[tuple[str, ToolArgs, str]] | ToolPlan:
+    binding = snapshot.input_binding
+    assert binding is not None
+    lowered: list[tuple[str, ToolArgs, str]] = []
+    for raw, args, call_id in items:
+        name = _canonical_name(raw)
+        if name != binding.model_spec.name or name not in snapshot.tool_names:
+            lowered.append((raw, args, call_id))
+            continue
+        spec = binding.model_spec
+        if error := validate_args_with_spec(spec, args):
+            return _invalid_plan(error, tool=name)
+        try:
+            if binding.kind == "upload":
+                converted = lower_upload_action(args, snapshot.policy.required_checks if snapshot.policy else ())
+            elif binding.kind == "actions":
+                from codey.operations.structured_actions import lower_action
+
+                converted = lower_action(args)
+            else:
+                if snapshot.browser_copy is None:
+                    raise ValueError("browser copy input has no captured observation")
+                converted = snapshot.browser_copy.lower(args)
+            lowered.append((raw, converted, call_id))
+        except (KeyError, TypeError, ValueError) as exc:
+            return _invalid_plan(str(exc), tool=name)
+    return lowered
+
+
+def _validate_control_plan(
+    items: ToolPlan, snapshot: TurnSnapshot | None, frozen: Mapping[str, ToolSpec] | None,
+) -> ToolPlan:
+    if (snapshot is not None and snapshot.browser_copy is not None and items.control is not None
+            and items.control.kind == "done" and "done" not in snapshot.tool_names):
+        return _invalid_plan("Finish the browser copy before reporting completion.", tool="done")
+    if snapshot is not None and snapshot.research_scope is not None and items.control is not None and items.control.kind == "done":
+        return _invalid_plan("Submit the answer with submit_research_answer under the frozen contract; global done is not allowed")
+    done_spec = frozen.get("done") if frozen is not None else None
+    if (items.control is not None and items.control.kind == "done" and not items.protocol_error
+            and done_spec is not None and "report_sections" in done_spec.required):
+        return _invalid_plan("Research completion requires done.report_sections.coverage under the frozen contract; "
+                             "plain text and summary-only reports are not accepted.", tool="done")
+    return items
+
+
 def normalize_turn(
     reply: DecodedTextTurn | AssistantTurn,
     *,
@@ -949,44 +996,13 @@ def normalize_turn(
         allowed = None if controller_allowed is None else {(n or "").strip().lower() for n in controller_allowed}
     items = _response_objects(reply)
     if isinstance(items, ToolPlan):
-        if (snapshot is not None and snapshot.browser_copy is not None and items.control is not None
-                and items.control.kind == "done" and "done" not in snapshot.tool_names):
-            return _invalid_plan("Finish the browser copy before reporting completion.", tool="done")
-        if snapshot is not None and snapshot.research_scope is not None and items.control is not None and items.control.kind == "done":
-            return _invalid_plan("Submit the answer with submit_research_answer under the frozen contract; global done is not allowed")
-        done_spec = frozen.get("done") if frozen is not None else None
-        if (items.control is not None and items.control.kind == "done" and not items.protocol_error
-                and done_spec is not None and "report_sections" in done_spec.required):
-            return _invalid_plan("Research completion requires done.report_sections.coverage under the frozen contract; "
-                                 "plain text and summary-only reports are not accepted.", tool="done")
-        return items
+        return _validate_control_plan(items, snapshot, frozen)
     if snapshot is not None and snapshot.browser_copy is not None and len(items) != 1:
         return _invalid_plan("Submit one browser copy action per turn.")
     if snapshot is not None and snapshot.input_binding is not None:
-        binding = snapshot.input_binding
-        lowered: list[tuple[str, ToolArgs, str]] = []
-        for raw, args, call_id in items:
-            name = _canonical_name(raw)
-            if name != binding.model_spec.name or name not in snapshot.tool_names:
-                lowered.append((raw, args, call_id))
-                continue
-            spec = binding.model_spec
-            if error := validate_args_with_spec(spec, args):
-                return _invalid_plan(error, tool=name)
-            try:
-                if binding.kind == "upload":
-                    converted = lower_upload_action(args, snapshot.policy.required_checks if snapshot.policy else ())
-                elif binding.kind == "actions":
-                    from codey.operations.structured_actions import lower_action
-
-                    converted = lower_action(args)
-                else:
-                    if snapshot.browser_copy is None:
-                        raise ValueError("browser copy input has no captured observation")
-                    converted = snapshot.browser_copy.lower(args)
-                lowered.append((raw, converted, call_id))
-            except (KeyError, TypeError, ValueError) as exc:
-                return _invalid_plan(str(exc), tool=name)
+        lowered = _lower_bound_inputs(items, snapshot)
+        if isinstance(lowered, ToolPlan):
+            return lowered
         items = lowered
     return _plan_from_tool_objects(
         items, policy=policy, controller_allowed=allowed,

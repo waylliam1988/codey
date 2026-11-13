@@ -126,5 +126,9 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path, monkey
     assert "submit_research_review" not in prompt
     assert "Calls return Result<T>" in prompt
     assert "Only frozen read-only tools" not in prompt
-    # Reviewed: only the interpreter path/version above became fixed inputs.
-    assert _sha256(prompt) == "376a768554a911ca7edefa69360ea8815e3ec3d812a770d0d8f02dfa2bbff66d"
+    # Reviewed: CodeMode now declares receipt-bound JSON field updates and
+    # explicitly requires an action call to persist data. Keep these semantics
+    # visible alongside the frozen prompt baseline.
+    assert "changes: Record<string, JsonEditValue>" in prompt
+    assert "Returning modified data does not persist it" in prompt
+    assert _sha256(prompt) == "3ca5b33ac342d51b53572fb2b45d0eccb5ea17c93b4fc2a6bc35fe34e2c93472"
