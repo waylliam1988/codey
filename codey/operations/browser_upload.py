@@ -1,6 +1,7 @@
 """Page prerequisites and exact receipt delivery for single-page uploads."""
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -14,7 +15,7 @@ from codey.policies.tool_requirement import _browser_body, parse_tool_success_ch
 from codey.runtime.core.models import ToolResult
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.task.web_intent import source_url_key
-from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
+from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, validate_args_against_spec
 from codey.types.json_value import JsonObject, decode_json_object
 
 if TYPE_CHECKING:
@@ -50,6 +51,23 @@ class UploadScope:
     report_hash: bool
     read_page: bool
     chinese: bool
+    wait_required: bool = False
+    wait_bound: bool = False
+
+
+def upload_waits(checks: tuple[str, ...]) -> tuple[JsonObject, ...]:
+    """Use only executable wait arguments from the admitted task policy."""
+    waits: list[JsonObject] = []
+    for check in checks:
+        rule = parse_tool_success_check(check)
+        if rule is None or rule.tool != "browser_wait":
+            continue
+        args = decode_json_object(json.loads(rule.arguments_json))
+        args.setdefault("timeout_ms", 5000)
+        if (isinstance(args.get("condition"), str) and isinstance(args.get("value"), str)
+                and args["value"] and not validate_args_against_spec("browser_wait", args)):
+            waits.append(args)
+    return tuple(waits)
 
 
 def upload_scope(session: TaskSession) -> UploadScope | None:
@@ -84,7 +102,9 @@ def task_upload_scope(task_kind: str, task: str, urls: frozenset[str], policy: T
     return UploadScope(next(iter(urls)), next(iter(attachments), ""),
         _NAVIGATE in checks or re.search(r"\bbrowser_navigate\b", task) is not None,
         _REPORT_HASH.search(task) is not None, _READ in checks or _PAGE_TEXT.search(task) is not None,
-        bool(re.search(r"[\u3400-\u9fff]", task)))
+        bool(re.search(r"[\u3400-\u9fff]", task)),
+        any((rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_wait" for check in checks),
+        bool(upload_waits(checks)))
 
 
 def _object(properties: dict[str, object], *required: str) -> dict[str, object]:
@@ -129,7 +149,8 @@ def structured_upload_spec(spec: ToolSpec, scope: UploadScope, phase: str) -> To
                        "url": {"type": "string", "enum": [scope.url]}}, "action")
     select = _object({"action": {"type": "string", "enum": ["select"]}, "target": UPLOAD_TARGET,
                       "attachment_id": attachment}, "action", "target", "attachment_id")
-    read = _object({"action": {"type": "string", "enum": ["read"]}, "wait_for_text": _LABEL}, "action")
+    read = _object({"action": {"type": "string", "enum": ["read"]}, "wait_for_text": _LABEL}, "action",
+                   *(("wait_for_text",) if scope.wait_required and not scope.wait_bound else ()))
     options = {"observe": observe, "select": select, "read": read}[phase]
     return freeze_spec_parameters(replace(spec, parameters=(*spec.parameters, (UPLOAD_ACTION, options)), required=()))
 
@@ -141,11 +162,11 @@ def upload_model_spec(spec: ToolSpec) -> ToolSpec:
     return replace(spec, parameters=parameters, required=(UPLOAD_ACTION,), declarations="", json_examples=(),
         description="Structured attachment selection on the authorized webpage. Use the action offered in this turn's "
         "schema. Observe lists file controls. Add the authorized URL only when the page needs opening. Select accepts "
-        "a unique name or an observed ID. If names repeat, choose an observed ID. Read accepts wait_for_text when "
-        "the task calls for a page marker.")
+        "a unique name or an observed ID. If names repeat, choose an observed ID. Read executes declared task waits "
+        "before reading. Supply wait_for_text only when the schema requires a condition or an additional marker is needed.")
 
 
-def lower_upload_action(args: JsonObject) -> JsonObject:
+def lower_upload_action(args: JsonObject, checks: tuple[str, ...] = ()) -> JsonObject:
     if set(args) != {UPLOAD_ACTION}:
         raise ValueError("Use one structured upload action without JavaScript arguments.")
     action = decode_json_object(args[UPLOAD_ACTION])
@@ -156,8 +177,13 @@ def lower_upload_action(args: JsonObject) -> JsonObject:
     elif action["action"] == "select":
         code = "return unwrap(await tools.browser_upload({target:inputs.target,attachment_id:inputs.attachment_id}));"
     else:
-        code = ('if (inputs.wait_for_text) unwrap(await tools.browser_wait({condition:"text",'
-                'value:inputs.wait_for_text,timeout_ms:5000})); return unwrap(await tools.browser_read({}));')
+        waits = list(upload_waits(checks))
+        marker = action.get("wait_for_text")
+        if isinstance(marker, str) and not any(wait.get("condition") == "text" and wait.get("value") == marker for wait in waits):
+            waits.append({"condition": "text", "value": marker, "timeout_ms": 5000})
+        action["waits"] = [wait for wait in waits]
+        code = ('for (const wait of inputs.waits) unwrap(await tools.browser_wait(wait)); '
+                'return unwrap(await tools.browser_read({}));')
     return {"code": code, "inputs": action}
 
 

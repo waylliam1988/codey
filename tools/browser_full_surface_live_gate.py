@@ -18,24 +18,18 @@ if __package__ in (None, ""):
 from tools.browser_production_live_gate import run_case, select_target
 from tools.completion_explanation_ab import Target, production_source_digest
 
-SCENARIOS = ("basic", "structured", "legacy_structured", "reread", "stale_ref", "stale_edit", "upload", "download", "research", "source_failure", "fixed_failure")
+SCENARIOS = ("basic", "structured", "legacy_structured", "reread", "stale_ref", "stale_edit", "upload", "download", "research", "research_sequence", "source_failure", "fixed_failure")
 
 
 def _case(root: Path, scenario: str, target: Target) -> dict[str, object]:
-    options = {
-        "restore_snapshots": scenario == "reread",
-        "reread": scenario == "reread",
-        "stale_edit": scenario == "stale_edit",
-        "structured": scenario == "legacy_structured",
-        "explanation_output": scenario == "structured",
-        "stale_ref": scenario == "stale_ref",
-        "source_failure": scenario in {"source_failure", "fixed_failure"},
-        "fixed_failure": scenario == "fixed_failure",
-        "upload_file": scenario == "upload",
-        "download_file": scenario == "download",
-    }
-    mode = "hybrid" if scenario == "stale_edit" else "research" if scenario == "research" else "chat"
-    return run_case(root / scenario, mode, target, strict_research=scenario == "research", **options)
+    research = scenario in {"research", "research_sequence"}
+    mode = "hybrid" if scenario == "stale_edit" else "research" if research else "chat"
+    return run_case(root / scenario, mode, target, strict_research=research,
+        restore_snapshots=scenario == "reread", reread=scenario == "reread", stale_edit=scenario == "stale_edit",
+        structured=scenario == "legacy_structured", explanation_output=scenario == "structured",
+        stale_ref=scenario == "stale_ref", source_failure=scenario in {"source_failure", "fixed_failure"},
+        fixed_failure=scenario == "fixed_failure", upload_file=scenario == "upload", download_file=scenario == "download",
+        research_sequence=scenario == "research_sequence")
 
 
 class Options(argparse.Namespace):

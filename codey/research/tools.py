@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import ConceptRelation, clean_relations, normalize_concept
-from codey.knowledge.model import KnowledgeMutation, canonical_json
+from codey.knowledge.model import KnowledgeMutation, KnowledgeReference, canonical_json
 from codey.knowledge.note import NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
 from codey.knowledge.recall import KnowledgeAccess, KnowledgeHit, render_recall
 from codey.knowledge.store import KnowledgeStore
@@ -233,12 +233,14 @@ class ResearchTools:
         if version is not None:
             if not KnowledgeAccess(self.project, self.session_id, self.store.owner_id).allows(version):
                 return ResearchToolOutput("ERROR: knowledge scope mismatch", ok=False)
+            read_versions = ((KnowledgeReference(version.value.id, version.revision, "uses"),)
+                             if version.value.kind != "answer" else ())
             if version.value.kind in {"source", "evidence"}:
                 from codey.research.knowledge_materials import read_material
 
                 try:
                     material: ResearchToolOutput = read_material(self, version, offset=offset, limit=limit)
-                    return material
+                    return replace(material, knowledge_read_versions=read_versions)
                 except (ValueError, TypeError, KeyError) as exc:
                     return ResearchToolOutput(f"ERROR: {exc}", ok=False)
             payload = version.to_dict()
@@ -257,7 +259,7 @@ class ResearchTools:
                 payload.update(reference_evidence_preview(self.ledger, self.store, payload["finding_ref"],
                     project=self.project, session_id=self.session_id))
                 payload["adoption"] = "Cite this fN only if adopted. It stays pinned and unreviewed; old answers are not evidence."
-            return ResearchToolOutput(canonical_json(payload), ok=True)
+            return ResearchToolOutput(canonical_json(payload), ok=True, knowledge_read_versions=read_versions)
         note = self.store.read_note((note_id or "").strip(), **({"revision": revision} if revision is not None else {}))
         if note is None:
             return ResearchToolOutput(self._missing_knowledge_identity(note_id), ok=False)

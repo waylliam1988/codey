@@ -24,6 +24,7 @@ from codey.operations.browser_upload import (
 from codey.operations.kernel_contracts import ToolExecutor
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
+from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.protocol_window import ProtocolWindowRef
 from codey.toolchain.tool_spec import _CONTROLLER_ALIAS_ID_ARG as _ALIAS_ARGS
@@ -45,6 +46,9 @@ if TYPE_CHECKING:
 
 
 class KernelSessionView(Protocol):
+    @property
+    def executed(self) -> Mapping[str, ExecutionRecord]: ...
+
     @property
     def research_acquisition_limits(self) -> tuple[int, int] | None: ...
 
@@ -338,6 +342,11 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     frozen = tuple(done_spec_for_purpose(spec, purpose, task=session.task_text,
                                         questions=session.research_questions) if spec.name == "done" else spec
                    for spec in frozen)
+    if purpose == "chat":
+        from codey.operations.chat_knowledge import chat_knowledge_spec, read_knowledge_versions
+
+        versions = read_knowledge_versions(session.executed, session._memory_results)
+        frozen = tuple(chat_knowledge_spec(spec, versions) if spec.name == "done" else spec for spec in frozen)
     from codey.policies.output_requirement import has_explanation
 
     if has_explanation(session.policy.required_checks):
@@ -934,7 +943,7 @@ def normalize_turn(
                 return _invalid_plan(error, tool=name)
             try:
                 if binding.kind == "upload":
-                    converted = lower_upload_action(args)
+                    converted = lower_upload_action(args, snapshot.policy.required_checks if snapshot.policy else ())
                 else:
                     if snapshot.browser_copy is None:
                         raise ValueError("browser copy input has no captured observation")

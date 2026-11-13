@@ -35,7 +35,10 @@ from codey.policies.tool_requirement import require_tool_success
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.research.browser_search import BrowserSearchProvider
 from codey.storage.input_attachments import InputAttachmentStore
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.toolchain import runtime as tool_runtime
+from codey.toolchain.runtime import ToolOutcome
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
+from codey.workspace.paths import path_hash
 from tools.completion_artifact_audit import rejection_audit, tool_receipts
 from tools.completion_explanation_ab import (
     BINDINGS,
@@ -84,6 +87,33 @@ def select_target(timeout: float, base_url: str) -> Target:
     return Target(endpoint.base_url, endpoint.models[0], 123456789, timeout)
 
 
+def schema_tool_names(schema: JsonValue) -> set[str]:
+    if isinstance(schema, list):
+        return set().union(*(schema_tool_names(row) for row in schema))
+    if not isinstance(schema, dict):
+        return set()
+    tool = schema.get("tool")
+    values = tool.get("enum") if isinstance(tool, dict) else None
+    names = {value for value in values if isinstance(value, str)} if isinstance(values, list) else set()
+    return names.union(*(schema_tool_names(row) for row in schema.values()))
+
+
+def has_submission_only_request(directory: Path) -> bool:
+    for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines():
+        row = parse_json_object(line)
+        if row.get("phase") != "request":
+            continue
+        payload = decode_json_object(row["payload"])
+        if schema_tool_names(payload.get("response_format")) == {"submit_research_answer"}:
+            return True
+        tools = payload.get("tools")
+        if isinstance(tools, list) and len(tools) == 1:
+            function = decode_json_object(decode_json_object(tools[0])["function"])
+            if function.get("name") == "submit_research_answer":
+                return True
+    return False
+
+
 def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: bool = False,
              reread: bool = False, stale_edit: bool = False, structured: bool = False,
              upload_file: bool = False, download_file: bool = False, bound_output: bool = False,
@@ -110,6 +140,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
     started = time.monotonic()
     snapshot_count = 0
     changed_after_read = False
+    version_check_reached = False
     result_file: Path | None = None
     build_snapshot = kernel_protocol.build_turn_snapshot
 
@@ -126,29 +157,32 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         return restored
 
     def observe(row: dict[str, object]) -> None:
-        nonlocal changed_after_read
         events.append(row)
         if row.get("type") == "tool":
             recording.observed_tools += 1
         with (directory / "events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
-        if (stale_edit and not changed_after_read and result_file is not None
-                and row.get("type") == "tool" and row.get("tool_name") == "read_file" and row.get("ok") is True
-                and isinstance(path := row.get("path"), str)
-                and (result_file.parent / path).resolve() == result_file.resolve()):
-            if preserve_external_field and not any(
-                receipt.result.call.name == "read_file" and receipt.result.ok
-                and receipt.result.call.args.get("path") == path
-                and isinstance(value := receipt.result.canonical.get("value"), dict)
-                and value.get("text_complete") is True for receipt in tool_receipts(directory / "state")
-            ):
-                return
+
+    final_write_check = tool_runtime._write_text_after_final_path_check
+
+    def inject_before_version_check(root: Path, rel: str, content: str, *, tool: str,
+                                    expected_version: str | None = None) -> ToolOutcome | None:
+        nonlocal changed_after_read, version_check_reached
+        if (stale_edit and result_file is not None and expected_version is not None
+                and (root / rel).resolve() == result_file.resolve()):
+            version_check_reached = True
+        if (stale_edit and not changed_after_read and result_file is not None and expected_version is not None
+                and (root / rel).resolve() == result_file.resolve()
+                and path_hash(result_file) == expected_version):
             changed: dict[str, object] = {"amount": -1, "code": "externally_changed"}
             if preserve_external_field:
                 changed["external_revision"] = EXTERNAL_FIELD
             result_file.write_text(json.dumps(changed) + "\n", encoding="utf-8")
-            (directory / "injection.json").write_text(json.dumps({"trigger": row, "file": changed}), encoding="utf-8")
+            (directory / "injection.json").write_text(json.dumps({
+                "trigger": "before_version_check", "path": rel, "expected_version": expected_version,
+                "file": changed}), encoding="utf-8")
             changed_after_read = True
+        return final_write_check(root, rel, content, tool=tool, expected_version=expected_version)
 
     def route_document(route: Route) -> None:
         navigations.append(route.request.url)
@@ -178,6 +212,9 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         task += "用 submit_research_answer 提交完整答案，引用实际读到的 [eN] 原文。"
     elif mode == "hybrid":
         task += "然后读取项目的 result.json，将 amount 改为实测克数，code 改为实测校验码，再用 done 报告。"
+        if stale_edit:
+            task += ("本项验收要求实际验证文件版本冲突恢复：完整 read_file 后，以外层 Result.result_ref 作为 "
+                     "edit.base_result_ref，使用 content 写入完整 JSON。遇到版本冲突后重新完整读取并保留新增字段，再写入。")
     else:
         task += "最后用 done 报告，不修改文件。"
     if stale_ref:
@@ -214,6 +251,9 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 "browser_upload 选择这个附件，browser_wait 等待页面出现 UPLOAD_BYTES_82，再 browser_read。"
                 "用 done 报告实际文件名、文件内容标记和选择回执的 SHA256。不要修改项目或运行命令。")
         required = {"browser_navigate", "browser_snapshot", "browser_upload", "browser_wait", "browser_read"}
+        if not explicit_wait:
+            required.remove("browser_wait")
+            task = task.replace("browser_wait 等待页面出现 UPLOAD_BYTES_82，再 browser_read", "browser_read 读取选择后的页面")
         if not upload_navigation_required:
             required.remove("browser_navigate")
         if assembled_upload:
@@ -255,12 +295,16 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 stack.enter_context(patch.object(KernelContext, "prefetch_required_sources", return_value=False))
             if restore_snapshots:
                 stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", restored_snapshot))
+            if stale_edit:
+                stack.enter_context(patch.object(tool_runtime, "_write_text_after_final_path_check", inject_before_version_check))
             if reread:
                 stack.enter_context(patch("codey.research.ledger.now_iso", return_value="2026-11-10T00:00:00+00:00"))
             stack.enter_context(patch.object(provider, "_guard_request", route_document))
             stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", source_factory))
             stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory))
             sequence = (require_browser_research_sequence(url=URL, condition="text", value="鱼丸"),) if research_sequence else ()
+            waits = (require_tool_success("browser_wait", via="codemode", arguments={
+                "condition": "text", "value": "UPLOAD_BYTES_82"}),) if upload_file and explicit_wait else ()
             request = HeadlessRequest(
                 project if mode == "hybrid" else None, task, intent=mode, provider_id="local", max_turns=max_turns,
                 session_id=session_id,
@@ -268,7 +312,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 requested_capabilities=("web.read", "browser.observe", "browser.interact", *(
                     ("browser.effect",) if structured or explanation_output or upload_file or download_file or bound_output else ())),
                 project_changes_required=mode == "hybrid",
-                required_tools=(*(() if source_failure and source_attempt_only else sorted(required)), *bindings, *sequence),
+                required_tools=(*(() if source_failure and source_attempt_only else sorted(required)), *bindings, *sequence, *waits),
                 output_format="json_explanation" if explanation_output or assembled_upload else "json" if bound_output else "text",
                 sources_open_required=True if source_failure else None,
                 output_schema=json.dumps(upload_schema) if assembled_upload else json.dumps(SCHEMA) if explanation_output else json.dumps({"type": "object", "properties": {
@@ -311,17 +355,20 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                            if not row.result.ok and "source_failure" in row.result.canonical]
         metadata_matches = ("SCHEMA_TOKEN_74" in answer and legacy_urls_match(answer)
                             if model_reports_metadata else legacy_report_fields_match(answer))
+        file_correct = artifact == {"amount": expected_amount, "code": expected_code, **(
+            {"external_revision": EXTERNAL_FIELD} if preserve_external_field and changed_after_read else {})}
+        conflict_recovered = (changed_after_read and audit["true_stale_conflicts"] == 1
+                              and audit["fresh_read_recovery"] is True)
+        submission_only = has_submission_only_request(directory) if research_sequence else False
         passed = (result.stop_reason == "done" and required <= successful and facts_match
                   and (not reread or reads >= 2)
-                  and (not stale_edit or changed_after_read and failed_edits >= 1)
+                  and (not stale_edit or conflict_recovered)
                   and (not structured or metadata_matches)
                   and (not explanation_output or output_checks.get("schema_valid") is True and output_checks.get("exact_fields") is True)
                   and (not stale_ref or failed_refs >= 1)
+                  and (not research_sequence or submission_only)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
-                  and (mode != "hybrid" or artifact == {"amount": expected_amount, "code": expected_code, **(
-                      {"external_revision": EXTERNAL_FIELD} if preserve_external_field and stale_edit else {})}))
-        if stale_edit and preserve_external_field:
-            passed = passed and audit["true_stale_conflicts"] == 1 and audit["fresh_read_recovery"] is True
+                  and (mode != "hybrid" or file_correct))
         if assembled_upload:
             try:
                 delivered = decode_json_object(json.loads(answer))
@@ -339,11 +386,18 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             "downloads": [str(path) for path in downloads], "failed_stale_refs": failed_refs,
             "posthoc_output_checks": output_checks, "explanation_output": explanation_output,
             "source_failure_receipts": source_failures}
+        if mode == "research":
+            summary.update(research_sequence=research_sequence, submission_only_request=submission_only)
         summary.update(first_tool_rejection=audit["first_tool_rejection"],
                        first_edit_rejection=audit["first_edit_rejection"],
                        true_stale_conflicts=audit["true_stale_conflicts"], fresh_read_recovery=audit["fresh_read_recovery"],
                        facts_match=facts_match, assembled_upload=assembled_upload, source_attempt_only=source_attempt_only,
                        fixed_source_attempt=fixed_source_attempt)
+        if mode == "hybrid":
+            summary.update(final_file_correct=file_correct, version_check_reached=version_check_reached,
+                           conflict_injected=changed_after_read, conflict_recovery_covered=conflict_recovered,
+                           conflict_coverage="recovered" if conflict_recovered else
+                           "not_recovered" if changed_after_read else "not_injected" if version_check_reached else "not_reached")
         explanation = output_checks.get("explanation")
         if isinstance(explanation, str):
             summary["explanation_quality"] = explanation_checks(explanation, 1, expected_url=URL)

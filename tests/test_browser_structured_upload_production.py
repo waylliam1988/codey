@@ -47,8 +47,8 @@ def test_observed_file_controls_are_selected_without_model_javascript(
 
         original_lower = lower_upload_action
 
-        def missing_return(args: JsonObject) -> JsonObject:
-            converted = original_lower(args)
+        def missing_return(args: JsonObject, checks: tuple[str, ...] = ()) -> JsonObject:
+            converted = original_lower(args, checks)
             if decode_json_object(args["upload"])["action"] == "select":
                 converted["code"] = str(converted["code"]).removeprefix("return ")
             return converted

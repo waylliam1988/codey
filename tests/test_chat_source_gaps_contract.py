@@ -63,7 +63,8 @@ def test_chat_contract_removes_only_the_deprecated_input(format: str) -> None:
         assert snapshot.ignore_runtime_claims
         assert "source_gaps" not in dict(done.parameters)
         assert "source_gaps" not in snapshot.contract_text
-        assert {"report_sections", "knowledge_refs"}.issubset(dict(done.parameters).keys())
+        assert "report_sections" in dict(done.parameters)
+        assert "knowledge_refs" not in dict(done.parameters)
         assert "execution_claims" not in dict(done.parameters)
         assert all("source_gaps" not in str(tool.parameters) and "source_gaps" not in tool.description
                    for tool in tools_from_specs(snapshot.model_specs))

@@ -838,6 +838,9 @@ class ExecutionDelegate:
                         "knowledge_read needs an exact stored id and revision.")
         canonical: dict[str, object] = {
             "research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
+        if outcome.ok and outcome.knowledge_read_versions:
+            canonical["knowledge_read_versions"] = [
+                {"id": ref.target, "revision": ref.revision} for ref in outcome.knowledge_read_versions]
         if outcome.ok and outcome.read_passages:
             canonical.update(research_observation=outcome.read_observation, read_passages=list(outcome.read_passages))
         return ToolResult(ok=outcome.ok, call=call, model_text=text, canonical=canonical), outcome.ok, None

@@ -81,9 +81,15 @@ def knowledge_reference_checks(session: TaskSession, context: object = None) -> 
     from codey.knowledge.answer_refs import answer_references
 
     try:
-        answer_references(raw, context.knowledge_store,
+        references = answer_references(raw, context.knowledge_store,
                           project=str(context.knowledge_project or ""),
                           session_id=str(context.knowledge_session_id or ""))
+        if session.task_kind == "chat" and not session.policy.strict_research:
+            from codey.operations.chat_knowledge import read_knowledge_versions
+
+            versions = read_knowledge_versions(session.executed, session._memory_results)
+            if any({"id": ref.target, "revision": ref.revision} not in versions for ref in references):
+                raise ValueError("Chat citations require a committed knowledge read of the exact version")
     except (ValueError, TypeError, KeyError):
         return [CompletionCheck("knowledge_versions", CHECK_FAIL, "knowledge_reference_invalid")]
     # A locator/version check cannot prove an interpretation or applicability.
