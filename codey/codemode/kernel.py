@@ -380,7 +380,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                 repair_context.assert_complete()
             except ValueError as exc:
                 return ToolResult(
-                    ok=False, call=call, model_text=str(exc),
+                    ok=False, call=call,
+                    model_text=repair_context.failure or (result.model_text if not result.ok else str(exc)),
                     audit={**result.audit, "error_code": "repair_rejected"},
                     canonical={"child_effect_ids": child_effect_ids()},
                 )

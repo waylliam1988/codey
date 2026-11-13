@@ -14,11 +14,11 @@ from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from threading import RLock
-from typing import TypedDict, cast
+from typing import NoReturn, Protocol, TypedDict, TypeGuard
 
 from codey.codemode.state import CodeModeStateStore, DurableCodeModeState
 from codey.codemode.types import ToolCatalogSnapshot
-from codey.durable.model import TaskCheckpoint, thaw_json
+from codey.durable.model import TaskCheckpoint
 from codey.durable.session import DurableSession
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_value
@@ -81,6 +81,11 @@ class CodeModeReplayError(ValueError):
     pass
 
 
+class RepairReceiptView(Protocol):
+    @property
+    def _memory_results(self) -> Mapping[str, ToolResult]: ...
+
+
 @dataclass(frozen=True)
 class ReplayChildView:
     """Read-only identity derived from one already-settled child receipt."""
@@ -104,23 +109,36 @@ class CodeModeRepairContext:
     children: tuple[ReplayChildView, ...]
     receipts: Mapping[str, ToolResult]
     _used_positions: set[int]
+    failure: str = ""
+
+    def _reject(self, message: str) -> NoReturn:
+        if not self.failure:
+            self.failure = message
+        raise CodeModeReplayError(self.failure)
 
     def readonly_state(self, replay: CodeModeStateStore) -> ReceiptOnlyStateStore:
         return ReceiptOnlyStateStore(replay)
 
     def replay_child(self, position: int, tool_name: str, args: JsonObject) -> ToolResult:
         if position < 0 or position >= len(self.children):
-            raise CodeModeReplayError("repair issued a child call outside the original sequence")
+            self._reject(f"repair issued a child call outside the original sequence at step {position + 1}; "
+                         f"the original sequence has {len(self.children)} steps")
         expected = self.children[position]
         if tool_name != expected.tool_name:
-            raise CodeModeReplayError("repair changed the child tool")
+            self._reject(f"repair changed the child tool at step {position + 1}: "
+                         f"expected {expected.tool_name}; received {tool_name}")
         from codey.runtime.effects.effect_records import compute_args_digest
 
         if compute_args_digest(args) != expected.args_digest:
-            raise CodeModeReplayError("repair changed child arguments")
+            original = self.receipts[expected.effect_id].call.args
+            before = json.dumps(original, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            after = json.dumps(args, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            self._reject(f"repair changed child arguments at step {position + 1} ({tool_name}): "
+                         f"expected {before[:1000]}; received {after[:1000]} "
+                         "(argument previews limited to 1000 characters)")
         result = self.receipts.get(expected.effect_id)
         if result is None or result.call.call_id != expected.call_id:
-            raise CodeModeReplayError("repair child receipt identity is unavailable")
+            self._reject(f"repair child receipt identity is unavailable at step {position + 1} ({tool_name})")
         self._used_positions.add(position)
         return replace(result, audit={
             **result.audit,
@@ -129,8 +147,13 @@ class CodeModeRepairContext:
         })
 
     def assert_complete(self) -> None:
-        if self._used_positions != set(range(len(self.children))):
-            raise CodeModeReplayError("repair did not consume the original child sequence")
+        if self.failure:
+            raise CodeModeReplayError(self.failure)
+        remaining = [f"{child.position + 1}: {child.tool_name}" for child in self.children
+                     if child.position not in self._used_positions]
+        if remaining:
+            raise CodeModeReplayError("repair did not consume the original child sequence; remaining steps: "
+                                      + ", ".join(remaining))
 
 
 class ReceiptOnlyStateStore:
@@ -179,7 +202,7 @@ def repair_metadata(
 
 
 def resolve_repair_context(
-    session: object,
+    session: RepairReceiptView,
     token: str,
     *,
     session_id: str,
@@ -188,19 +211,13 @@ def resolve_repair_context(
     pending_parent: ToolResult | None = None,
 ) -> CodeModeRepairContext:
     """Resolve a token against settled children and the recorded or current parent."""
-    raw_results = getattr(session, "_memory_results", None)
-    if not isinstance(raw_results, Mapping):
-        raise CodeModeReplayError("repair receipt projection is unavailable")
-    receipts = {
-        key: value for key, value in raw_results.items()
-        if isinstance(key, str) and isinstance(value, ToolResult)
-    }
-    metadata: Mapping[str, object] | None = None
+    receipts = session._memory_results
+    metadata: JsonObject | None = None
     parent_effect_id = ""
     parent_result: ToolResult | None = None
     for result in (pending_parent,) if pending_parent is not None else receipts.values():
-        repair = result.canonical.get("repair")
-        if isinstance(repair, Mapping) and repair.get("token") == token:
+        repair = canonical_json_object(result.canonical).get("repair")
+        if isinstance(repair, dict) and repair.get("token") == token:
             metadata = repair
             parent_effect_id = str(repair.get("parent_effect_id", ""))
             parent_result = result
@@ -217,13 +234,15 @@ def resolve_repair_context(
     for result in receipts.values():
         if result.canonical.get("repaired_from") == parent_effect_id:
             raise CodeModeReplayError("repair token has already been used")
-    raw_children = parent_result.canonical.get("child_effect_ids")
-    if not isinstance(raw_children, list) or not raw_children or not all(isinstance(item, str) for item in raw_children):
+    raw_children = canonical_json_object(parent_result.canonical).get("child_effect_ids")
+    if not isinstance(raw_children, list) or not raw_children:
         raise CodeModeReplayError("repair child receipts are unavailable")
     children: list[ReplayChildView] = []
     from codey.runtime.effects.effect_records import compute_args_digest
 
     for position, effect_id in enumerate(raw_children):
+        if not isinstance(effect_id, str):
+            raise CodeModeReplayError("repair child receipts are unavailable")
         child = receipts.get(effect_id)
         if child is None:
             raise CodeModeReplayError("repair child receipt is missing or unsettled")
@@ -246,7 +265,7 @@ def resolve_repair_context(
 
 
 def browser_file_replay_value(
-    session: object, parent: ToolResult, token: str, *,
+    session: RepairReceiptView, parent: ToolResult, token: str, *,
     session_id: str, run_id: str, catalog: ToolCatalogSnapshot,
 ) -> JsonObject | None:
     """Project authorized receipts before settling a failed browser file return."""
@@ -354,22 +373,20 @@ class DurableCodeModeReplay:
 
     @staticmethod
     def _records(current: TaskCheckpoint) -> dict[str, ReplayRecord]:
-        raw = current.state.get("codemode_replay", {})
-        if not isinstance(raw, Mapping):
-            raise CodeModeReplayError("invalid CodeMode recovery metadata")
-        return cast(dict[str, ReplayRecord], thaw_json(raw))
+        raw = canonical_json_object(current.state.get("codemode_replay", {}))
+        records: dict[str, ReplayRecord] = {}
+        for key, value in raw.items():
+            if not _is_replay_record(value):
+                raise CodeModeReplayError("invalid CodeMode recovery metadata")
+            records[key] = value
+        return records
 
     def _record(self, current: TaskCheckpoint) -> ReplayRecord:
         record = self._records(current)[self.execution_id]
         if (
-            not isinstance(record, dict)
-            or record.get("fingerprint") != self.fingerprint
-            or type(record.get("epoch_ms")) is not int
-            or type(record.get("seed")) is not int
+            record["fingerprint"] != self.fingerprint
             or record.get("schema") != 1
-            or type(record.get("state")) is not list
             or record.get("effect_scope") != self.effect_scope
-            or type(record.get("allow_writes")) is not bool
         ):
             raise CodeModeReplayError("CodeMode recovery identity or metadata mismatch")
         return record
@@ -449,3 +466,14 @@ class DurableCodeModeReplay:
         }
         if self._children_seen != children or self._state_index != len(record["state"]):
             raise CodeModeReplayError("CodeMode recovery did not consume its recorded control flow")
+
+
+def _is_replay_record(value: JsonValue) -> TypeGuard[ReplayRecord]:
+    if not isinstance(value, dict) or not set(ReplayRecord.__annotations__) <= value.keys():
+        return False
+    steps = value["state"]
+    return (all(isinstance(value[key], str) for key in ("fingerprint", "effect_scope"))
+            and all(type(value[key]) is int for key in ("schema", "epoch_ms", "seed"))
+            and type(value["allow_writes"]) is bool and isinstance(steps, list)
+            and all(isinstance(step, dict) and set(StateReference.__annotations__) <= step.keys()
+                    and isinstance(step["request"], str) and type(step["revision"]) is int for step in steps))
