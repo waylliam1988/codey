@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
@@ -15,6 +16,15 @@ from codey.types.json_value import JsonObject, decode_json_object
 class CodeModeHostProtocol(Protocol):
     def invoke(self, name: str, args: dict[str, object]) -> object:
         """Invoke one frozen, host-mediated child tool."""
+
+
+def _normalize_open_result_args(args: JsonObject) -> JsonObject:
+    if set(args) != {"id"}:
+        return args
+    result_id = args["id"]
+    if not isinstance(result_id, str) or re.fullmatch(r"r[1-9][0-9]*", result_id) is None:
+        raise ValueError("open_result requires an observed search reference such as r2")
+    return {"result_id": result_id}
 
 
 def successful_tool_value(raw: ToolResult, entry: ToolCatalogEntry) -> object:
@@ -71,6 +81,8 @@ class CodeModeHost:
             index = self._next_child
             self._next_child += 1
         decoded_args = decode_json_object(args)
+        if tool_name == "open_result":
+            decoded_args = _normalize_open_result_args(decoded_args)
         json_edit = tool_name == "edit" and "changes" in decoded_args
         if json_edit:
             try:
