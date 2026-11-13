@@ -16,7 +16,7 @@ from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.tool_spec import ToolSpec, validate_args_with_spec
+from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject
 
 if TYPE_CHECKING:
@@ -210,6 +210,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
 ) -> Callable[[ToolCall], ToolResult]:
     """Build the production parent executor; every child re-enters execute_turn."""
     from codey.operations.kernel_execution import execute_turn
+    from codey.operations.kernel_protocol import _validate_tool_args
     from codey.operations.task_effects import KernelEffectSink
 
     specs = {spec.name: spec for spec in snapshot.frozen_specs}
@@ -269,7 +270,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             if not isinstance(child_sink, KernelEffectSink):
                 raise ValueError("durable CodeMode requires the original effect sink")
             from codey.codemode.replay import DurableCodeModeReplay, digest
-            limit_payload: dict[str, object] = asdict(limits or CodeModeLimits())
+            limit_payload: dict[str, int] = asdict(limits or CodeModeLimits())
             replay = DurableCodeModeReplay(durable, str(run_id), parent_id,
                 digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
                         "limits": limit_payload,
@@ -281,11 +282,11 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             from codey.operations.kernel_events import _event_call
             from codey.runtime.observe.events import RunEvent
             from codey.toolchain.runtime import ToolOutcome
-            # An invalid wait cannot settle a child receipt for durable replay.
-            if child.name == "browser_wait":
-                error = validate_args_with_spec(specs[child.name], child.args)
-                if error:
-                    raise ValueError(error)
+            # Kernel argument rejection creates no intent or receipt. Validate
+            # before recording a child that durable replay must account for.
+            _, error = _validate_tool_args(child.name, child.args, frozen_specs=specs)
+            if error:
+                raise ValueError(error)
             if on_event is not None:
                 event = RunEvent.tool_started(turn, _event_call(session, child), child.name)
                 event.metadata['parent_call_id'] = parent_id

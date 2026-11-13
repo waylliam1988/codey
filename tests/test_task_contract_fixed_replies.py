@@ -1,19 +1,21 @@
 """Saved failing replies and controlled alternatives through the production browser gate.
 
-These characterize the current failures; passing pytest does not mean the task
-passed. The saved replies retain their original JSON text, including escapes.
+These check diagnostics and characterize remaining task failures; passing pytest
+does not mean the task passed. Saved replies retain their original JSON escapes.
 """
 from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Protocol, TypedDict
 
 import pytest
 
 from codey.codemode.replay import DurableCodeModeReplay
 from codey.codemode.runtime import NodeWorkerRuntime, ToolInvoker
 from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry
+from codey.types.json_value import decode_json_object, decode_json_value, parse_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_full_surface_live_gate as matrix
 from tools import browser_prerequisite_ab as browser
@@ -27,23 +29,49 @@ pytestmark = pytest.mark.usefixtures(
     "public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
 
 
+class RequestObserver(Protocol):
+    def __call__(self, *, attempt: int, data: bytes, phase: str, response_bytes: int, seconds: float) -> None: ...
+
+
+class RuntimeExecute(Protocol):
+    def __call__(self, runtime: NodeWorkerRuntime, code: str, /, *, catalog: Sequence[ToolCatalogEntry],
+                 invoke: ToolInvoker, inputs: Mapping[str, object] | None = None, state_store: object = None,
+                 replay_context: Mapping[str, object] | None = None,
+                 limits: CodeModeLimits | None = None) -> CodeModeResult: ...
+
+
+class ControlFlowTrace(TypedDict):
+    seen: list[str]
+    committed: list[str]
+    seen_without_intent: list[str]
+
+
 def saved_replies(case: str) -> list[str]:
-    return json.loads(FIXTURE.read_text(encoding="utf-8"))[case]["replies"]
+    replies = decode_json_object(parse_json_object(FIXTURE.read_text(encoding="utf-8"))[case])["replies"]
+    assert isinstance(replies, list)
+    result: list[str] = []
+    for reply in replies:
+        assert isinstance(reply, str)
+        result.append(reply)
+    return result
 
 
 def install_original_http(monkeypatch: pytest.MonkeyPatch, replies: list[str]) -> None:
     remaining = iter(replies)
 
-    def scripted(url: str, payload: dict[str, object], headers: dict[str, str], **kwargs: object) -> dict[str, object]:
+    def scripted(url: str, payload: dict[str, object], headers: dict[str, str], *,
+                 observe: RequestObserver, **kwargs: object) -> dict[str, object]:
         reply = next(remaining)
-        observe = kwargs.get("observe")
-        assert callable(observe)
         observe(attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0.0)
         return {"choices": [{"message": {"role": "assistant", "content": reply, "tool_calls": []},
                               "finish_reason": "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5}}
 
     monkeypatch.setattr("codey.providers.api_generation.generate", scripted)
-    monkeypatch.setattr("tools.completion_explanation_ab.service_state", lambda _url: {})
+
+    def service_state(_url: str) -> dict[str, object]:
+        return {}
+
+    monkeypatch.setattr("tools.completion_explanation_ab.service_state", service_state)
 
 
 @pytest.mark.parametrize("case", ["basic", "structured", "stale_ref", "stale_edit"])
@@ -58,18 +86,25 @@ def test_original_failure_replies(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert all("repair_of" not in r.call.args for r in parents)
     if case == "basic":
         assert len(parents) == 4
-        assert all("recovery did not consume" in r.model_text for r in parents[1:])
+        assert all("browser_fill missing required arg 'ref'" in r.model_text for r in parents[1:])
+        assert all("recovery did not consume" not in r.model_text for r in parents)
         wrong = URL.replace("production-browser-record", "production_browser_record")
-        assert result["navigations"].count(wrong) == 3
+        navigations = decode_json_value(result["navigations"])
+        assert isinstance(navigations, list) and navigations.count(wrong) == 3
         snapshots = [r for r in receipts if r.call.name == "browser_snapshot"]
         assert len(snapshots) == 3 and all(r.ok for r in snapshots)
-        assert all(r.canonical["value"]["elements"] == [] for r in snapshots)
+        assert all(decode_json_object(r.canonical["value"])["elements"] == [] for r in snapshots)
+        requests = [parse_json_object(line) for line in (directory / "provider.jsonl").read_text(
+            encoding="utf-8").splitlines()]
+        assert any(row.get("phase") == "request" and "browser_fill missing required arg 'ref'" in json.dumps(
+            row.get("payload")) for row in requests)
     elif case == "structured":
         assert result["stop_reason"] == "done"
-        output = json.loads(str(result["answer"]))
+        output = parse_json_object(str(result["answer"]))
         assert output["page_url"] == URL and output["token"] == "SCHEMA_TOKEN_74"
         assert result["facts_match"] is False
-        assert "173" not in output["explanation"] and "QUARTZ_851" not in output["explanation"]
+        explanation = output["explanation"]
+        assert isinstance(explanation, str) and "173" not in explanation and "QUARTZ_851" not in explanation
         assert any(r.call.name == "browser_read" and r.ok and "QUARTZ_851" in r.model_text for r in receipts)
     elif case == "stale_ref":
         assert len(parents) == 4
@@ -77,7 +112,8 @@ def test_original_failure_replies(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         assert not any(r.call.name == "browser_click" for r in receipts)
         assert all(r.audit.get("error_code") == "syntax_error" for r in parents)
     else:
-        assert "browser_read" in result["successful_tools"]
+        successful = decode_json_value(result["successful_tools"])
+        assert isinstance(successful, list) and "browser_read" in successful
         assert result["version_check_reached"] is False
         assert result["true_stale_conflicts"] == 0
         assert result["project_result"] == {"amount": 0, "code": "unknown"}
@@ -89,8 +125,8 @@ def test_wrong_url_feedback_without_a_prior_compile_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, followup: str,
 ) -> None:
     runtime_results: list[CodeModeResult] = []
-    control_flow: list[dict[str, object]] = []
-    execute = NodeWorkerRuntime.execute
+    control_flow: list[ControlFlowTrace] = []
+    execute: RuntimeExecute = NodeWorkerRuntime.execute
     assert_valid = DurableCodeModeReplay.assert_valid
 
     def observed_execute(self: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry],
@@ -123,19 +159,27 @@ def test_wrong_url_feedback_without_a_prior_compile_error(
     run_case(directory, "chat", TARGET, max_turns=1)
     receipts = [r.result for r in tool_receipts(directory / "state")]
     parent, = [r for r in receipts if r.call.name == "codemode"]
-    (directory / "feedback-trace.json").write_text(json.dumps({
+    trace: dict[str, object] = {
         "runtime": [{"ok": r.ok, "error_code": r.error_code, "error": r.error,
                      "child_calls": r.child_calls} for r in runtime_results],
         "control_flow": control_flow, "parent_feedback": parent.model_text,
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    }
+    (directory / "feedback-trace.json").write_text(json.dumps(trace, ensure_ascii=False, indent=2), encoding="utf-8")
     assert "repair_of" not in parent.call.args
     assert any(r.call.name == "browser_snapshot" and r.ok for r in receipts)
     if followup == "snapshot_only":
         assert parent.ok and runtime_results[-1].ok
         assert len(control_flow) == 1 and control_flow[0]["seen_without_intent"] == []
         return
-    assert "recovery did not consume" in parent.model_text
-    assert len(control_flow) == 1 and len(control_flow[0]["seen_without_intent"]) == 1
+    assert "browser_fill missing required arg 'ref'" in parent.model_text
+    assert "recovery did not consume" not in parent.model_text
+    assert len(control_flow) == 1 and control_flow[0]["seen_without_intent"] == []
+    assert len(control_flow[0]["committed"]) == 2
+    assert [r.call.name for r in receipts if r.call.name.startswith("browser_")] == [
+        "browser_navigate", "browser_snapshot"]
+    child_refs = decode_json_object(parent.canonical)["child_effect_ids"]
+    assert isinstance(child_refs, list) and len(child_refs) == 2
+    assert all(ref in child_refs for ref in control_flow[0]["committed"])
     assert runtime_results[-1].ok is False
     assert "ref" in runtime_results[-1].error
     assert "recovery did not consume" not in runtime_results[-1].error

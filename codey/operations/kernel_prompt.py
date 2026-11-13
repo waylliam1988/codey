@@ -359,7 +359,7 @@ def _result_context(result: ToolResult, session: TaskSession, *, receipt_recover
         if isinstance(observation, dict) and isinstance(observation.get("search"), dict):
             search = decode_json_object(observation["search"])
             rows = search.get("results", [])
-            urls = [url for row in rows if isinstance(row, dict) and isinstance(url := row.get("url"), str)] if isinstance(rows, list) else []
+            urls: list[str] = [url for row in rows if isinstance(row, dict) and isinstance(url := row.get("url"), str)] if isinstance(rows, list) else []
             by_url = {url: key for key, url in session.search_results.items()}
             mapping = {by_url[url]: url for url in urls if url in by_url}
         if not mapping:

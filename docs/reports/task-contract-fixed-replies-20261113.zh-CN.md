@@ -1,5 +1,7 @@
 # 任务合同失败的固定回复回归
 
+以下基线记录对应 `bffcf553`；末节另记后续 basic 生产修复及验收，保留原始失败证据。
+
 本次在 `0fb5c03c` 上建立失败基线，没有修改生产代码、绑定控件或导航 URL，也没有调用真实模型或重跑完整实机矩阵。浏览器动作由真实 Chromium 执行，页面沿用既有本地路由夹具；提供方回复固定，入口、策略、CodeMode、内核执行及持久回执均走现有生产链。
 
 原始四项失败均已重现。`basic` 的回放错误属于程序覆盖诊断，不是模型申请了不完整的回执修复。`structured` 的业务值缺项仍可被生产 `done` 接受。原始 `stale_ref` 没有发出真实旧引用操作，原始 Hybrid 没有到达文件版本校验。正确调用的两个恢复对照均成功。
@@ -56,3 +58,21 @@ python -m pytest tests/test_task_contract_fixed_replies.py tests/test_browser_fu
 - 新测试文件通过 Ruff，改动通过 git diff --check。
 
 这次验证的是固定决策下的生产执行行为。没有证明模型能自主选用新入口，也没有证明绑定后能够补齐业务值或自动持有编辑凭证；这些改动本次尚未实施。上传控件的单控件、同名控件、同 URL 重载，以及不同页面字段和歧义来源的交付验收，应随对应绑定改动单独执行。
+
+## 后续 basic 生产修复
+
+`codey/codemode/kernel.py` 将原来仅针对 browser_wait 的提前校验，改为复用内核 `_validate_tool_args`，按当前轮的冻结工具合同校验所有子调用。参数拒绝发生在 replay.child、子调用开始事件和执行之前，因此不会将没有 intent 的调用计入必须核对回执的集合。实际执行仍进入原 execute_turn；没有跳过或放宽回放完整性校验。
+
+固定原回复的断言已更新：模型后续请求能收到 `browser_fill missing required arg 'ref'`，父调用不再返回“回放未走完”；错 URL 后仅返回快照仍成功。空 ref 的两种独立对照均确认 runtime 和父反馈保留直接错误，seen 与 committed 都恰好包含先前的导航、快照两项，父调用 child_effect_ids 仍引用这两条成功回执。原始 basic 任务仍因错误 URL 和缺 ref 而失败，本修复只纠正反馈和记账边界。
+
+测试中的 JSON 解析改用项目的严格 JSON 解码器；请求观察回调、运行时调用和控制流记录使用明确类型。Pyrefly 同时发现两个原有类型边界问题：limits 的 asdict 结果标注改为实际的 dict[str, int]，kernel_prompt 的搜索 URL 列表明确标注 list[str]。两处只调整类型注解，未改变运行行为，也未增加 Any、类型忽略或基线豁免。
+
+本次产物独立存于 `.e2e-artifacts/codemode-child-admission-20261113/`：
+
+- `before.txt`：先更新验收断言，未修生产时两种空 ref 对照均失败，仍收到旧回放错误。
+- `after.txt`：修复后 43 项通过，包括固定原回复、独立浏览器对照、缺失回执阻断、正式恢复篡改、并发失效和 repair 参数变更拒绝。
+- `final.txt`：最终源码 95 项通过，涵盖固定回复及通用 CodeMode 内核集成、生产边界、来源预检、JSON 编辑和失败反馈。与 after 组有重叠，不相加。
+- `mypy-final.txt`：生产全树 680 个文件通过，目标 Python 3.11。
+- `no-any-final.txt`：修改的三个 Python 文件通过 mypy --disallow-any-expr（导入使用 follow-imports=silent；生产全树另行检查）。
+- `pyrefly-final.txt`、`ty-final.txt`：生产全树及修改的回归文件通过，目标 Python 3.11。Pyrefly 留存现有 suppressed / warnings，未添加忽略规则。
+- `ruff.txt`、`precision.txt`：全仓 Ruff 和内核类型精度检查通过；git diff --check 通过。
