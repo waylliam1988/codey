@@ -87,6 +87,10 @@ def test_requested_query_url_survives_clause_splitting() -> None:
     f"{URL}\nPlease read this page",
     f"请打开以下页面：\n- {URL}",
     f"请打开这个页面\n\n[参考页面]({URL})",
+    f"请打开下面的网址。\nSource: {URL}",
+    f"Please open the URL below.\nurl: <{URL}>",
+    f"请打开以下页面：\n- 来源：[参考页面]({URL})",
+    f"来源：{URL}\nPlease read this page",
 ])
 def test_standalone_url_adjacent_to_open_request_is_required(task: str) -> None:
     intent = explicit_web_intent(task)
@@ -99,6 +103,17 @@ def test_newline_does_not_reassign_a_negated_or_unrelated_url() -> None:
     assert intent.urls == frozenset({URL})
     assert not explicit_web_intent(f"请上网查官方文档。\n额外参考链接：{other}").urls
     assert not explicit_web_intent(f"不要打开这个页面。\n{other}").urls
+    assert not explicit_web_intent(f"不要打开这个页面。\nSource: {other}").urls
+    assert not explicit_web_intent(f"请上网查官方文档。\nSource: {other}").urls
+    assert not explicit_web_intent(f"请打开这个页面。\n其他背景资料：{other}").urls
+
+
+def test_consecutive_bare_and_labeled_addresses_share_the_adjacent_request() -> None:
+    other = "https://example.com/other"
+    intent = explicit_web_intent(f"请打开这个页面\n{URL}\nSource: {other}")
+    assert intent.urls == {URL, other}
+    assert intent.original_urls == {URL, other}
+    assert not explicit_web_intent(f"不要打开这些页面\n{URL}\nSource: {other}").urls
 
 
 def test_search_does_not_reauthorize_a_negated_url() -> None:

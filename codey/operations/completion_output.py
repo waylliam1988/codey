@@ -97,8 +97,6 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
         return CompletionOutput(text, observations)
     proposed: JsonValue
     if explanation:
-        if scope is not None and bound_upload is not None:
-            text = bound_upload.status(chinese=scope.chinese) if isinstance(bound_upload, UploadEvidence) else ""
         proposed = {"explanation": text}
     else:
         try:

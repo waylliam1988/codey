@@ -429,8 +429,9 @@ def _proof_capacity_verdict(checks: list[CompletionCheck], *, publication: bool)
 
 def _browser_completion_block(session: TaskSession, text: str, context: CompletionContext) -> GateVerdict | None:
     from codey.operations.browser_text_report import observe_metadata, report_scope
-    from codey.operations.browser_upload import upload_completion_scope, upload_evidence
+    from codey.operations.browser_upload import bound_upload_explanation, upload_completion_scope, upload_evidence
     from codey.operations.source_gaps import source_read_required, task_source_coverage
+    from codey.policies.tool_requirement import decode_answer
 
     coverage = task_source_coverage(session, context.research_execution_ledger or context.research_ledger)
     if (session.task_kind == "chat" and not session.policy.strict_research
@@ -446,6 +447,15 @@ def _browser_completion_block(session: TaskSession, text: str, context: Completi
         evidence = upload_evidence(session, upload, context.browser_document)
         if isinstance(evidence, str):
             return GateVerdict(False, evidence, None)
+        if bound_upload_explanation(session.policy.required_checks):
+            try:
+                answer = decode_answer(text)
+            except ValueError:
+                # The existing output check owns malformed JSON diagnostics.
+                return None
+            if (isinstance(answer, dict) and isinstance(explanation := answer.get("explanation"), str)
+                    and (issue := evidence.explanation_issue(explanation, chinese=upload.chinese))):
+                return GateVerdict(False, issue, None)
     return None
 
 

@@ -142,3 +142,51 @@ def test_observed_file_controls_are_selected_without_model_javascript(
     requests = [parse_json_object(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
     first = json.dumps(next(row["payload"] for row in requests if row.get("phase") == "request"))
     assert "Structured attachment selection" in first and "declare function unwrap" not in first
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
+@pytest.mark.parametrize(("english", "status"), [
+    (False, "已成功上传，服务器确认接收。"), (True, "The server has accepted the attachment. "),
+    (False, "通过网页成功上传了附件。"),
+])
+def test_labeled_source_prefetch_and_status_retry_preserve_analysis_without_reupload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, english: bool, status: str,
+) -> None:
+    attachment = InputAttachmentStore(tmp_path / "inputs", "upload-retry").put(
+        "fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode("ascii"))
+    identity = str(attachment["id"])
+    analysis = "The report has 3 entries; the last date is missing." if english else "报告有 3 条记录，末条缺日期。"
+    draft = status + analysis
+    corrected = ("The attachment was selected; server acceptance is unverified. " if english else
+                 "附件已选择，服务器接收尚未核验。") + analysis
+    replies: list[JsonObject] = [action("observe"),
+        action("select", attachment_id=identity, target={"name": "Attachment"}), action("read"),
+        {"tool": "done", "args": {"summary": draft}}, {"tool": "done", "args": {"summary": corrected}}]
+    install_http(monkeypatch, replies)
+    directory = tmp_path / "run"
+
+    def labeled_source(task: str) -> str:
+        return task.replace("打开 " + URL, "打开下面的网址\nSource: " + URL + "\n")
+
+    result = run_case(directory, "chat", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10),
+        upload_file=True, assembled_upload=True, max_turns=5, restore_snapshots=True, task_transform=labeled_source,
+        fixture_html=HTML.replace('<p id="uploaded">', '<p>服务器已接收，上传成功。</p><p id="uploaded">'))
+    assert result["passed"] is True and result["stop_reason"] == "done", result
+    answer = parse_json_object(str(result["answer"]))
+    assert answer["explanation"] == corrected
+    assert answer["sha256"] == hashlib.sha256(b"UPLOAD_BYTES_82\n").hexdigest()
+    assert "服务器已接收" in str(answer["page_text"])
+    rejection = decode_json_object(result["first_rejection"])
+    assert "服务器接收状态未核验" in str(rejection["reason"])
+    receipt_rows = tool_receipts(directory / "state")
+    receipts = [row.result for row in receipt_rows]
+    assert sum(receipt.call.name == "browser_upload" for receipt in receipts) == 1
+    assert sum(receipt.call.name == "browser_read" for receipt in receipts) == 1
+    sources = [receipt for receipt in receipts if receipt.call.name == "open_url"]
+    assert len(sources) == 1 and sources[0].call.call_id == "required-source:0"
+    transcript = [parse_json_object(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
+    requests = [json.dumps(row["payload"], ensure_ascii=False) for row in transcript if row.get("phase") == "request"]
+    source_ref = next(row.identity for row in receipt_rows if row.result.call.name == "open_url")
+    assert "Structured attachment selection" in requests[0] and source_ref in requests[0]
+    assert draft in requests[-1] and "done.summary" in requests[-1]
+    assert len(requests) == 5

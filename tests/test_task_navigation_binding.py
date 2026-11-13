@@ -114,6 +114,12 @@ def test_composed_model_exposure_can_use_its_authorized_nested_navigation() -> N
     (f"Open {URL} and do not visit https://example.com/records/Case-A", URL),
     (f"Do not visit https://example.com/records/Case-A and open {URL}", URL),
     (f"Open {URL} and do not visit {URL}", None),
+    (f"Do not visit {URL}. I changed my mind: please open {URL}", URL),
+    (f"不要打开 {URL}。我改主意了，请打开 {URL}。", URL),
+    (f"Do not visit {URL} and open {URL}", URL),
+    (f"Open {URL}. Do not visit {URL}. Please open {URL}", URL),
+    (f"Do not visit {URL}. Please open {URL}. Do not visit {URL}", None),
+    (f"Do not visit {URL}. Please search the web", None),
     (f"Open {URL} and do not visit https://example.com/records/Case-A or https://example.com/other", URL),
 ])
 def test_each_url_keeps_its_own_action_and_negation_through_restore(task: str, expected: str | None) -> None:
@@ -129,6 +135,15 @@ def test_each_url_keeps_its_own_action_and_negation_through_restore(task: str, e
     result = run_program(session, snapshot, calls, "return unwrap(await tools.browser_navigate({target:'task'}));")
     assert result.ok is (expected is not None)
     assert [call.args for call in calls] == ([{"url": expected}] if expected is not None else [])
+
+
+@pytest.mark.parametrize("first", [f"<{URL}#old>", f"{URL}."])
+def test_revocation_clears_original_candidates_and_their_ambiguity(first: str) -> None:
+    task = f"Open {first}. Do not visit <{URL}>. Please open <{URL}#new>"
+    intent = explicit_web_intent(task)
+    assert intent.urls == {URL}
+    assert intent.original_urls == {URL + "#new"}
+    assert build_turn_snapshot(session_for(task)).task_navigation_url == URL + "#new"
 
 
 def test_legacy_source_requirement_cannot_reauthorize_a_negated_task_url() -> None:

@@ -69,11 +69,13 @@ def test_first_request_delivery_and_real_completion(
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
-@pytest.mark.parametrize(("status", "multiple", "newline"), [
-    (200, False, False), (403, False, False), (403, True, False), (200, False, True), (403, False, True),
+@pytest.mark.parametrize(("status", "multiple", "layout"), [
+    (200, False, "inline"), (403, False, "inline"), (403, True, "inline"),
+    (200, False, "bare"), (403, False, "bare"),
+    (200, False, "labeled"), (403, False, "labeled"), (403, True, "mixed"),
 ])
 def test_production_opens_required_source_before_first_model_request(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: int, multiple: bool, newline: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: int, multiple: bool, layout: str,
 ) -> None:
     expected = SOURCE_SUCCESS_MARKER if status == 200 else "HTTP 403"
     install_http(monkeypatch, [{"tool": "done", "args": {"summary": f"Source result: {expected}"}}])
@@ -82,8 +84,11 @@ def test_production_opens_required_source_before_first_model_request(
     other = "https://example.com/second-required-source"
 
     def task_with_layout(task: str) -> str:
-        if newline:
-            return f"帮我看看这个页面\n{URL}\n请报告正文记录或访问失败的实际原因。"
+        if layout != "inline":
+            links = f"Source: {URL}" if layout == "labeled" else URL
+            if multiple:
+                links += f"\nSource: {other}"
+            return f"帮我看看这个页面\n{links}\n请报告正文记录或访问失败的实际原因。"
         return task + (f" Also open {other}." if multiple else "")
 
     row = run_case(directory, "chat", target, max_turns=1, source_failure=True, source_attempt_only=True,

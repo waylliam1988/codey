@@ -14,7 +14,8 @@ _URL = re.compile(r"https?://[^\s<>`\"'、，。；！？（）\[\]]+", re.IGNOR
 _CLAUSES = re.compile(r"[，。；;!?！？]|\.\s+|\.$")
 _URL_TOKEN = re.compile(r"\x00\d+\x00")
 _URL_LINE = re.compile(r"[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?"
-                       r"(?:<\x00\d+\x00>|\[[^\]\n]+\]\(\x00\d+\x00\)|\x00\d+\x00)[ \t。；.!?]*")
+                       r"(?:(?:Source|URL|来源)[ \t]*[:：][ \t]*)?"
+                       r"(?:<\x00\d+\x00>|\[[^\]\n]+\]\(\x00\d+\x00\)|\x00\d+\x00)[ \t。；.!?]*", re.I)
 _ACTION = re.compile(
     r"web_search|open_url|上网|联网查询|在线查找|查网页|查资料|官方文档|浏览网页|读取网页|"
     r"\b(?:browse|search the web|look online)\b", re.IGNORECASE)
@@ -88,10 +89,7 @@ def explicit_web_intent(task: str) -> WebIntent:
 
     text = _URL.sub(protect_url, text)
     requested = False
-    direct: set[str] = set()
-    denied: set[str] = set()
-    originals: set[str] = set()
-    unambiguous = True
+    direct: dict[str, set[str | None]] = {}
     for clause in _request_clauses(text):
         targets = list(_URL_TOKEN.finditer(clause))
         actions = list(_ACTION.finditer(clause))
@@ -107,14 +105,11 @@ def explicit_web_intent(task: str) -> WebIntent:
             positive = preceding[-1] if preceding else permissions[0][1]
             key, original = url_tokens[target[0]]
             if not positive:
-                denied.add(key)
+                direct.pop(key, None)
                 continue
-            direct.add(key)
-            unambiguous = unambiguous and original is not None
-            if original is not None:
-                originals.add(original)
-    direct.difference_update(denied)
-    originals = {url for url in originals if source_url_key(url) in direct}
+            direct.setdefault(key, set()).add(original)
+    originals = {url for candidates in direct.values() for url in candidates if url is not None}
+    unambiguous = all(None not in candidates for candidates in direct.values())
     return WebIntent(requested, frozenset(direct), frozenset(originals) if unambiguous else frozenset())
 
 

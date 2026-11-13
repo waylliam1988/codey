@@ -34,6 +34,20 @@ _REPORT_HASH = re.compile(
     r"[^。！？!?;；\n]{0,240}\bsha[ -]?256\b", re.I | re.ASCII)
 _PAGE_TEXT = re.compile(r"内容标记|页面(?:正文|文本|显示)|\b(?:content marker|page text)\b", re.I)
 _ATTACHMENT = re.compile(r"\batt_[0-9a-f]{64}\b")
+_QUOTED_STATUS = re.compile(r'```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|"[^"\n]*"|“[^”\n]*”|「[^」\n]*」'
+                            r"|(?<!\w)'[^'\n]*'(?!\w)")
+_STATUS_CLAUSES = re.compile(r"[。！？；，\n.!?;,]|\bbut\b|但是|但", re.I)
+_UPLOAD_ASSERTION = re.compile(
+    r"已(?:经)?(?:成功)?上传(?:完成|成功)?|成功上传|上传(?:已(?:经)?)?(?:成功|完成)|"
+    r"(?:服务器|服务端)(?:已(?:经)?(?:确认)?|确认)(?:成功)?(?:收到|接收|接受)|"
+    r"\b(?:successfully\s+uploaded|uploaded\s+successfully|(?:was|has been|have been)\s+uploaded|"
+    r"upload\s+(?:(?:is|was)\s+)?(?:complete(?:d)?|successful)|"
+    r"(?:the\s+)?server\s+(?:(?:has|had|already|successfully)\s+)*(?:received|accepted|confirmed\s+receipt))\b", re.I)
+_NEGATED_ASSERTION = re.compile(
+    r"(?:没有|尚未|并未|未能|未|是否|不能确认|无法确认|不能证明|无法证明|不代表|不意味着)(?:文件|附件)?\s*$|"
+    r"\b(?:not(?:\s+yet)?(?:\s+been)?|never|(?:cannot|can't)\s+(?:confirm|verify|prove)(?:\s+that)?|"
+    r"no\s+evidence\s+that)\s*$", re.I)
+_UNVERIFIED_ASSERTION = re.compile(r"^\s*(?:这一点|的状态)?(?:尚未|未经|未)(?:核验|验证|确认)")
 _NAVIGATE = require_tool_success("browser_navigate")
 _READ = require_tool_success("browser_read")
 _PAGE_RECEIPTS = frozenset({"open_url", "browser_navigate"})
@@ -352,6 +366,22 @@ class UploadEvidence:
             return f"已在网页选中附件。{page}服务器接收状态未核验。"
         page = " The page was read after selection." if self.text else ""
         return f"The attachment was selected on the page.{page} Server acceptance was not verified."
+
+    def explanation_issue(self, explanation: str, *, chinese: bool) -> str:
+        # Recognize explicit known claims, not arbitrary prose semantics or
+        # quoted page content. Keep the draft intact for a completion retry.
+        for clause in _STATUS_CLAUSES.split(_QUOTED_STATUS.sub(" ", explanation)):
+            for claim in _UPLOAD_ASSERTION.finditer(clause):
+                if (_NEGATED_ASSERTION.search(clause[:claim.start()])
+                        or _UNVERIFIED_ASSERTION.search(clause[claim.end():])):
+                    continue
+                instruction = ("请只修正 done.summary 中没有回执支持的上传或服务器接收状态，保留其余分析。"
+                               "重新提交 done，不要重复选择或上传附件。" if chinese else
+                               "Correct only the unsupported upload or server-acceptance claim in done.summary; "
+                               "preserve the remaining analysis. Resubmit done without selecting or uploading again.")
+                return (self.status(chinese=chinese) + " " + instruction
+                        + "\n\nRejected explanation to revise:\n" + explanation)
+        return ""
 
     def render(self, *, chinese: bool) -> str:
         lines = ([f"已选择附件：{self.name}", f"选择回执 SHA256：{self.sha256}"] if chinese else
