@@ -1,0 +1,650 @@
+{
+  "scope": "experimental_postprocessing_shared_committed_chromium_receipts",
+  "production_before": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+  "production_after": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+  "production_unchanged": true,
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "results": [
+    {
+      "case": "food",
+      "pair": 1,
+      "seed": 123456789,
+      "arm": "A",
+      "score": {
+        "passed": true,
+        "declaration_usable": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      },
+      "output": {
+        "text": "福州鱼丸的净重是173 克，校验码是QUARTZ_851。",
+        "missing": [],
+        "complete": true,
+        "facts": {}
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "food",
+      "pair": 1,
+      "seed": 123456789,
+      "arm": "B",
+      "score": {
+        "passed": false,
+        "declaration_usable": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      },
+      "output": {
+        "complete": false,
+        "facts": {},
+        "provenance": {},
+        "missing": [
+          {
+            "fact": "net_weight",
+            "subject": "福州鱼丸的净重",
+            "label": "净重",
+            "reason": "Expected one record owned by 福州鱼丸的净重; found 0."
+          },
+          {
+            "fact": "verification_code",
+            "subject": "福州鱼丸的校验码",
+            "label": "校验码",
+            "reason": "Expected one record owned by 福州鱼丸的校验码; found 0."
+          }
+        ],
+        "text": "查了采样记录表中的净重和校验码，并根据样本名称“福州鱼丸”匹配对应的记录。\n缺少 福州鱼丸的净重 的净重：Expected one record owned by 福州鱼丸的净重; found 0.\n缺少 福州鱼丸的校验码 的校验码：Expected one record owned by 福州鱼丸的校验码; found 0."
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "food",
+      "pair": 2,
+      "seed": 123456790,
+      "arm": "B",
+      "score": {
+        "passed": false,
+        "declaration_usable": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      },
+      "output": {
+        "complete": false,
+        "facts": {},
+        "provenance": {},
+        "missing": [
+          {
+            "fact": "net_weight",
+            "subject": "福州鱼丸的净重",
+            "label": "净重",
+            "reason": "Expected one record owned by 福州鱼丸的净重; found 0."
+          },
+          {
+            "fact": "verification_code",
+            "subject": "福州鱼丸的校验码",
+            "label": "校验码",
+            "reason": "Expected one record owned by 福州鱼丸的校验码; found 0."
+          }
+        ],
+        "text": "查了采样记录表中的净重和校验码，并根据样本名称“福州鱼丸”匹配对应的记录。\n缺少 福州鱼丸的净重 的净重：Expected one record owned by 福州鱼丸的净重; found 0.\n缺少 福州鱼丸的校验码 的校验码：Expected one record owned by 福州鱼丸的校验码; found 0."
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "food",
+      "pair": 2,
+      "seed": 123456790,
+      "arm": "A",
+      "score": {
+        "passed": true,
+        "declaration_usable": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      },
+      "output": {
+        "text": "福州鱼丸的净重是173 克，校验码是QUARTZ_851。",
+        "missing": [],
+        "complete": true,
+        "facts": {}
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "orders",
+      "pair": 1,
+      "seed": 123456789,
+      "arm": "A",
+      "score": {
+        "passed": true,
+        "declaration_usable": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      },
+      "output": {
+        "text": "订单 A-173 的送达时间是 2026-11-18，追踪号是 0042091。",
+        "missing": [],
+        "complete": true,
+        "facts": {}
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "orders",
+      "pair": 1,
+      "seed": 123456789,
+      "arm": "B",
+      "score": {
+        "passed": false,
+        "declaration_usable": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      },
+      "output": {
+        "complete": false,
+        "facts": {},
+        "provenance": {},
+        "missing": [
+          {
+            "fact": "delivery_time",
+            "subject": "订单 A-173 的送达时间",
+            "label": "送达时间",
+            "reason": "Expected one record owned by 订单 A-173 的送达时间; found 0."
+          },
+          {
+            "fact": "tracking_number",
+            "subject": "订单 A-173 的追踪号",
+            "label": "追踪号",
+            "reason": "Expected one record owned by 订单 A-173 的追踪号; found 0."
+          }
+        ],
+        "text": "查了订单表中的所有记录，并匹配了订单号为 'A-173' 的特定行。\n缺少 订单 A-173 的送达时间 的送达时间：Expected one record owned by 订单 A-173 的送达时间; found 0.\n缺少 订单 A-173 的追踪号 的追踪号：Expected one record owned by 订单 A-173 的追踪号; found 0."
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "orders",
+      "pair": 2,
+      "seed": 123456790,
+      "arm": "B",
+      "score": {
+        "passed": false,
+        "declaration_usable": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      },
+      "output": {
+        "complete": false,
+        "facts": {},
+        "provenance": {},
+        "missing": [
+          {
+            "fact": "delivery_time",
+            "subject": "订单 A-173 的送达时间",
+            "label": "送达时间",
+            "reason": "Expected one record owned by 订单 A-173 的送达时间; found 0."
+          },
+          {
+            "fact": "tracking_number",
+            "subject": "订单 A-173 的追踪号",
+            "label": "追踪号",
+            "reason": "Expected one record owned by 订单 A-173 的追踪号; found 0."
+          }
+        ],
+        "text": "查了订单表中的所有记录，并定位到订单号为 A-173 的那一行。\n缺少 订单 A-173 的送达时间 的送达时间：Expected one record owned by 订单 A-173 的送达时间; found 0.\n缺少 订单 A-173 的追踪号 的追踪号：Expected one record owned by 订单 A-173 的追踪号; found 0."
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "orders",
+      "pair": 2,
+      "seed": 123456790,
+      "arm": "A",
+      "score": {
+        "passed": true,
+        "declaration_usable": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      },
+      "output": {
+        "text": "订单 A-173 的送达时间是 2026-11-18，追踪号是 0042091。",
+        "missing": [],
+        "complete": true,
+        "facts": {}
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "inventory",
+      "pair": 1,
+      "seed": 123456789,
+      "arm": "A",
+      "score": {
+        "passed": true,
+        "declaration_usable": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      },
+      "output": {
+        "text": "西仓的可用库存是0。",
+        "missing": [],
+        "complete": true,
+        "facts": {}
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "inventory",
+      "pair": 1,
+      "seed": 123456789,
+      "arm": "B",
+      "score": {
+        "passed": false,
+        "declaration_usable": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 1,
+        "needs_count": 2
+      },
+      "output": {
+        "complete": false,
+        "facts": {
+          "warehouse_name": "西仓"
+        },
+        "provenance": {
+          "warehouse_name": {
+            "receipt_ref": "task_turn_effect:8e51f3e14f3e81ec",
+            "read_ref": "task_turn_effect:c0021a1269431803",
+            "url": "https://example.com/fact-delivery/inventory",
+            "record": "/documents/0/warehouses/1",
+            "identity": "/仓库",
+            "value": "/仓库"
+          }
+        },
+        "missing": [
+          {
+            "fact": "available_inventory",
+            "subject": "西仓的当前可用数量",
+            "label": "可用库存",
+            "reason": "Expected one record owned by 西仓的当前可用数量; found 0."
+          }
+        ],
+        "text": "查了仓库列表中的仓库名称和对应的可用库存数量。\n西仓 的仓库名称：西仓\n缺少 西仓的当前可用数量 的可用库存：Expected one record owned by 西仓的当前可用数量; found 0."
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 1,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "inventory",
+      "pair": 2,
+      "seed": 123456790,
+      "arm": "B",
+      "score": {
+        "passed": false,
+        "declaration_usable": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 1,
+        "needs_count": 2
+      },
+      "output": {
+        "complete": false,
+        "facts": {
+          "warehouse_name": "西仓"
+        },
+        "provenance": {
+          "warehouse_name": {
+            "receipt_ref": "task_turn_effect:8e51f3e14f3e81ec",
+            "read_ref": "task_turn_effect:c0021a1269431803",
+            "url": "https://example.com/fact-delivery/inventory",
+            "record": "/documents/0/warehouses/1",
+            "identity": "/仓库",
+            "value": "/仓库"
+          }
+        },
+        "missing": [
+          {
+            "fact": "available_inventory",
+            "subject": "西仓的当前可用数量",
+            "label": "可用库存",
+            "reason": "Select exactly one evidence position for this fact."
+          }
+        ],
+        "text": "查了仓库列表中的仓库名称和对应的可用库存数量。\n西仓 的仓库名称：西仓\n缺少 西仓的当前可用数量 的可用库存：Select exactly one evidence position for this fact."
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 1,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "inventory",
+      "pair": 2,
+      "seed": 123456790,
+      "arm": "A",
+      "score": {
+        "passed": true,
+        "declaration_usable": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      },
+      "output": {
+        "text": "西仓的可用库存是0。",
+        "missing": [],
+        "complete": true,
+        "facts": {}
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 0,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "ambiguous",
+      "pair": 1,
+      "seed": 123456789,
+      "arm": "A",
+      "score": {
+        "passed": true,
+        "declaration_usable": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 1,
+        "needs_count": 2
+      },
+      "output": {
+        "text": "订单 A-173 的追踪号是 0042091，送达时间为 missing。",
+        "missing": [
+          "delivery_time"
+        ],
+        "complete": false,
+        "facts": {}
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 1,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "ambiguous",
+      "pair": 1,
+      "seed": 123456789,
+      "arm": "B",
+      "score": {
+        "passed": false,
+        "declaration_usable": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      },
+      "output": {
+        "complete": false,
+        "facts": {},
+        "provenance": {},
+        "missing": [
+          {
+            "fact": "delivery_time",
+            "subject": "订单 A-173 的送达时间",
+            "label": "送达时间",
+            "reason": "Select exactly one evidence position for this fact."
+          },
+          {
+            "fact": "tracking_number",
+            "subject": "订单 A-173 的追踪号",
+            "label": "追踪号",
+            "reason": "Expected one record owned by 订单 A-173 的追踪号; found 0."
+          }
+        ],
+        "text": "查了订单表中的每一行，寻找订单号为 'A-173' 的记录，并提取其对应的送达时间和追踪号。\n缺少 订单 A-173 的送达时间 的送达时间：Select exactly one evidence position for this fact.\n缺少 订单 A-173 的追踪号 的追踪号：Expected one record owned by 订单 A-173 的追踪号; found 0."
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "ambiguous",
+      "pair": 2,
+      "seed": 123456790,
+      "arm": "B",
+      "score": {
+        "passed": false,
+        "declaration_usable": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      },
+      "output": {
+        "complete": false,
+        "facts": {},
+        "provenance": {},
+        "missing": [
+          {
+            "fact": "delivery_time",
+            "subject": "订单 A-173 的送达时间",
+            "label": "送达时间",
+            "reason": "Expected one record owned by 订单 A-173 的送达时间; found 0."
+          },
+          {
+            "fact": "tracking_number",
+            "subject": "订单 A-173 的追踪号",
+            "label": "追踪号",
+            "reason": "Expected one record owned by 订单 A-173 的追踪号; found 0."
+          }
+        ],
+        "text": "查了订单表中的每一行，寻找订单号为 'A-173' 的记录，并提取其对应的送达时间和追踪号。\n缺少 订单 A-173 的送达时间 的送达时间：Expected one record owned by 订单 A-173 的送达时间; found 0.\n缺少 订单 A-173 的追踪号 的追踪号：Expected one record owned by 订单 A-173 的追踪号; found 0."
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": false,
+        "wrong_owner_value": false,
+        "missing_count": 2,
+        "needs_count": 2
+      }
+    },
+    {
+      "case": "ambiguous",
+      "pair": 2,
+      "seed": 123456790,
+      "arm": "A",
+      "score": {
+        "passed": true,
+        "declaration_usable": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 1,
+        "needs_count": 2
+      },
+      "output": {
+        "text": "订单 A-173 的追踪号是 0042091，送达时间为 missing。",
+        "missing": [
+          "delivery_time"
+        ],
+        "complete": false,
+        "facts": {}
+      },
+      "original_score": {
+        "passed": false,
+        "required_values_present": true,
+        "wrong_owner_value": false,
+        "missing_count": 1,
+        "needs_count": 2
+      }
+    }
+  ],
+  "scoring_revision": "answer correctness separate from declaration; B uses typed facts, never diagnostic text",
+  "date": "2026-11-13",
+  "branch": "master",
+  "production_base": "7fe4ac94",
+  "live_command": "python -u -m tools.receipt_fact_delivery_ab --run-dir .e2e-artifacts/receipt-fact-delivery-20261113/live --pairs 2",
+  "live_requests": {
+    "declaration": 8,
+    "A": 8,
+    "B": 16
+  },
+  "completion_tokens": {
+    "declaration": 716,
+    "A": 332,
+    "B": 2025
+  },
+  "response_seconds": {
+    "declaration": 24.48499999998603,
+    "A": 13.279999999984284,
+    "B": 66.68900000002759
+  },
+  "seeds": [
+    123456789,
+    123456790
+  ],
+  "totals": {
+    "A": {
+      "passed": 8,
+      "cases": 8,
+      "wrong_owner_value": 0
+    },
+    "B": {
+      "passed": 0,
+      "cases": 8,
+      "wrong_owner_value": 0
+    }
+  },
+  "validation": {
+    "pytest-final": {
+      "command": "python -m pytest tests/test_receipt_fact_delivery.py tests/test_task_contract_fixed_replies.py -q",
+      "exit_code": 0,
+      "log": "checks/pytest-final.txt"
+    },
+    "ruff": {
+      "command": "python -m ruff check .",
+      "exit_code": 0,
+      "log": "checks/ruff.txt"
+    },
+    "mypy-production": {
+      "command": "python -m mypy codey --python-version 3.11",
+      "exit_code": 0,
+      "log": "checks/mypy-production.txt"
+    },
+    "mypy-experiment": {
+      "command": "python -m mypy tools/receipt_fact_delivery.py tools/receipt_fact_delivery_ab.py tests/test_receipt_fact_delivery.py --explicit-package-bases --python-version 3.11 --follow-imports=silent --disallow-any-expr",
+      "exit_code": 0,
+      "log": "checks/mypy-experiment.txt"
+    },
+    "pyrefly": {
+      "command": "python -m pyrefly check codey tools/receipt_fact_delivery.py tools/receipt_fact_delivery_ab.py tests/test_receipt_fact_delivery.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "checks/pyrefly.txt"
+    },
+    "ty": {
+      "command": "python -m ty check codey tools/receipt_fact_delivery.py tools/receipt_fact_delivery_ab.py tests/test_receipt_fact_delivery.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "checks/ty.txt"
+    },
+    "precision": {
+      "command": "python -m tools.kernel_type_precision_gate",
+      "exit_code": 0,
+      "log": "checks/precision.txt"
+    }
+  },
+  "fixed_reply_tests": 25,
+  "combined_regression_tests": 36,
+  "usable_declarations": 0,
+  "declarations": 8,
+  "decision": "No demonstrated live benefit; do not integrate into production.",
+  "limitations": [
+    "Fixed shared acquisition; model-driven discovery and production done enforcement not tested.",
+    "Visible structured tables and JSON only; model still owns question and column semantics.",
+    "Two seeds per case, largely repeated outputs; no reliability inference."
+  ]
+}
