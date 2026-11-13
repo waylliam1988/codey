@@ -1,0 +1,36 @@
+{
+  "nested_changes": {
+    "source": ".e2e-artifacts/hybrid-edit-receipt-20261113/live/renamed/pair-1/B",
+    "provider_sha256": {
+      "model-1/provider.jsonl": "d1c3c683bcbe8f414e5f108819b435309cc913e9201b8de164a8c363a0e1a141",
+      "model-2/provider.jsonl": "77a9a43d21e5a175fc5be3868d09f69b20da19b4f7309259e63f51b385c1b9a0",
+      "model-3/provider.jsonl": "141a377da077a449a3f30817870a11ccfe33734b42b2a1e5262d008464c0a3d3",
+      "model-4/provider.jsonl": "eaf343b5f3d4271bbeeb5961494e2e8ad3790c4cf3d92e7c9305ee75f51e379c",
+      "model-5/provider.jsonl": "cbbeef80b5f8b150551ea2c2705ebf68942a9351217e53cb38451a7b46e206ff",
+      "model-6/provider.jsonl": "3ec71027144cb04120f59c702603739aa771f8162e8aba57f55e97ac21de721d"
+    },
+    "replies": [
+      "{\"tool\": \"edit_fields\", \"args\": {\"changes\": {\"value\": {\"净重\": 173, \"校验码\": \"QUARTZ_851\"}}}}",
+      "{\"tool\": \"edit_fields\", \"args\": {\"changes\": {\"result_ref\": \"task_turn_effect:88fd69586b89694a\", \"value\": {\"end_line\": 9, \"next_offset\": 0, \"path\": \"result.json\", \"start_line\": 1, \"text\": \"{\\n  \\\"净重\\\": 173,\\n  \\\"校验码\\\": \\\"QUARTZ_851\\\",\\n  \\\"metadata\\\": {\\n    \\\"note\\\": \\\"保留 \\\\\\\"原文\\\\\\\"\\\",\\n    \\\"active\\\": false,\\n    \\\"sequence\\\": \\\"0042091\\\"\\n  }\\n}\", \"text_complete\": true, \"total_lines\": 9}}}}",
+      "{\"tool\": \"read_file\", \"args\": {}}",
+      "{\"tool\": \"edit_fields\", \"args\": {\"changes\": {\"value\": {\"净重\": 173, \"校验码\": \"QUARTZ_851\"}}}}",
+      "{\"tool\": \"edit_fields\", \"args\": {\"changes\": {\"value\": {\"净重\": 173, \"校验码\": \"QUARTZ_851\"}}}}",
+      "{\"tool\": \"edit_fields\", \"args\": {\"changes\": {\"value\": {\"净重\": 173, \"校验码\": \"QUARTZ_851\"}}}}"
+    ]
+  },
+  "correct_changes": {
+    "source": ".e2e-artifacts/hybrid-edit-receipt-20261113/live/renamed/pair-2/B",
+    "provider_sha256": {
+      "model-1/provider.jsonl": "b11125c4e0d64eaf970ade32cc9266fc09c3ae1b418a3752b1f0a37dbae6b3c1",
+      "model-2/provider.jsonl": "79660dc8275722a96df2e8314e4d5ee5f641e1662497bd9f4df5f99329fbefdc",
+      "model-3/provider.jsonl": "6a5b00784e3d3354b418a327121473853cd07b1c64286726a617ae7b414c616c",
+      "model-4/provider.jsonl": "84298d4e823d925a28f4ae1f581da221bf7d1eb083195094d8a60c0137e1a06a"
+    },
+    "replies": [
+      "{\"tool\": \"edit_fields\", \"args\": {\"changes\": {\"净重\": 173, \"校验码\": \"QUARTZ_851\"}}}",
+      "{\"tool\": \"read_file\", \"args\": {}}",
+      "{\"tool\": \"edit_fields\", \"args\": {\"changes\": {\"净重\": 173, \"校验码\": \"QUARTZ_851\"}}}",
+      "{\"tool\": \"done\", \"args\": {\"summary\": \"Successfully updated 'result.json' with the measured weight (173) and verification code (QUARTZ_851) from the browser evidence.\"}}"
+    ]
+  }
+}

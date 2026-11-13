@@ -1,0 +1,361 @@
+{
+  "scope": "experimental_field_edit_loop_production_codemode_read_write",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "production_before": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+  "production_after": "d326c7e78cdf46062992381eca5ca8ed21ba4a295b24bbe77f65a5c879846038",
+  "production_unchanged": true,
+  "results": [
+    {
+      "passed": true,
+      "done": true,
+      "file_correct": true,
+      "file": {
+        "amount": 173,
+        "code": "QUARTZ_851",
+        "metadata": {
+          "note": "保留 \"原文\"",
+          "active": false,
+          "sequence": "0042091"
+        },
+        "external_revision": {
+          "revision": 1,
+          "marker": "EXTERNAL_CHANGE_MUST_SURVIVE"
+        }
+      },
+      "external_preserved": true,
+      "backup_preserved": true,
+      "true_stale_conflicts": 1,
+      "fresh_read_recovery": true,
+      "field_calls": 2,
+      "field_edits": 1,
+      "read_calls": 2,
+      "case": "record",
+      "arm": "A",
+      "seed": 123456789,
+      "model_calls": 4
+    },
+    {
+      "passed": true,
+      "done": true,
+      "file_correct": true,
+      "file": {
+        "amount": 173,
+        "code": "QUARTZ_851",
+        "metadata": {
+          "note": "保留 \"原文\"",
+          "active": false,
+          "sequence": "0042091"
+        },
+        "external_revision": {
+          "revision": 1,
+          "marker": "EXTERNAL_CHANGE_MUST_SURVIVE"
+        }
+      },
+      "external_preserved": true,
+      "backup_preserved": true,
+      "true_stale_conflicts": 1,
+      "fresh_read_recovery": true,
+      "field_calls": 2,
+      "field_edits": 1,
+      "read_calls": 2,
+      "case": "record",
+      "arm": "B",
+      "seed": 123456789,
+      "model_calls": 4
+    },
+    {
+      "passed": true,
+      "done": true,
+      "file_correct": true,
+      "file": {
+        "amount": 173,
+        "code": "QUARTZ_851",
+        "metadata": {
+          "note": "保留 \"原文\"",
+          "active": false,
+          "sequence": "0042091"
+        },
+        "external_revision": {
+          "revision": 1,
+          "marker": "EXTERNAL_CHANGE_MUST_SURVIVE"
+        }
+      },
+      "external_preserved": true,
+      "backup_preserved": true,
+      "true_stale_conflicts": 1,
+      "fresh_read_recovery": true,
+      "field_calls": 2,
+      "field_edits": 1,
+      "read_calls": 2,
+      "case": "record",
+      "arm": "B",
+      "seed": 123456790,
+      "model_calls": 4
+    },
+    {
+      "passed": true,
+      "done": true,
+      "file_correct": true,
+      "file": {
+        "amount": 173,
+        "code": "QUARTZ_851",
+        "metadata": {
+          "note": "保留 \"原文\"",
+          "active": false,
+          "sequence": "0042091"
+        },
+        "external_revision": {
+          "revision": 1,
+          "marker": "EXTERNAL_CHANGE_MUST_SURVIVE"
+        }
+      },
+      "external_preserved": true,
+      "backup_preserved": true,
+      "true_stale_conflicts": 1,
+      "fresh_read_recovery": true,
+      "field_calls": 2,
+      "field_edits": 1,
+      "read_calls": 2,
+      "case": "record",
+      "arm": "A",
+      "seed": 123456790,
+      "model_calls": 4
+    },
+    {
+      "passed": true,
+      "done": true,
+      "file_correct": true,
+      "file": {
+        "净重": 173,
+        "校验码": "QUARTZ_851",
+        "metadata": {
+          "note": "保留 \"原文\"",
+          "active": false,
+          "sequence": "0042091"
+        },
+        "external_revision": {
+          "revision": 1,
+          "marker": "EXTERNAL_CHANGE_MUST_SURVIVE"
+        }
+      },
+      "external_preserved": true,
+      "backup_preserved": true,
+      "true_stale_conflicts": 1,
+      "fresh_read_recovery": true,
+      "field_calls": 2,
+      "field_edits": 1,
+      "read_calls": 2,
+      "case": "renamed",
+      "arm": "A",
+      "seed": 123456789,
+      "model_calls": 4
+    },
+    {
+      "passed": false,
+      "done": false,
+      "file_correct": false,
+      "file": {
+        "净重": 0,
+        "校验码": "unknown",
+        "metadata": {
+          "note": "保留 \"原文\"",
+          "active": false,
+          "sequence": "0042091"
+        },
+        "external_revision": {
+          "revision": 1,
+          "marker": "EXTERNAL_CHANGE_MUST_SURVIVE"
+        }
+      },
+      "external_preserved": true,
+      "backup_preserved": true,
+      "true_stale_conflicts": 0,
+      "fresh_read_recovery": false,
+      "field_calls": 5,
+      "field_edits": 0,
+      "read_calls": 2,
+      "case": "renamed",
+      "arm": "B",
+      "seed": 123456789,
+      "model_calls": 6
+    },
+    {
+      "passed": true,
+      "done": true,
+      "file_correct": true,
+      "file": {
+        "净重": 173,
+        "校验码": "QUARTZ_851",
+        "metadata": {
+          "note": "保留 \"原文\"",
+          "active": false,
+          "sequence": "0042091"
+        },
+        "external_revision": {
+          "revision": 1,
+          "marker": "EXTERNAL_CHANGE_MUST_SURVIVE"
+        }
+      },
+      "external_preserved": true,
+      "backup_preserved": true,
+      "true_stale_conflicts": 1,
+      "fresh_read_recovery": true,
+      "field_calls": 2,
+      "field_edits": 1,
+      "read_calls": 2,
+      "case": "renamed",
+      "arm": "B",
+      "seed": 123456790,
+      "model_calls": 4
+    },
+    {
+      "passed": true,
+      "done": true,
+      "file_correct": true,
+      "file": {
+        "净重": 173,
+        "校验码": "QUARTZ_851",
+        "metadata": {
+          "note": "保留 \"原文\"",
+          "active": false,
+          "sequence": "0042091"
+        },
+        "external_revision": {
+          "revision": 1,
+          "marker": "EXTERNAL_CHANGE_MUST_SURVIVE"
+        }
+      },
+      "external_preserved": true,
+      "backup_preserved": true,
+      "true_stale_conflicts": 1,
+      "fresh_read_recovery": true,
+      "field_calls": 2,
+      "field_edits": 1,
+      "read_calls": 2,
+      "case": "renamed",
+      "arm": "A",
+      "seed": 123456790,
+      "model_calls": 4
+    }
+  ],
+  "date": "2026-11-13",
+  "branch": "master",
+  "production_base": "7c66977f",
+  "comparison": "Both experimental edit_fields surfaces; only explicit vs held read credential differs. CodeMode optional in both.",
+  "commands": [
+    "python -u -m tools.hybrid_edit_receipt_ab --run-dir .e2e-artifacts/hybrid-edit-receipt-20261113/live --pairs 2 --basic",
+    "python -u -m tools.hybrid_edit_receipt_ab --run-dir .e2e-artifacts/hybrid-edit-receipt-20261113/feedback --basic-feedback-only"
+  ],
+  "seeds": [
+    123456789,
+    123456790
+  ],
+  "totals": {
+    "A": {
+      "passed": 4,
+      "runs": 4,
+      "adopted_field_interface": 4,
+      "true_stale_conflicts": 4,
+      "model_calls": 16,
+      "prompt_tokens": 27212,
+      "completion_tokens": 778,
+      "response_seconds": 33.954
+    },
+    "B": {
+      "passed": 3,
+      "runs": 4,
+      "adopted_field_interface": 4,
+      "true_stale_conflicts": 3,
+      "model_calls": 18,
+      "prompt_tokens": 29025,
+      "completion_tokens": 757,
+      "response_seconds": 31.656
+    }
+  },
+  "basic": {
+    "unmodified": {
+      "passed": false,
+      "stop_reason": "no_progress",
+      "navigations": [
+        "https://example.com/production-browser-record",
+        "https://example.com/production-browser_record"
+      ],
+      "live_model_responses": 7,
+      "missing_ref_in_request": false,
+      "source_reads": 0
+    },
+    "forced_missing_ref": {
+      "passed": false,
+      "stop_reason": "no_progress",
+      "navigations": [
+        "https://example.com/production_browser_record"
+      ],
+      "live_model_responses": 3,
+      "missing_ref_in_request": true,
+      "source_reads": 0
+    }
+  },
+  "audit": {
+    "paired_inputs_equal": true,
+    "recorded_schemas_match": true,
+    "old_read_used_before_conflict": true,
+    "fresh_read_contains_external_field": true,
+    "saved_raw_replies_match": true,
+    "execution_core_unchanged_after_live": true,
+    "basic_missing_ref_delivered": true,
+    "basic_prior_receipts_preserved": true,
+    "basic_replay_masking_absent": true
+  },
+  "validation": {
+    "pytest-final": {
+      "command": "python -m pytest tests/test_hybrid_edit_receipt_ab.py tests/test_task_contract_fixed_replies.py -q",
+      "exit_code": 0,
+      "log": "checks/pytest-final.txt"
+    },
+    "pytest-experiment-final": {
+      "command": "python -m pytest tests/test_hybrid_edit_receipt_ab.py -q",
+      "exit_code": 0,
+      "log": "checks/pytest-experiment-final.txt"
+    },
+    "ruff": {
+      "command": "python -m ruff check .",
+      "exit_code": 0,
+      "log": "checks/ruff.txt"
+    },
+    "mypy-production": {
+      "command": "python -m mypy codey --python-version 3.11",
+      "exit_code": 0,
+      "log": "checks/mypy-production.txt"
+    },
+    "mypy-experiment": {
+      "command": "python -m mypy tools/hybrid_edit_receipt_ab.py tests/test_hybrid_edit_receipt_ab.py --explicit-package-bases --python-version 3.11 --follow-imports=silent --disallow-any-expr",
+      "exit_code": 0,
+      "log": "checks/mypy-experiment.txt"
+    },
+    "pyrefly": {
+      "command": "python -m pyrefly check codey tools/hybrid_edit_receipt_ab.py tests/test_hybrid_edit_receipt_ab.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "checks/pyrefly.txt"
+    },
+    "ty": {
+      "command": "python -m ty check codey tools/hybrid_edit_receipt_ab.py tests/test_hybrid_edit_receipt_ab.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "checks/ty.txt"
+    },
+    "precision": {
+      "command": "python -m tools.kernel_type_precision_gate",
+      "exit_code": 0,
+      "log": "checks/precision.txt"
+    }
+  },
+  "experimental_tests": 18,
+  "earlier_combined_tests": 27,
+  "existing_fixed_reply_tests": 11,
+  "decision": "Keep experimental. Binding mechanics work; no live completion-rate gain (A 4/4, B 3/4).",
+  "limitations": [
+    "A also has an experimental field-edit surface; this is not a production-vs-candidate full Hybrid comparison.",
+    "Shared scripted real-browser acquisition; navigation and source value extraction are not bound.",
+    "File loop and done verdict are experimental; production completion and restart recovery are not validated.",
+    "Four pairs from one browser record and two target field spellings; no reliability inference."
+  ]
+}
