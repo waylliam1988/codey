@@ -1,6 +1,7 @@
 """Completion, questions and bounded protocol closure as explicit actions."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -158,7 +159,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
 
 
 def _ids(reply: AssistantTurn | str) -> list[str]:
-    return list(dict.fromkeys(call.id for call in reply.tool_calls if call.id)) if isinstance(reply, AssistantTurn) else []
+    return list({call.id: None for call in reply.tool_calls if call.id}) if isinstance(reply, AssistantTurn) else []
 
 
 def no_progress_result(session: TaskSession, turn: int) -> KernelResult:
@@ -212,12 +213,11 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         if context.native and ids:
             messages = []
         snapshot = received.snapshot
-        from codey.operations.research_submission_handoff import SUBMISSION_TOOLS, submission_sequence
+        from codey.operations.research_submission_handoff import SUBMISSION_TOOLS
 
         # A submission handoff must recheck the current document on repair.
         # Other native rejection replies keep their original declarations.
-        if (messages is None or PAGE_DETAIL_TOOL in snapshot.tool_names
-                or (snapshot.tool_names == SUBMISSION_TOOLS and submission_sequence(context.session) is not None)):
+        if messages is None or PAGE_DETAIL_TOOL in snapshot.tool_names or snapshot.tool_names == SUBMISSION_TOOLS:
             from codey.operations.kernel_protocol import build_turn_snapshot
             snapshot = build_turn_snapshot(context.session, native=context.native)
         # Both request-scoped providers and text-only providers render the
@@ -242,7 +242,8 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         if context.observation.on_event is None:
             raise ValueError("user questions require an event surface")
         task = context.durable.task(context.sink.run_id)
-        DurableUserQuestionStore(context.durable).request(decision["question_id"], context.sink.session_id,
+        request: Callable[[str, str, str, object, dict[str, object]], object] = DurableUserQuestionStore(context.durable).request
+        request(decision["question_id"], context.sink.session_id,
             context.sink.run_id, decision["question"], {"request_ref": state.response_ref,
                 "input_request": decode_json_object(thaw_json(task.state.get("input_request", {})))})
         # Notification is a projection of the saved question, so its failure

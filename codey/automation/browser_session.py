@@ -61,6 +61,12 @@ class _ElementRef:
     url: str
 
 
+def normalize_element_ref(ref: str) -> str:
+    """Accept a ref copied from the human-readable snapshot rows."""
+    ref = ref.strip()
+    return ref[1:-1] if ref.startswith("[") and ref.endswith("]") else ref
+
+
 def _browser_call(fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
     """Keep the browser worker boundary typed when its runtime is imported lazily."""
     return _search_browser_call(lambda: fn(*args, **kwargs))
@@ -147,10 +153,10 @@ class BrowserSession:
             self._snapshot_on_browser_thread, max_elements, max_text)
 
     def click(self, ref: str, *, query: bool = False) -> BrowserToolOutput:
-        return _browser_call(self._click_on_browser_thread, ref, query=query)
+        return _browser_call(self._click_on_browser_thread, normalize_element_ref(ref), query=query)
 
     def fill(self, ref: str, value: str) -> BrowserToolOutput:
-        return _browser_call(self._fill_on_browser_thread, ref, value)
+        return _browser_call(self._fill_on_browser_thread, normalize_element_ref(ref), value)
 
     def scroll(self, direction: str, amount: int) -> BrowserToolOutput:
         return _browser_call(self._scroll_on_browser_thread, direction, amount)
@@ -175,10 +181,10 @@ class BrowserSession:
 
     def upload(self, ref: str, file: FilePayload, *, expected_document: JsonObject | None = None,
                target: JsonObject | None = None) -> BrowserToolOutput:
-        return _browser_call(self._upload_on_browser_thread, ref, file, expected_document, target)
+        return _browser_call(self._upload_on_browser_thread, normalize_element_ref(ref), file, expected_document, target)
 
     def download(self, ref: str) -> BrowserToolOutput:
-        return _browser_call(self._download_on_browser_thread, ref)
+        return _browser_call(self._download_on_browser_thread, normalize_element_ref(ref))
 
     def capture(self) -> dict[str, object]:
         return _browser_call(self._capture_on_browser_thread)
@@ -612,7 +618,7 @@ class BrowserSession:
 
     def _resolve_ref(self, ref: str) -> tuple[Page, ElementHandle]:
         page = self._page_on_browser_thread()
-        entry = self._refs.get(ref.strip())
+        entry = self._refs.get(ref)
         if entry is None or entry.page_token != id(page) or entry.generation != self._generation or entry.url != page.url:
             raise RuntimeError("stale browser element reference; take a fresh browser_snapshot")
         try:

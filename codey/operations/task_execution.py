@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Protocol
 from codey.knowledge.store import KnowledgeStore
 from codey.operations import browser_followups, browser_text_report, browser_upload
 from codey.operations.browser_detail import audit_browser_open, read_browser_source
+from codey.operations.research_submission_handoff import traces_workflow_document
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
 from codey.policies.tool_requirement import has_browser_field_bindings
 from codey.research.ledger import ResearchLedger
@@ -307,6 +308,7 @@ class ExecutionDelegate:
             from codey.operations.browser_copy import CAPTURE
 
             trace_document = (call.name in browser_receipt_tools(checks)
+                              or traces_workflow_document(self.session, call.name)
                               or (call.name == "browser_read" and self._research_scope is not None)
                               or (call.name in browser_text_report.METADATA_TOOLS and browser_text_report.report_scope(self.session) is not None)
                               or (call.name in browser_upload.UPLOAD_RECEIPTS and browser_upload.upload_scope(self.session) is not None)

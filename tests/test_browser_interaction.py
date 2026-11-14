@@ -6,10 +6,9 @@ import threading
 import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import cast
 
 import pytest
-from playwright.sync_api import ElementHandle, Error, Page
+from playwright.sync_api import Error
 
 from codey.research import browser_search
 from codey.research.ledger import ResearchLedger
@@ -36,7 +35,7 @@ class _InteractionHandler(BaseHTTPRequestHandler):
         return
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def browser_fixture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[tuple[ResumableBrowserSearchProvider, BrowserInteraction]]:
@@ -90,19 +89,26 @@ def test_semantic_actions_use_snapshot_refs_and_reject_stale_refs(
     assert first.ok
     elements = first.observation["elements"]
     assert isinstance(elements, list)
-    rows = [cast(dict[str, object], row) for row in elements if isinstance(row, dict)]
+    rows = [row for row in elements if isinstance(row, dict)]
     query_ref = next(str(row["ref"]) for row in rows if row["role"] == "textbox")
     button_ref = next(str(row["ref"]) for row in rows if row["role"] == "button")
-    assert interaction.fill(query_ref, "福州小吃").ok
-    assert interaction.click(button_ref).ok is False
+    for invalid in ("<snapshot ref>", f"[[{query_ref}]]"):
+        rejected = interaction.fill(invalid, "must not be filled")
+        assert rejected.observation["delivery"] == "not_delivered"
+    filled = interaction.fill(f" [{query_ref}] ", "福州小吃")
+    assert filled.ok and filled.observation["ref"] == query_ref
+    stale = interaction.click(f"[{button_ref}]")
+    assert stale.observation["reason"] == "stale_ref"
+    assert stale.observation["delivery"] == "not_delivered"
 
     second = interaction.snapshot()
     assert "Waiting" in str(second.observation["text"])
     second_elements = second.observation["elements"]
     assert isinstance(second_elements, list)
-    second_rows = [cast(dict[str, object], row) for row in second_elements if isinstance(row, dict)]
+    second_rows = [row for row in second_elements if isinstance(row, dict)]
     button_ref = next(str(row["ref"]) for row in second_rows if row["role"] == "button")
-    assert interaction.click(button_ref).ok
+    clicked = interaction.click(f"[{button_ref}]")
+    assert clicked.ok and clicked.observation["ref"] == button_ref
     assert "Loaded article" in interaction.snapshot().model_text
     assert interaction.scroll("down", 700).ok
     assert interaction.wait("text", "Loaded article", 1000).ok
@@ -118,7 +124,8 @@ def test_old_node_cannot_target_replacement(
     ref = _ref(interaction, "button")
 
     def mutate() -> None:
-        page = cast(Page, provider._fetch_page)
+        page = provider._fetch_page
+        assert page is not None
         if mutation == "replace_node":
             page.evaluate("document.querySelector('button').outerHTML = document.querySelector('button').outerHTML")
         elif mutation == "replace_document":
@@ -195,20 +202,25 @@ def test_lost_click_acknowledgement_is_not_replayed(
     provider, interaction = browser_fixture
     _install_page(provider, "<button onclick='window.count=(window.count || 0)+1'>Count</button>")
     ref = _ref(interaction, "button")
-    original = ElementHandle.click
+    handle_type = type(interaction._refs[ref].handle)
+    original = handle_type.click
 
-    def lose_ack(handle: ElementHandle, *, timeout: float, no_wait_after: bool) -> None:
-        original(handle, timeout=timeout, no_wait_after=no_wait_after)
+    def lose_ack(handle: object, *, timeout: float, no_wait_after: bool) -> None:
+        if isinstance(handle, handle_type):
+            original(handle, timeout=timeout, no_wait_after=no_wait_after)
         raise Error("injected acknowledgement loss after real DOM click")
 
-    monkeypatch.setattr(ElementHandle, "click", lose_ack)
+    monkeypatch.setattr(handle_type, "click", lose_ack)
     result = interaction.click(ref)
     assert not result.ok
     assert result.observation["delivery"] == "uncertain"
     assert interaction.click(ref).observation["delivery"] == "not_delivered"
 
     def count() -> object:
-        return cast(Page, provider._fetch_page).evaluate("window.count")
+        page = provider._fetch_page
+        assert page is not None
+        count: object = page.evaluate("window.count")
+        return count
 
     assert browser_search._search_browser_call(count) == 1
 

@@ -1,9 +1,10 @@
 """Evaluate explicitly declared browser prerequisites from committed receipts."""
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from codey.automation.browser_session import normalize_element_ref
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, BrowserPageRounds, BrowserResearchSequence
 from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import _browser_body
@@ -15,6 +16,9 @@ from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.types.json_value import JsonObject
 
+PAGE_EVIDENCE_TOOLS = frozenset({"browser_wait", "browser_read"})
+_FORM_ACTIONS = frozenset({"browser_fill", "browser_click"})
+
 
 def committed_results(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
                       names: frozenset[str], *, include_failed: frozenset[str] = frozenset()) -> list[tuple[str, ToolResult]]:
@@ -25,9 +29,16 @@ def committed_results(records: Mapping[str, ExecutionRecord], results: Mapping[s
 
 
 def matches_wait(result: ToolResult, *, url: str, condition: str, value: str) -> bool:
-    observed = result.canonical.get("value")
     return (result.call.args.get("condition") == condition and result.call.args.get("value") == value
-            and isinstance(observed, dict) and observed.get("matched") is True and observed.get("page_url") == url)
+            and wait_matched_on_page(result, url))
+
+
+def wait_matched_on_page(result: ToolResult, url: str) -> bool:
+    observed = result.canonical.get("value")
+    if not isinstance(observed, dict):
+        return False
+    value = dict[str, object](observed)
+    return value.get("matched") is True and value.get("page_url") == url
 
 
 def complete_page_passages(result: ToolResult, url: str) -> set[str]:
@@ -45,15 +56,27 @@ def complete_page_passages(result: ToolResult, url: str) -> set[str]:
 
 def post_wait_passages(rule: BrowserResearchSequence, *, records: Mapping[str, ExecutionRecord],
                        results: Mapping[str, ToolResult], document: JsonObject) -> tuple[str, dict[str, tuple[str, str]]]:
+    return ordered_page_passages(rule.url, records=records, results=results, document=document,
+        wait_matches=lambda _, result: matches_wait(result, url=rule.url, condition=rule.condition, value=rule.value))
+
+
+def ordered_page_passages(url: str, *, records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
+                          document: JsonObject, wait_matches: Callable[[str, ToolResult], bool],
+                          read_refs: frozenset[str] | None = None,
+                          invalidated_by: frozenset[str] = frozenset()) -> tuple[str, dict[str, tuple[str, str]]]:
     wait = ""
     passages: dict[str, tuple[str, str]] = {}
-    for ref, result in committed_results(records, results, rule.receipt_tools):
+    for ref, result in committed_results(records, results, PAGE_EVIDENCE_TOOLS | invalidated_by,
+                                         include_failed=invalidated_by):
         if result.audit.get("browser_document") != document:
             continue
-        if result.call.name == "browser_wait" and matches_wait(result, url=rule.url, condition=rule.condition, value=rule.value):
+        if result.call.name in invalidated_by:
+            wait = ""
+            passages.clear()
+        elif result.call.name == "browser_wait" and wait_matches(ref, result):
             wait = ref
-        elif wait and result.call.name == "browser_read":
-            passages.update((passage, (wait, ref)) for passage in complete_page_passages(result, rule.url))
+        elif wait and result.call.name == "browser_read" and (read_refs is None or ref in read_refs):
+            passages.update((passage, (wait, ref)) for passage in complete_page_passages(result, url))
     return wait, passages
 
 
@@ -78,41 +101,48 @@ def evaluate_research_sequence(rule: BrowserResearchSequence, *, records: Mappin
                            if (row["source_id"], row["source_revision"]) in target_sources and "passage_ref" in row}
     fresh = cited.intersection(passages)
     if fresh and not (cited & target_passages) - passages.keys():
-        return RequirementEvaluation(evidence_refs=tuple(dict.fromkeys(ref for key in sorted(fresh) for ref in passages[key])))
+        return RequirementEvaluation(evidence_refs=tuple({ref: None for key in sorted(fresh) for ref in passages[key]}))
 
     submissions = committed_results(records, results, frozenset({"submit_research_answer"}))
     raw = submissions[-1][1].canonical.get("research_submission") if submissions else None
-    scope = AnswerScope.from_payload(raw["scope"]) if isinstance(raw, dict) else None
+    scope = AnswerScope.from_payload(dict[str, object](raw)["scope"]) if isinstance(raw, dict) else None
     labels = ", ".join(f"[{label}]" for label, ref in scope.aliases if ref in passages) if scope is not None else ""
     return RequirementEvaluation("browser_post_wait_citation_missing",
         "The post-wait text is already available. Use submit_research_answer and cite "
         + (labels or "the evidence from that read") + " for the required page.",
-        tuple(dict.fromkeys(ref for pair in passages.values() for ref in pair)))
+        tuple({ref: None for pair in passages.values() for ref in pair}))
 
 
 _ROUND_STEPS = ("browser_navigate", "browser_snapshot", "browser_fill", "browser_snapshot",
                 "browser_click", "browser_wait", "browser_read")
-_FORM_ACTIONS = frozenset({"browser_fill", "browser_click"})
 
 
 def _navigation_document(result: ToolResult, url: str) -> JsonObject | None:
-    value = result.canonical.get("value")
-    document = result.audit.get("browser_document")
+    raw_value = result.canonical.get("value")
+    raw_document = result.audit.get("browser_document")
+    if not isinstance(raw_value, dict) or not isinstance(raw_document, dict):
+        return None
+    value = dict[str, object](raw_value)
+    document = dict[str, object](raw_document)
     if (result.call.name == "browser_navigate" and result.ok and result.call.args.get("url") == url
-            and isinstance(value, dict) and value.get("url") == url
+            and value.get("url") == url
             and type(status := value.get("http_status")) is int and 200 <= status < 400
-            and isinstance(document, dict) and document.get("url") == url
+            and document.get("url") == url
             and isinstance(loader := document.get("loader_id"), str) and loader):
         return {"url": url, "loader_id": loader}
     return None
 
 
 def _snapshot_ref(result: ToolResult, label: str, url: str) -> str:
-    value = result.canonical.get("value")
-    if (not result.ok or result.truncated or not isinstance(value, dict) or value.get("page_url") != url
+    raw = result.canonical.get("value")
+    if not isinstance(raw, dict):
+        return ""
+    value = dict[str, object](raw)
+    if (not result.ok or result.truncated or value.get("page_url") != url
             or value.get("elements_truncated") is not False or not isinstance(items := value.get("elements"), list)):
         return ""
-    refs = [row.get("ref") for row in items if isinstance(row, dict) and row.get("name") == label]
+    rows = (dict[str, object](item) for item in list[object](items) if isinstance(item, dict))
+    refs = [row.get("ref") for row in rows if row.get("name") == label]
     return refs[0] if len(refs) == 1 and isinstance(refs[0], str) else ""
 
 
@@ -151,11 +181,14 @@ class _PageRound:
             return
         if step not in _FORM_ACTIONS:
             return
-        value = result.canonical.get("value")
-        delivered = (isinstance(value, dict) and value.get("ref") == self.target_ref
+        raw = result.canonical.get("value")
+        value = dict[str, object](raw) if isinstance(raw, dict) else {}
+        delivered = (value.get("ref") == self.target_ref
                      and (value.get("delivery") == "verified" and result.call.args.get("value") == rule.fill_value
                           if step == "browser_fill" else value.get("delivery") == "delivered"))
-        if (result.ok and result.call.name == step and result.call.args.get("ref") == self.target_ref and delivered):
+        requested_ref = result.call.args.get("ref")
+        if (result.ok and result.call.name == step and isinstance(requested_ref, str)
+                and normalize_element_ref(requested_ref) == self.target_ref and delivered):
             self.refs.append(ref)
         else:
             self.refs.pop()

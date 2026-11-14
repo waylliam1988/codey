@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -23,7 +22,7 @@ from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.toolchain.tool_spec import json_contract_text
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tools import browser_production_live_gate as gate
 from tools.browser_outcome_ab import DELAYED_HTML
 from tools.completion_artifact_audit import tool_receipts
@@ -67,6 +66,7 @@ def handoff(rule: BrowserResearchSequence, snapshot: TurnSnapshot, *, records: M
 
 
 def narrow(snapshot: TurnSnapshot, step: Handoff) -> TurnSnapshot:
+    names: tuple[str, ...]
     nested: tuple[str, ...]
     if step.phase == "submit" and "submit_research_answer" in snapshot.tool_names:
         names, nested = ("submit_research_answer",), ()
@@ -74,7 +74,7 @@ def narrow(snapshot: TurnSnapshot, step: Handoff) -> TurnSnapshot:
         names, nested = ("codemode",), ("browser_read",)
     else:
         return snapshot
-    inventory = (*names, *nested)
+    inventory = names + nested
     specs = tuple(spec for spec in snapshot.frozen_specs if spec.name in inventory)
     if nested:
         declarations = render_declarations(build_codemode_catalog(specs, allow_writes=False))
@@ -87,35 +87,37 @@ def narrow(snapshot: TurnSnapshot, step: Handoff) -> TurnSnapshot:
 @contextmanager
 def candidate(directory: Path, arm: Arm, *, rule: BrowserResearchSequence = RULE) -> Iterator[None]:
     original = KernelContext.freeze
+    inspect_handoff = handoff
 
     def freeze(context: KernelContext, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int,
                prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
-               coding_context_prepared: bool = False, initial_source_batch: bool = False) -> None:
+               coding_context_prepared: bool = False, initial_source_batch: bool = False,
+               handoff: str | None = None) -> None:
+        hint = handoff or ""
         if isinstance(snapshot.research_scope, AnswerScope) and not acknowledge:
             tools = context.execution.research_tools
             browser = tools.browser_session if tools is not None else None
-            step = handoff(rule, snapshot, records=context.session.executed, results=context.session._memory_results,
+            step = inspect_handoff(rule, snapshot, records=context.session.executed, results=context.session._memory_results,
                            document=browser.document_identity() if browser is not None else None)
             if arm == "B":
                 snapshot = narrow(snapshot, step)
-                hint = ""
                 if step.phase == "submit":
                     labels = ", ".join(f"[{label}]" for label in step.labels)
                     hint = f"The required post-wait page evidence is ready. Use submit_research_answer and cite {labels}."
                 elif step.phase == "read":
                     hint = "The required wait succeeded. Read the complete current document with browser_read in CodeMode."
-                if hint:
-                    prompt += "\n\n" + hint
-                    if messages:
-                        messages[-1] = replace(messages[-1], user_content=(messages[-1].user_content or "") + "\n\n" + hint)
             append_json(directory / "handoff.jsonl", {"turn": turn, "phase": step.phase, "reason": step.reason,
                 "labels": list(step.labels), "tools": list(snapshot.tool_names), "nested": list(snapshot.nested_tool_names)})
         original(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
             counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
-            initial_source_batch=initial_source_batch)
+            initial_source_batch=initial_source_batch, handoff=hint)
 
-    with patch.object(KernelContext, "freeze", freeze):
+    def preserve_snapshot(_context: KernelContext, snapshot: TurnSnapshot) -> tuple[TurnSnapshot, str]:
+        return snapshot, ""
+
+    with (patch.object(KernelContext, "request_snapshot", preserve_snapshot),
+          patch.object(KernelContext, "freeze", freeze)):
         yield
 
 
@@ -127,18 +129,18 @@ def run_arm(directory: Path, arm: Arm, target: Target, *, delayed: bool = False,
                             emit_jsonl=emit_jsonl, connect_provider=connect_provider)
 
     with (patch.object(gate, "run_headless", run), candidate(directory, arm),
-          patch("codey.app.provider_services.provider_tab_availability", return_value={}),
+          patch("codey.app.provider_services.provider_tab_availability", return_value=dict[str, bool]()),
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(gate.run_case(directory, "research", target, strict_research=True, max_turns=max_turns,
             fixture_html=DELAYED_HTML if delayed else gate.HTML))
     stable = before == production_source_digest()
     handoffs = directory / "handoff.jsonl"
-    phases = [decode_json_object(json.loads(line)) for line in handoffs.read_text(encoding="utf-8").splitlines()] if handoffs.exists() else []
+    phases = [parse_json_object(line) for line in handoffs.read_text(encoding="utf-8").splitlines()] if handoffs.exists() else []
     ready = next((entry["turn"] for entry in phases if entry["phase"] == "submit"), None)
     receipts = tool_receipts(directory / "state") if (directory / "state" / "durable.sqlite3").exists() else []
     submissions = [r.result for r in receipts if r.result.call.name == "submit_research_answer"]
     events = directory / "events.jsonl"
-    activity = [decode_json_object(json.loads(line)) for line in events.read_text(encoding="utf-8").splitlines()] if events.exists() else []
+    activity = [parse_json_object(line) for line in events.read_text(encoding="utf-8").splitlines()] if events.exists() else []
     row.update(arm=arm, delayed=delayed, source_stable=stable, source_digest=before, required_sequence=RULE.declaration,
                passed=stable and row.get("passed") is True, ready_turn=ready,
                reads_after_ready=sum(entry.get("type") == "tool" and entry.get("tool_name") == "browser_read"
@@ -149,12 +151,18 @@ def run_arm(directory: Path, arm: Arm, target: Target, *, delayed: bool = False,
     return row
 
 
+class Options(argparse.Namespace):
+    run_dir: Path
+    base_url: str
+    timeout: float
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--timeout", type=float, default=90)
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Options())
     target = gate.select_target(args.timeout, args.base_url)
     args.run_dir.mkdir(parents=True, exist_ok=False)
     rows: list[JsonObject] = []
