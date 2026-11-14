@@ -210,6 +210,11 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     records, results = tool_facts(session, context)
     rules = [rule for check in session.policy.required_checks
              if (rule := parse_tool_success_check(check)) is not None]
+    click = pending_click(results)
+    if click is not None:
+        uncertain = delivery(click[1]) == "uncertain"
+        snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot" if uncertain else "browser_read", {}))
+        return snapshot, (UNCERTAIN if uncertain else PENDING) + "\n" + action
     if not rules:
         return snapshot, ""
     observed = [(rule, rule.observe(records, results=results, browser_document=context.browser_document))

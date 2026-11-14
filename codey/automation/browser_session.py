@@ -19,6 +19,7 @@ from uuid import uuid4
 from playwright.sync_api import ElementHandle, Error, FilePayload, Page
 
 from codey.automation.browser_binding import BrowserBinding
+from codey.automation.browser_observation import ELEMENT_METADATA, render_controls
 from codey.policies.network import check_fetch_url
 from codey.research.browser_page import (
     _validate_page_content_type,
@@ -234,26 +235,19 @@ class BrowserSession:
     def _snapshot_on_browser_thread(self, max_elements: int, max_text: int) -> BrowserToolOutput:
         page = self._page_on_browser_thread()
         self._invalidate_refs()
+        document = self._document_identity_on_browser_thread()
         full_text = page.locator("body").inner_text(timeout=2_000)
         body = full_text[:max(1, min(max_text, MAX_SNAPSHOT_TEXT))]
         handles = page.query_selector_all(
             "button,summary,a,input,textarea,select,[role=button],[role=link],[role=textbox],[role=combobox]"
         )
         elements: list[JsonObject] = []
+        contexts: dict[str, JsonObject] = {}
         elements_truncated = False
         for handle in handles:
             if not handle.is_visible():
                 continue
-            raw_metadata: object = handle.evaluate("""el => ({
-                tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '',
-                name: el.getAttribute('aria-label') || el.getAttribute('title') ||
-                      Array.from(el.labels || [], label => label.innerText).join(' ') ||
-                      el.getAttribute('placeholder') || el.innerText || '',
-                type: el.getAttribute('type') || '',
-                value: el.type === 'password' ? null : ('value' in el ? el.value : null),
-                disabled: el.disabled === true || el.getAttribute('aria-disabled') === 'true',
-                checked: 'checked' in el ? el.checked : null
-            })""")
+            raw_metadata: object = handle.evaluate(ELEMENT_METADATA)
             metadata = canonical_json_object(raw_metadata)
             role = _element_role(metadata)
             name = " ".join(str(metadata.get("name") or "").split())[:240]
@@ -264,13 +258,19 @@ class BrowserSession:
                 break
             ref = f"b{self._reference_scope}g{self._generation}e{len(elements) + 1}"
             self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url)
+            context = metadata.get("context")
+            context_id = ""
+            if isinstance(context, dict) and isinstance(context.get("id"), str):
+                context_id = str(context["id"])
+                contexts[context_id] = context
             elements.append({"ref": ref, "role": role, "name": name,
+                             "context_id": context_id,
                              **{key: metadata[key] for key in ("value", "disabled", "checked")}})
-        rows = [f"[{row['ref']}] {row['role']} \"{row['name']}\""
-                + (f" value={row['value']!r}" if row["value"] is not None else "")
-                + (" disabled" if row["disabled"] else "") for row in elements]
+        if document != self._document_identity_on_browser_thread():
+            self._invalidate_refs()
+            raise RuntimeError("The document changed while observing controls; take a fresh browser_snapshot.")
         text = (f"Page URL: {page.url}\nObservation generation: {self._generation}\n"
-                f"Visible text:\n{body}\nInteractive elements:\n" + "\n".join(rows))
+                f"Visible text:\n{body}\nInteractive elements:\n" + render_controls(elements, list(contexts.values())))
         elements_value: list[JsonValue] = [row for row in elements]
         return BrowserToolOutput(text, True, {
             "page_id": self._page_id(page), "page_url": page.url, "generation": self._generation,
@@ -279,6 +279,7 @@ class BrowserSession:
             "text_truncated": len(body) < len(full_text),
             "elements_truncated": elements_truncated, "text": body,
             "elements": elements_value,
+            "contexts": list(contexts.values()),
         })
 
     def _file_snapshot_on_browser_thread(self, max_elements: int) -> BrowserToolOutput:

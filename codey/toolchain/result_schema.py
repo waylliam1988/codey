@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import cast
 
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
+from codey.types.json_value import decode_json_object, require_json_integer, require_json_string
 
 
 def browser_output_schema(name: str) -> dict[str, object]:
@@ -27,14 +27,17 @@ def browser_output_schema(name: str) -> dict[str, object]:
             "page_id": string, "page_url": string, "generation": integer, "text": string,
             "complete": boolean, "scope": string, "text_truncated": boolean, "elements_truncated": boolean,
             "elements": {"type": "array", "items": record({
-                "ref": string, "role": string, "name": string, "disabled": boolean,
+                "ref": string, "role": string, "name": string, "disabled": boolean, "context_id": string,
                 "value": {"anyOf": [string, {"type": "null"}]},
                 "checked": {"anyOf": [boolean, {"type": "null"}]},
+            }, optional=("context_id",))},
+            "contexts": {"type": "array", "items": record({
+                "id": string, "kind": string, "label": string, "basis": string,
             })},
             "file_controls": {"type": "array", "items": record({
                 "id": string, "name": string, "dom_id": string, "field_name": string, "group": string, "disabled": boolean,
             })},
-        }, optional=("file_controls",)),
+        }, optional=("file_controls", "contexts")),
         "browser_click": record(observed),
         "browser_scroll": record(observed),
         "browser_fill": record({**action, "ref": string, "value_length": integer}),
@@ -123,16 +126,16 @@ def validate_output(name: str, schema: Mapping[str, object], value: object) -> N
 def read_page_line(value: object, line: int) -> str | None:
     """Select an absolute file line; None means this page did not observe it."""
     validate_output("read_file", read_file_output_schema(), value)
-    observed = cast(Mapping[str, object], value)
-    end_line = cast(int, observed["end_line"])
-    total_lines = cast(int, observed["total_lines"])
-    text_complete = cast(bool, observed["text_complete"])
-    start_line = cast(int, observed["start_line"])
+    observed = decode_json_object(value)
+    end_line = require_json_integer(observed["end_line"], "end_line")
+    total_lines = require_json_integer(observed["total_lines"], "total_lines")
+    text_complete = observed["text_complete"] is True
+    start_line = require_json_integer(observed["start_line"], "start_line")
     if end_line > total_lines:
         raise ValueError("observed page exceeds total lines")
     if not text_complete or not start_line <= line <= end_line:
         return None
-    text = cast(str, observed["text"])
+    text = require_json_string(observed["text"], "text")
     lines = text.split("\n")
     if text.endswith("\n"):
         lines.pop()
