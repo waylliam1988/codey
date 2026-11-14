@@ -1,0 +1,14 @@
+{
+  "basic": {
+    "source": ".e2e-artifacts/browser-review-20261114/full-surface-tracked/basic/provider.jsonl",
+    "source_sha256": "9a971040f0a7ad4224b5d55e179df3ab7538d713d849b37edf05ce390b81507f",
+    "reply_index": 0,
+    "reply": "{\"tool\":\"codemode\",\"args\":{\"code\":\"const snapshot = await tools.browser_snapshot({});\\nconst elements = unwrap(snapshot).elements;\\n\\n// Find the Locality input field\\nlet localityRef = '';\\nfor (const el of elements) {\\n  if (el.name === 'Locality' || el.role === 'textbox' && el.name === 'Locality') {\\n    localityRef = el.ref;\\n    break;\\n  }\\n}\\n\\n// Fill Locality with '福州'\\nawait tools.browser_fill({ref: localityRef, value: '福州'});\\n\\n// Re-snapshot because old refs are invalidated\\return await tools.browser_snapshot({});\",\"inputs\":{},\"language\":\"javascript\"}}"
+  },
+  "download": {
+    "source": ".e2e-artifacts/browser-mechanical-20261114-verified/download/provider.jsonl",
+    "source_sha256": "7cdda27f2f58aa9b170f08589e8256d3751333076678f01044217c1052e240f3",
+    "reply_index": 1,
+    "reply": "{\"tool\":\"codemode\",\"args\":{\"code\":\"const nav = await tools.browser_navigate({url: 'https://example.com/production-browser-record'});\\nconst snapshot = await tools.browser_snapshot({});\\nconst downloadRef = snapshot.elements.find(e => e.name === 'Download fixture')?.ref;\\n\\nif (!downloadRef) return 'No element named \\\"Download fixture\\\" found.';\\n\\nconst download = await tools.browser_download({ ref: downloadRef });\\nconst pageText = await tools.browser_read({});\\n\\nreturn {\\n  path: download.path,\\n  filename: download.suggested_filename,\\n  bytes: download.bytes,\\n  sha256: download.sha256,\\n  page_text: pageText\\n};\",\"inputs\":{}}}"
+  }
+}

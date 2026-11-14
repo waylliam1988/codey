@@ -6,7 +6,7 @@ import json
 import os
 import subprocess
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import NoReturn
@@ -191,8 +191,9 @@ def test_current_body_hands_off_to_real_metadata_calls_without_repeating_work(
     handoffs: list[str] = []
     original = KernelContext.request_snapshot
 
-    def capture(context: KernelContext, snapshot: TurnSnapshot) -> tuple[TurnSnapshot, str]:
-        result = original(context, snapshot)
+    def capture(context: KernelContext, snapshot: TurnSnapshot, *,
+                delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
+        result = original(context, snapshot, delivered_results=delivered_results)
         snapshots.append(result[0])
         handoffs.append(result[1])
         return result

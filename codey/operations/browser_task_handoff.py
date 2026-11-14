@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import replace
 
 from codey.automation.browser_document import same_document
@@ -131,6 +132,55 @@ def _metadata_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
     return snapshot, feedback + "\n" + action
 
 
+def _current_snapshot(session: TaskSession, context: CompletionContext,
+                      generation: int | None) -> tuple[str, JsonObject] | None:
+    records, results = tool_facts(session, context)
+    snapshots = committed_results(records, results, frozenset({"browser_snapshot"}))
+    raw = snapshots[-1][1].canonical.get("value") if snapshots else None
+    value = decode_json_object(raw) if isinstance(raw, dict) else None
+    if (value is None or snapshots[-1][1].truncated
+            or snapshots[-1][1].audit.get("browser_document") != context.browser_document
+            or context.browser_document is None or value.get("generation") != generation
+            or value.get("complete") is not True or value.get("elements_truncated") is not False):
+        return None
+    return snapshots[-1][0], value
+
+
+def _action_receipts(session: TaskSession, snapshot: TurnSnapshot,
+                     context: CompletionContext) -> list[tuple[str, ToolResult]]:
+    records, results = tool_facts(session, context)
+    names = frozenset(spec.name for spec in snapshot.frozen_specs
+                      if spec.executor == "browser" and spec.effect not in {"read", "navigation"}
+                      or spec.executor == "project" and not spec.read_only)
+    return [(ref, result) for ref, result in committed_results(records, results, names, include_failed=names)
+            if result.ok or delivery(result) in {"verified", "delivered", "uncertain"}
+            or records[ref].get("applied_edit") is not None]
+
+
+def _compile_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                     generation: int | None, delivered_results: Sequence[ToolResult]) -> tuple[TurnSnapshot, str]:
+    if (snapshot.task_navigation_url is None or context.browser_document is None
+            or not any(not result.ok and result.call.name == "codemode"
+                       and result.audit.get("error_code") == "syntax_error"
+                       and result.canonical.get("child_effect_ids") == [] for result in delivered_results)
+            or _action_receipts(session, snapshot, context)):
+        return snapshot, ""
+    records, results = tool_facts(session, context)
+    navigations = committed_results(records, results, frozenset({"browser_navigate"}),
+                                    include_failed=frozenset({"browser_navigate"}))
+    navigation = navigations[-1][1] if navigations else None
+    if (navigation is None or not navigation.ok
+            or navigation.call.args.get("url") != snapshot.task_navigation_url
+            or not same_document(navigation.audit.get("browser_document"), context.browser_document)):
+        return snapshot, ""
+    if (current := _current_snapshot(session, context, generation)) is not None:
+        ref, value = current
+        return snapshot, (f"Reuse the current snapshot from committed receipt {ref}; its controls are still current:\n"
+                          + json.dumps(value, ensure_ascii=False))
+    snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))
+    return snapshot, "Compilation failed before any child action. Observe the bound task page next.\n" + action
+
+
 def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                       generation: int | None) -> tuple[TurnSnapshot, str, ToolResult | None]:
     if not any((rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_download"
@@ -143,15 +193,11 @@ def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
         if result.ok or delivery(result) in {"verified", "delivered", "uncertain"}:
             return snapshot, (f"Download outcome from committed receipt {ref}; reuse it without downloading again:\n"
                               + json.dumps(result.canonical.get("value"), ensure_ascii=False)), result
-    snapshots = committed_results(records, results, frozenset({"browser_snapshot"}))
-    raw = snapshots[-1][1].canonical.get("value") if snapshots else None
-    value = decode_json_object(raw) if isinstance(raw, dict) else None
-    if (value is None or snapshots[-1][1].truncated
-            or snapshots[-1][1].audit.get("browser_document") != context.browser_document
-            or context.browser_document is None or value.get("generation") != generation
-            or value.get("complete") is not True or value.get("elements_truncated") is not False):
+    current = _current_snapshot(session, context, generation)
+    if current is None:
         snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))
         return snapshot, action, None
+    _, value = current
     elements = value.get("elements")
     candidates = [element for element in elements if isinstance(element, dict)
                   and element.get("role") in {"link", "button"} and element.get("disabled") is False] if isinstance(elements, list) else []
@@ -170,43 +216,58 @@ def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
     return snapshot, "\n".join(lines), None
 
 
-def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext) -> str:
+def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot,
+                  context: CompletionContext) -> tuple[TurnSnapshot, str]:
+    records, results = tool_facts(session, context)
+    clicks = committed_results(records, results, frozenset({"browser_click"}), include_failed=frozenset({"browser_click"}))
+    if (not clicks or not same_document(clicks[-1][1].audit.get("browser_document"), context.browser_document)
+            or delivery(clicks[-1][1]) not in {"delivered", "uncertain"}):
+        return snapshot, ""
+    ref, result = clicks[-1]
+    if delivery(result) == "uncertain":
+        snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))
+        return snapshot, UNCERTAIN + "\n" + action
     plan = click_followup_plan(session.policy.required_checks, set(snapshot.nested_tool_names))
     if plan.unavailable:
-        return "Query follow-up unavailable: " + ", ".join(plan.unavailable) + "."
-    records, results = tool_facts(session, context)
+        return snapshot, "Query follow-up unavailable: " + ", ".join(plan.unavailable) + "."
+    keys = tuple(records)
+    after = {key: records[key] for key in keys[keys.index(ref) + 1:]
+             if records[key]["name"] not in {"browser_wait", "browser_read"}
+             or ((receipt := results.get(key)) is not None
+                 and same_document(receipt.audit.get("browser_document"), context.browser_document))}
     waits = [rule for check in session.policy.required_checks
              if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_wait"]
-    waiting = any(not rule.observe(records, results=results).evaluation.passed for rule in waits)
-    lines = []
-    clicks = committed_results(records, results, frozenset({"browser_click"}), include_failed=frozenset({"browser_click"}))
-    if (clicks and same_document(clicks[-1][1].audit.get("browser_document"), context.browser_document)
-            and delivery(clicks[-1][1]) in {"delivered", "uncertain"}):
-        ref, result = clicks[-1]
-        if delivery(result) == "uncertain":
-            lines.append(UNCERTAIN)
-        else:
-            keys = tuple(records)
-            after = {key: records[key] for key in keys[keys.index(ref) + 1:]
-                     if records[key]["name"] not in {"browser_wait", "browser_read"}
-                     or ((receipt := results.get(key)) is not None
-                         and same_document(receipt.audit.get("browser_document"), context.browser_document))}
-            records = after
-            waiting = any(not rule.observe(after, results=results).evaluation.passed for rule in waits)
-            if waits and same_document(result.audit.get("browser_document"), context.browser_document):
-                if waiting:
-                    lines.append(f"Click {ref} was delivered. Complete the declared browser_wait next; do not click again.")
-                elif not any(row["name"] == "browser_read" and row["ok"] for row in after.values()):
-                    lines.append(f"Click {ref} and its declared waits are settled. Use browser_read next; do not click again.")
+    waiting = any(not rule.observe(after, results=results).evaluation.passed for rule in waits)
+    lines: list[str] = []
+    call: ToolCall | None = None
+    if waiting:
+        lines.append(f"Click {ref} was delivered. Complete the declared browser_wait next; do not click again.")
+        steps = plan.plans.get("result")
+        for raw in steps if isinstance(steps, list) else []:
+            step = decode_json_object(raw)
+            args = decode_json_object(step["args"])
+            if step["name"] == "browser_wait" and not any(row.ok and row.call.name == "browser_wait"
+                    and row.call.args == args for key in after if (row := results.get(key)) is not None):
+                call = ToolCall("browser_wait", args)
+                break
+    elif (any((rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_read"
+              for check in session.policy.required_checks)
+            and not any(row["name"] == "browser_read" and row["ok"] for row in after.values())):
+        lines.append(f"Click {ref} and its declared waits are settled. Use browser_read next; do not click again.")
+        call = ToolCall("browser_read", {})
     if plan.missing_waits and waiting:
         lines.append("Automatic result read is unavailable: the wait condition is not fully declared. "
                      "For a query, omit purpose for the atomic browser_click({ref}), then use browser_wait with an explicit "
                      "page condition and timeout_ms, then browser_read. Do not substitute a sleep for a page condition.")
-    return "\n".join(lines)
+    if call is not None:
+        snapshot, action = _call_handoff(session, snapshot, call)
+        lines.append(action)
+    return snapshot, "\n".join(lines)
 
 
 def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
-                          generation: int | None = None) -> tuple[TurnSnapshot, str]:
+                          generation: int | None = None, *,
+                          delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
     if (session.task_kind not in {"chat", "hybrid"} or session.policy.strict_research
             or snapshot.input_binding is not None or snapshot.browser_copy is not None
             or "browser_read" not in snapshot.inventory_names):
@@ -234,21 +295,29 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
                         break
         snapshot, action = _call_handoff(session, snapshot, call)
         return snapshot, (UNCERTAIN if uncertain else PENDING) + "\n" + action
+    snapshot, waiting = _wait_handoff(session, snapshot, context)
+    if waiting:
+        return snapshot, waiting
+    snapshot, download, download_outcome = _download_handoff(session, snapshot, context, generation)
+    recovery = ""
+    if not download:
+        snapshot, recovery = _compile_handoff(session, snapshot, context, generation, delivered_results)
     interrupted = any(interrupted_query(row, context.browser_document) for _, row in unconfirmed_clicks(results))
     if not rules:
-        return snapshot, ("The previous query document changed; its outcome remains unverified. "
-                          "Use current-page observations for further work." if interrupted else "")
+        return snapshot, "\n".join(part for part in (recovery,
+            "The previous query document changed; its outcome remains unverified. "
+            "Use current-page observations for further work." if interrupted else "") if part)
     observed = [(rule, rule.observe(records, results=results, browser_document=context.browser_document))
                 for rule in rules]
     pending = [(rule, outcome.evaluation) for rule, outcome in observed if not outcome.evaluation.passed]
     lines = ["Next step from committed receipts (reuse completed work):"]
     if interrupted:
         lines.append("A previous query was interrupted by a document change; its outcome remains unverified.")
-    lines.append(_wait_handoff(session, snapshot, context))
     snapshot, metadata = _metadata_handoff(session, snapshot, context, observed)
     if metadata:
         lines.append(metadata)
-    snapshot, download, download_outcome = _download_handoff(session, snapshot, context, generation)
+    if recovery:
+        lines.append(recovery)
     if download:
         lines.append(download)
     outstanding = [(rule, outcome) for rule, outcome in pending

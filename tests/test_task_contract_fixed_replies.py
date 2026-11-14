@@ -6,7 +6,7 @@ does not mean the task passed. Saved replies retain their original JSON escapes.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Protocol, TypedDict
 
@@ -56,7 +56,7 @@ def saved_replies(case: str) -> list[str]:
     return result
 
 
-def install_original_http(monkeypatch: pytest.MonkeyPatch, replies: list[str]) -> None:
+def install_original_http(monkeypatch: pytest.MonkeyPatch, replies: Iterable[str]) -> None:
     remaining = iter(replies)
 
     def scripted(url: str, payload: dict[str, object], headers: dict[str, str], *,

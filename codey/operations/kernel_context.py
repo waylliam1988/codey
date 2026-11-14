@@ -6,7 +6,7 @@ This object contains dependencies and rebuildable caches only.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 
@@ -369,7 +369,8 @@ class KernelContext:
         batch = next(batch for batch in view.batches if batch.intent.batch_id == batch_id)
         return [self.session._memory_results[identity] for identity in batch.intent.tool_refs]
 
-    def request_snapshot(self, snapshot: TurnSnapshot) -> tuple[TurnSnapshot, str]:
+    def request_snapshot(self, snapshot: TurnSnapshot, *,
+                         delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
         """Finish tool narrowing before rendering results or request options."""
         research = self.execution.research_tools
         browser = research.browser_session if research is not None else None
@@ -381,7 +382,8 @@ class KernelContext:
                     and browser is not None and browser.document_identity() is not None):
                 snapshot = kernel_protocol.offer_browser_tools(snapshot, self.session)
             context = replace(self.completion_context, browser_document=browser.document_identity() if browser else None)
-            return browser_task_handoff(self.session, snapshot, context, browser.generation if browser else None)
+            return browser_task_handoff(self.session, snapshot, context, browser.generation if browser else None,
+                                        delivered_results=delivered_results)
         from codey.operations.browser_detail import offer_page_details
         from codey.operations.research_submission_handoff import research_submission_handoff
 
@@ -714,7 +716,8 @@ class KernelContext:
             self.close(state, no_progress_result(self.session, turn) if reason == "no_progress"
                        else KernelResult(False, summary, turn, reason))
             return
-        snapshot, handoff = self.request_snapshot(kernel_protocol.build_turn_snapshot(self.session, native=self.native))
+        snapshot, handoff = self.request_snapshot(kernel_protocol.build_turn_snapshot(self.session, native=self.native),
+                                                 delivered_results=results)
 
         def result_context(result: ToolResult) -> str:
             value: str = task_result_context(self.session, result, snapshot.research_scope, tool_names=snapshot.tool_names)
