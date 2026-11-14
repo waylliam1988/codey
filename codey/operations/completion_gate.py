@@ -108,10 +108,7 @@ def _proof_evidence_refs(session: TaskSession, context: CompletionContext, repor
         pass
     try:
         edited = dict(session.edited_files)
-        for path, rev in sorted(
-            ((str(k)[:120], v) for k, v in edited.items()),
-            key=lambda row: row[0],
-        )[:8]:
+        for path, rev in sorted((str(k)[:120], v) for k, v in edited.items())[:8]:
             try:
                 rev_num = int(rev)
             except (TypeError, ValueError):
@@ -122,7 +119,12 @@ def _proof_evidence_refs(session: TaskSession, context: CompletionContext, repor
     try:
         ledger = context.research_ledger
         sources = ledger.opened_sources if ledger is not None else ()
-        for source in sorted(sources, key=lambda item: item.final_url)[:8]:
+        from codey.research.ledger import OpenedSource
+
+        def source_url(source: OpenedSource) -> str:
+            return source.final_url
+
+        for source in sorted(sources, key=source_url)[:8]:
             refs.append(stable_ref("source", source.final_url, source.text_hash, source.retrieved_at))
     except Exception:
         pass
@@ -131,23 +133,23 @@ def _proof_evidence_refs(session: TaskSession, context: CompletionContext, repor
     try:
         verifs = list(session.verifications)[-4:]
         for item in verifs:
-            if isinstance(item, dict):
-                command = str(item.get("command", "") or "")[:80]
-                exit_code = item.get("exit_code", "?")
-                ws_rev = item.get("workspace_revision")
-                ws_fp = str(item.get("workspace_fingerprint") or "")
-                identity = ""
-                if type(ws_rev) is int and ws_rev >= 0:
-                    identity = f"@ws{ws_rev}"
-                if not identity and ws_fp:
-                    identity = f"@{ws_fp[:24]}"
-                refs.append(f"verify:{command}{identity}:{exit_code}")
+            command = str(item.get("command", "") or "")[:80]
+            exit_code = item.get("exit_code", "?")
+            ws_rev = item.get("workspace_revision")
+            ws_fp = str(item.get("workspace_fingerprint") or "")
+            identity = ""
+            if type(ws_rev) is int and ws_rev >= 0:
+                identity = f"@ws{ws_rev}"
+            if not identity and ws_fp:
+                identity = f"@{ws_fp[:24]}"
+            refs.append(f"verify:{command}{identity}:{exit_code}")
     except Exception:
         pass
     parent = context.research_prerequisites
     original = tuple(parent.executed) if parent is not None and _session_profile(session) == "research" else ()
     current = tuple(session.executed) if _session_profile(session) == "research" else ()
-    return tuple(dict.fromkeys((*original, *current, *refs)))[:12]
+    unique = {key: None for key in (*original, *current, *refs)}
+    return tuple(unique)[:12]
 
 
 def _domain_for_session(session: TaskSession) -> str:
@@ -236,7 +238,8 @@ def _required_checks_verdict(
         "observation_selector_unavailable", "conflicting_observations",
     } for key, issue in tool_evaluations.items()):
         required = tuple(sorted(required, key=is_output_check))
-    required = tuple(sorted(required, key=lambda item: not is_browser_requirement(item)))
+    required = tuple(item for item in required if is_browser_requirement(item)) + tuple(
+        item for item in required if not is_browser_requirement(item))
 
     for declaration in required:
         try:
@@ -433,11 +436,14 @@ def _proof_capacity_verdict(checks: list[CompletionCheck], *, publication: bool)
 
 
 def _browser_completion_block(session: TaskSession, text: str, context: CompletionContext) -> GateVerdict | None:
+    from codey.operations.browser_followups import PENDING, UNCERTAIN, delivery, pending_click
     from codey.operations.browser_text_report import observe_metadata, report_scope
     from codey.operations.browser_upload import bound_upload_explanation, upload_completion_scope, upload_evidence
     from codey.operations.source_gaps import source_read_required, task_source_coverage
     from codey.policies.tool_requirement import decode_answer
 
+    if (pending := pending_click(session._memory_results)) is not None:
+        return GateVerdict(False, UNCERTAIN if delivery(pending[1]) == "uncertain" else PENDING, None)
     coverage = task_source_coverage(session, context.research_execution_ledger or context.research_ledger)
     if (session.task_kind == "chat" and not session.policy.strict_research
             and source_read_required(session) and coverage.unavailable):

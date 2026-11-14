@@ -114,7 +114,7 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
     """Persist the captured contract, never Python callables or a live registry."""
     if snapshot.policy is None:
         raise ValueError("captured turn has no authorization policy")
-    return decode_json_object(json_value({"schema_version": 7,
+    payload = decode_json_object(json_value({"schema_version": 8 if snapshot.browser_followups else 7,
             "task_navigation_url": snapshot.task_navigation_url,
             "browser_copy": snapshot.browser_copy.payload() if snapshot.browser_copy is not None else None,
             "input_binding": json_value(snapshot.input_binding),
@@ -126,6 +126,9 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
             "policy": snapshot.policy.to_payload(), "specs": json_value(snapshot.frozen_specs),
             "executors": [{"name": name, "binding": None if fn is None else _executor_identity(fn)}
                           for name, fn in snapshot.custom_executors]}))
+    if snapshot.browser_followups:
+        payload["browser_fill_text"] = snapshot.browser_fill_text
+    return payload
 
 
 def _executor_identity(fn: ToolExecutor) -> dict[str, object]:
@@ -249,10 +252,12 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors",
                 "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding"}
     version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version not in {6, 7}:
+    if version not in {6, 7, 8}:
         raise ValueError("unsupported captured turn snapshot version; start a new request")
-    if version == 7:
+    if version >= 7:
         expected.add("task_navigation_url")
+    if version == 8:
+        expected.add("browser_fill_text")
     if set(payload) != expected:
         raise ValueError("invalid captured turn snapshot version/shape")
     names = require_json_strings(payload["tool_names"], "tool_names")
@@ -323,11 +328,20 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
     input_binding = _restore_input_binding(payload["input_binding"], names, specs, copy,
                                           nested=nested, policy=policy, navigation_url=navigation_url)
+    from codey.operations.browser_followups import DIRECT_TOOLS, MAX_TEXT, allows_surface
+
+    fill_text = payload.get("browser_fill_text")
+    if fill_text is not None and (not isinstance(fill_text, str) or not fill_text.strip() or len(fill_text) > MAX_TEXT):
+        raise ValueError("invalid captured browser fill text")
     snapshot = TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=contract,
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
-        browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url)
+        browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
+        browser_followups=version == 8, browser_fill_text=fill_text)
+    if snapshot.browser_followups and (not ignore_runtime_claims or not set(DIRECT_TOOLS) <= set(names)
+                                        or not allows_surface(snapshot)):
+        raise ValueError("captured browser follow-ups exceed the authorized Chat interface")
     from codey.toolchain.tool_prompt import contract_semantics
 
     if contract_semantics(contract) != contract_semantics(render_snapshot_contract(snapshot)):

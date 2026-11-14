@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from codey.research.ledger import ResearchLedger
 
 _URL_RE = re.compile(r"https?://[^\s<>\]）】`\"']+", re.IGNORECASE)
 _DOMAIN_RE = re.compile(r"(?<!@)\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b", re.IGNORECASE)
@@ -48,7 +52,7 @@ _NON_SOURCE_DOTTED_IDENTIFIERS = {
 
 def _citation_text(text: str) -> str:
     """JSON arrays/numbers are not bracket citations; scan string values only."""
-    def strings(value: Any) -> list[str]:
+    def strings(value: object) -> list[str]:
         if isinstance(value, str):
             return [value]
         if isinstance(value, dict):
@@ -57,20 +61,20 @@ def _citation_text(text: str) -> str:
             return [text for item in value for text in strings(item)]
         return []
     try:
-        value = json.loads(text)
+        value: object = json.loads(text)
     except ValueError:
         return text
     return "\n".join(strings(value))
 
 
-def citation_problem(summary: str, *, ledger: Any, source_ids: dict[str, str],
+def citation_problem(summary: str, *, ledger: ResearchLedger, source_ids: dict[str, str],
                      require_citation: bool) -> str | None:
     """Validate only contract-scoped citations against the committed ledger."""
     from codey.research.report_quality import parse_citation_rows
     from codey.utils.citation_scanner import citation_ref_items, source_id_ref_items
 
     text = _citation_text(summary)
-    urls = _urls_in_text(text)
+    urls = _urls_in_text(text, ledger.canonical_opened_url)
     ids = source_id_ref_items(text)
     try:
         numeric = citation_ref_items(text)
@@ -166,10 +170,16 @@ def provenance_problem(
     return None
 
 
-def _urls_in_text(text: str) -> list[str]:
+def _urls_in_text(text: str, opened_url: Callable[[str], str] | None = None) -> list[str]:
     urls = []
-    for match in _URL_RE.findall(text):
-        url = _trim_url_boundary(match)
+    for item in _URL_RE.finditer(text):
+        match = item[0]
+        url = match if opened_url is not None and opened_url(match) else _trim_url_boundary(match)
+        if opened_url is not None and not opened_url(url):
+            candidates = {url[:mark.start()] for mark in re.finditer(r"[，。；、！？：](?=[\u3400-\u9fff“‘（])", url)
+                          if not _URL_RE.search(url[mark.end():]) and opened_url(url[:mark.start()])}
+            if len(candidates) == 1:
+                url = candidates.pop()
         if url:
             urls.append(url)
     return urls

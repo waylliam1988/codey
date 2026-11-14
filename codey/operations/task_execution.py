@@ -14,14 +14,16 @@ import copy
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol
 
-from codey.operations import browser_text_report, browser_upload
+from codey.knowledge.store import KnowledgeStore
+from codey.operations import browser_followups, browser_text_report, browser_upload
 from codey.operations.browser_detail import audit_browser_open, read_browser_source
 from codey.policies.browser_requirement import PAGE_TRANSITIONS, browser_receipt_tools
 from codey.policies.tool_requirement import has_browser_field_bindings
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation, source_search_observation
+from codey.research.source_gateway import _SearchProvider
 from codey.runtime.core import cancellation
 from codey.runtime.core.execution_record import HitTarget
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -40,23 +42,30 @@ if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
     from codey.automation.browser_session import BrowserSession, BrowserToolOutput
-    from codey.knowledge.store import KnowledgeStore
     from codey.operations.kernel_contracts import ToolExecutor
     from codey.operations.task_session import TaskSession
-    from codey.operations.tool_result_reader import ReceiptReaderContext
+    from codey.policies.action import ActionPolicyDecision
     from codey.research.answer_contract import AnswerScope
     from codey.research.output_receipts import _Outcome
     from codey.research.receipt_types import SourceSearchObservation
-    from codey.research.source_gateway import _SearchProvider
     from codey.storage.managed_outputs import ManagedOutputStore
     from codey.toolchain.runtime import ToolOutcome
     from codey.toolchain.tool_spec import ToolSpec
 from codey.research.tools import ResearchToolOutput, ResearchTools
 
 
+class _SerializableRecord(Protocol):
+    def to_dict(self) -> object: ...
+
+
+def _record_payload(record: _SerializableRecord) -> JsonObject:
+    return decode_json_object(record.to_dict())
+
+
 def close_research_tools(tools: ResearchTools | None) -> None:
     """Release an owned search session without masking the task outcome."""
-    close = getattr(getattr(tools, "search", None), "close", None)
+    search = tools.search if tools is not None else None
+    close: object = getattr(search, "close", None)
     if callable(close):
         with contextlib.suppress(Exception):
             close()
@@ -76,14 +85,20 @@ def build_research_tools(deps: object, *, session_id: str, project: str, browser
     from codey.knowledge.changes import KnowledgeChanges
     from codey.research.tools import ResearchTools
 
-    knowledge_store = cast("KnowledgeStore | None", getattr(deps, "knowledge_store", None))
-    search_factory = cast("Callable[[], _SearchProvider] | None", getattr(deps, "search_factory", None))
+    knowledge_store: object = getattr(deps, "knowledge_store", None)
+    if knowledge_store is not None and not isinstance(knowledge_store, KnowledgeStore):
+        raise TypeError("invalid knowledge store")
+    search_factory: object = getattr(deps, "search_factory", None)
     if search_factory is None:
         from codey.research.search_factory import default_research_search_provider
         from codey.research.web_sources import WebSourceProvider
 
         search_factory = default_research_search_provider if browser_sources or browser_actions else WebSourceProvider
-    search = search_factory()
+    if not callable(search_factory):
+        raise TypeError("invalid search factory")
+    search: object = search_factory()
+    if not isinstance(search, _SearchProvider):
+        raise TypeError("invalid search provider")
     try:
         resources = ResearchTools(
             search=search, store=knowledge_store,
@@ -94,7 +109,7 @@ def build_research_tools(deps: object, *, session_id: str, project: str, browser
             bind_browser_session(resources)
         return resources
     except BaseException:
-        close = getattr(search, "close", None)
+        close: object = getattr(search, "close", None)
         if callable(close):
             with contextlib.suppress(Exception):
                 close()
@@ -208,7 +223,7 @@ class ExecutionDelegate:
         except Exception:
             return None
         try:
-            return cast("Callable[[ToolCall], object] | None", custom_executor_for(lowered))
+            return custom_executor_for(lowered)
         except Exception:
             return None
 
@@ -242,9 +257,10 @@ class ExecutionDelegate:
         except Exception:
             executor = ""
         if executor == "receipt":
-            from codey.operations.tool_result_reader import read_tool_result
+            from codey.operations.tool_result_reader import ReceiptReader, read_tool_result
 
-            result = read_tool_result(cast("ReceiptReaderContext", self), call)
+            assert self.session is not None
+            result = read_tool_result(ReceiptReader(self.session, self.managed_outputs, self.session_id, self.run_id), call)
             return result, result.ok, None
         if executor == "project":
             return self._execute_project(call)
@@ -324,9 +340,15 @@ class ExecutionDelegate:
             if call.name in {"browser_read", PAGE_DETAIL_TOOL}:
                 return read_browser_source(self, browser, call, turn=turn, tool_index=tool_index)
             output = self._browser_action(browser, call)
-            value = {**output.observation, "text": output.observation.get("text", output.model_text)}
+            value = dict(output.observation)
+            baseline = value.pop("query_baseline", None)
+            value["text"] = value.get("text", output.model_text)
+            audit: JsonObject = {"query_baseline": baseline} if baseline is not None else {}
+            if (call.name == "browser_wait" and output.ok and self.session is not None
+                    and browser_followups.pending_click(self.session._memory_results) is not None):
+                audit["query_wait_document"] = browser.document_identity()
             result = ToolResult(ok=output.ok, call=call, model_text=output.model_text,
-                                canonical={"value": value})
+                                canonical={"value": value}, audit=audit)
             return result, result.ok, None
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
@@ -344,7 +366,11 @@ class ExecutionDelegate:
                                     max_text=require_json_integer(args.get("max_text", 12000), "max_text"),
                                     file_inputs_only=file_inputs_only)
         if call.name == "browser_click":
-            return browser.click(ref)
+            if self.session is not None and (pending := browser_followups.pending_click(self.session._memory_results)) is not None:
+                message = (browser_followups.UNCERTAIN if browser_followups.delivery(pending[1]) == "uncertain"
+                           else browser_followups.PENDING)
+                return BrowserToolOutput(message, False, {"action": "click", "ref": ref, "delivery": "not_delivered"})
+            return browser.click(ref, query=True) if browser_followups.query_click.get() else browser.click(ref)
         if call.name == "browser_fill":
             return browser.fill(ref, str(args.get("value") or ""))
         if call.name == "browser_scroll":
@@ -411,7 +437,7 @@ class ExecutionDelegate:
         try:
             runtime_name = {"list_dir": "ls", "read_file": "read", "grep": "search",
                             "find_references": "references"}.get(call.name, call.name)
-            decision, _replay = evaluate_tool_call_policy_for(
+            evaluated: tuple[ActionPolicyDecision | None, object] = evaluate_tool_call_policy_for(
                 ToolCall(runtime_name, dict(call.args or {}), call_id=call.call_id),
                 project=self.project_path,
                 permission_profile=self._project_permission_profile(),
@@ -419,10 +445,11 @@ class ExecutionDelegate:
                 phase="writer",
                 shell=self.session.shell,
             )
+            decision = evaluated[0]
         except Exception as exc:
             return ProjectPolicyCheck(True, f"policy error: {exc}", False)
         if decision is not None and policy_denied(decision):
-            reason = str(getattr(decision, "reason", "") or getattr(decision, "reason_code", "") or "denied")
+            reason = decision.reason_code or "denied"
             display = decision.display
             if reason == "command_not_allowed" and not self.session.policy.allows("shell.approval"):
                 display = ("This task mode cannot request shell approval. Use an interactive coding task "
@@ -465,13 +492,11 @@ class ExecutionDelegate:
                     ToolCall(runtime_name, dict(call.args or {})),
                 )
                 result = _tool_result(call, outcome)
-                ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
-                return result, ok, None
+                return result, result.ok, None
             if name == "edit":
                 outcome = self._execute_edit(call)
                 result = _tool_result(call, outcome)
-                ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
-                return result, ok, None
+                return result, result.ok, None
             if name == "run":
                 from dataclasses import replace
 
@@ -482,14 +507,13 @@ class ExecutionDelegate:
                     project_path, str((call.args or {}).get("path", ".") or "."),
                     str((call.args or {}).get("command", "") or ""),
                     permission_profile=self._project_permission_profile(), phase="writer",
-                    tool_id=str(getattr(call, "call_id", "") or ""),
+                    tool_id=call.call_id,
                 )
                 if tail is not None:
                     outcome = replace(outcome, model_text=f"Exit code: {outcome.exit_code}\n" + output_tail(outcome.model_text, tail),
                                       presentation={**outcome.presentation, "output_tail_lines": tail})
                 result = _tool_result(call, outcome)
-                ok = outcome.ok if type(getattr(outcome, "ok", None)) is bool else False
-                return result, ok, getattr(outcome, "exit_code", None)
+                return result, result.ok, outcome.exit_code
         except Exception as exc:
             result = ToolResult(ok=False, call=call, model_text=f"ERROR: {exc}")
             return result, False, None
@@ -525,7 +549,7 @@ class ExecutionDelegate:
         if "content" in args:
             return self._write_content(project_path, path, canonical, args)
         guard = read_before_edit_outcome(
-            project_path, path, set(getattr(self.session, "read_files", set()) or set()),
+            project_path, path, set(self.session.read_files) if self.session is not None else set(),
         )
         if guard is not None:
             return guard
@@ -734,7 +758,7 @@ class ExecutionDelegate:
 
                 outcome = tools.web_search(first_text_arg(args, "query"))
                 canonical = {}
-                ledger = getattr(tools, "ledger", None)
+                ledger = tools.ledger
                 if outcome.ok:
                     if not isinstance(ledger, ResearchLedger):
                         raise ValueError("successful search requires a research ledger observation")
@@ -749,7 +773,7 @@ class ExecutionDelegate:
                     url = self._resolve_alias_url("reopen_source", {"source_id": args.get("source_id")}) or ""
                 outcome = tools.source_search(url, query, args.get("limit", 6))
                 if outcome.ok:
-                    ledger = getattr(tools, "ledger", None)
+                    ledger = tools.ledger
                     if not isinstance(ledger, ResearchLedger):
                         raise ValueError("successful source search requires a research ledger observation")
                     observation = ledger_observation(ledger, name)
@@ -766,7 +790,7 @@ class ExecutionDelegate:
                 outcome = tools.knowledge_search(first_text_arg(args, "query"),
                                                  depth=require_json_integer(args.get("depth", 1), "depth"))
                 search_canonical = ({"knowledge_search_empty": True}
-                    if outcome.ok and getattr(outcome, "knowledge_search_empty", False) is True else {})
+                    if outcome.ok and outcome.knowledge_search_empty is True else {})
                 return ToolResult(ok=outcome.ok, call=call, model_text=outcome.model_text,
                                   canonical=search_canonical), outcome.ok, None
             if name == "knowledge_read":
@@ -832,12 +856,12 @@ class ExecutionDelegate:
             if identity in tools.ledger.read_passages:
                 text = ("ERROR: this id names a task-read passage, not stored knowledge. "
                         "Cite its existing [eN] label directly. knowledge_read needs an exact stored id and revision.")
-            elif identity in getattr(self.session, "source_ids", {}):
+            elif self.session is not None and identity in self.session.source_ids:
                 text = ("ERROR: this id is a source locator, not stored knowledge. "
                         "Use the existing [eN] evidence, or the displayed source-reading action for unread text. "
                         "knowledge_read needs an exact stored id and revision.")
         canonical: dict[str, object] = {
-            "research_reference_bindings": {k: v.to_dict() for k, v in tools.ledger.references.items()}} if outcome.ok else {}
+            "research_reference_bindings": {k: _record_payload(v) for k, v in tools.ledger.references.items()}} if outcome.ok else {}
         if outcome.ok and outcome.knowledge_read_versions:
             canonical["knowledge_read_versions"] = [
                 {"id": ref.target, "revision": ref.revision} for ref in outcome.knowledge_read_versions]
@@ -861,7 +885,7 @@ class ExecutionDelegate:
 
     def _execute_research_write(self, call: ToolCall, tools: ResearchTools) -> tuple[ToolResult, bool, int | None]:
         name, args = call.name, dict(call.args or {})
-        before = len(getattr(getattr(tools, "ledger", None), "evidence_items", ()) or ())
+        before = len(tools.ledger.evidence_items)
         created_before, updated_before = set(tools.created_ids), set(tools.updated_ids)
         links_before = tools.links_created
         lowered, problem = (self._lower_finding_source(args) if name == "save_finding" else
@@ -875,21 +899,23 @@ class ExecutionDelegate:
         evidence = self._ledger_evidence(before, tools.ledger)
         evidence_canonical: dict[str, object] = {"evidence_items": evidence}
         if name in {"save_finding", "save_inference"}:
-            evidence_canonical["research_reference_bindings"] = {k: v.to_dict() for k, v in tools.ledger.references.items()}
+            evidence_canonical["research_reference_bindings"] = {k: _record_payload(v) for k, v in tools.ledger.references.items()}
         evidence_canonical["knowledge_links_created"] = tools.links_created - links_before
         proposals: list[object] = []
         created = [item for item in tools.created_ids if item not in created_before]
         target = str(lowered.get("id") or "")
-        updated = list(dict.fromkeys([item for item in tools.updated_ids if item not in updated_before] +
-            ([target] if target in tools.updated_ids else [])))
+        changed = [item for item in tools.updated_ids if item not in updated_before]
+        if target in tools.updated_ids:
+            changed.append(target)
+        updated = list({item: None for item in changed})
         evidence_canonical["knowledge_notes"] = {
             "created": created,
             "updated": updated,
             "proposals": proposals,
         }
-        affected = list(dict.fromkeys([*created, *updated]))
+        affected = list({item: None for item in (*created, *updated)})
         self._staged_note_receipt(tools, affected, proposals, evidence_canonical)
-        ledger = getattr(tools, "ledger", None)
+        ledger = tools.ledger
         if isinstance(ledger, ResearchLedger) and name != "save_inference":
             evidence_canonical["research_observation"] = ledger_observation(ledger, name, evidence_start=before)
         return (
@@ -908,7 +934,7 @@ class ExecutionDelegate:
             canonical["knowledge_bases"] = {identity: store._staged_bases[identity] for identity in created}
             canonical["knowledge_batches"] = {
                 identity: {"commit_id": batch[0], "mutations": [
-                    {"value": mutation.value.to_dict(), "expected_revision": mutation.expected_revision}
+                    {"value": _record_payload(mutation.value), "expected_revision": mutation.expected_revision}
                     for mutation in batch[1]]}
                 for identity, batch in store._staged_knowledge.items() if identity in created
             }
@@ -916,7 +942,7 @@ class ExecutionDelegate:
     def _lower_knowledge_sources(self, args: ToolArgs) -> tuple[ToolArgs, str]:
         import re
 
-        sources = dict(getattr(self.session, "source_ids", {}) or {})
+        sources = dict(self.session.source_ids) if self.session is not None else {}
 
         def lower(value: object) -> tuple[str, str]:
             text = str(value or "").strip()
@@ -961,7 +987,7 @@ class ExecutionDelegate:
         if "source_ref" not in args:
             return args, ""
         reference = args.get("source_ref")
-        sources = dict(getattr(self.session, "source_ids", {}) or {})
+        sources = dict(self.session.source_ids) if self.session is not None else {}
         if not isinstance(reference, str) or reference not in sources:
             return {}, "source_ref must be an exact opened source reference: " + ", ".join(sources)
         return {**args, "source_ref": sources[reference]}, ""
@@ -977,12 +1003,12 @@ class ExecutionDelegate:
         return build_hit_mapping(observation, self.session.hit_targets if self.session is not None else {})
 
     def _ledger_evidence(self, before: int, ledger: ResearchLedger) -> list[dict[str, str]]:
-        items = list(getattr(ledger, "evidence_items", ()) or [])
+        items = list(ledger.evidence_items)
         fresh = items[before:] if before >= 0 else items
         evidence: list[dict[str, str]] = []
         for item in fresh:
-            url = str(getattr(item, "source_url", "") or "").strip()
-            excerpt = str(getattr(item, "excerpt", "") or "").strip()
+            url = item.source_url.strip()
+            excerpt = item.excerpt.strip()
             if url and excerpt:
                 evidence.append({"source_url": url, "excerpt": excerpt[:600]})
         return evidence

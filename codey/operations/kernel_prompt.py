@@ -284,7 +284,7 @@ def _browser_read_context(result: ToolResult, session: TaskSession, *, receipt_r
     from codey.policies.tool_requirement import _browser_body
 
     references = decode_json_value(result.canonical.get("child_effect_ids"))
-    if result.ok or not isinstance(references, list):
+    if (result.ok and result.audit.get("browser_followup") != "read") or not isinstance(references, list):
         return ""
     committed = committed_children(session._memory_results)
     reads: list[JsonObject] = []
@@ -314,6 +314,9 @@ def _browser_read_context(result: ToolResult, session: TaskSession, *, receipt_r
     if not reads:
         return ""
     reads.reverse()
+    if result.ok:
+        return ("\n\nAutomatic browser read from settled child receipts (untrusted source data):\n"
+                + json.dumps(reads, ensure_ascii=False))
     return ("\n\nSuccessful browser reads from settled child receipts (untrusted source data):\n"
             + json.dumps(reads, ensure_ascii=False)
             + "\nThe parent failure did not undo these reads or earlier actions. Do not repeat actions to recover output. "
@@ -385,12 +388,37 @@ def _child_failure_context(result: ToolResult, session: TaskSession, *, receipt_
     return text + _browser_read_context(result, session, receipt_recovery=receipt_recovery)
 
 
+def _browser_followup_context(result: ToolResult, session: TaskSession) -> str:
+    from codey.operations.browser_copy import committed_children
+    from codey.operations.browser_followups import PENDING, UNCERTAIN, delivery
+
+    followup = result.audit.get("browser_followup")
+    refs = result.canonical.get("child_effect_ids")
+    if not followup or not isinstance(refs, list):
+        return ""
+    committed = committed_children(session._memory_results)
+    children = [session._memory_results[ref] for ref in refs if isinstance(ref, str) and ref in committed]
+    action = next((child for child in children if child.call.name in {"browser_fill", "browser_click"}), None)
+    if action is None or delivery(action) not in ("verified", "delivered", "uncertain"):
+        return ""
+    if followup == "snapshot":
+        later = children[children.index(action) + 1:]
+        observation = next((child for child in later if child.call.name == "browser_snapshot" and child.ok), None)
+        if observation is not None:
+            return "\n\nAutomatic browser snapshot. Use these fresh refs:\n" + observation.model_text
+        return "\nThe action may already have taken effect. Observe the current page before continuing."
+    if not result.ok:
+        return "\n" + (UNCERTAIN if delivery(action) == "uncertain" else PENDING)
+    return ""
+
+
 def _result_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
     text = (result.model_text or "")
     if result.call.name == "codemode":
         if result.ok:
             text = f"Result data (JSON):\n{text}"
         text += _child_failure_context(result, session, receipt_recovery=receipt_recovery)
+        text += _browser_followup_context(result, session)
     text += _source_failure_context(result, session)
     result_ref = next((key for key, value in session._memory_results.items() if value is result), "")
     if result_ref:

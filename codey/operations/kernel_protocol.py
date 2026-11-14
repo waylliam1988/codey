@@ -12,6 +12,7 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal, Protocol
 
+from codey.operations import browser_followups
 from codey.operations.browser_copy import CopyTurn, copy_target, copy_turn
 from codey.operations.browser_upload import (
     STRUCTURED_UPLOAD_TOOLS,
@@ -132,6 +133,8 @@ class TurnSnapshot:
     browser_copy: CopyTurn | None = None
     input_binding: ModelInputBinding | None = None
     task_navigation_url: str | None = None
+    browser_followups: bool = False
+    browser_fill_text: str | None = None
 
     @property
     def inventory_names(self) -> tuple[str, ...]:
@@ -141,8 +144,15 @@ class TurnSnapshot:
     @property
     def model_specs(self) -> tuple[ToolSpec, ...]:
         binding = self.input_binding
-        return tuple(binding.model_spec if binding is not None and spec.name == binding.model_spec.name else spec
-                     for spec in self.frozen_specs if spec.name in self.tool_names)
+        specs = tuple(binding.model_spec if binding is not None and spec.name == binding.model_spec.name else spec
+                      for spec in self.frozen_specs if spec.name in self.tool_names)
+        if not self.browser_followups:
+            return specs
+        leaves = tuple(spec for spec in self.frozen_specs if spec.name in self.nested_tool_names)
+        return tuple(action_model_spec(spec, leaves, self.task_navigation_url, followups=True,
+                                       fill_text=self.browser_fill_text)
+                     if binding is not None and binding.kind == "actions" and spec.name == binding.model_spec.name
+                     else browser_followups.model_spec(spec, self.browser_fill_text) for spec in specs)
 
 
 def render_snapshot_contract(snapshot: TurnSnapshot) -> str:
@@ -158,6 +168,22 @@ def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
     if snapshot.input_binding is not None and snapshot.input_binding.model_spec.name not in snapshot.tool_names:
         snapshot = replace(snapshot, input_binding=None)
     return replace(snapshot, contract_text=render_snapshot_contract(snapshot))
+
+
+def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSnapshot:
+    if (session.task_kind != "chat" or not browser_followups.allows_surface(snapshot)
+            or (exposed := session.model_tool_names) is not None
+            and not set(browser_followups.DIRECT_TOOLS) <= set(exposed)
+            or set(browser_followups.DIRECT_TOOLS) & set(session.controller_denied)):
+        return snapshot
+    names = (*snapshot.tool_names, *(name for name in browser_followups.DIRECT_TOOLS if name not in snapshot.tool_names))
+    inventory = (*names, *(name for name in snapshot.nested_tool_names if name not in names))
+    specs = {spec.name: spec for spec in snapshot.frozen_specs}
+    executors: dict[str, ToolExecutor | None] = dict(snapshot.custom_executors)
+    return refresh_snapshot_contract(replace(snapshot, tool_names=names,
+        frozen_specs=tuple(specs[name] for name in inventory),
+        custom_executors=tuple((name, executors[name]) for name in inventory),
+        browser_followups=True, browser_fill_text=browser_followups.explicit_fill_text(session.task_text)))
 
 
 @dataclass(frozen=True)
@@ -929,23 +955,45 @@ def _lower_bound_inputs(
     items: list[tuple[str, ToolArgs, str]], snapshot: TurnSnapshot,
 ) -> list[tuple[str, ToolArgs, str]] | ToolPlan:
     binding = snapshot.input_binding
-    assert binding is not None
+    models = {spec.name: spec for spec in snapshot.model_specs}
+    checks = snapshot.policy.required_checks if snapshot.policy else ()
+    wait_allowed = ("browser_wait" in snapshot.nested_tool_names
+                    and (snapshot.allowed is None or "browser_wait" in snapshot.allowed))
     lowered: list[tuple[str, ToolArgs, str]] = []
     for raw, args, call_id in items:
         name = _canonical_name(raw)
-        if name != binding.model_spec.name or name not in snapshot.tool_names:
+        direct = snapshot.browser_followups and name in {"browser_fill", "browser_click"} and name in models
+        if not direct and (binding is None or name != binding.model_spec.name or name not in models):
             lowered.append((raw, args, call_id))
             continue
-        spec = binding.model_spec
-        if error := validate_args_with_spec(spec, args):
+        if error := validate_args_with_spec(models[name], args):
             return _invalid_plan(error, tool=name)
         try:
+            if direct:
+                if len(items) != 1:
+                    return _invalid_plan("Submit one direct browser action per turn.", tool=name)
+                if name == "browser_fill":
+                    inputs = browser_followups.fill_args(args, snapshot.browser_fill_text)
+                    code = browser_followups.FILL + browser_followups.OBSERVE
+                else:
+                    code, waits = browser_followups.click_steps(args.get("purpose"), checks, wait_allowed)
+                    inputs = {"ref": args["ref"]}
+                    if not code:
+                        lowered.append((raw, inputs, call_id))
+                        continue
+                    if waits:
+                        inputs["waits"] = list[JsonValue](waits)
+                    code = browser_followups.CLICK + code
+                lowered.append(("codemode", {"code": browser_followups.DIRECT_REF + code, "inputs": inputs}, call_id))
+                continue
+            assert binding is not None
             if binding.kind == "upload":
-                converted = lower_upload_action(args, snapshot.policy.required_checks if snapshot.policy else ())
+                converted = lower_upload_action(args, checks)
             elif binding.kind == "actions":
                 from codey.operations.structured_actions import lower_action
 
-                converted = lower_action(args)
+                converted = lower_action(args, followups=snapshot.browser_followups, fill_text=snapshot.browser_fill_text,
+                                         checks=checks, wait_allowed=wait_allowed)
             else:
                 if snapshot.browser_copy is None:
                     raise ValueError("browser copy input has no captured observation")
@@ -999,7 +1047,7 @@ def normalize_turn(
         return _validate_control_plan(items, snapshot, frozen)
     if snapshot is not None and snapshot.browser_copy is not None and len(items) != 1:
         return _invalid_plan("Submit one browser copy action per turn.")
-    if snapshot is not None and snapshot.input_binding is not None:
+    if snapshot is not None and (snapshot.input_binding is not None or snapshot.browser_followups):
         lowered = _lower_bound_inputs(items, snapshot)
         if isinstance(lowered, ToolPlan):
             return lowered

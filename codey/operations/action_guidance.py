@@ -21,6 +21,7 @@ def action_guidance(session: TaskSession, snapshot: TurnSnapshot, *, native: boo
     completed: list[str] = []
     pending: list[tuple[str, RequiredAction]] = []
     details: list[str] = []
+    model = next(spec for spec in snapshot.model_specs if spec.name == binding.model_spec.name)
     for rule in requirements:
         observation = rule.observe(session.executed, results=session._memory_results, browser_document=browser_document)
         label = rule.check_id + " (" + rule.tool + ")"
@@ -34,7 +35,8 @@ def action_guidance(session: TaskSession, snapshot: TurnSnapshot, *, native: boo
         if rule.tool == "codemode" and rule.arguments_json == "{}" and not rule.via:
             details.append("A successful permitted action establishes the CodeMode execution requirement.")
             continue
-        pending.append((label, required_action(rule, binding.model_spec, snapshot.task_navigation_url, snapshot.frozen_specs)))
+        pending.append((label, required_action(rule, model, snapshot.task_navigation_url, snapshot.frozen_specs,
+                                               fill_text=snapshot.browser_fill_text)))
     calls: dict[str, list[str]] = {}
     for label, candidate in pending:
         rule = next(rule for rule in requirements if label == rule.check_id + " (" + rule.tool + ")")

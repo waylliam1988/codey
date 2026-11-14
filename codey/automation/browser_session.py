@@ -37,6 +37,10 @@ from codey.types.json_value import JsonObject, JsonValue, canonical_json_object,
 MAX_SNAPSHOT_ELEMENTS = 80
 MAX_SNAPSHOT_TEXT = 12_000
 MAX_ACTION_TEXT = 2_000
+_RESULT_REGIONS = """() => [...document.querySelectorAll('article, [role=status], [role=region], [aria-live]')]
+  .filter(el => el.getClientRects().length && getComputedStyle(el).visibility === 'visible')
+  .map((el, i) => ({key: el.id || el.tagName + ':' + i, text: el.innerText.replace(/\\s+/g, ' ').trim(),
+                  busy: !!el.closest('[aria-busy=true]')}))"""
 _PROPERTY_RETURN = re.compile(r"\s*return[ \t]+(window\.[A-Za-z_$][\w$]*)(?:\s*;)?\s*", re.ASCII)
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -115,7 +119,8 @@ class BrowserSession:
             page = self._page_on_browser_thread()
             cdp = page.context.new_cdp_session(page)
             try:
-                tree = decode_json_object(cdp.send("Page.getFrameTree"))
+                raw_tree: object = cdp.send("Page.getFrameTree")
+                tree = decode_json_object(raw_tree)
                 frame = decode_json_object(decode_json_object(tree["frameTree"])["frame"])
                 loader, url = frame.get("loaderId"), frame.get("url")
                 if isinstance(loader, str) and loader and isinstance(url, str) and url:
@@ -141,8 +146,8 @@ class BrowserSession:
         return _browser_call(self._file_snapshot_on_browser_thread, max_elements) if file_inputs_only else _browser_call(
             self._snapshot_on_browser_thread, max_elements, max_text)
 
-    def click(self, ref: str) -> BrowserToolOutput:
-        return _browser_call(self._click_on_browser_thread, ref)
+    def click(self, ref: str, *, query: bool = False) -> BrowserToolOutput:
+        return _browser_call(self._click_on_browser_thread, ref, query=query)
 
     def fill(self, ref: str, value: str) -> BrowserToolOutput:
         return _browser_call(self._fill_on_browser_thread, ref, value)
@@ -178,6 +183,32 @@ class BrowserSession:
     def capture(self) -> dict[str, object]:
         return _browser_call(self._capture_on_browser_thread)
 
+    def capture_query_result(self, baseline: JsonObject, *, pending: str) -> dict[str, object]:
+        return _browser_call(self._capture_query_result, baseline, pending)
+
+    def _query_observation(self) -> JsonObject:
+        document = self._document_identity_on_browser_thread()
+        page = self._page_on_browser_thread()
+        regions: object = page.evaluate(_RESULT_REGIONS)
+        return decode_json_object({"document": document, "regions": regions})
+
+    def _capture_query_result(self, baseline: JsonObject, pending: str) -> dict[str, object]:
+        deadline = time.monotonic() + 2.5
+        while True:
+            cancellation.check()
+            current = self._query_observation()
+            if not current["document"] or current["document"] != baseline.get("document"):
+                raise RuntimeError(pending + " The query document changed.")
+            if region := _changed_query_region(baseline, current):
+                page = self._capture_on_browser_thread()
+                body = page.get("text")
+                if (page.get("status") == "ok" and isinstance(body, str)
+                        and region in " ".join(body.split()) and self._query_observation() == current):
+                    return page
+            if time.monotonic() >= deadline:
+                raise RuntimeError(pending)
+            cancellation.wait(0.1)
+
     def _page_on_browser_thread(self) -> Page:
         if self.provider._resume_binding is not None:
             self.provider._ensure_session_on_browser_thread()
@@ -207,7 +238,7 @@ class BrowserSession:
         for handle in handles:
             if not handle.is_visible():
                 continue
-            metadata = canonical_json_object(handle.evaluate("""el => ({
+            raw_metadata: object = handle.evaluate("""el => ({
                 tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '',
                 name: el.getAttribute('aria-label') || el.getAttribute('title') ||
                       Array.from(el.labels || [], label => label.innerText).join(' ') ||
@@ -216,7 +247,8 @@ class BrowserSession:
                 value: el.type === 'password' ? null : ('value' in el ? el.value : null),
                 disabled: el.disabled === true || el.getAttribute('aria-disabled') === 'true',
                 checked: 'checked' in el ? el.checked : null
-            })"""))
+            })""")
+            metadata = canonical_json_object(raw_metadata)
             role = _element_role(metadata)
             name = " ".join(str(metadata.get("name") or "").split())[:240]
             if not name and role not in {"textbox", "combobox"}:
@@ -272,20 +304,25 @@ class BrowserSession:
             "text_truncated": False, "elements_truncated": self._file_controls_truncated,
             "text": text, "elements": [], "file_controls": candidates})
 
-    def _click_on_browser_thread(self, ref: str) -> BrowserToolOutput:
+    def _click_on_browser_thread(self, ref: str, *, query: bool = False) -> BrowserToolOutput:
         cancellation.check()
         try:
             page, handle = self._resolve_ref(ref)
         except RuntimeError as exc:
             return self._stale_ref_output("click", ref, exc)
+        baseline = self._query_observation() if query else None
         try:
             handle.click(timeout=5_000, no_wait_after=True)
         except Exception as exc:
             self._invalidate_refs()
-            return BrowserToolOutput(f"ERROR: click delivery is uncertain: {exc}", False,
-                                     {"action": "click", "ref": ref, "delivery": "uncertain"})
-        self._invalidate_refs()
-        return self._action_observation(page, "click", ref)
+            output = BrowserToolOutput(f"ERROR: click delivery is uncertain: {exc}", False,
+                                       {"action": "click", "ref": ref, "delivery": "uncertain"})
+        else:
+            self._invalidate_refs()
+            output = self._action_observation(page, "click", ref)
+        if baseline is not None:
+            output.observation["query_baseline"] = baseline
+        return output
 
     def _fill_on_browser_thread(self, ref: str, value: str) -> BrowserToolOutput:
         cancellation.check()
@@ -295,13 +332,13 @@ class BrowserSession:
             return self._stale_ref_output("fill", ref, exc)
         try:
             handle.fill(value, timeout=5_000)
-            actual = str(handle.evaluate("el => 'value' in el ? el.value : el.textContent || ''"))
+            actual: object = handle.evaluate("el => 'value' in el ? el.value : el.textContent || ''")
         except Exception as exc:
             self._invalidate_refs()
             return BrowserToolOutput(f"ERROR: fill delivery is uncertain: {exc}", False,
                                      {"action": "fill", "ref": ref, "delivery": "uncertain"})
         self._invalidate_refs()
-        verified = actual == value
+        verified = str(actual) == value
         return BrowserToolOutput(
             ("Filled and verified " + ref) if verified else "ERROR: fill was delivered but readback differed",
             verified, {"action": "fill", "ref": ref,
@@ -317,7 +354,8 @@ class BrowserSession:
         distance = max(1, min(abs(amount), 20_000))
         dx = distance if normalized == "right" else -distance if normalized == "left" else 0
         dy = distance if normalized == "down" else -distance if normalized == "up" else 0
-        page.evaluate("([x, y]) => window.scrollBy(x, y)", [dx, dy])
+        delta: list[int] = [dx, dy]
+        page.evaluate("([x, y]) => window.scrollBy(x, y)", delta)
         self._invalidate_refs()
         return self._action_observation(page, "scroll", normalized)
 
@@ -549,10 +587,11 @@ class BrowserSession:
         # A resumed/borrowed document has no trustworthy process-local navigation
         # response. Observe the surviving document rather than replaying old headers.
         if id(page) not in self._navigation_facts:
-            observed = canonical_json_object(page.evaluate("""() => ({
+            raw_observed: object = page.evaluate("""() => ({
                 status: performance.getEntriesByType('navigation')[0]?.responseStatus || 0,
                 content_type: document.contentType
-            })"""))
+            })""")
+            observed = canonical_json_object(raw_observed)
             status = observed["status"]
             response_status = status if isinstance(status, int) and not isinstance(status, bool) and status > 0 else None
             content_type = str(observed["content_type"])
@@ -612,13 +651,26 @@ class BrowserSession:
                                   "page_url": page.url, "text": text})
 
 
+def _changed_query_region(before: JsonObject, after: JsonObject) -> str:
+    old, new = before.get("regions"), after.get("regions")
+    if not isinstance(old, list) or len(old) != 1 or not isinstance(new, list) or len(new) != 1:
+        return ""
+    previous, current = old[0], new[0]
+    if (isinstance(previous, dict) and isinstance(current, dict) and previous.get("key") == current.get("key")
+            and current.get("busy") is False and isinstance(body := current.get("text"), str)
+            and body != previous.get("text")):
+        return body
+    return ""
+
+
 def _file_control_details(handle: ElementHandle) -> JsonObject:
-    row = canonical_json_object(handle.evaluate("""el => ({
+    raw: object = handle.evaluate("""el => ({
         name: el.getAttribute('aria-label') || Array.from(el.labels || [], label => label.innerText).join(' ') || el.title,
         dom_id: el.id, field_name: el.name,
         group: el.closest('fieldset')?.querySelector('legend')?.innerText || el.form?.getAttribute('aria-label') || '',
         disabled: el.matches(':disabled') || el.getAttribute('aria-disabled') === 'true' || el.type !== 'file'
-    })"""))
+    })""")
+    row = canonical_json_object(raw)
     return {"disabled": row["disabled"], **{key: " ".join(str(row[key]).split())[:240]
             for key in ("name", "dom_id", "field_name", "group")}}
 

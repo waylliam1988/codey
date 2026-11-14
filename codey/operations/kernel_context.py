@@ -371,13 +371,18 @@ class KernelContext:
 
     def request_snapshot(self, snapshot: TurnSnapshot) -> tuple[TurnSnapshot, str]:
         """Finish tool narrowing before rendering results or request options."""
+        research = self.execution.research_tools
+        browser = research.browser_session if research is not None else None
         if snapshot.research_scope is None:
+            from codey.operations.browser_followups import allows_surface
+
+            if (not snapshot.browser_followups and self.session.task_kind == "chat" and allows_surface(snapshot)
+                    and browser is not None and browser.document_identity() is not None):
+                snapshot = kernel_protocol.offer_browser_tools(snapshot, self.session)
             return snapshot, ""
         from codey.operations.browser_detail import offer_page_details
         from codey.operations.research_submission_handoff import research_submission_handoff
 
-        research = self.execution.research_tools
-        browser = research.browser_session if research is not None else None
         snapshot, handoff = research_submission_handoff(self.session, snapshot, self.completion_context, browser)
         return (snapshot, handoff) if handoff else offer_page_details(self.session, snapshot, browser)
 

@@ -5,6 +5,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
+from codey.operations import browser_followups
 from codey.policies.tool_requirement import ToolSuccessRequirement, argument_digest
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, thaw_schema_value, validate_args_with_spec
@@ -41,7 +42,8 @@ def _branch(kind: str, properties: JsonObject, required: Sequence[str]) -> JsonO
     return _object({"kind": {"type": "string", "enum": [kind]}, **properties}, ("kind", *required))
 
 
-def action_model_spec(spec: ToolSpec, leaves: Sequence[ToolSpec], navigation_url: str | None) -> ToolSpec:
+def action_model_spec(spec: ToolSpec, leaves: Sequence[ToolSpec], navigation_url: str | None, *,
+                      followups: bool = False, fill_text: str | None = None) -> ToolSpec:
     """Derive each available action from its authorized frozen leaf definition."""
     by_name = {leaf.name: leaf for leaf in leaves}
     branches: list[JsonValue] = []
@@ -55,6 +57,8 @@ def action_model_spec(spec: ToolSpec, leaves: Sequence[ToolSpec], navigation_url
         if name not in by_name:
             continue
         leaf = by_name[name]
+        if followups:
+            leaf = browser_followups.model_spec(leaf, fill_text)
         properties = decode_json_object(thaw_schema_value(dict(leaf.parameters)))
         ref = properties.pop("ref")
         targets: list[JsonValue] = [_object({"ref": ref}, ("ref",))]
@@ -68,6 +72,11 @@ def action_model_spec(spec: ToolSpec, leaves: Sequence[ToolSpec], navigation_url
         branches.append(_branch("edit_json", {"path": path, "changes": {"type": "object"}}, ("path", "changes")))
     if not branches:
         raise ValueError("Structured actions have no supported authorized leaves.")
+    followup_help = ""
+    if followups:
+        followup_help = " Verified fills return fresh refs. " + browser_followups.PURPOSE_DESCRIPTION
+        if fill_text is not None:
+            followup_help += " Use source=task_text to fill the original user text verbatim."
     return freeze_spec_parameters(replace(spec, parameters=(("action", {"anyOf": branches}),), required=("action",),
         declarations="", json_examples=(), description=
         "Submit one structured action from this turn's schema; do not submit JavaScript. "
@@ -76,10 +85,12 @@ def action_model_spec(spec: ToolSpec, leaves: Sequence[ToolSpec], navigation_url
         "When names repeat, choose an observed ref; stale refs remain rejected. "
         "edit_json replaces existing top-level fields with explicit values, using a complete default file read and "
         "the original receipt. It does not support files outside that read window or integers outside JavaScript's "
-        "safe range. A version conflict requires another action with a fresh read; uncertain delivery requires observation."))
+        "safe range. A version conflict requires another action with a fresh read; uncertain delivery requires observation."
+        + followup_help))
 
 
-def lower_action(args: JsonObject) -> JsonObject:
+def lower_action(args: JsonObject, *, followups: bool = False, fill_text: str | None = None,
+                 checks: tuple[str, ...] = (), wait_allowed: bool = False) -> JsonObject:
     if set(args) != {"action"}:
         raise ValueError("Submit one action without JavaScript arguments.")
     action = dict(decode_json_object(args["action"]))
@@ -89,8 +100,19 @@ def lower_action(args: JsonObject) -> JsonObject:
     elif kind in _LEAVES:
         code = f"return unwrap(await tools.{_LEAVES[kind]}(inputs));"
     elif kind in _CONTROLS:
-        call = "{ref,value:inputs.value}" if kind == "fill" else "{ref}"
-        code = _SELECT + f"return unwrap(await tools.{_CONTROLS[kind]}({call}));"
+        purpose = action.pop("purpose", None)
+        if kind == "fill" and followups:
+            action = browser_followups.fill_args(action, fill_text)
+            code = _SELECT + browser_followups.FILL + browser_followups.OBSERVE
+        else:
+            steps, waits = browser_followups.click_steps(purpose, checks, wait_allowed)
+            if kind == "click" and steps:
+                if waits:
+                    action["waits"] = list[JsonValue](waits)
+                code = _SELECT + browser_followups.CLICK + steps
+            else:
+                call = "{ref,value:inputs.value}" if kind == "fill" else "{ref}"
+                code = _SELECT + f"return unwrap(await tools.{_CONTROLS[kind]}({call}));"
     elif kind == "edit_json":
         if not decode_json_object(action["changes"]):
             raise ValueError("changes must name at least one existing top-level JSON field")
@@ -110,7 +132,8 @@ class RequiredAction:
 
 
 def required_action(requirement: ToolSuccessRequirement, spec: ToolSpec,
-                    navigation_url: str | None, leaves: Sequence[ToolSpec]) -> RequiredAction:
+                    navigation_url: str | None, leaves: Sequence[ToolSpec], *,
+                    fill_text: str | None = None) -> RequiredAction:
     """Project a leaf selector through the same fixed lowering used at execution."""
     from codey.codemode.protocol import parse_codemode_args
 
@@ -144,6 +167,12 @@ def required_action(requirement: ToolSuccessRequirement, spec: ToolSpec,
         action = {"kind": kind, **{key: value for key, value in args.items() if key != "ref"}}
         if "ref" in args:
             action["target"] = {"ref": args["ref"]}
+        if kind == "fill" and fill_text is not None:
+            if "value" in args and args["value"] != fill_text:
+                return RequiredAction(kind, action, args, error="The required value differs from the original bound text.")
+            action.pop("value", None)
+            action["source"] = browser_followups.TEXT_SOURCE
+            args = {**args, "value": fill_text}
     elif kind == "edit_json" and set(args) - {"path"}:
         return RequiredAction(kind, action, args,
             error="edit_json cannot guarantee these selectors on the lowered edit arguments; explicit field changes are required.")
@@ -155,7 +184,7 @@ def required_action(requirement: ToolSuccessRequirement, spec: ToolSpec,
     error = validate_args_with_spec(spec, {"action": action}) or ""
     if not error:
         try:
-            parse_codemode_args(lower_action({"action": action}))
+            parse_codemode_args(lower_action({"action": action}, followups=fill_text is not None, fill_text=fill_text))
         except (KeyError, ValueError, TypeError) as exc:
             error = str(exc)
     return RequiredAction(kind, action, args, error=error)

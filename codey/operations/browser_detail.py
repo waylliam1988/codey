@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codey.automation.browser_detail import observe_details, read_detail
+from codey.operations import browser_followups
 from codey.operations.browser_upload import audit_upload_open, browser_delivered_source, matches_document
 from codey.research.answer_contract import whole_research
 from codey.research.source_reading import render_source_read
@@ -18,7 +19,7 @@ from codey.toolchain.tool_spec import (
     spec_for_tool,
     validate_args_with_spec,
 )
-from codey.types.json_value import JsonObject, require_json_integer, require_json_string
+from codey.types.json_value import JsonObject, decode_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
@@ -116,11 +117,30 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
         return ToolResult(ok=False, call=call, model_text="ERROR: research acquisition budget exhausted"), False, None
     tools = delegate._observation_tools(source_read=True)
     document = None
+    query_ref = ""
+    session = delegate.session
     if call.name == PAGE_DETAIL_TOOL:
         specs = delegate._frozen_specs
         page, document = selected_detail(delegate.session, browser, call, specs.get(call.name) if specs is not None else None)
     else:
-        page = browser.capture()
+        pending = browser_followups.pending_click(session._memory_results) if session is not None else None
+        if pending is None or session is None:
+            page = browser.capture()
+        else:
+            query_ref, click = pending
+            if browser_followups.delivery(click) == "uncertain":
+                raise RuntimeError(browser_followups.UNCERTAIN)
+            baseline = decode_json_object(click.audit["query_baseline"])
+            raw_document = baseline.get("document")
+            document = decode_json_object(raw_document) if isinstance(raw_document, dict) else None
+            _, waits = browser_followups.click_steps("result", session.policy.required_checks, True)
+            refs = tuple(session._memory_results)
+            subsequent = (session._memory_results[ref] for ref in refs[refs.index(query_ref) + 1:])
+            settled = [row for row in subsequent if row.call.name == "browser_wait" and row.ok
+                       and row.audit.get("query_wait_document") == document]
+            if not all(any(row.call.args == wait for row in settled) for wait in waits):
+                raise RuntimeError(browser_followups.PENDING + " Complete the declared wait first.")
+            page = browser.capture_query_result(baseline, pending=browser_followups.PENDING)
     url = str(page.get("url") or "")
     opened = render_source_read(
         tools.gateway.capture(url, page), tools.ledger,
@@ -131,4 +151,6 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
     result, ok, code = delegate._opened_result(call, opened, url, ledger=tools.ledger, turn=turn, tool_index=tool_index)
     if ok and document is not None:
         result = replace(result, audit={**result.audit, "browser_document": document})
+    if ok and query_ref:
+        result = replace(result, audit={**result.audit, "query_click": query_ref})
     return result, ok, code

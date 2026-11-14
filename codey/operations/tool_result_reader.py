@@ -21,6 +21,14 @@ class ReceiptReaderContext(Protocol):
     run_id: str
 
 
+@dataclass
+class ReceiptReader:
+    session: TaskSession
+    managed_outputs: ManagedOutputStore | None
+    session_id: str
+    run_id: str
+
+
 @dataclass(frozen=True)
 class ResolvedOutput:
     text: str
@@ -123,7 +131,7 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResu
         if view == "value":
             if "value" not in result.canonical:
                 raise ValueError("canonical value unavailable in this receipt; available views: output")
-            text = json.dumps({"value": result.canonical["value"]}, ensure_ascii=False,
+            text = json.dumps(dict[str, object](value=result.canonical["value"]), ensure_ascii=False,
                               sort_keys=True, separators=(",", ":"), allow_nan=False)
             resolved = ResolvedOutput(text, "value", {}, False, False, False, None, False, True)
         else:

@@ -240,8 +240,11 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         effective_session_id = intent_sink.session_id
 
     def run_parent(call: ToolCall) -> ToolResult:  # noqa: C901, PLR0915
+        from codey.operations.browser_followups import followup_kind, query_click
+        from codey.operations.structured_actions import _SELECT
         from codey.operations.task_session import turn_effect_id
 
+        followup = followup_kind(call.args.get("code"), _SELECT) if snapshot.browser_followups else ""
         child_effect_ids_by_index: dict[int, str] = {}
 
         def child_effect_ids() -> list[str]:
@@ -309,7 +312,36 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             child_identity = turn_effect_id(f"{run_id}:{child_effect_scope}", turn, child_index)
             if replay is not None:
                 replay.child(child, child_identity)
-            results = execute_turn(
+            token = query_click.set(followup == "read" and child.name == "browser_click")
+            try:
+                results = execute_child_turn(child, child_effect_scope, child_index)
+            finally:
+                query_click.reset(token)
+            if not results:
+                raise RuntimeError("nested kernel returned no tool result")
+            if replay is not None and results[0].audit.get("recovery_disposition") in {"failed", "mismatch"}:
+                reason = "CodeMode child recovery could not verify its original receipt"
+                replay.invalidate(reason)
+                raise ValueError(reason)
+            if child_identity not in session.executed:
+                raise RuntimeError(f"nested kernel result was not committed: {results[0].model_text}")
+            if child_index in child_effect_ids_by_index and child_effect_ids_by_index[child_index] != child_identity:
+                raise RuntimeError("CodeMode child identity was reused for a different receipt")
+            child_effect_ids_by_index[child_index] = child_identity
+            if on_event is not None:
+                result = results[0]
+                outcome = ToolOutcome(model_text=result.model_text, ok=result.ok,
+                                      changed=result.audit.get('changed') is True,
+                                      canonical=result.canonical, audit=result.audit,
+                                      presentation=result.presentation, truncated=result.truncated)
+                event = RunEvent.tool_finished(turn, _event_call(session, child), outcome)
+                event.metadata['parent_call_id'] = parent_id
+                event.metadata['tool_name'] = child.name
+                on_event(event)
+            return replace(results[0], audit={**results[0].audit, "result_ref": child_identity})
+
+        def execute_child_turn(child: ToolCall, child_effect_scope: str, child_index: int) -> list[ToolResult]:
+            return execute_turn(
                 session,
                 [child],
                 executors=child_executors,
@@ -335,29 +367,6 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                 durable=durable,
                 nested=True,
             )
-            if not results:
-                raise RuntimeError("nested kernel returned no tool result")
-            if replay is not None and results[0].audit.get("recovery_disposition") in {"failed", "mismatch"}:
-                reason = "CodeMode child recovery could not verify its original receipt"
-                replay.invalidate(reason)
-                raise ValueError(reason)
-            child_identity = turn_effect_id(f"{run_id}:{child_effect_scope}", turn, child_index)
-            if child_identity not in session.executed:
-                raise RuntimeError(f"nested kernel result was not committed: {results[0].model_text}")
-            if child_index in child_effect_ids_by_index and child_effect_ids_by_index[child_index] != child_identity:
-                raise RuntimeError("CodeMode child identity was reused for a different receipt")
-            child_effect_ids_by_index[child_index] = child_identity
-            if on_event is not None:
-                result = results[0]
-                outcome = ToolOutcome(model_text=result.model_text, ok=result.ok,
-                                      changed=result.audit.get('changed') is True,
-                                      canonical=result.canonical, audit=result.audit,
-                                      presentation=result.presentation, truncated=result.truncated)
-                event = RunEvent.tool_finished(turn, _event_call(session, child), outcome)
-                event.metadata['parent_call_id'] = parent_id
-                event.metadata['tool_name'] = child.name
-                on_event(event)
-            return replace(results[0], audit={**results[0].audit, "result_ref": child_identity})
 
         repair_state_store = None
         if repair_context is not None:
@@ -398,6 +407,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         # References only: child facts stay in their original committed receipts.
         ordered_child_effect_ids = child_effect_ids()
         result = replace(result, canonical={**result.canonical, "child_effect_ids": ordered_child_effect_ids})
+        if followup:
+            result = replace(result, audit={**result.audit, "browser_followup": followup})
         if not result.ok:
             from codey.toolchain.result_schema import schema_typescript
             from codey.toolchain.tool_prompt import tool_repair_text
