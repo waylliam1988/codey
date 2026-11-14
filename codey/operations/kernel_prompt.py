@@ -284,7 +284,7 @@ def _browser_read_context(result: ToolResult, session: TaskSession, *, receipt_r
     from codey.policies.tool_requirement import _browser_body
 
     references = decode_json_value(result.canonical.get("child_effect_ids"))
-    if (result.ok and result.audit.get("browser_followup") != "read") or not isinstance(references, list):
+    if not isinstance(references, list):
         return ""
     committed = committed_children(session._memory_results)
     reads: list[JsonObject] = []
@@ -292,6 +292,8 @@ def _browser_read_context(result: ToolResult, session: TaskSession, *, receipt_r
     for reference in reversed(references):
         child = session._memory_results.get(reference) if isinstance(reference, str) else None
         if child is None or not child.ok or child.call.name != "browser_read" or reference not in committed:
+            continue
+        if result.ok and not isinstance(child.audit.get("query_click"), str):
             continue
         try:
             complete = _browser_body(child) is not None
@@ -390,24 +392,23 @@ def _child_failure_context(result: ToolResult, session: TaskSession, *, receipt_
 
 def _browser_followup_context(result: ToolResult, session: TaskSession) -> str:
     from codey.operations.browser_copy import committed_children
-    from codey.operations.browser_followups import PENDING, UNCERTAIN, delivery
+    from codey.operations.browser_followups import PENDING, UNCERTAIN, delivery, pending_click
 
-    followup = result.audit.get("browser_followup")
-    refs = result.canonical.get("child_effect_ids")
-    if not followup or not isinstance(refs, list):
+    refs = decode_json_value(result.canonical.get("child_effect_ids"))
+    if not isinstance(refs, list):
         return ""
     committed = committed_children(session._memory_results)
     children = [session._memory_results[ref] for ref in refs if isinstance(ref, str) and ref in committed]
-    action = next((child for child in children if child.call.name in {"browser_fill", "browser_click"}), None)
+    action = next((child for child in reversed(children)
+                   if child.call.name in {"browser_fill", "browser_click"}), None)
     if action is None or delivery(action) not in ("verified", "delivered", "uncertain"):
         return ""
-    if followup == "snapshot":
-        later = children[children.index(action) + 1:]
-        observation = next((child for child in later if child.call.name == "browser_snapshot" and child.ok), None)
-        if observation is not None:
-            return "\n\nAutomatic browser snapshot. Use these fresh refs:\n" + observation.model_text
-        return "\nThe action may already have taken effect. Observe the current page before continuing."
-    if not result.ok:
+    browser_children = [child for child in children if child.call.name.startswith("browser_")]
+    observation = browser_children[-1]
+    if observation.call.name == "browser_snapshot" and observation.ok:
+        return "\n\nBrowser snapshot from settled child receipts. Use these observed refs:\n" + observation.model_text
+    pending = pending_click(session._memory_results)
+    if pending is not None and pending[0] in refs:
         return "\n" + (UNCERTAIN if delivery(action) == "uncertain" else PENDING)
     return ""
 

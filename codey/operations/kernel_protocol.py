@@ -146,7 +146,10 @@ class TurnSnapshot:
                       for spec in self.frozen_specs if spec.name in self.tool_names)
         if not self.browser_followups:
             return specs
-        return tuple(browser_followups.model_spec(spec, self.browser_fill_text) for spec in specs)
+        plans = browser_followups.click_plans(self.policy.required_checks if self.policy else (),
+                                              set(self.nested_tool_names))
+        purposes = tuple(purpose for purpose in browser_followups.PURPOSES if purpose in plans)
+        return tuple(browser_followups.model_spec(spec, self.browser_fill_text, click_purposes=purposes) for spec in specs)
 
 
 def render_snapshot_contract(snapshot: TurnSnapshot) -> str:
@@ -165,19 +168,36 @@ def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
 
 
 def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSnapshot:
+    from codey.policies.tool_requirement import parse_tool_success_check
+
     if (session.task_kind != "chat" or not browser_followups.allows_surface(snapshot)
             or (exposed := session.model_tool_names) is not None
             and not set(browser_followups.DIRECT_TOOLS) <= set(exposed)
             or set(browser_followups.DIRECT_TOOLS) & set(session.controller_denied)):
         return snapshot
-    names = (*snapshot.tool_names, *(name for name in browser_followups.DIRECT_TOOLS if name not in snapshot.tool_names))
+    direct_names: tuple[str, ...] = browser_followups.DIRECT_TOOLS
+    checks = snapshot.policy.required_checks if snapshot.policy else ()
+    needs_wait = any((rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_wait"
+                     and rule.via in {"", "codemode"}
+                     and rule.observe(session.executed, results=session._memory_results).evaluation.reason_code
+                     in {"tool_execution_missing", "tool_parent_missing"} for check in checks)
+    if (needs_wait and "browser_wait" in snapshot.nested_tool_names
+            and "browser_wait" not in session.controller_denied
+            and (exposed is None or "browser_wait" in exposed)):
+        direct_names = (*direct_names, "browser_wait")
+    names = (*snapshot.tool_names, *(name for name in direct_names if name not in snapshot.tool_names))
     inventory = (*names, *(name for name in snapshot.nested_tool_names if name not in names))
     specs = {spec.name: spec for spec in snapshot.frozen_specs}
     executors: dict[str, ToolExecutor | None] = dict(snapshot.custom_executors)
-    return refresh_snapshot_contract(replace(snapshot, tool_names=names,
+    offered = replace(snapshot, tool_names=names,
         frozen_specs=tuple(specs[name] for name in inventory),
         custom_executors=tuple((name, executors[name]) for name in inventory),
-        browser_followups=True, browser_fill_text=browser_followups.explicit_fill_text(session.task_text)))
+        browser_followups=True, browser_fill_text=browser_followups.explicit_fill_text(session.task_text))
+    from codey.codemode.catalog import render_declarations, snapshot_catalog
+
+    declarations = render_declarations(snapshot_catalog(offered))
+    return refresh_snapshot_contract(replace(offered, frozen_specs=tuple(
+        replace(spec, declarations=declarations) if spec.name == "codemode" else spec for spec in offered.frozen_specs)))
 
 
 @dataclass(frozen=True)
@@ -946,12 +966,10 @@ def _lower_bound_inputs(
     binding = snapshot.input_binding
     models = {spec.name: spec for spec in snapshot.model_specs}
     checks = snapshot.policy.required_checks if snapshot.policy else ()
-    wait_allowed = ("browser_wait" in snapshot.nested_tool_names
-                    and (snapshot.allowed is None or "browser_wait" in snapshot.allowed))
     lowered: list[tuple[str, ToolArgs, str]] = []
     for raw, args, call_id in items:
         name = _canonical_name(raw)
-        direct = snapshot.browser_followups and name in {"browser_fill", "browser_click"} and name in models
+        direct = snapshot.browser_followups and name in {"browser_fill", "browser_click", "browser_wait"} and name in models
         if not direct and (binding is None or name != binding.model_spec.name or name not in models):
             lowered.append((raw, args, call_id))
             continue
@@ -964,15 +982,15 @@ def _lower_bound_inputs(
                 if name == "browser_fill":
                     inputs = browser_followups.fill_args(args, snapshot.browser_fill_text)
                     code = browser_followups.FILL + browser_followups.OBSERVE
+                elif name == "browser_click":
+                    inputs = dict(args)
+                    lowered.append(("codemode", {"code": "return unwrap(await tools.browser_click(inputs));",
+                                                  "inputs": inputs}, call_id))
+                    continue
                 else:
-                    code, waits = browser_followups.click_steps(args.get("purpose"), checks, wait_allowed)
-                    inputs = {"ref": args["ref"]}
-                    if not code:
-                        lowered.append((raw, inputs, call_id))
-                        continue
-                    if waits:
-                        inputs["waits"] = list[JsonValue](waits)
-                    code = browser_followups.CLICK + code
+                    lowered.append(("codemode", {"code": "return unwrap(await tools.browser_wait(inputs));",
+                                                  "inputs": dict(args)}, call_id))
+                    continue
                 lowered.append(("codemode", {"code": browser_followups.DIRECT_REF + code, "inputs": inputs}, call_id))
                 continue
             assert binding is not None

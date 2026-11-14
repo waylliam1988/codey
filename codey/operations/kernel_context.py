@@ -375,11 +375,13 @@ class KernelContext:
         browser = research.browser_session if research is not None else None
         if snapshot.research_scope is None:
             from codey.operations.browser_followups import allows_surface
+            from codey.operations.browser_task_handoff import browser_task_handoff
 
             if (not snapshot.browser_followups and self.session.task_kind == "chat" and allows_surface(snapshot)
                     and browser is not None and browser.document_identity() is not None):
                 snapshot = kernel_protocol.offer_browser_tools(snapshot, self.session)
-            return snapshot, ""
+            context = replace(self.completion_context, browser_document=browser.document_identity() if browser else None)
+            return snapshot, browser_task_handoff(self.session, snapshot, context)
         from codey.operations.browser_detail import offer_page_details
         from codey.operations.research_submission_handoff import research_submission_handoff
 
@@ -522,23 +524,25 @@ class KernelContext:
                     coding_context_prepared=True, initial_source_batch=prefetched is not None)
 
     def prefetch_required_sources(self, snapshot: TurnSnapshot) -> bool:
+        from codey.operations.browser_task_handoff import initial_navigation
         from codey.operations.browser_upload import upload_scope
         from codey.operations.source_gaps import task_source_coverage
         from codey.task.web_intent import source_url_key
 
-        if not self.session.required_source_urls or "open_url" not in snapshot.inventory_names:
-            return False
         coverage = task_source_coverage(self.session, self.completion_context.research_ledger)
         attempted = {source_url_key(url) for result in self.session._memory_results.values()
                      if result.call.name == "open_url" and isinstance(url := result.call.args.get("url"), str)}
-        urls = sorted(set(coverage.missing) - attempted)
-        if not urls:
-            return False
+        urls = sorted(set(coverage.missing) - attempted) if "open_url" in snapshot.inventory_names else []
         calls = [ToolCall("open_url", {"url": url}, call_id=f"required-source:{index}")
                  for index, url in enumerate(urls)]
         upload = upload_scope(self.session)
-        if upload is not None and upload.navigate and upload.url in urls and "browser_navigate" in snapshot.inventory_names:
+        navigation = initial_navigation(self.session, snapshot)
+        if navigation is not None:
+            calls.append(navigation)
+        elif upload is not None and upload.navigate and upload.url in urls and "browser_navigate" in snapshot.inventory_names:
             calls.append(ToolCall("browser_navigate", {"url": upload.url}, call_id="required-source:upload-page"))
+        if not calls:
+            return False
         # CodeMode aggregation hides this leaf from the model's outer catalog,
         # while the frozen inventory still authorizes it for the runtime.
         names: dict[str, None] = dict.fromkeys([*snapshot.tool_names, *[call.name for call in calls]])
@@ -690,7 +694,7 @@ class KernelContext:
         kernel_events._emit_tool_results(self.observation.on_event, self.session, results,
             run_id=f"{self.transport.run_id}:{self.effect_scope}" if self.effect_scope else self.transport.run_id,
             turn=turn)
-        if turn == 0 and results and all(result.call.name in {"open_url", "browser_navigate"}
+        if turn == 0 and results and all(result.call.name in {"open_url", "browser_navigate", "codemode"}
                 and result.call.call_id.startswith("required-source:") for result in results) and not self.cancelled():
             self.prepare_turn(state, prefetched=results)
             return

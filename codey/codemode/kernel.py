@@ -7,7 +7,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
-from codey.codemode.catalog import build_catalog_snapshot, build_codemode_catalog
+from codey.codemode.catalog import build_catalog_snapshot, snapshot_catalog
 from codey.codemode.host import CodeModeHost
 from codey.codemode.identity import parent_execution_id
 from codey.codemode.output import externalize_value
@@ -217,16 +217,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
     from codey.operations.task_effects import KernelEffectSink
 
     specs = {spec.name: spec for spec in snapshot.frozen_specs}
-    nested_names = set(snapshot.nested_tool_names)
-    catalog = build_codemode_catalog(
-        {name: spec for name, spec in specs.items() if name in nested_names},
-        allow_writes=allow_writes and session.policy.allows("project.write"),
-        allow_project_edit=(allow_writes and session.policy.allows("project.write")
-                            and "edit" in nested_names),
-        allow_project_run=(allow_writes and session.policy.allows("project.write")
-                           and "run" in nested_names),
-        task_navigation_url=snapshot.task_navigation_url,
-    )
+    catalog = snapshot_catalog(snapshot, allow_writes=allow_writes)
     # The catalog has already selected project writes and browser capabilities
     # independently. Host mutation support is not a project permission grant.
     allow_mutations = any(not entry.read_only for entry in catalog.entries)
@@ -236,10 +227,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         effective_session_id = intent_sink.session_id
 
     def run_parent(call: ToolCall) -> ToolResult:  # noqa: C901, PLR0915
-        from codey.operations.browser_followups import followup_kind, query_click
         from codey.operations.task_session import turn_effect_id
 
-        followup = followup_kind(call.args.get("code")) if snapshot.browser_followups else ""
         child_effect_ids_by_index: dict[int, str] = {}
 
         def child_effect_ids() -> list[str]:
@@ -307,11 +296,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             child_identity = turn_effect_id(f"{run_id}:{child_effect_scope}", turn, child_index)
             if replay is not None:
                 replay.child(child, child_identity)
-            token = query_click.set(followup == "read" and child.name == "browser_click")
-            try:
-                results = execute_child_turn(child, child_effect_scope, child_index)
-            finally:
-                query_click.reset(token)
+            results = execute_child_turn(child, child_effect_scope, child_index)
             if not results:
                 raise RuntimeError("nested kernel returned no tool result")
             if replay is not None and results[0].audit.get("recovery_disposition") in {"failed", "mismatch"}:
@@ -402,8 +387,6 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         # References only: child facts stay in their original committed receipts.
         ordered_child_effect_ids = child_effect_ids()
         result = replace(result, canonical={**result.canonical, "child_effect_ids": ordered_child_effect_ids})
-        if followup:
-            result = replace(result, audit={**result.audit, "browser_followup": followup})
         if not result.ok:
             from codey.toolchain.result_schema import schema_typescript
             from codey.toolchain.tool_prompt import tool_repair_text

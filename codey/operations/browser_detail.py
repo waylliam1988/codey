@@ -133,7 +133,7 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
             baseline = decode_json_object(click.audit["query_baseline"])
             raw_document = baseline.get("document")
             document = decode_json_object(raw_document) if isinstance(raw_document, dict) else None
-            _, waits = browser_followups.click_steps("result", session.policy.required_checks, True)
+            waits = browser_followups.click_waits(session.policy.required_checks, True)
             refs = tuple(session._memory_results)
             subsequent = (session._memory_results[ref] for ref in refs[refs.index(query_ref) + 1:])
             settled = [row for row in subsequent if row.call.name == "browser_wait" and row.ok

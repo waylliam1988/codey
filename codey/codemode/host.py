@@ -10,7 +10,7 @@ from codey.codemode.types import ToolCatalogEntry
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE, STALE_READ_REFERENCE_ERROR
 from codey.toolchain.result_schema import validate_output
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object
 
 
 class CodeModeHostProtocol(Protocol):
@@ -83,6 +83,7 @@ class CodeModeHost:
             index = self._next_child
             self._next_child += 1
         decoded_args = decode_json_object(args)
+        decoded_args, query = self._click_args(tool_name, decoded_args)
         if tool_name == "open_result":
             decoded_args = _normalize_open_result_args(decoded_args)
         if tool_name == "browser_navigate" and "target" in decoded_args:
@@ -97,11 +98,17 @@ class CodeModeHost:
                 decoded_args = self._json_edit_args(decoded_args)
             except (ValueError, TypeError, RecursionError) as exc:
                 return {"ok": False, "error": f"JSON field edit rejected: {exc}"}
-        if self._replay is not None:
-            raw = self._replay(index, tool_name, decoded_args)
-        else:
-            call = ToolCall(tool_name, decoded_args, call_id=f"{self.execution_id}:child:{index}")
-            raw = self._execute(call)
+        from codey.operations.browser_followups import query_click
+
+        token = query_click.set(query)
+        try:
+            if self._replay is not None:
+                raw = self._replay(index, tool_name, decoded_args)
+            else:
+                call = ToolCall(tool_name, decoded_args, call_id=f"{self.execution_id}:child:{index}")
+                raw = self._execute(call)
+        finally:
+            query_click.reset(token)
         if not isinstance(raw, ToolResult):
             raise TypeError("host executor must return a ToolResult")
         if not raw.ok:
@@ -122,6 +129,16 @@ class CodeModeHost:
                         and data.get("end_line") == data.get("total_lines")):
                     self._complete_reads[ref] = (path, text)
         return output
+
+    def _click_args(self, name: str, args: JsonObject) -> tuple[JsonObject, bool]:
+        if name != "browser_click" or "purpose" not in args:
+            return args, False
+        plans = canonical_json_object(self._catalog[name].parameters).get("x-codey-click-plans")
+        purpose = args["purpose"]
+        if (not isinstance(plans, dict) or not isinstance(purpose, str) or purpose not in plans
+                or set(args) != {"ref", "purpose"}):
+            raise ValueError("The requested click follow-up is unavailable or its arguments are invalid.")
+        return {"ref": args["ref"]}, purpose == "result"
 
     def _json_edit_args(self, args: JsonObject) -> JsonObject:
         ref = args.get("base_result_ref")

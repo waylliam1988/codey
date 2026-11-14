@@ -4,12 +4,29 @@ import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from codey.codemode.types import ToolCatalogEntry, ToolCatalogSnapshot
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.result_schema import schema_typescript
 from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
 from codey.types.json_value import canonical_json_object
+
+if TYPE_CHECKING:
+    from codey.operations.kernel_protocol import TurnSnapshot
+
+
+def snapshot_catalog(snapshot: TurnSnapshot, *, allow_writes: bool = True) -> ToolCatalogSnapshot:
+    names = set(snapshot.nested_tool_names)
+    writable = allow_writes and snapshot.policy is not None and snapshot.policy.allows("project.write")
+    return build_codemode_catalog(
+        (spec for spec in snapshot.frozen_specs if spec.name in names),
+        allow_project_edit=writable and "edit" in names,
+        allow_project_run=writable and "run" in names,
+        task_navigation_url=snapshot.task_navigation_url,
+        browser_followup_checks=(snapshot.policy.required_checks if snapshot.policy else ())
+        if snapshot.browser_followups else None,
+    )
 
 
 def build_catalog_snapshot(rows: Iterable[Mapping[str, object] | ToolCatalogEntry]) -> ToolCatalogSnapshot:
@@ -87,6 +104,7 @@ def build_codemode_catalog(
     specs: Mapping[str, ToolSpec] | Iterable[ToolSpec], *, allow_writes: bool = False,
     allow_project_edit: bool | None = None, allow_project_run: bool | None = None,
     task_navigation_url: str | None = None,
+    browser_followup_checks: tuple[str, ...] | None = None,
 ) -> ToolCatalogSnapshot:
     """Build the frozen CodeMode catalog for one permission snapshot.
 
@@ -103,7 +121,16 @@ def build_codemode_catalog(
         allow_project_edit = allow_writes
     if allow_project_run is None:
         allow_project_run = allow_writes
-    snapshot = build_catalog_from_specs(specs)
+    source_values: Iterable[ToolSpec] = specs.values() if isinstance(specs, Mapping) else specs
+    values = tuple(source_values)
+    if browser_followup_checks is not None:
+        from codey.operations.browser_followups import PURPOSES, click_plans, model_spec
+
+        plans = click_plans(browser_followup_checks, {spec.name for spec in values})
+        purposes = tuple(purpose for purpose in PURPOSES if purpose in plans)
+        values = tuple(model_spec(spec, None, click_purposes=purposes)
+                       if spec.name == "browser_click" else spec for spec in values)
+    snapshot = build_catalog_from_specs(values)
     allowed: list[ToolCatalogEntry] = []
     for entry in snapshot.entries:
         if is_text_batch_tool(entry.name):
@@ -128,6 +155,11 @@ def build_codemode_catalog(
                         canonical_json_object(entry.parameters),
                     ]})
             allowed.append(entry)
+    if browser_followup_checks is not None:
+        for index, entry in enumerate(allowed):
+            if entry.name == "browser_click":
+                allowed[index] = replace(entry, parameters={**canonical_json_object(entry.parameters),
+                                                           "x-codey-click-plans": plans})
     return build_catalog_snapshot(allowed)
 
 

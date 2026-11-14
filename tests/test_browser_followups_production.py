@@ -50,7 +50,9 @@ def test_snapshot_freezes_text_without_changing_authority() -> None:
     assert restored == offered and restored.browser_fill_text == NOTE
     assert base.nested_tool_names == restored.nested_tool_names
     assert set(restored.tool_names) - set(base.tool_names) == set(DIRECT_TOOLS)
-    assert {s.name: s for s in base.frozen_specs} == {s.name: s for s in restored.frozen_specs}
+    original = {s.name: s for s in base.frozen_specs}
+    assert all(replace(s, declarations=original[s.name].declarations) == original[s.name] for s in restored.frozen_specs)
+    assert '"purpose"?' in next(s.declarations for s in restored.model_specs if s.name == "codemode")
     for args in ('{"ref":"observed","source":"wrong"}', '{"ref":"observed","value":"partial"}'):
         reply = decode_text_turn('{"tool":"browser_fill","args":' + args + '}')
         assert normalize_turn(reply, snapshot=restored).protocol_error
@@ -107,7 +109,10 @@ def test_bound_fill_and_query_commit_once_with_chinese_url_boundary(
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
-def test_delayed_result_is_evidence_only_after_declared_wait(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("nested", [False, True])
+def test_delayed_result_is_evidence_only_after_declared_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, nested: bool,
+) -> None:
     path = tmp_path / "async"
     html = """<article id="record">Previous result: OLD_17.</article><button onclick="
         window.clicks=(window.clicks||0)+1; const record=document.getElementById('record');
@@ -124,7 +129,9 @@ def test_delayed_result_is_evidence_only_after_declared_wait(tmp_path: Path, mon
         elements = decode_json_object(snapshot.canonical["value"])["elements"]
         assert isinstance(elements, list)
         ref = decode_json_object(elements[0])["ref"]
-        yield {"tool": "browser_click", "args": {"ref": ref, "purpose": "result"}}
+        args: JsonObject = {"ref": ref, "purpose": "result"}
+        yield ({"tool": "codemode", "args": {"code": "return unwrap(await tools.browser_click(inputs));", "inputs": args}}
+               if nested else {"tool": "browser_click", "args": args})
         yield {"tool": "done", "args": {"summary": "查询结果 NEW_29。[s1]"}}
 
     install_http(monkeypatch, replies())
@@ -167,6 +174,48 @@ def test_opening_controls_returns_references_without_a_formal_read(tmp_path: Pat
     receipts = [row.result.call.name for row in tool_receipts(path / "state")]
     assert [name for name in receipts if name in DIRECT_TOOLS] == [
         "browser_snapshot", "browser_click", "browser_snapshot", "browser_click", "browser_read"]
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
+@pytest.mark.parametrize("nested", [False, True])
+def test_failed_read_is_recovered_without_replaying_delivered_click(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, nested: bool,
+) -> None:
+    directory = tmp_path / "read-failure"
+    capture = BrowserSession.capture_query_result
+    attempts = 0
+
+    def interrupted_read(browser: BrowserSession, baseline: JsonObject, *, pending: str) -> dict[str, object]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("fixture: result read temporarily unavailable")
+        return capture(browser, baseline, pending=pending)
+
+    monkeypatch.setattr(BrowserSession, "capture_query_result", interrupted_read)
+
+    def replies() -> Iterator[JsonObject]:
+        yield {"tool": "browser_snapshot", "args": {}}
+        snapshot = next(row.result for row in tool_receipts(directory / "state")
+                        if row.result.call.name == "browser_snapshot")
+        elements = decode_json_object(snapshot.canonical["value"])["elements"]
+        assert isinstance(elements, list)
+        ref = decode_json_object(elements[0])["ref"]
+        args: JsonObject = {"ref": ref, "purpose": "result"}
+        yield ({"tool": "codemode", "args": {"code": "return unwrap(await tools.browser_click(inputs));", "inputs": args}}
+               if nested else {"tool": "browser_click", "args": args})
+        yield {"tool": "browser_read", "args": {}}
+        yield {"tool": "done", "args": {"summary": "B-19 已入库，库位 C-42。[s1]"}}
+
+    install_http(monkeypatch, replies())
+    row = run_arm(directory, CASES["click"], "A", TARGET, max_turns=4)
+    assert row["passed"] and decode_json_object(row["page_state"])["clicks"] == 1, row
+    receipts = tool_receipts(directory / "state")
+    click, = [r for r in receipts if r.result.call.name == "browser_click"]
+    reads = [r.result for r in receipts if r.result.call.name == "browser_read"]
+    assert click.result.ok and "query_baseline" in click.result.audit
+    assert [read.ok for read in reads] == [False, True]
+    assert reads[-1].audit["query_click"] == click.identity
 
 
 def test_citation_boundary_preserves_full_urls_and_rejects_ambiguous_suffixes() -> None:
@@ -216,8 +265,9 @@ def query_restart_probe(state: Path, port: int, stage: str) -> None:
         assert isinstance(elements, list)
         ref = next(str(row["ref"]) for row in elements if isinstance(row, dict) and row["role"] == "button")
         snapshot = offer_browser_tools(base, session)
-        raw = json.dumps({"tool": "browser_click", "args": {"ref": ref, "purpose": "result"}})
-        (state / "request.json").write_text(json.dumps({"snapshot": snapshot_description(snapshot), "proposal": raw}), encoding="utf8")
+        raw = json.dumps(dict[str, object](tool="browser_click", args={"ref": ref, "purpose": "result"}))
+        saved_request: JsonObject = {"snapshot": snapshot_description(snapshot), "proposal": raw}
+        (state / "request.json").write_text(json.dumps(saved_request), encoding="utf8")
     else:
         saved = parse_json_object((state / "request.json").read_text(encoding="utf8"))
         snapshot = restore_snapshot(saved["snapshot"])
@@ -247,8 +297,9 @@ def query_restart_probe(state: Path, port: int, stage: str) -> None:
     result = dispatch()
     assert not initial
     reads = [row for row in session._memory_results.values() if row.call.name == "browser_read" and row.ok]
-    (state / "result.json").write_text(json.dumps({"ok": result.ok, "text": result.model_text,
-        "linked": len([row for row in reads if "query_click" in row.audit])}), encoding="utf8")
+    saved_result: JsonObject = {"ok": result.ok, "text": result.model_text,
+                               "linked": len([row for row in reads if "query_click" in row.audit])}
+    (state / "result.json").write_text(json.dumps(saved_result), encoding="utf8")
     sink.durable.close()
 
 

@@ -104,8 +104,54 @@ function checkedToolResult(value, name) {
 function toolsProxy(path = []) {
   const callable = (args = {}) => {
     const name = path.join(".");
+    return callTool(name, args);
+  };
+  return new Proxy(callable, {
+    get(_target, property) {
+      if (typeof property === "symbol") return undefined;
+      if (property === "then" && path.length === 0) return undefined;
+      return toolsProxy([...path, String(property)]);
+    },
+    apply(_target, _thisArg, args) {
+      return callable(args[0] ?? {});
+    },
+  });
+}
+
+function callTool(name, args, compose = true) {
     if (!active.catalog.has(name)) {
       throw new Error(`tool is not in the frozen catalog: ${name}`);
+    }
+    if (compose && name === "browser_click" && args !== null && typeof args === "object" && Object.hasOwn(args, "purpose")) {
+      args = JSON.parse(encodeJson(args, "Arguments for tools." + name, "argument_encoding",
+        active.catalog.get(name)?.parameters?.properties));
+      const plans = active.catalog.get(name)?.parameters?.["x-codey-click-plans"];
+      const steps = plans && Object.hasOwn(plans, args.purpose) ? plans[args.purpose] : undefined;
+      if (!Array.isArray(steps) || Object.keys(args).some(key => !["ref", "purpose"].includes(key))) {
+        throw new Error("The requested click follow-up is unavailable or its arguments are invalid.");
+      }
+      if (active.calls + 1 + steps.length > active.limits.maxChildCalls) {
+        throw new Error("codemode child call limit cannot cover the requested click follow-up");
+      }
+      const record = {observed: false};
+      active.issued.set(Symbol(), record);
+      const promise = (async () => {
+        const click = await callTool(name, args, false);
+        if (!click.ok) return click;
+        for (const step of steps) {
+          const result = await callTool(step.name, step.args);
+          if (!result.ok) {
+            return {ok: false, error: "Click delivered; " + step.name + " failed: " + result.error
+              + ". Continue from the committed receipts; do not repeat the click."};
+          }
+        }
+        return click;
+      })();
+      return Object.freeze({
+        then(accept, decline) { record.observed = true; return promise.then(accept, decline); },
+        catch(decline) { record.observed = true; return promise.catch(decline); },
+        finally(callback) { record.observed = true; return promise.finally(callback); },
+      });
     }
     if (active.calls >= active.limits.maxChildCalls) {
       throw new Error("codemode child call limit exceeded");
@@ -129,17 +175,6 @@ function toolsProxy(path = []) {
     const result = trackedCall(callId, false, name);
     send({ type: "call", callId, name, args: JSON.parse(encodedArgs) });
     return result;
-  };
-  return new Proxy(callable, {
-    get(_target, property) {
-      if (typeof property === "symbol") return undefined;
-      if (property === "then" && path.length === 0) return undefined;
-      return toolsProxy([...path, String(property)]);
-    },
-    apply(_target, _thisArg, args) {
-      return callable(args[0] ?? {});
-    },
-  });
 }
 
 function stateCall(op, key, value) {

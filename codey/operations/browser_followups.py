@@ -11,7 +11,7 @@ from codey.operations.browser_upload import upload_wait_plan
 from codey.policies.browser_requirement import BrowserPageRounds, parse_browser_requirement
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, thaw_schema_value
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 
 if TYPE_CHECKING:
     from codey.operations.kernel_protocol import TurnSnapshot
@@ -21,9 +21,11 @@ PURPOSES = ("result", "controls", "action")
 TEXT_SOURCE = "task_text"
 MAX_TEXT = 4096
 PURPOSE_DESCRIPTION = (
-    "For a query or detail needed to answer, use purpose=result to read the result. "
+    "For a query or detail needed to answer, use purpose=result when offered to read the result. "
     "For a menu or form needed for another action, use controls to observe new refs. "
-    "Use action when the click itself is the requested outcome."
+    "Use action when the click itself is the requested outcome. Only declared purpose values are available."
+    " Returns the click result; follow-up observations are delivered in child receipts. "
+    "A failed follow-up returns failure even when the click was delivered."
 )
 PENDING = "Click delivered. The query result is unconfirmed. Read the result again without repeating the click."
 UNCERTAIN = "Click delivery is uncertain. Inspect the page before taking another action."
@@ -51,7 +53,7 @@ def explicit_fill_text(task: str) -> str | None:
     return tail if tail.strip() and len(tail) <= MAX_TEXT else None
 
 
-def model_spec(spec: ToolSpec, fill_text: str | None) -> ToolSpec:
+def model_spec(spec: ToolSpec, fill_text: str | None, *, click_purposes: tuple[str, ...] = PURPOSES) -> ToolSpec:
     if spec.name == "browser_fill":
         fields = decode_json_object(thaw_schema_value(dict(spec.parameters)))
         required = spec.required
@@ -65,7 +67,7 @@ def model_spec(spec: ToolSpec, fill_text: str | None) -> ToolSpec:
                                              description=spec.description + " " + detail, json_examples=()))
     if spec.name == "browser_click":
         return freeze_spec_parameters(replace(spec, parameters=(*spec.parameters, (
-            "purpose", {"type": "string", "enum": list(PURPOSES)})),
+            "purpose", {"type": "string", "enum": list(click_purposes)})),
             description=spec.description + " " + PURPOSE_DESCRIPTION))
     return spec
 
@@ -82,28 +84,12 @@ def allows_surface(snapshot: TurnSnapshot) -> bool:
 
 
 OBSERVE = "unwrap(await tools.browser_snapshot({}));return action;"
-READ = "unwrap(await tools.browser_read({}));return action;"
-WAIT = "for(const wait of inputs.waits) unwrap(await tools.browser_wait(wait));"
-CLICK = "const action=unwrap(await tools.browser_click({ref}));"
 FILL = "const action=unwrap(await tools.browser_fill({ref,value:inputs.value}));"
 DIRECT_REF = "const ref=inputs.ref;"
 query_click: ContextVar[bool] = ContextVar("query_click", default=False)
 
 
-def followup_kind(code: object) -> str:
-    if isinstance(code, str):
-        if code in {DIRECT_REF + CLICK + steps for steps in (READ, WAIT + READ)}:
-            return "read"
-        if code in {DIRECT_REF + action + OBSERVE for action in (FILL, CLICK)}:
-            return "snapshot"
-    return ""
-
-
-def click_steps(purpose: object, checks: tuple[str, ...], wait_allowed: bool) -> tuple[str, list[JsonObject]]:
-    if purpose == "controls":
-        return OBSERVE, []
-    if purpose != "result":
-        return "", []
+def click_waits(checks: tuple[str, ...], wait_allowed: bool) -> list[JsonObject]:
     plan = upload_wait_plan(checks)
     waits = list(plan.waits)
     for check in checks:
@@ -114,7 +100,23 @@ def click_steps(purpose: object, checks: tuple[str, ...], wait_allowed: bool) ->
                 waits.append(args)
     if plan.missing or (waits and not wait_allowed):
         raise ValueError("The declared query wait is unavailable in this turn.")
-    return (WAIT if waits else "") + READ, waits
+    return waits
+
+
+def click_plans(checks: tuple[str, ...], names: set[str]) -> JsonObject:
+    """Freeze executable leaf sequences; the guest only dispatches these RPCs."""
+    plans: JsonObject = {"action": []}
+    if "browser_snapshot" in names:
+        plans["controls"] = [{"name": "browser_snapshot", "args": {}}]
+    if "browser_read" in names:
+        try:
+            waits = click_waits(checks, "browser_wait" in names)
+        except ValueError:
+            return plans
+        steps: list[JsonValue] = [{"name": "browser_wait", "args": wait} for wait in waits]
+        steps.append({"name": "browser_read", "args": {}})
+        plans["result"] = steps
+    return plans
 
 
 def fill_args(args: JsonObject, original: str | None) -> JsonObject:
