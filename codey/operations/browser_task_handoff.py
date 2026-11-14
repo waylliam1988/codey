@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import replace
 
@@ -30,7 +31,7 @@ from codey.operations.kernel_protocol import (
     refresh_snapshot_contract,
 )
 from codey.operations.task_session import TaskSession
-from codey.policies.browser_requirement import parse_browser_requirement
+from codey.policies.browser_requirement import BrowserPageRounds, parse_browser_requirement
 from codey.policies.tool_requirement import (
     ToolObservation,
     ToolSuccessRequirement,
@@ -77,30 +78,91 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
     return ToolCall("browser_navigate", args, call_id="required-source:navigation")
 
 
-def _call_handoff(session: TaskSession, snapshot: TurnSnapshot, call: ToolCall) -> tuple[TurnSnapshot, str]:
+def handoff_call(session: TaskSession, snapshot: TurnSnapshot,
+                 call: ToolCall) -> tuple[TurnSnapshot, JsonObject | None, str]:
+    """Admit a suggested call through the interface actually offered this turn."""
     if call.name not in snapshot.nested_tool_names:
-        return snapshot, f"{call.name} is unavailable under the current frozen authorization."
+        return snapshot, None, f"{call.name} is unavailable under the current frozen authorization."
     only = codemode_only(session.task_text)
     if not only:
         snapshot = offer_browser_call(snapshot, session, call.name)
-    spec = next(spec for spec in snapshot.frozen_specs if spec.name == call.name)
     task_selector = call.name == "browser_navigate" and "target" in call.args
-    if task_selector:
-        entry = next(entry for entry in snapshot_catalog(snapshot).entries if entry.name == call.name)
-        error = _check_spec_value_against_schema(call.name, "args", entry.parameters, call.args, strict=True)
-    else:
+    direct = call.name in snapshot.tool_names and not only and not task_selector
+    if direct:
+        spec = next(spec for spec in snapshot.model_specs if spec.name == call.name)
         missing = [name for name in spec.required if name not in call.args]
-        if missing:
-            return snapshot, (f"Use {call.name}; supply {', '.join(missing)} from the task or current page. "
-                              f"Known arguments: {json.dumps(call.args, ensure_ascii=False)}. "
-                              f"CodeMode wrapper: return unwrap(await tools.{call.name}(inputs));")
         error = validate_args_with_spec(spec, call.args)
+    else:
+        if "codemode" not in snapshot.tool_names:
+            return snapshot, None, "CodeMode is unavailable under the current frozen authorization."
+        entry = next(entry for entry in snapshot_catalog(snapshot).entries if entry.name == call.name)
+        required = entry.parameters.get("required", ())
+        missing = [name for name in required if isinstance(name, str) and name not in call.args] if isinstance(required, (list, tuple)) else []
+        error = _check_spec_value_against_schema(call.name, "args", entry.parameters, call.args, strict=True)
+    if missing:
+        return snapshot, None, (f"Use {call.name}; supply {', '.join(missing)} from the task or current page. "
+                               f"Known arguments: {json.dumps(call.args, ensure_ascii=False)}. "
+                               f"CodeMode wrapper: return unwrap(await tools.{call.name}(inputs));")
     if error:
-        return snapshot, f"The frozen arguments for {call.name} cannot execute: {error}"
+        return snapshot, None, f"The frozen arguments for {call.name} cannot execute: {error}"
     action: JsonObject = ({"tool": call.name, "args": call.args}
-        if call.name in snapshot.tool_names and not only and not task_selector else
+        if direct else
         {"tool": "codemode", "args": {"code": f"return unwrap(await tools.{call.name}(inputs));", "inputs": call.args}})
-    return snapshot, "Execute this next step: " + json.dumps(action, ensure_ascii=False)
+    return snapshot, action, ""
+
+
+def _call_handoff(session: TaskSession, snapshot: TurnSnapshot, call: ToolCall) -> tuple[TurnSnapshot, str]:
+    snapshot, action, error = handoff_call(session, snapshot, call)
+    return snapshot, error if action is None else "Execute this next step: " + json.dumps(action, ensure_ascii=False)
+
+
+def query_result_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                         generation: int | None) -> tuple[TurnSnapshot, str]:
+    """Offer task-named controls, without inferring natural-language ordering."""
+    if not snapshot.browser_followups or snapshot.input_binding is not None or snapshot.browser_copy is not None:
+        return snapshot, ""
+    checks = snapshot.policy.required_checks if snapshot.policy else ()
+    if "result" not in click_followup_plan(checks, set(snapshot.nested_tool_names)).plans:
+        return snapshot, ""
+    records, results = tool_facts(session, context)
+    if any(same_document(row.audit.get("browser_document"), context.browser_document)
+           and delivery(row) in {"verified", "delivered", "uncertain"} for _, row in committed_results(
+               records, results, frozenset({"browser_click"}), include_failed=frozenset({"browser_click"}))):
+        return snapshot, ""
+    if any((rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_fill"
+           and not rule.observe(records, results=results, browser_document=context.browser_document).evaluation.passed
+           for check in checks):
+        return snapshot, ""
+    current = _current_snapshot(session, context, generation)
+    if current is None:
+        return snapshot, ""
+    _, observed = current
+    contexts = observed.get("contexts")
+    labels = {row["id"]: row for row in contexts if isinstance(row, dict)} if isinstance(contexts, list) else {}
+    declared = [page_rule.click_name for check in checks
+                if isinstance(page_rule := parse_browser_requirement(check), BrowserPageRounds)]
+    elements = observed.get("elements")
+    lines: list[str] = []
+    for row in elements if isinstance(elements, list) else []:
+        if not isinstance(row, dict) or row.get("role") not in {"button", "link"} or row.get("disabled") is not False:
+            continue
+        name = row.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        named = name in declared if declared else re.search(
+            r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])", session.task_text, re.I) is not None
+        if not named:
+            continue
+        offered, call, _ = handoff_call(session, snapshot, ToolCall("browser_click", {"ref": row["ref"], "purpose": "result"}))
+        if call is not None:
+            snapshot = offered
+            candidate: JsonObject = {"name": name, "context": labels.get(row.get("context_id"), {}), "call": call}
+            lines.append(json.dumps(candidate, ensure_ascii=False))
+    if not lines:
+        return snapshot, ""
+    return snapshot, ("When you reach the requested query/detail step, choose its matching current control below. "
+                      "The result call clicks once, performs any declared waits and formally reads the result; "
+                      "use its child receipts as evidence. Follow the task's ordering and prerequisites.\n" + "\n".join(lines))
 
 
 def _metadata_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
@@ -204,10 +266,11 @@ def _navigation_handoff(session: TaskSession, snapshot: TurnSnapshot, context: C
         return snapshot, ""
     ref, navigation = navigations[-1]
     requested = navigation.call.args.get("url")
-    value = navigation.canonical.get("value")
+    raw_value = navigation.canonical.get("value")
+    value = decode_json_object(raw_value) if isinstance(raw_value, dict) else None
     if (not navigation.ok or navigation.call.call_id.startswith("required-source:")
             or not isinstance(requested, str) or requested == snapshot.task_navigation_url
-            or not isinstance(value, dict) or value.get("http_status") != 404
+            or value is None or value.get("http_status") != 404
             or value.get("url") == snapshot.task_navigation_url
             or value.get("url") != context.browser_document.get("url")
             or not same_document(navigation.audit.get("browser_document"), context.browser_document)
@@ -302,16 +365,9 @@ def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot,
     return snapshot, "\n".join(lines)
 
 
-def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
-                          generation: int | None = None, *,
-                          delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
-    if (session.task_kind not in {"chat", "hybrid"} or session.policy.strict_research
-            or snapshot.input_binding is not None or snapshot.browser_copy is not None
-            or "browser_read" not in snapshot.inventory_names):
-        return snapshot, ""
-    records, results = tool_facts(session, context)
-    rules = [rule for check in session.policy.required_checks
-             if (rule := parse_tool_success_check(check)) is not None]
+def _pending_query_handoff(session: TaskSession, snapshot: TurnSnapshot,
+                           context: CompletionContext) -> tuple[TurnSnapshot, str]:
+    _, results = tool_facts(session, context)
     click = pending_click(results, context.browser_document)
     if click is not None:
         uncertain = delivery(click[1]) == "uncertain"
@@ -332,6 +388,22 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
                         break
         snapshot, action = _call_handoff(session, snapshot, call)
         return snapshot, (UNCERTAIN if uncertain else PENDING) + "\n" + action
+    return snapshot, ""
+
+
+def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                          generation: int | None = None, *,
+                          delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
+    if (session.task_kind not in {"chat", "hybrid"} or session.policy.strict_research
+            or snapshot.input_binding is not None or snapshot.browser_copy is not None
+            or "browser_read" not in snapshot.inventory_names):
+        return snapshot, ""
+    records, results = tool_facts(session, context)
+    rules = [rule for check in session.policy.required_checks
+             if (rule := parse_tool_success_check(check)) is not None]
+    snapshot, pending_query = _pending_query_handoff(session, snapshot, context)
+    if pending_query:
+        return snapshot, pending_query
     snapshot, waiting = _wait_handoff(session, snapshot, context)
     if waiting:
         return snapshot, waiting
@@ -342,9 +414,12 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     recovery = ""
     if not download:
         snapshot, recovery = _compile_handoff(session, snapshot, context, generation, delivered_results)
+    query = ""
+    if not download and not recovery:
+        snapshot, query = query_result_handoff(session, snapshot, context, generation)
     interrupted = any(interrupted_query(row, context.browser_document) for _, row in unconfirmed_clicks(results))
     if not rules:
-        return snapshot, "\n".join(part for part in (recovery,
+        return snapshot, "\n".join(part for part in (recovery, query,
             "The previous query document changed; its outcome remains unverified. "
             "Use current-page observations for further work." if interrupted else "") if part)
     observed = [(rule, rule.observe(records, results=results, browser_document=context.browser_document))
@@ -360,6 +435,8 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
         lines.append(recovery)
     if download:
         lines.append(download)
+    if query and not metadata:
+        lines.append(query)
     outstanding = [(rule, outcome) for rule, outcome in pending
                    if rule.tool != "browser_download" or download_outcome is None]
     missing_execution = [rule for rule, outcome in outstanding if outcome.reason_code == "tool_execution_missing"]

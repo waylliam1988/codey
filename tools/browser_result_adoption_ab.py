@@ -1,7 +1,7 @@
 """Measure result-call presentation without changing the production menu or execution.
 
-Both arms use autonomous model responses. The candidate only appends calls made
-from a complete current snapshot and the frozen executable follow-up plan.
+Both arms use the production handoff and autonomous model responses. The menu
+arm only suppresses the new query hint, preserving the same frozen interfaces.
 Host tracing is passive; committed child receipts determine actual adoption.
 """
 from __future__ import annotations
@@ -12,26 +12,21 @@ import json
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.host import CodeModeHost
 from codey.codemode.identity import rpc_child_index
-from codey.operations.browser_completion import committed_results
-from codey.operations.browser_followups import click_followup_plan, delivery, pending_click
-from codey.operations.browser_task_handoff import _current_snapshot
+from codey.operations import browser_task_handoff as handoff
+from codey.operations.browser_followups import delivery
+from codey.operations.browser_task_handoff import handoff_call, query_result_handoff
 from codey.operations.completion_context import CompletionContext
-from codey.operations.completion_output import tool_facts
 from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import TurnSnapshot, normalize_turn
+from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
-from codey.policies.tool_requirement import parse_tool_success_check, require_tool_success
-from codey.protocols.text_turn import decode_text_turn
-from codey.runtime.core.models import ToolResult
-from codey.toolchain.tool_spec import _check_spec_value_against_schema, validate_args_with_spec
+from codey.policies.tool_requirement import require_tool_success
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import (
     JsonObject,
     canonical_json_object,
@@ -76,89 +71,42 @@ def assert_stable(source: str, harness: str) -> None:
 
 
 def result_call(snapshot: TurnSnapshot, args: JsonObject) -> JsonObject | None:
-    """Experiment-only presentation adapter; admit through the existing public interface."""
-    if not snapshot.browser_followups or 'browser_click' not in snapshot.nested_tool_names:
+    """Use the production call generator and frozen interface validation."""
+    session = TaskSession(snapshot.policy) if snapshot.policy is not None else None
+    if session is None or not snapshot.browser_followups:
         return None
-    if 'browser_click' in snapshot.tool_names:
-        spec = next(spec for spec in snapshot.model_specs if spec.name == 'browser_click')
-        if validate_args_with_spec(spec, args):
-            return None
-        action: JsonObject = {'tool': 'browser_click', 'args': args}
-    elif 'codemode' in snapshot.tool_names:
-        entry = next(entry for entry in snapshot_catalog(snapshot).entries if entry.name == 'browser_click')
-        if _check_spec_value_against_schema('browser_click', 'args', entry.parameters, args, strict=True):
-            return None
-        action = {'tool': 'codemode', 'args': {'code': 'return unwrap(await tools.browser_click(inputs));', 'inputs': args}}
-    else:
-        return None
-    plan = normalize_turn(decode_text_turn(json.dumps(action)), snapshot=snapshot)
-    return action if not plan.protocol_error else None
+    _, call, _ = handoff_call(session, snapshot, ToolCall('browser_click', args))
+    return call
 
 
 def result_hint(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                 generation: int | None) -> str:
-    if not snapshot.browser_followups or snapshot.input_binding is not None or snapshot.browser_copy is not None:
-        return ''
-    checks = snapshot.policy.required_checks if snapshot.policy else ()
-    plan = click_followup_plan(checks, set(snapshot.nested_tool_names))
-    steps = plan.plans.get('result')
-    if not isinstance(steps, list) or not any(isinstance(step, dict) and step.get('name') == 'browser_wait'
-                                             for step in steps):
-        return ''
-    records, results = tool_facts(session, context)
-    if pending_click(results, context.browser_document) is not None:
-        return ''
-    # This experiment offers the first declared query, never a replacement for
-    # an already delivered action or an outstanding required fill.
-    if any(delivery(row) in {'delivered', 'uncertain'} for _, row in committed_results(
-            records, results, frozenset({'browser_click'}), include_failed=frozenset({'browser_click'}))):
-        return ''
-    for check in checks:
-        rule = parse_tool_success_check(check)
-        if rule is not None and rule.tool == 'browser_fill' and not rule.observe(records, results=results).evaluation.passed:
-            return ''
-    current = _current_snapshot(session, context, generation)
-    if current is None:
-        return ''
-    _, observed = current
-    contexts = observed.get('contexts')
-    labels = {row['id']: row for row in contexts if isinstance(row, dict)} if isinstance(contexts, list) else {}
-    raw = observed.get('elements')
-    controls = [row for row in raw if isinstance(row, dict) and row.get('role') in {'button', 'link'}
-                and row.get('disabled') is False] if isinstance(raw, list) else []
-    lines: list[str] = []
-    for row in controls:
-        call = result_call(snapshot, {'ref': row['ref'], 'purpose': 'result'})
-        if call is None:
-            continue
-        candidate: JsonObject = {'name': row['name'], 'context': labels.get(row.get('context_id'), {}), 'call': call}
-        lines.append(json.dumps(candidate, ensure_ascii=False))
-    if not lines:
-        return ''
-    return ('For the query or detail needed by this task, choose the matching current control below. '
-            'The result call performs the declared wait and formal read; their child receipts contain the evidence. '
-            'Choose by the observed name and context.\n' + '\n'.join(lines))
+    return query_result_handoff(session, snapshot, context, generation)[1]
 
 
 @contextmanager
 def intervention(directory: Path, arm: str, source: str, harness: str) -> Iterator[None]:
     original_request = KernelContext.request_snapshot
     original_invoke = CodeModeHost.invoke
+    latest: tuple[bool, str] = (False, '')
+
+    def query(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+              generation: int | None) -> tuple[TurnSnapshot, str]:
+        nonlocal latest
+        offered, hint = query_result_handoff(session, snapshot, context, generation)
+        latest = bool(hint), hint if arm == 'call_hint' else ''
+        return offered, latest[1]
 
     def request(context: KernelContext, frozen: TurnSnapshot, *,
                 delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
+        nonlocal latest
+        latest = False, ''
         snapshot, text = original_request(context, frozen, delivered_results=delivered_results)
         payload = snapshot_description(snapshot)
         if restore_snapshot(payload) != snapshot:
             raise AssertionError('Frozen snapshot did not roundtrip.')
-        research = context.execution.research_tools
-        browser = research.browser_session if research is not None else None
-        hint = result_hint(context.session, snapshot, replace(context.completion_context,
-            browser_document=browser.document_identity() if browser else None), browser.generation if browser else None)
-        append_json(directory / 'presentation.jsonl', {'arm': arm, 'snapshot': payload, 'eligible': bool(hint),
-            'hint': hint if arm == 'call_hint' else '', 'baseline_handoff': text})
-        if arm == 'call_hint' and hint:
-            text = '\n\n'.join(part for part in (text, hint) if part)
+        append_json(directory / 'presentation.jsonl', {'arm': arm, 'snapshot': payload, 'eligible': latest[0],
+            'hint': latest[1], 'baseline_handoff': text.replace(latest[1], '') if latest[1] else text})
         return snapshot, text
 
     def invoke(host: CodeModeHost, name: str, args: dict[str, object]) -> object:
@@ -184,7 +132,8 @@ def intervention(directory: Path, arm: str, source: str, harness: str) -> Iterat
             super()._observe_http_attempt(attempt=attempt, data=data, phase=phase,
                 response_bytes=response_bytes, seconds=seconds)
 
-    with (patch.object(KernelContext, 'request_snapshot', request), patch.object(CodeModeHost, 'invoke', invoke),
+    with (patch.object(handoff, 'query_result_handoff', query),
+          patch.object(KernelContext, 'request_snapshot', request), patch.object(CodeModeHost, 'invoke', invoke),
           patch.object(live, 'ExperimentProvider', GuardedProvider)):
         yield
 

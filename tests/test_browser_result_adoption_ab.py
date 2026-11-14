@@ -34,7 +34,7 @@ DOCUMENT: JsonObject = {'target_id': 'tab', 'loader_id': 'document', 'url': URL}
 
 
 def session_with_snapshot(*, checks: tuple[str, ...] = (ab.WAIT,), multiple: bool = False) -> TaskSession:
-    session = TaskSession(TaskPolicy(GRANTS, required_checks=checks), task_kind='chat')
+    session = TaskSession(TaskPolicy(GRANTS, required_checks=checks), task_kind='chat', task_text='Click Details for the requested record.')
     elements: list[JsonObject] = [{'role': 'button', 'name': 'Details', 'ref': 'current-one',
         'disabled': False, 'context_id': 'one'}]
     if multiple:
@@ -228,7 +228,15 @@ return unwrap(await tools.browser_snapshot({}));''', 'inputs': {}}}
         raw = decode_json_object(receipts[-1].canonical['value'])['elements']
         assert isinstance(raw, list)
         ref = next(row['ref'] for row in raw if isinstance(row, dict) and row.get('name') == 'Load record')
-        yield {'tool': 'browser_click', 'args': {'ref': ref, 'purpose': 'result'}}
+        if arm == 'call_hint':
+            hint = require_json_string(ab.jsonl(directory / 'presentation.jsonl')[-1]['hint'], 'hint')
+            candidates = [parse_json_object(line) for line in hint.splitlines()[1:]]
+            assert len(candidates) == 1 and candidates[0]['name'] == 'Load record'
+            action = decode_json_object(candidates[0]['call'])
+            assert decode_json_object(action['args']) == {'ref': ref, 'purpose': 'result'}
+            yield action
+        else:
+            yield {'tool': 'browser_click', 'args': {'ref': ref, 'purpose': 'result'}}
         if reread:
             yield {'tool': 'browser_read', 'args': {}}
         yield {'tool': 'done', 'args': {'summary': '实际净重 173 克，校验码 QUARTZ_851。'}}
