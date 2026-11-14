@@ -23,7 +23,7 @@ from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.policies.tool_requirement import require_structured_actions, require_tool_success
+from codey.policies.tool_requirement import require_tool_success
 from codey.protocols.text_turn import decode_text_turn
 from codey.research.provenance import _urls_in_text
 from codey.research.tools import ResearchTools
@@ -75,11 +75,7 @@ def test_bound_fill_and_query_commit_once_with_chinese_url_boundary(
 
     def replies() -> Iterator[JsonObject]:
         yield {"tool": "browser_snapshot", "args": {}}
-        if wording == "code_block":
-            yield {"tool": "codemode", "args": {"action": {"kind": "fill",
-                "target": {"ref": ref("备注")}, "source": TEXT_SOURCE}}}
-        else:
-            yield {"tool": "browser_fill", "args": {"ref": ref("备注"), "source": TEXT_SOURCE}}
+        yield {"tool": "browser_fill", "args": {"ref": ref("备注"), "source": TEXT_SOURCE}}
         yield {"tool": "browser_click", "args": {"ref": ref("查询记录"), "purpose": "result"}}
         yield {"tool": "done", "args": {
             "summary": "已打开 https://example.com/leaf-exposure-record，并读取结果。备注已受理，回执码 NOTE_624。[s1]"}}
@@ -91,15 +87,20 @@ def test_bound_fill_and_query_commit_once_with_chinese_url_boundary(
         "following_block": QUESTION,
     }[wording]
     fixture = CASES["quoted"]
-    required = (*fixture.required, require_structured_actions()) if wording == "code_block" else fixture.required
-    result = run_arm(path, replace(fixture, question=question, required=required), "A", TARGET, max_turns=4)
+    result = run_arm(path, replace(fixture, question=question), "A", TARGET, max_turns=4)
     assert result["stop_reason"] == "done" and result["model_calls"] == 4, result
     assert "NOTE_624" in str(result["answer"]), result
     assert decode_json_object(result["page_state"]) == {"clicks": 1, "value": NOTE}
     receipts = tool_receipts(path / "state")
+    fills = [row for row in receipts if row.result.call.name == "browser_fill" and row.result.ok]
     clicks = [row for row in receipts if row.result.call.name == "browser_click"]
     reads = [row.result for row in receipts if row.result.call.name == "browser_read" and row.result.ok]
-    assert len(clicks) == len(reads) == 1
+    assert len(fills) == len(clicks) == len(reads) == 1
+    followup, = [row.result for row in receipts[receipts.index(fills[0]) + 1:receipts.index(clicks[0])]
+                 if row.result.call.name == "browser_snapshot" and row.result.ok]
+    elements = decode_json_object(followup.canonical["value"])["elements"]
+    assert isinstance(elements, list)
+    assert any(decode_json_object(element)["ref"] == clicks[0].result.call.args["ref"] for element in elements)
     assert reads[0].audit["query_click"] == clicks[0].identity
     assert any(decode_json_object(decode_json_object(item["payload"])["snapshot"]).get("browser_fill_text") == NOTE
                for _, item in artifacts(path / "state") if item.get("kind") == "provider_request")

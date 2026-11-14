@@ -5,10 +5,9 @@ from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
 from codey.operations import kernel_prompt, kernel_protocol
 from codey.operations.browser_text_report import report_scope
 from codey.operations.browser_upload import upload_scope
-from codey.operations.completion_context import CompletionContext, CompletionContextInput
+from codey.operations.completion_context import CompletionContextInput
 from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.project_prompt_context import prepare_coding_context
-from codey.operations.structured_actions import published_action_branch
 from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import parse_browser_requirement
 from codey.policies.output_requirement import has_explanation, is_output_check
@@ -31,14 +30,11 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     if snapshot.policy is None:
         raise ValueError("prepared turn has no authorization policy")
     whole = isinstance(snapshot.research_scope, AnswerScope)
-    actions = snapshot.input_binding is not None and snapshot.input_binding.kind == "actions"
     guidance = [task_guidance] if task_guidance else []
-    if not actions and snapshot.browser_copy is None and ".json" in user_task.casefold() and {"edit", "read_file"} <= set(snapshot.nested_tool_names):
+    if snapshot.browser_copy is None and ".json" in user_task.casefold() and {"edit", "read_file"} <= set(snapshot.nested_tool_names):
         guidance.append(JSON_FIELD_EDIT_GUIDANCE)
     if (metadata := report_scope(session)) is not None:
-        guidance.append(f"Reuse the page facts. Collect missing metadata using action kind eval with code {metadata.expression!r} "
-                        "and action kind tabs. Then report the requested facts in done.summary." if actions else
-                        f"After browser_read returns the requested page facts, reuse them. On the same page, collect any missing "
+        guidance.append(f"After browser_read returns the requested page facts, reuse them. On the same page, collect any missing "
                         f"metadata in a short separate CodeMode call: browser_eval with code {metadata.expression!r} and "
                         "browser_tab_list with empty arguments. Then use done.summary for the other requested facts and explanation. "
                         "The runtime fills the current tab URL and script token from the metadata receipts.")
@@ -55,20 +51,9 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     for check_id in snapshot.policy.required_checks:
         requirement = parse_tool_success_check(check_id)
         if requirement is not None:
-            if not actions:
-                guidance.append(requirement.model_guidance(explanation=has_explanation(snapshot.policy.required_checks)))
+            guidance.append(requirement.model_guidance(explanation=has_explanation(snapshot.policy.required_checks)))
         elif (browser := parse_browser_requirement(check_id)) is not None:
             guidance.append(browser.guidance)
-    if actions:
-        from codey.operations.action_guidance import action_guidance
-
-        guidance.append(action_guidance(session, snapshot, native=native, initial=True,
-            completion_context=CompletionContext.from_value(completion_context)))
-        if any(spec.name == "codemode" and published_action_branch(spec, "edit_json") is not None
-               for spec in snapshot.model_specs):
-            guidance.append("For edit_json, submit the intended existing top-level field values. The fixed program reads the "
-                            "complete file and uses its receipt. A version conflict rejected before writing can be retried "
-                            "with the same changes; when a write occurred or delivery is uncertain, inspect the file first.")
     prompt = kernel_prompt.kernel_prompt_for_session(
         session, user_task=user_task, contract_text=snapshot.contract_text,
         context_text=context_text,

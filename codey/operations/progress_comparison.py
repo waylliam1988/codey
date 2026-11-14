@@ -5,9 +5,8 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from codey.operations.kernel_protocol import TurnSnapshot
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, decode_json_value, require_json_integer
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
 
 # Repeated observations do not establish whether another effect was required
 # or occurred. These calls may be reminded, but cannot alone justify stopping.
@@ -103,31 +102,11 @@ class ProgressComparison:
     information: str
 
 
-def progress_comparison(result: ToolResult, receipts: Mapping[str, ToolResult],
-                        snapshot: TurnSnapshot | None) -> ProgressComparison:
+def progress_comparison(result: ToolResult, receipts: Mapping[str, ToolResult]) -> ProgressComparison:
     value = _browser_value(result)
     if value is not None:
         call = ToolCall(result.call.name, _target(result.call.args, receipts))
         text = _encoded({"ok": result.ok, "value": value, "truncated": result.truncated})
-        return ProgressComparison(call, ToolResult(call, text, ok=result.ok, audit=result.audit), text)
-    binding = snapshot.input_binding if snapshot is not None else None
-    refs = result.canonical.get("child_effect_ids")
-    if result.call.name == "codemode" and binding is not None and binding.kind == "actions" and isinstance(refs, list):
-        children = [receipts[ref] for ref in refs if isinstance(ref, str) and ref in receipts]
-        projected = [progress_comparison(child, receipts, None) for child in children]
-        inputs = result.call.args.get("inputs", {})
-        intent = decode_json_object(inputs)
-        target = intent.get("target")
-        if isinstance(target, dict) and "ref" in target:
-            intent["target"] = _target(target, receipts)
-        tool = children[-1].call.name if children else "codemode"
-        call = ToolCall(tool, {"structured_inputs": intent,
-            "operations": [{"tool": child.call.name, "args": child.call.args} for child in projected]})
-        text = _encoded({"ok": result.ok, "truncated": result.truncated,
-            "error_code": decode_json_value(result.audit.get("error_code")),
-            "children": [{"tool": child.call.name, "ok": child.result.ok, "result": child.information}
-                         for child in projected],
-            "failure": result.model_text if not result.ok and not any(not child.ok for child in children) else None})
         return ProgressComparison(call, ToolResult(call, text, ok=result.ok, audit=result.audit), text)
     # General CodeMode return values retain their own semantics.
     return ProgressComparison(result.call, result, result.model_text)

@@ -7,7 +7,6 @@ from typing import Protocol
 
 from codey.agents.runaway_guard import attempt_record, should_block_or_remind
 from codey.agents.state import SeenInfoLRU, ToolAttemptRecord, seen_info_key
-from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.progress_comparison import EFFECT_OBSERVATIONS, progress_comparison
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.progress import ProgressSnapshot
@@ -84,8 +83,7 @@ class KernelProgress:
             reminder += " Recording a plan is not completed investigation. Repeating it is not progress."
         return reminder
 
-    def observe(self, results: Sequence[ToolResult], session: ProgressSession, *, batch_id: str = "",
-                snapshot: TurnSnapshot | None = None) -> bool:
+    def observe(self, results: Sequence[ToolResult], session: ProgressSession, *, batch_id: str = "") -> bool:
         """Compare observations without treating repeated effects as safe to stop.
 
         Progress accounting never crashes the loop: a telemetry fault for one
@@ -98,7 +96,7 @@ class KernelProgress:
         epoch = max([0, *session.edited_files.values()])
         for result in results:
             try:
-                comparison = progress_comparison(result, session._memory_results, snapshot)
+                comparison = progress_comparison(result, session._memory_results)
                 call = comparison.call
                 record = attempt_record(call, comparison.result, turn=session.turn, edit_epoch=epoch)
             except Exception:

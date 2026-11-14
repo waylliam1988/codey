@@ -75,7 +75,7 @@ def allows_surface(snapshot: TurnSnapshot) -> bool:
     names = {"codemode", *DIRECT_TOOLS}
     return (policy is not None and not policy.strict_research and snapshot.research_scope is None
             and snapshot.browser_copy is None
-            and (snapshot.input_binding is None or snapshot.input_binding.kind == "actions")
+            and snapshot.input_binding is None
             and "codemode" in snapshot.tool_names and set(DIRECT_TOOLS) <= set(snapshot.nested_tool_names)
             and (snapshot.allowed is None or names <= set(snapshot.allowed))
             and names <= {spec.name for spec in snapshot.frozen_specs if policy.allows(spec.grant)})
@@ -90,11 +90,11 @@ DIRECT_REF = "const ref=inputs.ref;"
 query_click: ContextVar[bool] = ContextVar("query_click", default=False)
 
 
-def followup_kind(code: object, named_ref: str) -> str:
+def followup_kind(code: object) -> str:
     if isinstance(code, str):
-        if code in {prefix + CLICK + steps for prefix in (DIRECT_REF, named_ref) for steps in (READ, WAIT + READ)}:
+        if code in {DIRECT_REF + CLICK + steps for steps in (READ, WAIT + READ)}:
             return "read"
-        if code in {prefix + action + OBSERVE for prefix in (DIRECT_REF, named_ref) for action in (FILL, CLICK)}:
+        if code in {DIRECT_REF + action + OBSERVE for action in (FILL, CLICK)}:
             return "snapshot"
     return ""
 

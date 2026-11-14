@@ -210,29 +210,21 @@ def _normalized_scope_and_change(session: TaskSession | ProjectCompletionFacts, 
 
 def _engine_checks(session: TaskSession | ProjectCompletionFacts, context: CompletionContext) -> list[CompletionCheck]:
     try:
-        rows: list[CompletionCheck] = []
-        if (change_check := project_change_check(session, context)) is not None:
-            rows.append(change_check)
-            if change_check.status == CHECK_FAIL:
-                return rows
         scope, task_changed = _normalized_scope_and_change(session, context)
+        rows: list[CompletionCheck] = []
+        if _task_requires_modification(session):
+            change_check = completion_check(
+                "project_changes_required", CHECK_PASS if task_changed else CHECK_FAIL,
+                "" if task_changed else "project_changes_required",
+            )
+            if change_check is not None:
+                rows.append(change_check)
+            if not task_changed:
+                return rows
         return rows + _verification_checks(session, context, scope, task_changed)
     except Exception as exc:
         row = completion_check("completion_engine", CHECK_FAIL, f"engine_error:{type(exc).__name__}")
         return [row] if row is not None else []
-
-
-def project_change_check(
-    session: TaskSession | ProjectCompletionFacts, context: CompletionContext,
-) -> CompletionCheck | None:
-    """Report the declared modification requirement using collected facts only."""
-    if not _task_requires_modification(session):
-        return None
-    _, task_changed = _normalized_scope_and_change(session, context)
-    return completion_check(
-        "project_changes_required", CHECK_PASS if task_changed else CHECK_FAIL,
-        "" if task_changed else "project_changes_required",
-    )
 
 
 def _verification_checks(

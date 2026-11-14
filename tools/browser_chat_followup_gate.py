@@ -1,7 +1,7 @@
 """Run a paired browser Chat experiment through the existing Headless entry.
 
-All candidate wiring is process-local. Defaults are four cumulative arms,
-six Chromium fixtures and two phrasings, with no scripted model proposals.
+All candidate wiring is process-local. Defaults include an arm for frozen
+verbatim fills, with no scripted model proposals.
 The result guard covers one stable semantic result region in the same document.
 This measures the candidate, including its completion gate, on those fixtures.
 It does not test recovery of the candidate across a process restart.
@@ -12,32 +12,39 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Collection, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import asdict, replace
+from contextvars import ContextVar
+from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch
 
 from codey.automation.browser_session import BrowserSession, _browser_call
 from codey.codemode.kernel import CodeModeKernelExecutor
-from codey.operations import completion_gate, kernel_context, kernel_protocol
+from codey.operations import completion_gate, kernel_context, kernel_protocol, provider_receipts
 from codey.operations.browser_copy import committed_children
 from codey.operations.browser_upload import upload_wait_plan
 from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_guidance import task_result_context
 from codey.operations.task_session import TaskSession
-from codey.policies.tool_requirement import _browser_body, require_tool_success
+from codey.policies.task_policy import TaskPolicy
+from codey.policies.tool_requirement import ToolObservation, _browser_body, require_tool_success
 from codey.protocols.text_turn import DecodedTextTurn, TextRequest, TextRequests, decode_text_turn
-from codey.providers.base import AssistantTurn
+from codey.providers.base import AssistantTurn, ProviderToolResult
+from codey.providers.text_result_views import TextResultSpan
+from codey.research import provenance
+from codey.research.answer_contract import AnswerScope
+from codey.research.ledger import ResearchLedger
+from codey.research.ledger_receipts import restore_ledger_observation
 from codey.research.passages import read_passage_refs
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
-from codey.runtime.core.operation_payload import RuntimeOperationState
+from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, validate_args_with_spec
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tools import browser_followup_ab as ab
@@ -53,7 +60,10 @@ from tools.completion_explanation_ab import (
     write_json,
 )
 
-ARMS = ("codemode", "direct", "fill_observe", "purpose")
+ARMS = ("codemode", "direct", "fill_observe", "purpose", "bound_text")
+PURPOSE_ARMS = {"purpose", "bound_text"}
+BOUND_SOURCE = "task_text"
+MAX_BOUND_TEXT = 4096
 PURPOSES = ("result", "controls", "action")
 FILL = ab.VARIANTS["fill_observe"]
 RESULT = "const action=unwrap(await tools.browser_click(inputs.click));"
@@ -104,6 +114,8 @@ CASES = {
     "visible": base.CASES["visible"],
     "click": replace(base.CASES["click"], question="帮我查一下 B-19 入库了没、放在哪儿，附来源。"),
     "quoted": replace(base.CASES["quoted"], question=f"备注请原样输入下面两行，再查询受理状态和回执码，附来源。\n{base.NOTE}"),
+    "quoted_block": replace(base.CASES["quoted"], question=(
+        f"请把代码块里的原文填入备注框，再查询受理状态和回执码，附来源。\n```text\n{base.NOTE}\n```")),
     "async": async_case(),
     "explicit_wait": async_case(explicit_wait=True),
     "controls": base.Case("先打开筛选菜单，再展开 C-7 的记录。告诉我负责人和回执码，附来源。", '''
@@ -120,10 +132,64 @@ PARAPHRASES = {
     "visible": base.PARAPHRASES["visible"],
     "click": "B-19 现在是什么状态、库位是哪里？请附上页面来源。",
     "quoted": f"请保留引号和换行录入这段备注，查它有没有受理，回执号是多少？请注明来源。\n{base.NOTE}",
+    "quoted_block": f"录入以下代码块原文作为备注。它受理了吗？回执号是多少？请注明来源。\n```\n{base.NOTE}\n```",
     "async": "我要福州样本的重量和校验码。把城市切到福州，查一下并注明来源。",
     "explicit_wait": "我要福州样本的重量和校验码。把城市切到福州，查一下并注明来源。",
     "controls": "帮我从筛选菜单进入 C-7 的详情，查到经手人和回执编号，带上网页来源。",
 }
+
+
+def explicit_fill_text(task: str) -> str | None:
+    """Extract a single explicit payload from the user task, never the fixture."""
+    newline = re.search(r"\r?\n", task)
+    if newline is None:
+        return None
+    instruction, tail = task[:newline.start()], task[newline.end():]
+    if not re.search(r"填|录入|输入", instruction) or re.search(r"不要|禁止|无需|不用|别填|别输入|别录入", instruction):
+        return None
+    literal = "备注" in instruction and any(word in instruction for word in ("原文", "原样"))
+    if literal and "代码块" in instruction:
+        match = re.fullmatch(r"```(?:text)?\r?\n(?P<body>[\s\S]+?)\r?\n```(?:\r?\n)?", tail)
+        if match is None or re.search(r"(?m)^\s*```", match["body"]):
+            return None
+        value = match["body"]
+    elif literal and re.search(r"(?:以下|下面)(?:两|2)行", instruction):
+        if not re.fullmatch(r"[^\r\n]+\r?\n[^\r\n]+", tail):
+            return None
+        value = tail
+    elif re.search(r"保留(?:双)?引号和换行(?:填入|录入|输入)这段备注", instruction):
+        # The request explicitly points to one following text block. Preserve
+        # its lines as data even when one of them reads like an instruction.
+        lines = tail.splitlines()
+        if len(lines) < 2 or any(not line.strip() or line.lstrip().startswith("```") for line in lines):
+            return None
+        value = tail
+    else:
+        return None
+    return value if value.strip() and len(value) <= MAX_BOUND_TEXT else None
+
+
+@dataclass(frozen=True)
+class BoundFillSnapshot(TurnSnapshot):
+    fill_text: str = ""
+
+
+_restoring_fill_text: ContextVar[str] = ContextVar("restoring_fill_text", default="")
+
+
+def with_fill_text(snapshot: TurnSnapshot, value: str) -> BoundFillSnapshot:
+    return BoundFillSnapshot(**{field.name: getattr(snapshot, field.name) for field in fields(TurnSnapshot)},
+                             fill_text=value)
+
+
+def model_fill_spec(spec: ToolSpec) -> ToolSpec:
+    return freeze_spec_parameters(replace(spec, parameters=(
+        *(parameter for parameter in spec.parameters if parameter[0] != "value"),
+        ("source", {"type": "string", "enum": [BOUND_SOURCE]})),
+        required=("ref", "source"),
+        description=("Fill the observed field with the original text explicitly bound from the user's request. "
+                     "Select source=task_text. The runtime copies the original text verbatim, including newlines."),
+        json_examples=('{"tool":"browser_fill","args":{"ref":"<snapshot ref>","source":"task_text"}}',)))
 
 
 def model_click_spec(spec: ToolSpec) -> ToolSpec:
@@ -142,29 +208,44 @@ def admits(snapshot: TurnSnapshot, name: str) -> bool:
             and any(s.name == name and snapshot.policy.allows(s.grant) for s in snapshot.frozen_specs))
 
 
+def can_bind_fill(snapshot: TurnSnapshot) -> bool:
+    return (snapshot.input_binding is None and snapshot.browser_copy is None and snapshot.research_scope is None
+            and snapshot.policy is not None and not snapshot.policy.strict_research
+            and {"codemode", *base.DIRECT_TOOLS} <= set(snapshot.tool_names)
+            and all(admits(snapshot, name) for name in base.DIRECT_TOOLS))
+
+
 def normalize_candidate(reply: DecodedTextTurn | AssistantTurn, snapshot: TurnSnapshot, arm: str) -> ToolPlan:
     normalize = ab._ORIGINAL_NORMALIZE
     purpose = ""
-    offered = arm == "purpose" and set(base.DIRECT_TOOLS) <= set(snapshot.tool_names)
+    offered = arm in PURPOSE_ARMS and set(base.DIRECT_TOOLS) <= set(snapshot.tool_names)
     if offered:
         items = kernel_protocol._response_objects(reply)
-        if isinstance(items, list) and any(name == "browser_click" for name, _, _ in items):
+        adapted = {"browser_click"}
+        if isinstance(snapshot, BoundFillSnapshot):
+            adapted.add("browser_fill")
+        if isinstance(items, list) and any(name in adapted for name, _, _ in items):
             if len(items) != 1:
-                return kernel_protocol._invalid_plan("Submit one direct browser_click per turn.", tool="browser_click")
-            _, args, _ = items[0]
-            spec = next(s for s in snapshot.model_specs if s.name == "browser_click")
+                return kernel_protocol._invalid_plan("Submit one direct browser action per turn.")
+            name, args, _ = items[0]
+            spec = next(s for s in snapshot.model_specs if s.name == name)
             if error := validate_args_with_spec(spec, args):
-                return kernel_protocol._invalid_plan(error, tool="browser_click")
-            purpose = str(args["purpose"])
-            stripped = {key: value for key, value in args.items() if key != "purpose"}
+                return kernel_protocol._invalid_plan(error, tool=name)
+            if name == "browser_fill":
+                if not isinstance(snapshot, BoundFillSnapshot) or not can_bind_fill(snapshot):
+                    return kernel_protocol._invalid_plan("No authorized frozen fill text.", tool=name)
+                stripped: JsonObject = {"ref": args["ref"], "value": snapshot.fill_text}
+            else:
+                purpose = str(args["purpose"])
+                stripped = {key: value for key, value in args.items() if key != "purpose"}
             if isinstance(reply, TextRequests):
                 reply = replace(reply, items=(replace(reply.items[0], args=stripped),))
             elif isinstance(reply, AssistantTurn) and reply.tool_calls:
                 reply = replace(reply, tool_calls=(replace(reply.tool_calls[0], arguments=stripped),))
             else:
-                reply = TextRequests((TextRequest("browser_click", stripped),))
+                reply = TextRequests((TextRequest(name, stripped),))
     plan = normalize(reply, snapshot=snapshot)
-    if arm in {"fill_observe", "purpose"}:
+    if arm == "fill_observe" or arm in PURPOSE_ARMS:
         plan = ab.lower(plan, snapshot, FILL)
     if not purpose or purpose == "action" or plan.protocol_error:
         return plan
@@ -256,7 +337,9 @@ def guard_capture(browser: BrowserSession, baseline: JsonObject, *, wait_seconds
 @contextmanager
 def intervention(directory: Path, arm: str) -> Iterator[None]:
     original_snapshot = KernelContext.request_snapshot
-    original_specs = TurnSnapshot.model_specs.fget  # type: ignore[attr-defined]
+    model_specs_property: object = vars(TurnSnapshot)["model_specs"]
+    assert isinstance(model_specs_property, property)
+    original_specs: Callable[[TurnSnapshot], object] = model_specs_property.__get__
     original_freeze = KernelContext.freeze
     original_execute = ExecutionDelegate._execute_browser_operation
     original_capture = BrowserSession.capture
@@ -266,10 +349,40 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
     generated: set[str] = set()
 
     def model_specs(snapshot: TurnSnapshot) -> tuple[ToolSpec, ...]:
-        specs: tuple[ToolSpec, ...] = original_specs(snapshot)
-        if arm == "purpose" and set(base.DIRECT_TOOLS) <= set(snapshot.tool_names):
-            return tuple(model_click_spec(spec) if spec.name == "browser_click" else spec for spec in specs)
-        return specs
+        specs = original_specs(snapshot)
+        assert isinstance(specs, tuple) and all(isinstance(spec, ToolSpec) for spec in specs)
+        frozen = tuple(spec for spec in specs if isinstance(spec, ToolSpec))
+        if arm in PURPOSE_ARMS and set(base.DIRECT_TOOLS) <= set(snapshot.tool_names):
+            bound = isinstance(snapshot, BoundFillSnapshot) or bool(_restoring_fill_text.get())
+            return tuple(model_click_spec(spec) if spec.name == "browser_click" else
+                         model_fill_spec(spec) if bound and spec.name == "browser_fill" else spec
+                         for spec in frozen)
+        return frozen
+
+    def describe(snapshot: TurnSnapshot) -> JsonObject:
+        payload = snapshot_description(snapshot)
+        if isinstance(snapshot, BoundFillSnapshot):
+            payload["experiment_fill_binding"] = {"version": 1, "source": BOUND_SOURCE, "text": snapshot.fill_text}
+        return payload
+
+    def restore(payload: object) -> TurnSnapshot:
+        row = dict(decode_json_object(payload))
+        if "experiment_fill_binding" not in row:
+            return restore_snapshot(row)
+        binding = decode_json_object(row.pop("experiment_fill_binding"))
+        value = binding.get("text")
+        if (arm != "bound_text" or set(binding) != {"version", "source", "text"}
+                or type(binding["version"]) is not int or binding["version"] != 1 or binding["source"] != BOUND_SOURCE
+                or not isinstance(value, str) or not value.strip() or len(value) > MAX_BOUND_TEXT):
+            raise ValueError("Invalid frozen fill binding")
+        token = _restoring_fill_text.set(value)
+        try:
+            snapshot = restore_snapshot(row)
+        finally:
+            _restoring_fill_text.reset(token)
+        if not can_bind_fill(snapshot):
+            raise ValueError("Frozen fill binding lacks its authorized tool contract")
+        return with_fill_text(snapshot, value)
 
     def request_snapshot(context: KernelContext, snapshot: TurnSnapshot) -> tuple[TurnSnapshot, str]:
         baseline, handoff = original_snapshot(context, snapshot)
@@ -280,9 +393,11 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
             offered = base.expose_leaves(baseline, context.session)
             if set(base.DIRECT_TOOLS) <= set(offered.tool_names) and browser.document_identity() is not None:
                 candidate = offered
+        if arm == "bound_text" and can_bind_fill(candidate) and (value := explicit_fill_text(context.session.task_text)):
+            candidate = with_fill_text(candidate, value)
         candidate = refresh_snapshot_contract(candidate)
-        payload = snapshot_description(candidate)
-        restored = restore_snapshot(payload)
+        payload = describe(candidate)
+        restored = restore(payload)
         if (restored != candidate or not restored.implementation_compatible or restored.policy != baseline.policy
                 or restored.allowed != baseline.allowed or restored.nested_tool_names != baseline.nested_tool_names
                 or {s.name: s for s in restored.frozen_specs} != {s.name: s for s in baseline.frozen_specs}
@@ -291,10 +406,12 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
         append_json(directory / "snapshots.jsonl", {"baseline_tools": list(baseline.tool_names), "snapshot": payload})
         return restored, handoff
 
-    def normalize(reply: DecodedTextTurn | AssistantTurn, **kwargs: Any) -> ToolPlan:
-        snapshot = kwargs.get("snapshot")
-        if not isinstance(snapshot, TurnSnapshot):
-            return ab._ORIGINAL_NORMALIZE(reply, **kwargs)
+    def normalize(reply: DecodedTextTurn | AssistantTurn, *, policy: TaskPolicy | None = None,
+                  controller_allowed: Collection[str] | None = None, snapshot_names: tuple[str, ...] | None = None,
+                  snapshot: TurnSnapshot | None = None) -> ToolPlan:
+        if snapshot is None or (policy is not None and policy != snapshot.policy):
+            return ab._ORIGINAL_NORMALIZE(reply, policy=policy, controller_allowed=controller_allowed,
+                                          snapshot_names=snapshot_names, snapshot=snapshot)
         plan = normalize_candidate(reply, snapshot, arm)
         for call in plan.calls:
             if call.name != "codemode" or str(call.args.get("code")) not in FOLLOWUP_PROGRAMS:
@@ -302,18 +419,24 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
             items = kernel_protocol._response_objects(reply)
             if isinstance(items, list) and len(items) == 1 and items[0][0] in {"browser_fill", "browser_click"}:
                 generated.add(call_key(call))
-                append_json(directory / "lowering.jsonl", {"proposed": items[0][0], "executed": asdict(call)})
+                append_json(directory / "lowering.jsonl", {"proposed": items[0][0], "executed": asdict(call),
+                    "bound_fill": isinstance(snapshot, BoundFillSnapshot) and items[0][0] == "browser_fill"})
         return plan
 
-    def freeze(context: KernelContext, state: RuntimeOperationState, snapshot: TurnSnapshot, **kwargs: Any) -> None:
-        if arm in {"fill_observe", "purpose"} and "browser_fill" in snapshot.tool_names:
-            kwargs["prompt"] = str(kwargs.get("prompt", "")) + (
+    def freeze(context: KernelContext, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int,
+               prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
+               counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
+               coding_context_prepared: bool = False, initial_source_batch: bool = False, handoff: str | None = None) -> None:
+        if (arm == "fill_observe" or arm in PURPOSE_ARMS) and "browser_fill" in snapshot.tool_names:
+            prompt += (
                 "\nA successful direct browser_fill automatically obtains a new browser_snapshot. Use its newest refs.")
-        original_freeze(context, state, snapshot, **kwargs)
+        original_freeze(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
+                        counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
+                        initial_source_batch=initial_source_batch, handoff=handoff)
 
     def run_parent(executor: CodeModeKernelExecutor, call: ToolCall) -> ToolResult:
         code = str(call.args.get("code"))
-        if arm != "purpose" or code not in RESULT_PROGRAMS or call_key(call) not in generated:
+        if arm not in PURPOSE_ARMS or code not in RESULT_PROGRAMS or call_key(call) not in generated:
             return original_parent(executor, call)
         active[executor.execution_id] = code
         try:
@@ -363,7 +486,7 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
 
     def execute_with_wait(delegate: ExecutionDelegate, browser: BrowserSession, call: ToolCall, *, turn: int,
                           tool_index: int) -> tuple[ToolResult, bool, int | None]:
-        if arm != "purpose" or call.name != "browser_wait" or delegate.session is None or pending_click(delegate.session) is None:
+        if arm not in PURPOSE_ARMS or call.name != "browser_wait" or delegate.session is None or pending_click(delegate.session) is None:
             return execute(delegate, browser, call, turn=turn, tool_index=tool_index)
         before = browser.document_identity()
         result, ok, code = original_execute(delegate, browser, call, turn=turn, tool_index=tool_index)
@@ -371,8 +494,9 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
             result = replace(result, audit={**result.audit, "query_wait_document": before})
         return result, ok, code
 
-    def context(session: TaskSession, result: ToolResult, scope: Any, **kwargs: Any) -> str:
-        rendered = task_result_context(session, result, scope, **kwargs)
+    def context(session: TaskSession, result: ToolResult, scope: AnswerScope | None, *,
+                tool_names: tuple[str, ...] | None = None) -> str:
+        rendered = task_result_context(session, result, scope, tool_names=tool_names)
         code = str(result.call.args.get("code"))
         if result.call.name != "codemode" or code not in FOLLOWUP_PROGRAMS or call_key(result.call) not in generated:
             return rendered
@@ -388,21 +512,31 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
         elif delivery == "uncertain":
             rendered += "\nThe action's delivery is uncertain. Inspect the page before taking another action."
         for ref, child in children[1:]:
-            rendered += f"\n\nAutomatic followup {child.call.name} ({ref}):\n" + task_result_context(session, child, scope, **kwargs)
+            rendered += (f"\n\nAutomatic followup {child.call.name} ({ref}):\n"
+                         + task_result_context(session, child, scope, tool_names=tool_names))
             if child.ok and child.call.name == "browser_snapshot":
                 rendered += "\nUse these new refs for the next action."
         return rendered
 
-    def evaluate(session: TaskSession, done_text: object, **kwargs: Any) -> completion_gate.GateVerdict:
-        if arm == "purpose" and (pending := pending_click(session)) is not None:
+    def evaluate(session: TaskSession, done_text: object, *, context: object = None,
+                 observations: Mapping[str, ToolObservation] | None = None) -> completion_gate.GateVerdict:
+        if arm in PURPOSE_ARMS and (pending := pending_click(session)) is not None:
             value = decode_json_object(pending[1].canonical["value"])
             uncertain = value.get("delivery") == "uncertain"
             append_json(directory / "pending-submissions.jsonl", {
                 "reason": "click_delivery_uncertain" if uncertain else "query_result_unconfirmed", "click": pending[0]})
             return completion_gate.GateVerdict(False, UNCERTAIN if uncertain else PENDING, None)
-        return original_gate(session, done_text, **kwargs)
+        return original_gate(session, done_text, context=context, observations=observations)
 
-    with (patch.object(TurnSnapshot, "model_specs", property(model_specs)),
+    def keep_baseline(snapshot: TurnSnapshot, _session: KernelSessionView) -> TurnSnapshot:
+        return snapshot
+
+    # Each arm offers only its own browser surface. The production offer is
+    # already enabled on ordinary Chat, so it must stay out of this experiment.
+    with (patch.object(kernel_protocol, "offer_browser_tools", keep_baseline),
+          patch.object(TurnSnapshot, "model_specs", property(model_specs)),
+          patch.object(provider_receipts, "snapshot_description", describe),
+          patch.object(provider_receipts, "restore_snapshot", restore),
           patch.object(KernelContext, "request_snapshot", request_snapshot),
           patch.object(KernelContext, "freeze", freeze), patch.object(kernel_protocol, "normalize_turn", normalize),
           patch.object(kernel_context, "task_result_context", context),
@@ -417,8 +551,15 @@ def call_key(call: ToolCall) -> str:
 
 
 def harness_digest() -> str:
-    return hashlib.sha256(Path(__file__).read_bytes() + ab.harness_digest().encode()
-                          + Path(ab.__file__).read_bytes()).hexdigest()
+    digest = hashlib.sha256(Path(__file__).read_bytes() + ab.harness_digest().encode()
+                            + Path(ab.__file__).read_bytes())
+    # The shared production hash covers tracked files. Also guard new Python
+    # modules imported from a working tree before they have been staged.
+    untracked = subprocess.run(["git", "ls-files", "-z", "--others", "--exclude-standard", "--", "codey"],
+                               check=True, capture_output=True).stdout.decode("utf-8").split("\0")
+    for path in sorted(name for name in untracked if name.endswith(".py")):
+        digest.update(path.encode() + b"\0" + Path(path).read_bytes())
+    return digest.hexdigest()
 
 
 def assert_stable(source: str, harness: str) -> None:
@@ -449,6 +590,8 @@ def score(directory: Path, name: str, case: base.Case, row: JsonObject) -> JsonO
     wait_order = name != "explicit_wait" or bool(waits and matching and receipts.index(waits[0]) < receipts.index(matching[0]))
     generated = {json.dumps(item["executed"], sort_keys=True, ensure_ascii=False)
                  for item in ab.jsonl(directory / "lowering.jsonl")}
+    bound = {json.dumps(item["executed"], sort_keys=True, ensure_ascii=False)
+             for item in ab.jsonl(directory / "lowering.jsonl") if item.get("bound_fill") is True}
     actions = [item.result for item in receipts if item.result.call.name == "codemode"
                and call_key(item.result.call) in generated]
     verified_fills = [item for item in receipts[:last_click] if item.result.call.name == "browser_fill"
@@ -459,6 +602,7 @@ def score(directory: Path, name: str, case: base.Case, row: JsonObject) -> JsonO
             "passed": row["stop_reason"] == "done" and operation_passed and bool(cited)
                       and ab.facts_present(answer, case.facts) and "STALE_041" not in answer,
             "actual_clicks": state.get("clicks"), "expected_clicks": expected_clicks,
+            "field_matches": field_matches, "verified_exact_fills": len(verified_fills),
             "last_click_receipt": last_click_ref, "matching_read_receipts": [item.identity for item in matching],
             "cited_matching_reads": [item.identity for item in cited],
             "exact_passage_citations": [item.identity for item in exact], "wait_order": wait_order,
@@ -466,6 +610,7 @@ def score(directory: Path, name: str, case: base.Case, row: JsonObject) -> JsonO
             "stale_answer": "STALE_041" in answer,
             "query_linked_reads": sum(item.result.audit.get("query_click") == last_click_ref for item in matching),
             "fill_followups": sum(item.call.args.get("code") == FILL_PROGRAM for item in actions),
+            "bound_fills": sum(item.ok and call_key(item.call) in bound for item in actions),
             "controls_followups": sum(item.call.args.get("code") == CLICK_CONTROLS for item in actions),
             "result_followups": sum(item.call.args.get("code") in RESULT_PROGRAMS for item in actions),
             "pending_submissions": len(ab.jsonl(directory / "pending-submissions.jsonl")), **ab.phase_metrics(directory)}
@@ -528,6 +673,8 @@ def audit_matrix(directory: Path, runs: list[JsonObject], *, target: Target, arm
             raise AssertionError("Unbound page or mixed source versions")
         snapshots = ab.jsonl(unit / "snapshots.jsonl")
         snapshot = decode_json_object(snapshots[0]["snapshot"])
+        if any("browser_fill_text" in decode_json_object(row["snapshot"]) for row in snapshots):
+            raise AssertionError("Production browser follow-ups leaked into an experimental arm")
         pairs.setdefault(identity[:3], set()).add(((unit / "input.json").read_bytes(),
                                                   str(run["fixture_digest"]), authority(snapshot)))
         provider = ab.jsonl(unit / "provider.jsonl")
@@ -549,8 +696,19 @@ def audit_matrix(directory: Path, runs: list[JsonObject], *, target: Target, arm
         visible = schema_tool_names(schema) & set(base.DIRECT_TOOLS)
         if visible != (set() if run["variant"] == "codemode" else set(base.DIRECT_TOOLS)):
             raise AssertionError("First model request does not expose the arm's expected tools")
-        if (run["variant"] == "purpose") != ('"purpose"' in json.dumps(schema)):
+        if (str(run["variant"]) in PURPOSE_ARMS) != ('"purpose"' in json.dumps(schema)):
             raise AssertionError("Click purpose declaration differs from the arm")
+        task = decode_json_object(json.loads((unit / "input.json").read_bytes()))["task"]
+        if not isinstance(task, str):
+            raise AssertionError("Missing paired task text")
+        expected_text = explicit_fill_text(task) if run["variant"] == "bound_text" else None
+        actual_binding = snapshot.get("experiment_fill_binding")
+        if expected_text is None:
+            if actual_binding is not None or BOUND_SOURCE in json.dumps(schema):
+                raise AssertionError("Fill binding exposed without explicit source boundaries")
+        elif (actual_binding != {"version": 1, "source": BOUND_SOURCE, "text": expected_text}
+              or BOUND_SOURCE not in json.dumps(schema)):
+            raise AssertionError("Model schema or frozen payload differs from the explicitly bound fill")
         phases = decode_json_object(run["phases"])
         for metric, total in (("calls", "model_calls"), ("prompt_tokens", "prompt_tokens")):
             if sum(int(str(decode_json_object(phase)[metric])) for phase in phases.values()) != run[total]:
@@ -564,7 +722,7 @@ def audit_matrix(directory: Path, runs: list[JsonObject], *, target: Target, arm
 
 
 METRICS = ("model_calls", "prompt_tokens", "stale_ref_errors", "done_attempts", "stale_body_reads",
-           "fill_followups", "controls_followups", "result_followups", "query_linked_reads", "pending_submissions")
+           "fill_followups", "bound_fills", "controls_followups", "result_followups", "query_linked_reads", "pending_submissions")
 
 
 def summarize(runs: list[JsonObject]) -> JsonObject:
@@ -596,6 +754,59 @@ def paired_comparisons(runs: list[JsonObject]) -> list[JsonValue]:
                                          sum(int(str(b[key])) for _, b in common)]
                                     for key in ("model_calls", "prompt_tokens")}})
     return comparisons
+
+
+def citation_boundary_replay(directory: Path) -> list[JsonObject]:
+    """Replay the citation check on raw done drafts and receipts from the run."""
+    receipts = tool_receipts(directory / "state")
+    ledger = ResearchLedger()
+    source_ids: dict[str, str] = {}
+    for item in receipts:
+        result = item.result
+        if not result.ok or not isinstance(observation := result.canonical.get("research_observation"), dict):
+            continue
+        restore_ledger_observation(ledger, decode_json_object(observation))
+        if isinstance(label := result.canonical.get("source_id"), str):
+            source = decode_json_object(decode_json_object(observation)["source"])
+            if isinstance(url := source.get("final_url"), str):
+                source_ids[label] = url
+    original = provenance._urls_in_text
+
+    def check(summary: str) -> JsonObject:
+        def legacy_scan(text: str, _opened_url: Callable[[str], str] | None = None) -> list[str]:
+            return original(text)
+
+        with patch.object(provenance, "_urls_in_text", legacy_scan):
+            before = provenance.citation_problem(summary, ledger=ledger, source_ids=source_ids, require_citation=False)
+        replacements: JsonObject = {}
+
+        def scan(text: str, _opened_url: Callable[[str], str] | None = None) -> list[str]:
+            urls = original(text)
+            normalized = [resolve_citation_boundary(url, ledger) for url in urls]
+            replacements.update((url, candidate) for url, candidate in zip(urls, normalized, strict=True) if url != candidate)
+            return normalized
+
+        with patch.object(provenance, "_urls_in_text", scan):
+            after = provenance.citation_problem(summary, ledger=ledger, source_ids=source_ids, require_citation=False)
+        return {"before": before, "after": after, "replacements": replacements}
+
+    return [check(summary) for action in base.response_actions(directory / "provider.jsonl")
+            if action.get("tool") == "done" and isinstance(args := action.get("args"), dict)
+            and isinstance(summary := args.get("summary"), str)]
+
+
+def resolve_citation_boundary(url: str, ledger: ResearchLedger) -> str:
+    """Prefer the full URL, then a unique read URL before Chinese prose."""
+    if ledger.canonical_opened_url(url):
+        return url
+    candidates: set[str] = set()
+    for mark in re.finditer(r"[，。；、！？：](?=[\u3400-\u9fff“‘（])", url):
+        suffix = url[mark.end():]
+        prefix = url[:mark.start()]
+        # A swallowed second address must still fail validation as a whole.
+        if not re.search(r"https?://", suffix, re.IGNORECASE) and ledger.canonical_opened_url(prefix):
+            candidates.add(prefix)
+    return next(iter(candidates)) if len(candidates) == 1 else url
 
 
 def main() -> int:

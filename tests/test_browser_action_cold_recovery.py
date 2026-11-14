@@ -10,7 +10,6 @@ from pathlib import Path
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import CommitResult, DurableMutation
-from codey.operations.completion_context import CompletionContext
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
@@ -23,7 +22,7 @@ from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_loop import run_task_kernel
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.policies.tool_requirement import require_structured_actions, require_tool_success
+from codey.policies.tool_requirement import require_tool_success
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.core.operation_payload import RuntimeOperationState
 from codey.runtime.write.mutation_line import RuntimeMutationLine
@@ -74,11 +73,12 @@ def cold_probe(root: Path, *, interrupt: bool) -> JsonObject:
             position = state()
             log({"request": position.logical_turn, "idle": position.counters.progress.idle, "prompt": prompt})
             if position.logical_turn <= 2:
-                args: JsonObject = {"action": {"kind": "snapshot"}}
+                args: JsonObject = {"code": "await tools.browser_snapshot({}); return null;"}
             elif position.logical_turn == 3:
                 assert position.counters.progress.idle == 1
-                assert '"kind": "wait"' in prompt and "call tools.browser_wait" not in prompt
-                args = {"action": {"kind": "wait", "condition": "text", "value": "ready", "timeout_ms": 100}}
+                assert "browser_wait(args:" in prompt
+                assert "Do not call it again with identical arguments" in prompt
+                args = {"code": 'return unwrap(await tools.browser_wait({condition:"text",value:"ready",timeout_ms:100}));'}
             else:
                 return json.dumps({"tool": "done", "args": {"summary": "observed and waited"}})
             return json.dumps({"tool": "codemode", "args": args})
@@ -94,13 +94,11 @@ def cold_probe(root: Path, *, interrupt: bool) -> JsonObject:
     if interrupt:
         durable.subscribe_commits(committed)
     session = TaskSession(TaskPolicy(frozenset({"control", "browser.observe"}), required_checks=(
-        require_structured_actions(), require_tool_success("browser_wait", via="codemode",
-            arguments={"condition": "text", "value": "ready", "timeout_ms": 100}))), task_kind="chat", max_turns=6,
-        project_changes_required=True, verification_forbidden=True)
+        require_tool_success("browser_wait", via="codemode",
+            arguments={"condition": "text", "value": "ready", "timeout_ms": 100}),)), task_kind="chat", max_turns=6)
     request = KernelRunRequest(transport=KernelTransportDeps(ProviderAdapter(Provider()), run_id="r", provider_id="fixture"),
         execution=KernelExecutionDeps(intent_sink=sink, executors={"browser_snapshot": execute, "browser_wait": execute}),
-        observation=KernelObservationDeps(completion_context=CompletionContext(scope_files=("result.json",)),
-            on_boundary=durable_generation_boundary_callback(
+        observation=KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
             durable=durable, session_id="s", task_id="r", sink=sink)))
     try:
         result = run_task_kernel(session, request=request)
@@ -109,7 +107,7 @@ def cold_probe(root: Path, *, interrupt: bool) -> JsonObject:
         durable.close()
 
 
-def test_cold_progress_redelivery_uses_original_snapshot_and_renders_next_frozen_actions(tmp_path: Path) -> None:
+def test_cold_progress_redelivery_uses_original_snapshot_and_renders_next_requirement(tmp_path: Path) -> None:
     source = ("from pathlib import Path; import sys; "
               "from tests.test_browser_action_cold_recovery import cold_probe; "
               "cold_probe(Path(sys.argv[1]), interrupt=True)")
@@ -121,5 +119,3 @@ def test_cold_progress_redelivery_uses_original_snapshot_and_renders_next_frozen
     assert sum(row.get("executed") == "browser_snapshot" for row in rows) == 2
     assert sum(row.get("executed") == "browser_wait" for row in rows) == 1
     assert [row["idle"] for row in rows if row.get("request") == 3] == [1]
-    resumed = next(row["prompt"] for row in rows if row.get("request") == 3)
-    assert isinstance(resumed, str) and "Satisfied project requirement: project_changes_required" in resumed

@@ -23,8 +23,6 @@ from codey.operations.browser_upload import (
     upload_phase,
 )
 from codey.operations.kernel_contracts import ToolExecutor
-from codey.operations.structured_actions import action_model_spec
-from codey.policies.tool_requirement import has_structured_actions
 from codey.protocols.text_turn import DecodedTextTurn, TextAnswer, TextError, TextRequests, decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, TurnFinish
 from codey.runtime.core.execution_record import ExecutionRecord
@@ -99,7 +97,7 @@ class KernelSessionView(Protocol):
 class ModelInputBinding:
     """The captured model input; conversion still targets the original executor."""
 
-    kind: Literal["upload", "browser_copy", "actions"]
+    kind: Literal["upload", "browser_copy"]
     model_spec: ToolSpec
 
     def __post_init__(self) -> None:
@@ -148,11 +146,7 @@ class TurnSnapshot:
                       for spec in self.frozen_specs if spec.name in self.tool_names)
         if not self.browser_followups:
             return specs
-        leaves = tuple(spec for spec in self.frozen_specs if spec.name in self.nested_tool_names)
-        return tuple(action_model_spec(spec, leaves, self.task_navigation_url, followups=True,
-                                       fill_text=self.browser_fill_text)
-                     if binding is not None and binding.kind == "actions" and spec.name == binding.model_spec.name
-                     else browser_followups.model_spec(spec, self.browser_fill_text) for spec in specs)
+        return tuple(browser_followups.model_spec(spec, self.browser_fill_text) for spec in specs)
 
 
 def render_snapshot_contract(snapshot: TurnSnapshot) -> str:
@@ -460,11 +454,6 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     frozen = tuple(by_name[name] for name in inventory)
     if browser_copy is not None and "codemode" in names:
         binding = ModelInputBinding("browser_copy", browser_copy.spec(by_name["codemode"]))
-    if has_structured_actions(session.policy.required_checks):
-        if binding is not None or target is not None or "codemode" not in names or session.policy.strict_research:
-            raise ValueError("Structured actions require a visible ordinary CodeMode surface without a specialized binding.")
-        binding = ModelInputBinding("actions", action_model_spec(by_name["codemode"],
-            tuple(by_name[name] for name in nested), task_navigation_url))
     executors = _frozen_custom_executors(inventory)
     return refresh_snapshot_contract(TurnSnapshot(
         allowed=allowed,
@@ -989,11 +978,6 @@ def _lower_bound_inputs(
             assert binding is not None
             if binding.kind == "upload":
                 converted = lower_upload_action(args, checks)
-            elif binding.kind == "actions":
-                from codey.operations.structured_actions import lower_action
-
-                converted = lower_action(args, followups=snapshot.browser_followups, fill_text=snapshot.browser_fill_text,
-                                         checks=checks, wait_allowed=wait_allowed)
             else:
                 if snapshot.browser_copy is None:
                     raise ValueError("browser copy input has no captured observation")

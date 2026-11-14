@@ -106,7 +106,6 @@ class ToolSuccessRequirement:
     browser_text: BrowserTextSelector | None = None
     answer_contains: bool = False
     omit_from_explanation: bool = False
-    structured_actions: bool = False
 
     def __post_init__(self) -> None:
         if not _NAME.fullmatch(self.tool) or (self.via and not _NAME.fullmatch(self.via)):
@@ -123,9 +122,6 @@ class ToolSuccessRequirement:
         if type(self.omit_from_explanation) is not bool or (self.omit_from_explanation and (
                 self.answer_pointer in {None, "", "/explanation"} or self.answer_contains)):
             raise ValueError("explanation omission requires an independent answer field")
-        if type(self.structured_actions) is not bool or (self.structured_actions and (
-                self.tool != "codemode" or self.via or args or self.answer_pointer is not None)):
-            raise ValueError("structured actions require an unbound codemode requirement")
         if self.result_line is not None and (
             type(self.result_line) is not int or self.result_line < 1
             or self.tool != "read_file" or self.result_pointer != "/text"
@@ -139,12 +135,10 @@ class ToolSuccessRequirement:
 
     @property
     def declaration(self) -> str:
-        if not self.via and self.arguments_json == "{}" and self.answer_pointer is None and not self.structured_actions:
+        if not self.via and self.arguments_json == "{}" and self.answer_pointer is None:
             return PREFIX + self.tool
         data: JsonObject = {"tool": self.tool, "via": self.via,
                             "args": parse_json_object(self.arguments_json)}
-        if self.structured_actions:
-            data["input"] = "actions"
         if self.answer_pointer is not None:
             answer: JsonObject = {"pointer": self.answer_pointer, "result_pointer": self.result_pointer,
                                   "line": self.result_line}
@@ -160,7 +154,7 @@ class ToolSuccessRequirement:
 
     @property
     def check_id(self) -> str:
-        if not self.via and self.arguments_json == "{}" and self.answer_pointer is None and not self.structured_actions:
+        if not self.via and self.arguments_json == "{}" and self.answer_pointer is None:
             return self.declaration
         # Completion proofs contain bounded identifiers, never raw selectors.
         return PREFIX + hashlib.sha256(self.declaration.encode("utf-8")).hexdigest()[:32]
@@ -183,8 +177,6 @@ class ToolSuccessRequirement:
 
     def model_guidance(self, *, explanation: bool = False, execution: str | None = None) -> str:
         execution = self.execution_guidance if execution is None else execution
-        if self.structured_actions:
-            return execution + " Use the declared structured action input; the application supplies the fixed program."
         if self.answer_pointer is None:
             return execution
         selected = ("research_observation.text" if self._binds_browser_body
@@ -472,16 +464,6 @@ def require_browser_read_field(*, url: str, prefix: str, suffix: str, answer_poi
         answer_contains=answer_contains, omit_from_explanation=omit_from_explanation).declaration
 
 
-def require_structured_actions() -> str:
-    """Opt a task into fixed actions without granting any leaf capability."""
-    return ToolSuccessRequirement("codemode", structured_actions=True).declaration
-
-
-def has_structured_actions(checks: tuple[str, ...]) -> bool:
-    return any((requirement := parse_tool_success_check(check)) is not None and requirement.structured_actions
-               for check in checks)
-
-
 def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
     if not check_id.startswith(PREFIX):
         return None
@@ -489,7 +471,9 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
     if _NAME.fullmatch(expression):
         return ToolSuccessRequirement(expression)
     data = parse_json_object(expression)
-    if not {"tool", "via", "args"} <= set(data) or set(data) - {"tool", "via", "args", "answer", "input"}:
+    if data.get("input") == "actions":
+        raise ValueError("codemode.action has been removed; submit a new request using ordinary CodeMode")
+    if not {"tool", "via", "args"} <= set(data) or set(data) - {"tool", "via", "args", "answer"}:
         raise ValueError("invalid structured tool requirement")
     binding = data.get("answer")
     fields = {"pointer", "result_pointer", "line"}
@@ -510,7 +494,7 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
         if isinstance(binding, dict) and binding["line"] is not None else None, browser_text,
         require_json_boolean(binding.get("contains", False), "contains") if isinstance(binding, dict) else False,
         require_json_boolean(binding.get("omit_from_explanation", False), "omit_from_explanation")
-        if isinstance(binding, dict) else False, data.get("input") == "actions")
+        if isinstance(binding, dict) else False)
     if requirement.declaration != check_id:
         raise ValueError("tool requirement must use its canonical check id")
     return requirement

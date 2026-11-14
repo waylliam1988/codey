@@ -37,10 +37,6 @@ if TYPE_CHECKING:
 
 
 def _simplified_failure(result: ToolResult, spec: ToolSpec, children: Mapping[str, ToolResult]) -> ToolResult:
-    if "action" in dict(spec.parameters):
-        from codey.operations.structured_actions import action_failure
-
-        return action_failure(result, spec, children)
     from codey.operations.browser_copy import EXPIRED, captured_data, write_unconfirmed
     from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
     from codey.toolchain.tool_prompt import tool_repair_text
@@ -241,10 +237,9 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
 
     def run_parent(call: ToolCall) -> ToolResult:  # noqa: C901, PLR0915
         from codey.operations.browser_followups import followup_kind, query_click
-        from codey.operations.structured_actions import _SELECT
         from codey.operations.task_session import turn_effect_id
 
-        followup = followup_kind(call.args.get("code"), _SELECT) if snapshot.browser_followups else ""
+        followup = followup_kind(call.args.get("code")) if snapshot.browser_followups else ""
         child_effect_ids_by_index: dict[int, str] = {}
 
         def child_effect_ids() -> list[str]:

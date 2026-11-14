@@ -15,8 +15,9 @@ from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
-from codey.policies.task_policy import TaskPolicy
+from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.task.model import TaskSubmission
 from codey.task.web_intent import explicit_web_intent, source_requirements, source_url_key
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_string
 from tests.test_task_contract_fixed_replies import TARGET, install_original_http, saved_replies
@@ -30,6 +31,25 @@ ORIGINAL = "https://EXAMPLE.COM/A-b_C?x=A%2FB&n=0042#Part-1"
 def session_for(task: str, *, kind: str = "chat", grants: frozenset[str] = GRANTS) -> TaskSession:
     return TaskSession(TaskPolicy(grants, strict_research=kind == "research"), task_kind=kind,
                        task_text=task, required_source_urls=explicit_web_intent(task).urls)
+
+
+@pytest.mark.parametrize("kind", ["chat", "hybrid"])
+def test_removed_action_contract_requires_new_request(kind: str) -> None:
+    submission = TaskSubmission(
+        session_id="retired-action", project=None, task="Open the page.", max_turns=4,
+        continue_task=False, provider_id="local",
+        required_tools=('tool_succeeded:{"args":{},"input":"actions","tool":"codemode","via":""}',),
+    )
+    with pytest.raises(ValueError, match="invalid tool predicate") as rejected:
+        build_task_policy(submission, task_kind=kind)
+    assert "codemode.action has been removed" in str(rejected.value.__cause__)
+
+    snapshot = build_turn_snapshot(session_for(f"Open <{ORIGINAL}>.", kind=kind))
+    payload = snapshot_description(snapshot)
+    payload["input_binding"] = {"kind": "actions", "model_spec": {}}
+    payload["task_navigation_url"] = None
+    with pytest.raises(ValueError, match=r"codemode\.action input is no longer supported"):
+        restore_snapshot(payload)
 
 
 def run_program(session: TaskSession, snapshot: TurnSnapshot, calls: list[ToolCall], code: str,

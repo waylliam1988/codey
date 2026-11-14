@@ -2,19 +2,24 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from codey.automation.browser_session import BrowserSession
+from codey.operations import provider_receipts
 from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.provider_request_context import ProviderRequestContext
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
+from codey.research.ledger import ResearchLedger
 from codey.types.json_value import JsonObject, decode_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_chat_followup_gate as gate
-from tools.completion_artifact_audit import tool_receipts
+from tools.completion_artifact_audit import artifacts, tool_receipts
 from tools.completion_explanation_ab import Target
 
 TARGET = Target("http://scripted.test/v1", "fixture", 123456789, 15)
@@ -35,7 +40,8 @@ def observed(directory: Path, name: str) -> str:
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 def test_paired_matrix_checks_real_provider_schema_and_costs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     runs = []
-    for arm in gate.ARMS:
+    arms = list(gate.ARMS[:4])
+    for arm in arms:
         directory = tmp_path / arm
 
         def proposals(arm: str = arm, directory: Path = directory) -> Iterator[JsonObject]:
@@ -66,7 +72,7 @@ def test_paired_matrix_checks_real_provider_schema_and_costs(tmp_path: Path, mon
         assert row["query_linked_reads"] == int(arm == "purpose")
         runs.append({**row, "wording": "original", "repeat": 1})
     assert [row["model_calls"] for row in runs] == [6, 6, 5, 4]
-    kwargs = {"target": TARGET, "arms": list(gate.ARMS), "cases": ["quoted"], "wordings": ["original"],
+    kwargs = {"target": TARGET, "arms": arms, "cases": ["quoted"], "wordings": ["original"],
               "repeats": 1, "source": gate.production_source_digest(), "harness": gate.harness_digest()}
     assert gate.audit_matrix(tmp_path, runs, **kwargs)["http_requests"] == 21
     purpose = runs[-1]
@@ -174,3 +180,94 @@ def test_changed_region_requires_matching_document_and_a_settled_result() -> Non
     assert isinstance(regions, list)
     unrelated = [*regions, {"key": "clock", "text": "tick", "busy": False}]
     assert gate.changed_region(before, {**before, "regions": unrelated}) == ""
+
+
+def test_explicit_payload_preserves_quotes_and_whitespace_and_skips_ambiguous_text() -> None:
+    assert gate.explicit_fill_text(gate.CASES["quoted"].question) == gate.base.NOTE
+    assert gate.explicit_fill_text(gate.PARAPHRASES["quoted"]) == gate.base.NOTE
+    assert gate.explicit_fill_text(gate.PARAPHRASES["quoted_block"]) == gate.base.NOTE
+    assert gate.explicit_fill_text('备注请原样输入下面两行。\n  "first"  \n请保留原文 ') == '  "first"  \n请保留原文 '
+    assert gate.explicit_fill_text("不要填备注。请原样输入下面两行。\na\nb") is None
+    assert gate.explicit_fill_text(gate.CASES["quoted"].question + "\n这是附加说明。") is None
+    assert gate.explicit_fill_text(gate.CASES["quoted_block"].question + "\n```\n第二段\n```") is None
+    assert gate.explicit_fill_text(gate.PARAPHRASES["quoted"] + "\n\n另一个段落。") is None
+    assert gate.explicit_fill_text('请录入这段备注。\n用户说"明天到"\n请保留原文') is None
+    assert gate.explicit_fill_text('不要保留引号和换行录入这段备注。\na\nb') is None
+
+
+def test_frozen_fill_roundtrip_and_admission(tmp_path: Path) -> None:
+    session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "browser.observe", "browser.interact"})),
+                          task_kind="chat")
+    with gate.intervention(tmp_path, "bound_text"):
+        snapshot = gate.base.expose_leaves(build_turn_snapshot(session, native=True), session)
+        bound = gate.with_fill_text(snapshot, gate.base.NOTE)
+        bound = gate.refresh_snapshot_contract(bound)
+        request_context = ProviderRequestContext(1, bound, None, "", ())
+        payload = request_context.to_payload()
+        restored = ProviderRequestContext.from_payload(payload).snapshot
+        assert restored == bound
+        reply = AssistantTurn(tool_calls=(ProviderToolCall("fill-1", "browser_fill", {
+            "ref": "current", "source": gate.BOUND_SOURCE}),))
+        plan = gate.normalize_candidate(reply, restored, "bound_text")
+        assert not plan.protocol_error and plan.calls[0].call_id == "fill-1"
+        assert plan.calls[0].args["inputs"] == {"ref": "current", "value": gate.base.NOTE}
+        assert gate.base.NOTE not in str(plan.calls[0].args["code"])
+        invalid = decode_text_turn('{"tool":"browser_fill","args":{"ref":"current","source":"other"}}')
+        assert gate.normalize_candidate(invalid, restored, "bound_text").protocol_error
+        invalid = decode_text_turn('{"tool":"browser_fill","args":{"ref":"current","source":"task_text","value":"extra"}}')
+        assert gate.normalize_candidate(invalid, restored, "bound_text").protocol_error
+        assert gate.normalize_candidate(reply, replace(bound, allowed=("codemode", "browser_fill")), "bound_text").protocol_error
+        raw = decode_json_object(payload["snapshot"])
+        with pytest.raises(ValueError):
+            provider_receipts.restore_snapshot({**raw, "experiment_fill_binding": {"version": True,
+                "source": gate.BOUND_SOURCE, "text": gate.base.NOTE}})
+        with pytest.raises(ValueError):
+            provider_receipts.restore_snapshot({k: v for k, v in raw.items() if k != "experiment_fill_binding"})
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
+@pytest.mark.parametrize("wording", ["original", "paraphrase"])
+def test_bound_fill_uses_real_provider_snapshot_and_browser_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wording: str,
+) -> None:
+    directory = tmp_path / "bound"
+
+    def proposals() -> Iterator[JsonObject]:
+        yield request("browser_snapshot")
+        yield request("browser_fill", ref=observed(directory, "备注"), source=gate.BOUND_SOURCE)
+        yield request("browser_click", ref=observed(directory, "查询记录"), purpose="result")
+        yield request("done", summary="备注已受理，回执码 NOTE_624。[s1]")
+
+    install_http(monkeypatch, proposals())
+    case = gate.CASES["quoted"]
+    if wording == "paraphrase":
+        case = replace(case, question=gate.PARAPHRASES["quoted"])
+    row = gate.run_unit(directory, "quoted", case, "bound_text", TARGET)
+    assert row["passed"] and row["bound_fills"] == row["verified_exact_fills"] == row["actual_clicks"] == 1, row
+    assert row["model_calls"] == 4
+    payloads = [decode_json_object(item["payload"]) for _, item in artifacts(directory / "state")
+                if item.get("kind") == "provider_request"]
+    assert payloads
+    snap = decode_json_object(payloads[0]["snapshot"])
+    assert decode_json_object(snap["experiment_fill_binding"])["text"] == gate.base.NOTE
+    with gate.intervention(directory, "bound_text"):
+        restored = ProviderRequestContext.from_payload(payloads[0]).snapshot
+    assert isinstance(restored, gate.BoundFillSnapshot) and restored.fill_text == gate.base.NOTE
+    assert gate.audit_matrix(tmp_path, [{**row, "wording": wording, "repeat": 1}], target=TARGET,
+        arms=["bound_text"], cases=["quoted"], wordings=[wording], repeats=1, source=str(row["source_digest"]),
+        harness=str(row["harness_digest"]))["http_requests"] == 4
+
+
+def test_citation_fallback_only_accepts_an_unambiguous_opened_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    ledger = ResearchLedger()
+    read = {"https://example.com/record", "https://example.com/条目，细节"}
+    monkeypatch.setattr(ledger, "canonical_opened_url", lambda url: url if url in read else "")
+    resolve = gate.resolve_citation_boundary
+    assert resolve("https://example.com/record，并把原文填入", ledger) == "https://example.com/record"
+    assert resolve("https://example.com/条目，细节", ledger) == "https://example.com/条目，细节"
+    for url in ("https://example.com/other，并把原文填入", "https://example.com/record，接着https://example.org/other",
+                "https://example.com/record-next，并把原文填入"):
+        assert resolve(url, ledger) == url
+    read.add("https://example.com/record，细节")
+    ambiguous = "https://example.com/record，细节，并把原文填入"
+    assert resolve(ambiguous, ledger) == ambiguous

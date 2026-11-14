@@ -14,7 +14,6 @@ from codey.durable.checkpoint import checkpoint_entries
 from codey.durable.model import thaw_json
 from codey.operations import kernel_actions as wiring
 from codey.operations import kernel_events, kernel_prompt, kernel_protocol
-from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_capabilities import KernelCapabilityView
 from codey.operations.kernel_contracts import (
     ClosingDecision,
@@ -429,8 +428,7 @@ class KernelContext:
                 self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
-                tool_names=snapshot.tool_names, provider=self.provider, snapshot=snapshot, native=self.native,
-                completion_context=self.request_completion_context(snapshot))
+                tool_names=snapshot.tool_names, provider=self.provider)
             # Canonical replay excludes Ghost hints. Each continuation must
             # carry its frozen context without relying on a warm wire history.
             context = self.transport.context_text
@@ -483,11 +481,10 @@ class KernelContext:
                 and self.prefetch_required_sources(snapshot)):
             return
         snapshot, handoff = self.request_snapshot(snapshot)
-        completion_context = self.request_completion_context(snapshot)
         prepared = prepare_kernel_turn(self.session, user_task=str(self.transport.user_task or ""),
             context_text="\n\n".join(part for part in (self.transport.context_text, recalled) if part),
             native=self.native, task_guidance=self.request.task_guidance,
-            completion_context=completion_context,
+            completion_context=self.completion_context,
             request_scoped_contract=self.request_scoped_context, snapshot=snapshot)
         prompt = prepared.prompt
         if prefetched:
@@ -519,8 +516,7 @@ class KernelContext:
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "",
                 research_scope=snapshot.research_scope, tool_names=snapshot.tool_names,
-                provider=self.provider, snapshot=snapshot, native=self.native,
-                completion_context=completion_context)) if part)
+                provider=self.provider)) if part)
         self.freeze(state, snapshot, turn=turn, prompt=prompt, handoff=handoff,
                     counters=replace(state.counters, progress=progress.snapshot()),
                     coding_context_prepared=True, initial_source_batch=prefetched is not None)
@@ -680,8 +676,7 @@ class KernelContext:
         self.session.turn = state.turn
         previous = state.counters.progress
         progress = KernelProgress(self.transport.stagnant_turns, snapshot=previous)
-        snapshot = self.response(state).snapshot if state.turn else None
-        progress.observe(results, self.session, batch_id=action.delivery_batch_id, snapshot=snapshot)
+        progress.observe(results, self.session, batch_id=action.delivery_batch_id)
         self.sink.delivery_batch_id = action.delivery_batch_id
         self.sink.record_progress(previous, progress.snapshot())
 
@@ -729,8 +724,7 @@ class KernelContext:
             self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
-                tool_names=snapshot.tool_names, provider=self.provider, snapshot=snapshot, native=self.native,
-                completion_context=self.request_completion_context(snapshot))
+                tool_names=snapshot.tool_names, provider=self.provider)
         reminder = progress.repeat_feedback()
         if self.native and messages:
             messages[-1] = replace(messages[-1], user_content="\n\n".join(
@@ -745,15 +739,6 @@ class KernelContext:
                 prompt += "\n\n" + reminder
         self.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages, text_result_spans=spans,
                     handoff=handoff)
-
-    def request_completion_context(self, snapshot: TurnSnapshot) -> CompletionContext:
-        if snapshot.input_binding is None or snapshot.input_binding.kind != "actions":
-            return self.completion_context
-        tools = self.execution.research_tools
-        browser = tools.browser_session if tools is not None else None
-        if browser is None:
-            return self.completion_context
-        return replace(self.completion_context, browser_document=browser.document_identity())
 
     def boundary_text(self) -> str:
         task = self.durable.task(self.sink.run_id)

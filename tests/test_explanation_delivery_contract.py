@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,6 +13,7 @@ from codey.operations.completion_output import OutputBindingError, prepare_compl
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import declaration
 from codey.policies.output_requirement import evaluate as evaluate_output
+from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.policies.tool_requirement import (
     ToolSuccessRequirement,
     argument_digest,
@@ -20,7 +22,7 @@ from codey.policies.tool_requirement import (
 )
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import JsonObject, JsonValue, parse_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 
 PARAGRAPH = r"[^\S\r\n]*\S[^\r\n]*(?:\r?\n[^\S\r\n]*\S[^\r\n]*)*"
 SEPARATOR = r"(?:\r?\n[^\S\r\n]*){2,}"
@@ -50,8 +52,6 @@ def commit(session: TaskSession, value: JsonValue, identity: str = "read-1") -> 
 
 
 def session_for(value: JsonValue, *, pattern: str = "") -> TaskSession:
-    from codey.policies.task_policy import TaskPolicy
-
     checks = (declaration("json_explanation", json.dumps(explanation_schema(pattern))), requirement().declaration)
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read"}), required_checks=checks),
                           task_kind="chat", task_text="Report the selected result.")
@@ -170,3 +170,53 @@ def test_combined_answer_repairs_preserve_whitespace_paths_and_code() -> None:
     output = prepare_completion_output(session, draft, CompletionContext())
     assert parse_json_object(output.text)["explanation"] == draft
     assert evaluate(session, output.text, observations=output.observations).complete
+
+
+def test_omission_reuses_field_observation_without_rewriting_the_draft() -> None:
+    check = require_tool_success("read_file", answer_pointer="/token", result_pointer="/fact", omit_from_explanation=True)
+    requirement = parse_tool_success_check(check)
+    assert requirement is not None and requirement.omit_from_explanation
+    schema = explanation_schema()
+    props = decode_json_object(schema["properties"])
+    props["token"] = {"type": "string"}
+    schema["properties"] = props
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read"}), required_checks=(
+        declaration("json_explanation", json.dumps(schema)), check)), task_kind="chat")
+    commit(session, "TOKEN_74")
+    draft = "已读。TOKEN_74"
+    output = prepare_completion_output(session, draft, CompletionContext())
+    assert parse_json_object(output.text) == {"explanation": draft, "token": "TOKEN_74"}
+    failed = evaluate(session, output.text, observations=output.observations)
+    assert not failed.complete and "answer_text_forbidden" in failed.followup and draft in failed.followup
+    corrected = prepare_completion_output(session, "已读取，保留业务分析。", CompletionContext())
+    assert evaluate(session, corrected.text, observations=corrected.observations).complete
+    assert len(session.executed) == 1
+
+
+def test_entry_rejects_contradictory_occurrence_rules() -> None:
+    contains = require_tool_success("read_file", answer_pointer="/explanation", result_pointer="/fact", answer_contains=True)
+    omit = require_tool_success("read_file", answer_pointer="/token", result_pointer="/fact", omit_from_explanation=True)
+    submission = SimpleNamespace(required_tools=(contains, omit), output_format="json_explanation")
+    with pytest.raises(ValueError, match="required and forbidden"):
+        build_task_policy(submission, task_kind="chat")
+
+
+@pytest.mark.parametrize(("value", "text", "passed"), [("CHANGED_29", "CHANGED_29", False),
+    ("CHANGED_29", "OLD_17", True), (284, "结果284克", False), (284, "结果1284克", True)])
+def test_omission_uses_the_current_selected_value(value: JsonValue, text: str, passed: bool) -> None:
+    rule = ToolSuccessRequirement("read_file", answer_pointer="/field", result_pointer="/fact", omit_from_explanation=True)
+    session = TaskSession(TaskPolicy(frozenset({"control", "project.read"})))
+    commit(session, value)
+    selected = rule.observe(session.executed, results=session._memory_results)
+    answer: JsonObject = {"field": value, "explanation": text}
+    assert rule.evaluate_observation(selected, json.dumps(answer)).passed is passed
+
+
+@pytest.mark.parametrize("text,passed", [("已读取结果。C:\\new 中保留字面 \\n。", True),
+    ("https://example.com/production-browser-record", False),
+    ("HTTPS://example.com/production_browser_record", False)])
+def test_explicit_metadata_schema_checks_decoded_text_without_rewriting(text: str, passed: bool) -> None:
+    report_schema = explanation_schema(r"\A(?![\s\S]*[Hh][Tt][Tt][Pp][Ss]?://)[\s\S]+\Z")
+    check = declaration("json_explanation", json.dumps(report_schema))
+    answer: JsonObject = {"explanation": text}
+    assert evaluate_output(check, json.dumps(answer))[0] is passed

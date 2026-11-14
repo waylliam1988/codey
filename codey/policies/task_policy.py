@@ -199,8 +199,6 @@ def _entry_tool_checks(raw: object, *, kind: str, strict: bool, explanation: boo
             if (requirement.browser_text is not None or requirement.answer_contains
                     or requirement.omit_from_explanation) and not explanation:
                 raise ValueError("browser text fields and explanation occurrence rules require json_explanation")
-            if requirement.structured_actions and (strict or kind not in {"chat", "hybrid"}):
-                raise ValueError("structured actions require ordinary Chat or Hybrid")
             if requirement.answer_contains or requirement.omit_from_explanation:
                 from dataclasses import replace
 

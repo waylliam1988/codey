@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from codey.operations.browser_copy import CopyTurn
     from codey.operations.kernel_contracts import ToolExecutor
     from codey.operations.kernel_protocol import ModelInputBinding, TurnSnapshot
-    from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import ToolSpec
 
 REQUEST_KIND = "provider_request"
@@ -198,25 +197,23 @@ def _restore_spec(value: object) -> ToolSpec:
 
 
 def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSpec],
-                           copy: CopyTurn | None, *, nested: list[str], policy: TaskPolicy,
-                           navigation_url: str | None) -> ModelInputBinding | None:
+                           copy: CopyTurn | None) -> ModelInputBinding | None:
     from codey.operations.kernel_protocol import ModelInputBinding
-    from codey.policies.tool_requirement import has_structured_actions
 
     if payload is None:
-        if (copy is not None and "codemode" in names) or has_structured_actions(policy.required_checks):
+        if copy is not None and "codemode" in names:
             raise ValueError("captured structured input has no input binding")
         return None
     raw = decode_json_object(payload)
     if set(raw) != {"kind", "model_spec"}:
         raise ValueError("invalid captured input binding")
+    if raw["kind"] == "actions":
+        raise ValueError("captured codemode.action input is no longer supported; start a new request")
     model = _restore_spec(raw["model_spec"])
     if raw["kind"] == "upload":
         binding = ModelInputBinding("upload", model)
     elif raw["kind"] == "browser_copy":
         binding = ModelInputBinding("browser_copy", model)
-    elif raw["kind"] == "actions":
-        binding = ModelInputBinding("actions", model)
     else:
         raise ValueError("unknown captured input binding")
     execution = next((spec for spec in specs if spec.name == model.name), None)
@@ -225,17 +222,7 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
     if replace(model, parameters=execution.parameters, required=execution.required, description=execution.description,
                declarations=execution.declarations, json_examples=execution.json_examples) != execution:
         raise ValueError("captured input binding changes execution authority")
-    if binding.kind == "actions":
-        from codey.operations.structured_actions import action_model_spec
-
-        leaves = tuple(spec for spec in specs if spec.name in nested)
-        if (copy is not None or policy.strict_research or not has_structured_actions(policy.required_checks)
-                or any(not policy.allows(leaf.grant) for leaf in leaves)
-                or action_model_spec(execution, leaves, navigation_url) != model):
-            raise ValueError("captured action input differs from its frozen permissions")
-    elif has_structured_actions(policy.required_checks):
-        raise ValueError("captured action requirement has an incompatible input binding")
-    elif binding.kind == "browser_copy":
+    if binding.kind == "browser_copy":
         if copy is None or copy.phase not in {"observe", "edit"} or copy.spec(execution) != model:
             raise ValueError("captured input binding differs from its copy observation")
     elif copy is not None or set(dict(model.parameters)) != {"upload"} or model.required != ("upload",):
@@ -260,6 +247,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         expected.add("browser_fill_text")
     if set(payload) != expected:
         raise ValueError("invalid captured turn snapshot version/shape")
+    raw_binding = payload["input_binding"]
     names = require_json_strings(payload["tool_names"], "tool_names")
     nested = require_json_strings(payload["nested_tool_names"], "nested_tool_names")
     allowed = None if payload["allowed"] is None else require_json_strings(payload["allowed"], "allowed")
@@ -281,11 +269,10 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
 
         navigation_url = require_json_string(navigation_url, "task_navigation_url")
         navigation = next((spec for spec in specs if spec.name == "browser_navigate"), None)
-        raw_binding = payload["input_binding"]
         if (not navigation_url or check_fetch_url(navigation_url, resolve=False) is not None
                 or "codemode" not in names or "browser_navigate" not in nested
                 or navigation is None or not policy.allows(navigation.grant) or policy.strict_research
-                or (raw_binding is not None and (not isinstance(raw_binding, dict) or raw_binding.get("kind") != "actions"))
+                or payload["input_binding"] is not None
                 or payload["browser_copy"] is not None):
             raise ValueError("invalid captured task navigation binding")
     ignore_runtime_claims = require_json_boolean(payload["ignore_runtime_claims"], "ignore_runtime_claims")
@@ -326,8 +313,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.operations.browser_copy import CopyTurn
 
     copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
-    input_binding = _restore_input_binding(payload["input_binding"], names, specs, copy,
-                                          nested=nested, policy=policy, navigation_url=navigation_url)
+    input_binding = _restore_input_binding(raw_binding, names, specs, copy)
     from codey.operations.browser_followups import DIRECT_TOOLS, MAX_TEXT, allows_surface
 
     fill_text = payload.get("browser_fill_text")
