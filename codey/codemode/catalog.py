@@ -7,6 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codey.codemode.types import ToolCatalogEntry, ToolCatalogSnapshot
+from codey.operations.browser_references import BrowserReferences, reference_spec
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.result_schema import schema_typescript
 from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
@@ -26,6 +27,7 @@ def snapshot_catalog(snapshot: TurnSnapshot, *, allow_writes: bool = True) -> To
         task_navigation_url=snapshot.task_navigation_url,
         browser_followup_checks=(snapshot.policy.required_checks if snapshot.policy else ())
         if snapshot.browser_followups else None,
+        browser_references=snapshot.browser_references,
     )
 
 
@@ -105,6 +107,7 @@ def build_codemode_catalog(
     allow_project_edit: bool | None = None, allow_project_run: bool | None = None,
     task_navigation_url: str | None = None,
     browser_followup_checks: tuple[str, ...] | None = None,
+    browser_references: BrowserReferences | None = None,
 ) -> ToolCatalogSnapshot:
     """Build the frozen CodeMode catalog for one permission snapshot.
 
@@ -122,7 +125,7 @@ def build_codemode_catalog(
     if allow_project_run is None:
         allow_project_run = allow_writes
     source_values: Iterable[ToolSpec] = specs.values() if isinstance(specs, Mapping) else specs
-    values = tuple(source_values)
+    values = tuple(reference_spec(spec, browser_references) for spec in source_values)
     if browser_followup_checks is not None:
         from codey.operations.browser_followups import PURPOSES, click_plans, model_spec
 

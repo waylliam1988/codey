@@ -21,6 +21,7 @@ from codey.operations.browser_followups import (
     pending_click,
     unconfirmed_clicks,
 )
+from codey.operations.browser_references import BrowserReferences
 from codey.operations.browser_text_report import MetadataPending, observe_metadata, report_scope
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
@@ -203,7 +204,7 @@ def _metadata_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
 
 
 def _current_snapshot(session: TaskSession, context: CompletionContext,
-                      generation: int | None) -> tuple[str, JsonObject] | None:
+                      generation: int | None, *, require_text: bool = True) -> tuple[str, JsonObject] | None:
     records, results = tool_facts(session, context)
     snapshots = committed_results(records, results, frozenset({"browser_snapshot"}))
     raw = snapshots[-1][1].canonical.get("value") if snapshots else None
@@ -211,9 +212,25 @@ def _current_snapshot(session: TaskSession, context: CompletionContext,
     if (value is None or snapshots[-1][1].truncated
             or snapshots[-1][1].audit.get("browser_document") != context.browser_document
             or context.browser_document is None or value.get("generation") != generation
-            or value.get("complete") is not True or value.get("elements_truncated") is not False):
+            or (require_text and value.get("complete") is not True) or value.get("elements_truncated") is not False):
         return None
     return snapshots[-1][0], value
+
+
+def bind_browser_references(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                            generation: int | None) -> TurnSnapshot:
+    """Freeze complete controls independently of body-text truncation."""
+    references = None
+    if (snapshot.input_binding is None and snapshot.browser_copy is None
+            and {"browser_fill", "browser_click"} & set(snapshot.nested_tool_names)
+            and context.browser_document is not None
+            and (current := _current_snapshot(session, context, generation, require_text=False)) is not None):
+        try:
+            references = BrowserReferences.observe(current[0], current[1], context.browser_document)
+        except ValueError:
+            # Older/incomplete receipts cannot authorize descriptive selection.
+            references = None
+    return refresh_snapshot_contract(replace(snapshot, browser_references=references))
 
 
 def _action_receipts(session: TaskSession, snapshot: TurnSnapshot,

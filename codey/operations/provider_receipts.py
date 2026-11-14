@@ -113,7 +113,7 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
     """Persist the captured contract, never Python callables or a live registry."""
     if snapshot.policy is None:
         raise ValueError("captured turn has no authorization policy")
-    payload = decode_json_object(json_value({"schema_version": 8 if snapshot.browser_followups else 7,
+    payload = decode_json_object(json_value({"schema_version": 9,
             "task_navigation_url": snapshot.task_navigation_url,
             "browser_copy": snapshot.browser_copy.payload() if snapshot.browser_copy is not None else None,
             "input_binding": json_value(snapshot.input_binding),
@@ -125,8 +125,9 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
             "policy": snapshot.policy.to_payload(), "specs": json_value(snapshot.frozen_specs),
             "executors": [{"name": name, "binding": None if fn is None else _executor_identity(fn)}
                           for name, fn in snapshot.custom_executors]}))
-    if snapshot.browser_followups:
-        payload["browser_fill_text"] = snapshot.browser_fill_text
+    payload["browser_fill_text"] = snapshot.browser_fill_text
+    payload["browser_followups"] = snapshot.browser_followups
+    payload["browser_references"] = snapshot.browser_references.payload() if snapshot.browser_references else None
     return payload
 
 
@@ -230,23 +231,30 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
     return binding
 
 
+def _snapshot_payload(raw: object) -> tuple[JsonObject, int]:
+    payload = decode_json_object(raw)
+    expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors",
+                "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding"}
+    version = require_json_integer(payload.get("schema_version"), "snapshot version")
+    if version not in {6, 7, 8, 9}:
+        raise ValueError("unsupported captured turn snapshot version; start a new request")
+    if version >= 7:
+        expected.add("task_navigation_url")
+    if version >= 8:
+        expected.add("browser_fill_text")
+    if version >= 9:
+        expected.update({"browser_followups", "browser_references"})
+    if set(payload) != expected:
+        raise ValueError("invalid captured turn snapshot version/shape")
+    return payload, version
+
+
 def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.operations.kernel_protocol import TurnSnapshot, render_snapshot_contract
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import custom_executor_for
 
-    payload = decode_json_object(payload)
-    expected = {"schema_version", "implementation_id", "allowed", "contract_text", "tool_names", "policy", "specs", "executors",
-                "nested_tool_names", "research_scope", "ignore_runtime_claims", "browser_copy", "input_binding"}
-    version = require_json_integer(payload.get("schema_version"), "snapshot version")
-    if version not in {6, 7, 8}:
-        raise ValueError("unsupported captured turn snapshot version; start a new request")
-    if version >= 7:
-        expected.add("task_navigation_url")
-    if version == 8:
-        expected.add("browser_fill_text")
-    if set(payload) != expected:
-        raise ValueError("invalid captured turn snapshot version/shape")
+    payload, version = _snapshot_payload(payload)
     raw_binding = payload["input_binding"]
     names = require_json_strings(payload["tool_names"], "tool_names")
     nested = require_json_strings(payload["nested_tool_names"], "nested_tool_names")
@@ -319,12 +327,20 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     fill_text = payload.get("browser_fill_text")
     if fill_text is not None and (not isinstance(fill_text, str) or not fill_text.strip() or len(fill_text) > MAX_TEXT):
         raise ValueError("invalid captured browser fill text")
+    from codey.operations.browser_references import BrowserReferences
+
+    followups = require_json_boolean(payload["browser_followups"], "browser_followups") if version >= 9 else version == 8
+    raw_references = payload.get("browser_references")
+    references = BrowserReferences.restore(raw_references) if raw_references is not None else None
+    if (fill_text is not None and not followups or references is not None
+            and (input_binding is not None or copy is not None or not {"browser_fill", "browser_click"} & set(nested))):
+        raise ValueError("invalid captured browser input binding")
     snapshot = TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=contract,
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
         custom_executors=tuple(bindings), implementation_compatible=bool(compatible), nested_tool_names=tuple(nested),
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
-        browser_followups=version == 8, browser_fill_text=fill_text)
+        browser_followups=followups, browser_fill_text=fill_text, browser_references=references)
     direct = tuple(spec.name for spec in specs if spec.executor == "browser" and spec.name in names)
     if snapshot.browser_followups and (not set(direct) <= {*DIRECT_TOOLS, *SINGLE_STEP_TOOLS}
             or (not ignore_runtime_claims and not set(direct) <= set(SINGLE_STEP_TOOLS))

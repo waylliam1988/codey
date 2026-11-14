@@ -7,10 +7,11 @@ from typing import Protocol
 from codey.codemode.identity import rpc_child_index
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE, replace_json_fields
 from codey.codemode.types import ToolCatalogEntry
+from codey.operations.browser_references import BrowserReferences
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE, STALE_READ_REFERENCE_ERROR
 from codey.toolchain.result_schema import validate_output
-from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object
 
 
 class CodeModeHostProtocol(Protocol):
@@ -51,6 +52,8 @@ class CodeModeHost:
         allow_writes: bool = False,
         replay: Callable[[int, str, JsonObject], ToolResult] | None = None,
         task_navigation_url: str | None = None,
+        browser_references: BrowserReferences | None = None,
+        replay_browser_ref: Callable[[int, str, JsonValue], str] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -67,6 +70,8 @@ class CodeModeHost:
         self._execute = execute
         self._replay = replay
         self._task_navigation_url = task_navigation_url
+        self._browser_references = browser_references
+        self._replay_browser_ref = replay_browser_ref
         self._next_child = 0
         self._complete_reads: dict[str, tuple[str, str]] = {}
 
@@ -83,6 +88,7 @@ class CodeModeHost:
             index = self._next_child
             self._next_child += 1
         decoded_args = decode_json_object(args)
+        decoded_args = self._reference_args(index, tool_name, decoded_args)
         decoded_args, query = self._click_args(tool_name, decoded_args)
         if tool_name == "open_result":
             decoded_args = _normalize_open_result_args(decoded_args)
@@ -129,6 +135,17 @@ class CodeModeHost:
                         and data.get("end_line") == data.get("total_lines")):
                     self._complete_reads[ref] = (path, text)
         return output
+
+    def _reference_args(self, index: int, tool_name: str, args: JsonObject) -> JsonObject:
+        if tool_name not in {"browser_fill", "browser_click"} or not isinstance(selector := args.get("ref"), dict):
+            return args
+        if self._replay_browser_ref is not None:
+            resolved_ref = self._replay_browser_ref(index, tool_name, selector)
+        elif self._browser_references is not None:
+            resolved_ref = self._browser_references.resolve(selector)
+        else:
+            raise ValueError("No complete current control binding; use an observed string ref or take a fresh snapshot.")
+        return {**args, "ref": resolved_ref}
 
     def _click_args(self, name: str, args: JsonObject) -> tuple[JsonObject, bool]:
         if name != "browser_click" or "purpose" not in args:

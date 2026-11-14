@@ -29,7 +29,7 @@ from codey.research.provenance import _urls_in_text
 from codey.research.tools import ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.observe.events import RunEvent
-from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tests.support.browser_reconnect_process import URL, FixtureBrowser, NoModel, new_session, resources
 from tests.support.real_cdp import cdp_browser
 from tests.test_receipt_bound_edit_surface_probe import install_http
@@ -232,7 +232,7 @@ def test_citation_boundary_preserves_full_urls_and_rejects_ambiguous_suffixes() 
     assert _urls_in_text(second, lookup) == [second]
 
 
-def query_restart_probe(state: Path, port: int, stage: str) -> None:
+def query_restart_probe(state: Path, port: int, stage: str, *, readable: bool = False) -> None:
     initial = stage != "resume"
     sink = resources(state, initialize=initial)
     session = new_session()
@@ -264,8 +264,9 @@ def query_restart_probe(state: Path, port: int, stage: str) -> None:
         elements = decode_json_object(prepared.canonical["value"])["elements"]
         assert isinstance(elements, list)
         ref = next(str(row["ref"]) for row in elements if isinstance(row, dict) and row["role"] == "button")
-        snapshot = offer_browser_tools(base, session)
-        raw = json.dumps(dict[str, object](tool="browser_click", args={"ref": ref, "purpose": "result"}))
+        snapshot, _ = context.request_snapshot(offer_browser_tools(base, session))
+        selector: JsonValue = {"role": "button", "name": "Query"} if readable else ref
+        raw = json.dumps(dict[str, object](tool="browser_click", args={"ref": selector, "purpose": "result"}))
         saved_request: JsonObject = {"snapshot": snapshot_description(snapshot), "proposal": raw}
         (state / "request.json").write_text(json.dumps(saved_request), encoding="utf8")
     else:
@@ -304,12 +305,13 @@ def query_restart_probe(state: Path, port: int, stage: str) -> None:
 
 
 @pytest.mark.parametrize("stage", ["before", "after"])
-def test_query_restart_uses_committed_click_or_preserves_uncertainty(tmp_path: Path, stage: str) -> None:
+@pytest.mark.parametrize("readable", [False, True])
+def test_query_restart_uses_committed_click_or_preserves_uncertainty(tmp_path: Path, stage: str, readable: bool) -> None:
     state = tmp_path / "state"
     with cdp_browser(tmp_path / "profile") as port:
         source = ("from pathlib import Path; import sys; "
                   "from tests.test_browser_followups_production import query_restart_probe; "
-                  "query_restart_probe(Path(sys.argv[1]), int(sys.argv[2]), sys.argv[3])")
+                  f"query_restart_probe(Path(sys.argv[1]), int(sys.argv[2]), sys.argv[3], readable={readable!r})")
         command = [sys.executable, "-c", source, str(state), str(port)]
         interrupted = subprocess.run([*command, stage], capture_output=True, text=True, timeout=60)
         assert interrupted.returncode == (74 if stage == "before" else 73), interrupted.stdout + interrupted.stderr

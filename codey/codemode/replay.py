@@ -119,6 +119,31 @@ class CodeModeRepairContext:
     def readonly_state(self, replay: CodeModeStateStore) -> ReceiptOnlyStateStore:
         return ReceiptOnlyStateStore(replay)
 
+    def resolve_browser_ref(self, position: int, tool_name: str, selector: JsonValue) -> str:
+        """Resolve a repair from the original observed ref, never the new page."""
+        from codey.operations.browser_references import BrowserReferences
+        from codey.types.json_value import decode_json_object
+
+        if position >= len(self.children) or position < 0 or self.children[position].tool_name != tool_name:
+            self._reject("repair changed the browser child sequence")
+        original = self.receipts[self.children[position].effect_id].call.args.get("ref")
+        for receipt_ref, receipt in self.receipts.items():
+            if receipt.call.name != "browser_snapshot" or not receipt.ok or receipt.truncated:
+                continue
+            raw, document = receipt.canonical.get("value"), receipt.audit.get("browser_document")
+            if not isinstance(raw, dict) or not isinstance(document, dict):
+                continue
+            try:
+                binding = BrowserReferences.observe(receipt_ref, decode_json_object(raw), decode_json_object(document))
+            except ValueError:
+                continue
+            if any(control.ref == original for control in binding.controls):
+                ref = binding.resolve(selector)
+                if ref != original:
+                    self._reject("repair changed the original browser control")
+                return ref
+        self._reject("repair has no original complete control observation; use the original string ref")
+
     def replay_child(self, position: int, tool_name: str, args: JsonObject) -> ToolResult:
         if position < 0 or position >= len(self.children):
             self._reject(f"repair issued a child call outside the original sequence at step {position + 1}; "

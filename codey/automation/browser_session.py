@@ -65,6 +65,8 @@ class _ElementRef:
     document: JsonObject | None = None
     context: JsonObject | None = None
     context_node: ElementHandle | None = None
+    role: str | None = None
+    name: str | None = None
 
 
 def normalize_element_ref(ref: str) -> str:
@@ -264,7 +266,7 @@ class BrowserSession:
             if not handle.is_visible():
                 continue
             role = _element_role(metadata)
-            name = " ".join(str(metadata.get("name") or "").split())[:240]
+            name = _element_name(metadata)[:240]
             if not name and role not in {"textbox", "combobox"}:
                 continue
             if len(elements) >= max(1, min(max_elements, MAX_SNAPSHOT_ELEMENTS)):
@@ -277,7 +279,8 @@ class BrowserSession:
             if context is not None:
                 contexts[context_id] = context
             self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url, document,
-                                         context if isinstance(context, dict) else None, context_node)
+                                         context if isinstance(context, dict) else None, context_node,
+                                         role, _element_name(metadata))
             elements.append({"ref": ref, "role": role, "name": name,
                              "context_id": context_id,
                              **{key: metadata[key] for key in ("value", "disabled", "checked")}})
@@ -656,15 +659,20 @@ class BrowserSession:
             raise RuntimeError("stale browser element reference; document is no longer available") from exc
         if connected is not True:
             raise RuntimeError("stale browser element reference; original node is detached")
-        if entry.context is not None:
-            metadata, context_node = observe_element(entry.handle)
-            try:
-                if (context_node is None or entry.context_node is None or not same_node(context_node, entry.context_node)
-                        or metadata.get('context') != {key: value for key, value in entry.context.items() if key != 'id'}):
-                    raise RuntimeError("stale browser element reference; observed structural context changed")
-            finally:
-                if context_node is not None:
-                    context_node.dispose()
+        metadata, context_node = observe_element(entry.handle)
+        try:
+            if entry.role is not None and (_element_role(metadata) != entry.role
+                    or _element_name(metadata) != entry.name):
+                raise RuntimeError("stale browser element reference; observed role or name changed")
+            if metadata.get("disabled") is True or not entry.handle.is_visible() or not entry.handle.is_enabled():
+                raise RuntimeError("stale browser element reference; control is no longer available")
+            if entry.context is not None and (
+                    context_node is None or entry.context_node is None or not same_node(context_node, entry.context_node)
+                    or metadata.get("context") != {key: value for key, value in entry.context.items() if key != "id"}):
+                raise RuntimeError("stale browser element reference; observed structural context changed")
+        finally:
+            if context_node is not None:
+                context_node.dispose()
         return page, entry.handle
 
     def _invalidate_refs(self) -> None:
@@ -718,6 +726,10 @@ def _file_control_details(handle: ElementHandle) -> JsonObject:
     row = canonical_json_object(raw)
     return {"disabled": row["disabled"], **{key: " ".join(str(row[key]).split())[:240]
             for key in ("name", "dom_id", "field_name", "group")}}
+
+
+def _element_name(metadata: JsonObject) -> str:
+    return " ".join(str(metadata.get("name") or "").split())
 
 
 def _element_role(metadata: JsonObject) -> str:

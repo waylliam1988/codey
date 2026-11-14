@@ -374,6 +374,10 @@ class KernelContext:
         """Finish tool narrowing before rendering results or request options."""
         research = self.execution.research_tools
         browser = research.browser_session if research is not None else None
+        from codey.operations.browser_task_handoff import bind_browser_references
+
+        context = replace(self.completion_context, browser_document=browser.document_identity() if browser else None)
+        snapshot = bind_browser_references(self.session, snapshot, context, browser.generation if browser else None)
         if snapshot.research_scope is None:
             from codey.operations.browser_followups import allows_surface
             from codey.operations.browser_task_handoff import browser_task_handoff
@@ -381,7 +385,6 @@ class KernelContext:
             if (not snapshot.browser_followups and self.session.task_kind == "chat" and allows_surface(snapshot)
                     and browser is not None and browser.document_identity() is not None):
                 snapshot = kernel_protocol.offer_browser_tools(snapshot, self.session)
-            context = replace(self.completion_context, browser_document=browser.document_identity() if browser else None)
             return browser_task_handoff(self.session, snapshot, context, browser.generation if browser else None,
                                         delivered_results=delivered_results)
         from codey.operations.browser_detail import offer_page_details

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 from codey.operations import browser_followups
 from codey.operations.browser_copy import CopyTurn, copy_target, copy_turn
+from codey.operations.browser_references import BrowserReferences, reference_spec
 from codey.operations.browser_upload import (
     STRUCTURED_UPLOAD_TOOLS,
     lower_upload_action,
@@ -133,6 +134,7 @@ class TurnSnapshot:
     task_navigation_url: str | None = None
     browser_followups: bool = False
     browser_fill_text: str | None = None
+    browser_references: BrowserReferences | None = None
 
     @property
     def inventory_names(self) -> tuple[str, ...]:
@@ -144,6 +146,7 @@ class TurnSnapshot:
         binding = self.input_binding
         specs = tuple(binding.model_spec if binding is not None and spec.name == binding.model_spec.name else spec
                       for spec in self.frozen_specs if spec.name in self.tool_names)
+        specs = tuple(reference_spec(spec, self.browser_references) for spec in specs)
         if not self.browser_followups:
             return specs
         plans = browser_followups.click_plans(self.policy.required_checks if self.policy else (),
@@ -175,7 +178,7 @@ def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
     snapshot = replace(snapshot,
         frozen_specs=tuple(sorted(snapshot.frozen_specs, key=spec_order)),
         custom_executors=tuple(sorted(snapshot.custom_executors, key=executor_order)))
-    if snapshot.browser_followups:
+    if "codemode" in snapshot.tool_names:
         from codey.codemode.catalog import render_declarations, snapshot_catalog
 
         declarations = render_declarations(snapshot_catalog(snapshot))

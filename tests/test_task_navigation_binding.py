@@ -247,6 +247,8 @@ def test_navigation_repair_matches_the_lowered_original_url() -> None:
 def test_old_snapshot_has_no_implicit_binding_and_new_shapes_fail_closed() -> None:
     snapshot = build_turn_snapshot(session_for("读取当前页面"))
     payload = snapshot_description(snapshot)
+    for key in ("browser_fill_text", "browser_followups", "browser_references"):
+        del payload[key]
     payload["schema_version"] = 6
     del payload["task_navigation_url"]
     assert restore_snapshot(payload) == snapshot

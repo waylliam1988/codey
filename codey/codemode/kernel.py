@@ -14,10 +14,11 @@ from codey.codemode.output import externalize_value
 from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSnapshot
+from codey.operations.browser_references import BrowserReferences
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import ToolSpec
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, JsonValue
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
@@ -102,6 +103,8 @@ class CodeModeKernelExecutor:
         replay: CodeModeReplay | None = None,
         replay_child: Callable[[int, str, JsonObject], ToolResult] | None = None,
         task_navigation_url: str | None = None,
+        browser_references: BrowserReferences | None = None,
+        replay_browser_ref: Callable[[int, str, JsonValue], str] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -123,6 +126,8 @@ class CodeModeKernelExecutor:
         self.replay = replay
         self.replay_child = replay_child
         self.task_navigation_url = task_navigation_url
+        self.browser_references = browser_references
+        self.replay_browser_ref = replay_browser_ref
 
     def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -142,6 +147,8 @@ class CodeModeKernelExecutor:
             allow_writes=self.allow_writes,
             replay=self.replay_child,
             task_navigation_url=self.task_navigation_url,
+            browser_references=self.browser_references,
+            replay_browser_ref=self.replay_browser_ref,
         )
         try:
             state_store = self.state_store if self.state_store is not None else self.replay
@@ -269,6 +276,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             replay = DurableCodeModeReplay(durable, str(run_id), parent_id,
                 digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
                         "task_navigation_url": snapshot.task_navigation_url,
+                        "browser_references": snapshot.browser_references.payload() if snapshot.browser_references else None,
                         "limits": limit_payload,
                         "runtime": runtime.contract_digest()}),
                 parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_mutations)
@@ -367,6 +375,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             session_id=session_id,
             run_id=str(run_id or ""),
             task_navigation_url=snapshot.task_navigation_url,
+            browser_references=snapshot.browser_references,
+            replay_browser_ref=repair_context.resolve_browser_ref if repair_context is not None else None,
         ).execute(call)
         if repair_context is not None:
             try:
