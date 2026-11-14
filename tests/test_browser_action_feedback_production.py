@@ -2,14 +2,22 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 import pytest
 from playwright.sync_api import Error, Locator, Page
 
 from codey.automation.browser_session import BrowserSession, BrowserToolOutput
+from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from codey.policies.tool_requirement import require_structured_actions, require_tool_success
+from codey.providers.base import AssistantTurn, ProviderToolCall, ProviderToolDefinition, ProviderToolResult
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, parse_json_object
+from tests.support.kernel_runtime import run_task_kernel
+from tests.test_browser_action_progress import control_snapshot
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tests.test_structured_actions import action
 from tests.test_structured_actions_production import TARGET
@@ -85,6 +93,7 @@ def test_effect_read_cycle_reminder_reaches_the_next_model_request(
     row = run(directory, "chat", TARGET)
     assert row["passed"] is True, row
     wire = dict(requests(directory))
+    assert "Outstanding project requirement" not in wire[10]
     assert "does not establish whether an effect occurred" in wire[10]
     assert "outstanding requirements" in wire[10]
 
@@ -115,11 +124,53 @@ def test_rejection_and_edit_conflict_feedback_use_the_request_action_interface(
     row = run(directory, "hybrid", TARGET)
     assert row["passed"] is True, row
     wire = dict(requests(directory))
+    outstanding = "Outstanding project requirement: project_changes_required"
+    assert outstanding in wire[1]
+    assert outstanding in wire[7]
     assert "tool_execution_missing" in wire[7]
     assert '\\"kind\\": \\"wait\\"' in wire[7] or '"kind": "wait"' in wire[7]
     assert "window.__contractToken" in wire[7]
     assert "call tools.browser_eval" not in wire[7]
     assert "call tools.browser_wait" not in wire[7]
+    assert "reuse the acquired results" in wire[10].lower()
+    assert "this request offers edit_json" in wire[10]
+    assert "provides no executable arguments" in wire[10]
+    assert outstanding in wire[10]
     assert "Resubmit the edit_json action" in wire[11]
+    assert outstanding in wire[11]
     assert "const read" not in wire[11]
+    assert "Satisfied project requirement: project_changes_required" in wire[12]
     assert row["version_check_reached"] is True
+
+
+def test_project_feedback_in_native_calls_and_completion_rejection(monkeypatch: pytest.MonkeyPatch) -> None:
+    outstanding = "Outstanding project requirement: project_changes_required"
+    sent: list[str] = []
+
+    class Provider:
+        def send_turn(self, prompt: str, tools: Sequence[ProviderToolDefinition]) -> AssistantTurn:
+            sent.append(prompt)
+            return AssistantTurn(tool_calls=(ProviderToolCall("snapshot", "codemode", {"action": {"kind": "snapshot"}}),))
+
+        def send_tool_results(self, results: Sequence[ProviderToolResult],
+                              tools: Sequence[ProviderToolDefinition]) -> AssistantTurn:
+            sent.append("\n".join(result.content + "\n" + (result.user_content or "") for result in results))
+            return AssistantTurn(tool_calls=(ProviderToolCall(f"done-{len(sent)}", "done", {"summary": "observed"}),))
+
+    monkeypatch.setattr("codey.operations.kernel_transport.provider_uses_native", lambda _provider, **_kwargs: True)
+    session = TaskSession(TaskPolicy(frozenset({"control", "browser.observe"}), required_checks=(
+        require_structured_actions(), require_tool_success("browser_snapshot", via="codemode"),
+    )), task_kind="hybrid", project_changes_required=True, max_turns=4)
+
+    def observe(call: ToolCall) -> ToolResult:
+        snapshot = control_snapshot("observed")
+        return ToolResult(call, snapshot.model_text, ok=True, canonical=snapshot.canonical)
+
+    result = run_task_kernel(session, request=KernelRunRequest(
+        transport=KernelTransportDeps(Provider(), run_id="native-project-feedback"),
+        execution=KernelExecutionDeps(executors={"browser_snapshot": observe}),
+    ))
+    assert len(sent) >= 3, result
+    assert all(outstanding in prompt for prompt in sent[:3])
+    assert "Reuse the acquired results" in sent[1]
+    assert "this request offers edit_json" not in sent[1]

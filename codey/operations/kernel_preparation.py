@@ -8,6 +8,7 @@ from codey.operations.browser_upload import upload_scope
 from codey.operations.completion_context import CompletionContext, CompletionContextInput
 from codey.operations.kernel_protocol import TurnSnapshot
 from codey.operations.project_prompt_context import prepare_coding_context
+from codey.operations.structured_actions import published_action_branch
 from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import parse_browser_requirement
 from codey.policies.output_requirement import has_explanation, is_output_check
@@ -62,8 +63,9 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
         from codey.operations.action_guidance import action_guidance
 
         guidance.append(action_guidance(session, snapshot, native=native, initial=True,
-            browser_document=CompletionContext.from_value(completion_context).browser_document))
-        if {"read_file", "edit"} <= set(snapshot.nested_tool_names):
+            completion_context=CompletionContext.from_value(completion_context)))
+        if any(spec.name == "codemode" and published_action_branch(spec, "edit_json") is not None
+               for spec in snapshot.model_specs):
             guidance.append("For edit_json, submit the intended existing top-level field values. The fixed program reads the "
                             "complete file and uses its receipt. A version conflict rejected before writing can be retried "
                             "with the same changes; when a write occurred or delivery is uncertain, inspect the file first.")

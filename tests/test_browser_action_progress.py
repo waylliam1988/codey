@@ -7,10 +7,12 @@ from dataclasses import replace
 import pytest
 
 from codey.operations.action_guidance import action_guidance
+from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_preparation import prepare_kernel_turn
 from codey.operations.kernel_progress import KernelProgress
 from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot
 from codey.operations.progress_comparison import progress_comparison
+from codey.operations.project_completion_checks import project_change_check
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.structured_actions import lower_action, required_action
 from codey.operations.task_session import TaskSession
@@ -294,14 +296,16 @@ def test_evidence_status_distinguishes_satisfied_page_changed_and_truncated_rece
 
     parent = execute_action(session, action("eval", code="record"), executors={"browser_eval": evaluate})
     assert parent.ok, parent.model_text
-    text = action_guidance(session, snapshot, native=False, browser_document=document)
+    context = CompletionContext(browser_document=document)
+    text = action_guidance(session, snapshot, native=False, completion_context=context)
     assert "tool_execution_missing" not in text and "Calls validated" not in text
-    changed = action_guidance(session, snapshot, native=False, browser_document={**document, "loader_id": "other"})
+    changed = action_guidance(session, snapshot, native=False,
+        completion_context=replace(context, browser_document={**document, "loader_id": "other"}))
     assert "No matching receipt observes the current browser page" in changed
     child_ref = next(ref for ref, result in session._memory_results.items() if result.call.name == "browser_eval")
     child = session._memory_results[child_ref]
     session._memory_results[child_ref] = replace(child, truncated=True)
-    text = action_guidance(session, snapshot, native=False, browser_document=document)
+    text = action_guidance(session, snapshot, native=False, completion_context=context)
     assert "incomplete" in text and "Calls validated" in text
 
 
@@ -312,3 +316,25 @@ def test_initial_guidance_uses_actions_without_legacy_json_edit_programs() -> No
     assert '"kind": "eval"' in prepared.prompt
     assert "const read" not in prepared.prompt and "call tools.browser_eval" not in prepared.prompt
     assert "rejected before writing" in prepared.prompt
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_project_feedback_uses_completion_facts_and_offered_actions(native: bool) -> None:
+    session, snapshot = required_session("project_changes_required")
+    assert "Outstanding project requirement: project_changes_required" in action_guidance(
+        session, snapshot, native=native,
+    )
+    for context in (CompletionContext(scope_files=("result.json",)), CompletionContext(task_changed=True)):
+        check = project_change_check(session, context)
+        assert check is not None and check.status == "pass"
+        guidance = action_guidance(session, snapshot, native=native, completion_context=context)
+        assert "Satisfied project requirement: project_changes_required" in guidance
+        assert "no recorded project change" not in guidance
+    session.record_edit("result.json")
+    assert "Satisfied project requirement: project_changes_required" in action_guidance(
+        session, snapshot, native=native,
+    )
+    read_only = TaskSession(replace(session.policy, grants=GRANTS - {"project.write"}), task_kind="hybrid")
+    guidance = action_guidance(read_only, build_turn_snapshot(read_only, native=native), native=native)
+    assert "Outstanding project requirement: project_changes_required" in guidance
+    assert "this request offers edit_json" not in guidance

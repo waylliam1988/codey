@@ -228,7 +228,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
                 research.store if research is not None else None,
                 research.session_id if research is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, snapshot=snapshot, native=context.native,
-                browser_document=context.browser_document(snapshot))
+                completion_context=context.request_completion_context(snapshot))
         prompt = "\n\n".join(part for part in (observations, decision["prompt"]) if part)
         if messages is not None:
             messages = [ProviderToolResult(identity, "ERROR: " + (decision["error"] or prompt)) for identity in ids]

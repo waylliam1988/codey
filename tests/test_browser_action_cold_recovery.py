@@ -10,6 +10,7 @@ from pathlib import Path
 from codey.durable import DurableSession, SQLiteDurableStore
 from codey.durable.checkpoint import operation_from_checkpoint
 from codey.durable.model import CommitResult, DurableMutation
+from codey.operations.completion_context import CompletionContext
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
@@ -94,10 +95,12 @@ def cold_probe(root: Path, *, interrupt: bool) -> JsonObject:
         durable.subscribe_commits(committed)
     session = TaskSession(TaskPolicy(frozenset({"control", "browser.observe"}), required_checks=(
         require_structured_actions(), require_tool_success("browser_wait", via="codemode",
-            arguments={"condition": "text", "value": "ready", "timeout_ms": 100}))), task_kind="chat", max_turns=6)
+            arguments={"condition": "text", "value": "ready", "timeout_ms": 100}))), task_kind="chat", max_turns=6,
+        project_changes_required=True, verification_forbidden=True)
     request = KernelRunRequest(transport=KernelTransportDeps(ProviderAdapter(Provider()), run_id="r", provider_id="fixture"),
         execution=KernelExecutionDeps(intent_sink=sink, executors={"browser_snapshot": execute, "browser_wait": execute}),
-        observation=KernelObservationDeps(on_boundary=durable_generation_boundary_callback(
+        observation=KernelObservationDeps(completion_context=CompletionContext(scope_files=("result.json",)),
+            on_boundary=durable_generation_boundary_callback(
             durable=durable, session_id="s", task_id="r", sink=sink)))
     try:
         result = run_task_kernel(session, request=request)
@@ -118,3 +121,5 @@ def test_cold_progress_redelivery_uses_original_snapshot_and_renders_next_frozen
     assert sum(row.get("executed") == "browser_snapshot" for row in rows) == 2
     assert sum(row.get("executed") == "browser_wait" for row in rows) == 1
     assert [row["idle"] for row in rows if row.get("request") == 3] == [1]
+    resumed = next(row["prompt"] for row in rows if row.get("request") == 3)
+    assert isinstance(resumed, str) and "Satisfied project requirement: project_changes_required" in resumed

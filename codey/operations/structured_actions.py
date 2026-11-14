@@ -131,6 +131,14 @@ class RequiredAction:
     error: str = ""
 
 
+def published_action_branch(spec: ToolSpec, kind: str) -> JsonObject | None:
+    properties = decode_json_object(thaw_schema_value(dict(spec.parameters)))
+    branches = decode_json_object(properties["action"])["anyOf"]
+    assert isinstance(branches, list)
+    return next((decode_json_object(row) for row in branches
+        if decode_json_object(decode_json_object(row)["properties"])["kind"] == {"type": "string", "enum": [kind]}), None)
+
+
 def required_action(requirement: ToolSuccessRequirement, spec: ToolSpec,
                     navigation_url: str | None, leaves: Sequence[ToolSpec], *,
                     fill_text: str | None = None) -> RequiredAction:
@@ -140,15 +148,11 @@ def required_action(requirement: ToolSuccessRequirement, spec: ToolSpec,
     kinds = {name: kind for kind, name in {**_LEAVES, **_CONTROLS,
                                          "navigate": _NAVIGATE_TOOL, "edit_json": _EDIT_TOOL}.items()}
     kind = kinds.get(requirement.tool, "")
-    args = parse_json_object(requirement.arguments_json)
+    args: JsonObject = parse_json_object(requirement.arguments_json)
     action: JsonObject = {"kind": kind, **args}
     if requirement.via not in {"", "codemode"} or not kind:
         return RequiredAction(kind, action, args, error="No corresponding action can establish the required execution.")
-    properties = decode_json_object(thaw_schema_value(dict(spec.parameters)))
-    branches = decode_json_object(properties["action"])["anyOf"]
-    assert isinstance(branches, list)
-    branch = next((decode_json_object(row) for row in branches
-        if decode_json_object(decode_json_object(row)["properties"])["kind"] == {"type": "string", "enum": [kind]}), None)
+    branch = published_action_branch(spec, kind)
     if branch is None:
         return RequiredAction(kind, action, args, error="This action is not published by the frozen interface.")
     leaf = next((item for item in leaves if item.name == requirement.tool), None)

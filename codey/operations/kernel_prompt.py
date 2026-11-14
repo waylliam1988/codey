@@ -33,6 +33,7 @@ from codey.workspace.coding_context import CodingContext, render_coding_context
 from codey.workspace.revision import valid_workspace_fingerprint, valid_workspace_revision
 
 if TYPE_CHECKING:
+    from codey.operations.completion_context import CompletionContext
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.toolchain.tool_spec import ToolSpec
 
@@ -327,7 +328,7 @@ def _browser_read_context(result: ToolResult, session: TaskSession, *, receipt_r
 
 def _source_failure_context(result: ToolResult, session: TaskSession) -> str:
     references = decode_json_value(result.canonical.get("child_effect_ids"))
-    children = [child for ref in references if isinstance(ref, str)
+    children: list[ToolResult] = [child for ref in references if isinstance(ref, str)
                 and (child := session._memory_results.get(ref)) is not None] if isinstance(references, list) else []
     stale = any(not child.ok and isinstance(value := canonical_json_object(child.canonical).get("value"), dict)
                 and value.get("reason") == "stale_ref" for child in [result, *children])
@@ -571,7 +572,7 @@ def operation_receipts(session: TaskSession) -> list[JsonObject]:
 
 
 def working_context(session: TaskSession, *, snapshot: TurnSnapshot | None = None, native: bool = False,
-                    browser_document: JsonObject | None = None) -> str:
+                    completion_context: CompletionContext | None = None) -> str:
     """Fresh execution facts; narrative checkpoints cannot amend these observations."""
     import json
 
@@ -619,13 +620,12 @@ def working_context(session: TaskSession, *, snapshot: TurnSnapshot | None = Non
     )
     if snapshot is not None and snapshot.input_binding is not None and snapshot.input_binding.kind == "actions":
         from codey.operations.action_guidance import action_guidance
-
-        pending = action_guidance(session, snapshot, native=native, browser_document=browser_document)
+        finish_guidance = action_guidance(session, snapshot, native=native, completion_context=completion_context)
     else:
         pending = _pending_execution_guidance(session)
-    if pending:
-        finish_guidance = ("Outstanding declared executions (runtime receipts, not assistant narrative):\n" + pending
-                           + "\nExecute the outstanding requirements before delivering the final answer. ")
+        if pending:
+            finish_guidance = ("Outstanding declared executions (runtime receipts, not assistant narrative):\n" + pending
+                               + "\nExecute the outstanding requirements before delivering the final answer. ")
     operations = operation_receipts(session)
     return ("Current work observations (runtime records):\n" + json.dumps(dict[str, object](user_task=session.task_text,
         project=session.project, workspace_revision=session.workspace_revision,

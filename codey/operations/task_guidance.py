@@ -11,13 +11,13 @@ from codey.research.completion_guidance import render_completion_guidance
 
 if TYPE_CHECKING:
     from codey.knowledge.store import KnowledgeStore
+    from codey.operations.completion_context import CompletionContext
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_session import TaskSession
     from codey.research.answer_contract import AnswerScope
     from codey.research.ledger import ResearchLedger
     from codey.research.staging import StagedKnowledgeStore
     from codey.runtime.core.models import ToolResult
-    from codey.types.json_value import JsonObject
 
 
 def task_working_context(session: TaskSession, research_ledger: ResearchLedger | None = None,
@@ -25,7 +25,7 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
                          knowledge_session_id: str = "", *, research_scope: AnswerScope | None = None,
                          tool_names: tuple[str, ...] | None = None, provider: object = None,
                          snapshot: TurnSnapshot | None = None, native: bool = False,
-                         browser_document: JsonObject | None = None) -> str:
+                         completion_context: CompletionContext | None = None) -> str:
     from codey.operations.kernel_prompt import working_context
     from codey.research.completion_guidance import render_research_observations
 
@@ -35,7 +35,7 @@ def task_working_context(session: TaskSession, research_ledger: ResearchLedger |
     research_only = (session.task_kind in {"research", "evidence_followup"}
                      and not session.policy.allows("project.write"))
     parts = [] if research_only else [working_context(session, snapshot=snapshot, native=native,
-                                                     browser_document=browser_document)]
+                                                     completion_context=completion_context)]
     from codey.research.answer_contract import answer_scope, whole_research
 
     scope = research_scope or (answer_scope(session) if whole_research(session) else None)
