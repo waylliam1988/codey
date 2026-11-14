@@ -2,7 +2,31 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class SourceReadScope:
+    """An observed target mapped onto the unchanged captured source text."""
+
+    text: str
+    start: int | None = None
+    end: int | None = None
+
+    @classmethod
+    def locate(cls, text: str, target: str) -> SourceReadScope:
+        normalized = " ".join(target.split())
+        if not normalized:
+            raise ValueError("source read target must contain text")
+        pattern = re.compile(r"\s+".join(re.escape(part) for part in normalized.split(" ")))
+        match = pattern.search(text)
+        if match is None or pattern.search(text, match.start() + 1) is not None:
+            return cls(normalized)
+        return cls(normalized, match.start(), match.end())
+
+    def bounds(self, text: str) -> tuple[int, int]:
+        return (self.start, self.end) if self.start is not None and self.end is not None else (0, len(text))
 
 
 @dataclass(frozen=True)
@@ -25,6 +49,11 @@ class SourceDocument:
     page_count: int = 0
     pages_read: tuple[int, ...] = ()
     page_texts: tuple[SourcePage, ...] = ()
+    read_scope: SourceReadScope | None = None
+
+    @property
+    def read_bounds(self) -> tuple[int, int]:
+        return self.read_scope.bounds(self.text) if self.read_scope is not None else (0, len(self.text))
 
     @classmethod
     def html(
@@ -36,6 +65,7 @@ class SourceDocument:
         text: str,
         mime_type: str = "text/html",
         truncated: bool = False,
+        read_scope: SourceReadScope | None = None,
     ) -> SourceDocument:
         return cls(
             requested_url=requested_url,
@@ -45,6 +75,7 @@ class SourceDocument:
             mime_type=mime_type,
             text=text,
             truncated=truncated,
+            read_scope=read_scope,
         )
 
 

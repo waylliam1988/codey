@@ -12,7 +12,7 @@ import copy
 import hashlib
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from difflib import get_close_matches
 
@@ -20,9 +20,9 @@ from codey.research import source_domains
 from codey.research.passages import ReadPassage
 from codey.research.receipt_types import InvestigationRecord, SourceSearchLocator, SourceSearchObservation
 from codey.research.reference import ResearchReference
-from codey.research.source_document import SourceDocument
+from codey.research.source_document import SourceDocument, SourceReadScope
 from codey.research.urls import host_key, opened_url, parsed_url
-from codey.types.json_value import JsonObject, canonical_json_object
+from codey.types.json_value import JsonObject, canonical_json_object, encode_transport_value
 from codey.utils.refs import coerce_int, parse_int
 
 MAX_SNIPPET_CHARS = 360
@@ -49,7 +49,7 @@ class SourceQuality:
         return " · ".join(part for part in parts if part)
 
     def to_dict(self) -> JsonObject:
-        return canonical_json_object(asdict(self))
+        return canonical_json_object(encode_transport_value(self))
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ class SearchResultRecord:
     snippet: str = ""
 
     def to_dict(self) -> JsonObject:
-        return canonical_json_object(asdict(self))
+        return canonical_json_object(encode_transport_value(self))
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,7 @@ class SearchRecord:
     results: tuple[SearchResultRecord, ...] = ()
 
     def to_dict(self) -> JsonObject:
-        data = canonical_json_object(asdict(self))
+        data = canonical_json_object(encode_transport_value(self))
         data["results"] = [item.to_dict() for item in self.results]
         return data
 
@@ -88,9 +88,11 @@ class OpenedSource:
     page_count: int = 0
     pages_read: tuple[int, ...] = ()
     truncated: bool = False
+    read_scope: SourceReadScope | None = None
 
     def to_dict(self) -> JsonObject:
-        data = canonical_json_object(asdict(self))
+        data = canonical_json_object(encode_transport_value(self))
+        del data["read_scope"]  # Target text belongs to the durable capture, not the bounded UI payload.
         data["quality"] = self.quality.to_dict()
         data["pages_read"] = list(self.pages_read)
         return data
@@ -107,7 +109,7 @@ class EvidenceItem:
     locator: str = ""
 
     def to_dict(self) -> JsonObject:
-        data = canonical_json_object(asdict(self))
+        data = canonical_json_object(encode_transport_value(self))
         # Public/UI payload boundary: the exact excerpt stays on the ledger
         # item for proof locators, while everything leaving the ledger
         # (events, UI session state) carries only the bounded display form.
@@ -240,6 +242,7 @@ class ResearchLedger:
             ),
             pages_read=pages_read,
             truncated=(document.truncated or (existing.truncated if existing is not None else False)),
+            read_scope=document.read_scope,
         )
         self.merge_opened_source(opened, text, page_map)
         return opened
@@ -270,8 +273,10 @@ class ResearchLedger:
                     stamp = self._source_page_versions[item.final_url][number]
                     if number not in versions or stamp > versions[number]:
                         page_map[number], versions[number] = body, stamp
-                latest = max((item, source), key=lambda row: (
-                    datetime.fromisoformat(row.retrieved_at), row.final_url, row.title, row.requested_url))
+                candidates: tuple[OpenedSource, ...] = (item, source)
+                def page_order(row: OpenedSource) -> tuple[datetime, str, str, str]:
+                    return datetime.fromisoformat(row.retrieved_at), row.final_url, row.title, row.requested_url
+                latest = max(candidates, key=page_order)
                 source = replace(latest, pages_read=tuple(sorted(read_pages)),
                                  page_count=max(item.page_count, source.page_count),
                                  truncated=item.truncated or source.truncated)
@@ -282,10 +287,10 @@ class ResearchLedger:
         # latest source projection as the current source; the historical bytes
         # remain owned by the read passage that referenced them.
         if previous and source.content_kind != "pdf":
-            latest = max(
-                (*previous, source),
-                key=lambda item: (item.retrieved_at, item.final_url, item.text_hash),
-            )
+            candidates = (*previous, source)
+            def source_order(item: OpenedSource) -> tuple[str, str, str]:
+                return item.retrieved_at, item.final_url, item.text_hash
+            latest = max(candidates, key=source_order)
             self.opened_sources = [item for item in self.opened_sources if item not in previous]
             self.opened_sources.append(latest)
             if latest is not source:
@@ -629,7 +634,8 @@ def classify_source_quality(url: str, text: str = "") -> SourceQuality:
 
 def _freshness(text: str) -> str:
     years = []
-    for match in _YEAR_RE.findall(text or ""):
+    matches: list[str] = _YEAR_RE.findall(text or "")
+    for match in matches:
         with contextlib.suppress(ValueError):
             years.append(int(match))
     if not years:
@@ -747,8 +753,9 @@ def _best_excerpt(text: str, hint: str = "") -> str:
 
 
 def _hint_tokens(hint: str) -> list[str]:
-    tokens = []
-    for raw in re.findall(r"[A-Za-z0-9\u4e00-\u9fff]{3,}", (hint or "").lower()):
+    tokens: list[str] = []
+    matches: list[str] = re.findall(r"[A-Za-z0-9\u4e00-\u9fff]{3,}", (hint or "").lower())
+    for raw in matches:
         if len(raw) >= 24:
             raw = raw[:24]
         if raw not in tokens:

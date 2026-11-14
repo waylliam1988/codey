@@ -35,12 +35,15 @@ def render_opened_source(
     ]
     if read_window is not None:
         start, end = read_window
-        if not 0 <= start < end <= len(document.text):
+        lower, upper = document.read_bounds
+        if not lower <= start < end <= upper:
             raise ValueError("invalid source text window")
         lines.extend(("", f"[Source text window: offset={start}, end={end} (exclusive), "
                       f"available_length={len(document.text)} characters.]"))
-        if end == len(document.text):
-            lines.append("[End of available extracted source text; there is no later text window in this snapshot.]")
+        if end == upper:
+            lines.append("[End of captured target range; there is no later text window in this range.]"
+                         if document.read_scope is not None and document.read_scope.start is not None else
+                         "[End of available extracted source text; there is no later text window in this snapshot.]")
             if document.truncated:
                 lines.append("[Source acquisition is marked truncated; unseen source content may remain.]")
     if more_offset is not None:
@@ -54,6 +57,8 @@ def render_opened_source(
 def _section_locators(document: SourceDocument) -> list[str]:
     """Expose bounded HTML heading offsets without summarizing unseen findings."""
     rows = section_locators(document.text, content_kind=document.content_kind)
+    lower, upper = document.read_bounds
+    rows = [row for row in rows if isinstance(row["offset"], int) and lower <= row["offset"] < upper]
     return ["", "Source section locators (labels only):", *[
         f"offset={row['offset']}: {row['label']}" for row in rows]] if rows else []
 
@@ -62,9 +67,10 @@ def section_locators(text: str, *, content_kind: str = "html") -> list[dict[str,
     """Shared pure locator projection; headings never become read evidence."""
     if content_kind != "html":
         return []
-    rows = []
+    rows: list[dict[str, object]] = []
     for match in re.finditer(r"(?m)^[ \t]{0,3}#{1,6}[ \t]+([^\n]+)", text):
-        rows.append({"offset": match.start(), "label": match.group(1).strip()[:120]})
+        label: str = match.group(1)
+        rows.append({"offset": match.start(), "label": label.strip()[:120]})
     # Keep a bounded outline without systematically hiding every late chapter.
     # This selects navigation labels only, never evidence or supported claims.
     return rows if len(rows) <= 32 else [*rows[:16], *rows[-16:]]
@@ -72,12 +78,17 @@ def section_locators(text: str, *, content_kind: str = "html") -> list[dict[str,
 
 def _metadata_lines(document: SourceDocument) -> list[str]:
     lines: list[str] = []
-    title = str(getattr(document, "title", "") or "").strip()
-    final_url = str(getattr(document, "final_url", "") or "").strip()
+    title = document.title.strip()
+    final_url = document.final_url.strip()
     if title:
         lines.append(f"Title: {title}")
     if final_url:
         lines.append(f"URL: {final_url}")
+    if document.read_scope is not None:
+        scope = document.read_scope
+        lines.append(f"Target range: confirmed, offset={scope.start}, end={scope.end} (exclusive)."
+                     if scope.start is not None else
+                     "Target range: unconfirmed; the observed target has no unique mapping in this captured text. Full source read.")
     source_kind = _source_kind_line(document)
     if source_kind:
         lines.append(source_kind)
@@ -85,13 +96,13 @@ def _metadata_lines(document: SourceDocument) -> list[str]:
 
 
 def _source_kind_line(document: SourceDocument) -> str:
-    kind = str(getattr(document, "content_kind", "") or "").lower()
+    kind = document.content_kind.lower()
     if kind == "abstract":
         return "Kind: abstract only - the full paper has not been acquired in this snapshot."
     if kind != "pdf":
         return ""
     bits = ["PDF", _pages_meta(document.pages_read, document.page_count)]
-    if bool(getattr(document, "truncated", False)):
+    if document.truncated:
         bits.append("truncated")
     return "Kind: " + " - ".join(part for part in bits if part)
 

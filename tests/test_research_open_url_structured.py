@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
+from codey.operations.kernel_facts import bind_source_identity, project_result_observation
+from codey.operations.task_execution import ExecutionDelegate
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
 from codey.research.tools import ResearchToolOutput, ResearchTools
+from codey.runtime.core.models import ToolCall
+from codey.types.json_value import JsonObject
 
 
 class _LongSearch:
@@ -18,7 +23,10 @@ class _LongSearch:
         self.text = text
         self.url = url
 
-    def fetch(self, requested: str) -> dict:
+    def search(self, query: str, *, limit: int) -> list[JsonObject]:
+        return []
+
+    def fetch(self, requested: str) -> dict[str, object]:
         return {"status": "ok",
             "url": requested,
             "title": "Long doc",
@@ -63,7 +71,7 @@ def test_receipt_externalize_keeps_window_only_for_model() -> None:
     from codey.research.output_receipts import maybe_externalize_output
 
     full = "WINDOW\n" + "x" * 30000 + "\nTAIL_ONLY"
-    call = SimpleNamespace(name="open_url", args={"url": "https://example.com"})
+    call = ToolCall("open_url", {"url": "https://example.com"})
     outcome = maybe_externalize_output(
         store=None,
         session_id="",
@@ -81,22 +89,20 @@ def test_receipt_externalize_keeps_window_only_for_model() -> None:
     assert outcome.truncated is True
 
 
-def test_receipt_override_skips_head_tail_clip() -> None:
-    from types import SimpleNamespace as _NS
-
+def test_receipt_override_skips_head_tail_clip(monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.research import output_receipts as receipts
 
     calls: list[str] = []
     original = receipts.head_tail_clip
 
-    def _spy(text: str):  # type: ignore[no-untyped-def]
+    def _spy(text: str) -> tuple[str, int]:
         calls.append(text)
         return original(text)
 
-    receipts.head_tail_clip = _spy  # type: ignore[method-assign]
-    try:
+    with monkeypatch.context() as patch:
+        patch.setattr(receipts, "head_tail_clip", _spy)
         full = "WINDOW\n" + "x" * 30000 + "\nTAIL_ONLY"
-        call = _NS(name="open_url", args={"url": "https://example.com"})
+        call = ToolCall("open_url", {"url": "https://example.com"})
         outcome = receipts.maybe_externalize_output(
             store=None,
             session_id="",
@@ -109,8 +115,6 @@ def test_receipt_override_skips_head_tail_clip() -> None:
             model_text_override="WINDOW",
             ok=True,
         )
-    finally:
-        receipts.head_tail_clip = original  # type: ignore[method-assign]
     assert calls == []
     assert outcome.model_text == "WINDOW"
 
@@ -118,19 +122,21 @@ def test_receipt_override_skips_head_tail_clip() -> None:
 def test_research_tool_output_contains_only_receipts_and_observed_search_status() -> None:
     import dataclasses
 
-    names = {field.name for field in dataclasses.fields(ResearchToolOutput)}
+    fields: tuple[dataclasses.Field[object], ...] = dataclasses.fields(ResearchToolOutput)
+    names = {field.name for field in fields}
     assert names == {"model_text", "receipt_text", "read_passages", "read_observation", "ok",
-                     "knowledge_search_empty", "failure_code", "acquisition"}
+                     "knowledge_search_empty", "knowledge_read_versions", "failure_code", "acquisition"}
     # This is the program's observed zero-hit status, not a semantic judgment
     # about an answer. Ordinary source reads keep the conservative default.
-    search_status = next(field for field in dataclasses.fields(ResearchToolOutput)
-                         if field.name == "knowledge_search_empty")
-    assert search_status.kw_only and search_status.default is False
+    search_status = next(field for field in fields if field.name == "knowledge_search_empty")
+    default: object = search_status.default
+    assert search_status.kw_only and default is False
     assert ResearchToolOutput("Original window", ok=True).knowledge_search_empty is False
+    assert ResearchToolOutput("Original window", ok=True).knowledge_read_versions == ()
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_search_read_keeps_leading_condition_and_resumes_before_clipped_tail():
+def test_search_read_keeps_leading_condition_and_resumes_before_clipped_tail() -> None:
     from codey.research.ledger import ResearchLedger
     from codey.research.passages import restore_passages
     from codey.research.source_search import search_text
@@ -161,26 +167,27 @@ def test_search_read_keeps_leading_condition_and_resumes_before_clipped_tail():
 
 
 @pytest.mark.usefixtures("public_source_dns")
-def test_source_eof_is_explicit_and_out_of_range_reads_do_not_commit_observations(tmp_path):
-    from codey.runtime.core.models import ToolCall
-    from tests.test_research_findings import URL, execute, setup
-
-    store, tools, session, delegate = setup(tmp_path)
-    try:
-        tools.search.text = "Previous source content. " * 1400 + "FINAL_FACT"
-        size = len(tools.search.text)
-        for offset in (size, size + 8000):
-            result, ok, _ = delegate._execute_research(ToolCall("open_url", {"url": URL, "offset": offset}))
-            assert not ok and not result.ok
-            assert f"length={size} characters" in result.model_text
-            assert "No passage was read" in result.model_text
-            assert not result.canonical.get("research_observation") and not result.canonical.get("read_passages")
-        assert not tools.ledger.opened_sources and not tools.ledger.read_passages and not session.opened_sources
-        result = execute(delegate, tools, session, "open_url", {"url": URL, "offset": size - 400, "limit": 500})
-        assert "FINAL_FACT" in result.model_text
-        assert f"end={size} (exclusive), available_length={size} characters" in result.model_text
-        assert "End of available extracted source text" in result.model_text
-        assert "more text available" not in result.model_text
-        assert tools.ledger.read_passages
-    finally:
-        store.close()
+def test_source_eof_is_explicit_and_out_of_range_reads_do_not_commit_observations() -> None:
+    url = "https://example.com/study"
+    backend = _LongSearch("Previous source content. " * 1400 + "FINAL_FACT", url)
+    tools = ResearchTools(backend, None, None)
+    session = TaskSession(TaskPolicy(frozenset({"web.read", "control"})), task_kind="research")
+    delegate = ExecutionDelegate(session=session, research_tools=tools)
+    size = len(backend.text)
+    for offset in (size, size + 8000):
+        result, ok, _ = delegate._execute_research(ToolCall("open_url", {"url": url, "offset": offset}))
+        assert not ok and not result.ok
+        assert f"length={size} characters" in result.model_text
+        assert "No passage was read" in result.model_text
+        assert not result.canonical.get("research_observation") and not result.canonical.get("read_passages")
+    assert not tools.ledger.opened_sources and not tools.ledger.read_passages and not session.opened_sources
+    call = ToolCall("open_url", {"url": url, "offset": size - 400, "limit": 500})
+    result, ok, _ = delegate._execute_research(call)
+    assert ok, result.model_text
+    result = bind_source_identity(session, call, result, ok=ok)
+    project_result_observation(session, call, result, ok=ok, research_ledger=tools.ledger)
+    assert "FINAL_FACT" in result.model_text
+    assert f"end={size} (exclusive), available_length={size} characters" in result.model_text
+    assert "End of available extracted source text" in result.model_text
+    assert "more text available" not in result.model_text
+    assert tools.ledger.read_passages

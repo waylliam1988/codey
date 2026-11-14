@@ -1,5 +1,7 @@
 """Locators are semantic identities, never display clips."""
-from types import SimpleNamespace
+from __future__ import annotations
+
+import pytest
 
 from codey.operations.kernel_facts import bind_source_identity, record_facts_for_result
 from codey.operations.task_execution import ExecutionDelegate
@@ -7,15 +9,17 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.research.ledger import ResearchLedger
 from codey.research.ledger_receipts import ledger_observation
+from codey.research.source_snapshots import snapshot_document
 from codey.research.tools import ResearchToolOutput, ResearchTools
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.types.json_value import JsonObject, decode_json_object
 
 
-def session():
+def session() -> TaskSession:
     return TaskSession(policy=TaskPolicy(grants=frozenset({"control", "web.read", "knowledge.write"})))
 
 
-def test_long_search_open_and_evidence_keep_distinct_urls():
+def test_long_search_open_and_evidence_keep_distinct_urls() -> None:
     first = "https://example.com/?query=" + "a" * 600 + "first"
     second = first[:-5] + "second"
     task = session()
@@ -30,19 +34,20 @@ def test_long_search_open_and_evidence_keep_distinct_urls():
     assert task.evidence[0]["source_url"] == first
 
 
-def test_long_hit_is_opened_and_replayed_with_exact_target():
+def test_long_hit_is_opened_and_replayed_with_exact_target() -> None:
     url = "https://example.com/?token=" + "x" * 700
     task = session()
-    seen = []
+    seen: list[tuple[str, dict[str, int | str]]] = []
     ledger = ResearchLedger()
 
     class Tools(ResearchTools):
-        def read_source(self, observation, **kw):
-            seen.append((observation["source"]["final_url"], kw))
-            return super().read_source(observation, **kw)
+        def read_source(self, observation: JsonObject, *, offset: int = 0, limit: int = 6000,
+                        pages: str = "") -> ResearchToolOutput:
+            seen.append((snapshot_document(observation).final_url, {"offset": offset, "limit": limit, "pages": pages}))
+            return super().read_source(observation, offset=offset, limit=limit, pages=pages)
 
-        def source_search(self, actual, query, limit):
-            self.ledger.record_source_search(actual, query, [{"offset": 120, "page": None, "snippet": "observed"}])
+        def source_search(self, url: str, query: str, limit: object = 6) -> ResearchToolOutput:
+            self.ledger.record_source_search(url, query, [{"offset": 120, "page": None, "snippet": "observed"}])
             return ResearchToolOutput("1. offset 999: unrelated display", ok=True)
 
     ledger.record_open(url, url, "Test", "observed text\n" * 100)
@@ -60,37 +65,33 @@ def test_long_hit_is_opened_and_replayed_with_exact_target():
     )
     assert ok is True
     assert seen == [(url, {"offset": 120, "limit": 6000, "pages": ""})]
-    assert opened.canonical["research_observation"]["source"]["final_url"] == url
-    assert opened.canonical["research_observation"]["source"]["requested_url"] == url
+    document = snapshot_document(decode_json_object(opened.canonical["research_observation"]))
+    assert document.final_url == url and document.requested_url == url
     opened = bind_source_identity(fresh, opened.call, opened, ok=True)
     record_facts_for_result(fresh, opened.call, opened, ok=True)
     assert fresh.opened_sources == {url}
 
 
-def test_unrelated_ledger_source_cannot_replace_actual_open():
+def test_unrelated_ledger_source_cannot_replace_actual_open() -> None:
     requested = "https://example.com/requested"
     unrelated = "https://example.com/unrelated"
-    import pytest
-
     ledger = ResearchLedger()
     ledger.record_open(unrelated, unrelated, "Unrelated", "other content")
-    delegate = ExecutionDelegate(research_tools=SimpleNamespace(ledger=ledger))
+    delegate = ExecutionDelegate(research_tools=ResearchTools(None, None, None, ledger=ledger))
     with pytest.raises(ValueError, match="missing research observation"):
         delegate._opened_result(ToolCall("open_url", {"url": requested}), ResearchToolOutput("body", ok=True), requested, ledger=ledger, turn=1, tool_index=0)
 
 
-def test_collision_after_500_characters_is_still_a_conflict():
-    import pytest
-
+def test_collision_after_500_characters_is_still_a_conflict() -> None:
     task = session()
     url = "https://example.com/" + "x" * 600
     call = ToolCall("source_search", {"url": url, "query": "q"})
-    def result(target):
+    def result(target: str) -> ToolResult:
         ledger = ResearchLedger()
         ledger.record_open(target, target, "Captured", "body")
         snapshot = ledger_observation(ledger, "open", url=target)
         return ToolResult(call, "hit", ok=True, canonical={
-            "hit_targets": {"h1": {"url": target, "offset": 0, "pages": "", "text_hash": snapshot["source"]["text_hash"]}},
+            "hit_targets": {"h1": {"url": target, "offset": 0, "pages": "", "text_hash": decode_json_object(snapshot["source"])["text_hash"]}},
             "research_observation": {"source_search": {"source_url": target, "query": "q", "hits": [{"offset": 0, "page": None, "snippet": "body"}], "source_snapshot": snapshot}},
         })
     record_facts_for_result(task, call, result(url + "one"), ok=True)
@@ -100,36 +101,34 @@ def test_collision_after_500_characters_is_still_a_conflict():
 
 
 
-def test_search_source_identity_comes_from_receipt_not_rendered_punctuation():
-    from codey.research.ledger import ResearchLedger
-
+def test_search_source_identity_comes_from_receipt_not_rendered_punctuation() -> None:
     task = session()
     ledger = ResearchLedger()
     url = "https://example.com/entry_(official)"
-    class Tools:
-        def __init__(self):
-            self.ledger = ledger
-
-        def web_search(self, query):
+    class Tools(ResearchTools):
+        def web_search(self, query: str) -> ResearchToolOutput:
             self.ledger.record_search(query, [{"title": "Official", "url": url, "snippet": "See https://unrelated.example/a"}])
             return ResearchToolOutput(f"1. Official\n   {url}\n   See https://unrelated.example/a", ok=True)
     call = ToolCall("web_search", {"query": "official"})
-    result, ok, _ = ExecutionDelegate(session=task, research_tools=Tools())._execute_research(call)
+    tools = Tools(None, None, None, ledger=ledger)
+    result, ok, _ = ExecutionDelegate(session=task, research_tools=tools)._execute_research(call)
     assert ok is True
     record_facts_for_result(task, call, result, ok=True)
     assert task.search_results == {"r1": url}
 
 
 
-def test_malformed_search_receipt_cannot_mutate_facts_or_use_display_fallback():
-    import pytest
-
+def test_malformed_search_receipt_cannot_mutate_facts_or_use_display_fallback() -> None:
     task = session()
     call = ToolCall("web_search", {"query": "official"})
     ledger = ResearchLedger()
     ledger.record_search("official", [{"url": "https://example.com/valid"}, {"url": "https://example.com/bad"}])
     observation = ledger_observation(ledger, "web_search")
-    observation["search"]["results"][1]["url"] = False
+    search = decode_json_object(observation["search"])
+    results = search["results"]
+    assert isinstance(results, list)
+    results[1] = {**decode_json_object(results[1]), "url": False}
+    observation["search"] = {**search, "results": results}
     result = ToolResult(call, "https://example.com/fallback", ok=True,
                         canonical={"research_observation": observation})
     with pytest.raises(ValueError, match="URL"):

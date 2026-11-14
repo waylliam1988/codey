@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NotRequired, TypedDict
 
-from codey.types.json_value import JsonObject, require_json_string
+from codey.types.json_value import JsonObject, canonical_json_object, require_json_integer, require_json_string
 
 if TYPE_CHECKING:
     from codey.research.ledger import OpenedSource, ResearchLedger
@@ -143,8 +143,13 @@ def describe_document_window(document: SourceDocument, text_hash: str, offset: i
     even when a short document fits in one model window.
     """
     describe = describe_section_window if coherent else describe_window
+    lower, upper = document.read_bounds
+    offset = max(lower, offset)
+    limit = min(limit, upper - offset)
     if document.content_kind != "pdf":
-        return describe(document.final_url, text_hash, document.text, offset, limit)
+        # Segmentation sees the end of the selected range as a real boundary;
+        # offsets and passage identities still address the full original source.
+        return describe(document.final_url, text_hash, document.text[:upper], offset, limit)
     end = min(len(document.text), offset + limit)
     rows: list[PassageDescriptor] = []
     pages = tuple((page.number, page.text) for page in document.page_texts)
@@ -201,16 +206,21 @@ def restore_passages(ledger: ResearchLedger, observation: object, descriptors: o
     from codey.research.ledger_receipts import source_observation
 
     source, text, pages = source_observation(observation)
+    lower, upper = source.read_scope.bounds(text) if source.read_scope is not None else (0, len(text))
     if not isinstance(descriptors, (list, tuple)) or len(descriptors) > MAX_READ_PASSAGES:
         raise ValueError("invalid read passage descriptors")
+    decoded = canonical_json_object({"passages": descriptors})["passages"]
+    assert isinstance(decoded, list)
     pending = {}
-    for row in descriptors:
+    for row in decoded:
         if (not isinstance(row, dict) or not {"ref", "start", "end"} <= set(row)
                 or set(row) - {"ref", "start", "end", "source_version", "evidence_version"}):
             raise ValueError("invalid read passage descriptor")
         start, end = row["start"], row["end"]
         if type(start) is not int or type(end) is not int or not 0 <= start < end <= len(text):
             raise ValueError("invalid read passage range")
+        if not lower <= start < end <= upper:
+            raise ValueError("read passage outside captured target range")
         versions: dict[str, tuple[str, int]] = {}
         for key in ("source_version", "evidence_version"):
             if key not in row:
@@ -220,8 +230,10 @@ def restore_passages(ledger: ResearchLedger, observation: object, descriptors: o
             pin = row[key]
             if not isinstance(pin, (list, tuple)) or len(pin) != 2:
                 raise ValueError("invalid stored material version")
-            KnowledgeReference(pin[0], pin[1], "uses")
-            versions[key] = (pin[0], pin[1])
+            identity = require_json_string(pin[0], "stored material id")
+            revision = require_json_integer(pin[1], "stored material revision")
+            KnowledgeReference(identity, revision, "uses")
+            versions[key] = (identity, revision)
         if "evidence_version" in versions and "source_version" not in versions:
             raise ValueError("stored evidence requires a pinned source")
         ref = passage_ref(source.final_url, source.text_hash, start, end, **versions)

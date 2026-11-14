@@ -42,6 +42,7 @@ def snapshot_document(observation: JsonObject, *, pages: str = "") -> SourceDocu
     return SourceDocument(requested_url=source.requested_url, final_url=source.final_url,
         title=source.title, text=text, content_kind=source.content_kind, mime_type=source.mime_type,
         truncated=source.truncated, page_count=source.page_count, pages_read=selected,
+        read_scope=source.read_scope,
         page_texts=tuple(SourcePage(number=number, text=body) for number, body in page_map.items()))
 
 

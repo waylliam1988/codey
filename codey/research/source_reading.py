@@ -19,11 +19,12 @@ def render_source_read(outcome: OpenedSource, ledger: ResearchLedger, *, offset:
                                   failure_code=outcome.failure_code)
     document = outcome.document
     assert document is not None
-    offset = max(0, _as_int(offset, 0))
-    if offset >= len(document.text):
+    lower, upper = document.read_bounds
+    offset = max(lower, _as_int(offset, 0))
+    if offset >= upper:
         return ResearchToolOutput(
             f"ERROR: source offset={offset} is at or beyond the end of available extracted text "
-            f"(length={len(document.text)} characters). No passage was read. "
+            f"(length={len(document.text)} characters, range={lower}:{upper}). No passage was read. "
             "Do not advance the offset; use source_search on an earlier section or investigate another source.",
             ok=False, acquisition=outcome.acquisition, failure_code="read_range_unavailable")
     # Leave room for exact passage labels, metadata and source boundaries.
@@ -37,7 +38,7 @@ def render_source_read(outcome: OpenedSource, ledger: ResearchLedger, *, offset:
                                   ok=False, acquisition=outcome.acquisition, failure_code="read_range_unavailable")
     window = render_passage_window(document, passages)
     next_offset = passages[-1]["end"]
-    more = next_offset < len(document.text)
+    more = next_offset < upper
     body = render_opened_source(
         document,
         window,

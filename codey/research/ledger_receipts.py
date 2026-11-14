@@ -7,7 +7,7 @@ UI ledger payloads (which deliberately clip excerpts and counts).
 from __future__ import annotations
 
 import hashlib
-from dataclasses import asdict, fields
+from dataclasses import Field, fields
 from datetime import datetime
 
 from codey.research.ledger import (
@@ -19,10 +19,12 @@ from codey.research.ledger import (
     SourceQuality,
 )
 from codey.research.receipt_types import SourceSearchLocator, SourceSearchObservation
+from codey.research.source_document import SourceReadScope
 from codey.research.urls import parsed_url
 from codey.types.json_value import (
     JsonObject,
     canonical_json_object,
+    encode_transport_value,
     require_json_boolean,
     require_json_integer,
     require_json_string,
@@ -42,9 +44,15 @@ def decode_evidence_item(value: object) -> EvidenceItem:
 
 
 def _record_fields(value: object, model: type[SearchRecord] | type[SearchResultRecord] | type[OpenedSource] | type[SourceQuality] | type[EvidenceItem]) -> JsonObject:
-    if not isinstance(value, dict) or set(value) != {item.name for item in fields(model)}:
+    if not isinstance(value, dict):
         raise ValueError(f"invalid {model.__name__} observation fields")
-    return canonical_json_object(value)
+    row = canonical_json_object(value)
+    if model is OpenedSource and "read_scope" not in row:
+        row["read_scope"] = None  # Sources captured before target ranges were recorded.
+    source_fields: tuple[Field[object], ...] = fields(model)
+    if set(row) != {item.name for item in source_fields}:
+        raise ValueError(f"invalid {model.__name__} observation fields")
+    return row
 
 
 def _source_url(value: object) -> str:
@@ -69,7 +77,10 @@ def _timestamp(value: object) -> None:
 
 def search_observation(observation: object) -> SearchRecord:
     """Validate the exact search receipt for both live facts and recovery."""
-    if not isinstance(observation, dict) or set(observation) != {"search"}:
+    if not isinstance(observation, dict):
+        raise ValueError("missing or invalid search observation")
+    observation = canonical_json_object(observation)
+    if set(observation) != {"search"}:
         raise ValueError("missing or invalid search observation")
     row = _record_fields(observation["search"], SearchRecord)
     if type(row["query"]) is not str or not row["query"].strip():
@@ -92,7 +103,10 @@ def search_observation(observation: object) -> SearchRecord:
 
 def source_observation(observation: object) -> tuple[OpenedSource, str, dict[int, str]]:
     """Decode one source observation without mutating any task or ledger."""
-    if not isinstance(observation, dict) or set(observation) != {"source", "text", "pages"}:
+    if not isinstance(observation, dict):
+        raise ValueError("missing or invalid source observation")
+    observation = canonical_json_object(observation)
+    if set(observation) != {"source", "text", "pages"}:
         raise ValueError("missing or invalid source observation")
     row = _record_fields(observation["source"], OpenedSource)
     _source_url(row["requested_url"])
@@ -121,7 +135,8 @@ def source_observation(observation: object) -> tuple[OpenedSource, str, dict[int
         mime_type=require_json_string(row["mime_type"], "mime_type"),
         page_count=require_json_integer(row["page_count"], "page_count"),
         pages_read=tuple(require_json_integer(page, "page") for page in pages_read),
-        truncated=require_json_boolean(row["truncated"], "truncated"))
+        truncated=require_json_boolean(row["truncated"], "truncated"),
+        read_scope=_read_scope(row["read_scope"], observation["text"]))
     text = observation["text"]
     if (type(text) is not str or not text.strip()
             or hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16] != source.text_hash):
@@ -141,9 +156,29 @@ def source_observation(observation: object) -> tuple[OpenedSource, str, dict[int
     return source, text, page_map
 
 
+def _read_scope(value: object, text: object) -> SourceReadScope | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("invalid source read scope")
+    value = canonical_json_object(value)
+    if (set(value) != {"text", "start", "end"}
+            or not isinstance(text, str) or not isinstance(value["text"], str)):
+        raise ValueError("invalid source read scope")
+    scope = SourceReadScope.locate(text, value["text"])
+    if (value["text"] != scope.text
+            or any(value[key] is not None and type(value[key]) is not int for key in ("start", "end"))
+            or value["start"] != scope.start or value["end"] != scope.end):
+        raise ValueError("source read scope differs from captured text")
+    return scope
+
+
 def source_search_observation(observation: object) -> SourceSearchObservation:
     """Validate locator previews without interpreting their display text."""
-    if not isinstance(observation, dict) or set(observation) != {"source_search"}:
+    if not isinstance(observation, dict):
+        raise ValueError("missing or invalid source search observation")
+    observation = canonical_json_object(observation)
+    if set(observation) != {"source_search"}:
         raise ValueError("missing or invalid source search observation")
     row = observation["source_search"]
     if not isinstance(row, dict) or set(row) != {"source_url", "source_snapshot", "query", "hits"}:
@@ -154,6 +189,7 @@ def source_search_observation(observation: object) -> SourceSearchObservation:
         raise ValueError("source search snapshot differs from its locator URL")
     if type(row["query"]) is not str or not row["query"].strip() or not isinstance(row["hits"], (list, tuple)):
         raise ValueError("invalid source search observation query or hits")
+    hits: list[SourceSearchLocator] = []
     for hit in row["hits"]:
         if (not isinstance(hit, dict) or set(hit) != {"offset", "page", "snippet"}
                 or type(hit["offset"]) is not int or hit["offset"] < 0
@@ -163,16 +199,18 @@ def source_search_observation(observation: object) -> SourceSearchObservation:
         text = _text if hit["page"] is None else _pages.get(hit["page"], "")
         if not 0 <= hit["offset"] < len(text):
             raise ValueError("source search locator is outside the captured source")
-    return SourceSearchObservation(source_url=row["source_url"],
-        source_snapshot=canonical_json_object(row["source_snapshot"]), query=row["query"],
-        hits=[SourceSearchLocator(offset=hit["offset"], page=hit["page"], snippet=hit["snippet"])
-              for hit in row["hits"]])
+        hits.append(SourceSearchLocator(offset=require_json_integer(hit["offset"], "offset"),
+            page=None if hit["page"] is None else require_json_integer(hit["page"], "page"),
+            snippet=require_json_string(hit["snippet"], "snippet")))
+    return SourceSearchObservation(source_url=require_json_string(row["source_url"], "source_url"),
+        source_snapshot=canonical_json_object(row["source_snapshot"]), query=row["query"], hits=hits)
 
 
 def source_snapshot(source: OpenedSource, text: str, pages: dict[int, str]) -> JsonObject:
     """Encode and validate the same source capture for acquisition and recovery."""
-    observation = canonical_json_object({"source": asdict(source), "text": text,
-        "pages": [{"number": number, "text": body} for number, body in pages.items()]})
+    payload: dict[str, object] = {"source": encode_transport_value(source), "text": text,
+        "pages": [{"number": number, "text": body} for number, body in pages.items()]}
+    observation = canonical_json_object(payload)
     source_observation(observation)
     return observation
 
@@ -180,7 +218,7 @@ def source_snapshot(source: OpenedSource, text: str, pages: dict[int, str]) -> J
 def ledger_observation(ledger: ResearchLedger, kind: str, *, url: str = "", evidence_start: int = 0) -> JsonObject:
     observation: JsonObject
     if kind == "web_search" and ledger.searches:
-        observation = canonical_json_object({"search": asdict(ledger.searches[-1])})
+        observation = canonical_json_object({"search": encode_transport_value(ledger.searches[-1])})
         search_observation(observation)
         return canonical_json_object(observation)
     if kind == "source_search" and ledger.source_searches:
@@ -188,7 +226,7 @@ def ledger_observation(ledger: ResearchLedger, kind: str, *, url: str = "", evid
         source_search_observation(observation)
         return canonical_json_object(observation)
     if kind in {"knowledge_write", "save_finding"}:
-        return canonical_json_object({"evidence": [asdict(item) for item in ledger.evidence_items[evidence_start:]]})
+        return canonical_json_object({"evidence": [encode_transport_value(item) for item in ledger.evidence_items[evidence_start:]]})
     source = ledger.source_record_for_url(url) if url else None
     if source is not None:
         return source_snapshot(source, ledger.source_text_for_url(url), ledger.source_pages_for_url(url))

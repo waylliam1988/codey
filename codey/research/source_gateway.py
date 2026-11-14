@@ -34,7 +34,7 @@ from codey.research.pdf_extract import (
     extract_pdf_document,
 )
 from codey.research.source_acquisition import SourceFailureCode, acquisition_observation, source_failure_code
-from codey.research.source_document import SourceDocument
+from codey.research.source_document import SourceDocument, SourceReadScope
 from codey.research.source_search import (
     SOURCE_SEARCH_DEFAULT_LIMIT,
     SourceSearchHit,
@@ -250,14 +250,18 @@ class ResearchSourceGateway:
                 mime_type=mime_type or "application/pdf",
                 pages=pages or PDF_DEFAULT_PAGES,
             )
+        text = str(page.get("text") or "")
+        region = page.get("query_region")
+        target = region.get("text") if isinstance(region, dict) else None
         return SourceDocument(
             requested_url=requested_url,
             final_url=final_url,
             title=str(page.get("title") or ""),
             content_kind="abstract" if content_kind == "abstract" else "html",
-            text=str(page.get("text") or ""),
+            text=text,
             mime_type=mime_type or "text/html",
             truncated=bool(page.get("truncated")),
+            read_scope=SourceReadScope.locate(text, target) if isinstance(target, str) else None,
         )
 
     def search_inside(
