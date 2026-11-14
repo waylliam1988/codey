@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 
 from codey.automation.browser_document import same_document
+from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
 from codey.operations.browser_completion import committed_results, complete_page_passages
 from codey.operations.browser_followups import (
@@ -37,7 +38,7 @@ from codey.policies.tool_requirement import (
     parse_tool_success_check,
 )
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.toolchain.tool_spec import validate_args_with_spec
+from codey.toolchain.tool_spec import _check_spec_value_against_schema, validate_args_with_spec
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 
 
@@ -83,14 +84,21 @@ def _call_handoff(session: TaskSession, snapshot: TurnSnapshot, call: ToolCall) 
     if not only:
         snapshot = offer_browser_call(snapshot, session, call.name)
     spec = next(spec for spec in snapshot.frozen_specs if spec.name == call.name)
-    missing = [name for name in spec.required if name not in call.args]
-    if missing:
-        return snapshot, (f"Use {call.name}; supply {', '.join(missing)} from the task or current page. "
-                          f"Known arguments: {json.dumps(call.args, ensure_ascii=False)}. "
-                          f"CodeMode wrapper: return unwrap(await tools.{call.name}(inputs));")
-    if error := validate_args_with_spec(spec, call.args):
+    task_selector = call.name == "browser_navigate" and "target" in call.args
+    if task_selector:
+        entry = next(entry for entry in snapshot_catalog(snapshot).entries if entry.name == call.name)
+        error = _check_spec_value_against_schema(call.name, "args", entry.parameters, call.args, strict=True)
+    else:
+        missing = [name for name in spec.required if name not in call.args]
+        if missing:
+            return snapshot, (f"Use {call.name}; supply {', '.join(missing)} from the task or current page. "
+                              f"Known arguments: {json.dumps(call.args, ensure_ascii=False)}. "
+                              f"CodeMode wrapper: return unwrap(await tools.{call.name}(inputs));")
+        error = validate_args_with_spec(spec, call.args)
+    if error:
         return snapshot, f"The frozen arguments for {call.name} cannot execute: {error}"
-    action: JsonObject = ({"tool": call.name, "args": call.args} if call.name in snapshot.tool_names and not only else
+    action: JsonObject = ({"tool": call.name, "args": call.args}
+        if call.name in snapshot.tool_names and not only and not task_selector else
         {"tool": "codemode", "args": {"code": f"return unwrap(await tools.{call.name}(inputs));", "inputs": call.args}})
     return snapshot, "Execute this next step: " + json.dumps(action, ensure_ascii=False)
 
@@ -179,6 +187,35 @@ def _compile_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Comp
                           + json.dumps(value, ensure_ascii=False))
     snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))
     return snapshot, "Compilation failed before any child action. Observe the bound task page next.\n" + action
+
+
+def _navigation_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                        generation: int | None) -> tuple[TurnSnapshot, str]:
+    if (snapshot.task_navigation_url is None or context.browser_document is None
+            or _action_receipts(session, snapshot, context)):
+        return snapshot, ""
+    current = _current_snapshot(session, context, generation)
+    if current is None or current[1].get("elements") != []:
+        return snapshot, ""
+    records, results = tool_facts(session, context)
+    navigations = committed_results(records, results, frozenset({"browser_navigate"}),
+                                    include_failed=frozenset({"browser_navigate"}))
+    if not navigations:
+        return snapshot, ""
+    ref, navigation = navigations[-1]
+    requested = navigation.call.args.get("url")
+    value = navigation.canonical.get("value")
+    if (not navigation.ok or navigation.call.call_id.startswith("required-source:")
+            or not isinstance(requested, str) or requested == snapshot.task_navigation_url
+            or not isinstance(value, dict) or value.get("http_status") != 404
+            or value.get("url") == snapshot.task_navigation_url
+            or value.get("url") != context.browser_document.get("url")
+            or not same_document(navigation.audit.get("browser_document"), context.browser_document)
+            or tuple(records).index(current[0]) <= tuple(records).index(ref)):
+        return snapshot, ""
+    snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_navigate", {"target": "task"}))
+    return snapshot, (f"Navigation receipt {ref} reached HTTP 404 outside the bound task URL, and current snapshot "
+                      f"{current[0]} has no controls. Return to the bound task page.\n" + action)
 
 
 def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
@@ -298,6 +335,9 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     snapshot, waiting = _wait_handoff(session, snapshot, context)
     if waiting:
         return snapshot, waiting
+    snapshot, navigation = _navigation_handoff(session, snapshot, context, generation)
+    if navigation:
+        return snapshot, navigation
     snapshot, download, download_outcome = _download_handoff(session, snapshot, context, generation)
     recovery = ""
     if not download:

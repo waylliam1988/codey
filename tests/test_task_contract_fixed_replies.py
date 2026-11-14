@@ -175,7 +175,8 @@ def test_wrong_url_feedback_without_a_prior_compile_error(
     assert "recovery did not consume" not in parent.model_text
     assert len(control_flow) == 1 and control_flow[0]["seen_without_intent"] == []
     assert len(control_flow[0]["committed"]) == 2
-    assert [r.call.name for r in receipts if r.call.name.startswith("browser_")] == [
+    assert [r.call.name for r in receipts if r.call.name.startswith("browser_")
+            and not r.call.call_id.startswith("required-source:")] == [
         "browser_navigate", "browser_snapshot"]
     child_refs = decode_json_object(parent.canonical)["child_effect_ids"]
     assert isinstance(child_refs, list) and len(child_refs) == 2
