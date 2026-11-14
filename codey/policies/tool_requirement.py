@@ -195,7 +195,9 @@ class ToolSuccessRequirement:
         content = ("In done.summary, supply only the natural-language explanation. " if explanation else
                    "In done.summary, supply only unbound JSON fields, or {} when none are needed. ")
         evidence = ("The latest matching receipt for the current browser document must be complete."
-                    if self.binds_browser_fields else "Conflicting observations cannot establish this answer requirement.")
+                    if self._binds_latest_browser_fields else
+                    "Current document receipts must be complete and agree." if self.binds_browser_fields else
+                    "Conflicting observations cannot establish this answer requirement.")
         return (execution + " " + instruction + f" The application fills pointer {self.answer_pointer!r} "
                 f"from the committed {selected}, preserving its JSON type and complete value. "
                 + content + evidence + (" Do not repeat this selected value in /explanation."
@@ -251,7 +253,8 @@ class ToolSuccessRequirement:
                 return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
                     "No matching receipt observes the current browser page. " + guidance))
             # A later read of the same declared selector replaces the previous snapshot.
-            eligible = eligible[-1:]
+            if self._binds_latest_browser_fields:
+                eligible = eligible[-1:]
             children = {identity for identity, _ in eligible}
             witnesses = children | {ref for ref, parent in records.items() if self.via and _succeeded(parent, self.via)
                                     and children.intersection(parent.get("child_effect_ids", ()))}
@@ -291,7 +294,7 @@ class ToolSuccessRequirement:
                     or ((self.tool == "browser_upload" or self.answer_contains) and receipt.truncated)
                     or (self.binds_browser_fields and not self._binds_browser_body
                         and (receipt.truncated or not isinstance(value, dict)
-                        or value.get("truncated") is not False))):
+                        or (self.tool == "browser_eval" and value.get("truncated") is not False)))):
                 return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
                     "The committed browser receipt or read window is incomplete. Obtain complete evidence before editing the answer. "
                     + self._evidence_guidance))
@@ -333,6 +336,12 @@ class ToolSuccessRequirement:
 
     @property
     def binds_browser_fields(self) -> bool:
+        return self._binds_latest_browser_fields or (self.answer_pointer is not None and (
+            (self.tool == "browser_eval" and (self.result_pointer == "/value" or self.result_pointer.startswith("/value/")))
+            or (self.tool == "browser_tab_list" and self.result_pointer == "/page_url")))
+
+    @property
+    def _binds_latest_browser_fields(self) -> bool:
         return self.browser_text is not None or (self.tool == "browser_eval" and self.result_pointer.startswith("/value/"))
 
     @property

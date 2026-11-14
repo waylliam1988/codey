@@ -5,7 +5,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from codey.operations.browser_text_report import BrowserMetadata, observe_metadata, report_scope
+from codey.operations.browser_text_report import BrowserMetadata, MetadataPending, observe_metadata, report_scope
 from codey.operations.browser_upload import UploadEvidence, bound_upload_explanation, upload_evidence, upload_scope
 from codey.operations.completion_context import CompletionContext
 from codey.operations.task_session import TaskSession
@@ -32,6 +32,7 @@ class OutputBindingError(ValueError):
 class CompletionOutput:
     text: str
     observations: Mapping[str, ToolObservation]
+    metadata: BrowserMetadata | MetadataPending | None = None
 
 
 @dataclass(frozen=True)
@@ -90,13 +91,13 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
         observations[requirement.check_id] = observation
     if (not fields and not explanation) or session.policy.strict_research:
         report = report_scope(session)
-        if (report is not None
-                and isinstance(metadata := observe_metadata(report, records, results, context.browser_document), BrowserMetadata)):
-            return CompletionOutput(metadata.render(text, chinese=report.chinese), observations)
+        metadata = observe_metadata(report, records, results, context.browser_document) if report is not None else None
+        if report is not None and isinstance(metadata, BrowserMetadata):
+            return CompletionOutput(metadata.render(text, chinese=report.chinese), observations, metadata)
         if (schema is None and scope is not None and scope.report_hash
                 and isinstance(evidence := upload_evidence(session, scope, context.browser_document), UploadEvidence)):
             text = evidence.render(chinese=scope.chinese)
-        return CompletionOutput(text, observations)
+        return CompletionOutput(text, observations, metadata)
     proposed: JsonValue
     if explanation:
         proposed = {"explanation": text}

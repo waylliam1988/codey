@@ -314,7 +314,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
 
     copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
     input_binding = _restore_input_binding(raw_binding, names, specs, copy)
-    from codey.operations.browser_followups import DIRECT_TOOLS, MAX_TEXT, allows_surface
+    from codey.operations.browser_followups import DIRECT_TOOLS, MAX_TEXT, SINGLE_STEP_TOOLS, allows_surface
 
     fill_text = payload.get("browser_fill_text")
     if fill_text is not None and (not isinstance(fill_text, str) or not fill_text.strip() or len(fill_text) > MAX_TEXT):
@@ -325,8 +325,10 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
         browser_followups=version == 8, browser_fill_text=fill_text)
-    if snapshot.browser_followups and (not ignore_runtime_claims or not set(DIRECT_TOOLS) <= set(names)
-                                        or not allows_surface(snapshot)):
+    direct = tuple(spec.name for spec in specs if spec.executor == "browser" and spec.name in names)
+    if snapshot.browser_followups and (not set(direct) <= {*DIRECT_TOOLS, *SINGLE_STEP_TOOLS}
+            or (not ignore_runtime_claims and not set(direct) <= set(SINGLE_STEP_TOOLS))
+            or not allows_surface(snapshot, direct)):
         raise ValueError("captured browser follow-ups exceed the authorized Chat interface")
     from codey.toolchain.tool_prompt import contract_semantics
 

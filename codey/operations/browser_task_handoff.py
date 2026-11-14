@@ -1,17 +1,40 @@
 """Initial prerequisites and next-step presentation from existing task receipts."""
 from __future__ import annotations
 
+import json
+from dataclasses import replace
+
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
-from codey.operations.browser_followups import PENDING, UNCERTAIN, delivery, pending_click
+from codey.operations.browser_completion import committed_results, complete_page_passages
+from codey.operations.browser_followups import (
+    DIRECT_TOOLS,
+    PENDING,
+    UNCERTAIN,
+    click_followup_plan,
+    codemode_only,
+    delivery,
+    pending_click,
+)
+from codey.operations.browser_text_report import MetadataPending, observe_metadata, report_scope
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
-from codey.operations.kernel_protocol import TurnSnapshot, _task_navigation_url
+from codey.operations.kernel_protocol import (
+    TurnSnapshot,
+    _task_navigation_url,
+    offer_browser_call,
+    refresh_snapshot_contract,
+)
 from codey.operations.task_session import TaskSession
 from codey.policies.browser_requirement import parse_browser_requirement
-from codey.policies.tool_requirement import argument_digest, parse_tool_success_check
-from codey.runtime.core.models import ToolCall
+from codey.policies.tool_requirement import (
+    ToolObservation,
+    ToolSuccessRequirement,
+    argument_digest,
+    parse_tool_success_check,
+)
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import validate_args_with_spec
-from codey.types.json_value import JsonObject, parse_json_object
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 
 
 def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall | None:
@@ -41,7 +64,7 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
             args[key] = value
     if validate_args_with_spec(specs["browser_navigate"], args):
         return None
-    if any(rule.via == "codemode" for rule in requirements):
+    if any(rule.via == "codemode" for rule in requirements) or codemode_only(session.task_text):
         if "codemode" not in snapshot.tool_names or "browser_navigate" not in snapshot.nested_tool_names:
             return None
         return ToolCall("codemode", {"code": "return unwrap(await tools.browser_navigate(inputs));", "inputs": args},
@@ -49,32 +72,170 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
     return ToolCall("browser_navigate", args, call_id="required-source:navigation")
 
 
-def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext) -> str:
+def _call_handoff(session: TaskSession, snapshot: TurnSnapshot, call: ToolCall) -> tuple[TurnSnapshot, str]:
+    if call.name not in snapshot.nested_tool_names:
+        return snapshot, f"{call.name} is unavailable under the current frozen authorization."
+    only = codemode_only(session.task_text)
+    if not only:
+        snapshot = offer_browser_call(snapshot, session, call.name)
+    spec = next(spec for spec in snapshot.frozen_specs if spec.name == call.name)
+    missing = [name for name in spec.required if name not in call.args]
+    if missing:
+        return snapshot, (f"Use {call.name}; supply {', '.join(missing)} from the task or current page. "
+                          f"Known arguments: {json.dumps(call.args, ensure_ascii=False)}. "
+                          f"CodeMode wrapper: return unwrap(await tools.{call.name}(inputs));")
+    if error := validate_args_with_spec(spec, call.args):
+        return snapshot, f"The frozen arguments for {call.name} cannot execute: {error}"
+    action: JsonObject = ({"tool": call.name, "args": call.args} if call.name in snapshot.tool_names and not only else
+        {"tool": "codemode", "args": {"code": f"return unwrap(await tools.{call.name}(inputs));", "inputs": call.args}})
+    return snapshot, "Execute this next step: " + json.dumps(action, ensure_ascii=False)
+
+
+def _metadata_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                      observed: list[tuple[ToolSuccessRequirement, ToolObservation]]) -> tuple[TurnSnapshot, str]:
+    records, results = tool_facts(session, context)
+    pending = [(rule, observation) for rule, observation in observed if not observation.evaluation.passed]
+    document = context.browser_document
+    url = document.get("url") if document is not None else None
+    current_read = isinstance(url, str) and any(
+        result.audit.get("browser_document") == document and complete_page_passages(result, url)
+        for _, result in committed_results(records, results, frozenset({"browser_read"})))
+    if (not current_read or pending_click(results) is not None
+            or any(rule.tool not in {"browser_eval", "browser_tab_list"} for rule, _ in pending)):
+        return snapshot, ""
+    call: ToolCall | None = None
+    feedback = ""
+    if (scope := report_scope(session)) is not None:
+        metadata = observe_metadata(scope, records, results, context.browser_document)
+        if isinstance(metadata, MetadataPending):
+            call, feedback = metadata.call, metadata.evaluation.feedback
+    if call is None and not feedback:
+        for rule, observation in pending:
+            if rule.tool not in {"browser_eval", "browser_tab_list"}:
+                continue
+            feedback = observation.evaluation.feedback
+            if observation.evaluation.reason_code in {"tool_execution_missing", "observation_selector_unavailable"}:
+                declared = next((item for item, _ in pending if item.tool == rule.tool and item.arguments_json != "{}"), rule)
+                call = ToolCall(rule.tool, parse_json_object(declared.arguments_json))
+            break
+    if call is None:
+        return snapshot, feedback
+    # Only hide redundant outer aliases. The authorized CodeMode leaves
+    # remain available for additional task work and page recovery.
+    snapshot = refresh_snapshot_contract(replace(snapshot,
+        tool_names=tuple(name for name in snapshot.tool_names if name not in DIRECT_TOOLS)))
+    snapshot, action = _call_handoff(session, snapshot, call)
+    return snapshot, feedback + "\n" + action
+
+
+def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                      generation: int | None) -> tuple[TurnSnapshot, str, ToolResult | None]:
+    if not any((rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_download"
+               for check in session.policy.required_checks):
+        return snapshot, "", None
+    records, results = tool_facts(session, context)
+    downloads = committed_results(records, results, frozenset({"browser_download"}),
+                                   include_failed=frozenset({"browser_download"}))
+    for ref, result in reversed(downloads):
+        if result.ok or delivery(result) in {"verified", "delivered", "uncertain"}:
+            return snapshot, (f"Download outcome from committed receipt {ref}; reuse it without downloading again:\n"
+                              + json.dumps(result.canonical.get("value"), ensure_ascii=False)), result
+    snapshots = committed_results(records, results, frozenset({"browser_snapshot"}))
+    raw = snapshots[-1][1].canonical.get("value") if snapshots else None
+    value = decode_json_object(raw) if isinstance(raw, dict) else None
+    if (value is None or snapshots[-1][1].truncated
+            or snapshots[-1][1].audit.get("browser_document") != context.browser_document
+            or context.browser_document is None or value.get("generation") != generation
+            or value.get("complete") is not True or value.get("elements_truncated") is not False):
+        snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))
+        return snapshot, action, None
+    elements = value.get("elements")
+    candidates = [element for element in elements if isinstance(element, dict)
+                  and element.get("role") in {"link", "button"} and element.get("disabled") is False] if isinstance(elements, list) else []
+    if not candidates:
+        return snapshot, "The current snapshot has no enabled download candidate. Inspect the page before choosing a target.", None
+    lines = ["Choose the requested download target from these current snapshot controls:"]
+    for item in candidates:
+        candidate: JsonObject = {"name": item["name"], "args": {"ref": item["ref"]}}
+        lines.append(json.dumps(candidate, ensure_ascii=False))
+    if len(candidates) == 1:
+        snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_download", {"ref": candidates[0]["ref"]}))
+        lines.append(action)
+    else:
+        snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_download", {}))
+        lines.append(action)
+    return snapshot, "\n".join(lines), None
+
+
+def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext) -> str:
+    plan = click_followup_plan(session.policy.required_checks, set(snapshot.nested_tool_names))
+    if plan.unavailable:
+        return "Query follow-up unavailable: " + ", ".join(plan.unavailable) + "."
+    records, results = tool_facts(session, context)
+    waits = [rule for check in session.policy.required_checks
+             if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_wait"]
+    waiting = any(not rule.observe(records, results=results).evaluation.passed for rule in waits)
+    lines = []
+    clicks = committed_results(records, results, frozenset({"browser_click"}), include_failed=frozenset({"browser_click"}))
+    if clicks and delivery(clicks[-1][1]) in {"delivered", "uncertain"}:
+        ref, result = clicks[-1]
+        if delivery(result) == "uncertain":
+            lines.append(UNCERTAIN)
+        else:
+            keys = tuple(records)
+            after = {key: records[key] for key in keys[keys.index(ref) + 1:]
+                     if records[key]["name"] not in {"browser_wait", "browser_read"}
+                     or ((receipt := results.get(key)) is not None
+                         and receipt.audit.get("browser_document") == context.browser_document)}
+            records = after
+            waiting = any(not rule.observe(after, results=results).evaluation.passed for rule in waits)
+            if waits and result.audit.get("browser_document") == context.browser_document:
+                if waiting:
+                    lines.append(f"Click {ref} was delivered. Complete the declared browser_wait next; do not click again.")
+                elif not any(row["name"] == "browser_read" and row["ok"] for row in after.values()):
+                    lines.append(f"Click {ref} and its declared waits are settled. Use browser_read next; do not click again.")
+    if plan.missing_waits and waiting:
+        lines.append("Automatic result read is unavailable: the wait condition is not fully declared. "
+                     "For a query, omit purpose for the atomic browser_click({ref}), then use browser_wait with an explicit "
+                     "page condition and timeout_ms, then browser_read. Do not substitute a sleep for a page condition.")
+    return "\n".join(lines)
+
+
+def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                          generation: int | None = None) -> tuple[TurnSnapshot, str]:
     if (session.task_kind not in {"chat", "hybrid"} or session.policy.strict_research
             or snapshot.input_binding is not None or snapshot.browser_copy is not None
             or "browser_read" not in snapshot.inventory_names):
-        return ""
+        return snapshot, ""
     records, results = tool_facts(session, context)
     rules = [rule for check in session.policy.required_checks
              if (rule := parse_tool_success_check(check)) is not None]
-    if not rules or not results:
-        return ""
-    observed = [(rule, rule.observe(records, results=results, browser_document=context.browser_document).evaluation)
+    if not rules:
+        return snapshot, ""
+    observed = [(rule, rule.observe(records, results=results, browser_document=context.browser_document))
                 for rule in rules]
-    pending = [(rule, outcome) for rule, outcome in observed if not outcome.passed]
-    missing_execution = [rule for rule, outcome in pending
-                         if outcome.reason_code in {"tool_execution_missing", "tool_parent_missing"}]
+    pending = [(rule, outcome.evaluation) for rule, outcome in observed if not outcome.evaluation.passed]
     lines = ["Next step from committed receipts (reuse completed work):"]
     if (click := pending_click(results)) is not None:
         lines.append(UNCERTAIN if delivery(click[1]) == "uncertain" else PENDING)
+    lines.append(_wait_handoff(session, snapshot, context))
+    snapshot, metadata = _metadata_handoff(session, snapshot, context, observed)
+    if metadata:
+        lines.append(metadata)
+    snapshot, download, download_outcome = _download_handoff(session, snapshot, context, generation)
+    if download:
+        lines.append(download)
+    outstanding = [(rule, outcome) for rule, outcome in pending
+                   if rule.tool != "browser_download" or download_outcome is None]
+    missing_execution = [rule for rule, outcome in outstanding if outcome.reason_code == "tool_execution_missing"]
     if missing_execution:
         lines.append("Outstanding declared calls: " + "; ".join(
             rule.tool + (f" via {rule.via}" if rule.via else "")
             + (f" matching {rule.arguments_json}" if rule.arguments_json != "{}" else "")
             for rule in missing_execution) + ".")
-    elif pending:
+    elif outstanding:
         lines.append("Execution exists but its observation is incomplete. Recover the missing evidence, not the click.")
-    else:
+    elif not pending and not metadata:
         lines.append("All declared tool executions have receipts. If they answer the task, deliver done using those facts.")
     if (session.task_kind == "hybrid" and ".json" in session.task_text.casefold()
             and {"read_file", "edit"} <= set(snapshot.nested_tool_names)):
@@ -83,4 +244,4 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
             lines.append("Browser evidence is available; the requested project modification still needs an actual edit receipt. "
                          "Use the observed field values as inputs.changes and the requested file as inputs.path.\n"
                          + JSON_FIELD_EDIT_GUIDANCE)
-    return "\n".join(lines)
+    return snapshot, "\n".join(line for line in lines if line)

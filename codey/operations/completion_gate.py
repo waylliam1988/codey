@@ -27,6 +27,7 @@ from codey.completion.contract import (
     register_completion_domain,
 )
 from codey.operations.browser_completion import evaluate_page_rounds, evaluate_research_sequence
+from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import CompletionCheckInput
 from codey.operations.completion_output import tool_facts
@@ -183,11 +184,12 @@ def _contract_error(message: str) -> GateVerdict:
 
 
 def evaluate(session: TaskSession, done_text: object, *, context: object = None,
-             observations: Mapping[str, ToolObservation] | None = None) -> GateVerdict:
+             observations: Mapping[str, ToolObservation] | None = None,
+             metadata: BrowserMetadata | MetadataPending | None = None) -> GateVerdict:
     try:
         normalized = CompletionContext.from_value(context)
         collect_completion_workspace(session, normalized)
-        return _evaluate_inner(session, done_text, context=normalized, observations=observations)
+        return _evaluate_inner(session, done_text, context=normalized, observations=observations, metadata=metadata)
     except Exception as exc:
         return GateVerdict(
             complete=False,
@@ -430,7 +432,8 @@ def _proof_capacity_verdict(checks: list[CompletionCheck], *, publication: bool)
         f"(including publication when required). Checks: {ids}. This requires a local contract fix.")
 
 
-def _browser_completion_block(session: TaskSession, text: str, context: CompletionContext) -> GateVerdict | None:
+def _browser_completion_block(session: TaskSession, text: str, context: CompletionContext,
+                              metadata: BrowserMetadata | MetadataPending | None = None) -> GateVerdict | None:
     from codey.operations.browser_followups import PENDING, UNCERTAIN, delivery, pending_click
     from codey.operations.browser_text_report import observe_metadata, report_scope
     from codey.operations.browser_upload import bound_upload_explanation, upload_completion_scope, upload_evidence
@@ -445,9 +448,10 @@ def _browser_completion_block(session: TaskSession, text: str, context: Completi
         return GateVerdict(False, "", None, final_text=text, blocked=True)
     if (report := report_scope(session)) is not None:
         records, results = tool_facts(session, context)
-        metadata = observe_metadata(report, records, results, context.browser_document)
-        if isinstance(metadata, str):
-            return GateVerdict(False, metadata, None)
+        if metadata is None:
+            metadata = observe_metadata(report, records, results, context.browser_document)
+        if isinstance(metadata, MetadataPending):
+            return GateVerdict(False, metadata.evaluation.feedback, None)
     upload = upload_completion_scope(session)
     if upload is not None:
         evidence = upload_evidence(session, upload, context.browser_document)
@@ -466,7 +470,8 @@ def _browser_completion_block(session: TaskSession, text: str, context: Completi
 
 
 def _evaluate_inner(session: TaskSession, done_text: object, *, context: CompletionContext,
-                    observations: Mapping[str, ToolObservation] | None) -> GateVerdict:
+                    observations: Mapping[str, ToolObservation] | None,
+                    metadata: BrowserMetadata | MetadataPending | None = None) -> GateVerdict:
     text = str(done_text or "").strip()
     from codey.operations.execution_claims import validate_execution_claims
     from codey.operations.source_gaps import validate_source_gaps
@@ -476,7 +481,7 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
         validate_source_gaps(session)
     except ValueError as exc:
         return GateVerdict(False, str(exc), None)
-    if block := _browser_completion_block(session, text, context):
+    if block := _browser_completion_block(session, text, context, metadata):
         return block
     try:
         text, report = prepare_research_completion(session, text, context)

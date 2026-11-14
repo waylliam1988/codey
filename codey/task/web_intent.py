@@ -9,7 +9,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from codey.types.json_value import canonical_json_object
 
-_CODE = re.compile(r"```[\s\S]*?```|`[^`\n]*`")
+_CODE = re.compile(r"```[\s\S]*?```|`[^`\n]*`|(?m:^[ \t]*>[^\n]*)")
+_QUOTED = re.compile(r'"[^"\n]*"|“[^”\n]*”')
 _URL = re.compile(r"https?://[^\s<>`\"'、，。；！？（）\[\]]+", re.IGNORECASE)
 _CLAUSES = re.compile(r"[，。；;!?！？]|\.\s+|\.$")
 _URL_TOKEN = re.compile(r"\x00\d+\x00")
@@ -19,7 +20,7 @@ _URL_LINE = re.compile(r"[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?"
 _ACTION = re.compile(
     r"web_search|open_url|上网|联网查询|在线查找|查网页|查资料|官方文档|浏览网页|读取网页|"
     r"\b(?:browse|search the web|look online)\b", re.IGNORECASE)
-_OPEN = re.compile(r"打开|访问|读取|浏览|看看|查看|分析|了解|\b(?:open|visit|inspect|read|look at)\b", re.IGNORECASE)
+_OPEN = re.compile(r"打开|访问|读取|浏览|看看|查看|分析|了解|\b(?:open|visit|inspect|read|look at|navigate to)\b", re.IGNORECASE)
 _NEGATED = re.compile(r"(?:不要|勿|禁止|不允许|无需|不需要|不用|不必|do not|don't|never|without)"
                       r"(?:\s|直接|使用|用|再|去|帮我|请|directly\b)*$", re.IGNORECASE)
 
@@ -75,16 +76,22 @@ def _request_clauses(text: str) -> list[str]:
 
 def explicit_web_intent(task: str) -> WebIntent:
     text = _CODE.sub("", task)
+
+    def quoted_example(match: re.Match[str]) -> str:
+        return "" if _OPEN.search(match[0]) or _ACTION.search(match[0]) else match[0]
+
+    text = _QUOTED.sub(quoted_example, text)
     url_tokens: dict[str, tuple[str, str | None]] = {}
 
     def protect_url(match: re.Match[str]) -> str:
         token = f"\x00{len(url_tokens)}\x00"
         value = match[0]
         address = value.rstrip(").,:;!?")
-        # A closing Markdown parenthesis has an explicit boundary. Other
-        # stripped ASCII punctuation may belong to the URL; do not bind it.
+        # Markdown and an interior sentence boundary delimit the address.
+        # A trailing punctuation mark without such a boundary stays ambiguous.
         markdown = value == address + ")" and re.search(r"\[[^\]\n]+\]\($", text[:match.start()]) is not None
-        original = address if value == address or markdown else None
+        sentence = value == address + "." and re.match(r"[ \t]+[A-Z][a-z]+\b", text[match.end():]) is not None
+        original = address if value == address or markdown or sentence else None
         url_tokens[token] = (source_url_key(address), original)
         return token + value[len(address):]
 

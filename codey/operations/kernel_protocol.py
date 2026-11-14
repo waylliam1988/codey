@@ -164,13 +164,31 @@ def render_snapshot_contract(snapshot: TurnSnapshot) -> str:
 def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
     if snapshot.input_binding is not None and snapshot.input_binding.model_spec.name not in snapshot.tool_names:
         snapshot = replace(snapshot, input_binding=None)
+    order = {name: index for index, name in enumerate(snapshot.inventory_names)}
+
+    def spec_order(spec: ToolSpec) -> int:
+        return order.get(spec.name, len(order))
+
+    def executor_order(item: tuple[str, ToolExecutor | None]) -> int:
+        return order.get(item[0], len(order))
+
+    snapshot = replace(snapshot,
+        frozen_specs=tuple(sorted(snapshot.frozen_specs, key=spec_order)),
+        custom_executors=tuple(sorted(snapshot.custom_executors, key=executor_order)))
+    if snapshot.browser_followups:
+        from codey.codemode.catalog import render_declarations, snapshot_catalog
+
+        declarations = render_declarations(snapshot_catalog(snapshot))
+        snapshot = replace(snapshot, frozen_specs=tuple(
+            replace(spec, declarations=declarations) if spec.name == "codemode" else spec for spec in snapshot.frozen_specs))
     return replace(snapshot, contract_text=render_snapshot_contract(snapshot))
 
 
 def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSnapshot:
     from codey.policies.tool_requirement import parse_tool_success_check
 
-    if (session.task_kind != "chat" or not browser_followups.allows_surface(snapshot)
+    if (session.task_kind != "chat" or browser_followups.codemode_only(session.task_text)
+            or not browser_followups.allows_surface(snapshot)
             or (exposed := session.model_tool_names) is not None
             and not set(browser_followups.DIRECT_TOOLS) <= set(exposed)
             or set(browser_followups.DIRECT_TOOLS) & set(session.controller_denied)):
@@ -186,18 +204,21 @@ def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> T
             and (exposed is None or "browser_wait" in exposed)):
         direct_names = (*direct_names, "browser_wait")
     names = (*snapshot.tool_names, *(name for name in direct_names if name not in snapshot.tool_names))
-    inventory = (*names, *(name for name in snapshot.nested_tool_names if name not in names))
-    specs = {spec.name: spec for spec in snapshot.frozen_specs}
-    executors: dict[str, ToolExecutor | None] = dict(snapshot.custom_executors)
-    offered = replace(snapshot, tool_names=names,
-        frozen_specs=tuple(specs[name] for name in inventory),
-        custom_executors=tuple((name, executors[name]) for name in inventory),
-        browser_followups=True, browser_fill_text=browser_followups.explicit_fill_text(session.task_text))
-    from codey.codemode.catalog import render_declarations, snapshot_catalog
+    offered = replace(snapshot, tool_names=names, browser_followups=True,
+                      browser_fill_text=browser_followups.explicit_fill_text(session.task_text))
+    return refresh_snapshot_contract(offered)
 
-    declarations = render_declarations(snapshot_catalog(offered))
-    return refresh_snapshot_contract(replace(offered, frozen_specs=tuple(
-        replace(spec, declarations=declarations) if spec.name == "codemode" else spec for spec in offered.frozen_specs)))
+
+def offer_browser_call(snapshot: TurnSnapshot, session: KernelSessionView, name: str) -> TurnSnapshot:
+    """Offer an existing leaf through the same single-step CodeMode lowering."""
+    if (name not in browser_followups.SINGLE_STEP_TOOLS
+            or browser_followups.codemode_only(session.task_text)
+            or not browser_followups.allows_surface(snapshot, (name,))
+            or name in session.controller_denied
+            or (session.model_tool_names is not None and name not in session.model_tool_names)):
+        return snapshot
+    return refresh_snapshot_contract(replace(snapshot, browser_followups=True,
+        tool_names=(*snapshot.tool_names, *((name,) if name not in snapshot.tool_names else ()))))
 
 
 @dataclass(frozen=True)
@@ -969,7 +990,7 @@ def _lower_bound_inputs(
     lowered: list[tuple[str, ToolArgs, str]] = []
     for raw, args, call_id in items:
         name = _canonical_name(raw)
-        direct = snapshot.browser_followups and name in {"browser_fill", "browser_click", "browser_wait"} and name in models
+        direct = snapshot.browser_followups and name in {"browser_fill", "browser_click", *browser_followups.SINGLE_STEP_TOOLS} and name in models
         if not direct and (binding is None or name != binding.model_spec.name or name not in models):
             lowered.append((raw, args, call_id))
             continue
@@ -982,13 +1003,8 @@ def _lower_bound_inputs(
                 if name == "browser_fill":
                     inputs = browser_followups.fill_args(args, snapshot.browser_fill_text)
                     code = browser_followups.FILL + browser_followups.OBSERVE
-                elif name == "browser_click":
-                    inputs = dict(args)
-                    lowered.append(("codemode", {"code": "return unwrap(await tools.browser_click(inputs));",
-                                                  "inputs": inputs}, call_id))
-                    continue
                 else:
-                    lowered.append(("codemode", {"code": "return unwrap(await tools.browser_wait(inputs));",
+                    lowered.append(("codemode", {"code": f"return unwrap(await tools.{name}(inputs));",
                                                   "inputs": dict(args)}, call_id))
                     continue
                 lowered.append(("codemode", {"code": browser_followups.DIRECT_REF + code, "inputs": inputs}, call_id))

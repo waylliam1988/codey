@@ -40,7 +40,7 @@ from codey.providers.base import ProviderToolDefinition
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.ledger import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.support.real_cdp import chromium_executable
 from tools.completion_artifact_audit import rejection_audit, tool_receipts
 
@@ -68,7 +68,7 @@ def add_receipt(session: TaskSession, identity: str, value: str, *, ok: bool = T
 def test_explicit_mode_preserves_summary_as_one_string_even_without_receipt_bindings(text: str) -> None:
     session = session_for()
     output = prepare_completion_output(session, text, CompletionContext())
-    assert json.loads(output.text) == {"explanation": text}
+    assert parse_json_object(output.text) == {"explanation": text}
     assert evaluate(session, output.text, observations=output.observations).complete
     assert session.last_done_text == ""
 
@@ -83,9 +83,9 @@ def test_missing_failed_and_conflicting_receipts_cannot_be_filled_by_model_claim
         verdict = evaluate(session, output.text, observations=output.observations)
         assert verdict.complete is (stage == "first"), (stage, verdict)
         if stage == "first":
-            assert json.loads(output.text) == {"code": "actual", "explanation": 'code="actual"'}
+            assert parse_json_object(output.text) == {"code": "actual", "explanation": 'code="actual"'}
         else:
-            assert "code" not in json.loads(output.text)
+            assert "code" not in parse_json_object(output.text)
 
 
 @pytest.mark.parametrize(("state", "reason"), [
@@ -121,7 +121,7 @@ def test_browser_body_binding_uses_complete_original_receipt_before_format(state
     if reason:
         assert reason in verdict.followup and "output_format_invalid" not in verdict.followup
     else:
-        assert json.loads(output.text)["body"] == text
+        assert parse_json_object(output.text)["body"] == text
     assert "value" not in read.canonical
 
 
@@ -179,9 +179,9 @@ def test_api_forwards_production_output_mode_and_receipt_bindings() -> None:
         submitted.update(kwargs)
         return "accepted"
 
-    status, _ = run_submit_response({"task": "read and explain", "output_format": "json_explanation",
+    response: tuple[int, object] = run_submit_response({"task": "read and explain", "output_format": "json_explanation",
                                      "required_tools": [binding]}, submit)
-    assert status == 200
+    assert response[0] == 200
     assert submitted["output_format"] == "json_explanation"
     assert submitted["required_tools"] == (binding,)
 
@@ -298,7 +298,7 @@ def test_headless_binds_latest_browser_text_field(
         provider.close()
     terminal = next(row for row in reversed(events) if row["type"] == "task_done")
     assert result.stop_reason == "done", terminal
-    assert json.loads(str(terminal["summary"])) == {"code": "QUARTZ_851", "explanation": prose}
+    assert parse_json_object(str(terminal["summary"])) == {"code": "QUARTZ_851", "explanation": prose}
     rejection = rejection_audit(tmp_path / "state")["first_rejection"]
     if replace_document:
         assert "No matching receipt observes the current browser page" in str(decode_json_object(rejection)["reason"])
@@ -358,7 +358,7 @@ def test_headless_binds_declared_business_fields_from_current_browser_receipt(
         replies.append({"tool": "codemode", "args": {"code": nav + "return null;", "inputs": {"url": url}}})
     replies.append(done)
     if state != "complete":
-        prefix = ("const s=unwrap(await tools.browser_snapshot({}));"
+        prefix = meta if state == "stale" else ("const s=unwrap(await tools.browser_snapshot({}));"
                   "unwrap(await tools.browser_click({ref:s.elements.find(e=>e.name==='Refresh record').ref}));"
                   if state in {"partial", "wrong_type", "truncated"} else "")
         replies.extend([{"tool": "codemode", "args": {"code": prefix + read, "inputs": {"url": url}}}, done])
@@ -372,7 +372,7 @@ def test_headless_binds_declared_business_fields_from_current_browser_receipt(
     def observe(value: dict[str, object]) -> None:
         events.append(decode_json_object(value))
 
-    schema = {"type": "object", "properties": {
+    schema: JsonObject = {"type": "object", "properties": {
         key: {"type": "integer"} if key == "amount" else {"type": "string", "minLength": 1}
         for key in ("explanation", "page_url", "token", "amount", "unit", "code")},
         "required": ["explanation", "page_url", "token", "amount", "unit", "code"], "additionalProperties": False}
@@ -395,7 +395,7 @@ def test_headless_binds_declared_business_fields_from_current_browser_receipt(
     terminal = next(row for row in reversed(events) if row["type"] == "task_done")
     assert result.stop_reason == "done", terminal
     expected = record if state in {"complete", "missing", "failed_parent"} else later_record
-    assert json.loads(str(terminal["summary"])) == {"page_url": url, "token": token, "explanation": prose, **expected}
+    assert parse_json_object(str(terminal["summary"])) == {"page_url": url, "token": token, "explanation": prose, **expected}
     assert provider.calls == len(replies)
     receipts = tool_receipts(tmp_path / "state")
     read_receipts = [r.result for r in receipts if r.result.ok and r.result.call.args.get("code") == "window.__record"]
@@ -407,7 +407,10 @@ def test_headless_binds_declared_business_fields_from_current_browser_receipt(
     if state in {"partial", "wrong_type", "truncated"}:
         assert documents[0] == documents[1]
     rejection = rejection_audit(tmp_path / "state")["first_rejection"]
-    if field:
+    if state == "stale":
+        reason = str(decode_json_object(rejection)["reason"])
+        assert "current browser page" in reason
+    elif field:
         reason = str(decode_json_object(rejection)["reason"])
         assert f"'/{field}'" in reason and f"'/value/{field}'" in reason
         assert "output_format_invalid" not in reason
@@ -453,7 +456,7 @@ def test_headless_production_publishes_prose_and_receipt_fields_without_provider
         emit_jsonl=observe, connect_provider=connect)
     terminal = next(row for row in reversed(events) if row["type"] == "task_done")
     assert result.stop_reason == "done", terminal
-    assert json.loads(str(terminal["summary"])) == {"code": "REAL-CODE\n", "explanation": prose}
+    assert parse_json_object(str(terminal["summary"])) == {"code": "REAL-CODE\n", "explanation": prose}
     assert provider.calls == 2
     assert sum(row["type"] == "tool" and row.get("tool_name") == "read_file" for row in events) == 1
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from codey.automation.browser_session import BrowserToolOutput
 from codey.operations.browser_completion import committed_results
+from codey.operations.browser_waits import wait_plan as upload_wait_plan
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import has_explanation
 from codey.policies.tool_requirement import (
@@ -19,8 +20,8 @@ from codey.policies.tool_requirement import (
 from codey.runtime.core.models import ToolResult
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.task.web_intent import source_url_key
-from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, spec_for_tool, validate_args_against_spec
-from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
+from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, spec_for_tool
+from codey.types.json_value import JsonObject, decode_json_object
 
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
@@ -70,49 +71,6 @@ class UploadScope:
     read_page: bool
     chinese: bool
     wait_checks: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class UploadWaitPlan:
-    waits: tuple[JsonObject, ...]
-    missing: tuple[JsonObject, ...]
-
-    @property
-    def needs_arguments(self) -> bool:
-        """A single text marker cannot cover incompatible or non-text predicates."""
-        values = {argument_digest(args["value"]) for args in self.missing if "value" in args}
-        return len(values) > 1 or any(
-            any(key not in {"condition", "value", "timeout_ms"} for key in args)
-            or args.get("condition", "text") != "text" or args.get("timeout_ms", 5000) != 5000
-            for args in self.missing)
-
-
-def upload_wait_plan(checks: tuple[str, ...], supplied: tuple[JsonObject, ...] = ()) -> UploadWaitPlan:
-    """Plan executable waits and check every task argument predicate against the plan."""
-    required: list[JsonObject] = []
-    waits: list[JsonObject] = []
-    for check in checks:
-        rule = parse_tool_success_check(check)
-        if rule is None or rule.tool != "browser_wait":
-            continue
-        expected = parse_json_object(rule.arguments_json)
-        required.append(expected)
-        args = dict(expected)
-        args.setdefault("timeout_ms", 5000)
-        if (isinstance(args.get("condition"), str) and isinstance(args.get("value"), str)
-                and args["value"] and not validate_args_against_spec("browser_wait", args) and args not in waits):
-            waits.append(args)
-    for value in supplied:
-        args = dict(value)
-        args.setdefault("timeout_ms", 5000)
-        if error := validate_args_against_spec("browser_wait", args):
-            raise ValueError(error)
-        if args not in waits:
-            waits.append(args)
-    missing = tuple(expected for expected in required if not any(all(
-        key in wait and argument_digest(wait[key]) == argument_digest(value) for key, value in expected.items())
-        for wait in waits))
-    return UploadWaitPlan(tuple(waits), missing)
 
 
 def upload_scope(session: TaskSession) -> UploadScope | None:
@@ -203,7 +161,12 @@ def _upload_read_spec(checks: tuple[str, ...]) -> dict[str, object]:
     properties: dict[str, object] = {"action": {"type": "string", "enum": ["read"]}, "wait_for_text": _LABEL}
     required = ["action"]
     if plan.missing:
-        if plan.needs_arguments:
+        values = {argument_digest(args["value"]) for args in plan.missing if "value" in args}
+        needs_arguments = len(values) > 1 or any(
+            any(key not in {"condition", "value", "timeout_ms"} for key in args)
+            or args.get("condition", "text") != "text" or args.get("timeout_ms", 5000) != 5000
+            for args in plan.missing)
+        if needs_arguments:
             wait_spec = spec_for_tool("browser_wait")
             assert wait_spec is not None
             properties["waits"] = {"type": "array", "minItems": 1, "maxItems": len(plan.missing),

@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING
 
 from codey.operations.browser_completion import committed_results
 from codey.policies.output_requirement import is_output_check
-from codey.policies.tool_requirement import ToolSuccessRequirement
-from codey.types.json_value import JsonObject
+from codey.policies.requirement import RequirementEvaluation
+from codey.policies.tool_requirement import ToolObservation, ToolSuccessRequirement
+from codey.runtime.core.models import ToolCall
+from codey.types.json_value import JsonObject, decode_json_object
 
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
@@ -52,7 +54,7 @@ def report_scope(session: TaskSession) -> BrowserTextReport | None:
             or any(is_output_check(check) for check in policy.required_checks)):
         return None
     task = re.sub(r"```[\s\S]*?```", "", session.task_text)
-    properties = set(_READ_PROPERTY.findall(task))
+    properties = {match[1] for match in _READ_PROPERTY.finditer(task)}
     reports = [match[1] for match in _REPORT.finditer(task) if not _NO_REPORT.search(task[:match.start()])]
     if (len(properties) != 1 or not re.search(r"\bbrowser_tab_list\b", task, re.ASCII)
             or not any(_TOKEN.search(fields) and _URL.search(fields) for fields in reports)):
@@ -74,30 +76,47 @@ class BrowserMetadata:
         return f"{prose}\n\n{fields}" if prose else fields
 
 
+@dataclass(frozen=True)
+class MetadataPending:
+    evaluation: RequirementEvaluation
+    call: ToolCall | None = None
+
+
+def _pending(observation: ToolObservation, call: ToolCall, feedback: str) -> MetadataPending:
+    evaluation = observation.evaluation
+    return MetadataPending(RequirementEvaluation(evaluation.reason_code or "observation_selector_unavailable",
+        feedback + evaluation.feedback, evaluation.evidence_refs),
+        None if evaluation.reason_code in {"tool_parent_missing", "observation_receipt_invalid", "conflicting_observations"}
+        else call)
+
+
 def observe_metadata(scope: BrowserTextReport, records: Mapping[str, ExecutionRecord],
-                     results: Mapping[str, ToolResult], document: JsonObject | None) -> BrowserMetadata | str:
+                     results: Mapping[str, ToolResult], document: JsonObject | None) -> BrowserMetadata | MetadataPending:
     url = document.get("url") if document is not None else None
     if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-        return "Observe the current browser document before reporting its URL and script token."
+        return MetadataPending(RequirementEvaluation("browser_document_missing",
+            "Observe the current browser document before reporting its URL and script token."))
     eligible: set[str] = set()
     for ref, result in committed_results(records, results, METADATA_TOOLS):
         if result.truncated or result.audit.get("browser_document") != document:
             continue
         if result.call.name == "browser_eval":
-            value, code = result.canonical.get("value"), result.call.args.get("code")
+            raw, code = result.canonical.get("value"), result.call.args.get("code")
+            observed_value = decode_json_object(raw) if isinstance(raw, dict) else None
             match = _PROPERTY_EXPRESSION.fullmatch(code) if isinstance(code, str) else None
-            if (match is None or match[1] != scope.expression or not isinstance(value, dict)
-                    or value.get("truncated") is not False):
+            expression: str = match[1] if match is not None else ""
+            if (expression != scope.expression or observed_value is None or observed_value.get("truncated") is not False):
                 continue
         eligible.add(ref)
     current = {ref: row for ref, row in records.items() if row["name"] not in METADATA_TOOLS or ref in eligible}
     tab = ToolSuccessRequirement("browser_tab_list", scope.via, answer_pointer="/page_url", result_pointer="/page_url")
     script = ToolSuccessRequirement("browser_eval", scope.via, answer_pointer="/token", result_pointer="/value")
-    page = tab.observe(current, results=results)
-    token = script.observe(current, results=results)
+    page = tab.observe(current, results=results, browser_document=document)
+    token = script.observe(current, results=results, browser_document=document)
     if not page.evaluation.passed or page.value != url:
-        return "Use browser_tab_list on the current browser document. " + page.evaluation.feedback
+        return _pending(page, ToolCall("browser_tab_list", {}), "Use browser_tab_list on the current browser document. ")
     if (not token.evaluation.passed or not isinstance(value := token.value, str) or not value or value != value.strip()
             or value.splitlines() != [value]):
-        return f"Read {scope.expression} with browser_eval on the current browser document. " + token.evaluation.feedback
+        return _pending(token, ToolCall("browser_eval", {"code": scope.expression}),
+                        f"Read {scope.expression} with browser_eval on the current browser document. ")
     return BrowserMetadata(url, value)

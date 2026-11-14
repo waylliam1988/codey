@@ -381,7 +381,7 @@ class KernelContext:
                     and browser is not None and browser.document_identity() is not None):
                 snapshot = kernel_protocol.offer_browser_tools(snapshot, self.session)
             context = replace(self.completion_context, browser_document=browser.document_identity() if browser else None)
-            return snapshot, browser_task_handoff(self.session, snapshot, context)
+            return browser_task_handoff(self.session, snapshot, context, browser.generation if browser else None)
         from codey.operations.browser_detail import offer_page_details
         from codey.operations.research_submission_handoff import research_submission_handoff
 

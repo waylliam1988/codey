@@ -108,7 +108,8 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
             if browser is not None:
                 completion_context = replace(completion_context, browser_document=browser.document_identity())
         output = prepare_completion_output(context.session, context.session.last_done_text, completion_context)
-        verdict = evaluate(context.session, output.text, context=completion_context, observations=output.observations)
+        verdict = evaluate(context.session, output.text, context=completion_context,
+                           observations=output.observations, metadata=output.metadata)
         if type(verdict.complete) is not bool:
             raise ValueError("completion gate returned an invalid verdict")
         complete, followup, proof = verdict.complete, verdict.followup, verdict.proof

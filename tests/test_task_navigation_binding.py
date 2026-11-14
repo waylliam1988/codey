@@ -307,8 +307,11 @@ def test_original_basic_failure_through_production_binding_without_an_adapter(
     assert result["passed"] is bound, result
     receipts = [row.result for row in tool_receipts(directory / "state")]
     navigation = [row for row in receipts if row.call.name == "browser_navigate"]
-    assert len(navigation) == 1
-    assert navigation[0].call.args == {"url": URL if bound else URL.replace("-", "_")}
-    assert decode_json_object(navigation[0].canonical["value"])["http_status"] == (200 if bound else 404)
+    assert len(navigation) == 2
+    prerequisite, requested = navigation
+    assert prerequisite.call.call_id == "required-source:navigation" and prerequisite.ok
+    assert prerequisite.call.args == {"url": URL}
+    assert requested.call.args == {"url": URL if bound else URL.replace("-", "_")}
+    assert decode_json_object(requested.canonical["value"])["http_status"] == (200 if bound else 404)
     assert all("recovery did not consume" not in row.model_text for row in receipts)
     assert fingerprints and all(row["task_navigation_url"] == URL for row in fingerprints)
