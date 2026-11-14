@@ -18,7 +18,7 @@ from tools.completion_artifact_audit import EffectReceipt
 def test_neighbor_in_source_is_not_automatically_neighbor_in_delivered_passage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, show_neighbor: bool,
 ) -> None:
-    target = 'Target TARGET_173.'
+    target = 'Target 18:20 TARGET_173.'
     text = target + '\nNeighbor OTHER_174.'
     ledger = ResearchLedger()
     ledger.record_open('https://example.com/scope', 'https://example.com/scope', 'Scope', text)
@@ -50,6 +50,22 @@ def test_ordinary_read_is_not_counted_as_targeted_readback(tmp_path: Path, monke
     row = probe.audit(tmp_path, {'answer': 'OTHER_174'})
     assert row['targeted_read_reached'] is False
     assert row['neighbor_in_answer'] is True
+
+
+def test_target_marker_in_region_metadata_cannot_replace_actual_target_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ledger = ResearchLedger()
+    url = 'https://example.com/scope'
+    ledger.record_open(url, url, 'Scope', 'Target 18:20 TARGET_173.')
+    result = ToolResult(ToolCall('browser_read', {}), 'Read', ok=True,
+        canonical={'research_observation': ledger_observation(ledger, 'browser_read', url=url), 'read_passages': []},
+        audit={'query_region': {'label': '18:20 TARGET_173', 'text': 'Not loaded yet.'}})
+
+    def receipts(_state: Path) -> list[EffectReceipt]:
+        return [EffectReceipt('read', result, None)]
+    monkeypatch.setattr(probe, 'tool_receipts', receipts)
+    assert probe.audit(tmp_path, {})['target_read_correct'] is False
 
 
 @pytest.mark.parametrize('citation', ['target', 'neighbor', 'source'])
@@ -102,3 +118,31 @@ def test_code_only_labels_do_not_count_as_answer_citations(wrapper: str, source_
     prose = evidence_checks([result], answer + f'\n\nThe actual evidence is {label}.', ('18:20', 'TARGET_173'))
     assert prose['correct_evidence_cited'] is True
     assert prose['exact_passage_cited'] is (not source_label)
+
+
+@pytest.mark.parametrize('mixed,source_only', [(False, False), (True, False), (False, True)])
+def test_scope_delivery_and_actually_cited_passage_are_scored_independently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mixed: bool, source_only: bool,
+) -> None:
+    url = 'https://example.com/record-scope'
+    target = '18:20 TARGET_173.\n'
+    text = target + '12:10 OTHER_174.'
+    ledger = ResearchLedger()
+    ledger.record_open(url, url, 'Orders', text)
+    observation = ledger_observation(ledger, 'browser_read', url=url)
+    source, _, _ = source_observation(observation)
+    end = len(text) if mixed else len(target)
+    ref = passage_ref(url, source.text_hash, 0, end)
+    result = ToolResult(ToolCall('browser_read', {}), 'Window', ok=True,
+        canonical={'source_id': 's1', 'research_observation': observation,
+                   'read_passages': [{'ref': ref, 'start': 0, 'end': end}]},
+        audit={'query_region': {'text': target}})
+
+    def receipts(_state: Path) -> list[EffectReceipt]:
+        return [EffectReceipt('read', result, None)]
+    monkeypatch.setattr(probe, 'tool_receipts', receipts)
+    row = probe.audit(tmp_path, {'passed': True, 'answer': f'18:20 TARGET_173 [{"s1" if source_only else ref}]'})
+    assert row['passed'] is True  # Existing task/source success remains a separate metric.
+    assert row['scope_passed'] is (not mixed and not source_only)
+    assert row['cited_target_passage_contains_neighbor'] is (mixed and not source_only)
+    assert row['exact_target_passage_supported'] is (not source_only)

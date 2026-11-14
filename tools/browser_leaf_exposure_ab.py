@@ -26,9 +26,10 @@ from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
-from codey.policies.tool_requirement import _browser_body, decode_answer
+from codey.policies.tool_requirement import decode_answer
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.ledger import ResearchLedger
+from codey.research.ledger_receipts import source_observation
 from codey.research.passages import restore_passages
 from codey.runtime.core.models import ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
@@ -197,16 +198,16 @@ def evidence_checks(receipts: list[ToolResult], answer: str, facts: tuple[str, .
         if not row.ok or row.call.name not in {"browser_read", "open_url"}:
             continue
         try:
-            body = _browser_body(row)
+            source, _, _ = source_observation(row.canonical.get('research_observation'))
             excerpts = passage_texts(row)
         except (KeyError, TypeError, ValueError):
             continue
-        if body is None or not all(fact in body for fact in facts):
+        delivered_text = '\n'.join(text for _, text in excerpts)
+        if row.truncated or source.truncated or not all(fact in delivered_text for fact in facts):
             continue
         matching.append(row.call.name)
         # Passage references are the canonical identifiers advertised by Chat.
         cited_text = '\n'.join(text for ref, text in excerpts if ref in citations)
-        delivered_text = '\n'.join(text for _, text in excerpts)
         if cited_text and all(fact in cited_text for fact in facts):
             exact.append(row.call.name)
             cited.append(row.call.name)
