@@ -1,24 +1,26 @@
 """Read explicit DOM control relationships through the existing Chromium session."""
 from __future__ import annotations
 
+import json
+from contextlib import suppress
+from uuid import uuid4
+
 from playwright.sync_api import CDPSession, ElementHandle, Error, Page
 
 from codey.types.json_value import JsonObject, decode_json_object, require_json_integer, require_json_string
 
 _TARGET = """el => {
-    let target = null, relation = '', selector = '', index = 0;
+    let target = null, relation = '';
     if (el.matches('summary') && el.parentElement?.matches('details')) {
-        target = el.parentElement; relation = 'native-details'; selector = 'details';
-        index = [...document.querySelectorAll(selector)].indexOf(target);
+        target = el.parentElement; relation = 'native-details';
     } else {
         const ids = (el.getAttribute('aria-controls') || '').trim().split(/\\s+/).filter(Boolean);
-        if (ids.length !== 1) return null;
-        selector = '#' + CSS.escape(ids[0]);
-        const matches = document.querySelectorAll(selector);
-        if (matches.length !== 1) return null;
+        if (ids.length !== 1) return {relation, node: null};
+        const matches = el.getRootNode().querySelectorAll('#' + CSS.escape(ids[0]));
+        if (matches.length !== 1) return {relation, node: null};
         target = matches[0]; relation = 'aria-controls';
     }
-    return {relation, selector, index, text: target.innerText.replace(/\\s+/g, ' ').trim()};
+    return {relation, node: target};
 }"""
 _STATE = """function() {
     if (!this.isConnected || this.ownerDocument !== document) return null;
@@ -41,34 +43,60 @@ def _send(cdp: CDPSession, method: str, params: dict[str, object] | None = None)
 
 def bind_query_target(page: Page, control: ElementHandle) -> JsonObject | None:
     """Persist a browser node identity, never a selector to rediscover after restart."""
-    raw: object = control.evaluate(_TARGET)
-    if raw is None:
-        return None
-    target = decode_json_object(raw)
-    cdp = page.context.new_cdp_session(page)
+    observed = control.evaluate_handle(_TARGET)
     try:
-        root = _send(cdp, 'DOM.getDocument')
-        node = decode_json_object(root['root'])
-        matches = _send(cdp, 'DOM.querySelectorAll', {
-            'nodeId': require_json_integer(node['nodeId'], 'root node'),
-            'selector': require_json_string(target['selector'], 'selector'),
-        })
-        nodes = matches.get('nodeIds')
-        index = require_json_integer(target['index'], 'index')
-        if not isinstance(nodes, list) or not 0 <= index < len(nodes):
-            raise QueryObservationError('query_target_changed', 'The controlled node changed before the click.')
-        described = _send(cdp, 'DOM.describeNode', {'nodeId': require_json_integer(nodes[index], 'node')})
-        backend = require_json_integer(decode_json_object(described['node'])['backendNodeId'], 'backend node')
+        node_handle = observed.get_property('node')
+        target = node_handle.as_element()
+        if target is None:
+            node_handle.dispose()
+            return None
+        relation_handle = observed.get_property('relation')
+        try:
+            raw_relation: object = relation_handle.json_value()
+            relation = require_json_string(raw_relation, 'relation')
+        finally:
+            relation_handle.dispose()
+        try:
+            backend = _backend_node(page, target)
+            binding: JsonObject = {'backend_node_id': backend, 'relation': relation}
+            observe_query_target(page, binding)
+            still_controlled: object = control.evaluate(
+                '(el, node) => { const current = (' + _TARGET + ')(el); return !!current && current.node === node; }', target)
+            if still_controlled is not True:
+                raise QueryObservationError('query_target_changed', 'The control relationship changed before the click.')
+            return binding
+        finally:
+            target.dispose()
+    except Error as exc:
+        raise QueryObservationError('query_target_unavailable', 'The controlled node is unavailable before the click.') from exc
     finally:
+        observed.dispose()
+
+
+def _backend_node(page: Page, node: ElementHandle) -> int:
+    """Bridge an actual handle to CDP; no selector, index or persistent node map."""
+    cdp = page.context.new_cdp_session(page)
+    key = '__codey_query_node_' + uuid4().hex
+    try:
+        # Playwright and CDP do not share public handle IDs. This temporary,
+        # nonenumerable reference crosses that boundary and is consumed at once.
+        args: dict[str, object] = {'node': node, 'key': key}
+        _value: object = page.evaluate('''({node, key}) => {
+            Object.defineProperty(globalThis, key, {value: node, configurable: true});
+        }''', args)
+        remote = _send(cdp, 'Runtime.evaluate', {
+            'expression': '(() => { const node = globalThis[' + json.dumps(key)
+                + ']; delete globalThis[' + json.dumps(key) + ']; return node; })()',
+            'objectGroup': 'codey-query-binding',
+        })
+        handle = decode_json_object(remote['result'])
+        described = _send(cdp, 'DOM.describeNode', {'objectId': require_json_string(handle['objectId'], 'node object')})
+        return require_json_integer(decode_json_object(described['node'])['backendNodeId'], 'backend node')
+    finally:
+        with suppress(Error):
+            _value = page.evaluate('key => { delete globalThis[key]; }', key)
+        _send(cdp, 'Runtime.releaseObjectGroup', {'objectGroup': 'codey-query-binding'})
         cdp.detach()
-    # The selector is used only at observation time. Later reads resolve the
-    # original browser node, and reject replacements with identical labels/IDs.
-    binding: JsonObject = {'backend_node_id': backend, 'relation': target['relation']}
-    state = observe_query_target(page, binding)
-    again: object = control.evaluate(_TARGET)
-    if again != raw or state['text'] != target['text']:
-        raise QueryObservationError('query_target_changed', 'The control relationship changed before the click.')
-    return binding
 
 
 def observe_query_target(page: Page, binding: JsonObject) -> JsonObject:

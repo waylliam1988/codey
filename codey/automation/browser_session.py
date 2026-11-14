@@ -20,7 +20,7 @@ from playwright.sync_api import ElementHandle, Error, FilePayload, Page
 
 from codey.automation.browser_binding import BrowserBinding
 from codey.automation.browser_document import same_document
-from codey.automation.browser_observation import observe_element, render_controls, same_node
+from codey.automation.browser_observation import observe_element, observe_elements, render_controls, same_node
 from codey.automation.browser_query import QueryObservationError, bind_query_target, observe_query_target
 from codey.policies.network import check_fetch_url
 from codey.research.browser_page import (
@@ -258,12 +258,11 @@ class BrowserSession:
         )
         elements: list[JsonObject] = []
         contexts: dict[str, JsonObject] = {}
-        context_nodes: list[ElementHandle] = []
+        metadata_rows, observed_contexts, context_nodes = observe_elements(page, handles)
         elements_truncated = False
-        for handle in handles:
+        for handle, metadata in zip(handles, metadata_rows, strict=True):
             if not handle.is_visible():
                 continue
-            metadata, context_node = observe_element(handle)
             role = _element_role(metadata)
             name = " ".join(str(metadata.get("name") or "").split())[:240]
             if not name and role not in {"textbox", "combobox"}:
@@ -272,21 +271,19 @@ class BrowserSession:
                 elements_truncated = True
                 break
             ref = f"b{self._reference_scope}g{self._generation}e{len(elements) + 1}"
-            context = metadata.get("context")
-            context_id = ""
-            if isinstance(context, dict) and context_node is not None:
-                index = next((i for i, node in enumerate(context_nodes) if same_node(node, context_node)), None)
-                if index is None:
-                    index = len(context_nodes)
-                    context_nodes.append(context_node)
-                    contexts[f'c{index}'] = {'id': f'c{index}', **context}
-                context_id = f'c{index}'
-                context = contexts[context_id]
+            context_id = str(metadata['context_id'])
+            context = observed_contexts.get(context_id)
+            context_node = context_nodes.get(context_id)
+            if context is not None:
+                contexts[context_id] = context
             self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url, document,
                                          context if isinstance(context, dict) else None, context_node)
             elements.append({"ref": ref, "role": role, "name": name,
                              "context_id": context_id,
                              **{key: metadata[key] for key in ("value", "disabled", "checked")}})
+        for context_id, node in context_nodes.items():
+            if context_id not in contexts:
+                node.dispose()
         if not same_document(document, self._document_identity_on_browser_thread()):
             self._invalidate_refs()
             raise RuntimeError("The document changed while observing controls; take a fresh browser_snapshot.")

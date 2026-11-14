@@ -32,6 +32,7 @@ from codey.research.ledger import ResearchLedger
 from codey.research.passages import restore_passages
 from codey.runtime.core.models import ToolResult
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
+from codey.utils.citation_scanner import mask_markdown_code
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import (
@@ -188,7 +189,7 @@ def passage_texts(receipt: ToolResult) -> list[tuple[str, str]]:
 
 def evidence_checks(receipts: list[ToolResult], answer: str, facts: tuple[str, ...]) -> JsonObject:
     """Resolve answer citations against real receipt passages, never against all page text."""
-    citations = {match.group(1) for match in re.finditer(r"\[([^\[\]\s]+)\]", answer)}
+    citations = {match.group(1) for match in re.finditer(r"\[([^\[\]\s]+)\]", mask_markdown_code(answer))}
     matching = []
     cited = []
     exact = []
