@@ -17,6 +17,8 @@
 
 日志、类型配置和测试首次失败：`.e2e-artifacts/bc1/`。新增模块已在最终实机前纳入 git 索引，生产摘要覆盖该模块。
 
+后续第二部分复查补充：tools 为隐式命名空间，必须以 `--explicit-package-bases` 确保模块级严格 Any 设置匹配。该复查发现本实验脚本一处打印字典的隐式 Any，已在第二部分改成显式 JsonObject；最终严格检查及日志见第二部分报告。前述第一部分初次检查不能单独证明该脚本已应用模块级额外 Any 门禁。
+
 ## 完整实机矩阵
 
 命令：`python -u -m tools.browser_full_surface_live_gate --run-dir .e2e-artifacts/bc1-final-live --scenario all --timeout 180`。

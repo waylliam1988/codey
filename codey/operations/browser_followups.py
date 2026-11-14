@@ -151,12 +151,36 @@ def delivery(result: ToolResult) -> object:
     return value.get("delivery") if isinstance(value, dict) else None
 
 
-def pending_click(results: Mapping[str, ToolResult]) -> tuple[str, ToolResult] | None:
+def query_document(results: Mapping[str, ToolResult], document: JsonObject | None = None) -> JsonObject | None:
+    if document is not None:
+        return document
+    for receipt in reversed(tuple(results.values())):
+        observed = receipt.audit.get("browser_document")
+        if isinstance(observed, dict):
+            return decode_json_object(observed)
+    return None
+
+
+def interrupted_query(result: ToolResult, document: JsonObject | None) -> bool:
+    baseline = result.audit.get("query_baseline")
+    original = baseline.get("document") if isinstance(baseline, dict) else None
+    return bool(document and isinstance(original, dict) and original and original != document)
+
+
+def unconfirmed_clicks(results: Mapping[str, ToolResult]) -> tuple[tuple[str, ToolResult], ...]:
+    """Project unsettled queries once for both current-page and historical views."""
     confirmed: set[str] = set()
+    pending: list[tuple[str, ToolResult]] = []
     for ref, receipt in reversed(tuple(results.items())):
         if receipt.call.name == "browser_read" and receipt.ok and isinstance(click := receipt.audit.get("query_click"), str):
             confirmed.add(click)
         if ("query_baseline" in receipt.audit and receipt.call.name == "browser_click"
                 and ref not in confirmed and delivery(receipt) in ("delivered", "uncertain")):
-            return ref, receipt
-    return None
+            pending.append((ref, receipt))
+    return tuple(pending)
+
+
+def pending_click(results: Mapping[str, ToolResult], document: JsonObject | None = None) -> tuple[str, ToolResult] | None:
+    current = query_document(results, document)
+    return next(((ref, receipt) for ref, receipt in unconfirmed_clicks(results)
+                 if not interrupted_query(receipt, current)), None)

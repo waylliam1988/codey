@@ -20,6 +20,7 @@ from playwright.sync_api import ElementHandle, Error, FilePayload, Page
 
 from codey.automation.browser_binding import BrowserBinding
 from codey.automation.browser_observation import ELEMENT_METADATA, render_controls
+from codey.automation.browser_query import QueryObservationError, bind_query_target, observe_query_target
 from codey.policies.network import check_fetch_url
 from codey.research.browser_page import (
     _validate_page_content_type,
@@ -60,6 +61,8 @@ class _ElementRef:
     page_token: int
     generation: int
     url: str
+    document: JsonObject | None = None
+    context: JsonObject | None = None
 
 
 def normalize_element_ref(ref: str) -> str:
@@ -193,27 +196,35 @@ class BrowserSession:
     def capture_query_result(self, baseline: JsonObject, *, pending: str) -> dict[str, object]:
         return _browser_call(self._capture_query_result, baseline, pending)
 
-    def _query_observation(self) -> JsonObject:
+    def _query_observation(self, target: JsonObject | None = None) -> JsonObject:
         document = self._document_identity_on_browser_thread()
         page = self._page_on_browser_thread()
+        if target is not None:
+            return {"document": document, "regions": [observe_query_target(page, target)]}
         regions: object = page.evaluate(_RESULT_REGIONS)
         return decode_json_object({"document": document, "regions": regions})
 
     def _capture_query_result(self, baseline: JsonObject, pending: str) -> dict[str, object]:
         deadline = time.monotonic() + 2.5
+        raw_target = baseline.get("target")
+        target = decode_json_object(raw_target) if isinstance(raw_target, dict) else None
         while True:
             cancellation.check()
-            current = self._query_observation()
+            if self._document_identity_on_browser_thread() != baseline.get("document"):
+                raise QueryObservationError("query_document_changed", pending + " The query document changed.")
+            current = self._query_observation(target)
             if not current["document"] or current["document"] != baseline.get("document"):
-                raise RuntimeError(pending + " The query document changed.")
+                raise QueryObservationError("query_document_changed", pending + " The query document changed or is unavailable.")
             if region := _changed_query_region(baseline, current):
                 page = self._capture_on_browser_thread()
                 body = page.get("text")
                 if (page.get("status") == "ok" and isinstance(body, str)
-                        and region in " ".join(body.split()) and self._query_observation() == current):
+                        and region in " ".join(body.split()) and self._query_observation(target) == current):
+                    if target is not None:
+                        page["query_region"] = {"text": region, "relation": target["relation"]}
                     return page
             if time.monotonic() >= deadline:
-                raise RuntimeError(pending)
+                raise QueryObservationError("query_update_unconfirmed", pending)
             cancellation.wait(0.1)
 
     def _page_on_browser_thread(self) -> Page:
@@ -257,12 +268,13 @@ class BrowserSession:
                 elements_truncated = True
                 break
             ref = f"b{self._reference_scope}g{self._generation}e{len(elements) + 1}"
-            self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url)
             context = metadata.get("context")
             context_id = ""
             if isinstance(context, dict) and isinstance(context.get("id"), str):
                 context_id = str(context["id"])
                 contexts[context_id] = context
+            self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url, document,
+                                         context if isinstance(context, dict) else None)
             elements.append({"ref": ref, "role": role, "name": name,
                              "context_id": context_id,
                              **{key: metadata[key] for key in ("value", "disabled", "checked")}})
@@ -317,7 +329,15 @@ class BrowserSession:
             page, handle = self._resolve_ref(ref)
         except RuntimeError as exc:
             return self._stale_ref_output("click", ref, exc)
-        baseline = self._query_observation() if query else None
+        baseline = None
+        if query:
+            try:
+                target = bind_query_target(page, handle)
+                baseline = self._query_observation(target)
+                if target is not None:
+                    baseline["target"] = target
+            except QueryObservationError as exc:
+                return self._stale_ref_output("click", ref, exc, reason=exc.reason)
         try:
             handle.click(timeout=5_000, no_wait_after=True)
         except Exception as exc:
@@ -622,12 +642,18 @@ class BrowserSession:
         entry = self._refs.get(ref)
         if entry is None or entry.page_token != id(page) or entry.generation != self._generation or entry.url != page.url:
             raise RuntimeError("stale browser element reference; take a fresh browser_snapshot")
+        if entry.document is not None and entry.document != self._document_identity_on_browser_thread():
+            raise RuntimeError("stale browser element reference; the document changed")
         try:
             connected: object = entry.handle.evaluate("el => el.isConnected && el.ownerDocument === document")
         except Error as exc:
             raise RuntimeError("stale browser element reference; document is no longer available") from exc
         if connected is not True:
             raise RuntimeError("stale browser element reference; original node is detached")
+        if entry.context is not None:
+            raw: object = entry.handle.evaluate(ELEMENT_METADATA)
+            if canonical_json_object(raw).get("context") != entry.context:
+                raise RuntimeError("stale browser element reference; observed structural context changed")
         return page, entry.handle
 
     def _invalidate_refs(self) -> None:

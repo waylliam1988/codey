@@ -90,7 +90,8 @@ def main() -> int:
                     row = run_arm(args.run_dir / name, CASE, 'A', target)
                 row.update(context=grouped, recovery=recovery, injected=injected, fault=fault)
                 results.append(row)
-                print(json.dumps({'case': name, 'passed': row['passed'], 'injected': injected}), flush=True)
+                status: JsonObject = {'case': name, 'passed': row['passed'], 'injected': injected}
+                print(json.dumps(status), flush=True)
     write_json(args.run_dir / 'summary.json', results)
     return 0
 

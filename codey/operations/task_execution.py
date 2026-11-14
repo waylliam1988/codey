@@ -348,7 +348,7 @@ class ExecutionDelegate:
             value["text"] = value.get("text", output.model_text)
             audit: JsonObject = {"query_baseline": baseline} if baseline is not None else {}
             if (call.name == "browser_wait" and output.ok and self.session is not None
-                    and browser_followups.pending_click(self.session._memory_results) is not None):
+                    and browser_followups.pending_click(self.session._memory_results, browser.document_identity()) is not None):
                 audit["query_wait_document"] = browser.document_identity()
             result = ToolResult(ok=output.ok, call=call, model_text=output.model_text,
                                 canonical={"value": value}, audit=audit)
@@ -369,7 +369,10 @@ class ExecutionDelegate:
                                     max_text=require_json_integer(args.get("max_text", 12000), "max_text"),
                                     file_inputs_only=file_inputs_only)
         if call.name == "browser_click":
-            if self.session is not None and (pending := browser_followups.pending_click(self.session._memory_results)) is not None:
+            if self.session is not None and (pending := browser_followups.pending_click(
+                    self.session._memory_results, browser.document_identity())) is not None:
+                from codey.automation.browser_session import BrowserToolOutput
+
                 message = (browser_followups.UNCERTAIN if browser_followups.delivery(pending[1]) == "uncertain"
                            else browser_followups.PENDING)
                 return BrowserToolOutput(message, False, {"action": "click", "ref": ref, "delivery": "not_delivered"})

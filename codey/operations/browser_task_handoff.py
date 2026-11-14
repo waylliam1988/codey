@@ -13,7 +13,9 @@ from codey.operations.browser_followups import (
     click_followup_plan,
     codemode_only,
     delivery,
+    interrupted_query,
     pending_click,
+    unconfirmed_clicks,
 )
 from codey.operations.browser_text_report import MetadataPending, observe_metadata, report_scope
 from codey.operations.completion_context import CompletionContext
@@ -100,7 +102,7 @@ def _metadata_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
     current_read = isinstance(url, str) and any(
         result.audit.get("browser_document") == document and complete_page_passages(result, url)
         for _, result in committed_results(records, results, frozenset({"browser_read"})))
-    if (not current_read or pending_click(results) is not None
+    if (not current_read or pending_click(results, context.browser_document) is not None
             or any(rule.tool not in {"browser_eval", "browser_tab_list"} for rule, _ in pending)):
         return snapshot, ""
     call: ToolCall | None = None
@@ -177,7 +179,8 @@ def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Complet
     waiting = any(not rule.observe(records, results=results).evaluation.passed for rule in waits)
     lines = []
     clicks = committed_results(records, results, frozenset({"browser_click"}), include_failed=frozenset({"browser_click"}))
-    if clicks and delivery(clicks[-1][1]) in {"delivered", "uncertain"}:
+    if (clicks and clicks[-1][1].audit.get("browser_document") == context.browser_document
+            and delivery(clicks[-1][1]) in {"delivered", "uncertain"}):
         ref, result = clicks[-1]
         if delivery(result) == "uncertain":
             lines.append(UNCERTAIN)
@@ -210,19 +213,36 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     records, results = tool_facts(session, context)
     rules = [rule for check in session.policy.required_checks
              if (rule := parse_tool_success_check(check)) is not None]
-    click = pending_click(results)
+    click = pending_click(results, context.browser_document)
     if click is not None:
         uncertain = delivery(click[1]) == "uncertain"
-        snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot" if uncertain else "browser_read", {}))
+        call = ToolCall("browser_snapshot" if uncertain else "browser_read", {})
+        if not uncertain:
+            plan = click_followup_plan(session.policy.required_checks, set(snapshot.nested_tool_names))
+            steps = plan.plans.get("result")
+            if isinstance(steps, list):
+                refs = tuple(results)
+                subsequent = [results[ref] for ref in refs[refs.index(click[0]) + 1:]]
+                for raw in steps:
+                    step = decode_json_object(raw)
+                    args = decode_json_object(step["args"])
+                    if step["name"] == "browser_wait" and not any(row.ok and row.call.name == "browser_wait"
+                            and row.call.args == args and row.audit.get("query_wait_document") == context.browser_document
+                            for row in subsequent):
+                        call = ToolCall("browser_wait", args)
+                        break
+        snapshot, action = _call_handoff(session, snapshot, call)
         return snapshot, (UNCERTAIN if uncertain else PENDING) + "\n" + action
+    interrupted = any(interrupted_query(row, context.browser_document) for _, row in unconfirmed_clicks(results))
     if not rules:
-        return snapshot, ""
+        return snapshot, ("The previous query document changed; its outcome remains unverified. "
+                          "Use current-page observations for further work." if interrupted else "")
     observed = [(rule, rule.observe(records, results=results, browser_document=context.browser_document))
                 for rule in rules]
     pending = [(rule, outcome.evaluation) for rule, outcome in observed if not outcome.evaluation.passed]
     lines = ["Next step from committed receipts (reuse completed work):"]
-    if (click := pending_click(results)) is not None:
-        lines.append(UNCERTAIN if delivery(click[1]) == "uncertain" else PENDING)
+    if interrupted:
+        lines.append("A previous query was interrupted by a document change; its outcome remains unverified.")
     lines.append(_wait_handoff(session, snapshot, context))
     snapshot, metadata = _metadata_handoff(session, snapshot, context, observed)
     if metadata:

@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codey.automation.browser_detail import observe_details, read_detail
+from codey.automation.browser_query import QueryObservationError
 from codey.operations import browser_followups
 from codey.operations.browser_upload import audit_upload_open, browser_delivered_source, matches_document
 from codey.research.answer_contract import whole_research
@@ -123,7 +124,7 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
         specs = delegate._frozen_specs
         page, document = selected_detail(delegate.session, browser, call, specs.get(call.name) if specs is not None else None)
     else:
-        pending = browser_followups.pending_click(session._memory_results) if session is not None else None
+        pending = browser_followups.pending_click(session._memory_results, browser.document_identity()) if session is not None else None
         if pending is None or session is None:
             page = browser.capture()
         else:
@@ -140,7 +141,11 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
                        and row.audit.get("query_wait_document") == document]
             if not all(any(row.call.args == wait for row in settled) for wait in waits):
                 raise RuntimeError(browser_followups.PENDING + " Complete the declared wait first.")
-            page = browser.capture_query_result(baseline, pending=browser_followups.PENDING)
+            try:
+                page = browser.capture_query_result(baseline, pending=browser_followups.PENDING)
+            except QueryObservationError as exc:
+                return ToolResult(ok=False, call=call, model_text=str(exc),
+                    canonical={"query_read": {"reason": exc.reason}}, audit={"query_click": query_ref}), False, None
     url = str(page.get("url") or "")
     opened = render_source_read(
         tools.gateway.capture(url, page), tools.ledger,
@@ -153,4 +158,7 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
         result = replace(result, audit={**result.audit, "browser_document": document})
     if ok and query_ref:
         result = replace(result, audit={**result.audit, "query_click": query_ref})
+        region = page.get("query_region")
+        if isinstance(region, dict):
+            result = replace(result, audit={**result.audit, "query_region": decode_json_object(region)})
     return result, ok, code

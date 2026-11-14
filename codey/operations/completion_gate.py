@@ -440,7 +440,7 @@ def _browser_completion_block(session: TaskSession, text: str, context: Completi
     from codey.operations.source_gaps import source_read_required, task_source_coverage
     from codey.policies.tool_requirement import decode_answer
 
-    if (pending := pending_click(session._memory_results)) is not None:
+    if (pending := pending_click(session._memory_results, context.browser_document)) is not None:
         return GateVerdict(False, UNCERTAIN if delivery(pending[1]) == "uncertain" else PENDING, None)
     coverage = task_source_coverage(session, context.research_execution_ledger or context.research_ledger)
     if (session.task_kind == "chat" and not session.policy.strict_research
