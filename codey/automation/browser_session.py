@@ -19,7 +19,8 @@ from uuid import uuid4
 from playwright.sync_api import ElementHandle, Error, FilePayload, Page
 
 from codey.automation.browser_binding import BrowserBinding
-from codey.automation.browser_observation import ELEMENT_METADATA, render_controls
+from codey.automation.browser_document import same_document
+from codey.automation.browser_observation import observe_element, render_controls, same_node
 from codey.automation.browser_query import QueryObservationError, bind_query_target, observe_query_target
 from codey.policies.network import check_fetch_url
 from codey.research.browser_page import (
@@ -42,7 +43,7 @@ MAX_ACTION_TEXT = 2_000
 _RESULT_REGIONS = """() => [...document.querySelectorAll('article, [role=status], [role=region], [aria-live]')]
   .filter(el => el.getClientRects().length && getComputedStyle(el).visibility === 'visible')
   .map((el, i) => ({key: el.id || el.tagName + ':' + i, text: el.innerText.replace(/\\s+/g, ' ').trim(),
-                  busy: !!el.closest('[aria-busy=true]')}))"""
+                  visible: true, busy: !!el.closest('[aria-busy=true]')}))"""
 _PROPERTY_RETURN = re.compile(r"\s*return[ \t]+(window\.[A-Za-z_$][\w$]*)(?:\s*;)?\s*", re.ASCII)
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -63,6 +64,7 @@ class _ElementRef:
     url: str
     document: JsonObject | None = None
     context: JsonObject | None = None
+    context_node: ElementHandle | None = None
 
 
 def normalize_element_ref(ref: str) -> str:
@@ -133,8 +135,10 @@ class BrowserSession:
                 tree = decode_json_object(raw_tree)
                 frame = decode_json_object(decode_json_object(tree["frameTree"])["frame"])
                 loader, url = frame.get("loaderId"), frame.get("url")
-                if isinstance(loader, str) and loader and isinstance(url, str) and url:
-                    return {"loader_id": loader, "url": url}
+                raw_target: object = cdp.send("Target.getTargetInfo")
+                target = decode_json_object(decode_json_object(raw_target)['targetInfo']).get('targetId')
+                if isinstance(loader, str) and loader and isinstance(url, str) and url and isinstance(target, str) and target:
+                    return {"loader_id": loader, "target_id": target, "url": url}
             finally:
                 cdp.detach()
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
@@ -210,10 +214,10 @@ class BrowserSession:
         target = decode_json_object(raw_target) if isinstance(raw_target, dict) else None
         while True:
             cancellation.check()
-            if self._document_identity_on_browser_thread() != baseline.get("document"):
+            if not same_document(self._document_identity_on_browser_thread(), baseline.get("document")):
                 raise QueryObservationError("query_document_changed", pending + " The query document changed.")
             current = self._query_observation(target)
-            if not current["document"] or current["document"] != baseline.get("document"):
+            if not same_document(current["document"], baseline.get("document")):
                 raise QueryObservationError("query_document_changed", pending + " The query document changed or is unavailable.")
             if region := _changed_query_region(baseline, current):
                 page = self._capture_on_browser_thread()
@@ -221,7 +225,7 @@ class BrowserSession:
                 if (page.get("status") == "ok" and isinstance(body, str)
                         and region in " ".join(body.split()) and self._query_observation(target) == current):
                     if target is not None:
-                        page["query_region"] = {"text": region, "relation": target["relation"]}
+                        page["query_region"] = {"text": region, "relation": target["relation"], "visible": True}
                     return page
             if time.monotonic() >= deadline:
                 raise QueryObservationError("query_update_unconfirmed", pending)
@@ -254,12 +258,12 @@ class BrowserSession:
         )
         elements: list[JsonObject] = []
         contexts: dict[str, JsonObject] = {}
+        context_nodes: list[ElementHandle] = []
         elements_truncated = False
         for handle in handles:
             if not handle.is_visible():
                 continue
-            raw_metadata: object = handle.evaluate(ELEMENT_METADATA)
-            metadata = canonical_json_object(raw_metadata)
+            metadata, context_node = observe_element(handle)
             role = _element_role(metadata)
             name = " ".join(str(metadata.get("name") or "").split())[:240]
             if not name and role not in {"textbox", "combobox"}:
@@ -270,15 +274,20 @@ class BrowserSession:
             ref = f"b{self._reference_scope}g{self._generation}e{len(elements) + 1}"
             context = metadata.get("context")
             context_id = ""
-            if isinstance(context, dict) and isinstance(context.get("id"), str):
-                context_id = str(context["id"])
-                contexts[context_id] = context
+            if isinstance(context, dict) and context_node is not None:
+                index = next((i for i, node in enumerate(context_nodes) if same_node(node, context_node)), None)
+                if index is None:
+                    index = len(context_nodes)
+                    context_nodes.append(context_node)
+                    contexts[f'c{index}'] = {'id': f'c{index}', **context}
+                context_id = f'c{index}'
+                context = contexts[context_id]
             self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url, document,
-                                         context if isinstance(context, dict) else None)
+                                         context if isinstance(context, dict) else None, context_node)
             elements.append({"ref": ref, "role": role, "name": name,
                              "context_id": context_id,
                              **{key: metadata[key] for key in ("value", "disabled", "checked")}})
-        if document != self._document_identity_on_browser_thread():
+        if not same_document(document, self._document_identity_on_browser_thread()):
             self._invalidate_refs()
             raise RuntimeError("The document changed while observing controls; take a fresh browser_snapshot.")
         text = (f"Page URL: {page.url}\nObservation generation: {self._generation}\n"
@@ -642,7 +651,7 @@ class BrowserSession:
         entry = self._refs.get(ref)
         if entry is None or entry.page_token != id(page) or entry.generation != self._generation or entry.url != page.url:
             raise RuntimeError("stale browser element reference; take a fresh browser_snapshot")
-        if entry.document is not None and entry.document != self._document_identity_on_browser_thread():
+        if entry.document is not None and not same_document(entry.document, self._document_identity_on_browser_thread()):
             raise RuntimeError("stale browser element reference; the document changed")
         try:
             connected: object = entry.handle.evaluate("el => el.isConnected && el.ownerDocument === document")
@@ -651,9 +660,14 @@ class BrowserSession:
         if connected is not True:
             raise RuntimeError("stale browser element reference; original node is detached")
         if entry.context is not None:
-            raw: object = entry.handle.evaluate(ELEMENT_METADATA)
-            if canonical_json_object(raw).get("context") != entry.context:
-                raise RuntimeError("stale browser element reference; observed structural context changed")
+            metadata, context_node = observe_element(entry.handle)
+            try:
+                if (context_node is None or entry.context_node is None or not same_node(context_node, entry.context_node)
+                        or metadata.get('context') != {key: value for key, value in entry.context.items() if key != 'id'}):
+                    raise RuntimeError("stale browser element reference; observed structural context changed")
+            finally:
+                if context_node is not None:
+                    context_node.dispose()
         return page, entry.handle
 
     def _invalidate_refs(self) -> None:
@@ -691,7 +705,8 @@ def _changed_query_region(before: JsonObject, after: JsonObject) -> str:
     previous, current = old[0], new[0]
     if (isinstance(previous, dict) and isinstance(current, dict) and previous.get("key") == current.get("key")
             and current.get("busy") is False and isinstance(body := current.get("text"), str)
-            and body != previous.get("text")):
+            and current.get('visible') is True
+            and (body != previous.get("text") or previous.get('visible') is False)):
         return body
     return ""
 

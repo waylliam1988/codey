@@ -7,6 +7,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from codey.automation.browser_document import document_changed
 from codey.operations.browser_waits import BrowserWaitPlan, wait_plan
 from codey.policies.browser_requirement import BrowserPageRounds, parse_browser_requirement
 from codey.runtime.core.models import ToolResult
@@ -164,7 +165,7 @@ def query_document(results: Mapping[str, ToolResult], document: JsonObject | Non
 def interrupted_query(result: ToolResult, document: JsonObject | None) -> bool:
     baseline = result.audit.get("query_baseline")
     original = baseline.get("document") if isinstance(baseline, dict) else None
-    return bool(document and isinstance(original, dict) and original and original != document)
+    return document_changed(original, document)
 
 
 def unconfirmed_clicks(results: Mapping[str, ToolResult]) -> tuple[tuple[str, ToolResult], ...]:

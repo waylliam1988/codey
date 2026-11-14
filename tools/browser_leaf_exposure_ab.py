@@ -28,8 +28,10 @@ from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot, re
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.policies.tool_requirement import _browser_body, decode_answer
 from codey.research.browser_search import BrowserSearchProvider
+from codey.research.ledger import ResearchLedger
+from codey.research.passages import restore_passages
 from codey.runtime.core.models import ToolResult
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import (
@@ -66,7 +68,7 @@ def form_html(label: str, value: str, facts: str, *, multiline: bool = False) ->
 
 
 NOTE = '用户说"明天到"\n请保留原文'
-CASES = {
+CASES: dict[str, Case] = {
     "visible": Case("请报告 LY-72 的可借数量和今天闭馆时间，并注明本次页面证据的引用。",
         '<article>馆藏 LY-72：可借 6 本。今天 19:40 闭馆。</article>', ("6", "19:40"), ()),
     "click": Case("请查询 B-19 的实时状态和库位，读取查询后的页面正文，并注明证据引用。",
@@ -102,8 +104,8 @@ def expose_leaves(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSna
         and snapshot.policy is not None and snapshot.policy.allows(specs[name].grant)
         and (snapshot.allowed is None or name in snapshot.allowed)
         and name not in session.controller_denied and (exposure is None or name in exposure))
-    names = tuple(dict.fromkeys((*snapshot.tool_names, *selected)))
-    inventory = tuple(dict.fromkeys((*names, *snapshot.nested_tool_names)))
+    names = tuple({name: None for name in (*snapshot.tool_names, *selected)})
+    inventory = tuple({name: None for name in (*names, *snapshot.nested_tool_names)})
     executors = dict(snapshot.custom_executors)
     return refresh_snapshot_contract(replace(snapshot, tool_names=names,
         frozen_specs=tuple(specs[name] for name in inventory),
@@ -139,7 +141,7 @@ def response_actions(path: Path) -> list[JsonObject]:
     if not path.exists():
         return actions
     for line in path.read_text(encoding="utf-8").splitlines():
-        row = decode_json_object(json.loads(line))
+        row = parse_json_object(line)
         if row.get("type") != "response":
             continue
         payload = decode_json_object(row["payload"])
@@ -177,27 +179,37 @@ def metrics(receipts: list[ToolResult], actions: list[JsonObject]) -> JsonObject
         "failed_receipts": len(errors)}
 
 
+def passage_texts(receipt: ToolResult) -> list[tuple[str, str]]:
+    """Slice only advertised ranges in the receipt's original source version."""
+    ledger = ResearchLedger()
+    restore_passages(ledger, receipt.canonical.get('research_observation'), receipt.canonical.get('read_passages'))
+    return [(ref, passage.excerpt) for ref, passage in ledger.read_passages.items()]
+
+
 def evidence_checks(receipts: list[ToolResult], answer: str, facts: tuple[str, ...]) -> JsonObject:
     """Resolve answer citations against real receipt passages, never against all page text."""
-    citations = set(re.findall(r"\[([^\[\]\s]+)\]", answer))
+    citations = {match.group(1) for match in re.finditer(r"\[([^\[\]\s]+)\]", answer)}
     matching = []
     cited = []
     exact = []
     for row in receipts:
         if not row.ok or row.call.name not in {"browser_read", "open_url"}:
             continue
-        body = _browser_body(row)
+        try:
+            body = _browser_body(row)
+            excerpts = passage_texts(row)
+        except (KeyError, TypeError, ValueError):
+            continue
         if body is None or not all(fact in body for fact in facts):
             continue
         matching.append(row.call.name)
         # Passage references are the canonical identifiers advertised by Chat.
-        passages = row.canonical.get("read_passages")
-        refs = {str(passage.get("ref")) for passage in passages if isinstance(passage, dict)} \
-            if isinstance(passages, list) else set()
-        if citations.intersection(refs):
+        cited_text = '\n'.join(text for ref, text in excerpts if ref in citations)
+        delivered_text = '\n'.join(text for _, text in excerpts)
+        if cited_text and all(fact in cited_text for fact in facts):
             exact.append(row.call.name)
             cited.append(row.call.name)
-        elif row.canonical.get("source_id") in citations:
+        elif row.canonical.get("source_id") in citations and all(fact in delivered_text for fact in facts):
             cited.append(row.call.name)
     return {"facts_in_read_receipts": bool(matching), "updated_browser_read": "browser_read" in matching,
         "citations": sorted(citations), "correct_evidence_cited": bool(cited),
@@ -249,21 +261,30 @@ def run_arm(directory: Path, case: Case, arm: Arm, target: Target, *, max_turns:
     def connect(_provider_id: str, **_kwargs: object) -> ExperimentProvider:
         return provider
 
+    previous_native = os.environ.get(NATIVE_TOOLS_ENV)
+    os.environ[NATIVE_TOOLS_ENV] = '1'
+    available: dict[str, bool] = {'local': True}
+    tabs: dict[str, object] = {}
+    selection: JsonObject = {'model': target.model, 'base_url': target.base_url}
     try:
-        with (experiment(directory, arm), patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}),
+        with (experiment(directory, arm),
               patch.object(browser, "_guard_request", route),
               patch("codey.research.search_factory.default_research_search_provider", return_value=browser),
               patch("codey.operations.task_phases.dispatch.default_research_search_provider", return_value=browser),
-              patch("codey.app.provider_services.provider_availability", return_value={"local": True}),
-              patch("codey.app.provider_services.provider_tab_availability", return_value={}),
+              patch("codey.app.provider_services.provider_availability", return_value=available),
+              patch("codey.app.provider_services.provider_tab_availability", return_value=tabs),
               patch("codey.app.review_service.run_review", return_value=None)):
             result = run_headless(HeadlessRequest(None, task, intent="chat", provider_id="local", max_turns=max_turns,
                 state_home=directory / "state", research_store_root=directory / "knowledge",
                 requested_capabilities=("web.read", "browser.observe", "browser.interact"),
                 sources_open_required=True, required_tools=case.required,
-                model_selection={"model": target.model, "base_url": target.base_url}),
+                model_selection=selection),
                 emit_jsonl=observe, connect_provider=connect)
     finally:
+        if previous_native is None:
+            os.environ.pop(NATIVE_TOOLS_ENV, None)
+        else:
+            os.environ[NATIVE_TOOLS_ENV] = previous_native
         browser.close()
         provider.close()
     receipts = [item.result for item in tool_receipts(directory / "state")]
@@ -289,15 +310,26 @@ def run_arm(directory: Path, case: Case, arm: Arm, target: Target, *, max_turns:
     return row
 
 
+class Options(argparse.Namespace):
+    run_dir: Path
+    base_url: str
+    max_turns: int
+    repeats: int
+    wordings: list[str]
+    cases: list[str]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
     parser.add_argument("--max-turns", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=1)
-    parser.add_argument("--wordings", nargs="+", choices=("original", "paraphrase"), default=["original"])
-    parser.add_argument("--cases", nargs="+", choices=tuple(CASES), default=list(CASES))
-    args = parser.parse_args()
+    default_wordings: list[str] = ['original']
+    default_cases: list[str] = list(CASES)
+    parser.add_argument("--wordings", nargs="+", choices=("original", "paraphrase"), default=default_wordings)
+    parser.add_argument("--cases", nargs="+", choices=tuple(CASES), default=default_cases)
+    args = parser.parse_args(namespace=Options())
     if args.repeats < 1 or args.max_turns < 1:
         parser.error("repeats and max-turns must be positive")
     target = select_target(90, args.base_url)

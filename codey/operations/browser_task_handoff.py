@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 
+from codey.automation.browser_document import same_document
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
 from codey.operations.browser_completion import committed_results, complete_page_passages
 from codey.operations.browser_followups import (
@@ -179,7 +180,7 @@ def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Complet
     waiting = any(not rule.observe(records, results=results).evaluation.passed for rule in waits)
     lines = []
     clicks = committed_results(records, results, frozenset({"browser_click"}), include_failed=frozenset({"browser_click"}))
-    if (clicks and clicks[-1][1].audit.get("browser_document") == context.browser_document
+    if (clicks and same_document(clicks[-1][1].audit.get("browser_document"), context.browser_document)
             and delivery(clicks[-1][1]) in {"delivered", "uncertain"}):
         ref, result = clicks[-1]
         if delivery(result) == "uncertain":
@@ -189,10 +190,10 @@ def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Complet
             after = {key: records[key] for key in keys[keys.index(ref) + 1:]
                      if records[key]["name"] not in {"browser_wait", "browser_read"}
                      or ((receipt := results.get(key)) is not None
-                         and receipt.audit.get("browser_document") == context.browser_document)}
+                         and same_document(receipt.audit.get("browser_document"), context.browser_document))}
             records = after
             waiting = any(not rule.observe(after, results=results).evaluation.passed for rule in waits)
-            if waits and result.audit.get("browser_document") == context.browser_document:
+            if waits and same_document(result.audit.get("browser_document"), context.browser_document):
                 if waiting:
                     lines.append(f"Click {ref} was delivered. Complete the declared browser_wait next; do not click again.")
                 elif not any(row["name"] == "browser_read" and row["ok"] for row in after.values()):
@@ -227,7 +228,7 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
                     step = decode_json_object(raw)
                     args = decode_json_object(step["args"])
                     if step["name"] == "browser_wait" and not any(row.ok and row.call.name == "browser_wait"
-                            and row.call.args == args and row.audit.get("query_wait_document") == context.browser_document
+                            and row.call.args == args and same_document(row.audit.get("query_wait_document"), context.browser_document)
                             for row in subsequent):
                         call = ToolCall("browser_wait", args)
                         break

@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from codey.research.ledger import ResearchLedger
+from codey.research.ledger_receipts import ledger_observation, source_observation
+from codey.research.passages import passage_ref
 from codey.runtime.core.models import ToolCall, ToolResult
 from tools import browser_query_scope_probe as probe
 from tools.completion_artifact_audit import EffectReceipt
@@ -16,9 +19,15 @@ def test_neighbor_in_source_is_not_automatically_neighbor_in_delivered_passage(
 ) -> None:
     target = 'Target TARGET_173.'
     text = target + '\nNeighbor OTHER_174.'
+    ledger = ResearchLedger()
+    ledger.record_open('https://example.com/scope', 'https://example.com/scope', 'Scope', text)
+    observation = ledger_observation(ledger, 'browser_read', url='https://example.com/scope')
+    source, _, _ = source_observation(observation)
+    end = len(text) if show_neighbor else len(target)
+    ref = passage_ref(source.final_url, source.text_hash, 0, end)
     result = ToolResult(ToolCall('browser_read', {}), 'window', ok=True,
-        canonical={'research_observation': {'text': text},
-                   'read_passages': [{'start': 0, 'end': len(text) if show_neighbor else len(target)}]},
+        canonical={'research_observation': observation,
+                   'read_passages': [{'ref': ref, 'start': 0, 'end': end}]},
         audit={'query_region': {'text': target}})
 
     def receipts(_state: Path) -> list[EffectReceipt]:
@@ -40,3 +49,34 @@ def test_ordinary_read_is_not_counted_as_targeted_readback(tmp_path: Path, monke
     row = probe.audit(tmp_path, {'answer': 'OTHER_174'})
     assert row['targeted_read_reached'] is False
     assert row['neighbor_in_answer'] is True
+
+
+@pytest.mark.parametrize('citation', ['target', 'neighbor', 'source'])
+def test_scope_score_recomputes_cited_ranges_instead_of_trusting_cached_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, citation: str,
+) -> None:
+    target = 'Target 18:20 TARGET_173.\n'
+    text = target + 'Neighbor 12:10 OTHER_174.'
+    ledger = ResearchLedger()
+    url = 'https://example.com/scope'
+    ledger.record_open(url, url, 'Scope', text)
+    observation = ledger_observation(ledger, 'browser_read', url=url)
+    source, _, _ = source_observation(observation)
+    target_ref = passage_ref(url, source.text_hash, 0, len(target))
+    neighbor_ref = passage_ref(url, source.text_hash, len(target), len(text))
+    result = ToolResult(ToolCall('browser_read', {}), 'Delivered', ok=True,
+        canonical={'source_id': 's1', 'research_observation': observation, 'read_passages': [
+            {'ref': target_ref, 'start': 0, 'end': len(target)},
+            {'ref': neighbor_ref, 'start': len(target), 'end': len(text)}]}, audit={'query_region': {'text': target}})
+
+    def receipts(_state: Path) -> list[EffectReceipt]:
+        return [EffectReceipt('original-read', result, None)]
+    monkeypatch.setattr(probe, 'tool_receipts', receipts)
+    ref = {'target': target_ref, 'neighbor': neighbor_ref, 'source': 's1'}[citation]
+    row = probe.audit(tmp_path, {'answer': f'18:20 TARGET_173 [{ref}]', 'passed': True,
+                                'evidence': {'correct_evidence_cited': True, 'exact_passage_cited': True}})
+    evidence = row['evidence']
+    assert isinstance(evidence, dict)
+    assert row['passed'] is (citation != 'neighbor')
+    assert evidence['correct_evidence_cited'] is (citation != 'neighbor')
+    assert evidence['exact_passage_cited'] is (citation == 'target')

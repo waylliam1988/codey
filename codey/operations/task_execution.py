@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
+from codey.automation.browser_document import same_document
 from codey.knowledge.store import KnowledgeStore
 from codey.operations import browser_followups, browser_text_report, browser_upload
 from codey.operations.browser_detail import audit_browser_open, read_browser_source
@@ -321,7 +322,7 @@ class ExecutionDelegate:
             result, ok, code = self._execute_browser_operation(browser, call, turn=turn, tool_index=tool_index)
             if trace_document and (transition or before is not None):
                 after = browser.document_identity()
-                if after is not None and (transition or before == after):
+                if after is not None and (transition or same_document(before, after)):
                     result = replace(result, audit={**result.audit, "browser_document": after})
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise

@@ -23,6 +23,7 @@ _TARGET = """el => {
 _STATE = """function() {
     if (!this.isConnected || this.ownerDocument !== document) return null;
     return {text: (this.innerText || '').replace(/\\s+/g, ' ').trim(),
+            visible: !!this.getClientRects().length && getComputedStyle(this).visibility === 'visible',
             busy: !!this.closest('[aria-busy=true]') || !!this.querySelector('[aria-busy=true]')};
 }"""
 

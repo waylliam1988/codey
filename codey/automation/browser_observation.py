@@ -1,26 +1,28 @@
 """Observed structural labels and their text projection; no business ownership inference."""
 from __future__ import annotations
 
-from codey.types.json_value import JsonObject
+from playwright.sync_api import ElementHandle
+
+from codey.types.json_value import JsonObject, decode_json_object
 
 ELEMENT_METADATA = """el => {
     const owners = 'article,section,tr,[role=row],[role=region],fieldset';
     const clean = value => (value || '').replace(/\\s+/g, ' ').trim();
-    let context = null;
+    let context = null, contextNode = null;
     for (let node = el.parentElement; node; node = node.parentElement) {
         if (!node.matches(owners)) continue;
         const named = clean((node.getAttribute('aria-labelledby') || '').split(/\\s+/)
-            .map(id => document.getElementById(id)?.innerText || '').join(' '));
+            .map(id => node.getRootNode().getElementById(id)?.innerText || '').join(' '));
         const heading = node.querySelector(':scope > h1,:scope > h2,:scope > h3,:scope > h4,' +
             ':scope > th[scope=row],:scope > legend');
         const label = clean(node.getAttribute('aria-label')) || named || clean(heading?.innerText);
         if (!label) continue;
-        context = {id: 'c' + [...document.querySelectorAll(owners)].indexOf(node),
-            kind: node.getAttribute('role') || node.tagName.toLowerCase(), label: label.slice(0, 240),
+        contextNode = node;
+        context = {kind: node.getAttribute('role') || node.tagName.toLowerCase(), label: label.slice(0, 240),
             basis: node.getAttribute('aria-label') ? 'aria-label' : named ? 'aria-labelledby' : 'heading'};
         break;
     }
-    return {
+    return {contextNode, metadata: {
         tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || '',
         name: el.getAttribute('aria-label') || el.getAttribute('title') ||
               Array.from(el.labels || [], label => label.innerText).join(' ') ||
@@ -29,8 +31,26 @@ ELEMENT_METADATA = """el => {
         value: el.type === 'password' ? null : ('value' in el ? el.value : null),
         disabled: el.disabled === true || el.getAttribute('aria-disabled') === 'true',
         checked: 'checked' in el ? el.checked : null, context
-    };
+    }};
 }"""
+
+
+def observe_element(handle: ElementHandle) -> tuple[JsonObject, ElementHandle | None]:
+    """Read metadata and its actual context node in the same DOM observation."""
+    observed = handle.evaluate_handle(ELEMENT_METADATA)
+    metadata = observed.get_property('metadata')
+    try:
+        raw: object = metadata.json_value()
+        context_node = observed.get_property('contextNode').as_element()
+        return decode_json_object(raw), context_node
+    finally:
+        metadata.dispose()
+        observed.dispose()
+
+
+def same_node(left: ElementHandle, right: ElementHandle) -> bool:
+    raw: object = left.evaluate('(node, other) => node === other', right)
+    return raw is True
 
 
 def render_controls(elements: list[JsonObject], contexts: list[JsonObject]) -> str:

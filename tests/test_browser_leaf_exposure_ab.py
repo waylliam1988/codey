@@ -17,13 +17,13 @@ from codey.policies.tool_requirement import _browser_body
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 from codey.research.tools import ResearchTools
-from codey.runtime.core.models import ToolCall
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, decode_json_object
-from tests.test_browser_production_execution import URL
-from tests.test_browser_production_execution import production_browser as production_browser
+from tests.test_browser_context_delivery import URL, install
+from tests.test_browser_context_delivery import production_browser as production_browser
 from tests.test_model_input_binding import upload_snapshot
 from tools.browser_leaf_exposure_ab import CASES, DIRECT_TOOLS, NOTE, evidence_checks, expose_leaves, metrics, run_arm
-from tools.completion_explanation_ab import Target
+from tools.completion_explanation_ab import Arm, Target
 
 GRANTS = frozenset({"control", "web.read", "browser.observe", "browser.interact"})
 
@@ -43,8 +43,9 @@ def test_visibility_and_roundtrip_reuse_one_definition_per_leaf() -> None:
     restored = restore_snapshot(snapshot_description(b))
     assert restored == b
     assert set(DIRECT_TOOLS) <= {tool.name for tool in tools_from_specs(restored.model_specs)}
-    for name, args in (("browser_snapshot", {}), ("browser_fill", {"ref": "observed", "value": "text"}),
-                       ("browser_click", {"ref": "observed"}), ("browser_read", {})):
+    actions: tuple[tuple[str, JsonObject], ...] = (("browser_snapshot", {}),
+        ("browser_fill", {"ref": "observed", "value": "text"}), ("browser_click", {"ref": "observed"}), ("browser_read", {}))
+    for name, args in actions:
         reply = AssistantTurn(tool_calls=(ProviderToolCall("identity", name, args),))
         assert normalize_turn(reply, snapshot=a).protocol_error_kind == "snapshot_tool_mismatch"
         accepted = normalize_turn(reply, snapshot=restored)
@@ -85,9 +86,12 @@ def test_real_kernel_executes_the_same_fill_click_read_and_rejects_stale_ref(
 ) -> None:
     session, tools, browser = production_browser
     assert browser.navigate(URL).ok
+    install(browser, '''<label>City<input></label><button onclick="
+        document.querySelector('article').textContent='Verified Fuzhou amount is 37 grams.'">Load</button>
+        <article>Initial article amount is 17 grams.</article>''')
     turn = 0
 
-    def call(name: str, args: JsonObject):
+    def call(name: str, args: JsonObject) -> ToolResult:
         nonlocal turn
         turn += 1
         snapshot = build_turn_snapshot(session)
@@ -140,7 +144,7 @@ def test_real_kernel_executes_the_same_fill_click_read_and_rejects_stale_ref(
 @pytest.mark.parametrize("arm", ["A", "B"])
 @pytest.mark.parametrize("case_name", ["visible", "quoted"])
 def test_full_headless_harness_uses_bound_page_and_real_evidence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, case_name: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: Arm, case_name: str,
 ) -> None:
     from collections.abc import Iterator
 
@@ -178,8 +182,15 @@ def test_full_headless_harness_uses_bound_page_and_real_evidence(
     assert row["passed"], row
     assert row["model_calls"] == (6 if arm == "B" and case_name == "quoted" else 2)
     assert row["source_stable"] and row["bound_before_model"]
-    assert row["direct_executions"] == (({"browser_snapshot": 2, "browser_fill": 1, "browser_click": 1,
-        "browser_read": 1} if case_name == "quoted" else {"browser_read": 1}) if arm == "B" else {})
+    # Direct fill/click are lowered through CodeMode; their real executions are
+    # child receipts, while snapshot/read still execute as outer leaves.
+    assert row["direct_executions"] == (({"browser_snapshot": 2, "browser_read": 1}
+        if case_name == "quoted" else {"browser_read": 1}) if arm == "B" else {})
+    if case_name == 'quoted':
+        successful = decode_json_object(row['browser_successes'])
+        attempted = decode_json_object(row['direct_attempts'])
+        assert successful['browser_fill'] == successful['browser_click'] == 1
+        assert attempted['browser_fill'] == attempted['browser_click'] == (1 if arm == 'B' else 0)
 
 
 def test_metrics_distinguish_attempts_from_executed_actions() -> None:

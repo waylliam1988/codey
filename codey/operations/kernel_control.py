@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from codey.durable.model import thaw_json
 from codey.operations import kernel_prompt
+from codey.operations.browser_followups import unconfirmed_clicks
 from codey.operations.completion_output import OutputBindingError, prepare_completion_output
 from codey.operations.kernel_contracts import (
     ClosingDecision,
@@ -102,7 +103,8 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         completion_context = context.completion_context
         checks = context.session.policy.required_checks
         if (upload_completion_scope(context.session) is not None or report_scope(context.session) is not None or has_browser_field_bindings(checks)
-                or any(check.startswith(RESEARCH_PREFIX) for check in checks)):
+                or any(check.startswith(RESEARCH_PREFIX) for check in checks)
+                or unconfirmed_clicks(context.session._memory_results)):
             tools = context.execution.research_tools
             browser = tools.browser_session if tools is not None else None
             if browser is not None:

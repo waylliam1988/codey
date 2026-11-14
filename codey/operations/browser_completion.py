@@ -14,7 +14,7 @@ from codey.research.finding_report import ResearchReport
 from codey.research.ledger_receipts import source_observation
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, decode_json_object
 
 PAGE_EVIDENCE_TOOLS = frozenset({"browser_wait", "browser_read"})
 _FORM_ACTIONS = frozenset({"browser_fill", "browser_click"})
@@ -129,7 +129,7 @@ def _navigation_document(result: ToolResult, url: str) -> JsonObject | None:
             and type(status := value.get("http_status")) is int and 200 <= status < 400
             and document.get("url") == url
             and isinstance(loader := document.get("loader_id"), str) and loader):
-        return {"url": url, "loader_id": loader}
+        return decode_json_object(raw_document)
     return None
 
 

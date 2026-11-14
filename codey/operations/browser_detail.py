@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codey.automation.browser_detail import observe_details, read_detail
+from codey.automation.browser_document import same_document
 from codey.automation.browser_query import QueryObservationError
 from codey.operations import browser_followups
 from codey.operations.browser_upload import audit_upload_open, browser_delivered_source, matches_document
@@ -138,7 +139,7 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
             refs = tuple(session._memory_results)
             subsequent = (session._memory_results[ref] for ref in refs[refs.index(query_ref) + 1:])
             settled = [row for row in subsequent if row.call.name == "browser_wait" and row.ok
-                       and row.audit.get("query_wait_document") == document]
+                       and same_document(row.audit.get("query_wait_document"), document)]
             if not all(any(row.call.args == wait for row in settled) for wait in waits):
                 raise RuntimeError(browser_followups.PENDING + " Complete the declared wait first.")
             try:

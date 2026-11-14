@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
-from codey.types.json_value import JsonObject, decode_json_object
-from tools.browser_leaf_exposure_ab import Case, run_arm
+from codey.types.json_value import JsonObject, decode_json_object, decode_json_value, require_json_string
+from tools.browser_leaf_exposure_ab import Case, evidence_checks, passage_texts, run_arm
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import ExperimentProvider, Target, write_json
@@ -31,6 +31,7 @@ ACQUIRE = '''const s=unwrap(await tools.browser_snapshot({}));
 const context=s.contexts.find(c=>c.label==='订单 A-173');
 const button=s.elements.find(e=>e.context_id===context.id && e.role==='button');
 return unwrap(await tools.browser_click({ref:button.ref,purpose:'result'}));'''
+FACTS = ('18:20', 'TARGET_173')
 
 
 class SeededProvider(ExperimentProvider):
@@ -40,7 +41,8 @@ class SeededProvider(ExperimentProvider):
 
 
 class Options(argparse.Namespace):
-    run_dir: Path
+    run_dir: Path | None
+    audit_run: Path | None
     timeout: float
 
 
@@ -50,27 +52,47 @@ def audit(directory: Path, row: JsonObject) -> JsonObject:
     linked = [receipt for receipt in reads if 'query_region' in receipt.audit]
     excerpts: list[str] = []
     for receipt in linked:
-        observation = decode_json_object(receipt.canonical['research_observation'])
-        text = observation['text']
-        passages = receipt.canonical.get('read_passages')
-        if isinstance(text, str) and isinstance(passages, list):
-            for raw in passages:
-                passage = decode_json_object(raw)
-                start, end = passage['start'], passage['end']
-                if type(start) is int and type(end) is int:
-                    excerpts.append(text[start:end])
+        excerpts.extend(text for _, text in passage_texts(receipt))
     answer = str(row.get('answer') or '')
-    return {**row, 'targeted_read_reached': bool(linked),
+    evidence = evidence_checks(receipts, answer, FACTS)
+    return {**row, 'evidence': evidence,
+            'passed': row.get('passed') is True and evidence['correct_evidence_cited'] is True,
+            'targeted_read_reached': bool(linked),
             'target_read_correct': any('TARGET_173' in str(receipt.audit['query_region']) for receipt in linked),
             'neighbor_in_target_passages': any('OTHER_174' in excerpt for excerpt in excerpts),
             'neighbor_in_answer': 'OTHER_174' in answer or '12:10' in answer}
 
 
+def reaudit(directory: Path) -> list[JsonObject]:
+    raw_summary: object = json.loads((directory / 'summary.json').read_text(encoding='utf-8'))
+    original = decode_json_value(raw_summary)
+    if not isinstance(original, list):
+        raise ValueError('Expected saved scope experiment rows.')
+    rows: list[JsonObject] = []
+    for raw in original:
+        row = decode_json_object(raw)
+        layout = require_json_string(row['layout'], 'layout')
+        seeded = row['seeded']
+        if layout not in CASES or type(seeded) is not bool:
+            raise ValueError('Invalid saved scope experiment arm.')
+        result = audit(directory / (layout + ('-seeded' if seeded else '-autonomous')), row)
+        result.update(original_evidence=row['evidence'], original_passed=row['passed'])
+        rows.append(result)
+    write_json(directory / 'scope-reaudit.json', rows)
+    return rows
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--run-dir', required=True, type=Path)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--run-dir', type=Path)
+    mode.add_argument('--audit-run', type=Path, help='Reaudit saved receipts without making model or browser calls.')
     parser.add_argument('--timeout', default=180, type=float)
     args = parser.parse_args(namespace=Options())
+    if args.audit_run is not None:
+        print(json.dumps(reaudit(args.audit_run)), flush=True)
+        return 0
+    assert args.run_dir is not None
     args.run_dir.mkdir(parents=True, exist_ok=False)
     target = select_target(args.timeout, 'http://127.0.0.1:5001/v1')
     rows: list[JsonObject] = []
@@ -78,7 +100,7 @@ def main() -> int:
         for seeded in (False, True):
             directory = args.run_dir / (name + ('-seeded' if seeded else '-autonomous'))
             case = Case('请查订单 A-173 的配送详情，报告预计送达时间和回执号，附对应证据。',
-                        html, ('18:20', 'TARGET_173'), ('browser_click', 'browser_read'))
+                        html, FACTS, ('browser_click', 'browser_read'))
             if seeded:
                 with patch('tools.browser_leaf_exposure_ab.ExperimentProvider', SeededProvider):
                     result = run_arm(directory, case, 'A', target)
