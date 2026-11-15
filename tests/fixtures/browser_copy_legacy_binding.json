@@ -1,0 +1,82 @@
+{
+  "source_commit": "1cbaab10",
+  "source_file": "codey/operations/browser_copy.py",
+  "input_binding": {
+    "kind": "browser_copy",
+    "model_spec": {
+      "name": "codemode",
+      "aliases": [],
+      "grant": "control",
+      "parameters": [
+        [
+          "source",
+          {
+            "type": "object",
+            "properties": {
+              "key_column": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string",
+                "enum": [
+                  "RZ-824"
+                ]
+              },
+              "column": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key_column",
+              "key",
+              "column"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        [
+          "target",
+          {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string",
+                "enum": [
+                  "vouchers.json"
+                ]
+              },
+              "field": {
+                "type": "string",
+                "enum": [
+                  "outstanding"
+                ]
+              }
+            },
+            "required": [
+              "file",
+              "field"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      ],
+      "required": [
+        "source",
+        "target"
+      ],
+      "json_examples": [],
+      "description": "Copy the table source value to the authorized integer field. Observed source IDs and previews: [{\"id\": \"table-1\", \"columns\": [\"Batch\", \"Balance\"], \"rows\": [[\"RZ-824\", \"962\"]]}]. Use a JSON Pointer such as /parcel/label for JSON. After a file version conflict, retry with the same source.",
+      "executor": "codemode",
+      "replay_class": "safe",
+      "parallel_safe": false,
+      "output_schema": {
+        "type": "string"
+      },
+      "declarations": "",
+      "namespace": "core",
+      "effect": "read",
+      "evidence_route": "none",
+      "preconditions": []
+    }
+  }
+}

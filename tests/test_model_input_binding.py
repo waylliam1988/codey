@@ -23,7 +23,7 @@ from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall, tools_from_specs
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, parse_json_object
+from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object, parse_json_object
 
 URL = "https://example.com/input-binding"
 GRANTS = frozenset({"control", "web.read", "browser.observe", "browser.interact", "browser.effect",
@@ -120,7 +120,7 @@ def test_copy_only_requests_unbound_source_fields_and_restores_them(key: str) ->
 
 
 @pytest.mark.parametrize("old_field", ["target", "key"])
-def test_obsolete_copy_contract_requires_a_new_request(old_field: str) -> None:
+def test_changed_copy_definition_without_matching_contract_text_is_rejected(old_field: str) -> None:
     payload = snapshot_description(copy_snapshot(table=True))
     binding = decode_json_object(payload["input_binding"])
     spec = decode_json_object(binding["model_spec"])
@@ -142,7 +142,7 @@ def test_obsolete_copy_contract_requires_a_new_request(old_field: str) -> None:
         source["required"] = ["key_column", "key", "column"]
         parameters[0] = ["source", source]
     payload["input_binding"] = {**binding, "model_spec": spec}
-    with pytest.raises(ValueError, match="copy observation; start a new request"):
+    with pytest.raises(ValueError, match="contract text differs"):
         restore_snapshot(payload)
 
 
@@ -195,10 +195,10 @@ def test_copy_observation_is_detached_and_readonly_between_uses() -> None:
     assert snapshot.browser_copy is not None
     original = snapshot.browser_copy.payload()
     copy = CopyTurn.restore(original)
-    original["data"] = {"tables": [], "records": []}
+    original["data"] = {"tables": list[JsonValue](), "records": list[JsonValue]()}
     exposed = copy.data
     assert exposed is not None
-    exposed["records"] = []
+    exposed["records"] = list[JsonValue]()
     assert copy.data != exposed
     assert copy == snapshot.browser_copy
 

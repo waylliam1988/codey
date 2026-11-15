@@ -198,13 +198,13 @@ def _restore_spec(value: object) -> ToolSpec:
 
 
 def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSpec],
-                           copy: CopyTurn | None) -> ModelInputBinding | None:
+                           copy: CopyTurn | None) -> tuple[ModelInputBinding | None, bool]:
     from codey.operations.kernel_protocol import ModelInputBinding
 
     if payload is None:
         if copy is not None and "codemode" in names:
             raise ValueError("captured structured input has no input binding")
-        return None
+        return None, True
     raw = decode_json_object(payload)
     if set(raw) != {"kind", "model_spec"}:
         raise ValueError("invalid captured input binding")
@@ -224,11 +224,14 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
                declarations=execution.declarations, json_examples=execution.json_examples) != execution:
         raise ValueError("captured input binding changes execution authority")
     if binding.kind == "browser_copy":
-        if copy is None or copy.phase not in {"observe", "edit"} or copy.spec(execution) != model:
-            raise ValueError("captured input binding differs from its copy observation; start a new request")
+        if copy is None or copy.phase not in {"observe", "edit"}:
+            raise ValueError("captured input binding has no copy observation")
+        # Historical replies keep their frozen contract. Only execution needs
+        # the current lowering implementation to match that contract.
+        return binding, copy.spec(execution) == model
     elif copy is not None or set(dict(model.parameters)) != {"upload"} or model.required != ("upload",):
         raise ValueError("invalid captured upload input binding")
-    return binding
+    return binding, True
 
 
 def _snapshot_payload(raw: object) -> tuple[JsonObject, int]:
@@ -321,7 +324,8 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.operations.browser_copy import CopyTurn
 
     copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
-    input_binding = _restore_input_binding(raw_binding, names, specs, copy)
+    input_binding, binding_compatible = _restore_input_binding(raw_binding, names, specs, copy)
+    compatible = compatible and binding_compatible
     from codey.operations.browser_followups import DIRECT_TOOLS, MAX_TEXT, SINGLE_STEP_TOOLS, allows_surface
 
     fill_text = payload.get("browser_fill_text")
