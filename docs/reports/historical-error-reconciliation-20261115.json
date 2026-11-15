@@ -1,0 +1,1047 @@
+{
+  "scope": {
+    "start": "2026-11-10",
+    "end": "2026-11-15",
+    "timezone": "Asia/Taipei",
+    "reports_indexed": 63,
+    "artifact_roots_indexed": 265,
+    "artifact_file_counts": {
+      "summary.json": 2500,
+      "provider.jsonl": 2415,
+      "verification.json": 1,
+      "batch-summary.json": 1
+    },
+    "unit": "files, not independent live tasks",
+    "all_provider_files_reexecuted": false,
+    "new_model_calls": 0
+  },
+  "head": "93b6f460ab27cfdf241dcddcd5d52a1a93474d90",
+  "production_diff_empty": true,
+  "verdict": "Not fully absorbed. Mechanical paths exist; unchanged failures and validation/adoption gaps remain.",
+  "reports_sha256": {
+    "docs/browser-convergence-seven-batches-20261110.zh-CN.md": "e65b85acd86b178f83bf1b76ce3c4271fd14efe0567d28f4ddb2239f1168589b",
+    "docs/browser-entry-ab-20261112.zh-CN.md": "d0094af5db0d001eec9b102235c5ed9d663dd3a55fb65db06c2fb727160a3c12",
+    "docs/browser-entry-followup-20261112.zh-CN.md": "d2b1c3d097b73fb710962941a7944c46360f57b7c840643c916f1e2d43af75bf",
+    "docs/browser-failure-handoff-20261114.zh-CN.md": "09a7df4eb1a76e777f078066e2b05636f25fbfbf21fab98a948489c02d6440a7",
+    "docs/browser-followup-ab-20261113.zh-CN.md": "c8d613cd2437cb8923e8a91830d406864527c0c5f5490d839e768f34454396a0",
+    "docs/browser-leaf-exposure-ab-20261113.zh-CN.md": "9799fab4541a734a4640c925355cd9a915efc9b7081462fbcbe9bff9b6e829b7",
+    "docs/browser-outcome-ab-20261112.zh-CN.md": "6cf230be5b039a70c3d45d9a479b599a5c5ccdc231af69acb56764e1e0b363be",
+    "docs/browser-prerequisite-ab-20261112.zh-CN.md": "6297387de6057623bbc08aea2f7bdbb57e8bb5d2986a7e6b15cd8cdc63502841",
+    "docs/browser-receipt-edit-ab-20261112.zh-CN.md": "c39e3286dd69258eb04dfc04413bf668747fae152f9425e005905a99bd88466a",
+    "docs/browser-structured-edit-ab-20261112.zh-CN.md": "a3675af1ebef583c6b7b67178f3e3fe7099124d6a86f17830e381ce1a341a477",
+    "docs/browser-structured-recovery-ab-20261112.zh-CN.md": "ffb47b26110fd270c76ba3903c86d4ad279c14240a07b6bf5bfc31065c44d85a",
+    "docs/browser-three-fixes-ab-20261112.zh-CN.md": "9309d003806554a678aa279ea553e2d18b0eb7856976511c0d62b76469269087",
+    "docs/browser-tool-convergence-progress-20261110.zh-CN.md": "8a00a15c78a4d67234fb296fb750aaa3d3cd24c488ac5e6f8725cfcf0a8f43bc",
+    "docs/ci-contract-followup-20261112.zh-CN.md": "58dffeda6e341c4b63220f8a62a1369e99b1fa307a4377457f90ea94fe15505e",
+    "docs/ci-fixture-repair-2026-11-12.zh-CN.md": "d1c7ec5c9a48517fd4b38f68fc13aac237b91aaae45d433642f791529b0c5b18",
+    "docs/ci-gate-roots-20261112.zh-CN.md": "12e4a25ead46f7cec45f623c4638b2539f16fb34e264073378ee5ddbcb2f76b3",
+    "docs/model-input-binding-convergence-20261113.zh-CN.md": "e80894bf943c7f30168475bcb8ac9e1b036616b368b8335b516d8e48e69c9274",
+    "docs/protocol-edit-boundary-live-20261111.zh-CN.md": "7c45aedccd0ca92e598068632a59bbfd4bcce454012b1b9fc0bd11029d01927d",
+    "docs/protocol-edit-continuation-live-20261111.zh-CN.md": "4750771196d249d4e6f44c1a491ace4ae5c98e29a677b67c0017814f0084d31d",
+    "docs/protocol-file-handoff-live-20261111.zh-CN.md": "20bc90a82dd99e74f535064e6d45fdfb0c51bd696c67c3c7768d620a59de04e0",
+    "docs/protocol-page-reset-gate-live-20261111.zh-CN.md": "e1dbb106053f334bd110c1f14c2d8727d33bc2bcae4556620fd908b9920c3837",
+    "docs/protocol-page-reset-navigation-live-20261111.zh-CN.md": "a8895d1b3cac2ebf845411f38de8eba00c32c495e06607a15fb1de41356aaf2f",
+    "docs/protocol-receipt-delivery-live-20261111.zh-CN.md": "f6312036da96edc9d674e6bdc8739048f1a23ea179816fdd922515edc11ba8a2",
+    "docs/protocol-surface-b4-delivery-live-20261111.zh-CN.md": "0499f140195efd591f006e6f25a547687328e53d5d696823b4d061b63e4567ae",
+    "docs/protocol-surface-isolated-live-20261111.zh-CN.md": "e0d280249dc3c6346194ee3ac960008d63cffa1fed460be6fe778584d1e362c1",
+    "docs/receipt-bound-json-edit-20261112.zh-CN.md": "9e08fced78ea8a85d5b9db64d782dd88bba723c4a431cb7bab73db7ed09669b8",
+    "docs/receipt-bound-json-edit-write-ab-20261112.zh-CN.md": "181d9d40c8e9af2e029db4e2b291fd2b9247e9775a79107921119e4e4fe24697",
+    "docs/receipt-field-assembly-ab-20261112.zh-CN.md": "9c2645abc1dcda50de88d9a6130c27770b916e050561a727598627fcd9c23960",
+    "docs/reports/basic-navigation-url-20261113.zh-CN.md": "bde8f07ef842281f66700ebc527ce160adc163bee2f1f2035f3374232ffb1d14",
+    "docs/reports/bound-copy-json-edit-20261115.zh-CN.md": "215835dc35324ce3ad92df46534ddffcafdf24dd79f45d426caea731a01c1395",
+    "docs/reports/browser-action-progress-20261113.zh-CN.md": "a0702e214872b8879fdbfc0b407eac1864c449adc53bc64df75bd70e9b2832b1",
+    "docs/reports/browser-actions-restart-20261114.zh-CN.md": "deee31f6888f4e0ea824235257519da595ccd1c007481ada3bbf0098c3de881f",
+    "docs/reports/browser-context-delivery-20261114.zh-CN.md": "7c1c67b67182fc76f33fcca0b340195cb0f94c9fa4eb67456c6a084159b13f1c",
+    "docs/reports/browser-mechanical-handoff-20261114.zh-CN.md": "37161f4b8ba59bba9f228df484dc53625dbc341b0c0081226dcecdf20bf906c0",
+    "docs/reports/browser-next-step-handoff-20261114.zh-CN.md": "ffd17ee43905dba3bff8b05c1ef358805e2b2f3386acca04c444d8e248a28eb3",
+    "docs/reports/browser-observation-review-fixes-20261114.zh-CN.md": "f032944ef50616f15bb308e5d31e64a8f3b2674b8dc08fd70ae4df5ec2928d98",
+    "docs/reports/browser-production-relief-20261114.zh-CN.md": "5f38199676de102159e965ebf21f5b0ea73805f2b5fad903be61328dcd133cc2",
+    "docs/reports/browser-query-binding-20261114.zh-CN.md": "c71e9dedf8f151934629288196ad597afba23ece149cb0378b8508fd8fe33a17",
+    "docs/reports/browser-query-scope-diagnosis-20261114.zh-CN.md": "c337b1538f53af197c9b057531e5eb2af38bdbd69a5fb118a1c51ae74b8abafe",
+    "docs/reports/browser-ref-research-handoff-20261114.zh-CN.md": "ca28438b40fe0f7784cc44061201151b8e3b7600660ecf0a86d464906a57760c",
+    "docs/reports/browser-relief-experiments-20261114.zh-CN.md": "6beaaf83032e3d4ee0bc6586e7717b3468e846bcc39938ac8a5a7380a71d2005",
+    "docs/reports/browser-shadow-query-batch-fixes-20261114.zh-CN.md": "a9bc430b11889dc9db4131cfdc678cc1874589ac234a6899216cd616b9c26134",
+    "docs/reports/browser-target-scope-fix-20261114.zh-CN.md": "b6c60a5f459b13c7c7db58999973399a6653a178b02abd062bbc730db4c018c7",
+    "docs/reports/codemode-receipt-feedback-20261113.zh-CN.md": "a0dc09c997b38afaeaf4036f8a4ac9e2708be82fe2cbc80da58e9cc70a0f5c59",
+    "docs/reports/codemode-recovery-and-reference-handles-progress-20261110.zh-CN.md": "cbd75a531f42a0efa66fa533f685cb7905e47225c7918deae158920582845c2c",
+    "docs/reports/completion-contract-boundaries-20261113.zh-CN.md": "148d9156837d31577ae9eb181e4bfd29d62a3995827496cb956bbc1b8ea9ad18",
+    "docs/reports/hybrid-edit-receipt-20261113.zh-CN.md": "dafe7c62efcf5e5ee3f7217f494dd94734fa7b75a6ea4e3878e0030582c351a5",
+    "docs/reports/navigation-candidate-20261113.zh-CN.md": "10385592b4f543cba9971a7fb37d9c0720bafdceab7e6de23e3d6778b72545cc",
+    "docs/reports/production-bound-arguments-20261113.zh-CN.md": "6ddd19cb6ba74a3906fe1a72cff963368c20e5f5c1da8ba47aa8cac2a48587d2",
+    "docs/reports/production-navigation-20261113.zh-CN.md": "e24cda88f9f2803ff023f9a45ffc6e303acaf09a4362baf48d02ddf90286fd50",
+    "docs/reports/receipt-fact-delivery-20261113.zh-CN.md": "387d18e5a4d979ea056c8ef66f21593d035450065af36c535456c3f79d699cd2",
+    "docs/reports/source-upload-regressions-20261113.zh-CN.md": "a23cfe039ed75da7d20e22c9eb4ce88915a0bdd578f3b9f6237ba8e15ee8afea",
+    "docs/reports/structured-actions-20261113.zh-CN.md": "1d7ca2fc63b91915ab8c35f082b3221b14f28610ee940a4ba1d089e6028a4893",
+    "docs/reports/task-bound-upload-chat-20261113.zh-CN.md": "2e98515e8ed5645342b74df99dc0a6b45de724fd2ba81490f7aceb33ba80cf7b",
+    "docs/reports/task-contract-boundaries-20261113.zh-CN.md": "d386bbf3eb3d88d0b0ca4231e14cbdab603b5332c227bf9a50e2d78a51d7abc9",
+    "docs/reports/task-contract-fixed-replies-20261113.zh-CN.md": "b2902ac206bc9d88f56147cac0bd1b9f23a216acdac76be4e06d1264eb44fa0b",
+    "docs/required-source-prefetch-ab-20261112.zh-CN.md": "2e7b6bb5494449bf1e53d7c194f7555dd06ba3a79dd1efeaa86c650a400cce21",
+    "docs/research-click-readback-ab-20261112.zh-CN.md": "a2b72ebc0fd376f90b59637fd14d85126f03926488a1fcc0bbc266a842d081dd",
+    "docs/research-control-choice-ab-20261112.zh-CN.md": "da8ffd8cc29dd8d703c0f1801988cdafd3b9dec5f78e7d438f5893af8f8a3764",
+    "docs/research-natural-handoff-ab-20261112.zh-CN.md": "c58b4b327d8e7b3d05478899bab399d0def97f662dd01bd21c5e5c59889acf6e",
+    "docs/research-submission-handoff-ab-20261112.zh-CN.md": "a3bfd7dc1cbd85d160b0cba3c6c476ad9f4d258dc806f9bc19a34cee87550e88",
+    "docs/simplified-receipt-recovery-20261113.zh-CN.md": "5d4540e4220c025739ee6248843f391e8b5097f618ad04ea75c22c846f3d5608",
+    "docs/simplified-recovery-boundaries-20261113.zh-CN.md": "cb742a6e6ae0ce6552d74b9d1e28da32c0d905ede25623fe91345e26b24fb874"
+  },
+  "fixture_source_integrity_checks": 16,
+  "fixture_reply_groups_compared_to_wire": 6,
+  "integrity_passed": true,
+  "root_cause_rows": [
+    {
+      "id": "R01",
+      "historical_error": "等待参数不合法，却被“回放未消费完”覆盖",
+      "current_behavior": "**接住诊断缺陷**：全部子调用先按冻结 schema 校验再记账，保留具体字段错误",
+      "remaining_model_responsibility": "合法等待条件仍由模型／明确任务合同给出",
+      "historical_report": "docs/reports/task-contract-fixed-replies-20261113.zh-CN.md",
+      "production_files": [
+        "codey/codemode/kernel.py"
+      ],
+      "regression_modules": [
+        "tests/test_task_contract_fixed_replies.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/task-contract-fixed-replies-20261113.zh-CN.md": "b2902ac206bc9d88f56147cac0bd1b9f23a216acdac76be4e06d1264eb44fa0b",
+        "codey/codemode/kernel.py": "2175c7d557da0d4ffffef894738fd92dd3ca6d7d8c7834a691b4d9ef6fd36254",
+        "tests/test_task_contract_fixed_replies.py": "b722d2484129c3c09f899a94540e38e72ae5577f631d51e14366d6c88ef7ef50"
+      }
+    },
+    {
+      "id": "R02",
+      "historical_error": "`snapshot.elements`、`download.path` 直接访问 Result 外壳",
+      "current_behavior": "**报错／交接**：准确 `result_contract`，Chat 可用直接入口",
+      "remaining_model_responsibility": "自由 CodeMode 仍要正确 unwrap；未自动兼容错误访问",
+      "historical_report": "docs/reports/browser-mechanical-handoff-20261114.zh-CN.md",
+      "production_files": [
+        "codey/codemode/guest_runner.js",
+        "codey/operations/browser_followups.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_child_failure_feedback.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/browser-mechanical-handoff-20261114.zh-CN.md": "37161f4b8ba59bba9f228df484dc53625dbc341b0c0081226dcecdf20bf906c0",
+        "codey/codemode/guest_runner.js": "4bb2eb02ce0b469d2f6ee9256e33360348fdb60dbfc033b26bb6ee82b41cc50f",
+        "codey/operations/browser_followups.py": "57656a71688aad3a9975194f340d3b169fb8622d1dd2fb2cbb5dc249f588fa71",
+        "tests/test_codemode_child_failure_feedback.py": "49aec34644ae7f7dfc33b71ee18f6f26b5268873c6ecdd6c5d3158ec335e5d5f"
+      }
+    },
+    {
+      "id": "R03",
+      "historical_error": "正确 unwrap 后又把读页字符串当 `.text` 对象",
+      "current_behavior": "**报错**：11、12 日原回复今天仍四轮失败",
+      "remaining_model_responsibility": "模型改表达式或改选正式直接读取路径",
+      "historical_report": "docs/protocol-surface-isolated-live-20261111.zh-CN.md",
+      "production_files": [
+        "codey/codemode/guest_runner.js"
+      ],
+      "regression_modules": [
+        "tests/test_task_contract_fixed_replies.py"
+      ],
+      "evidence_sha256": {
+        "docs/protocol-surface-isolated-live-20261111.zh-CN.md": "e0d280249dc3c6346194ee3ac960008d63cffa1fed460be6fe778584d1e362c1",
+        "codey/codemode/guest_runner.js": "4bb2eb02ce0b469d2f6ee9256e33360348fdb60dbfc033b26bb6ee82b41cc50f",
+        "tests/test_task_contract_fixed_replies.py": "b722d2484129c3c09f899a94540e38e72ae5577f631d51e14366d6c88ef7ef50"
+      }
+    },
+    {
+      "id": "R04",
+      "historical_error": "错误换行、注释吞语句、`eturn`／`ib` 等 JS 错误",
+      "current_behavior": "**报错／交接**：有条件提供已绑定页的观察调用",
+      "remaining_model_responsibility": "无任意 JS 自动修复；编译前无副作用不等于任务获救",
+      "historical_report": "docs/browser-failure-handoff-20261114.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_task_handoff.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_failure_handoff.py"
+      ],
+      "evidence_sha256": {
+        "docs/browser-failure-handoff-20261114.zh-CN.md": "09a7df4eb1a76e777f078066e2b05636f25fbfbf21fab98a948489c02d6440a7",
+        "codey/operations/browser_task_handoff.py": "dcd85ae5ebbaf68ef046588858191ba8201562dacaeb4ccce913cc6706ecc967",
+        "tests/test_browser_failure_handoff.py": "4cb76cdfe92656d8698ec89c7a1b0aafcd9d6a5da74ef7b676eb878bc0d607b9"
+      }
+    },
+    {
+      "id": "R05",
+      "historical_error": "查找控件循环提前 break，按钮 ref 为空",
+      "current_behavior": "**报错**，现有描述引用提供替代路径",
+      "remaining_model_responsibility": "模型仍要采用替代路径或修循环",
+      "historical_report": "docs/reports/browser-production-relief-20261114.zh-CN.md",
+      "production_files": [
+        "codey/codemode/kernel.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_readable_references.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/browser-production-relief-20261114.zh-CN.md": "5f38199676de102159e965ebf21f5b0ea73805f2b5fad903be61328dcd133cc2",
+        "codey/codemode/kernel.py": "2175c7d557da0d4ffffef894738fd92dd3ca6d7d8c7834a691b4d9ef6fd36254",
+        "tests/test_browser_readable_references.py": "cb4b3c7546ce4554fb7460c1d1c22e4d22b4abb5036277fdc94e1c8dac20e019"
+      }
+    },
+    {
+      "id": "R06",
+      "historical_error": "把控件名称当 raw ref，或抄错长 ref",
+      "current_behavior": "**条件接住机械抄写**：冻结的 role/name/context 对象可在外层和 CodeMode 共用",
+      "remaining_model_responsibility": "裸名称仍不是合法 ref；重名与失效观察拒绝选择",
+      "historical_report": "docs/reports/browser-production-relief-20261114.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_references.py",
+        "codey/codemode/host.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_readable_references.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/browser-production-relief-20261114.zh-CN.md": "5f38199676de102159e965ebf21f5b0ea73805f2b5fad903be61328dcd133cc2",
+        "codey/operations/browser_references.py": "0a372fba6ce13ecb77ee335dafb719abffa3144e64dbc443152f8d6e11c37826",
+        "codey/codemode/host.py": "17452da9e505bf5ed885a030a311d0f9df62db90169b47fcf8d18f3b5d2a21aa",
+        "tests/test_browser_readable_references.py": "cb4b3c7546ce4554fb7460c1d1c22e4d22b4abb5036277fdc94e1c8dac20e019"
+      }
+    },
+    {
+      "id": "R07",
+      "historical_error": "URL 连字符抄成下划线，404 后空快照循环",
+      "current_behavior": "**条件接住**：任务 URL 绑定、明确前置导航、404 的可执行返回提示",
+      "remaining_model_responsibility": "只有唯一授权 URL；模型手写错误 URL 仍可能失败，恢复提示仍需采用",
+      "historical_report": "docs/reports/production-bound-arguments-20261113.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_protocol.py"
+      ],
+      "regression_modules": [
+        "tests/test_task_navigation_binding.py",
+        "tests/test_browser_failure_handoff.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/production-bound-arguments-20261113.zh-CN.md": "6ddd19cb6ba74a3906fe1a72cff963368c20e5f5c1da8ba47aa8cac2a48587d2",
+        "codey/operations/browser_task_handoff.py": "dcd85ae5ebbaf68ef046588858191ba8201562dacaeb4ccce913cc6706ecc967",
+        "codey/operations/kernel_protocol.py": "e20cdb4e4b1b46f1c377c95ad3c805fb61a4d6b68523656e81884e9d49c48b93",
+        "tests/test_task_navigation_binding.py": "d4153d91f8cf2fab1a8b6513da0317b4d6b1e4b61c83977083652f8072b3173a",
+        "tests/test_browser_failure_handoff.py": "4cb76cdfe92656d8698ec89c7a1b0aafcd9d6a5da74ef7b676eb878bc0d607b9"
+      }
+    },
+    {
+      "id": "R08",
+      "historical_error": "`open_result({id:'r2'})` 写错参数名",
+      "current_behavior": "**接住窄错写**：观察到的合法 rN 可规范化为 result_id",
+      "remaining_model_responsibility": "未观察或错误来源不因此变正确；不是通用搜索结果自动选择",
+      "historical_report": "docs/reports/production-bound-arguments-20261113.zh-CN.md",
+      "production_files": [
+        "codey/codemode/host.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_open_result_arguments.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/production-bound-arguments-20261113.zh-CN.md": "6ddd19cb6ba74a3906fe1a72cff963368c20e5f5c1da8ba47aa8cac2a48587d2",
+        "codey/codemode/host.py": "17452da9e505bf5ed885a030a311d0f9df62db90169b47fcf8d18f3b5d2a21aa",
+        "tests/test_codemode_open_result_arguments.py": "51ce731d10b91d1cf14c6102ffa3c17539f2d196eda4fe3c645d218a8f96fdaa"
+      }
+    },
+    {
+      "id": "R09",
+      "historical_error": "browser_eval 误写独立的 `return window.x;`",
+      "current_behavior": "**接住窄语法差异**：独立属性 return 在实际边界规范化",
+      "remaining_model_responsibility": "多语句和任意脚本仍需模型写对",
+      "historical_report": "docs/browser-three-fixes-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/automation/browser_session.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_text_report_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/browser-three-fixes-ab-20261112.zh-CN.md": "9309d003806554a678aa279ea553e2d18b0eb7856976511c0d62b76469269087",
+        "codey/automation/browser_session.py": "53c842a5563416ddd625e428539e3e7b9295568023485df70ac7004cad0d87b9",
+        "tests/test_browser_text_report_production.py": "25044fb0dad488476e182b39cde18efe6b408553790c593f4cf2dc60ebfc96a5"
+      }
+    },
+    {
+      "id": "R10",
+      "historical_error": "从 tab 列表猜第一项，答案抄错 URL/token",
+      "current_behavior": "**接住已绑定元数据**：顶层 page_url、JSON 精确绑定和普通文本报告来自正式回执",
+      "remaining_model_responsibility": "自由说明中的所有额外真假陈述不受通用保证",
+      "historical_report": "docs/browser-convergence-seven-batches-20261110.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_text_report.py",
+        "codey/operations/completion_output.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_text_report_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/browser-convergence-seven-batches-20261110.zh-CN.md": "e65b85acd86b178f83bf1b76ce3c4271fd14efe0567d28f4ddb2239f1168589b",
+        "codey/operations/browser_text_report.py": "e6ff7177b8bd6cf38a5dcad6624112affbea5ed547136f2bba1ca243df669388",
+        "codey/operations/completion_output.py": "4055cce489b48b2f2a81de308a13e8bc2c569d7730c5b84e7c8bceb89fe1fdd2",
+        "tests/test_browser_text_report_production.py": "25044fb0dad488476e182b39cde18efe6b408553790c593f4cf2dc60ebfc96a5"
+      }
+    },
+    {
+      "id": "R11",
+      "historical_error": "业务事实已读到，答案漏掉或抄错",
+      "current_behavior": "**有条件报错，默认仍可能接受**：已有 answer_contains／正文选值检查",
+      "remaining_model_responsibility": "要求须显式接入；13 日原 structured 漏事实今天仍 `done`",
+      "historical_report": "docs/reports/completion-contract-boundaries-20261113.zh-CN.md",
+      "production_files": [
+        "codey/policies/tool_requirement.py",
+        "tools/browser_production_live_gate.py"
+      ],
+      "regression_modules": [
+        "tests/test_explanation_delivery_production.py",
+        "tests/test_task_contract_fixed_replies.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/completion-contract-boundaries-20261113.zh-CN.md": "148d9156837d31577ae9eb181e4bfd29d62a3995827496cb956bbc1b8ea9ad18",
+        "codey/policies/tool_requirement.py": "b6b6a7e43ad54f65d034c4a31c9d1c5eb1c0825ab8a0540b155b7643dd4a6510",
+        "tools/browser_production_live_gate.py": "e7fd65d2268cc46c01026b28f8c08999f86f57a5ce50121cbbddd27673c25e57",
+        "tests/test_explanation_delivery_production.py": "32121daa5048dc6a9afec00d85bdbf04151637a76ac4de01ddfcad25d838c894",
+        "tests/test_task_contract_fixed_replies.py": "b722d2484129c3c09f899a94540e38e72ae5577f631d51e14366d6c88ef7ef50"
+      }
+    },
+    {
+      "id": "R12",
+      "historical_error": "字面反斜杠换行冒充段落，重复不应重复的字段",
+      "current_behavior": "**有条件报错，原场景未接全**：schema pattern 可检查真实段落",
+      "remaining_model_responsibility": "15 日原回复仍通过原 gate；自然语言要求未全变为检查",
+      "historical_report": "docs/reports/bound-copy-json-edit-20261115.zh-CN.md",
+      "production_files": [
+        "tools/browser_production_live_gate.py"
+      ],
+      "regression_modules": [
+        "tests/test_explanation_delivery_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/bound-copy-json-edit-20261115.zh-CN.md": "215835dc35324ce3ad92df46534ddffcafdf24dd79f45d426caea731a01c1395",
+        "tools/browser_production_live_gate.py": "e7fd65d2268cc46c01026b28f8c08999f86f57a5ce50121cbbddd27673c25e57",
+        "tests/test_explanation_delivery_production.py": "32121daa5048dc6a9afec00d85bdbf04151637a76ac4de01ddfcad25d838c894"
+      }
+    },
+    {
+      "id": "R13",
+      "historical_error": "子动作已成功，父程序失败后正文被遮住",
+      "current_behavior": "**接住交付缺口**：从成功原始子回执交付正文、来源及可恢复引用",
+      "remaining_model_responsibility": "不把失败父程序冒充成功；截断或缺失数据仍要补证据",
+      "historical_report": "docs/reports/codemode-receipt-feedback-20261113.zh-CN.md",
+      "production_files": [
+        "codey/operations/kernel_prompt.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_receipt_feedback.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/codemode-receipt-feedback-20261113.zh-CN.md": "a0dc09c997b38afaeaf4036f8a4ac9e2708be82fe2cbc80da58e9cc70a0f5c59",
+        "codey/operations/kernel_prompt.py": "558e51cf79ca3f12fd066f780eb594e7e0192bb2b3db69393aaf5335164ed125",
+        "tests/test_codemode_receipt_feedback.py": "cf376050d72d3934373dcfefddd9ef34ca871e3e3d6adc970348493c8c5138f4"
+      }
+    },
+    {
+      "id": "R14",
+      "historical_error": "已下载／上传，父返回编码出错，修复只返回计数",
+      "current_behavior": "**条件接住**：合格的文件返回失败能交付有界的原回执数据，不重做文件动作",
+      "remaining_model_responsibility": "不是所有 execution_error 都有回放授权，不保证自由修复程序写对",
+      "historical_report": "docs/protocol-receipt-delivery-live-20261111.zh-CN.md",
+      "production_files": [
+        "codey/codemode/replay.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_replay_authority.py",
+        "tests/test_codemode_receipt_feedback.py"
+      ],
+      "evidence_sha256": {
+        "docs/protocol-receipt-delivery-live-20261111.zh-CN.md": "f6312036da96edc9d674e6bdc8739048f1a23ea179816fdd922515edc11ba8a2",
+        "codey/codemode/replay.py": "33be1ab9c399e8b304458c37996798c0b19c32d60743fbe90792413d93816ea0",
+        "tests/test_codemode_replay_authority.py": "a96ea4b2331918c4ebf76adc2709133cda2b9a82ed878914b9c667768548dfda",
+        "tests/test_codemode_receipt_feedback.py": "cf376050d72d3934373dcfefddd9ef34ca871e3e3d6adc970348493c8c5138f4"
+      }
+    },
+    {
+      "id": "R15",
+      "historical_error": "不存在的 repair token、改变原调用顺序／参数",
+      "current_behavior": "**报错**，保留具体首错；只回放原始已结算结果",
+      "remaining_model_responsibility": "模型不能伪造 token；fresh execution 与 receipt replay 仍不同",
+      "historical_report": "docs/reports/codemode-recovery-and-reference-handles-progress-20261110.zh-CN.md",
+      "production_files": [
+        "codey/codemode/replay.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_repair_replay.py",
+        "tests/test_codemode_replay_authority.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/codemode-recovery-and-reference-handles-progress-20261110.zh-CN.md": "cbd75a531f42a0efa66fa533f685cb7905e47225c7918deae158920582845c2c",
+        "codey/codemode/replay.py": "33be1ab9c399e8b304458c37996798c0b19c32d60743fbe90792413d93816ea0",
+        "tests/test_codemode_repair_replay.py": "5e5bc9af44f804262727d9bdc515fd40091e3c4f004159b42b04866a012649a6",
+        "tests/test_codemode_replay_authority.py": "a96ea4b2331918c4ebf76adc2709133cda2b9a82ed878914b9c667768548dfda"
+      }
+    },
+    {
+      "id": "R16",
+      "historical_error": "填写使旧 ref 失效，下一轮仍取旧控件",
+      "current_behavior": "**条件接住**：直接填写后自动观察；新描述引用绑定冻结观察",
+      "remaining_model_responsibility": "通用嵌套填写代码仍可能自写错误；显式旧 ref 保持拒绝",
+      "historical_report": "docs/browser-followup-ab-20261113.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_followups.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_followups_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/browser-followup-ab-20261113.zh-CN.md": "c8d613cd2437cb8923e8a91830d406864527c0c5f5490d839e768f34454396a0",
+        "codey/operations/browser_followups.py": "57656a71688aad3a9975194f340d3b169fb8622d1dd2fb2cbb5dc249f588fa71",
+        "tests/test_browser_followups_production.py": "f07211365e33abcef9851eda43c71acdbadb9d6f691b085710c705f057d02829"
+      }
+    },
+    {
+      "id": "R17",
+      "historical_error": "点击后漏等、漏读，或反复点击取结果",
+      "current_behavior": "**条件接住**：两种入口共用 purpose=result 的点击→已声明等待→正式读取",
+      "remaining_model_responsibility": "模型先选查询意图；条件不明确、送达未知时不能猜下一动作",
+      "historical_report": "docs/reports/browser-production-relief-20261114.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_followups.py",
+        "codey/codemode/guest_runner.js"
+      ],
+      "regression_modules": [
+        "tests/test_browser_followups_production.py",
+        "tests/test_browser_query_handoff.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/browser-production-relief-20261114.zh-CN.md": "5f38199676de102159e965ebf21f5b0ea73805f2b5fad903be61328dcd133cc2",
+        "codey/operations/browser_followups.py": "57656a71688aad3a9975194f340d3b169fb8622d1dd2fb2cbb5dc249f588fa71",
+        "codey/codemode/guest_runner.js": "4bb2eb02ce0b469d2f6ee9256e33360348fdb60dbfc033b26bb6ee82b41cc50f",
+        "tests/test_browser_followups_production.py": "f07211365e33abcef9851eda43c71acdbadb9d6f691b085710c705f057d02829",
+        "tests/test_browser_query_handoff.py": "d5633b022fe4882d2a933b8ebfb569c59ca69a4f88a55a74efa5551cc114f8de"
+      }
+    },
+    {
+      "id": "R18",
+      "historical_error": "原文备注的引号／换行被模型改写",
+      "current_behavior": "**条件接住**：可识别的直接填写任务冻结 task_text，按原文字节传入",
+      "remaining_model_responsibility": "识别文法有限；历史嵌套可比样本为零，不能宣称通用嵌套无损",
+      "historical_report": "docs/reports/browser-relief-experiments-20261114.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_followups.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_fill_history_audit.py",
+        "tests/test_browser_followups_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/browser-relief-experiments-20261114.zh-CN.md": "6beaaf83032e3d4ee0bc6586e7717b3468e846bcc39938ac8a5a7380a71d2005",
+        "codey/operations/browser_followups.py": "57656a71688aad3a9975194f340d3b169fb8622d1dd2fb2cbb5dc249f588fa71",
+        "tests/test_browser_fill_history_audit.py": "efbb81df4097dbdc5cc16f695420ffd52e0028478800c19ec4874f56b169eed5",
+        "tests/test_browser_followups_production.py": "f07211365e33abcef9851eda43c71acdbadb9d6f691b085710c705f057d02829"
+      }
+    },
+    {
+      "id": "R19",
+      "historical_error": "冲突后重读了文件，但全文写回丢失外部字段／精度",
+      "current_behavior": "**接住局部更新路径**：原完整 read＋changes，只替换目标值文本；保留版本冲突",
+      "remaining_model_responsibility": "仍允许的通用全文编辑不自动保证字段保留；模型须采用局部更新",
+      "historical_report": "docs/protocol-edit-continuation-live-20261111.zh-CN.md",
+      "production_files": [
+        "codey/codemode/json_edit.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_json_edit.py"
+      ],
+      "evidence_sha256": {
+        "docs/protocol-edit-continuation-live-20261111.zh-CN.md": "4750771196d249d4e6f44c1a491ace4ae5c98e29a677b67c0017814f0084d31d",
+        "codey/codemode/json_edit.py": "e02f5d5446693ee1471a6a24227604e9be0be23b3e60477a05a5fd81d5ebc3d8",
+        "tests/test_codemode_json_edit.py": "9cd96222e1e763b869863682e37a9d173028b8e3271849990de5efa145b27d5b"
+      }
+    },
+    {
+      "id": "R20",
+      "historical_error": "编辑路径、原读取凭证及 business_key 反复回填出错",
+      "current_behavior": "**条件接住**：原读取对象助手、网页复制冻结目标及已绑定业务键复用",
+      "remaining_model_responsibility": "通用 Hybrid 仍须给原 read；未绑定的行列、来源和 JSON Pointer 仍需选择",
+      "historical_report": "docs/reports/bound-copy-json-edit-20261115.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_copy.py",
+        "codey/codemode/host.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_copy_production.py",
+        "tests/test_codemode_json_edit.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/bound-copy-json-edit-20261115.zh-CN.md": "215835dc35324ce3ad92df46534ddffcafdf24dd79f45d426caea731a01c1395",
+        "codey/operations/browser_copy.py": "a4d3967bf0a919c9eeb14622ef73d3e9607191d0c9c5aa8c427f67d9a38ef800",
+        "codey/codemode/host.py": "17452da9e505bf5ed885a030a311d0f9df62db90169b47fcf8d18f3b5d2a21aa",
+        "tests/test_browser_copy_production.py": "94240f57ead3d106399423edfebf5aa33836f4c1a3aba684f95cdc3efe16ef85",
+        "tests/test_codemode_json_edit.py": "9cd96222e1e763b869863682e37a9d173028b8e3271849990de5efa145b27d5b"
+      }
+    },
+    {
+      "id": "R21",
+      "historical_error": "`changes.value` 多套外壳或错误字段名",
+      "current_behavior": "**报错**：15 日反馈具体缺失／现有／提交字段及可能外壳",
+      "remaining_model_responsibility": "没有自动拆壳，模型仍须修正；真实名为 value 的字段继续合法",
+      "historical_report": "docs/reports/hybrid-edit-receipt-20261113.zh-CN.md",
+      "production_files": [
+        "codey/codemode/json_edit.py",
+        "codey/codemode/host.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_json_edit.py",
+        "tests/test_hybrid_edit_receipt_ab.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/hybrid-edit-receipt-20261113.zh-CN.md": "dafe7c62efcf5e5ee3f7217f494dd94734fa7b75a6ea4e3878e0030582c351a5",
+        "codey/codemode/json_edit.py": "e02f5d5446693ee1471a6a24227604e9be0be23b3e60477a05a5fd81d5ebc3d8",
+        "codey/codemode/host.py": "17452da9e505bf5ed885a030a311d0f9df62db90169b47fcf8d18f3b5d2a21aa",
+        "tests/test_codemode_json_edit.py": "9cd96222e1e763b869863682e37a9d173028b8e3271849990de5efa145b27d5b",
+        "tests/test_hybrid_edit_receipt_ab.py": "1c3c03fea113bc7951b146b22930d5e0b0413de6225e500110953f9d7e6d9366"
+      }
+    },
+    {
+      "id": "R22",
+      "historical_error": "从旧文件的 unknown 或错误网页区域提取值后写入",
+      "current_behavior": "**条件接住复制专用路径；通用路径依赖模型**",
+      "remaining_model_responsibility": "任意网页→文件语义映射、转换与来源选择没有普遍自动保证",
+      "historical_report": "docs/browser-outcome-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_copy.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_copy_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/browser-outcome-ab-20261112.zh-CN.md": "6cf230be5b039a70c3d45d9a479b599a5c5ccdc231af69acb56764e1e0b363be",
+        "codey/operations/browser_copy.py": "a4d3967bf0a919c9eeb14622ef73d3e9607191d0c9c5aa8c427f67d9a38ef800",
+        "tests/test_browser_copy_production.py": "94240f57ead3d106399423edfebf5aa33836f4c1a3aba684f95cdc3efe16ef85"
+      }
+    },
+    {
+      "id": "R23",
+      "historical_error": "网页读完，反复读回执或只返回 JSON，始终没有实际 edit",
+      "current_behavior": "**仍依赖模型**；有两行模板和缺编辑检查",
+      "remaining_model_responsibility": "本次确认：无 ToolSuccessRequirement 的普通 Hybrid 缺少该次续跑模板，见下文",
+      "historical_report": "docs/protocol-file-handoff-live-20261111.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_preparation.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_json_edit.py"
+      ],
+      "evidence_sha256": {
+        "docs/protocol-file-handoff-live-20261111.zh-CN.md": "20bc90a82dd99e74f535064e6d45fdfb0c51bd696c67c3c7768d620a59de04e0",
+        "codey/operations/browser_task_handoff.py": "dcd85ae5ebbaf68ef046588858191ba8201562dacaeb4ccce913cc6706ecc967",
+        "codey/operations/kernel_preparation.py": "dac2a9852ef12cbfe1651cf62d165f55ba30aac644bfe1643416af5569e2b369",
+        "tests/test_codemode_json_edit.py": "9cd96222e1e763b869863682e37a9d173028b8e3271849990de5efa145b27d5b"
+      }
+    },
+    {
+      "id": "R24",
+      "historical_error": "只做一轮却声称完成两轮",
+      "current_behavior": "**明确轮次合同可报错**：原回执、导航和顺序核验，重复 read 不计新轮",
+      "remaining_model_responsibility": "普通自然语言任务不自动拥有任意阶段状态机；故意 stale-ref 测试也不能冒充普通业务缺陷",
+      "historical_report": "docs/protocol-page-reset-gate-live-20261111.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_completion.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_completion_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/protocol-page-reset-gate-live-20261111.zh-CN.md": "e1dbb106053f334bd110c1f14c2d8727d33bc2bcae4556620fd908b9920c3837",
+        "codey/operations/browser_completion.py": "a36c51e0d52013e80b06f53fc438f37e09a20e34be3231549235ac19642aa776",
+        "tests/test_browser_completion_production.py": "f17f8df88c315954e0ea548804f8f9e5882148d8a5fc887bfdee449c498a7e64"
+      }
+    },
+    {
+      "id": "R25",
+      "historical_error": "Strict Research 证据齐了仍反复采集、不提交",
+      "current_behavior": "**条件接住**：明确单页等待／读取合同满足后收窄到提交入口",
+      "remaining_model_responsibility": "普通多来源 Research 不等同于这条路径",
+      "historical_report": "docs/research-submission-handoff-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/operations/research_submission_handoff.py"
+      ],
+      "regression_modules": [
+        "tests/test_research_submission_handoff_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/research-submission-handoff-ab-20261112.zh-CN.md": "a3bfd7dc1cbd85d160b0cba3c6c476ad9f4d258dc806f9bc19a34cee87550e88",
+        "codey/operations/research_submission_handoff.py": "7fb6ca164a9734e7749c094bd16fd3775a2e79cf482bbd16aec78c9171db7d89",
+        "tests/test_research_submission_handoff_production.py": "cb1f10e4b39861182cc45c2f07af28f11713c704df4cf44ae35326fcea379150"
+      }
+    },
+    {
+      "id": "R26",
+      "historical_error": "普通 Research 缺项却提前提交，或点击后仍用旧正文",
+      "current_behavior": "**部分接住**：有记录绑定的原生 details 入口；通用交互继续用正式采集",
+      "remaining_model_responsibility": "事件按钮、是否继续查询以及答案是否充分仍需要模型判断",
+      "historical_report": "docs/research-control-choice-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_detail.py",
+        "codey/automation/browser_detail.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_detail_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/research-control-choice-ab-20261112.zh-CN.md": "da8ffd8cc29dd8d703c0f1801988cdafd3b9dec5f78e7d438f5893af8f8a3764",
+        "codey/operations/browser_detail.py": "4d71c842c330f11e7d9a62eff7b50b3fba47bcc01f09606ec526be874031daa5",
+        "codey/automation/browser_detail.py": "e6004d866733a2dd98d8faffb8638d47c96f49ba5892fd58f5ac94b62dd951e4",
+        "tests/test_browser_detail_production.py": "483aa1feb4aa483eef07daea629dab6469dee73791c4d38a6a8881b788403f6e"
+      }
+    },
+    {
+      "id": "R27",
+      "historical_error": "选错来源、同页拿隔壁记录的字段作答",
+      "current_behavior": "**仍依赖模型语义；机械范围有保护**",
+      "remaining_model_responsibility": "来源真实、引句存在、字段值出现都不能单独证明属于目标记录",
+      "historical_report": "docs/research-natural-handoff-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_detail.py",
+        "codey/research/source_reading.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_detail_production.py",
+        "tests/test_browser_scope_probe_audit.py"
+      ],
+      "evidence_sha256": {
+        "docs/research-natural-handoff-ab-20261112.zh-CN.md": "c58b4b327d8e7b3d05478899bab399d0def97f662dd01bd21c5e5c59889acf6e",
+        "codey/operations/browser_detail.py": "4d71c842c330f11e7d9a62eff7b50b3fba47bcc01f09606ec526be874031daa5",
+        "codey/research/source_reading.py": "f0fbd7278ea8fb5e6ff04af53b2b57799b514c935f46443f160c65c57aa53c4c",
+        "tests/test_browser_detail_production.py": "483aa1feb4aa483eef07daea629dab6469dee73791c4d38a6a8881b788403f6e",
+        "tests/test_browser_scope_probe_audit.py": "2d70efe136e4e3d82d1d1d9bd2550a44486dd184bb5c00dbbb1aaf88e1246d5f"
+      }
+    },
+    {
+      "id": "R28",
+      "historical_error": "已选对目标，正式 passage 仍混入邻居",
+      "current_behavior": "**接住已确认目标范围**：初读、扩展、续读、恢复共用 SourceReadScope",
+      "remaining_model_responsibility": "必须先进入定向路径且唯一映射；普通全文和来源级引用不自动变成精确归属",
+      "historical_report": "docs/reports/browser-target-scope-fix-20261114.zh-CN.md",
+      "production_files": [
+        "codey/research/source_document.py",
+        "codey/research/source_reading.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_scope_channels.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/browser-target-scope-fix-20261114.zh-CN.md": "b6c60a5f459b13c7c7db58999973399a6653a178b02abd062bbc730db4c018c7",
+        "codey/research/source_document.py": "f54c771dde6ac3023c9e5261208f013cd5db302e5c4aad7d7eeb6e6be5fa278f",
+        "codey/research/source_reading.py": "f0fbd7278ea8fb5e6ff04af53b2b57799b514c935f46443f160c65c57aa53c4c",
+        "tests/test_browser_scope_channels.py": "b9d84fa5a812896ff83ee38acc9a186cc5fb4fcd322f4446914775c54b3efcd1"
+      }
+    },
+    {
+      "id": "R29",
+      "historical_error": "页面重载、Shadow DOM 同名 ID、同文档节点被重用",
+      "current_behavior": "**接住可确认的身份错误**：当前文档、原节点、DOM 根及关系检查",
+      "remaining_model_responsibility": "同一节点静默复用于另一业务对象的全部语义变化仍无法自动识别",
+      "historical_report": "docs/reports/browser-shadow-query-batch-fixes-20261114.zh-CN.md",
+      "production_files": [
+        "codey/automation/browser_query.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_shadow_query_regressions.py",
+        "tests/test_browser_query_binding.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/browser-shadow-query-batch-fixes-20261114.zh-CN.md": "a9bc430b11889dc9db4131cfdc678cc1874589ac234a6899216cd616b9c26134",
+        "codey/automation/browser_query.py": "e214b96d036d287e4ed2dc922ba665a64c4602b8e5004a9a351bf1a1c812ae93",
+        "tests/test_browser_shadow_query_regressions.py": "8235f6c7e01b405bfb0fc25cb0c1095d0d5b3ceb0562b19e980d2db5e0dcca6a",
+        "tests/test_browser_query_binding.py": "c09544322afde448d2b4dd7d6bb5328ee8fac73dfc1dd874a9fc23b742022170"
+      }
+    },
+    {
+      "id": "R30",
+      "historical_error": "把“附件已选入”说成“服务器已接收”",
+      "current_behavior": "**接住可识别的越界断言**：effect_verified=false 保留，状态说明检查与单次选择回执复用",
+      "remaining_model_responsibility": "识别有限，不是通用自然语言真实性证明",
+      "historical_report": "docs/reports/source-upload-regressions-20261113.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_upload.py"
+      ],
+      "regression_modules": [
+        "tests/test_explanation_delivery_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/reports/source-upload-regressions-20261113.zh-CN.md": "a23cfe039ed75da7d20e22c9eb4ce88915a0bdd578f3b9f6237ba8e15ee8afea",
+        "codey/operations/browser_upload.py": "acc239a1a40c47ea77586fe9d970e0aa5995e0bf7080832cdd46fb166b7282bf",
+        "tests/test_explanation_delivery_production.py": "32121daa5048dc6a9afec00d85bdbf04151637a76ac4de01ddfcad25d838c894"
+      }
+    },
+    {
+      "id": "R31",
+      "historical_error": "来源未访问就作答，或否定／背景 URL 被错误预取",
+      "current_behavior": "**条件接住**：唯一明确必要来源预取，保留逐 URL 意图／否定；403 等失败真实阻断",
+      "remaining_model_responsibility": "多义来源不猜；站点拒绝读取不应被包装成成功",
+      "historical_report": "docs/required-source-prefetch-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/operations/kernel_context.py",
+        "codey/task/web_intent.py"
+      ],
+      "regression_modules": [
+        "tests/test_task_navigation_binding.py",
+        "tests/test_explanation_delivery_production.py"
+      ],
+      "evidence_sha256": {
+        "docs/required-source-prefetch-ab-20261112.zh-CN.md": "2e7b6bb5494449bf1e53d7c194f7555dd06ba3a79dd1efeaa86c650a400cce21",
+        "codey/operations/kernel_context.py": "d7b389d7109f37a6bbc7a3669192f242a56684d3b50b171ca342a929bd10a3b4",
+        "codey/task/web_intent.py": "f198680c4d7a1397560917256326d4e64524ae24f2f31c9409dd2319460cc5d9",
+        "tests/test_task_navigation_binding.py": "d4153d91f8cf2fab1a8b6513da0317b4d6b1e4b61c83977083652f8072b3173a",
+        "tests/test_explanation_delivery_production.py": "32121daa5048dc6a9afec00d85bdbf04151637a76ac4de01ddfcad25d838c894"
+      }
+    },
+    {
+      "id": "R32",
+      "historical_error": "provider 超时、HTTP 头混入 JSON、长路径导致验收文件读取失败",
+      "current_behavior": "**明确失败或独立处理**，不归为模型业务选择已修复",
+      "remaining_model_responsibility": "环境／上游问题和任务算法分账；重跑不覆盖首次失败",
+      "historical_report": "docs/reports/browser-production-relief-20261114.zh-CN.md",
+      "production_files": [],
+      "regression_modules": [],
+      "evidence_sha256": {
+        "docs/reports/browser-production-relief-20261114.zh-CN.md": "5f38199676de102159e965ebf21f5b0ea73805f2b5fad903be61328dcd133cc2"
+      }
+    }
+  ],
+  "unchanged_transcript_replays": [
+    {
+      "case": "1113-basic",
+      "original_provider": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/basic/provider.jsonl",
+      "original_provider_sha256": "881d885337570af15fb8fc8bc812209ae810d71963fe85c9e131eb1d56710ef4",
+      "reply_count": 4,
+      "new_model_calls": 0,
+      "summary": ".e2e-artifacts\\historical-error-reconciliation-20261115\\pytest-history\\test_original_failure_replies_0\\basic\\summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 0,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {},
+        "fresh_read_recovery": false
+      }
+    },
+    {
+      "case": "1113-structured",
+      "original_provider": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/structured/provider.jsonl",
+      "original_provider_sha256": "5696f6f270215c33b1bf4d07a70f28fd6b9de6f2da1a441bc597687747f65d65",
+      "reply_count": 4,
+      "new_model_calls": 0,
+      "summary": ".e2e-artifacts\\historical-error-reconciliation-20261115\\pytest-history\\test_original_failure_replies_1\\structured\\summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "done",
+        "facts_match": false,
+        "source_reads": 1,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {
+          "schema_valid": true,
+          "exact_fields": true,
+          "facts_mentioned": false,
+          "explanation": "通过生产工具成功打开了记录页面，并按照要求将 Locality 填写为“福州”。在点击 Load record 按钮后，页面成功加载出鱼丸样本，并读取到最终的详细信息。\\n\\n最终获取到的脚本 token 为 SCHEMA_TOKEN_74，当前标签页的 URL 为 https://example.com/production-browser-record。",
+          "reason": ""
+        },
+        "explanation_quality": {
+          "requested_shape_valid": false,
+          "literal_backslash_n": true,
+          "bound_values_repeated": true,
+          "unexpected_url_mentions": [],
+          "unexpected_token_mentions": []
+        },
+        "fresh_read_recovery": false
+      }
+    },
+    {
+      "case": "1113-stale_ref",
+      "original_provider": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/stale_ref/provider.jsonl",
+      "original_provider_sha256": "3fd33cac20ee13d3c9f33befc00d63c94b7ee76c31ab104f5bb994f0d7728910",
+      "reply_count": 4,
+      "new_model_calls": 0,
+      "summary": ".e2e-artifacts\\historical-error-reconciliation-20261115\\pytest-history\\test_original_failure_replies_2\\stale_ref\\summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 0,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {},
+        "fresh_read_recovery": false
+      }
+    },
+    {
+      "case": "1113-stale_edit",
+      "original_provider": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/stale_edit/provider.jsonl",
+      "original_provider_sha256": "2043beca46c791adf1c7aaf85c9a4de8d216c7f59ffbd1258c1ecf0c9080b785",
+      "reply_count": 5,
+      "new_model_calls": 0,
+      "summary": ".e2e-artifacts\\historical-error-reconciliation-20261115\\pytest-history\\test_original_failure_replies_3\\stale_edit\\summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 1,
+        "failed_stale_refs": 0,
+        "version_check_reached": false,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {},
+        "final_file_correct": false,
+        "fresh_read_recovery": false
+      }
+    },
+    {
+      "case": "string-text-1111",
+      "original_provider": ".e2e-artifacts\\protocol-isolated-live-20261111-01\\B2\\01-structured\\A\\provider.jsonl",
+      "original_provider_sha256": "d0950a96fd180257a38200ae9ea6d3320bb34bc647e71ca4ee369ecdbe1033e5",
+      "reply_count": 4,
+      "reply_sha256": [
+        "e7d21718b4861fa88cd64fca135172eb016f39a6e5cbbc672eb48500ef6c2915",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f"
+      ],
+      "new_model_calls": 0,
+      "summary": ".e2e-artifacts\\historical-error-reconciliation-20261115\\string-text-1111.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 4,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {
+          "schema_valid": false,
+          "exact_fields": false,
+          "facts_mentioned": false,
+          "explanation": null,
+          "reason": "output_format_invalid"
+        },
+        "fresh_read_recovery": false
+      }
+    },
+    {
+      "case": "string-text-1112",
+      "original_provider": ".e2e-artifacts\\browser-entry-followup-properties-autonomous\\01-structured\\A\\provider.jsonl",
+      "original_provider_sha256": "6428edcecae0832e1a3a015d929b10b2452e052f9a8bc51ca5a749441b27e54c",
+      "reply_count": 4,
+      "reply_sha256": [
+        "6dc6f3ab69166529f33b08591d861bf31cdb512c6859c04aa39707f7b29e273a",
+        "9864d6382e48829c1289c8d402a1675f61d36f57290aadeaf4585f8d989bcd81",
+        "9864d6382e48829c1289c8d402a1675f61d36f57290aadeaf4585f8d989bcd81",
+        "d433cfd6cbc6d16987e41b12c21d6fa19233d7e19f4ad1f07a90a0e099eb8b70"
+      ],
+      "new_model_calls": 0,
+      "summary": ".e2e-artifacts\\historical-error-reconciliation-20261115\\string-text-1112.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 4,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {
+          "schema_valid": false,
+          "exact_fields": false,
+          "facts_mentioned": false,
+          "explanation": null,
+          "reason": "output_format_invalid"
+        },
+        "fresh_read_recovery": false
+      }
+    },
+    {
+      "case": "early-break-1114",
+      "original_provider": ".e2e-artifacts\\browser-production-relief-20261114\\full-surface-tracked-first\\stale_ref\\provider.jsonl",
+      "original_provider_sha256": "07f83ecca49798ef601f48331fe751d872ae257da47ef1792e736a502b36e062",
+      "reply_count": 4,
+      "reply_sha256": [
+        "ab1a9c481f3d84ddfa49a4205c2ad75278c16b17479ae82d37aead74f0de4bc4",
+        "cf4516ce8ab84f9b63256cd367617e788ed0dfb2916dfbfadc0d5369491248dd",
+        "8d116c6c60d2390af8fffd64048d42ec78e03f9c4857afa46e914b8d2fd7e7e5",
+        "99f640336ea0ac25eedec96a1686ed4433e68c24dbc59afab7ce5707ba1e73de"
+      ],
+      "new_model_calls": 0,
+      "summary": ".e2e-artifacts\\historical-error-reconciliation-20261115\\early-break-1114.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 0,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {},
+        "fresh_read_recovery": false
+      }
+    },
+    {
+      "case": "explanation-1115",
+      "original_provider": ".e2e-artifacts\\bound-edit-20261115\\full-surface-first\\structured\\provider.jsonl",
+      "original_provider_sha256": "b0cb0e8bc1b9239be3b83264e10ea5f99102240c905cc23906fd19eb419fa389",
+      "reply_count": 2,
+      "reply_sha256": [
+        "748c61383a5aaeb72617dcf6a6226bd91e7804df31192e53435cb8d43494f402",
+        "04b8faf045f6b928ab646be62e309a46ff049d69a3eb32ec32f3d49b5b5cc1c0"
+      ],
+      "new_model_calls": 0,
+      "summary": ".e2e-artifacts\\historical-error-reconciliation-20261115\\explanation-1115.json",
+      "result": {
+        "passed": true,
+        "stop_reason": "done",
+        "facts_match": true,
+        "source_reads": 1,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {
+          "schema_valid": true,
+          "exact_fields": true,
+          "facts_mentioned": true,
+          "explanation": "通过生产工具打开页面并成功将 Locality 填入“福州”。点击 Load record 后，页面更新并显示出鱼丸的详细信息。\\n\\n最终获取的实际净重为 173 克，校验码为 QUARTZ_851。脚本生成的 token 为 SCHEMA_TOKEN_74，当前标签页 URL 为 https://example.com/production-browser-record。",
+          "reason": ""
+        },
+        "explanation_quality": {
+          "requested_shape_valid": false,
+          "literal_backslash_n": true,
+          "bound_values_repeated": true,
+          "unexpected_url_mentions": [],
+          "unexpected_token_mentions": []
+        },
+        "fresh_read_recovery": false
+      }
+    }
+  ],
+  "transcript_selection": "purposively selected problem traces; not a success-rate sample",
+  "hybrid_handoff_probe": {
+    "new_model_calls": 0,
+    "ordinary_hint": "",
+    "declared_hint": "Next step from committed receipts (reuse completed work):\nAll declared tool executions have receipts. If they answer the task, deliver done using those facts.\nBrowser evidence is available; the requested project modification still needs an actual edit receipt. Use the observed field values as inputs.changes and the requested file as inputs.path.\nTo persist changes to existing top-level JSON fields, use this CodeMode program. Put the requested file in inputs.path and the requested field values in inputs.changes.\nconst read = await tools.read_file({path: inputs.path});\nreturn unwrap(await tools.edit({read, changes: inputs.changes}));\nPass read directly and unwrap only the edit result. Returning modified JSON alone does not write. If the file changed, rerun the same two lines to read the current file and repeat the edit.",
+    "ordinary_receives_edit_template": false,
+    "declared_receives_edit_template": true,
+    "scope": "browser_task_handoff only; initial prompt guidance remains a separate mechanism"
+  },
+  "validation": {
+    "history_initial": {
+      "file": ".e2e-artifacts\\historical-error-reconciliation-20261115\\history-junit.xml",
+      "available": true,
+      "tests": 167,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "download_short_path_recheck": {
+      "file": ".e2e-artifacts\\historical-error-reconciliation-20261115\\download-short-path-junit.xml",
+      "available": true,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "production_mechanisms": {
+      "file": ".e2e-artifacts\\historical-error-reconciliation-20261115\\mechanisms-junit.xml",
+      "available": true,
+      "tests": 259,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "observed_result_id_compatibility": {
+      "file": ".e2e-artifacts\\historical-error-reconciliation-20261115\\result-id-junit.xml",
+      "available": true,
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "new_transcripts": {
+      "file": ".e2e-artifacts\\historical-error-reconciliation-20261115\\transcripts-final-junit.xml",
+      "available": true,
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "hybrid_handoff": {
+      "file": ".e2e-artifacts\\historical-error-reconciliation-20261115\\handoff-gap-junit.xml",
+      "available": true,
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "caveats": [
+      "Initial historical suite had a long-path download FileNotFoundError; same node passed under a short path.",
+      "A transcript loader development failure was fixed before production replay; initial log is retained.",
+      "A green characterization test may establish that the historical task still fails."
+    ]
+  },
+  "audit_script_sha256": {
+    "build_machine_report.py": "14716366032cc2d8077d5e46b76c31a11cc853a40d73ed390e5c42728386c930",
+    "test_saved_transcripts.py": "d1878fe493abc22cc3349c71d0ce4b619bbac889f7bbcd919bc94d1db7334955",
+    "test_handoff_gap.py": "d73ed2229e6ee6142aff2310ac8078cdece4742d58bff1cadd106b0a70743d40"
+  },
+  "priorities": [
+    {
+      "priority": "P0",
+      "ids": [
+        "R11",
+        "R12"
+      ],
+      "action": "Connect explicit fact/paragraph requirements to existing production validators and gate pass conditions."
+    },
+    {
+      "priority": "P1",
+      "ids": [
+        "R23"
+      ],
+      "action": "Reuse existing JSON edit continuation guidance for ordinary Hybrid sessions without a formal tool checklist."
+    },
+    {
+      "priority": "P1",
+      "ids": [
+        "R02",
+        "R03",
+        "R05",
+        "R17",
+        "R26",
+        "R28"
+      ],
+      "action": "Measure offering, adoption, execution, evidence and final answer separately on natural tasks."
+    }
+  ]
+}

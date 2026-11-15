@@ -213,7 +213,7 @@ def test_current_body_hands_off_to_real_metadata_calls_without_repeating_work(
                 assert "All declared tool executions have receipts" not in handoffs[-1]
                 assert "browser_eval" in snapshots[-1].tool_names
             yield {"tool": offered, "args": {"code": "window.__contractToken"} if offered == "browser_eval" else {}}
-        yield {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
+        yield {"tool": "done", "args": {"summary": "已读取当前记录。\n\n净重 173 克，校验码 QUARTZ_851。"}}
 
     install_http(monkeypatch, replies())
     directory = tmp_path / "metadata"

@@ -408,6 +408,25 @@ def _pending_query_handoff(session: TaskSession, snapshot: TurnSnapshot,
     return snapshot, ""
 
 
+def _project_edit_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext) -> str:
+    tools = {"codemode", "read_file", "edit"}
+    if (session.task_kind != "hybrid" or not session.project_changes_required
+            or ".json" not in session.task_text.casefold() or "codemode" not in snapshot.tool_names
+            or not {"read_file", "edit"} <= set(snapshot.nested_tool_names)
+            or tools & set(session.controller_denied)):
+        return ""
+    records, results = tool_facts(session, context)
+    if committed_results(records, results, frozenset({"edit"})):
+        return ""
+    reads = committed_results(records, results, frozenset({"browser_read"}))
+    if not any(not result.truncated and same_document(result.audit.get("browser_document"), context.browser_document)
+               for _, result in reads):
+        return ""
+    return ("Browser evidence is available; the requested project modification still needs an actual edit receipt. "
+            "Use the observed field values as inputs.changes and the requested file as inputs.path.\n"
+            + JSON_FIELD_EDIT_GUIDANCE)
+
+
 def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                           generation: int | None = None, *,
                           delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
@@ -435,8 +454,9 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     if not download and not recovery:
         snapshot, query = query_result_handoff(session, snapshot, context, generation)
     interrupted = any(interrupted_query(row, context.browser_document) for _, row in unconfirmed_clicks(results))
+    project_edit = _project_edit_handoff(session, snapshot, context)
     if not rules:
-        return snapshot, "\n".join(part for part in (recovery, query,
+        return snapshot, "\n".join(part for part in (recovery, query, project_edit,
             "The previous query document changed; its outcome remains unverified. "
             "Use current-page observations for further work." if interrupted else "") if part)
     observed = [(rule, rule.observe(records, results=results, browser_document=context.browser_document))
@@ -466,11 +486,6 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
         lines.append("Execution exists but its observation is incomplete. Recover the missing evidence, not the click.")
     elif not pending and not metadata:
         lines.append("All declared tool executions have receipts. If they answer the task, deliver done using those facts.")
-    if (session.task_kind == "hybrid" and ".json" in session.task_text.casefold()
-            and {"read_file", "edit"} <= set(snapshot.nested_tool_names)):
-        reads = [result for result in results.values() if result.call.name == "browser_read" and result.ok]
-        if reads and not any(result.call.name == "edit" and result.ok for result in results.values()):
-            lines.append("Browser evidence is available; the requested project modification still needs an actual edit receipt. "
-                         "Use the observed field values as inputs.changes and the requested file as inputs.path.\n"
-                         + JSON_FIELD_EDIT_GUIDANCE)
+    if project_edit:
+        lines.append(project_edit)
     return snapshot, "\n".join(line for line in lines if line)

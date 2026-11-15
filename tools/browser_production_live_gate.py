@@ -17,6 +17,7 @@ import tempfile
 import time
 from collections.abc import Callable
 from contextlib import ExitStack
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,7 +32,7 @@ from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.policies.browser_requirement import require_browser_research_sequence
-from codey.policies.tool_requirement import require_tool_success
+from codey.policies.tool_requirement import parse_tool_success_check, require_browser_read_field, require_tool_success
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.research.browser_search import BrowserSearchProvider
 from codey.storage.input_attachments import InputAttachmentStore
@@ -52,6 +53,28 @@ from tools.receipt_bound_edit_recovery_probe import EXTERNAL_FIELD, receipt_audi
 
 URL = "https://example.com/production-browser-record"
 SOURCE_SUCCESS_MARKER = "REQUIRED_SOURCE_RECORD_418"
+PARAGRAPH = r"[^\S\r\n]*\S[^\r\n]*(?:\r?\n[^\S\r\n]*\S[^\r\n]*)*"
+SEPARATOR = r"(?:\r?\n[^\S\r\n]*){2,}"
+TWO_PARAGRAPHS = rf"\A{PARAGRAPH}{SEPARATOR}{PARAGRAPH}\Z"
+EXPLANATION_FACTS = tuple(require_browser_read_field(url=URL, prefix=prefix, suffix=suffix,
+    answer_pointer="/explanation", answer_contains=True) for prefix, suffix in (
+        ("鱼丸净重为 ", " 克。"), ("记录校验码 ", "。")))
+
+
+def explanation_output_schema() -> JsonObject:
+    schema = decode_json_object(SCHEMA)
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    explanation = properties["explanation"]
+    assert isinstance(explanation, dict)
+    explanation["pattern"] = TWO_PARAGRAPHS
+    return schema
+
+
+def _explanation_binding(check: str) -> str:
+    rule = parse_tool_success_check(check)
+    assert rule is not None
+    return replace(rule, omit_from_explanation=True).declaration
 
 
 def legacy_urls_match(answer: str) -> bool:
@@ -128,6 +151,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              upload_navigation_required: bool = True, research_sequence: bool = False,
              model_reports_metadata: bool = False,
              expected_amount: int = 173, expected_code: str = "QUARTZ_851",
+             declare_required_tools: bool = True,
              additional_required_tools: tuple[str, ...] = (),
              explanation_bindings: tuple[str, ...] = BINDINGS,
              explanation_schema: JsonObject | None = None) -> dict[str, object]:
@@ -237,7 +261,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             "点击 Load record，再用 browser_read 读取本次加载后的完整记录。")
     if structured or explanation_output:
         required.update({"browser_eval", "browser_tab_list"})
-    bindings: tuple[str, ...] = explanation_bindings if explanation_output else ()
+    bindings: tuple[str, ...] = tuple(_explanation_binding(check) for check in explanation_bindings) if explanation_output else ()
+    explanation_facts = EXPLANATION_FACTS if explanation_output else ()
     if explanation_output:
         task += "最终 done.summary 只填自然语言解释，分两段，不重复 URL 或 token；应用从正式回执填入精确 JSON 字段。"
     if bound_output:
@@ -280,7 +305,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         task = (f"固定 Chromium 采集程序将先导航至必要来源 {URL} 并读取正文。"
                 "请根据真实读取回执解释限制并调用 done，不要猜测正文内容。")
         required = {"browser_navigate", "browser_read"}
-    upload_schema = {"type": "object", "properties": {
+    upload_schema: JsonObject = {"type": "object", "properties": {
         key: {"type": "string"} for key in ("explanation", "filename", "sha256", "page_text")},
         "required": ["explanation", "filename", "sha256", "page_text"], "additionalProperties": False}
     if task_transform is not None:
@@ -309,8 +334,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             sequence = (require_browser_research_sequence(url=URL, condition="text", value="鱼丸"),) if research_sequence else ()
             waits = (require_tool_success("browser_wait", via="codemode", arguments={
                 "condition": "text", "value": "UPLOAD_BYTES_82"}),) if upload_file and explicit_wait else ()
-            output_schema: object = (explanation_schema if explanation_schema is not None else
-                upload_schema if assembled_upload else SCHEMA if explanation_output else
+            output_schema: JsonObject = (explanation_schema if explanation_schema is not None else
+                upload_schema if assembled_upload else explanation_output_schema() if explanation_output else
                 {"type": "object", "properties": {"amount": {"type": "integer"}, "code": {"type": "string"}},
                  "required": ["amount", "code"], "additionalProperties": False})
             selection: dict[str, str] = {"model": target.model, "base_url": target.base_url}
@@ -321,8 +346,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 requested_capabilities=("web.read", "browser.observe", "browser.interact", *(
                     ("browser.effect",) if structured or explanation_output or upload_file or download_file or bound_output else ())),
                 project_changes_required=mode == "hybrid",
-                required_tools=(*(() if source_failure and source_attempt_only else sorted(required)),
-                                *bindings, *sequence, *waits, *additional_required_tools),
+                required_tools=(*(() if not declare_required_tools or source_failure and source_attempt_only else sorted(required)),
+                                *bindings, *sequence, *waits, *explanation_facts, *additional_required_tools),
                 output_format="json_explanation" if explanation_output or assembled_upload else "json" if bound_output else "text",
                 sources_open_required=True if source_failure else None,
                 output_schema=json.dumps(output_schema) if assembled_upload or explanation_output or bound_output else "",
@@ -354,7 +379,10 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         if download_file:
             facts_match = (bool(downloads) and all(path.read_bytes() == DOWNLOAD_BYTES for path in downloads)
                            and hashlib.sha256(DOWNLOAD_BYTES).hexdigest() in answer and "fixture-download.txt" in answer)
-        output_checks: JsonObject = final_checks(answer, expected_url=URL) if explanation_output else {}
+        output_checks: JsonObject = final_checks(answer, expected_url=URL, expected_amount=expected_amount,
+            expected_code=expected_code, schema=output_schema) if explanation_output else {}
+        explanation = output_checks.get("explanation")
+        explanation_quality: JsonObject = explanation_checks(explanation, 1, expected_url=URL) if isinstance(explanation, str) else {}
         receipts = tool_receipts(directory / "state")
         audit = receipt_audit([(row.identity, row.result) for row in receipts])
         (directory / "receipts.json").write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -373,7 +401,9 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                   and (not reread or reads >= 2)
                   and (not stale_edit or conflict_recovered)
                   and (not structured or metadata_matches)
-                  and (not explanation_output or output_checks.get("schema_valid") is True and output_checks.get("exact_fields") is True)
+                  and (not explanation_output or output_checks.get("schema_valid") is True
+                       and output_checks.get("exact_fields") is True and output_checks.get("facts_mentioned") is True
+                       and explanation_quality.get("bound_values_repeated") is False)
                   and (not stale_ref or failed_refs >= 1)
                   and (not research_sequence or submission_only)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
@@ -407,9 +437,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                            conflict_injected=changed_after_read, conflict_recovery_covered=conflict_recovered,
                            conflict_coverage="recovered" if conflict_recovered else
                            "not_recovered" if changed_after_read else "not_injected" if version_check_reached else "not_reached")
-        explanation = output_checks.get("explanation")
         if isinstance(explanation, str):
-            summary["explanation_quality"] = explanation_checks(explanation, 1, expected_url=URL)
+            summary["explanation_quality"] = explanation_quality
             summary["raw_explanation_preserved"] = bool(recording.proposals) and explanation == recording.proposals[-1]["raw_summary"]
     except Exception as exc:
         summary = {"mode": mode, "passed": False, "error": f"{type(exc).__name__}: {exc}"}

@@ -23,10 +23,8 @@ from codey.policies.tool_requirement import (
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
+from tools.browser_production_live_gate import PARAGRAPH, SEPARATOR, TWO_PARAGRAPHS
 
-PARAGRAPH = r"[^\S\r\n]*\S[^\r\n]*(?:\r?\n[^\S\r\n]*\S[^\r\n]*)*"
-SEPARATOR = r"(?:\r?\n[^\S\r\n]*){2,}"
-TWO_PARAGRAPHS = rf"\A{PARAGRAPH}{SEPARATOR}{PARAGRAPH}\Z"
 AT_LEAST_TWO = rf"\A{PARAGRAPH}(?:{SEPARATOR}{PARAGRAPH})+\Z"
 
 
@@ -65,6 +63,9 @@ def session_for(value: JsonValue, *, pattern: str = "") -> TaskSession:
     (173, "ID_173", False), (-2.5, "结果为-2.5。", True), (-2.5, "结果为-2.50。", False),
     ("A_0017", "结果：A_0017。", True), ("A_0017", "结果：XA_0017。", False),
     ("A_0017", "结果：A_00170。", False), ("中文结果", "观察到中文结果。", True),
+    ("173", "净重173克。", True), ("173", "净重173.5克。", False), ("173", "净重-173克。", False),
+    ("173", "净重+173克。", False), ("173", "净重173e2克。", False), ("173", "净重1173克。", False),
+    ("0017", "编号0017。", True), ("0017", "编号0017.5。", False),
 ])
 def test_selected_text_and_numbers_must_be_delivered_whole(value: JsonValue, text: str, passed: bool) -> None:
     session = session_for(value)

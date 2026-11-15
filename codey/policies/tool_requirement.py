@@ -409,8 +409,11 @@ class ToolSuccessRequirement:
 
 
 def _contains_value(text: str, value: JsonValue) -> bool:
-    if type(value) in {int, float}:
-        return re.search(r"(?<![A-Za-z0-9_.+-])" + re.escape(_json(value))
+    numeric = type(value) in {int, float} or (isinstance(value, str) and re.fullmatch(
+        r"[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?", value) is not None)
+    if numeric:
+        selected = value if isinstance(value, str) else _json(value)
+        return re.search(r"(?<![A-Za-z0-9_.+-])" + re.escape(selected)
                          + r"(?![A-Za-z0-9_]|\.[0-9])", text) is not None
     if not isinstance(value, str) or not value.strip():
         return False

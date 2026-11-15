@@ -8,33 +8,15 @@ from pathlib import Path
 import pytest
 
 from codey.codemode.json_edit import JSON_FIELD_EDIT_PROGRAM
-from codey.policies.tool_requirement import require_browser_read_field, require_tool_success
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.test_browser_structured_upload_production import action as upload_action
-from tests.test_explanation_delivery_contract import TWO_PARAGRAPHS
 from tests.test_receipt_bound_edit_surface_probe import install_http
-from tools.browser_production_live_gate import HTML, SOURCE_SUCCESS_MARKER, URL, run_case
+from tools.browser_production_live_gate import HTML, SOURCE_SUCCESS_MARKER, TWO_PARAGRAPHS, URL, run_case
 from tools.completion_artifact_audit import tool_receipts
-from tools.completion_explanation_ab import ACQUISITION, SCHEMA, Target
+from tools.completion_explanation_ab import ACQUISITION, TOKEN, Target
 
 TARGET = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
-EXPLANATION_FACTS = (
-    require_tool_success("browser_eval", via="codemode", arguments={"code": "window.__record"},
-                         answer_pointer="/explanation", result_pointer="/value/amount", answer_contains=True),
-    require_browser_read_field(url=URL, prefix="记录校验码 ", suffix="。",
-                               answer_pointer="/explanation", answer_contains=True),
-)
-
-
-def schema() -> JsonObject:
-    result = decode_json_object(SCHEMA)
-    properties = result["properties"]
-    assert isinstance(properties, dict)
-    explanation = properties["explanation"]
-    assert isinstance(explanation, dict)
-    explanation["pattern"] = TWO_PARAGRAPHS
-    return result
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
@@ -45,26 +27,34 @@ def test_fact_and_paragraph_repairs_use_current_receipts_without_repeating_reads
     stale = ("已读取页面记录。\n\n上一次结果是 1173 克，校验码 OLD_000。" if amount == 173 else
              "已读取页面记录。\n\n上一次结果是 173 克，校验码 QUARTZ_851。")
     escaped = f"观察过程。\\n\\n净重为 {amount} 克，校验码 {code}。"
+    fractional = f"已读取当前记录。\n\n净重为 {amount}.5 克，校验码 {code}。"
+    repeated = f"已读取 {URL}，token为 {TOKEN}。\n\n净重为 {amount} 克，校验码 {code}。"
+    three_paragraphs = f"已读取当前记录。\n\n净重为 {amount} 克。\n\n校验码 {code}。"
     corrected = f"已读取当前记录，路径示例 `C:\\new`。\n\n净重为 {amount} 克，校验码 {code}，代码示例 `\\n`。"
     replies: list[JsonObject] = [{"tool": "done", "args": {"summary": draft}}
-                                for draft in (stale, escaped, corrected)]
+                                for draft in (stale, fractional, escaped, repeated, three_paragraphs, corrected)]
     install_http(monkeypatch, replies)
     acquisition: JsonObject = {"tool": "codemode", "args": {
-        "code": ACQUISITION.replace("const tabs=", "unwrap(await tools.browser_eval({code:'window.__record'}));\nconst tabs="),
+        "code": ACQUISITION,
         "inputs": {"url": URL, "city": "福州", "wait_text": "鱼丸"}}}
     directory = tmp_path / "run"
-    row = run_case(directory, "chat", TARGET, max_turns=4, explanation_output=True, restore_snapshots=True,
-        additional_required_tools=EXPLANATION_FACTS, explanation_schema=schema(), acquisition_action=acquisition,
+    row = run_case(directory, "chat", TARGET, max_turns=7, explanation_output=True, restore_snapshots=True,
+        acquisition_action=acquisition,
         fixture_html=HTML.replace("amount:173,code:'QUARTZ_851'", f"amount:{amount},code:'{code}'"),
         expected_amount=amount, expected_code=code)
     assert row["passed"] is True and row["stop_reason"] == "done", row
     assert parse_json_object(str(row["answer"]))["explanation"] == corrected
     attempts = row["repair_attempts"]
-    assert isinstance(attempts, list) and len(attempts) == 2
-    first, second = [decode_json_object(item) for item in attempts]
+    assert isinstance(attempts, list) and len(attempts) == 5
+    first, numeric, second, third, fourth = [decode_json_object(item) for item in attempts]
     assert "answer_text_missing" in str(first["reason"])
     assert str(amount) in str(first["reason"]) and stale in str(first["reason"])
+    assert "answer_text_missing" in str(numeric["reason"]) and fractional in str(numeric["reason"])
     assert "output_format_invalid" in str(second["reason"]) and escaped in str(second["reason"])
+    assert "answer_text_forbidden" in str(third["reason"]) and repeated in str(third["reason"])
+    assert "output_format_invalid" in str(fourth["reason"])
+    checks = decode_json_object(row["posthoc_output_checks"])
+    assert checks["facts_mentioned"] is True and checks["schema_valid"] is True
     receipts = tool_receipts(directory / "state")
     assert sum(item.result.call.name == "browser_read" for item in receipts) == 1
     assert sum(item.result.call.name == "browser_click" for item in receipts) == 1
@@ -86,21 +76,20 @@ def test_missing_one_fact_repairs_only_explanation_after_committed_edit(
     corrected = draft + "校验码为 QUARTZ_851。"
     install_http(monkeypatch, [{"tool": "done", "args": {"summary": text}} for text in (draft, corrected)])
     program = ACQUISITION.replace("const tabs=",
-        "unwrap(await tools.browser_eval({code:'window.__record'}));\n"
         "await (async () => {\n" + JSON_FIELD_EDIT_PROGRAM + "\n})();\nconst tabs=")
     acquisition: JsonObject = {"tool": "codemode", "args": {"code": program, "inputs": {
         "url": URL, "city": "福州", "wait_text": "鱼丸", "path": "result.json",
         "changes": {"amount": 173, "code": "QUARTZ_851"}}}}
     directory = tmp_path / "run"
     row = run_case(directory, "hybrid", TARGET, max_turns=3, explanation_output=True, restore_snapshots=True,
-        additional_required_tools=EXPLANATION_FACTS, explanation_schema=schema(), acquisition_action=acquisition)
+        acquisition_action=acquisition)
     assert row["passed"] is True and row["stop_reason"] == "done", row
     assert parse_json_object(str(row["answer"]))["explanation"] == corrected
     attempts = row["repair_attempts"]
     assert isinstance(attempts, list) and len(attempts) == 1
     feedback = str(decode_json_object(attempts[0])["reason"])
     assert "answer_text_missing" in feedback and 'Expected selected value (JSON): "QUARTZ_851"' in feedback
-    assert "Expected selected value (JSON): 173" not in feedback
+    assert 'Expected selected value (JSON): "173"' not in feedback
     assert "Do not repeat the tool execution" in feedback
     receipts = tool_receipts(directory / "state")
     for tool in ("browser_read", "browser_click", "read_file", "edit"):

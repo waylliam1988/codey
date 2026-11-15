@@ -17,7 +17,6 @@ from codey.codemode.runtime import NodeWorkerRuntime, ToolInvoker
 from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry
 from codey.types.json_value import decode_json_object, decode_json_value, parse_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
-from tools import browser_full_surface_live_gate as matrix
 from tools import browser_prerequisite_ab as browser
 from tools.browser_production_live_gate import URL, run_case
 from tools.completion_artifact_audit import tool_receipts
@@ -79,7 +78,9 @@ def test_original_failure_replies(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     replies = saved_replies(case)
     install_original_http(monkeypatch, replies)
     directory = tmp_path / case
-    result = matrix._case(tmp_path, case, TARGET)
+    result = run_case(directory, "hybrid" if case == "stale_edit" else "chat", TARGET,
+        stale_edit=case == "stale_edit", stale_ref=case == "stale_ref", explanation_output=case == "structured",
+        max_turns=len(replies))
     assert result["passed"] is False, result
     receipts = [r.result for r in tool_receipts(directory / "state")]
     parents = [r for r in receipts if r.call.name == "codemode"]
@@ -99,12 +100,9 @@ def test_original_failure_replies(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         assert any(row.get("phase") == "request" and "browser_fill missing required arg 'ref'" in json.dumps(
             row.get("payload")) for row in requests)
     elif case == "structured":
-        assert result["stop_reason"] == "done"
-        output = parse_json_object(str(result["answer"]))
-        assert output["page_url"] == URL and output["token"] == "SCHEMA_TOKEN_74"
+        assert result["stop_reason"] != "done"
         assert result["facts_match"] is False
-        explanation = output["explanation"]
-        assert isinstance(explanation, str) and "173" not in explanation and "QUARTZ_851" not in explanation
+        assert decode_json_object(result["posthoc_output_checks"])["reason"] == "output_format_invalid"
         assert any(r.call.name == "browser_read" and r.ok and "QUARTZ_851" in r.model_text for r in receipts)
     elif case == "stale_ref":
         assert len(parents) == 4
@@ -197,7 +195,7 @@ def test_structured_delivery_with_controlled_summary(
         "净重 173 克，校验码 QUARTZ_851。" if complete else "已完成页面操作。")
     install_http(monkeypatch, [browser.code_action(code), {"tool": "done", "args": {"summary": summary}}])
     result = run_case(tmp_path / "run", "chat", TARGET, explanation_output=True, max_turns=2)
-    assert result["stop_reason"] == "done", result
+    assert (result["stop_reason"] == "done") is complete, result
     assert result["facts_match"] is complete
     assert result["passed"] is complete
 

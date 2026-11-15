@@ -32,7 +32,7 @@ if __package__ in (None, ""):
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.policies.output_requirement import evaluate
-from codey.policies.tool_requirement import decode_answer, require_tool_success
+from codey.policies.tool_requirement import _contains_value, decode_answer, require_tool_success
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ProviderToolDefinition
 from codey.providers.local_discovery import probe_local_endpoint_detail
@@ -208,11 +208,12 @@ class ExperimentProvider(ApiProvider):
         return normalized
 
 
-def final_checks(answer: str, *, expected_url: str = URL) -> JsonObject:
+def final_checks(answer: str, *, expected_url: str = URL, expected_amount: int = 173,
+                 expected_code: str = "QUARTZ_851", schema: JsonObject | None = None) -> JsonObject:
     """Field equality is independent of other correct strings elsewhere in prose."""
     from codey.policies.output_requirement import declaration
 
-    valid, reason, _feedback = evaluate(declaration("json", json.dumps(SCHEMA)), answer)
+    valid, reason, _feedback = evaluate(declaration("json", json.dumps(SCHEMA if schema is None else schema)), answer)
     if not valid:
         return {"schema_valid": False, "exact_fields": False, "facts_mentioned": False,
                 "explanation": None, "reason": reason}
@@ -220,13 +221,12 @@ def final_checks(answer: str, *, expected_url: str = URL) -> JsonObject:
     explanation = require_json_string(value["explanation"], "explanation")
     return {"schema_valid": True,
             "exact_fields": value["page_url"] == expected_url and value["token"] == TOKEN,
-            "facts_mentioned": bool(re.search(r"(?<!\d)173(?!\d)", explanation))
-            and bool(re.search(r"(?<![A-Za-z0-9_])QUARTZ_851(?![A-Za-z0-9_])", explanation)),
+            "facts_mentioned": _contains_value(explanation, expected_amount) and _contains_value(explanation, expected_code),
             "explanation": explanation, "reason": ""}
 
 
 def provider_metrics(path: Path) -> JsonObject:
-    rows = [decode_json_object(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines()
+    rows: list[JsonObject] = [decode_json_object(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines()
             ] if path.exists() else []
     requests = {require_json_integer(row["exchange"], "exchange") for row in rows
                 if row["type"] == "wire_attempt" and row.get("phase") == "request"}
@@ -306,7 +306,7 @@ def run_arm(directory: Path, target: Target, arm: Arm, shape: int, max_turns: in
                 output_format="json" if arm == "A" else "json_explanation", output_schema=json.dumps(SCHEMA),
                 model_selection={"model": target.model, "base_url": target.base_url}),
                 emit_jsonl=observe, connect_provider=connect)
-        terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), {})
+        terminal = next((row for row in reversed(events) if row.get("type") == "task_done"), JsonObject())
         answer = str(terminal.get("summary") or "")
         checks = final_checks(answer)
         tools = [row for row in events if row.get("type") == "tool"]
@@ -428,7 +428,7 @@ def audit_run(directory: Path) -> JsonObject:
         row = decode_json_object(value)
         path = directory / f"{require_json_integer(row['pair'], 'pair'):02d}" / require_json_string(row["arm"], "arm")
         proposals_path = path / "proposals.jsonl"
-        proposals = [decode_json_object(json.loads(line)) for line in proposals_path.read_text(encoding="utf-8").splitlines()
+        proposals: list[JsonObject] = [decode_json_object(json.loads(line)) for line in proposals_path.read_text(encoding="utf-8").splitlines()
                      ] if proposals_path.exists() else []
         case: JsonObject = {"pair": row["pair"], "arm": row["arm"], "primary_passed": row["passed"],
                             "published": row.get("stop_reason") == "done", "raw_explanation_preserved": None,

@@ -1,0 +1,1082 @@
+{
+  "baseline_head": "3863ad8f98a946218c5bc5f80439193dfc2eae5f",
+  "audit_scope": {
+    "start": "2026-11-10",
+    "end": "2026-11-15",
+    "unchanged_traces": 8,
+    "unchanged_replies": 31,
+    "new_model_calls_for_replay": 0,
+    "all_historical_files_replayed": false
+  },
+  "historical_results": [
+    {
+      "source": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/basic/provider.jsonl",
+      "source_sha256": "881d885337570af15fb8fc8bc812209ae810d71963fe85c9e131eb1d56710ef4",
+      "case": "1113-basic",
+      "result_path": ".e2e-artifacts/cc15-contract-final/test_original_failure_replies_0/basic/summary.json",
+      "reply_count": 4,
+      "reply_sha256": [
+        "7bc7139d9c8bb020597500accdea9514aa51aeff8191854ac937891c87ad538e",
+        "a5aa53097bba73dcd4a52e8fe38a59b7169a081c0b95f566ffda611b7dedf748",
+        "a5aa53097bba73dcd4a52e8fe38a59b7169a081c0b95f566ffda611b7dedf748",
+        "a5aa53097bba73dcd4a52e8fe38a59b7169a081c0b95f566ffda611b7dedf748"
+      ],
+      "classification": "tool_error_requires_model_correction",
+      "stop_reason": "no_progress",
+      "output_checks": {}
+    },
+    {
+      "source": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/structured/provider.jsonl",
+      "source_sha256": "5696f6f270215c33b1bf4d07a70f28fd6b9de6f2da1a441bc597687747f65d65",
+      "case": "1113-structured",
+      "result_path": ".e2e-artifacts/cc15-contract-final/test_original_failure_replies_1/structured/summary.json",
+      "reply_count": 4,
+      "reply_sha256": [
+        "6972fbbf4645e4661b6121c33775a59c6b2cc40e59ce4e5024cf773562a6b467",
+        "d5d728ac2c4d6d0883536c02ec4c5de3c03487aca639a95d5f237ef066056fae",
+        "79b7346a837f652080b81efa18833e05d4b891824504b01d7c6c5107127b8be1",
+        "78cc3a1a83a697bbe8f8f24cf8feff43ce03a51f7827596aace1d4ddf6b0af14"
+      ],
+      "classification": "rejected_answer_requires_model_repair",
+      "stop_reason": "max_turns",
+      "output_checks": {
+        "schema_valid": false,
+        "exact_fields": false,
+        "facts_mentioned": false,
+        "explanation": null,
+        "reason": "output_format_invalid"
+      }
+    },
+    {
+      "source": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/stale_ref/provider.jsonl",
+      "source_sha256": "3fd33cac20ee13d3c9f33befc00d63c94b7ee76c31ab104f5bb994f0d7728910",
+      "case": "1113-stale_ref",
+      "result_path": ".e2e-artifacts/cc15-contract-final/test_original_failure_replies_2/stale_ref/summary.json",
+      "reply_count": 4,
+      "reply_sha256": [
+        "1e523f43ba719ea2058ee787d7d2f95c886ab0b13208bcea4fb846e9208aab45",
+        "01cf7c02f2e0ffe6e1051fcc8f1ef961db0721c816d29a04c24ed93d885aee85",
+        "01cf7c02f2e0ffe6e1051fcc8f1ef961db0721c816d29a04c24ed93d885aee85",
+        "01cf7c02f2e0ffe6e1051fcc8f1ef961db0721c816d29a04c24ed93d885aee85"
+      ],
+      "classification": "tool_error_requires_model_correction",
+      "stop_reason": "no_progress",
+      "output_checks": {}
+    },
+    {
+      "source": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/stale_edit/provider.jsonl",
+      "source_sha256": "2043beca46c791adf1c7aaf85c9a4de8d216c7f59ffbd1258c1ecf0c9080b785",
+      "case": "1113-stale_edit",
+      "result_path": ".e2e-artifacts/cc15-contract-final/test_original_failure_replies_3/stale_edit/summary.json",
+      "reply_count": 5,
+      "reply_sha256": [
+        "a60d676080f024d093ede7f45c84e063b1acfb9aa8ec5551cff6255847e5e565",
+        "42e9bf7bccb7006d7f66867225cc7ec428e66dc31080c0462ffd87b77fc1c13d",
+        "dcb31493b0098faeef35eb3e9cca6af662c47ee8f973e5309696126527ab822b",
+        "9bc67b003bb264a70767fba4c16feb91295bacf633570e4c08387823b0651cdb",
+        "d938ab0cdcaecd2ea900447d167e70858e47f3d19ff3d4b3767fca534763cca9"
+      ],
+      "classification": "tool_error_requires_model_correction",
+      "stop_reason": "no_progress",
+      "output_checks": {}
+    },
+    {
+      "source": ".e2e-artifacts/protocol-isolated-live-20261111-01/B2/01-structured/A/provider.jsonl",
+      "source_sha256": "d0950a96fd180257a38200ae9ea6d3320bb34bc647e71ca4ee369ecdbe1033e5",
+      "reply_sha256": [
+        "e7d21718b4861fa88cd64fca135172eb016f39a6e5cbbc672eb48500ef6c2915",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f"
+      ],
+      "explanation_output": true,
+      "stale_ref": false,
+      "case": "string-text-1111",
+      "result_path": ".e2e-artifacts/cc15-contract-final/test_unchanged_historical_repl0/run/summary.json",
+      "reply_count": 4,
+      "classification": "tool_error_requires_model_correction",
+      "stop_reason": "no_progress",
+      "output_checks": {
+        "schema_valid": false,
+        "exact_fields": false,
+        "facts_mentioned": false,
+        "explanation": null,
+        "reason": "output_format_invalid"
+      }
+    },
+    {
+      "source": ".e2e-artifacts/browser-entry-followup-properties-autonomous/01-structured/A/provider.jsonl",
+      "source_sha256": "6428edcecae0832e1a3a015d929b10b2452e052f9a8bc51ca5a749441b27e54c",
+      "reply_sha256": [
+        "6dc6f3ab69166529f33b08591d861bf31cdb512c6859c04aa39707f7b29e273a",
+        "9864d6382e48829c1289c8d402a1675f61d36f57290aadeaf4585f8d989bcd81",
+        "9864d6382e48829c1289c8d402a1675f61d36f57290aadeaf4585f8d989bcd81",
+        "d433cfd6cbc6d16987e41b12c21d6fa19233d7e19f4ad1f07a90a0e099eb8b70"
+      ],
+      "explanation_output": true,
+      "stale_ref": false,
+      "case": "string-text-1112",
+      "result_path": ".e2e-artifacts/cc15-contract-final/test_unchanged_historical_repl1/run/summary.json",
+      "reply_count": 4,
+      "classification": "tool_error_requires_model_correction",
+      "stop_reason": "no_progress",
+      "output_checks": {
+        "schema_valid": false,
+        "exact_fields": false,
+        "facts_mentioned": false,
+        "explanation": null,
+        "reason": "output_format_invalid"
+      }
+    },
+    {
+      "source": ".e2e-artifacts/browser-production-relief-20261114/full-surface-tracked-first/stale_ref/provider.jsonl",
+      "source_sha256": "07f83ecca49798ef601f48331fe751d872ae257da47ef1792e736a502b36e062",
+      "reply_sha256": [
+        "ab1a9c481f3d84ddfa49a4205c2ad75278c16b17479ae82d37aead74f0de4bc4",
+        "cf4516ce8ab84f9b63256cd367617e788ed0dfb2916dfbfadc0d5369491248dd",
+        "8d116c6c60d2390af8fffd64048d42ec78e03f9c4857afa46e914b8d2fd7e7e5",
+        "99f640336ea0ac25eedec96a1686ed4433e68c24dbc59afab7ce5707ba1e73de"
+      ],
+      "explanation_output": false,
+      "stale_ref": true,
+      "case": "early-break-1114",
+      "result_path": ".e2e-artifacts/cc15-contract-final/test_unchanged_historical_repl2/run/summary.json",
+      "reply_count": 4,
+      "classification": "tool_error_requires_model_correction",
+      "stop_reason": "no_progress",
+      "output_checks": {}
+    },
+    {
+      "source": ".e2e-artifacts/bound-edit-20261115/full-surface-first/structured/provider.jsonl",
+      "source_sha256": "b0cb0e8bc1b9239be3b83264e10ea5f99102240c905cc23906fd19eb419fa389",
+      "reply_sha256": [
+        "748c61383a5aaeb72617dcf6a6226bd91e7804df31192e53435cb8d43494f402",
+        "04b8faf045f6b928ab646be62e309a46ff049d69a3eb32ec32f3d49b5b5cc1c0"
+      ],
+      "explanation_output": true,
+      "stale_ref": false,
+      "case": "explanation-1115",
+      "result_path": ".e2e-artifacts/cc15-contract-final/test_unchanged_historical_repl3/run/summary.json",
+      "reply_count": 2,
+      "classification": "rejected_answer_requires_model_repair",
+      "stop_reason": "max_turns",
+      "output_checks": {
+        "schema_valid": false,
+        "exact_fields": false,
+        "facts_mentioned": false,
+        "explanation": null,
+        "reason": "output_format_invalid"
+      }
+    }
+  ],
+  "answer_repairs": [
+    {
+      "case": "1113-structured",
+      "artifact": ".e2e-artifacts/cc15-contract-final/test_historical_bad_completion0/run",
+      "passed": true,
+      "receipt_counts": {
+        "browser_click": 1,
+        "browser_read": 1
+      },
+      "continuation": "one additional scripted correct done; no autonomous model repair claim"
+    },
+    {
+      "case": "explanation-1115",
+      "artifact": ".e2e-artifacts/cc15-contract-final/test_historical_bad_completion1/run",
+      "passed": true,
+      "receipt_counts": {
+        "browser_click": 1,
+        "browser_read": 1
+      },
+      "continuation": "one additional scripted correct done; no autonomous model repair claim"
+    }
+  ],
+  "regressions": {
+    "runs": [
+      {
+        "artifact": ".e2e-artifacts/continuation-contract-20261115/regression-first.xml",
+        "tests": 139,
+        "failures": 1
+      },
+      {
+        "artifact": ".e2e-artifacts/continuation-contract-20261115/history.xml",
+        "tests": 17,
+        "failures": 0
+      },
+      {
+        "artifact": ".e2e-artifacts/continuation-contract-20261115/production.xml",
+        "tests": 227,
+        "failures": 0
+      },
+      {
+        "artifact": ".e2e-artifacts/continuation-contract-20261115/final-answers.xml",
+        "tests": 25,
+        "failures": 0
+      },
+      {
+        "artifact": ".e2e-artifacts/continuation-contract-20261115/final-regression.xml",
+        "tests": 180,
+        "failures": 0
+      }
+    ],
+    "unique_final_passed": 407,
+    "unique_final_total": 407,
+    "all_final_passed": true
+  },
+  "live_first": {
+    "artifact": ".e2e-artifacts/cc15-live-first",
+    "passed": 11,
+    "runs": 13,
+    "source_digest": "40abd81a911984c97b1a22f1814b56cab0064ba196d39b291d6e21876de24cb4",
+    "scenarios": [
+      {
+        "scenario": "basic",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 44.5
+      },
+      {
+        "scenario": "structured",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_eval",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_tab_list",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": {
+          "requested_shape_valid": true,
+          "literal_backslash_n": false,
+          "bound_values_repeated": false,
+          "unexpected_url_mentions": [],
+          "unexpected_token_mentions": []
+        },
+        "posthoc_output_checks": {
+          "schema_valid": true,
+          "exact_fields": true,
+          "facts_mentioned": true,
+          "explanation": "通过生产工具打开页面并成功将 Locality 填入“福州”。\n点击 Load record 后，页面更新并显示出鱼丸的详细信息。\n\n根据 browser_read 获取的最终正文，鱼丸的实际净重为 173 克，记录校验码为 QUARTZ_851。",
+          "reason": ""
+        },
+        "seconds": 47.032
+      },
+      {
+        "scenario": "legacy_structured",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_eval",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_tab_list",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 73.64
+      },
+      {
+        "scenario": "reread",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 8,
+        "source_reads": 2,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 49.328
+      },
+      {
+        "scenario": "stale_ref",
+        "mode": "chat",
+        "passed": false,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 45.766
+      },
+      {
+        "scenario": "hybrid",
+        "mode": "hybrid",
+        "passed": false,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "edit",
+          "open_url",
+          "read_file"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": true,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 33.5
+      },
+      {
+        "scenario": "stale_edit",
+        "mode": "hybrid",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "edit",
+          "open_url",
+          "read_file"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": true,
+        "true_stale_conflicts": 1,
+        "fresh_read_recovery": true,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 39.578
+      },
+      {
+        "scenario": "upload",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_upload",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 28.297
+      },
+      {
+        "scenario": "download",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_download",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 47.546
+      },
+      {
+        "scenario": "research",
+        "mode": "research",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "open_url",
+          "submit_research_answer"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 26.797
+      },
+      {
+        "scenario": "research_sequence",
+        "mode": "research",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "open_url",
+          "submit_research_answer"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 28.891
+      },
+      {
+        "scenario": "source_failure",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "blocked",
+        "successful_tools": [],
+        "facts_match": false,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 0,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 11.344
+      },
+      {
+        "scenario": "fixed_failure",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "blocked",
+        "successful_tools": [
+          "browser_navigate",
+          "codemode"
+        ],
+        "facts_match": false,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 0,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 13.265
+      }
+    ]
+  },
+  "live_final_after_numeric_text_fix": {
+    "artifact": ".e2e-artifacts/cc15-live-final",
+    "passed": 9,
+    "runs": 13,
+    "source_digest": "d9c2c528c13a4cf8299678bfc42e263a0f5f1ff9840a1e86d4c559355a3202d9",
+    "scenarios": [
+      {
+        "scenario": "basic",
+        "mode": "chat",
+        "passed": false,
+        "stop_reason": "max_turns",
+        "successful_tools": [
+          "browser_navigate",
+          "browser_snapshot",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": false,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 0,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 218.359
+      },
+      {
+        "scenario": "structured",
+        "mode": "chat",
+        "passed": false,
+        "stop_reason": "no_progress",
+        "successful_tools": [
+          "browser_click",
+          "browser_eval",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_tab_list",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": false,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {
+          "schema_valid": false,
+          "exact_fields": false,
+          "facts_mentioned": false,
+          "explanation": null,
+          "reason": "output_format_invalid"
+        },
+        "seconds": 78.453
+      },
+      {
+        "scenario": "legacy_structured",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_eval",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_tab_list",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 74.016
+      },
+      {
+        "scenario": "reread",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 8,
+        "source_reads": 2,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 52.063
+      },
+      {
+        "scenario": "stale_ref",
+        "mode": "chat",
+        "passed": false,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 45.671
+      },
+      {
+        "scenario": "hybrid",
+        "mode": "hybrid",
+        "passed": false,
+        "stop_reason": "no_progress",
+        "successful_tools": [
+          "open_url"
+        ],
+        "facts_match": false,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 0,
+        "final_file_correct": false,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 58.672
+      },
+      {
+        "scenario": "stale_edit",
+        "mode": "hybrid",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "edit",
+          "open_url",
+          "read_file"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": true,
+        "true_stale_conflicts": 1,
+        "fresh_read_recovery": true,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 50.61
+      },
+      {
+        "scenario": "upload",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_upload",
+          "browser_wait",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 28.141
+      },
+      {
+        "scenario": "download",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_download",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "codemode",
+          "open_url"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 42.687
+      },
+      {
+        "scenario": "research",
+        "mode": "research",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "open_url",
+          "submit_research_answer"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 27.875
+      },
+      {
+        "scenario": "research_sequence",
+        "mode": "research",
+        "passed": true,
+        "stop_reason": "done",
+        "successful_tools": [
+          "browser_click",
+          "browser_fill",
+          "browser_navigate",
+          "browser_read",
+          "browser_snapshot",
+          "browser_wait",
+          "codemode",
+          "open_url",
+          "submit_research_answer"
+        ],
+        "facts_match": true,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 1,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 27.985
+      },
+      {
+        "scenario": "source_failure",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "blocked",
+        "successful_tools": [],
+        "facts_match": false,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 0,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 11.5
+      },
+      {
+        "scenario": "fixed_failure",
+        "mode": "chat",
+        "passed": true,
+        "stop_reason": "blocked",
+        "successful_tools": [
+          "browser_navigate",
+          "codemode"
+        ],
+        "facts_match": false,
+        "failed_stale_refs": 0,
+        "restored_snapshots": 0,
+        "source_reads": 0,
+        "final_file_correct": null,
+        "true_stale_conflicts": 0,
+        "fresh_read_recovery": false,
+        "explanation_quality": null,
+        "posthoc_output_checks": {},
+        "seconds": 12.797
+      }
+    ]
+  },
+  "live_reruns": [
+    {
+      "artifact": ".e2e-artifacts/cc15-live-staleref-rerun",
+      "passed": 1,
+      "runs": 1,
+      "source_digest": "40abd81a911984c97b1a22f1814b56cab0064ba196d39b291d6e21876de24cb4",
+      "scenarios": [
+        {
+          "scenario": "stale_ref",
+          "mode": "chat",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "open_url"
+          ],
+          "facts_match": true,
+          "failed_stale_refs": 1,
+          "restored_snapshots": 0,
+          "source_reads": 1,
+          "final_file_correct": null,
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "explanation_quality": null,
+          "posthoc_output_checks": {},
+          "seconds": 64.89
+        }
+      ]
+    },
+    {
+      "artifact": ".e2e-artifacts/cc15-live-hybrid-rerun",
+      "passed": 1,
+      "runs": 1,
+      "source_digest": "40abd81a911984c97b1a22f1814b56cab0064ba196d39b291d6e21876de24cb4",
+      "scenarios": [
+        {
+          "scenario": "hybrid",
+          "mode": "hybrid",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "edit",
+            "open_url",
+            "read_file"
+          ],
+          "facts_match": true,
+          "failed_stale_refs": 0,
+          "restored_snapshots": 0,
+          "source_reads": 1,
+          "final_file_correct": true,
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "explanation_quality": null,
+          "posthoc_output_checks": {},
+          "seconds": 64.187
+        }
+      ]
+    }
+  ],
+  "first_live_failures": {
+    "stale_ref": {
+      "request": ".e2e-artifacts/cc15-live-first/stale_ref/request.json",
+      "provider": ".e2e-artifacts/cc15-live-first/stale_ref/provider.jsonl",
+      "actions": [
+        {
+          "tool": "browser_snapshot",
+          "args": {}
+        },
+        {
+          "tool": "browser_fill",
+          "args": {
+            "ref": {
+              "name": "Locality",
+              "role": "textbox"
+            },
+            "value": "福州"
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "ref": "b20e5c4f6ba2a4e80b2be495307f6f82ag4e2",
+            "purpose": "action"
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "condition": "text",
+            "timeout_ms": 5000,
+            "value": "鱼丸"
+          }
+        },
+        {
+          "tool": "browser_read",
+          "args": {}
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并完成操作。在填写 Locality 为“福州”后，点击 Load record 按钮，页面更新并显示鱼丸记录。根据 `browser_read` 获取的最终正文，实际净重为 173 克，校验码为 QUARTZ_851。"
+          }
+        }
+      ]
+    },
+    "hybrid": {
+      "request": ".e2e-artifacts/cc15-live-first/hybrid/request.json",
+      "provider": ".e2e-artifacts/cc15-live-first/hybrid/provider.jsonl",
+      "actions": [
+        {
+          "tool": "codemode",
+          "args": {
+            "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = unwrap(snapshot).elements;\nconst localityRef = elements.find(e => e.name === 'Locality' || e.name === 'locality')?.ref;\nif (!localityRef) return 'Locality ref not found';\n\nawait tools.browser_fill({ref: localityRef, value: '福州'});\n\nconst newSnapshot = await tools.browser_snapshot({});\nconst newElements = unwrap(newSnapshot).elements;\nconst loadRecordRef = newElements.find(e => e.name === 'Load record' || e.name === 'Load Record')?.ref;\nif (!loadRecordRef) return 'Load record ref not found';\n\nawait tools.browser_click({ref: loadRecordRef});\n\nawait tools.browser_wait({condition: 'text', value: '鱼丸', timeout_ms: 5000});\n\nreturn unwrap(await tools.browser_read({}));",
+            "inputs": {}
+          }
+        },
+        {
+          "tool": "codemode",
+          "args": {
+            "code": "const read = await tools.read_file({path: inputs.path});\nreturn unwrap(await tools.edit({read, changes: inputs.changes}));",
+            "inputs": {
+              "path": "result.json",
+              "changes": {
+                "amount": 173,
+                "code": "QUARTZ_851"
+              }
+            }
+          }
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并完成操作。首先将 Locality 填为“福州”，随后点击 Load record 并等待“鱼丸”出现。最终通过 browser_read 获取的页面内容显示：鱼丸净重为 173 克，校验码为 QUARTZ_851。已更新项目中的 result.json 文件。",
+            "knowledge_refs": []
+          }
+        }
+      ]
+    }
+  },
+  "final_live_failures": {
+    "artifact": ".e2e-artifacts/continuation-contract-20261115/final-live-failure-evidence.json",
+    "classifications": {
+      "basic": "model_loop_break_before_button_selection",
+      "structured": "model_answer_format_and_fact_errors_rejected_without_successful_repair",
+      "stale_ref": "model_skipped_requested_stale_reference_probe",
+      "hybrid": "model_repeated_eturn_syntax_error_before_browser_read"
+    }
+  },
+  "checks": {
+    "ruff": ".e2e-artifacts/continuation-contract-20261115/ruff-final.log",
+    "mypy": ".e2e-artifacts/continuation-contract-20261115/mypy-final.log",
+    "pyrefly": ".e2e-artifacts/continuation-contract-20261115/pyrefly-final.log",
+    "ty": ".e2e-artifacts/continuation-contract-20261115/ty-final.log",
+    "changed_mypy": ".e2e-artifacts/continuation-contract-20261115/changed-mypy-final.log",
+    "changed_pyrefly": ".e2e-artifacts/continuation-contract-20261115/changed-pyrefly-final.log",
+    "changed_ty": ".e2e-artifacts/continuation-contract-20261115/changed-ty.log",
+    "precision": ".e2e-artifacts/continuation-contract-20261115/precision.log"
+  },
+  "remaining_limits": [
+    "No arbitrary JavaScript repair or semantic source/field mapping guarantee.",
+    "Explicit completion requirements still come from the task entry.",
+    "A controlled local Chromium fixture and one local model do not establish arbitrary website reliability."
+  ]
+}
