@@ -149,14 +149,17 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
 
         if whole_research(context.session):
             proposal = canonical_json_object(submitted_answer(context.session) or {})
-        progress.reject_completion(proposal, followup, context.session,
-            failure_key=(domain_issue["code"] + ":" + domain_issue["path"]) if domain_issue else "")
+        from codey.operations.explanation_repair import FAILURE_KEY, active
+
+        failure_key = ((domain_issue["code"] + ":" + domain_issue["path"]) if domain_issue else
+                       FAILURE_KEY if error_source == FAILURE_KEY or active(state.counters.progress) else "")
+        progress.reject_completion(proposal, followup, context.session, failure_key=failure_key)
         counters = replace(state.counters, progress=progress.snapshot())
         done_spec = next((spec for spec in context.response(state).snapshot.model_specs if spec.name == "done"), None)
         decision = RetryDecision(
             purpose="retry", prompt=kernel_prompt._completion_followup(followup, native=context.native,
                 structured_report=done_spec is not None and "report_sections" in done_spec.required,
-                whole_submission=whole_research(context.session)), error="",
+                whole_submission=whole_research(context.session), done_spec=done_spec), error="",
             error_source=error_source, error_type=error_type)
         context.advance(state, operation_payload.LEAF_CONTROL_READY, data=decision,
             counters=counters)
@@ -224,16 +227,6 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         if messages is None or PAGE_DETAIL_TOOL in snapshot.tool_names or snapshot.tool_names == SUBMISSION_TOOLS:
             from codey.operations.kernel_protocol import build_turn_snapshot
             snapshot = build_turn_snapshot(context.session, native=context.native)
-        explanation_only = decision.get("error_source") == "completion_explanation"
-        if explanation_only:
-            from codey.operations.kernel_protocol import refresh_snapshot_contract
-
-            names = tuple(name for name in snapshot.tool_names if name in {"done", "read_tool_result"})
-            snapshot = refresh_snapshot_contract(replace(snapshot, tool_names=names, nested_tool_names=(),
-                frozen_specs=tuple(spec for spec in snapshot.frozen_specs if spec.name in names),
-                custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in names),
-                browser_followups=False, browser_references=None, browser_fill_text=None,
-                browser_copy=None, input_binding=None, task_navigation_url=None))
         # Both request-scoped providers and text-only providers render the
         # same frozen repair basis, including after a successful local write.
         research = context.execution.research_tools
@@ -248,7 +241,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             if decision["error"]:
                 messages[-1] = replace(messages[-1], user_content=prompt)
         context.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages,
-                       counters=counters, coding_context_prepared=explanation_only)
+                       counters=counters)
         return
     if decision["purpose"] == "question":
         from codey.durable.questions import DurableUserQuestionStore

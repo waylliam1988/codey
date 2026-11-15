@@ -254,6 +254,7 @@ def _snapshot_payload(raw: object) -> tuple[JsonObject, int]:
 
 def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.operations.kernel_protocol import TurnSnapshot, render_snapshot_contract
+    from codey.policies.output_requirement import explanation_spec, has_explanation
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import custom_executor_for
 
@@ -274,6 +275,9 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     if [spec.name for spec in specs] != inventory:
         raise ValueError("captured definitions do not match tool names")
     policy = TaskPolicy.from_payload(payload["policy"])
+    if has_explanation(policy.required_checks) and any(
+            spec.name == "done" and spec != explanation_spec(spec) for spec in specs):
+        raise ValueError("unsupported captured explanation contract; start a new request")
     navigation_url = payload.get("task_navigation_url")
     if navigation_url is not None:
         from codey.policies.network import check_fetch_url

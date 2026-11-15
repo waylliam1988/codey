@@ -7,6 +7,7 @@ import json
 import sqlite3
 from pathlib import Path
 
+from codey.operations.browser_followups import query_document
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import evaluate
 from codey.operations.completion_output import prepare_completion_output
@@ -21,12 +22,13 @@ from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.ledger import ResearchLedger
 from codey.runtime.effects.effect_records import RuntimeEffectIntent, RuntimeEffectProjection, RuntimeEffectSettlement
 from codey.storage.managed_outputs import ManagedOutputStore
+from codey.task.web_intent import explicit_web_intent
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_string
 from tools.completion_artifact_audit import artifacts
-from tools.completion_explanation_ab import URL, final_checks, production_source_digest, write_json
+from tools.completion_explanation_ab import final_checks, production_source_digest, write_json
 
 
-def replay(case: Path, *, experimental_snapshot: bool = False) -> JsonObject:
+def replay(case: Path, *, experimental_snapshot: bool = False, proposal_index: int = 0) -> JsonObject:
     state = case / "state"
     original = artifacts(state)
     requests = [decode_json_object(body["payload"]) for _, body in original if body.get("kind") == "provider_request"]
@@ -34,7 +36,7 @@ def replay(case: Path, *, experimental_snapshot: bool = False) -> JsonObject:
     policy = TaskPolicy.from_payload(captured["policy"])
     request = decode_json_object(json.loads((case / "request.json").read_text(encoding="utf-8")))
     task = require_json_string(request["task"], "task")
-    session = TaskSession(policy=policy, task_kind="chat", task_text=task, required_source_urls=frozenset({URL}))
+    session = TaskSession(policy=policy, task_kind="chat", task_text=task, required_source_urls=explicit_web_intent(task).urls)
     ledger = ResearchLedger()
     receipt_refs: list[JsonValue] = []
     with sqlite3.connect((state / "durable.sqlite3").resolve().as_uri() + "?mode=ro", uri=True) as connection:
@@ -55,11 +57,11 @@ def replay(case: Path, *, experimental_snapshot: bool = False) -> JsonObject:
             session._memory_results[intent.effect_id] = result
             receipt_refs.append({"result_ref": intent.effect_id, "tool": result.call.name, "ok": result.ok})
     proposal_path = case / "proposals.jsonl"
-    first = decode_json_object(json.loads(proposal_path.read_text(encoding="utf-8").splitlines()[0]))
+    first = decode_json_object(json.loads(proposal_path.read_text(encoding="utf-8").splitlines()[proposal_index]))
     raw = require_json_string(first["normalized_reply"], "normalized_reply")
     new_snapshot = restore_snapshot(snapshot_description(build_turn_snapshot(session)))
     outcomes: JsonObject = {}
-    context = CompletionContext(task=task, research_ledger=ledger)
+    context = CompletionContext(task=task, research_ledger=ledger, browser_document=query_document(session._memory_results))
     decoded = decode_text_turn(raw)
     if not isinstance(decoded, TextRequests):
         raise ValueError("historical proposal must be a tool request")
@@ -69,7 +71,13 @@ def replay(case: Path, *, experimental_snapshot: bool = False) -> JsonObject:
         ("new_contract", new_snapshot, decoded),
         ("new_contract_native_equivalent", build_turn_snapshot(session, native=True), native)]
     if not experimental_snapshot:
-        comparisons.insert(0, ("original_contract", restore_snapshot(captured), decoded))
+        try:
+            original_snapshot = restore_snapshot(captured)
+        except ValueError as exc:
+            outcomes["original_contract"] = {"available": False, "reason": str(exc),
+                                              "schema_version": captured.get("schema_version")}
+        else:
+            comparisons.insert(0, ("original_contract", original_snapshot, decoded))
     for label, snapshot, turn in comparisons:
         plan = normalize_turn(turn, snapshot=snapshot)
         if plan.protocol_error or plan.control is None:
@@ -82,7 +90,11 @@ def replay(case: Path, *, experimental_snapshot: bool = False) -> JsonObject:
         outcomes[label] = {"complete": verdict.complete, "followup": verdict.followup,
                            "checks": checks, "explanation_preserved": checks.get("explanation") == first["raw_summary"],
                            "normalized_args": dict(plan.control_args)}
-    return {"case": str(case), "original_snapshot": captured, "new_snapshot": snapshot_description(new_snapshot),
+    current = decode_json_object(outcomes["new_contract"])
+    classification = ("caught" if current.get("complete") is True else
+                      "model_repair_required" if "Only the explanation" in str(current.get("followup", "")) else "rejected")
+    return {"case": str(case), "proposal_index": proposal_index, "classification": classification,
+            "original_snapshot": captured, "new_snapshot": snapshot_description(new_snapshot),
             "first_proposal": first, "proposal_file_sha256": hashlib.sha256(proposal_path.read_bytes()).hexdigest(),
             "original_result": decode_json_object(json.loads((case / "summary.json").read_text(encoding="utf-8"))),
             "receipts": receipt_refs, "outcomes": outcomes}
@@ -90,11 +102,13 @@ def replay(case: Path, *, experimental_snapshot: bool = False) -> JsonObject:
 
 class Options(argparse.Namespace):
     run_dir: Path
+    extra_case: list[Path]
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True, type=Path)
+    parser.add_argument("--extra-case", action="append", type=Path, default=[])
     options = parser.parse_args(namespace=Options())
     options.run_dir.mkdir(parents=True, exist_ok=False)
     rows: list[JsonValue] = []
@@ -105,6 +119,9 @@ def main() -> int:
             print(json.dumps({"case": str(case), "outcomes": row["outcomes"]}, ensure_ascii=True), flush=True)
     if len(rows) != 20:
         raise ValueError("expected both complete historical batches (20 first proposals)")
+    for case in options.extra_case:
+        for index, _ in enumerate((case / "proposals.jsonl").read_text(encoding="utf-8").splitlines()):
+            rows.append(replay(case, proposal_index=index))
     write_json(options.run_dir / "replay.json", {"scope": "offline_original_proposals_and_validated_receipts",
                "production_source": production_source_digest(), "cases": rows})
     # Preserve the intermediate uncommitted v4 snapshot verbatim; it is not a

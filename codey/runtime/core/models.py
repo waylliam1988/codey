@@ -4,9 +4,13 @@ import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object
 from codey.utils.refs import strict_nonnegative_int
+
+if TYPE_CHECKING:
+    from codey.protocols.json_repair import JsonTailClosure
 
 TRUNCATED_RESULT_NOTICE = (
     "[truncated result: omitted content may contain relevant "
@@ -260,6 +264,7 @@ class ToolPlan:
     alias_rewrite_count: int = 0
     arg_repair_counts: Mapping[str, int] = field(default_factory=dict)
     control_args: Mapping[str, JsonValue] = field(default_factory=dict)
+    syntax_closure: JsonTailClosure | None = None
 
 
 @dataclass(frozen=True)

@@ -107,6 +107,9 @@ class ToolSuccessRequirement:
     answer_contains: bool = False
     omit_from_explanation: bool = False
     after: str = ""
+    stage: int = 0
+    file_path: str = ""
+    value_type: str = ""
 
     def __post_init__(self) -> None:
         if not _NAME.fullmatch(self.tool) or (self.via and not _NAME.fullmatch(self.via)):
@@ -116,6 +119,8 @@ class ToolSuccessRequirement:
         if self.after and (self.tool, self.after) not in {
                 ("browser_wait", "page_actions"), ("browser_read", "browser_wait")}:
             raise ValueError("browser ordering requires wait after page actions or read after wait")
+        if type(self.stage) is not int or not 0 <= self.stage <= 16 or (self.stage and not self.after):
+            raise ValueError("browser stage requires an ordered wait/read and a bounded click ordinal")
         if self.answer_pointer is not None:
             _validate_pointer(self.answer_pointer)
             _validate_pointer(self.result_pointer)
@@ -132,10 +137,20 @@ class ToolSuccessRequirement:
         ):
             raise ValueError("absolute result lines require read_file /text and a positive integer")
         if self.browser_text is not None and (
-            self.tool != "browser_read" or self.via != "codemode" or not self.answer_pointer
+            self.tool != "browser_read" or (self.via != "codemode" and not self.file_path) or not self.answer_pointer
             or self.result_pointer != "/text" or self.result_line is not None
         ):
             raise ValueError("browser text selectors require browser_read via codemode and a named answer field")
+        if self.file_path or self.value_type:
+            from pathlib import PurePosixPath
+
+            path = PurePosixPath(self.file_path)
+            if (not self.file_path or path.is_absolute() or ".." in path.parts or ":" in self.file_path
+                    or "\\" in self.file_path or path.as_posix() != self.file_path
+                    or self.value_type not in {"integer", "number", "string"} or self.browser_text is None
+                    or self.answer_contains or self.omit_from_explanation or not self.answer_pointer
+                    or self.answer_pointer.count("/") != 1):
+                raise ValueError("file field bindings require a relative path, top-level pointer and explicit source type")
 
     @property
     def declaration(self) -> str:
@@ -145,6 +160,8 @@ class ToolSuccessRequirement:
                             "args": parse_json_object(self.arguments_json)}
         if self.after:
             data["after"] = self.after
+        if self.stage:
+            data["stage"] = self.stage
         if self.answer_pointer is not None:
             answer: JsonObject = {"pointer": self.answer_pointer, "result_pointer": self.result_pointer,
                                   "line": self.result_line}
@@ -155,6 +172,8 @@ class ToolSuccessRequirement:
                 answer["contains"] = True
             if self.omit_from_explanation:
                 answer["omit_from_explanation"] = True
+            if self.file_path:
+                answer.update(file_path=self.file_path, value_type=self.value_type)
             data["answer"] = answer
         return PREFIX + _json(data)
 
@@ -178,6 +197,8 @@ class ToolSuccessRequirement:
         if self.after:
             execution += (" Use the current document, after its latest page action." if self.after == "page_actions" else
                           " Read the current document after its latest successful declared wait.")
+        if self.stage:
+            execution += f" This requirement belongs to click stage {self.stage}, before the next click."
         return execution
 
     @property
@@ -188,6 +209,10 @@ class ToolSuccessRequirement:
         execution = self.execution_guidance if execution is None else execution
         if self.answer_pointer is None:
             return execution
+        if self.file_path:
+            return (execution + f" File {self.file_path!r} field {self.answer_pointer!r} must match the committed "
+                    f"browser text selector as declared JSON {self.value_type}. Follow the task's declared edit mode "
+                    "and the next-step template. Do not infer types or coerce other fields.")
         selected = ("research_observation.text" if self._binds_browser_body
                     else f"value{self.result_pointer}")
         if self.result_line is not None:
@@ -240,7 +265,7 @@ class ToolSuccessRequirement:
             from codey.operations.browser_completion import ordered_browser_refs
 
             ordered = ordered_browser_refs(self.tool, self.after, records=records, results=results or {},
-                                           document=browser_document)
+                                           document=browser_document, stage=self.stage)
         for identity, row in records.items():
             if not _succeeded(row, self.tool):
                 continue
@@ -416,12 +441,12 @@ class ToolSuccessRequirement:
                 "Repair only /explanation: remove the value belonging to independent field "
                 f"{self.answer_pointer!r} from the prose. The application already fills that field from its receipt. "
                 "Preserve supported business facts and satisfy all explanation constraints together. "
-                "Submit the complete revised natural-language explanation in done.summary.", tuple(refs))
+                "Submit the complete revised natural-language explanation in done.paragraphs.", tuple(refs))
         view = "output" if self._binds_browser_body else "value"
         instruction = (EXPLANATION_GUIDANCE + " Preserve the remaining analysis; include the selected text in "
-                       "done.summary and resubmit done. " if self.answer_contains else
+                       "done.paragraphs and resubmit done. " if self.answer_contains else
                        EXPLANATION_GUIDANCE + " Preserve the remaining analysis; remove the selected value from "
-                       "done.summary and resubmit done. The independent field remains receipt-bound. "
+                       "done.paragraphs and resubmit done. The independent field remains receipt-bound. "
                        if self.omit_from_explanation else JSON_ANSWER_GUIDANCE + " ")
         return RequirementEvaluation(reason,
             "Execution and observation are already satisfied. Do not repeat the tool execution. "
@@ -437,15 +462,23 @@ def _contains_value(text: str, value: JsonValue) -> bool:
         r"[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?", value) is not None)
     if numeric:
         selected = value if isinstance(value, str) else _json(value)
-        return re.search(r"(?<![A-Za-z0-9_.+-])" + re.escape(selected)
-                         + r"(?![A-Za-z0-9_]|\.[0-9])", text) is not None
+        return re.search(_text_occurrence(selected), text) is not None
     if not isinstance(value, str) or not value.strip():
         return False
-    selected = value
-    # Keep ASCII identifiers whole, while allowing surrounding Chinese prose.
+    return re.search(_text_occurrence(value), text) is not None
+
+
+def _text_occurrence(selected: str) -> str:
+    if re.fullmatch(r"[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?", selected):
+        return r"(?<![A-Za-z0-9_.+-])" + re.escape(selected) + r"(?![A-Za-z0-9_]|\.[0-9])"
     left = r"(?<![A-Za-z0-9_])" if re.match(r"[A-Za-z0-9_]", selected) else ""
     right = r"(?![A-Za-z0-9_])" if re.search(r"[A-Za-z0-9_]$", selected) else ""
-    return re.search(left + re.escape(selected) + right, text) is not None
+    return left + re.escape(selected) + right
+
+
+def omit_selected_text(text: str, selected: str) -> str:
+    """Remove only a declared exact string occurrence, retaining identifier boundaries."""
+    return re.sub(_text_occurrence(selected), "", text) if selected else text
 
 
 def _browser_body(receipt: ToolResult, *, url: str | None = None) -> str | None:
@@ -486,11 +519,12 @@ def require_tool_success(
     answer_contains: bool = False,
     omit_from_explanation: bool = False,
     after: str = "",
+    stage: int = 0,
 ) -> str:
     """Declare exact argument selectors, optionally bound to a successful parent."""
     return ToolSuccessRequirement(tool, via, _json(dict(arguments or {})),
                                   answer_pointer, result_pointer, result_line, answer_contains=answer_contains,
-                                  omit_from_explanation=omit_from_explanation, after=after).declaration
+                                  omit_from_explanation=omit_from_explanation, after=after, stage=stage).declaration
 
 
 def require_browser_read_field(*, url: str, prefix: str, suffix: str, answer_pointer: str,
@@ -499,6 +533,12 @@ def require_browser_read_field(*, url: str, prefix: str, suffix: str, answer_poi
     return ToolSuccessRequirement("browser_read", "codemode", answer_pointer=answer_pointer,
         result_pointer="/text", browser_text=BrowserTextSelector(url, prefix, suffix),
         answer_contains=answer_contains, omit_from_explanation=omit_from_explanation).declaration
+
+
+def require_browser_file_field(*, url: str, prefix: str, suffix: str, path: str, pointer: str, value_type: str) -> str:
+    """Declare an exact current-page text copy to a typed file field."""
+    return ToolSuccessRequirement("browser_read", answer_pointer=pointer, result_pointer="/text",
+        browser_text=BrowserTextSelector(url, prefix, suffix), file_path=path, value_type=value_type).declaration
 
 
 def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
@@ -510,12 +550,12 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
     data = parse_json_object(expression)
     if data.get("input") == "actions":
         raise ValueError("codemode.action has been removed; submit a new request using ordinary CodeMode")
-    if not {"tool", "via", "args"} <= set(data) or set(data) - {"tool", "via", "args", "answer", "after"}:
+    if not {"tool", "via", "args"} <= set(data) or set(data) - {"tool", "via", "args", "answer", "after", "stage"}:
         raise ValueError("invalid structured tool requirement")
     binding = data.get("answer")
     fields = {"pointer", "result_pointer", "line"}
     if "answer" in data and (not isinstance(binding, dict) or not fields <= set(binding)
-                            or set(binding) - fields - {"browser_text", "contains", "omit_from_explanation"}):
+                            or set(binding) - fields - {"browser_text", "contains", "omit_from_explanation", "file_path", "value_type"}):
         raise ValueError("invalid answer observation binding")
     browser_text = None
     if isinstance(binding, dict) and "browser_text" in binding:
@@ -531,7 +571,10 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
         if isinstance(binding, dict) and binding["line"] is not None else None, browser_text,
         require_json_boolean(binding.get("contains", False), "contains") if isinstance(binding, dict) else False,
         require_json_boolean(binding.get("omit_from_explanation", False), "omit_from_explanation")
-        if isinstance(binding, dict) else False, require_json_string(data.get("after", ""), "after"))
+        if isinstance(binding, dict) else False, require_json_string(data.get("after", ""), "after"),
+        require_json_integer(data.get("stage", 0), "stage"),
+        require_json_string(binding.get("file_path", ""), "file_path") if isinstance(binding, dict) else "",
+        require_json_string(binding.get("value_type", ""), "value_type") if isinstance(binding, dict) else "")
     if requirement.declaration != check_id:
         raise ValueError("tool requirement must use its canonical check id")
     return requirement

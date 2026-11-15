@@ -40,6 +40,7 @@ from codey.providers.base import ProviderToolDefinition
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.ledger import OpenedSource
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.support.real_cdp import chromium_executable
 from tools.completion_artifact_audit import rejection_audit, tool_receipts
@@ -65,7 +66,7 @@ def add_receipt(session: TaskSession, identity: str, value: str, *, ok: bool = T
     '```json\n{"wrong":"still raw"}\n```',
     "",
 ])
-def test_explicit_mode_preserves_summary_as_one_string_even_without_receipt_bindings(text: str) -> None:
+def test_explicit_mode_preserves_prose_as_one_string_even_without_receipt_bindings(text: str) -> None:
     session = session_for()
     output = prepare_completion_output(session, text, CompletionContext())
     assert parse_json_object(output.text) == {"explanation": text}
@@ -269,7 +270,7 @@ def test_headless_binds_latest_browser_text_field(
     load = ("const snapshot=unwrap(await tools.browser_snapshot({}));"
             "unwrap(await tools.browser_click({ref:snapshot.elements.find(element=>element.name==='Load').ref}));")
     prose = "已读取加载后的记录。"
-    done: JsonObject = {"tool": "done", "args": {"summary": prose}}
+    done: JsonObject = {"tool": "done", "args": {"paragraphs": [prose]}}
     replies: list[JsonObject] = [
         {"tool": "codemode", "args": {"code": nav + read, "inputs": {"url": url}}},
         {"tool": "codemode", "args": {"code": load + read}},
@@ -348,7 +349,7 @@ def test_headless_binds_declared_business_fields_from_current_browser_receipt(
             "unwrap(await tools.browser_eval({code:'window.__contractToken'}));")
     read = "return unwrap(await tools.browser_eval({code:'window.__record'}));"
     prose = '按页面读取记录。模型草稿 {"amount":999}。'
-    done: JsonObject = {"tool": "done", "args": {"summary": prose}}
+    done: JsonObject = {"tool": "done", "args": {"paragraphs": [prose]}}
     code = nav + meta + ("return null;" if state in {"missing", "failed_parent"} else read)
     replies: list[JsonObject] = [{"tool": "codemode", "args": {"code": code, "inputs": {"url": url}}}]
     if state == "failed_parent":
@@ -420,7 +421,7 @@ def test_headless_binds_declared_business_fields_from_current_browser_receipt(
 
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("mode", ["chat", "hybrid"])
-@pytest.mark.parametrize("prose", ['\n  exact "explanation"  \n', '{"source_gaps":"business data"}', ""])
+@pytest.mark.parametrize("prose", ['  exact "explanation"  ', '{"source_gaps":"business data"}'])
 def test_headless_production_publishes_prose_and_receipt_fields_without_provider_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native: bool, mode: str, prose: str,
 ) -> None:
@@ -431,9 +432,7 @@ def test_headless_production_publishes_prose_and_receipt_fields_without_provider
     project = tmp_path / "project"
     project.mkdir()
     (project / "a.txt").write_text("REAL-CODE\n", encoding="utf-8")
-    done_args: JsonObject = {"summary": prose}
-    if mode == "chat":
-        done_args["source_gaps"] = [{"reason": "None", "result_ref": "invented"}]
+    done_args: JsonObject = {"paragraphs": [prose]}
     provider = ScriptedProvider([
         {"tool": "codemode", "args": {"code": "return unwrap(await tools.read_file({path:'a.txt'}));"}},
         {"tool": "done", "args": done_args},
@@ -462,7 +461,7 @@ def test_headless_production_publishes_prose_and_receipt_fields_without_provider
 
 
 @pytest.mark.parametrize("native", [False, True])
-def test_optional_report_proposal_cannot_choose_repair_mode(
+def test_unrelated_report_fields_are_rejected_by_the_explanation_protocol(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native: bool,
 ) -> None:
     from codey.operations import kernel_prompt
@@ -471,17 +470,18 @@ def test_optional_report_proposal_cannot_choose_repair_mode(
     render = kernel_prompt._completion_followup
 
     def capture(feedback: str, *, native: bool, structured_report: bool = False,
-                whole_submission: bool = False) -> str:
+                whole_submission: bool = False, done_spec: ToolSpec | None = None) -> str:
         modes.append(structured_report)
-        return render(feedback, native=native, structured_report=structured_report, whole_submission=whole_submission)
+        return render(feedback, native=native, structured_report=structured_report,
+                      whole_submission=whole_submission, done_spec=done_spec)
 
     monkeypatch.setattr(kernel_prompt, "_completion_followup", capture)
     monkeypatch.setattr("codey.app.provider_services.provider_availability", lambda: {"local": True})
     provider = ScriptedProvider([
-        {"tool": "done", "args": {"summary": "x", "report_sections": {"evidence": ["Unsupported report"],
+        {"tool": "done", "args": {"paragraphs": ["x"], "report_sections": {"evidence": ["Unsupported report"],
             "counter": [], "coverage": [{"question_ref": "q1", "state": "not_investigated", "answer": "unknown",
                                        "findings": [], "investigations": []}]}}},
-        {"tool": "done", "args": {"summary": "A sufficiently complete explanation."}},
+        {"tool": "done", "args": {"paragraphs": ["A sufficiently complete explanation."]}},
     ], native=native)
 
     def connect(_provider_id: str, **_kwargs: object) -> ScriptedProvider:
@@ -497,4 +497,5 @@ def test_optional_report_proposal_cannot_choose_repair_mode(
         max_turns=3, state_home=tmp_path / "state", research_store_root=tmp_path / "knowledge",
         output_format="json_explanation", output_schema=json.dumps(schema)), connect_provider=connect, emit_jsonl=observe)
     assert result.stop_reason == "done"
-    assert modes == [False]
+    assert provider.calls == 2
+    assert modes == []

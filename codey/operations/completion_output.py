@@ -67,14 +67,14 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
             continue
         if (requirement.answer_contains or requirement.omit_from_explanation) and not explanation:
             raise OutputBindingError("An explanation occurrence rule requires json_explanation.")
-        if requirement.browser_text is not None and not explanation:
+        if requirement.browser_text is not None and not requirement.file_path and not explanation:
             raise OutputBindingError("Browser text fields require json_explanation.")
-        if explanation and not requirement.answer_contains and requirement.answer_pointer is not None and (
+        if explanation and not requirement.file_path and not requirement.answer_contains and requirement.answer_pointer is not None and (
                 requirement.answer_pointer == "" or requirement.answer_pointer.split("/")[1] == "explanation"):
             raise OutputBindingError("A receipt binding overlaps the declared /explanation text destination.")
         binding_records = _upload_binding_records(requirement, records, bound_upload)
         observation = requirement.observe(binding_records, results=results, browser_document=context.browser_document)
-        if requirement.answer_pointer is not None and not requirement.answer_contains and observation.evaluation.passed:
+        if requirement.answer_pointer is not None and not requirement.file_path and not requirement.answer_contains and observation.evaluation.passed:
             pointer = requirement.answer_pointer
             path = tuple(part.replace("~1", "/").replace("~0", "~") for part in pointer[1:].split("/")) if pointer else ()
             selected_schema = _field_schema(schema, path) if requirement.binds_browser_fields else None
@@ -99,7 +99,7 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
         return CompletionOutput(text, observations, metadata)
     proposed: JsonValue
     if explanation:
-        proposed = {"explanation": text}
+        proposed = {"explanation": explanation_text(text, session.policy.required_checks, observations)}
     else:
         try:
             proposed = decode_answer(text)
@@ -108,6 +108,26 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
     assembled = _assemble(proposed, schema, fields)
     return CompletionOutput(json.dumps(assembled, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
                                        allow_nan=False), observations)
+
+
+def explanation_text(text: str, checks: tuple[str, ...], observations: Mapping[str, ToolObservation]) -> str:
+    from codey.policies.tool_requirement import omit_selected_text
+
+    omitted: list[str] = []
+    required: list[str] = []
+    for check in checks:
+        rule = parse_tool_success_check(check)
+        observation = observations.get(rule.check_id) if rule is not None else None
+        if rule is None or observation is None or not observation.evaluation.passed or not isinstance(observation.value, str):
+            continue
+        if rule.omit_from_explanation and observation.value:
+            omitted.append(observation.value)
+        if rule.answer_contains:
+            required.append(observation.value)
+    for value in sorted(set(omitted), key=len, reverse=True):
+        if not any(value in fact for fact in required):
+            text = omit_selected_text(text, value)
+    return text
 
 
 def _upload_binding_records(requirement: ToolSuccessRequirement, records: dict[str, ExecutionRecord],

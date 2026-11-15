@@ -11,7 +11,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Protocol
 
 from codey.durable.checkpoint import checkpoint_entries
-from codey.durable.model import thaw_json
+from codey.durable.model import ArtifactRecord, thaw_json
 from codey.operations import kernel_actions as wiring
 from codey.operations import kernel_events, kernel_prompt, kernel_protocol
 from codey.operations.kernel_capabilities import KernelCapabilityView
@@ -217,7 +217,8 @@ class KernelContext:
         self.sink.mutations.settle_tool_effect(self.sink.session_id, self.sink.run_id, receipt)
 
     def advance(self, state: RuntimeOperationState, leaf: str, *, data: KernelDecision | None = None,
-                logical_turn: int | None = None, counters: RuntimeExecutionCounters | None = None) -> None:
+                logical_turn: int | None = None, counters: RuntimeExecutionCounters | None = None,
+                audit: ArtifactRecord | None = None) -> None:
         artifact = None
         if data is not None and (not state.work_ref or self.decision(state) != data):
             ref = self.sink.managed_outputs.write_json_artifact(
@@ -226,7 +227,8 @@ class KernelContext:
             artifact = self.sink.managed_outputs.json_artifact_record(ref, owner_task_id=self.sink.run_id, owner_effect_id=None,
                                                                     metadata={"kind": "kernel_decision"})
         self.sink.mutations.advance_execution(self.sink.session_id, self.sink.run_id, expected=state,
-            leaf=leaf, artifact=artifact, logical_turn=logical_turn, counters=counters)
+            leaf=leaf, artifact=artifact, logical_turn=logical_turn, counters=counters,
+            audit_artifacts=(audit,) if audit is not None else ())
 
     def decision(self, state: RuntimeOperationState) -> KernelDecision:
         artifact = self.durable.artifact(state.work_ref)
@@ -408,9 +410,19 @@ class KernelContext:
                text_result_spans: tuple[TextResultSpan, ...] = (),
                coding_context_prepared: bool = False, initial_source_batch: bool = False,
                handoff: str | None = None) -> None:
+        from codey.operations.explanation_repair import active, repair_messages, repair_prompt, repair_snapshot
         from codey.operations.provider_request import prepare_provider_request
 
-        if handoff is None and not acknowledge:
+        explanation_only = not acknowledge and active((counters or state.counters).progress)
+        if explanation_only:
+            snapshot = repair_snapshot(snapshot)
+            handoff = ""
+            decision = self.decision(state) if state.leaf == operation_payload.LEAF_CONTROL_READY else None
+            prompt = repair_prompt(self.session, self.completion_context, snapshot, native=self.native, decision=decision)
+            text_result_spans = ()
+            coding_context_prepared = True
+            messages = repair_messages(messages, prompt, rejected_control=state.leaf == operation_payload.LEAF_CONTROL_READY)
+        elif handoff is None and not acknowledge:
             snapshot, handoff = self.request_snapshot(snapshot)
         if handoff:
             if self.native and messages:
@@ -423,7 +435,7 @@ class KernelContext:
             prompt = kernel_prompt._text_request_prompt(prompt, snapshot)
         self.snapshots[turn] = snapshot
         self.sink.bind_request(snapshot, logical_turn=turn, window_ref=self.window,
-            context_text=self.transport.context_text, ghost_sources=self.transport.ghost_sources,
+            context_text=prompt if explanation_only else self.transport.context_text, ghost_sources=self.transport.ghost_sources,
             effect_scope=self.effect_scope, close_reply=acknowledge,
             delivery_purpose=self.decision(state)["purpose"] if state.work_ref else "", work_ref=state.work_ref,
             source_response_ref=self.response_reference(state) if state.response_ref or state.work_ref
@@ -439,7 +451,9 @@ class KernelContext:
             if coding and coding not in prompt and not self.request_scoped_observations and messages:
                 messages[-1] = replace(messages[-1], user_content="\n\n".join(
                     part for part in (messages[-1].user_content, coding) if part))
-        if self.request_scoped_observations and not (self.native and acknowledge):
+        if explanation_only:
+            options = replace(options, tool_call_observations=prompt, tool_call_history_groups=1)
+        elif self.request_scoped_observations and not (self.native and acknowledge):
             observations = task_working_context(
                 self.session, self.execution.research_tools.ledger if self.execution.research_tools is not None else None,
                 self.execution.research_tools.store if self.execution.research_tools is not None else None,
@@ -620,11 +634,11 @@ class KernelContext:
                         if previous_ref and state.counters.invalid_turns else None)
             repeated = previous is not None and previous.get("purpose") == "retry" and previous.get("prompt") == prompt
             if repeated or threshold is not None and invalid >= max(1, threshold):
-                self.advance(state, operation_payload.LEAF_CLOSING, counters=replace(state.counters, invalid_turns=invalid),
-                    data=ClosingDecision(purpose="closing", result=KernelResult(False,
+                self.close(state, KernelResult(False,
                         f"stopped after {invalid} invalid tool requests"
                         + (" (repeated response without new diagnostic information)" if repeated else "")
-                        + f": {plan.protocol_error}", turn, "protocol").to_payload()))
+                        + f": {plan.protocol_error}", turn, "protocol"),
+                    counters=replace(state.counters, invalid_turns=invalid))
                 return
             self.retry(state, prompt, error=plan.protocol_error, counters=replace(state.counters, invalid_turns=invalid))
             return
@@ -638,8 +652,18 @@ class KernelContext:
                 purpose="question", question=question, question_id=question_id,
                 result=KernelResult(False, question["question"], turn, "question").to_payload()))
             return
+        audit = None
+        if plan.syntax_closure is not None:
+            ref = self.sink.managed_outputs.write_json_artifact(
+                session_id=self.sink.session_id, run_id=self.sink.run_id,
+                payload={"schema_version": 1, "kind": "syntax_closed", "source_response_ref": state.response_ref,
+                         "candidate": plan.syntax_closure.candidate, "suffix": plan.syntax_closure.suffix,
+                         "transport": "native_arguments" if isinstance(reply, AssistantTurn)
+                         and "malformed_native_calls" in reply.raw else "text"})
+            audit = self.sink.managed_outputs.json_artifact_record(ref, owner_task_id=self.sink.run_id,
+                owner_effect_id=None, metadata={"kind": "syntax_closed"})
         self.advance(state, operation_payload.LEAF_COMPLETION_PENDING if kind == "done" else operation_payload.LEAF_PLAN_READY,
-                     counters=replace(state.counters, invalid_turns=0))
+                     counters=replace(state.counters, invalid_turns=0), audit=audit)
 
     def retry(self, state: RuntimeOperationState, prompt: str, *, error: str = "", counters: RuntimeExecutionCounters | None = None) -> None:
         decision = RetryDecision(purpose="retry", prompt=prompt, error=error)
@@ -792,5 +816,9 @@ class KernelContext:
         self.observation.on_boundary(GenerationBoundaryRequest(action.reason))
 
     def close(self, state: RuntimeOperationState, result: KernelResult, *, counters: RuntimeExecutionCounters | None = None) -> None:
+        from codey.operations.explanation_repair import active
+
+        if active((counters or state.counters).progress) and result.stop_reason in {"no_progress", "max_turns", "protocol"}:
+            result = replace(result, stop_reason="answer_repair_exhausted")
         self.advance(state, operation_payload.LEAF_CLOSING, data=ClosingDecision(purpose="closing", result=result.to_payload()),
                      counters=counters)

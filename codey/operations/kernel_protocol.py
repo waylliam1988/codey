@@ -44,6 +44,7 @@ MAX_NATIVE_CALLS_PER_TURN = 8
 if TYPE_CHECKING:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
+    from codey.protocols.json_repair import JsonTailClosure
     from codey.research.answer_contract import AnswerScope
 
 
@@ -377,12 +378,65 @@ def frozen_custom_executor_map(snapshot: TurnSnapshot | None) -> dict[str, ToolE
     return mapping
 
 
+def _task_edit_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...]) -> tuple[ToolSpec, ...]:
+    from codey.codemode.json_edit import requires_content_edit
+    from codey.operations.file_field_binding import file_rules
+
+    if requires_content_edit(session.task_text):
+        return tuple(freeze_spec_parameters(replace(spec,
+            parameters=tuple((key, value) for key, value in spec.parameters if key in {"path", "content", "base_result_ref"}),
+            required=("path", "content", "base_result_ref"))) if spec.name == "edit" else spec for spec in frozen)
+    if file_rules(session.policy.required_checks):
+        return tuple(freeze_spec_parameters(replace(spec, parameters=(*tuple(
+            (key, value) for key, value in spec.parameters if key in {"path", "content", "base_result_ref"}),
+            ("declared_fields", {"type": "boolean", "enum": [True], "description":
+                "Copy only task-declared fields from complete browser receipts. Supply path and the original "
+                "complete read's base_result_ref; do not supply content or changes."})))) if spec.name == "edit" else spec
+            for spec in frozen)
+    return frozen
+
+
+def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
+                     scope: AnswerScope | None) -> tuple[ToolSpec, ...]:
+    """Select completion once; bind investigation tools on their separate route."""
+    from codey.operations.chat_knowledge import chat_knowledge_spec, read_knowledge_versions
+    from codey.policies.output_requirement import explanation_spec, has_explanation
+    from codey.research.answer_contract import answer_spec
+    from codey.research.questions import requires_question_ref
+    from codey.research.tool_contract import done_spec_for_purpose, question_bound_spec
+
+    explaining = has_explanation(session.policy.required_checks)
+    if explaining and session.policy.strict_research:
+        raise ValueError("json_explanation cannot replace the strict Research answer contract")
+    if scope is not None:
+        return tuple(answer_spec(spec, scope) for spec in frozen)
+    purpose = ("evidence" if session.task_kind == "evidence_followup" else
+               "report" if session.policy.strict_research else "chat" if session.task_kind == "chat" else "ordinary")
+    versions = read_knowledge_versions(session.executed, session._memory_results) if purpose == "chat" and not explaining else []
+    bind_questions = requires_question_ref(session)
+    question_refs = tuple(f"q{index}" for index in range(1, len(session.research_questions) + 1))
+    selected: list[ToolSpec] = []
+    for spec in frozen:
+        if spec.name == "done":
+            if explaining:
+                spec = explanation_spec(spec)
+            else:
+                spec = done_spec_for_purpose(spec, purpose, task=session.task_text, questions=session.research_questions)
+                if purpose == "chat":
+                    spec = chat_knowledge_spec(spec, versions)
+        elif bind_questions:
+            spec = question_bound_spec(spec, question_refs=question_refs)
+        selected.append(spec)
+    return tuple(selected)
+
+
 def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> TurnSnapshot:
     """Build the round's authoritative snapshot; raises on failure."""
     # Fail closed: a snapshot computation failure never encodes as None
     # (unlimited). Callers must treat the exception as a per-turn config
     # error and stop.
-    from codey.research.answer_contract import AnswerScope, answer_scope, answer_spec, whole_research
+    from codey.policies.output_requirement import has_explanation
+    from codey.research.answer_contract import answer_scope, whole_research
 
     whole = whole_research(session)
     allowed = controller_allowed_for_session(session)
@@ -401,35 +455,12 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     denied_browser = {spec.name for spec in frozen if spec.executor == "browser" and spec.name in denied}
     names = tuple(name for name in names if name not in denied_browser)
     frozen = tuple(spec for spec in frozen if spec.name not in denied_browser)
-    from codey.research.tool_contract import done_spec_for_purpose, question_bound_spec
-
-    purpose = ("evidence" if session.task_kind == "evidence_followup" else
-               "report" if session.policy.strict_research else "chat" if session.task_kind == "chat" else "ordinary")
-    frozen = tuple(done_spec_for_purpose(spec, purpose, task=session.task_text,
-                                        questions=session.research_questions) if spec.name == "done" else spec
-                   for spec in frozen)
-    if purpose == "chat":
-        from codey.operations.chat_knowledge import chat_knowledge_spec, read_knowledge_versions
-
-        versions = read_knowledge_versions(session.executed, session._memory_results)
-        frozen = tuple(chat_knowledge_spec(spec, versions) if spec.name == "done" else spec for spec in frozen)
-    from codey.policies.output_requirement import has_explanation
-
-    if has_explanation(session.policy.required_checks):
-        frozen = tuple(freeze_spec_parameters(replace(spec, parameters=tuple(
-            (key, {"type": "string", "minLength": 0}) if key == "summary" else (key, value)
-            for key, value in spec.parameters))) if spec.name == "done" else spec for spec in frozen)
-    from codey.research.questions import requires_question_ref
-
-    if requires_question_ref(session):
-        question_refs = tuple(f"q{index}" for index in range(1, len(session.research_questions) + 1))
-        frozen = tuple(question_bound_spec(spec, question_refs=question_refs) for spec in frozen)
-    if isinstance(scope, AnswerScope):
-        frozen = tuple(answer_spec(spec, scope) for spec in frozen)
+    frozen = _task_tool_specs(session, frozen, scope)
     nested: tuple[str, ...] = ()
     binding = None
     task_navigation_url = None
     target = copy_target(session.task_text)
+    frozen = _task_edit_specs(session, frozen)
     if "codemode" in names:
         from codey.codemode.catalog import build_codemode_catalog, render_declarations
 
@@ -504,7 +535,8 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
         custom_executors=executors,
         nested_tool_names=nested,
         research_scope=scope,
-        ignore_runtime_claims=purpose == "chat",
+        ignore_runtime_claims=session.task_kind == "chat" and not session.policy.strict_research
+                              and not has_explanation(session.policy.required_checks),
         browser_copy=browser_copy,
         input_binding=binding,
         task_navigation_url=task_navigation_url,
@@ -748,7 +780,10 @@ def _validate_tool_args(
         # ``done`` is a control tool with no runtime executor. Its
         # canonical ToolSpec validation above is the complete contract.
         return dict(args), ""
-    if name == "edit" and "browser_source" in args and any(key == "browser_source" for key, _ in spec.parameters):
+    if name == "edit" and (("browser_source" in args and any(key == "browser_source" for key, _ in spec.parameters))
+                           or args.get("declared_fields") is True):
+        if args.get("declared_fields") is True and set(args) != {"path", "base_result_ref", "declared_fields"}:
+            return {}, "Receipt-bound edit requires only path, base_result_ref and declared_fields=true"
         return dict(args), ""
     if name == "codemode":
         try:
@@ -842,6 +877,18 @@ def _drop_legacy_done_declarations(args: ToolArgs, *, runtime_owned: bool) -> To
     return {key: value for key, value in args.items() if key not in ignored}
 
 
+def _control_text(tool: str, validated: ToolArgs, policy: TaskPolicy | None) -> tuple[str, str]:
+    from codey.policies.output_requirement import explanation_proposal, has_explanation
+
+    text = str(validated.get("summary" if tool == "done" else "question") or "")
+    if tool != "done" or policy is None or not has_explanation(policy.required_checks):
+        return text.strip(), ""
+    try:
+        return explanation_proposal(validated), ""
+    except ValueError as exc:
+        return "", str(exc)
+
+
 def _plan_from_tool_objects(
     items: list[tuple[str, ToolArgs, str]],
     *,
@@ -882,11 +929,9 @@ def _plan_from_tool_objects(
             validated, error = _validate_tool_args(tool, args, frozen_specs=frozen_specs)
             if error:
                 return _invalid_plan(error, tool=tool)
-            text = str(validated.get("summary" if tool == "done" else "question") or "")
-            from codey.policies.output_requirement import has_explanation
-
-            if tool != "done" or policy is None or not has_explanation(policy.required_checks):
-                text = text.strip()
+            text, error = _control_text(tool, validated, policy)
+            if error:
+                return _invalid_plan(error, tool=tool)
             return ToolPlan(calls=[], control=Control(kind=tool, body=text), control_args=validated)
         if not _policy_allows(policy, tool, frozen_specs):
             return _disallowed_plan(tool)
@@ -1028,6 +1073,53 @@ def _lower_bound_inputs(
     return lowered
 
 
+def _closed_done_request(reply: DecodedTextTurn | AssistantTurn) -> tuple[JsonTailClosure, DecodedTextTurn | AssistantTurn] | None:
+    from codey.protocols.json_repair import close_json_tail
+    from codey.types.json_value import parse_json_object
+
+    if isinstance(reply, TextError) and reply.tail_closure is not None:
+        closure = reply.tail_closure
+        value = parse_json_object(closure.candidate)
+        if set(value) == {"tool", "args"} and value["tool"] == "done" and isinstance(value["args"], dict):
+            return closure, decode_text_turn(closure.candidate)
+    if not isinstance(reply, AssistantTurn):
+        return None
+    if reply.finish is TurnFinish.COMPLETE and reply.raw.get("text_protocol") is True and not reply.tool_calls:
+        return _closed_done_request(decode_text_turn(reply.text))
+    raw_calls = reply.raw.get("malformed_native_calls")
+    if reply.finish is not TurnFinish.PROTOCOL_ERROR or reply.tool_calls or not isinstance(raw_calls, list) or len(raw_calls) != 1:
+        return None
+    try:
+        call = decode_json_object(raw_calls[0])
+        function = decode_json_object(call.get("function"))
+    except ValueError:
+        return None
+    identity, name, arguments = call.get("id"), function.get("name"), function.get("arguments")
+    if (call.get("type") != "function" or name != "done" or not isinstance(identity, str)
+            or not identity.strip() or len(identity) > 256 or not isinstance(arguments, str)):
+        return None
+    native_closure = close_json_tail(arguments)
+    if native_closure is None:
+        return None
+    return native_closure, AssistantTurn(tool_calls=(ProviderToolCall(identity, "done", parse_json_object(native_closure.candidate)),))
+
+
+def _try_close_done(reply: DecodedTextTurn | AssistantTurn, snapshot: TurnSnapshot | None) -> ToolPlan | None:
+    if snapshot is None:
+        return None
+    done = next((spec for spec in snapshot.model_specs if spec.name == "done"), None)
+    if done is None or done.required != ("paragraphs",) or set(dict(done.parameters)) != {"paragraphs"}:
+        return None
+    closed = _closed_done_request(reply)
+    if closed is None:
+        return None
+    closure, candidate = closed
+    plan = normalize_turn(candidate, snapshot=snapshot)
+    if plan.protocol_error or plan.calls or plan.control is None or plan.control.kind != "done":
+        return None
+    return replace(plan, syntax_closure=closure, arg_repair_counts={**plan.arg_repair_counts, "syntax_closed": 1})
+
+
 def _validate_control_plan(
     items: ToolPlan, snapshot: TurnSnapshot | None, frozen: Mapping[str, ToolSpec] | None,
 ) -> ToolPlan:
@@ -1041,6 +1133,10 @@ def _validate_control_plan(
             and done_spec is not None and "report_sections" in done_spec.required):
         return _invalid_plan("Research completion requires done.report_sections.coverage under the frozen contract; "
                              "plain text and summary-only reports are not accepted.", tool="done")
+    if (items.control is not None and items.control.kind == "done" and not items.protocol_error
+            and done_spec is not None and "paragraphs" in done_spec.required):
+        return _invalid_plan("Explanation completion requires done.paragraphs under the frozen contract; "
+                             "plain text is not accepted.", tool="done")
     return items
 
 
@@ -1068,6 +1164,8 @@ def normalize_turn(
         allowed = None if controller_allowed is None else {(n or "").strip().lower() for n in controller_allowed}
     items = _response_objects(reply)
     if isinstance(items, ToolPlan):
+        if items.protocol_error and (closed := _try_close_done(reply, snapshot)) is not None:
+            return closed
         return _validate_control_plan(items, snapshot, frozen)
     if snapshot is not None and snapshot.browser_copy is not None and len(items) != 1:
         return _invalid_plan("Submit one browser copy action per turn.")

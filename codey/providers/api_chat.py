@@ -226,6 +226,7 @@ def decode_turn(message: dict[str, object], *,
         # Content cannot rescue a malformed native batch as a JSON call.
         return AssistantTurn(text=f"ERROR: local model returned {dropped} malformed tool call(s)", raw={
             "finish_reason": str(message.get("_finish_reason") or ""), "malformed_dropped": dropped, **provider_metadata,
+            "malformed_native_calls": message.get("tool_calls"),
         }, finish=TurnFinish.PROTOCOL_ERROR), None
     turn = AssistantTurn(text=text, reasoning=_reasoning_text(message), tool_calls=tuple(
         ProviderToolCall(id=str(call["id"]), name=str(call["name"]),

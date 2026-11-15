@@ -80,7 +80,7 @@ def test_hybrid_injects_only_at_validated_write_and_reports_real_recovery(
                       stale_edit=True, preserve_external_field=True, max_turns=6)
     recovered = case in {"recover", "invalid_then_recover"}
     assert result["passed"] is recovered, result
-    assert result["final_file_correct"] is (case != "never_legal")
+    assert result["final_file_correct"] is recovered
     assert result["version_check_reached"] is recovered
     assert result["conflict_recovery_covered"] is recovered
     assert result["true_stale_conflicts"] == (1 if recovered else 0)

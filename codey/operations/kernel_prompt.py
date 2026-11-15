@@ -58,12 +58,17 @@ def _native_final_rule(*, structured_report: bool) -> str:
             "user-facing answer in the user's requested final format, not the outer tool-call object.")
 
 
-def _native_done_guidance(spec: ToolSpec | None) -> str:
-    rule = _native_final_rule(structured_report=spec is not None and "report_sections" in spec.required)
+def _done_guidance(spec: ToolSpec | None, *, native: bool) -> str:
+    if spec is not None and any(name == "paragraphs" for name, _ in spec.parameters):
+        rule = spec.description
+    else:
+        rule = _native_final_rule(structured_report=spec is not None and "report_sections" in spec.required)
     if spec is not None and spec.json_examples:
-        example = parse_json_object(spec.json_examples[0])
-        rule += " Native done arguments example (replace sample content with verified task facts): " + json.dumps(
-            example["args"], ensure_ascii=False, separators=(",", ":"))
+        example = spec.json_examples[0]
+        if native:
+            example = json.dumps(parse_json_object(example)["args"], ensure_ascii=False, separators=(",", ":"))
+        label = "Native done arguments" if native else "Complete done tool call"
+        rule += " " + label + " example (replace sample content with verified task facts): " + example
     return rule
 _TEXT_ACTION_RULE = (
     "For actions, reply with exactly one bare JSON tool call per turn and wait for its result. "
@@ -127,8 +132,10 @@ def kernel_prompt_for_session(
     if native:
         parts.append(
             "For actions, use native tool calls, not JSON in prose. "
-            + _NATIVE_READ_BATCH_RULE + " " + _NATIVE_ARGUMENTS_RULE + " " + _native_done_guidance(done_spec)
+            + _NATIVE_READ_BATCH_RULE + " " + _NATIVE_ARGUMENTS_RULE + " " + _done_guidance(done_spec, native=True)
         )
+    elif done_spec is not None and any(name == "paragraphs" for name, _ in done_spec.parameters):
+        parts.append(_TEXT_ACTION_RULE + " " + _done_guidance(done_spec, native=False))
     elif request_scoped_contract:
         parts.append(
             _TEXT_ACTION_RULE + " Deliver the final answer with done using the requested answer format. "
@@ -176,6 +183,27 @@ def kernel_prompt_for_session(
     return "\n\n".join(parts)
 
 
+def _text_repair_instruction(spec: ToolSpec | None, done: ToolSpec | None) -> str:
+    if spec is not None and spec.name == "done" and done is not None and "paragraphs" in done.required:
+        return ("Reply with exactly one complete JSON tool-call object, with double-quoted keys and no prose or tool-call tags. "
+                "Close every string, array and object. " + _done_guidance(done, native=False))
+    instruction = (
+        'Reply with exactly one JSON object using {"tool":"ACTUAL_TOOL_NAME","args":{...}}. '
+        "Use double-quoted JSON keys, no prose and no tool-call tags. "
+        "The tool field must name an available tool, not the word 'tool'."
+    )
+    if (spec is not None and spec.name == "done"
+            and any('"report_sections"' in example for example in spec.json_examples)):
+        instruction += (
+            'Use the frozen example: ' + spec.json_examples[0] + '. '
+            'Copy actual finding references from save_finding; the application generates the report.'
+        )
+    elif spec is not None and spec.name == "done":
+        instruction += (' Use {"tool":"done","args":{"summary":"complete response in the requested format"}}. '
+                        'Do not add a structured research report unless the current task requests one.')
+    return instruction
+
+
 def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, reply: str | AssistantTurn | None = None) -> str:
     from codey.providers.base import AssistantTurn, TurnFinish
     from codey.research.answer_contract import AnswerScope
@@ -184,6 +212,7 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
 
     error = (plan.protocol_error or "invalid tool call").strip()
     spec = next((item for item in snapshot.model_specs if item.name == plan.protocol_tool_name), None)
+    done = next((item for item in snapshot.model_specs if item.name == "done"), None)
     missing_submission = (native and isinstance(snapshot.research_scope, AnswerScope)
         and isinstance(reply, AssistantTurn) and reply.finish is TurnFinish.COMPLETE
         and not reply.tool_calls and bool(reply.text.strip()) and not reply.raw.get("text_protocol")
@@ -199,26 +228,12 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
             )
         if snapshot.research_scope is not None:
             instruction += " Submit the answer with submit_research_answer using the frozen contract."
-        elif spec is None or spec.name == "done":
-            done = next((item for item in snapshot.model_specs if item.name == "done"), None)
-            instruction += " " + _native_done_guidance(done)
+        elif spec is not None and spec.name == "done":
+            instruction += " " + _done_guidance(done, native=True)
     else:
         detail = (tool_repair_text(error, spec) if spec is not None else
                   error + "\nAvailable tool signatures:\n" + "\n".join(tool_signature(item) for item in snapshot.model_specs))
-        instruction = (
-            'Reply with exactly one JSON object using {"tool":"ACTUAL_TOOL_NAME","args":{...}}. '
-            "Use double-quoted JSON keys, no prose and no tool-call tags. "
-            "The tool field must name an available tool, not the word 'tool'."
-        )
-        if (spec is not None and spec.name == "done"
-                and any('"report_sections"' in example for example in spec.json_examples)):
-            instruction += (
-                'Use the frozen example: ' + spec.json_examples[0] + '. '
-                'Copy actual finding references from save_finding; the application generates the report.'
-            )
-        elif spec is not None and spec.name == "done":
-            instruction += (' Use {"tool":"done","args":{"summary":"complete response in the requested format"}}. '
-                            'Do not add a structured research report unless the current task requests one.')
+        instruction = _text_repair_instruction(spec, done)
     if "unexpected arg '" in error or "unexpected property '" in error:
         instruction += (" Remove the rejected property key at the reported location, rather than changing only "
                         "its value or adding another key. Blank property names are not placeholders. "
@@ -265,11 +280,13 @@ def _repair_prompt(plan: ToolPlan, *, snapshot: TurnSnapshot, native: bool, repl
 
 
 def _completion_followup(feedback: str, *, native: bool, structured_report: bool = False,
-                         whole_submission: bool = False) -> str:
+                         whole_submission: bool = False, done_spec: ToolSpec | None = None) -> str:
     """Render completion feedback for its transport without changing the verdict."""
     final_rule = ("Repair the complete answer with submit_research_answer under its frozen contract." if whole_submission else
+                  _done_guidance(done_spec, native=native) if done_spec is not None else
                   _native_final_rule(structured_report=structured_report))
     rule = (_NATIVE_ARGUMENTS_RULE + " " + final_rule if native else
+            _TEXT_ACTION_RULE + " " + final_rule if done_spec is not None and "paragraphs" in done_spec.required else
             r'Preserve the requested answer format. Encode any needed line breaks once as \n inside JSON strings. '
             "Fenced examples are answer text and do not execute tools.")
     if structured_report:

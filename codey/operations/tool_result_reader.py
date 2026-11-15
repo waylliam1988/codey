@@ -130,7 +130,11 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResu
         available_views: list[JsonValue] = ["output", "value"] if "value" in result.canonical else ["output"]
         if view == "value":
             if "value" not in result.canonical:
-                raise ValueError("canonical value unavailable in this receipt; available views: output")
+                retry: JsonObject = {"result_ref": identity, "view": "output", "offset": offset, "limit": limit}
+                known["next_read"] = {"tool": "read_tool_result", "args": retry}
+                raise ValueError("canonical value unavailable in this receipt; available views: output. "
+                    "If more receipt text is needed, use exactly " + json.dumps(known["next_read"], ensure_ascii=False)
+                    + ". If the complete body was already delivered, continue the task without rereading it")
             text = json.dumps(dict[str, object](value=result.canonical["value"]), ensure_ascii=False,
                               sort_keys=True, separators=(",", ":"), allow_nan=False)
             resolved = ResolvedOutput(text, "value", {}, False, False, False, None, False, True)
@@ -166,6 +170,6 @@ def read_tool_result(delegate: ReceiptReaderContext, call: ToolCall) -> ToolResu
                                                       "next_offset": data["next_offset"]}})
     except (OSError, sqlite3.Error, ValueError, KeyError) as exc:
         text = f"ERROR: {exc}. Read failure does not authorize re-execution."
-        if known:
+        if "execution" in known:
             text += "\nKnown execution facts: " + json.dumps(known["execution"], ensure_ascii=False)
         return ToolResult(call, text, ok=False, canonical={**known, "output_available": False})

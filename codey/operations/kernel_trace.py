@@ -1,14 +1,21 @@
 """Trace projections of actual shared-kernel turns; no execution decisions."""
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from codey.runtime.observe.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 from codey.utils.refs import digest_text
 from codey.workspace.context_admission import GhostAdmissionResult
 
+if TYPE_CHECKING:
+    from codey.operations.kernel_protocol import TurnSnapshot
+    from codey.runs.trace import RunTraceRecorder
+    from codey.runtime.core.models import ToolPlan
+
 
 def record_outbound(
-    trace: Any,
+    trace: object | None,
     prompt: str,
     *,
     admission: GhostAdmissionResult,
@@ -27,7 +34,8 @@ def record_outbound(
     )
 
 
-def record_turn(trace: Any, *, phase: str, turn: int, snapshot: Any, plan: Any, native: bool) -> None:
+def record_turn(trace: RunTraceRecorder | None, *, phase: str, turn: int, snapshot: TurnSnapshot,
+                plan: ToolPlan, native: bool) -> None:
     if trace is None:
         return
     sink = FailOpenPromptTrace(trace)
@@ -40,5 +48,6 @@ def record_turn(trace: Any, *, phase: str, turn: int, snapshot: Any, plan: Any, 
         sink.call("record_protocol_error", plan.protocol_error_kind, phase=phase,
                   turn=turn, tool_name=plan.protocol_tool_name)
     else:
-        sink.call("record_protocol_valid_turn", turn, phase=phase)
+        sink.call("record_protocol_valid_turn", turn, phase=phase, alias_rewrite_count=plan.alias_rewrite_count,
+                  arg_repair_counts=plan.arg_repair_counts)
     sink.call("flush")

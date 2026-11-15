@@ -24,6 +24,15 @@ Use `3.12` or `3.13` to check another target. These target-version checks do not
 replace running tests on the corresponding interpreter and operating system.
 Tests and experiment scripts are outside this full-production-tree typing gate.
 
+Run focused checks that mix test and tool paths from the repository root:
+
+```powershell
+python -m mypy tests/test_browser_repair_closure.py tools/browser_production_live_gate.py --python-version 3.11
+```
+
+The configured `explicit_package_bases` resolves namespace scripts as `tools.*`,
+so a tool passed by path and imported by a test has one module identity.
+
 The machine contract gate does not generate invalid Python snippets and launch
 each checker against them. Those 24 checker subprocess tests were removed to
 avoid repeated analysis of imported production modules. Normal production-tree

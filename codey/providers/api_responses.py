@@ -165,7 +165,12 @@ def decode_exchange(body: dict[str, object], *, text_only: bool,
             try:
                 arguments = parse_json_object(str(item.get("arguments", "")))
             except (ValueError, TypeError, RecursionError) as exc:
-                raise RuntimeError("Responses returned invalid function arguments") from exc
+                raw_calls = [{"id": call.get("call_id"), "type": "function", "function": {
+                    "name": call.get("name"), "arguments": call.get("arguments")}}
+                    for call in decoded_output if call.get("type") == "function_call"]
+                return AssistantTurn(finish=TurnFinish.PROTOCOL_ERROR, raw={
+                    "protocol_error": "Responses returned invalid function arguments: " + str(exc),
+                    "malformed_native_calls": raw_calls}), []
             if not isinstance(call_id, str) or not call_id or not isinstance(name, str) or not name or not isinstance(arguments, dict):
                 raise RuntimeError("Responses returned malformed function call")
             if any(call.id == call_id for call in calls):

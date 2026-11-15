@@ -1,7 +1,7 @@
 """Prepare an unsent kernel turn once; received turns reuse their original input."""
 from dataclasses import dataclass
 
-from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
+from codey.codemode.json_edit import edit_guidance
 from codey.operations import kernel_prompt, kernel_protocol
 from codey.operations.browser_text_report import report_scope
 from codey.operations.browser_upload import upload_scope
@@ -32,7 +32,8 @@ def prepare_kernel_turn(session: TaskSession, *, user_task: str, context_text: s
     whole = isinstance(snapshot.research_scope, AnswerScope)
     guidance = [task_guidance] if task_guidance else []
     if snapshot.browser_copy is None and ".json" in user_task.casefold() and {"edit", "read_file"} <= set(snapshot.nested_tool_names):
-        guidance.append(JSON_FIELD_EDIT_GUIDANCE)
+        edit = next(spec for spec in snapshot.frozen_specs if spec.name == "edit")
+        guidance.append(edit_guidance(edit.required, dict(edit.parameters)))
     if (metadata := report_scope(session)) is not None:
         guidance.append(f"After browser_read returns the requested page facts, reuse them. On the same page, collect any missing "
                         f"metadata in a short separate CodeMode call: browser_eval with code {metadata.expression!r} and "

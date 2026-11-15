@@ -397,6 +397,15 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         # References only: child facts stay in their original committed receipts.
         ordered_child_effect_ids = child_effect_ids()
         result = replace(result, canonical={**result.canonical, "child_effect_ids": ordered_child_effect_ids})
+        if not result.ok and result.audit.get("error_code") in {"missing_return", "result_encoding", "execution_error"}:
+            from codey.codemode.shape_repair import readonly_settled, shape_diagnostic
+
+            source = call.args.get("code")
+            if (isinstance(source, str) and result.audit.get("child_calls") == len(ordered_child_effect_ids)
+                    and readonly_settled(parent_id, ordered_child_effect_ids, session._memory_results, catalog)
+                    and (diagnostic := shape_diagnostic(source, catalog))):
+                result = replace(result, audit={**result.audit, "repair_category": "shape_mismatch"},
+                                 model_text=result.model_text + "\n" + diagnostic)
         if not result.ok:
             from codey.toolchain.result_schema import schema_typescript
             from codey.toolchain.tool_prompt import tool_repair_text
@@ -415,7 +424,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                         args = json.dumps(dict[str, str](result_ref=ref, view="value"))
                         detail += ("\nBrowser download already completed. Recover the path and SHA256 with "
                                    f"read_tool_result({args}). Do not repeat the download.")
-            if result.audit.get("error_code") in {"missing_return", "result_encoding"} and ordered_child_effect_ids:
+            if (result.audit.get("error_code") in {"missing_return", "result_encoding"}
+                    or result.audit.get("repair_category") == "shape_mismatch") and ordered_child_effect_ids:
                 names = sorted({session.executed[ref]["name"] for ref in ordered_child_effect_ids})
                 detail += "\nInvoked tool return types (Result<T> success data is result.value):\n" + "\n".join(
                     f"tools.{name}: Result<{schema_typescript(specs[name].output_schema)}>" for name in names)
@@ -423,7 +433,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                 from codey.codemode.replay import browser_file_replay_value, repair_catalog_digest, repair_metadata
                 child_names = [session.executed[ref]["name"] for ref in ordered_child_effect_ids]
                 metadata = repair_metadata(
-                    effective_session_id, parent_id, str(result.audit["error_code"]), ordered_child_effect_ids,
+                    effective_session_id, parent_id, str(result.audit.get("repair_category", result.audit["error_code"])), ordered_child_effect_ids,
                     repair_catalog_digest(catalog, child_names),
                 )
                 result = replace(result, canonical={**result.canonical, "repair": metadata})
@@ -439,7 +449,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                                                   sort_keys=True, separators=(",", ":")),
                             canonical={"value": value, "child_effect_ids": ordered_child_effect_ids,
                                        "recovered_return": True})
-                detail += ". Correct only the return expression. Use repair_of=" + str(metadata["token"])
+                detail += ". Correct only value handling and the return expression. Use repair_of=" + str(metadata["token"])
                 detail += " to replay these settled child receipts; do not repeat the child calls."
             result = (_simplified_failure(result, snapshot.input_binding.model_spec,
                                          {ref: session._memory_results[ref] for ref in ordered_child_effect_ids})

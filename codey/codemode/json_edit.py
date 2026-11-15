@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 from typing import NoReturn
 
@@ -25,6 +25,17 @@ class JsonNumber:
     def __str__(self) -> str:
         return self.text
 
+    def numeric_key(self) -> tuple[bool, str, int]:
+        """Compare finite decimal values without a float or Decimal context limit."""
+        mantissa, _, exponent = self.text.lower().partition("e")
+        whole, _, fractional = mantissa.lstrip("-").partition(".")
+        digits = (whole + fractional).lstrip("0")
+        if not digits:
+            return False, "0", 0
+        significant = digits.rstrip("0")
+        scale = int(exponent or "0") - len(fractional) + len(digits) - len(significant)
+        return mantissa.startswith("-"), significant, scale
+
 JSON_FIELD_EDIT_PROGRAM = (
     "const read = await tools.read_file({path: inputs.path});\n"
     "return unwrap(await tools.edit({read, changes: inputs.changes}));"
@@ -37,6 +48,36 @@ JSON_FIELD_EDIT_GUIDANCE = (
     "Pass read directly and unwrap only the edit result. Returning modified JSON alone does not write. "
     "If the file changed, rerun the same two lines to read the current file and repeat the edit."
 )
+
+CONTENT_EDIT_GUIDANCE = (
+    "The task requires a whole-file edit using content and the outer read Result.result_ref. "
+    "Read the complete current file, construct content from that read preserving all unrelated fields, "
+    "then call tools.edit({path:inputs.path,base_result_ref:read.result_ref,content}). "
+    "On a version conflict, read again and reconstruct content from the new file; do not reuse stale content. "
+    "Do not substitute the read+changes field-edit form for this declared whole-file edit."
+)
+
+DECLARED_FIELD_EDIT_GUIDANCE = (
+    "Copy task-declared fields directly from their committed browser receipts without transcribing values. "
+    "Put the requested destination in inputs.path and use the original outer read Result.result_ref:\n"
+    "const read=await tools.read_file({path:inputs.path});unwrap(read);"
+    "return unwrap(await tools.edit({path:inputs.path,base_result_ref:read.result_ref,declared_fields:true}));\n"
+    "Do not supply changes, replacements or manually copied values. "
+    "On a version conflict, obtain a new complete file read and repeat this declared-field edit."
+)
+
+
+def edit_guidance(required: Collection[str], parameters: Collection[str]) -> str:
+    """Select the edit template from the same frozen input contract used to execute."""
+    if "content" in required:
+        return CONTENT_EDIT_GUIDANCE
+    if "declared_fields" in parameters:
+        return DECLARED_FIELD_EDIT_GUIDANCE
+    return JSON_FIELD_EDIT_GUIDANCE
+
+
+def requires_content_edit(task: str) -> bool:
+    return re.search(r"(?:使用|用|with|using)\s*`?content`?\s*(?:写入|写回|write|for)", task, re.I) is not None
 
 
 def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:

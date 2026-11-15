@@ -8,7 +8,7 @@ from dataclasses import replace
 
 from codey.automation.browser_document import same_document
 from codey.codemode.catalog import snapshot_catalog
-from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
+from codey.codemode.json_edit import edit_guidance
 from codey.operations.browser_completion import committed_results, complete_page_passages
 from codey.operations.browser_followups import (
     DIRECT_TOOLS,
@@ -347,7 +347,10 @@ def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot,
     if delivery(result) == "uncertain":
         snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))
         return snapshot, UNCERTAIN + "\n" + action
-    plan = click_followup_plan(session.policy.required_checks, set(snapshot.nested_tool_names))
+    from codey.operations.browser_completion import browser_click_stage
+
+    stage = browser_click_stage(records, results, context.browser_document)
+    plan = click_followup_plan(session.policy.required_checks, set(snapshot.nested_tool_names), stage=stage)
     if plan.unavailable:
         return snapshot, "Query follow-up unavailable: " + ", ".join(plan.unavailable) + "."
     keys = tuple(records)
@@ -356,8 +359,9 @@ def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot,
              or ((receipt := results.get(key)) is not None
                  and same_document(receipt.audit.get("browser_document"), context.browser_document))}
     waits = [rule for check in session.policy.required_checks
-             if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_wait"]
-    waiting = any(not rule.observe(after, results=results, browser_document=context.browser_document).evaluation.passed
+             if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_wait"
+             and rule.stage in {0, stage}]
+    waiting = any(not rule.observe(records, results=results, browser_document=context.browser_document).evaluation.passed
                   for rule in waits)
     lines: list[str] = []
     call: ToolCall | None = None
@@ -426,9 +430,11 @@ def _project_edit_handoff(session: TaskSession, snapshot: TurnSnapshot, context:
     if not any(not result.truncated and same_document(result.audit.get("browser_document"), context.browser_document)
                for _, result in reads):
         return ""
-    return ("Browser evidence is available; the requested project modification still needs an actual edit receipt. "
-            "Use the observed field values as inputs.changes and the requested file as inputs.path.\n"
-            + JSON_FIELD_EDIT_GUIDANCE)
+    settled = ("The complete browser body has already been delivered. Continue with the file edit; "
+               "an additional receipt read is unnecessary. ")
+    edit = next(spec for spec in snapshot.frozen_specs if spec.name == "edit")
+    return (settled + "The requested project modification still needs an actual edit receipt. "
+            + edit_guidance(edit.required, dict(edit.parameters)))
 
 
 def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,

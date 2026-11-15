@@ -22,23 +22,45 @@ PAGE_ACTIONS = PAGE_TRANSITIONS | _FORM_ACTIONS | {"browser_upload"}
 
 
 def ordered_browser_refs(tool: str, after: str, *, records: Mapping[str, ExecutionRecord],
-                         results: Mapping[str, ToolResult], document: JsonObject | None) -> set[str]:
+                         results: Mapping[str, ToolResult], document: JsonObject | None, stage: int = 0) -> set[str]:
     """Select successful current-document receipts after the latest prerequisite."""
     if document is None:
         return set()
     prerequisites = PAGE_ACTIONS if after == "page_actions" else frozenset({after})
     eligible: set[str] = set()
     ready = after == "page_actions"
-    for ref, result in committed_results(records, results, prerequisites | {tool}, include_failed=prerequisites):
+    click_stage = 0
+    for ref, result in committed_results(records, results, prerequisites | {tool, "browser_click"},
+                                         include_failed=prerequisites | {"browser_click"}):
         if result.audit.get("browser_document") != document:
+            continue
+        if _stage_click(result):
+            click_stage += 1
+        if stage and click_stage != stage:
             continue
         if result.call.name in prerequisites:
             eligible.clear()
             ready = after == "page_actions" or result.ok and wait_matched_on_page(result, str(document.get("url", "")))
-        elif ready and result.ok:
+        elif result.call.name == "browser_click":
+            eligible.clear()
+            ready = False
+        elif result.call.name == tool and ready and result.ok:
             if tool != "browser_wait" or wait_matched_on_page(result, str(document.get("url", ""))):
                 eligible.add(ref)
     return eligible
+
+
+def browser_click_stage(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
+                        document: JsonObject | None) -> int:
+    return sum(result.audit.get("browser_document") == document and _stage_click(result)
+        for _, result in committed_results(
+        records, results, frozenset({"browser_click"}), include_failed=frozenset({"browser_click"})))
+
+
+def _stage_click(result: ToolResult) -> bool:
+    value = result.canonical.get("value")
+    return result.call.name == "browser_click" and (result.ok or isinstance(value, dict)
+                                                    and value.get("delivery") in {"delivered", "uncertain"})
 
 
 def committed_results(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],

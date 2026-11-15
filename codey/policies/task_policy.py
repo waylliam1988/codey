@@ -196,7 +196,7 @@ def _entry_tool_checks(raw: object, *, kind: str, strict: bool, explanation: boo
             declared.append(browser.declaration)
         else:
             requirement = parse_tool_success_check(name) or ToolSuccessRequirement(name)
-            if (requirement.browser_text is not None or requirement.answer_contains
+            if (requirement.browser_text is not None and not requirement.file_path or requirement.answer_contains
                     or requirement.omit_from_explanation) and not explanation:
                 raise ValueError("browser text fields and explanation occurrence rules require json_explanation")
             if requirement.answer_contains or requirement.omit_from_explanation:

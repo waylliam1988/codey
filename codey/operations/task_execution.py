@@ -553,8 +553,14 @@ class ExecutionDelegate:
             outcome = self._write_content(project_path, path, canonical, {**args, "content": prepared})
             return (replace(outcome, audit={**outcome.audit, "browser_copy_content_hash": content_hash(prepared)})
                     if outcome.ok else outcome)
+        if args.get("declared_fields") is True:
+            return self._declared_field_edit(project_path, path, canonical, args)
         if "content" in args:
             return self._write_content(project_path, path, canonical, args)
+        from codey.operations.file_field_binding import file_rules
+
+        if self.session is not None and file_rules(self.session.policy.required_checks, canonical):
+            return ToolOutcome.error("Receipt-bound fields require content or declared_fields=true with a complete version-bound read")
         guard = read_before_edit_outcome(
             project_path, path, set(self.session.read_files) if self.session is not None else set(),
         )
@@ -589,6 +595,18 @@ class ExecutionDelegate:
             self.change_tracker.capture_after(path)
         return outcome
 
+    def _declared_field_edit(self, project: Path, path: str, canonical: str, args: ToolArgs) -> ToolOutcome:
+        from codey.operations.edit_base import edit_base_text
+        from codey.operations.file_field_binding import bound_content
+        from codey.toolchain.runtime import ToolOutcome
+
+        if self.session is None or self.browser_session is None:
+            return ToolOutcome.error("Receipt-bound file fields require the authorized browser session")
+        baseline = edit_base_text(self.session, project, canonical,
+                                  require_json_string(args.get("base_result_ref"), "base_result_ref"))
+        prepared = bound_content(self.session, canonical, baseline, self.browser_session.document_identity())
+        return self._write_content(project, path, canonical, {**args, "content": prepared})
+
     def _write_content(self, project: Path, path: str, canonical: str, args: ToolArgs) -> ToolOutcome:
         from codey.operations.edit_base import content_edit_version
 
@@ -597,6 +615,16 @@ class ExecutionDelegate:
         if self.change_tracker is not None:
             self.change_tracker.capture_before(path)
         content = str(args.get("content") or "")
+        from codey.operations.file_field_binding import validate_content
+
+        if self.session is not None:
+            error = validate_content(self.session.policy.required_checks, canonical, content,
+                self.session.executed, self.session._memory_results,
+                self.browser_session.document_identity() if self.browser_session is not None else None)
+            if error:
+                from codey.toolchain.runtime import ToolOutcome
+
+                return ToolOutcome.error(error, error_code="file_field_mismatch")
         outcome = (self.tool_fns.write_file(project, path, content) if version is None else
                    self.tool_fns.write_file(project, path, content, expected_version=version))
         if outcome.ok and outcome.changed and self.change_tracker is not None:

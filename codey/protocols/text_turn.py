@@ -12,6 +12,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from codey.protocols.json_repair import JsonTailClosure, close_json_tail
 from codey.protocols.json_scanner import balanced_json_spans
 from codey.types.json_value import JsonValue, ToolArgs, decode_json_object, unique_json_fields
 
@@ -39,6 +40,7 @@ class TextError:
     message: str
     kind: str = "invalid_args"
     tool: str = ""
+    tail_closure: JsonTailClosure | None = None
 
 
 DecodedTextTurn = TextRequests | TextAnswer | TextError
@@ -57,7 +59,7 @@ def _tool_and_args(obj: Mapping[str, JsonValue]) -> tuple[str, ToolArgs]:
     return tool, args
 
 
-def _json_error(source: str, exc: json.JSONDecodeError) -> TextError:
+def _json_error(source: str, exc: json.JSONDecodeError, *, original: str | None = None) -> TextError:
     """Locate the failure without guessing a repaired request or changing data."""
     detail = f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}."
     if exc.pos >= len(source.rstrip()) and exc.msg.startswith(("Expecting ',' delimiter", "Expecting property name", "Expecting value")):
@@ -96,7 +98,8 @@ def _json_error(source: str, exc: json.JSONDecodeError) -> TextError:
     # A literal first tool field is diagnostic only. It selects the frozen
     # schema for repair; malformed arguments are never promoted into a call.
     name = re.match(r'^\{\s*"tool"\s*:\s*"([a-z][a-z0-9_]*)"\s*[,}]', source)
-    return TextError(detail, kind="invalid_json", tool=name.group(1) if name else "")
+    return TextError(detail, kind="invalid_json", tool=name.group(1) if name else "",
+                     tail_closure=close_json_tail(source if original is None else original))
 
 
 def _json_objects(text: str) -> list[ToolArgs] | TextError | None:
@@ -156,7 +159,7 @@ def decode_text_turn(text: str) -> DecodedTextTurn:
         try:
             json.loads(source)
         except json.JSONDecodeError as exc:
-            return _json_error(source, exc)
+            return _json_error(source, exc, original=text)
         except (ValueError, RecursionError):
             return TextError("invalid JSON: value exceeds decoder limits", kind="invalid_json")
     return TextAnswer(source)

@@ -13,12 +13,14 @@ class BrowserWaitPlan:
     waits: tuple[JsonObject, ...]
     missing: tuple[JsonObject, ...]
 
-def wait_plan(checks: tuple[str, ...], supplied: tuple[JsonObject, ...] = ()) -> BrowserWaitPlan:
+def wait_plan(checks: tuple[str, ...], supplied: tuple[JsonObject, ...] = (), *, stage: int = 0) -> BrowserWaitPlan:
     required: list[JsonObject] = []
     waits: list[JsonObject] = []
     for check in checks:
         rule = parse_tool_success_check(check)
         if rule is None or rule.tool != "browser_wait":
+            continue
+        if rule.stage and rule.stage != stage:
             continue
         expected = parse_json_object(rule.arguments_json)
         required.append(expected)

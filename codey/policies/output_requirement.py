@@ -4,21 +4,57 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, decode_json_value, parse_json_object
 
+if TYPE_CHECKING:
+    from codey.toolchain.tool_spec import ToolSpec
+
 PREFIX = "output_json"
 EXPLANATION_PREFIX = "output_json_explanation"
+EXPLANATION_DONE_ARGS_EXAMPLE = '{"paragraphs":["First paragraph.","Second paragraph."]}'
+EXPLANATION_DONE_EXAMPLE = (
+    '{"tool":"done","args":' + EXPLANATION_DONE_ARGS_EXAMPLE + '}'
+)
 EXPLANATION_GUIDANCE = (
-    "The application assembles the final JSON. In done.summary, supply only the natural-language explanation, "
-    "not an inner JSON document. The application preserves that exact string in /explanation and fills declared "
+    "The application assembles the final JSON. The done arguments object has exactly one property: paragraphs. "
+    "Do not add summary, report_sections or any other property. "
+    "Supply natural-language paragraphs in done.paragraphs, "
+    "one string per paragraph without embedded line breaks, not an inner JSON document. "
+    "The application joins them with a blank line in /explanation and fills declared "
     "receipt-bound fields from committed tool results. Repeat selected values in the explanation only when explicitly required. "
+    "Explicitly omitted receipt-bound metadata is removed by exact value; other prose is preserved. "
     "The required JSON schema describes the application's final output."
 )
 JSON_ANSWER_GUIDANCE = (
     "Final answer must be JSON: one bare document without Markdown fences or surrounding prose."
 )
+
+
+def explanation_proposal(args: Mapping[str, object]) -> str:
+    paragraphs = args.get("paragraphs")
+    if not isinstance(paragraphs, (list, tuple)):
+        raise ValueError("Supply natural-language paragraphs")
+    if not paragraphs or any(not isinstance(part, str) or not part.strip() or "\n" in part or "\r" in part
+                             for part in paragraphs):
+        raise ValueError("Each paragraph must be one nonempty string without line breaks")
+    return "\n\n".join(str(part) for part in paragraphs)
+
+
+def explanation_spec(spec: ToolSpec) -> ToolSpec:
+    """Freeze the sole model-owned input for an application-assembled answer."""
+    from dataclasses import replace
+
+    from codey.toolchain.tool_spec import freeze_spec_parameters
+
+    parameters: list[tuple[str, object]] = [
+        ("paragraphs", {"type": "array", "minItems": 1, "items": {
+            "type": "string", "minLength": 1, "pattern": r"\A[^\r\n]+\Z"}}),
+    ]
+    return freeze_spec_parameters(replace(spec, parameters=tuple(parameters),
+        required=("paragraphs",),
+        description=EXPLANATION_GUIDANCE, json_examples=(EXPLANATION_DONE_EXAMPLE,)))
 
 
 def _unique(pairs: list[tuple[str, JsonValue]]) -> JsonObject:

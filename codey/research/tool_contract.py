@@ -241,18 +241,11 @@ TOOL_CONTRACTS = {
         name="done",
         input_schema=object_schema({
             'summary': {'type': 'string'},
-            'open_questions': array_schema({'type': 'string'}),
             'knowledge_refs': array_schema(knowledge_reference_schema()),
-            'report_sections': report_sections_schema(),
         }, 'summary'),
-        example='{"tool":"done","args":{"summary":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}',
-        description="For a structured research report, summary is the conclusion with citations, and "
-                    "report_sections supplies evidence, counter as text arrays, and coverage as question records "
-                    "{question_ref:q1,state:partial,answer:answer or gap,findings:[f1],investigations:[a1]}. States: evidence_found, partial, "
-                    "not_investigated, unanswered_after_search. Evidence states need findings; gap states need an empty findings array. "
-                    "Cite selected findings with [f...] from save_finding; the application generates source numbers, "
-                    "source table, exact knowledge versions, headings and paragraph breaks. All evidence checks still apply. "
-                    "Without report_sections, summary is the complete final answer.",
+        example='{"tool":"done","args":{"summary":"<the complete user-facing answer>"}}',
+        description="summary is the complete user-facing answer. When citing retrieved knowledge, "
+                    "knowledge_refs selects the exact versions read for this task.",
     ),
 }
 

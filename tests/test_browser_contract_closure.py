@@ -122,14 +122,14 @@ def test_explanation_repair_keeps_metadata_and_does_not_reopen_browser(
             assert isinstance(names, list)
             name = next(name for name in ("browser_eval", "browser_tab_list") if name in names)
             yield {"tool": name, "args": {"code": "window.__contractToken"} if name == "browser_eval" else {}}
-        yield {"tool": "done", "args": {"summary": "已读取净重 173 克。\n\n校验码 QUARTZ_851，SCHEMA_TOKEN_74。"}}
+        yield {"tool": "done", "args": {"paragraphs": ["已读取净重 173 克。"]}}
         snapshots = [decode_json_object(body["payload"])["snapshot"] for _, body in artifacts(directory / "state")
                      if body.get("kind") == "provider_request"]
         last = decode_json_object(snapshots[-1])
         names = last["tool_names"]
         assert isinstance(names, list) and "done" in names and set(names) <= {"done", "read_tool_result"}
         assert last["nested_tool_names"] == []
-        yield {"tool": "done", "args": {"summary": "已读取当前记录，净重为 173 克。\n\n记录校验码为 QUARTZ_851。"}}
+        yield {"tool": "done", "args": {"paragraphs": ["已读取当前记录，净重为 173 克。", "记录校验码为 QUARTZ_851。"]}}
 
     install_http(monkeypatch, replies())
     result = run_case(directory, "chat", Target("http://scripted.test/v1", "fixture", 123456789, 10),

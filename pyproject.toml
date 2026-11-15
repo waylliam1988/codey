@@ -112,6 +112,8 @@ max-statements = 80
 # New boundaries should use precise annotations and Protocols over Any.
 strict = true
 python_version = "3.11"
+# Resolve namespace scripts passed as paths under the same tools.* names as imports.
+explicit_package_bases = true
 ignore_missing_imports = false
 check_untyped_defs = true
 warn_unused_ignores = true

@@ -398,15 +398,11 @@ def _all_specs() -> dict[str, ToolSpec]:
     )
     for name, spec in _research_specs().items():
         if name == "done":
-            # summary stays canonical; retain the research completion metadata.
+            # Ordinary completion carries knowledge citations, never a Research report.
             coding_done = specs.get("done")
             if coding_done is not None:
                 specs["done"] = replace(coding_done, description=coding_done.description + " " + spec.description, parameters=(
-                    *coding_done.parameters, ("open_questions", {"type": "array", "items": {"type": "string"}}),
-                    ("knowledge_refs", {"type": "array", "items": {"type": "object", "required": ["id", "revision"],
-                        "properties": {"id": {"type": "string"}, "revision": {"type": "integer", "minimum": 1}},
-                        "additionalProperties": False}}),
-                    ("report_sections", dict(spec.parameters)["report_sections"]),
+                    *coding_done.parameters, ("knowledge_refs", dict(spec.parameters)["knowledge_refs"]),
                 ))
             continue
         specs[name] = spec

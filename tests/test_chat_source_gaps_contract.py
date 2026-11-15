@@ -183,9 +183,11 @@ def test_native_duplicate_arguments_cannot_be_hidden_by_compatibility(arguments:
     turn, history = decode_turn({"tool_calls": [{"id": "original", "type": "function", "function": {
         "name": "done", "arguments": arguments}}]})
     assert turn.finish is TurnFinish.PROTOCOL_ERROR and history is None
-    with pytest.raises(RuntimeError, match="invalid function arguments"):
-        decode_exchange({"status": "completed", "output": [{"type": "function_call", "call_id": "original",
-            "name": "done", "arguments": arguments}]}, text_only=False, text_decoder=None)
+    response_turn, response_history = decode_exchange({"status": "completed", "output": [
+        {"type": "function_call", "call_id": "original", "name": "done", "arguments": arguments}]},
+        text_only=False, text_decoder=None)
+    assert response_turn.finish is TurnFinish.PROTOCOL_ERROR and not response_history
+    assert not response_turn.tool_calls
 
 
 @pytest.mark.parametrize("version", [1, 2, 3])

@@ -429,7 +429,23 @@ def _required_tool_checks(
             identity = requirement.check_id
             observation = (requirement.observe(records, results=results, browser_document=context.browser_document) if observations is None
                            else observations[identity])
-            outcome = requirement.evaluate_observation(observation, final_text)
+            if requirement.file_path:
+                from pathlib import Path
+
+                from codey.operations.file_field_binding import validate_field
+                from codey.toolchain.runtime import WRITE_MAX_FILE_BYTES, safe_join
+                from codey.workspace.paths import read_text_bounded
+
+                try:
+                    root = session.project or context.project
+                    if not root:
+                        raise ValueError("File binding requires a project")
+                    content = read_text_bounded(safe_join(Path(root), requirement.file_path), max_bytes=WRITE_MAX_FILE_BYTES)
+                    outcome = validate_field(requirement, observation, content)
+                except (OSError, ValueError) as exc:
+                    outcome = RequirementEvaluation("file_field_unavailable", str(exc), observation.evaluation.evidence_refs)
+            else:
+                outcome = requirement.evaluate_observation(observation, final_text)
         else:
             continue
         evaluations[identity] = outcome

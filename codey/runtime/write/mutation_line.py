@@ -97,6 +97,7 @@ class RuntimeMutationLine:
         self, session_id: str, run_id: str, *, expected: RuntimeOperationState,
         leaf: str, artifact: ArtifactRecord | None = None,
         logical_turn: int | None = None, counters: RuntimeExecutionCounters | None = None,
+        audit_artifacts: tuple[ArtifactRecord, ...] = (),
     ) -> None:
         from codey.runtime.core.operation_state import advance_execution
 
@@ -115,7 +116,7 @@ class RuntimeMutationLine:
             operation_is_open(projection, current)
             return (operation_state_entry(proposed),)
 
-        self._mutate(session_id, run_id, mutation, artifacts=(artifact,) if artifact is not None else ())
+        self._mutate(session_id, run_id, mutation, artifacts=(*audit_artifacts, *((artifact,) if artifact is not None else ())))
 
     def _mutate(self, session_id: str, run_id: str, mutation: RuntimeRowsBuilder, *,
                 messages: tuple[tuple[str, Mapping[str, object]], ...] = (),

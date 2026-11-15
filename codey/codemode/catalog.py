@@ -11,7 +11,7 @@ from codey.operations.browser_references import BrowserReferences, reference_spe
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.result_schema import schema_typescript
 from codey.toolchain.tool_spec import ToolSpec, is_text_batch_tool
-from codey.types.json_value import canonical_json_object
+from codey.types.json_value import canonical_json_object, require_json_strings
 
 if TYPE_CHECKING:
     from codey.operations.kernel_protocol import TurnSnapshot
@@ -167,13 +167,20 @@ def build_codemode_catalog(
 
 
 def render_declarations(snapshot: ToolCatalogSnapshot) -> str:
-    from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
+    from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE, edit_guidance
 
     names = {entry.name for entry in snapshot.entries}
-    json_edit = {"edit", "read_file"} <= names
+    guidance = ""
+    if {"edit", "read_file"} <= names:
+        edit = next(entry for entry in snapshot.entries if entry.name == "edit")
+        parameters = canonical_json_object(edit.parameters)
+        guidance = edit_guidance(require_json_strings(parameters["required"], "required"),
+                                 tuple(canonical_json_object(parameters["properties"])))
+    json_edit = guidance == JSON_FIELD_EDIT_GUIDANCE
     lines = ["// tools.NAME uses NAME's declared arguments; returns Result<T>."]
+    if guidance:
+        lines.extend("// " + line for line in guidance.splitlines())
     if json_edit:
-        lines.extend("// " + line for line in JSON_FIELD_EDIT_GUIDANCE.splitlines())
         lines.append("type JsonEditValue = null | boolean | number | string | JsonEditValue[] | {[key: string]: JsonEditValue};")
     lines.extend((
         "type ToolResult<T> =",

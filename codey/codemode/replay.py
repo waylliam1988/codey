@@ -254,7 +254,7 @@ def resolve_repair_context(
     if not parent_effect_id.startswith(f"{run_id}:"):
         raise CodeModeReplayError("repair token belongs to a different run")
     failure_code = str(metadata.get("failure_code", ""))
-    if failure_code not in {"missing_return", "result_encoding"}:
+    if failure_code not in {"missing_return", "result_encoding", "shape_mismatch"}:
         raise CodeModeReplayError("repair is not authorized for this failure")
     for result in receipts.values():
         if result.canonical.get("repaired_from") == parent_effect_id:
@@ -282,6 +282,11 @@ def resolve_repair_context(
     current_catalog_digest = repair_catalog_digest(catalog, [child.tool_name for child in children])
     if metadata.get("catalog_digest") != current_catalog_digest:
         raise CodeModeReplayError("repair capability changed; refusing receipt replay")
+    if failure_code == "shape_mismatch":
+        from codey.codemode.shape_repair import readonly_settled
+
+        if not readonly_settled(parent_effect_id, [child.effect_id for child in children], receipts, catalog):
+            raise CodeModeReplayError("shape repair requires the complete successful read-only child sequence")
     return CodeModeRepairContext(
         token=token, parent_effect_id=parent_effect_id, failure_code=failure_code,
         catalog_digest=current_catalog_digest, children=tuple(children), receipts=receipts,

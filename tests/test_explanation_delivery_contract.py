@@ -77,7 +77,8 @@ def test_selected_text_and_numbers_must_be_delivered_whole(value: JsonValue, tex
     if not passed:
         assert outcome.reason_code == "answer_text_missing"
         assert text in outcome.feedback and '"read-1"' in outcome.feedback
-        assert "Do not repeat" in outcome.feedback and "done.summary" in outcome.feedback
+        assert "Do not repeat" in outcome.feedback and "done.paragraphs" in outcome.feedback
+        assert "done.summary" not in outcome.feedback
 
 
 def test_changed_receipt_rejects_the_old_answer_without_rewriting_it() -> None:

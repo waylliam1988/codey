@@ -33,7 +33,12 @@ from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.policies.browser_requirement import require_browser_research_sequence
-from codey.policies.tool_requirement import parse_tool_success_check, require_browser_read_field, require_tool_success
+from codey.policies.tool_requirement import (
+    parse_tool_success_check,
+    require_browser_file_field,
+    require_browser_read_field,
+    require_tool_success,
+)
 from codey.providers.local_discovery import probe_local_endpoint_detail
 from codey.research.browser_search import BrowserSearchProvider
 from codey.storage.input_attachments import InputAttachmentStore
@@ -261,7 +266,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
     if mode == "research":
         task += "用 submit_research_answer 提交完整答案，引用实际读到的 [eN] 原文。"
     elif mode == "hybrid":
-        task += "然后读取项目的 result.json，将 amount 改为实测克数，code 改为实测校验码，再用 done 报告。"
+        task += "然后读取项目的 result.json，将 amount 改为实测克数（JSON number），code 改为实测校验码（JSON string），再用 done 报告。"
         if stale_edit:
             task += ("本项验收要求实际验证文件版本冲突恢复：完整 read_file 后，以外层 Result.result_ref 作为 "
                      "edit.base_result_ref，使用 content 写入完整 JSON。遇到版本冲突后重新完整读取并保留新增字段，再写入。")
@@ -274,7 +279,9 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
         task += "另一个验收要求：导航后、填写之前先 browser_read 读取未加载状态；加载后再次 browser_read，以后一次正文为准。"
     if structured or explanation_output:
         task += ("另外用 browser_eval 读取 window.__contractToken，取得返回对象的 value；"
-                 "用 browser_tab_list 获取当前绑定标签页的 URL。最终报告脚本 token 和当前标签页 URL；脚本 token 是动作结果，不要作为来源引用。")
+                 "用 browser_tab_list 获取当前绑定标签页的 URL。脚本 token 是动作结果，不要作为来源引用。")
+        if not explanation_output:
+            task += "最终报告脚本 token 和当前标签页 URL。"
     required = {"browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read"}
     if not explicit_wait:
         required.remove("browser_wait")
@@ -286,7 +293,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
     bindings: tuple[str, ...] = tuple(_explanation_binding(check) for check in explanation_bindings) if explanation_output else ()
     explanation_facts = EXPLANATION_FACTS if explanation_output else ()
     if explanation_output:
-        task += "最终 done.summary 只填自然语言解释，分两段，不重复 URL 或 token；应用从正式回执填入精确 JSON 字段。"
+        task += "最终只提交业务说明：done.paragraphs 填两项自然语言段落，每项一段，不重复 URL 或 token；应用从正式回执填入独立 JSON 字段。"
     if bound_output:
         task += ("完成 browser_read 后，用 browser_eval 的 code=window.__record 读取该页面同一记录的结构化对象。"
                  "这两个字段由应用从该回执组装最终 JSON；调用 done 时 summary 只填字符串 {}，无需抄写字段值。")
@@ -356,6 +363,9 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             stack.enter_context(patch("codey.research.search_factory.default_research_search_provider", source_factory))
             stack.enter_context(patch("codey.operations.task_phases.dispatch.default_research_search_provider", source_factory))
             sequence = (require_browser_research_sequence(url=URL, condition="text", value="鱼丸"),) if research_sequence else ()
+            file_fields = tuple(require_browser_file_field(url=URL, prefix=prefix, suffix=suffix, path="result.json",
+                pointer=pointer, value_type=kind) for prefix, suffix, pointer, kind in (
+                    ("鱼丸净重为 ", " 克。", "/amount", "number"), ("记录校验码 ", "。", "/code", "string"))) if mode == "hybrid" else ()
             waits = (require_tool_success("browser_wait", via="codemode", arguments={
                 "condition": "text", "value": "UPLOAD_BYTES_82"}),) if upload_file and explicit_wait else ()
             output_schema: JsonObject = (explanation_schema if explanation_schema is not None else
@@ -371,7 +381,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                     ("browser.effect",) if structured or explanation_output or upload_file or download_file or bound_output else ())),
                 project_changes_required=mode == "hybrid",
                 required_tools=(*(() if not declare_required_tools or source_failure and source_attempt_only else sorted(required)),
-                                *bindings, *sequence, *waits, *explanation_facts, *additional_required_tools),
+                                *bindings, *sequence, *waits, *explanation_facts, *file_fields, *additional_required_tools),
                 output_format="json_explanation" if explanation_output or assembled_upload else "json" if bound_output else "text",
                 sources_open_required=True if source_failure else None,
                 output_schema=json.dumps(output_schema) if assembled_upload or explanation_output or bound_output else "",

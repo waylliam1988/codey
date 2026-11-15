@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from codey.automation.browser_document import document_changed
 from codey.operations.browser_waits import BrowserWaitPlan, wait_plan
 from codey.policies.browser_requirement import BrowserPageRounds, BrowserResearchSequence, parse_browser_requirement
+from codey.policies.tool_requirement import parse_tool_success_check
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, thaw_schema_value
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
@@ -98,7 +99,7 @@ DIRECT_REF = "const ref=inputs.ref;"
 query_click: ContextVar[bool] = ContextVar("query_click", default=False)
 
 
-def _click_wait_plan(checks: tuple[str, ...]) -> BrowserWaitPlan:
+def _click_wait_plan(checks: tuple[str, ...], stage: int = 0) -> BrowserWaitPlan:
     waits: list[JsonObject] = []
     for check in checks:
         rule = parse_browser_requirement(check)
@@ -106,11 +107,16 @@ def _click_wait_plan(checks: tuple[str, ...]) -> BrowserWaitPlan:
             args: JsonObject = {"condition": rule.condition, "value": rule.value, "timeout_ms": 5000}
             if args not in waits:
                 waits.append(args)
-    return wait_plan(checks, tuple(waits))
+    plan = wait_plan(checks, tuple(waits), stage=stage)
+    if not stage and any((tool_rule := parse_tool_success_check(check)) is not None and tool_rule.stage for check in checks):
+        # A frozen CodeMode program may click more than once. Do not attach
+        # another stage's waits to each click; the receipt handoff supplies them.
+        return BrowserWaitPlan(plan.waits, (*plan.missing, {}))
+    return plan
 
 
-def click_waits(checks: tuple[str, ...], wait_allowed: bool) -> list[JsonObject]:
-    plan = _click_wait_plan(checks)
+def click_waits(checks: tuple[str, ...], wait_allowed: bool, *, stage: int = 0) -> list[JsonObject]:
+    plan = _click_wait_plan(checks, stage)
     if plan.missing or (plan.waits and not wait_allowed):
         raise ValueError("The declared query wait is unavailable in this turn.")
     return list(plan.waits)
@@ -123,8 +129,8 @@ class ClickFollowupPlan:
     unavailable: tuple[str, ...]
 
 
-def click_followup_plan(checks: tuple[str, ...], names: set[str]) -> ClickFollowupPlan:
-    wait = _click_wait_plan(checks)
+def click_followup_plan(checks: tuple[str, ...], names: set[str], *, stage: int = 0) -> ClickFollowupPlan:
+    wait = _click_wait_plan(checks, stage)
     unavailable = tuple(name for name in ("browser_wait", "browser_read")
                         if name not in names and (name == "browser_read" or wait.waits or wait.missing))
     plans: JsonObject = {"action": []}

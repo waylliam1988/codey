@@ -98,10 +98,10 @@ def append_json(path: Path, value: object) -> None:
 
 
 def production_source_digest() -> str:
-    tracked = subprocess.run(["git", "ls-files", "--", "codey"], cwd=ROOT, check=True,
+    tracked = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", "codey"], cwd=ROOT, check=True,
                              capture_output=True, text=True, encoding="utf-8").stdout.splitlines()
     digest = hashlib.sha256()
-    for name in tracked:
+    for name in sorted(tracked):
         digest.update(name.encode() + b"\0" + (ROOT / name).read_bytes())
     return digest.hexdigest()
 
@@ -113,9 +113,17 @@ def completion_summary(reply: str) -> str | None:
     except (ValueError, TypeError):
         return None
     args = action.get("args")
-    if action.get("tool") != "done" or not isinstance(args, dict) or not isinstance(args.get("summary"), str):
+    if action.get("tool") != "done" or not isinstance(args, dict):
         return None
-    return require_json_string(args["summary"], "summary")
+    if "paragraphs" not in args:
+        summary = args.get("summary")
+        return summary if isinstance(summary, str) else None
+    from codey.policies.output_requirement import explanation_proposal
+
+    try:
+        return explanation_proposal(args)
+    except ValueError:
+        return None
 
 
 def service_state(base_url: str) -> JsonObject:
@@ -280,7 +288,7 @@ def run_arm(directory: Path, target: Target, arm: Arm, shape: int, max_turns: in
             "最后通过 done 提交解释，用数字报告实测净重和校验码；不要在解释中重复 URL 或脚本 token。"
             + SHAPES[shape] + "URL 和 token 均由应用从正式回执填入。")
     task += ('done.summary 只提交一个 JSON 对象，形如 {"explanation":"你的解释"}，不抄写其他字段。'
-             if arm == "A" else "done.summary 直接填写自然语言解释，不包装成内层 JSON 对象。")
+             if arm == "A" else "done.paragraphs 按要求填写自然语言段落数组，每项一段，不包装成内层 JSON 对象。")
     if fixed_acquisition:
         task += "实验固定采集程序将先执行上述浏览器步骤；成功回执到达后直接提交解释，不要重复已经成功的操作。"
     write_json(directory / "request.json", {"task": task, "arm": arm, "shape": shape,
