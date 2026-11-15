@@ -347,9 +347,8 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references)
     direct = tuple(spec.name for spec in specs if spec.executor == "browser" and spec.name in names)
     if snapshot.browser_followups and (not set(direct) <= {*DIRECT_TOOLS, *SINGLE_STEP_TOOLS}
-            or (not ignore_runtime_claims and not set(direct) <= set(SINGLE_STEP_TOOLS))
             or not allows_surface(snapshot, direct)):
-        raise ValueError("captured browser follow-ups exceed the authorized Chat interface")
+        raise ValueError("captured browser follow-ups exceed the authorized browser interface")
     from codey.toolchain.tool_prompt import contract_semantics
 
     if contract_semantics(contract) != contract_semantics(render_snapshot_contract(snapshot)):

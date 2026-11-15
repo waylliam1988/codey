@@ -1,0 +1,1088 @@
+{
+  "date": "2026-11-15",
+  "production_digest": "6e3507f8cfe3a60460326ef20ecdf260035bee9db406dfd28eec4c364b2c73d1",
+  "comparison": {
+    "before": {
+      "source_before": "3dbbed1688a793fde699b20319e1c150769ab5d5b8c0f3a0dd643b6ce9841b88",
+      "source_after": "3dbbed1688a793fde699b20319e1c150769ab5d5b8c0f3a0dd643b6ce9841b88",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "seed": 123456789,
+      "temperature": 0,
+      "rows": [
+        {
+          "case": "chat-alternate",
+          "passed": true,
+          "stop_reason": "done",
+          "model_replies": 6,
+          "browser_javascript_proposals": 0,
+          "other_javascript_proposals": 0,
+          "repeated_browser_programs": 0,
+          "direct_proposals": 5,
+          "successful_fill": 1,
+          "successful_click": 1,
+          "successful_wait": 1,
+          "successful_read": 1,
+          "successful_edit": 0,
+          "stale_ref_failures": 0,
+          "final_file_correct": null,
+          "seconds": 42.484
+        },
+        {
+          "case": "chat-original",
+          "passed": true,
+          "stop_reason": "done",
+          "model_replies": 6,
+          "browser_javascript_proposals": 0,
+          "other_javascript_proposals": 0,
+          "repeated_browser_programs": 0,
+          "direct_proposals": 5,
+          "successful_fill": 1,
+          "successful_click": 1,
+          "successful_wait": 1,
+          "successful_read": 1,
+          "successful_edit": 0,
+          "stale_ref_failures": 0,
+          "final_file_correct": null,
+          "seconds": 44.813
+        },
+        {
+          "case": "hybrid-alternate",
+          "passed": false,
+          "stop_reason": "protocol",
+          "model_replies": 3,
+          "browser_javascript_proposals": 3,
+          "other_javascript_proposals": 0,
+          "repeated_browser_programs": 1,
+          "direct_proposals": 0,
+          "successful_fill": 0,
+          "successful_click": 0,
+          "successful_wait": 0,
+          "successful_read": 0,
+          "successful_edit": 0,
+          "stale_ref_failures": 0,
+          "final_file_correct": false,
+          "seconds": 52.547
+        },
+        {
+          "case": "hybrid-original",
+          "passed": false,
+          "stop_reason": "max_turns",
+          "model_replies": 12,
+          "browser_javascript_proposals": 12,
+          "other_javascript_proposals": 0,
+          "repeated_browser_programs": 10,
+          "direct_proposals": 0,
+          "successful_fill": 11,
+          "successful_click": 0,
+          "successful_wait": 0,
+          "successful_read": 11,
+          "successful_edit": 0,
+          "stale_ref_failures": 11,
+          "final_file_correct": false,
+          "seconds": 220.234
+        }
+      ]
+    },
+    "after": {
+      "source_before": "8b307f7af58fdfa556456a3a43059ff9e18fde2525ac36356f0b616110ffc81b",
+      "source_after": "8b307f7af58fdfa556456a3a43059ff9e18fde2525ac36356f0b616110ffc81b",
+      "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+      "seed": 123456789,
+      "temperature": 0,
+      "rows": [
+        {
+          "case": "chat-alternate",
+          "passed": true,
+          "stop_reason": "done",
+          "model_replies": 6,
+          "browser_javascript_proposals": 0,
+          "other_javascript_proposals": 0,
+          "repeated_browser_programs": 0,
+          "direct_proposals": 5,
+          "successful_fill": 1,
+          "successful_click": 1,
+          "successful_wait": 1,
+          "successful_read": 1,
+          "successful_edit": 0,
+          "stale_ref_failures": 0,
+          "final_file_correct": null,
+          "seconds": 39.0
+        },
+        {
+          "case": "chat-original",
+          "passed": true,
+          "stop_reason": "done",
+          "model_replies": 6,
+          "browser_javascript_proposals": 0,
+          "other_javascript_proposals": 0,
+          "repeated_browser_programs": 0,
+          "direct_proposals": 5,
+          "successful_fill": 1,
+          "successful_click": 1,
+          "successful_wait": 1,
+          "successful_read": 1,
+          "successful_edit": 0,
+          "stale_ref_failures": 0,
+          "final_file_correct": null,
+          "seconds": 40.875
+        },
+        {
+          "case": "hybrid-alternate",
+          "passed": false,
+          "stop_reason": "done",
+          "model_replies": 5,
+          "browser_javascript_proposals": 0,
+          "other_javascript_proposals": 1,
+          "repeated_browser_programs": 0,
+          "direct_proposals": 3,
+          "successful_fill": 1,
+          "successful_click": 1,
+          "successful_wait": 0,
+          "successful_read": 1,
+          "successful_edit": 1,
+          "stale_ref_failures": 0,
+          "final_file_correct": false,
+          "seconds": 44.875
+        },
+        {
+          "case": "hybrid-original",
+          "passed": false,
+          "stop_reason": "done",
+          "model_replies": 5,
+          "browser_javascript_proposals": 0,
+          "other_javascript_proposals": 1,
+          "repeated_browser_programs": 0,
+          "direct_proposals": 3,
+          "successful_fill": 1,
+          "successful_click": 1,
+          "successful_wait": 0,
+          "successful_read": 1,
+          "successful_edit": 1,
+          "stale_ref_failures": 0,
+          "final_file_correct": true,
+          "seconds": 45.641
+        }
+      ]
+    },
+    "identical_tasks": true
+  },
+  "matrices": [
+    {
+      "path": ".e2e-artifacts\\browser-direct-hybrid-20261115\\full-surface-post-restart",
+      "passed": 9,
+      "runs": 15,
+      "source_before": "8b307f7af58fdfa556456a3a43059ff9e18fde2525ac36356f0b616110ffc81b",
+      "source_after": "8b307f7af58fdfa556456a3a43059ff9e18fde2525ac36356f0b616110ffc81b",
+      "results": [
+        {
+          "scenario": "basic",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "codemode",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "structured",
+          "passed": false,
+          "stop_reason": "max_turns",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 2,
+          "failed_stale_refs": 0,
+          "facts_match": false,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {
+            "schema_valid": false,
+            "exact_fields": false,
+            "facts_mentioned": false,
+            "explanation": null,
+            "reason": "output_format_invalid"
+          },
+          "error": null
+        },
+        {
+          "scenario": "legacy_structured",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_eval",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_tab_list",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "reread",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 2,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "stale_ref",
+          "passed": false,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "hybrid",
+          "passed": false,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "codemode",
+            "edit",
+            "read_file"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": true,
+          "project_result": {
+            "amount": 173,
+            "code": "QUARTZ_851"
+          },
+          "conflict_recovery_covered": false,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "hybrid_codemode",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "edit",
+            "read_file"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": true,
+          "project_result": {
+            "amount": 173,
+            "code": "QUARTZ_851"
+          },
+          "conflict_recovery_covered": false,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "stale_edit",
+          "passed": false,
+          "stop_reason": "no_progress",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "read_tool_result"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": false,
+          "final_file_correct": false,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": false,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "upload",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_upload",
+            "browser_wait",
+            "codemode",
+            "open_url"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "download",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_download",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "research",
+          "passed": false,
+          "stop_reason": "no_progress",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "codemode",
+            "open_url",
+            "submit_research_answer"
+          ],
+          "source_reads": 2,
+          "failed_stale_refs": 2,
+          "facts_match": false,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "research_sequence",
+          "passed": false,
+          "stop_reason": "max_turns",
+          "successful_tools": [
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "open_url",
+            "submit_research_answer"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 1,
+          "facts_match": false,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "source_failure",
+          "passed": true,
+          "stop_reason": "blocked",
+          "successful_tools": [],
+          "source_reads": 0,
+          "failed_stale_refs": 0,
+          "facts_match": false,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "fixed_failure",
+          "passed": true,
+          "stop_reason": "blocked",
+          "successful_tools": [
+            "browser_navigate",
+            "codemode"
+          ],
+          "source_reads": 0,
+          "failed_stale_refs": 0,
+          "facts_match": false,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        }
+      ]
+    },
+    {
+      "path": ".e2e-artifacts\\browser-direct-hybrid-20261115\\full-surface-final",
+      "passed": 11,
+      "runs": 15,
+      "source_before": "6e3507f8cfe3a60460326ef20ecdf260035bee9db406dfd28eec4c364b2c73d1",
+      "source_after": "6e3507f8cfe3a60460326ef20ecdf260035bee9db406dfd28eec4c364b2c73d1",
+      "results": [
+        {
+          "scenario": "basic",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "codemode",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "structured",
+          "passed": false,
+          "stop_reason": "no_progress",
+          "successful_tools": [
+            "browser_click",
+            "browser_eval",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_tab_list",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {
+            "schema_valid": false,
+            "exact_fields": false,
+            "facts_mentioned": false,
+            "explanation": null,
+            "reason": "output_format_invalid"
+          },
+          "error": null
+        },
+        {
+          "scenario": "legacy_structured",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_eval",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_tab_list",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "reread",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 2,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "stale_ref",
+          "passed": false,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "hybrid",
+          "passed": false,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "codemode",
+            "edit",
+            "read_file"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": false,
+          "project_result": {
+            "amount": "173",
+            "code": "QUARTZ_851"
+          },
+          "conflict_recovery_covered": false,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "hybrid_codemode",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "edit",
+            "read_file"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": true,
+          "project_result": {
+            "amount": 173,
+            "code": "QUARTZ_851"
+          },
+          "conflict_recovery_covered": false,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "stale_edit",
+          "passed": false,
+          "stop_reason": "no_progress",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "read_tool_result"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": false,
+          "final_file_correct": false,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": false,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "upload",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_upload",
+            "browser_wait",
+            "codemode",
+            "open_url"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "download",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_download",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "codemode"
+          ],
+          "source_reads": 1,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "research",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "open_url",
+            "submit_research_answer"
+          ],
+          "source_reads": 6,
+          "failed_stale_refs": 5,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "research_sequence",
+          "passed": true,
+          "stop_reason": "done",
+          "successful_tools": [
+            "browser_click",
+            "browser_fill",
+            "browser_navigate",
+            "browser_read",
+            "browser_snapshot",
+            "browser_wait",
+            "codemode",
+            "open_url",
+            "submit_research_answer"
+          ],
+          "source_reads": 2,
+          "failed_stale_refs": 0,
+          "facts_match": true,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "source_failure",
+          "passed": true,
+          "stop_reason": "blocked",
+          "successful_tools": [],
+          "source_reads": 0,
+          "failed_stale_refs": 0,
+          "facts_match": false,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        },
+        {
+          "scenario": "fixed_failure",
+          "passed": true,
+          "stop_reason": "blocked",
+          "successful_tools": [
+            "browser_navigate",
+            "codemode"
+          ],
+          "source_reads": 0,
+          "failed_stale_refs": 0,
+          "facts_match": false,
+          "final_file_correct": null,
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "conflict_recovery_covered": null,
+          "true_stale_conflicts": 0,
+          "posthoc_output_checks": {},
+          "error": null
+        }
+      ]
+    }
+  ],
+  "regression": {
+    "log": ".e2e-artifacts\\browser-direct-hybrid-20261115\\regression-final-complete.log",
+    "passed": 356,
+    "full_pytest": false
+  },
+  "static_checks": [
+    {
+      "name": "ruff",
+      "command": [
+        "ruff",
+        "check",
+        "."
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "pyrefly",
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "ty",
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "precision",
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "mypy-targets",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "--follow-imports=silent",
+        "--explicit-package-bases",
+        "tests/test_browser_direct_hybrid.py",
+        "tests/test_browser_followups_production.py",
+        "tests/test_browser_full_surface_contract.py",
+        "tests/test_browser_task_handoff.py",
+        "tools/browser_production_live_gate.py",
+        "tools/browser_full_surface_live_gate.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "pyrefly-targets",
+      "command": [
+        "pyrefly",
+        "check",
+        "tests/test_browser_direct_hybrid.py",
+        "tests/test_browser_followups_production.py",
+        "tests/test_browser_full_surface_contract.py",
+        "tests/test_browser_task_handoff.py",
+        "tools/browser_production_live_gate.py",
+        "tools/browser_full_surface_live_gate.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0
+    },
+    {
+      "name": "ty-targets",
+      "command": [
+        "ty",
+        "check",
+        "tests/test_browser_direct_hybrid.py",
+        "tests/test_browser_followups_production.py",
+        "tests/test_browser_full_surface_contract.py",
+        "tests/test_browser_task_handoff.py",
+        "tools/browser_production_live_gate.py",
+        "tools/browser_full_surface_live_gate.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "interrupted": [
+    "full-surface-first/interrupted.json",
+    "regression-interrupted.json"
+  ],
+  "limitations": [
+    "Controlled fixtures and a single local 12B model are not a reliability estimate for all websites.",
+    "Matched comparison retained both Hybrid acceptance failures; browser JavaScript reduction does not imply full-task success.",
+    "CodeMode source token guard still rejects Fetch inside JavaScript strings; inputs can carry task data."
+  ]
+}

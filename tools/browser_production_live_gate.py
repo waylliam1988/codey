@@ -152,6 +152,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              model_reports_metadata: bool = False,
              expected_amount: int = 173, expected_code: str = "QUARTZ_851",
              declare_required_tools: bool = True,
+             codemode_only: bool = False,
              additional_required_tools: tuple[str, ...] = (),
              explanation_bindings: tuple[str, ...] = BINDINGS,
              explanation_schema: JsonObject | None = None) -> dict[str, object]:
@@ -230,12 +231,15 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             raise ValueError("gate only authorizes the selected KoboldCpp model")
         return recording
 
-    task = (f"这是用户授权的浏览器操作任务。用生产工具打开 {URL}。"
-            "通过 codemode 的 tools.browser_navigate、browser_snapshot、browser_fill、browser_click、browser_wait、browser_read 完成操作。"
-            "先观察页面，把 Locality 填为福州；填写后旧 ref 失效，需要重新 snapshot，再点击 Load record，等待出现鱼丸，最后 browser_read 当前页。"
-            "每一步检查工具结果，不要猜 ref；用 unwrap 获得结构化 snapshot.elements，每项有 ref/role/name。"
-            "browser_read 返回字符串，直接 return unwrap(await tools.browser_read({}))，不要再取 .text。"
+    task = (f"这是用户授权的浏览器操作任务。调用 browser_navigate 打开 {URL}。"
+            "先观察页面，把 Locality 填为福州；使用最新的控件引用，点击 Load record，调用 browser_wait 等待出现鱼丸，最后 browser_read 当前页。"
+            "每一步检查工具结果，不要猜控件引用。"
             "最后报告实际净重和校验码，不要用 snapshot 或点击结果替代 browser_read 正文。不要运行测试或命令。")
+    if codemode_only or mode == "research":
+        task += (("Use codemode only. " if codemode_only else "浏览器操作通过 codemode 完成。")
+                 + "用 unwrap 获得结构化 snapshot.elements，每项有 ref/role/name。"
+                 "填写后重新 snapshot 获取新 ref。browser_read 返回字符串，"
+                 "直接 return unwrap(await tools.browser_read({}))，不要再取 .text。")
     if mode == "research":
         task += "用 submit_research_answer 提交完整答案，引用实际读到的 [eN] 原文。"
     elif mode == "hybrid":
@@ -256,8 +260,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
     required = {"browser_navigate", "browser_snapshot", "browser_fill", "browser_click", "browser_wait", "browser_read"}
     if not explicit_wait:
         required.remove("browser_wait")
-        task = task.replace("、browser_wait", "").replace(
-            "点击 Load record，等待出现鱼丸，最后 browser_read 当前页。",
+        task = task.replace(
+            "点击 Load record，调用 browser_wait 等待出现鱼丸，最后 browser_read 当前页。",
             "点击 Load record，再用 browser_read 读取本次加载后的完整记录。")
     if structured or explanation_output:
         required.update({"browser_eval", "browser_tab_list"})

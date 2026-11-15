@@ -86,15 +86,16 @@ def test_first_request_has_formal_navigation_even_when_model_omits_it(
                    for parent in parents)
 
 
-@pytest.mark.parametrize("required,denied", [(False, False), (True, False), (True, True)])
-def test_wait_exposure_uses_the_existing_frozen_leaf(required: bool, denied: bool) -> None:
+@pytest.mark.parametrize("kind", ["chat", "hybrid"])
+@pytest.mark.parametrize("required,denied", [(False, False), (False, True), (True, False), (True, True)])
+def test_wait_exposure_uses_the_existing_frozen_leaf(kind: str, required: bool, denied: bool) -> None:
     session = TaskSession(TaskPolicy(GRANTS, required_checks=(require_tool_success("browser_wait"),) if required else ()),
-                          task_kind="chat", controller_denied=("browser_wait",) if denied else ())
+                          task_kind=kind, controller_denied=("browser_wait",) if denied else ())
     snapshot = offer_browser_tools(build_turn_snapshot(session), session)
     restored = restore_snapshot(snapshot_description(snapshot))
     assert restored == snapshot
-    assert ("browser_wait" in snapshot.tool_names) is (required and not denied)
-    if required and not denied:
+    assert ("browser_wait" in snapshot.tool_names) is (not denied)
+    if not denied:
         spec = next(s for s in snapshot.frozen_specs if s.name == "browser_wait")
         assert next(s for s in snapshot.model_specs if s.name == "browser_wait") == spec
         for args in ('{"condition":"invented","value":"Ready","timeout_ms":5000}',

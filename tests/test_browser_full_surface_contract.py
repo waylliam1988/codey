@@ -1,13 +1,12 @@
 """The live matrix distinguishes sequence handoff and real write conflicts."""
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, parse_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_full_surface_live_gate as matrix
 from tools import browser_prerequisite_ab as browser
@@ -29,6 +28,23 @@ def test_matrix_preserves_plain_research_and_adds_declared_sequence(tmp_path: Pa
         matrix._case(tmp_path, scenario, target)
     assert all(row["mode"] == "research" and row["strict_research"] is True for row in calls)
     assert [row["research_sequence"] for row in calls] == [False, True]
+
+
+def test_matrix_separates_ordinary_tools_from_explicit_codemode(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def capture(directory: Path, mode: str, target: Target, **options: bool) -> dict[str, object]:
+        calls.append({"scenario": directory.name, "mode": mode, **options})
+        return {}
+
+    monkeypatch.setattr(matrix, "run_case", capture)
+    target = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
+    for scenario in ("basic", "codemode", "hybrid", "hybrid_codemode"):
+        assert scenario in matrix.SCENARIOS
+        matrix._case(tmp_path, scenario, target)
+    assert [row["mode"] for row in calls] == ["chat", "chat", "hybrid", "hybrid"]
+    assert [row["codemode_only"] for row in calls] == [False, True, False, True]
+    assert [row["declare_required_tools"] for row in calls] == [True, True, False, False]
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
@@ -53,7 +69,7 @@ def test_hybrid_injects_only_at_validated_write_and_reports_real_recovery(
             yield browser.code_action(unversioned)
         elif case != "never_legal":
             yield browser.code_action(correct)
-            injection = json.loads((directory / "injection.json").read_text(encoding="utf-8"))
+            injection = parse_json_object((directory / "injection.json").read_text(encoding="utf-8"))
             assert injection["trigger"] == "before_version_check"
             yield browser.code_action(correct)
         while True:

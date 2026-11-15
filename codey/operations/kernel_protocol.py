@@ -188,21 +188,14 @@ def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
 
 
 def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSnapshot:
-    from codey.policies.tool_requirement import parse_tool_success_check
-
-    if (session.task_kind != "chat" or browser_followups.codemode_only(session.task_text)
+    if (session.task_kind not in {"chat", "hybrid"} or browser_followups.codemode_only(session.task_text)
             or not browser_followups.allows_surface(snapshot)
             or (exposed := session.model_tool_names) is not None
             and not set(browser_followups.DIRECT_TOOLS) <= set(exposed)
             or set(browser_followups.DIRECT_TOOLS) & set(session.controller_denied)):
         return snapshot
     direct_names: tuple[str, ...] = browser_followups.DIRECT_TOOLS
-    checks = snapshot.policy.required_checks if snapshot.policy else ()
-    needs_wait = any((rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_wait"
-                     and rule.via in {"", "codemode"}
-                     and rule.observe(session.executed, results=session._memory_results).evaluation.reason_code
-                     in {"tool_execution_missing", "tool_parent_missing"} for check in checks)
-    if (needs_wait and "browser_wait" in snapshot.nested_tool_names
+    if (browser_followups.allows_surface(snapshot, ("browser_wait",))
             and "browser_wait" not in session.controller_denied
             and (exposed is None or "browser_wait" in exposed)):
         direct_names = (*direct_names, "browser_wait")
@@ -987,13 +980,19 @@ def _response_objects(reply: object) -> list[tuple[str, ToolArgs, str]] | ToolPl
 def _lower_bound_inputs(
     items: list[tuple[str, ToolArgs, str]], snapshot: TurnSnapshot,
 ) -> list[tuple[str, ToolArgs, str]] | ToolPlan:
+    from codey.policies.tool_requirement import parse_tool_success_check
+
     binding = snapshot.input_binding
     models = {spec.name: spec for spec in snapshot.model_specs}
     checks = snapshot.policy.required_checks if snapshot.policy else ()
     lowered: list[tuple[str, ToolArgs, str]] = []
     for raw, args, call_id in items:
         name = _canonical_name(raw)
-        direct = snapshot.browser_followups and name in {"browser_fill", "browser_click", *browser_followups.SINGLE_STEP_TOOLS} and name in models
+        bound_observation = name in {"browser_snapshot", "browser_read"} and any(
+            (rule := parse_tool_success_check(check)) is not None and rule.tool == name and rule.via == "codemode"
+            for check in checks)
+        direct = snapshot.browser_followups and name in models and (
+            name in {"browser_fill", "browser_click", *browser_followups.SINGLE_STEP_TOOLS} or bound_observation)
         if not direct and (binding is None or name != binding.model_spec.name or name not in models):
             lowered.append((raw, args, call_id))
             continue

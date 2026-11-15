@@ -42,14 +42,15 @@ TARGET = Target("http://scripted.test/v1", "fixture", 123456789, 15)
 GRANTS = frozenset({"control", "web.read", "browser.observe", "browser.interact"})
 
 
-def test_snapshot_freezes_text_without_changing_authority() -> None:
-    session = TaskSession(TaskPolicy(GRANTS), task_kind="chat", task_text=QUESTION)
+@pytest.mark.parametrize("kind", ["chat", "hybrid"])
+def test_snapshot_freezes_text_without_changing_authority(kind: str) -> None:
+    session = TaskSession(TaskPolicy(GRANTS), task_kind=kind, task_text=QUESTION)
     base = build_turn_snapshot(session)
     offered = offer_browser_tools(base, session)
     restored = restore_snapshot(snapshot_description(offered))
     assert restored == offered and restored.browser_fill_text == NOTE
     assert base.nested_tool_names == restored.nested_tool_names
-    assert set(restored.tool_names) - set(base.tool_names) == set(DIRECT_TOOLS)
+    assert set(restored.tool_names) - set(base.tool_names) == {*DIRECT_TOOLS, "browser_wait"}
     original = {s.name: s for s in base.frozen_specs}
     assert all(replace(s, declarations=original[s.name].declarations) == original[s.name] for s in restored.frozen_specs)
     assert '"purpose"?' in next(s.declarations for s in restored.model_specs if s.name == "codemode")

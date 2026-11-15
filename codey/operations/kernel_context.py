@@ -379,14 +379,18 @@ class KernelContext:
         context = replace(self.completion_context, browser_document=browser.document_identity() if browser else None)
         snapshot = bind_browser_references(self.session, snapshot, context, browser.generation if browser else None)
         if snapshot.research_scope is None:
-            from codey.operations.browser_followups import allows_surface
+            from codey.operations.browser_followups import DIRECT_TOOLS
             from codey.operations.browser_task_handoff import browser_task_handoff
 
-            if (not snapshot.browser_followups and self.session.task_kind == "chat" and allows_surface(snapshot)
-                    and browser is not None and browser.document_identity() is not None):
+            if (not snapshot.browser_followups and browser is not None and browser.document_identity() is not None):
                 snapshot = kernel_protocol.offer_browser_tools(snapshot, self.session)
-            return browser_task_handoff(self.session, snapshot, context, browser.generation if browser else None,
-                                        delivered_results=delivered_results)
+            snapshot, handoff = browser_task_handoff(self.session, snapshot, context, browser.generation if browser else None,
+                                                      delivered_results=delivered_results)
+            if snapshot.browser_followups and set(DIRECT_TOOLS) <= set(snapshot.tool_names):
+                guidance = ("For ordinary browser steps, prefer the offered direct browser tools. "
+                            "Use CodeMode for operations that need programming or composition.")
+                handoff = "\n\n".join(part for part in (guidance, handoff) if part)
+            return snapshot, handoff
         from codey.operations.browser_detail import offer_page_details
         from codey.operations.research_submission_handoff import research_submission_handoff
 
