@@ -1,8 +1,8 @@
 """Structured entry counterexamples; no live model in these regression tests."""
 from __future__ import annotations
 
-import base64
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -10,17 +10,23 @@ import pytest
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.codemode.types import ToolCatalogEntry
+from codey.durable import DurableSession
 from codey.operations import completion_gate, completion_output
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import declaration
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.input_attachments import InputAttachmentStore
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.storage.managed_outputs import ManagedOutputStore
+from codey.types.json_value import JsonObject, decode_json_object, require_json_strings
+from codey.workspace.revision import WorkspaceRevisionStore
+from tests.test_browser_structured_upload_production import action as upload_action
 from tests.test_mechanical_surface import record
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
@@ -48,8 +54,9 @@ def plan(*steps: JsonObject) -> JsonObject:
     return {"tool": "codemode", "args": {"steps": list(steps)}}
 
 
-def browser_steps() -> list[JsonObject]:
-    return [step("nav", "browser_navigate", {"url": URL}),
+def browser_steps(*, navigate: bool = True) -> list[JsonObject]:
+    navigation = [step("nav", "browser_navigate", {"url": URL})] if navigate else []
+    return [*navigation,
             step("fill", "browser_fill", {"name": "Locality", "value": "福州"}),
             step("click", "browser_click", {"name": "Load record"}),
             step("wait", "browser_wait", {"condition": "text", "value": "鱼丸"}),
@@ -71,7 +78,7 @@ class State:
 def test_whole_plan_is_validated_before_execution(defect: str) -> None:
     snapshot = build_turn_snapshot(session())
     schemas = structured.entry_schemas(snapshot)
-    args = decode_json_object(plan(*browser_steps())["args"])
+    args: JsonObject = decode_json_object(plan(*browser_steps())["args"])
     steps = args["steps"]
     assert isinstance(steps, list)
     if defect == "condition":
@@ -107,11 +114,11 @@ def test_named_targets_are_mandatory_and_old_snapshots_are_diagnostic_only(stale
     schemas = structured.entry_schemas(build_turn_snapshot(session()), stale_refs=stale_refs)
     for op in structured.ACTION_TOOLS:
         properties = decode_json_object(schemas[op]["properties"])
-        assert "ref" not in properties and "name" in schemas[op]["required"]
+        assert "ref" not in properties and "name" in require_json_strings(schemas[op]["required"], "required")
         assert ("snapshot_id" in properties) is stale_refs
     with pytest.raises(ValueError):
         structured.compile_plan({"steps": [step("click", "browser_click", {"ref": "guessed"})]}, schemas)
-    old = {"steps": [step("click", "browser_click", {"name": "Load record", "snapshot_id": "before"})]}
+    old: JsonObject = {"steps": [step("click", "browser_click", {"name": "Load record", "snapshot_id": "before"})]}
     if stale_refs:
         structured.compile_plan(old, schemas)
     else:
@@ -151,7 +158,8 @@ def test_ambiguous_target_performs_no_action(matches: int) -> None:
     assert calls == ["browser_snapshot"]
 
 
-def test_same_mutation_id_reuses_result_and_changed_arguments_are_rejected() -> None:
+@pytest.mark.parametrize("tool", ["browser_upload", "browser_download"])
+def test_same_mutation_id_reuses_result_and_changed_arguments_are_rejected(tool: str) -> None:
     schemas = structured.entry_schemas(build_turn_snapshot(session()))
     state = State()
     calls: list[str] = []
@@ -164,9 +172,12 @@ def test_same_mutation_id_reuses_result_and_changed_arguments_are_rejected() -> 
 
     for identity, target, expected_reuse in [("download", "Download", False), ("download", "Download", True),
                                           ("download", "Changed", False), ("intentional_second", "Download", False)]:
-        compiled = structured.compile_plan(decode_json_object(plan(step(identity, "browser_download", {"name": target}))["args"]), schemas)
+        args: JsonObject = {"name": target}
+        if tool == "browser_upload":
+            args["attachment_id"] = "att_" + "0" * 64
+        compiled = structured.compile_plan(decode_json_object(plan(step(identity, tool, args))["args"]), schemas)
         result = NodeWorkerRuntime().execute(str(compiled["code"]), inputs=decode_json_object(compiled["inputs"]),
-            catalog=[ToolCatalogEntry(name, name) for name in ("browser_snapshot", "browser_download")], invoke=invoke, state_store=state)
+            catalog=[ToolCatalogEntry(name, name) for name in ("browser_snapshot", tool)], invoke=invoke, state_store=state)
         assert result.ok
         value = decode_json_object(result.value)
         if identity == "download" and target == "Changed":
@@ -175,33 +186,38 @@ def test_same_mutation_id_reuses_result_and_changed_arguments_are_rejected() -> 
             completed = value["completed"]
             assert isinstance(completed, list)
             assert decode_json_object(completed[0])["reused"] is expected_reuse
-    assert calls == ["browser_snapshot", "browser_download", "browser_snapshot", "browser_download"]
+    assert calls == ["browser_snapshot", tool, "browser_snapshot", tool]
 
 
 @pytest.mark.parametrize("enabled", [False, True])
 def test_durable_missing_parameter_keeps_root_cause_when_prechecked(tmp_path: Path, enabled: bool) -> None:
-    project, state, logdir = _dirs(tmp_path)
-    _, mutations, managed, revisions, _deps, sink = _open_runtime(logdir, state, "s", "r", project)
+    directories: tuple[Path, Path, Path] = _dirs(tmp_path)
+    project, state, logdir = directories
+    runtime: tuple[object, RuntimeMutationLine, ManagedOutputStore, WorkspaceRevisionStore, object, KernelEffectSink] = (
+        _open_runtime(logdir, state, "s", "r", project))
+    _, mutations, managed, revisions, _deps, sink = runtime
+    durable = mutations.durable
+    assert isinstance(durable, DurableSession)
     s = TaskSession(TaskPolicy(frozenset({"control", "project.read", "browser.observe"})), project=str(project))
     from codey.operations.recovery import record_entry_policy
 
-    record_entry_policy(mutations, session_id="s", run_id="r", policy=s.policy, durable=mutations.durable)
+    record_entry_policy(mutations, session_id="s", run_id="r", policy=s.policy, durable=durable)
     try:
         with structured.prototype(tmp_path, "basic", enabled=enabled):
             snapshot = build_turn_snapshot(s)
             executor = build_execute_turn_executor(session=s, snapshot=snapshot, run_id="r", effect_scope="probe",
                 turn=0, project_path=project, managed_outputs=managed, workspace_revision_store=revisions,
-                intent_sink=sink, durable=mutations.durable, session_id="s")
+                intent_sink=sink, durable=durable, session_id="s")
             result = execute_turn(s, [ToolCall("codemode", {"code":
                 "return unwrap(await tools.browser_wait({condition:'text',value:'ready'}));"}, call_id="parent")],
                 executors={"codemode": executor}, run_id="r", effect_scope="probe", turn=0, project_path=project,
-                snapshot=snapshot, intent_sink=sink, durable=mutations.durable)[0]
+                snapshot=snapshot, intent_sink=sink, durable=durable)[0]
         assert not result.ok
-        assert ("timeout_ms" if enabled else "recorded control flow") in result.model_text
+        assert "timeout_ms" in result.model_text
         assert result.canonical["child_effect_ids"] == []
-        assert len(mutations.durable.effects("r")) == 1
+        assert len(durable.effects("r")) == 1
     finally:
-        mutations.durable.close()
+        durable.close()
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -217,35 +233,36 @@ def test_binding_precondition_feedback_precedes_answer_format(tmp_path: Path, en
     s._memory_results["read"] = read
     with structured.prototype(tmp_path, "upload_bound", enabled=enabled):
         output = kernel_output(s)
-        checks = completion_gate._required_tool_checks(s, output.text, CompletionContext(), output.observations)
+        checks = completion_gate._required_tool_checks(s, output.text, CompletionContext(), output.observations, None)
         verdict = completion_gate._required_checks_verdict(s, checks.rows, checks.evaluations)
     assert verdict is not None and not verdict.complete
     assert "tool_parent_missing" in verdict.followup
 
 
 def kernel_output(s: TaskSession) -> completion_output.CompletionOutput:
-    from codey.operations import kernel_control
-
-    return kernel_control.prepare_completion_output(s, "model explanation", CompletionContext())
+    return completion_output.prepare_completion_output(s, "model explanation", CompletionContext())
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 @pytest.mark.parametrize("assembled", [False, True])
-def test_upload_receipts_are_delivered_and_same_step_is_not_repeated(
+def test_structured_upload_delivers_original_receipts_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, assembled: bool,
 ) -> None:
-    attachment = InputAttachmentStore(tmp_path / "inputs", "upload-test").put(
-        "fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode())
-    upload = plan(step("nav", "browser_navigate", {"url": URL}),
-        step("upload", "browser_upload", {"name": "Attachment", "attachment_id": str(attachment["id"])}),
-        step("wait", "browser_wait", {"condition": "text", "value": "UPLOAD_BYTES_82"}),
-        step("read", "browser_read", {}))
-    install_http(monkeypatch, [upload, upload, {"tool": "done", "args": {"summary": "已选择附件；尚未核验服务器接收。"}}])
     directory = tmp_path / "run"
+
+    def replies() -> Iterator[JsonObject]:
+        yield upload_action("observe")
+        attachment, = InputAttachmentStore(directory / "state", "browser-file-fixture").root.glob("att_*.json")
+        yield upload_action("select", target={"name": "Attachment"}, attachment_id=attachment.stem)
+        yield upload_action("read", wait_for_text="UPLOAD_BYTES_82")
+        yield {"tool": "done", "args": {"paragraphs": ["已选择附件；尚未核验服务器接收。"]}
+               if assembled else {"summary": "已选择附件；尚未核验服务器接收。"}}
+
+    install_http(monkeypatch, replies())
     row = probe.run_arm(directory, "upload_bound" if assembled else "upload", "B",
-                        Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10), max_turns=4, structured=True)
-    assert row["passed"] and row["model_calls"] == 3, row
-    assert row["structured_plans"] == 2 and row["structured_reused_steps"] == 2
+                        Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10), max_turns=5, structured=True)
+    assert row["passed"] and row["model_calls"] == 4, row
+    assert row["structured_plans"] == row["structured_reused_steps"] == 0
     assert row["successful_uploads"] == 1
     assert "UPLOAD_BYTES_82" in str(row["answer"])
     receipts = tool_receipts(directory / "state")
@@ -256,8 +273,9 @@ def test_upload_receipts_are_delivered_and_same_step_is_not_repeated(
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 def test_real_stale_edit_reloads_and_preserves_external_field(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    initial = json.dumps({"amount": 173, "code": "QUARTZ_851"})
-    fresh = json.dumps({"amount": 173, "code": "QUARTZ_851", "external_revision": EXTERNAL_FIELD})
+    initial_value: JsonObject = {"amount": 173, "code": "QUARTZ_851"}
+    fresh_value: JsonObject = {**initial_value, "external_revision": EXTERNAL_FIELD}
+    initial, fresh = json.dumps(initial_value), json.dumps(fresh_value)
     install_http(monkeypatch, [plan(*browser_steps(), step("file", "read_file", {"path": "result.json"}),
         step("edit", "edit", {"read_id": "file", "content": initial})),
         plan(step("file", "read_file", {"path": "result.json"})),
@@ -273,7 +291,8 @@ def test_static_content_after_same_plan_reread_can_drop_external_field(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Characterize the live failure: a fresh credential cannot protect old content."""
-    content = json.dumps({"amount": 173, "code": "QUARTZ_851"})
+    value: JsonObject = {"amount": 173, "code": "QUARTZ_851"}
+    content = json.dumps(value)
     install_http(monkeypatch, [
         plan(*browser_steps(), step("file", "read_file", {"path": "result.json"}),
              step("edit", "edit", {"read_id": "file", "content": content})),
@@ -319,7 +338,7 @@ def test_structured_entry_keeps_browser_and_source_contracts(
 def test_invalid_late_step_prevents_earlier_navigation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     install_http(monkeypatch, [plan(step("nav", "browser_navigate", {"url": URL}),
                                   step("bad", "browser_wait", {"value": "ready"})),
-        plan(*browser_steps()), {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}])
+        plan(*browser_steps(navigate=False)), {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}])
     row = probe.run_arm(tmp_path / "run", "basic", "B",
         Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10), max_turns=4, structured=True)
     assert row["passed"] and row["structured_rejections"] == 1, row

@@ -9,18 +9,20 @@ import pytest
 
 from codey.automation.browser_session import BrowserSession
 from codey.operations import provider_receipts
-from codey.operations.kernel_protocol import build_turn_snapshot
+from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot, refresh_snapshot_contract
 from codey.operations.provider_request_context import ProviderRequestContext
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.protocols.text_turn import decode_text_turn
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.research.ledger import ResearchLedger
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_chat_followup_gate as gate
+from tools import browser_followup_ab as followup
+from tools import browser_leaf_exposure_ab as base
 from tools.completion_artifact_audit import artifacts, tool_receipts
-from tools.completion_explanation_ab import Target
+from tools.completion_explanation_ab import Target, production_source_digest
 
 TARGET = Target("http://scripted.test/v1", "fixture", 123456789, 15)
 
@@ -39,8 +41,8 @@ def observed(directory: Path, name: str) -> str:
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 def test_paired_matrix_checks_real_provider_schema_and_costs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    runs = []
-    arms = list(gate.ARMS[:4])
+    runs: list[JsonObject] = []
+    arms = [arm for arm in gate.ARMS if arm != "bound_text"]
     for arm in arms:
         directory = tmp_path / arm
 
@@ -48,12 +50,12 @@ def test_paired_matrix_checks_real_provider_schema_and_costs(tmp_path: Path, mon
             snapshot = request("browser_snapshot") if arm != "codemode" else request(
                 "codemode", code="return unwrap(await tools.browser_snapshot({}));")
             yield snapshot
-            fill = {"ref": observed(directory, "备注"), "value": gate.base.NOTE}
+            fill: JsonObject = {"ref": observed(directory, "备注"), "value": base.NOTE}
             yield request("browser_fill", **fill) if arm != "codemode" else request(
                 "codemode", code="return unwrap(await tools.browser_fill(inputs));", inputs=fill)
             if arm in {"codemode", "direct"}:
                 yield snapshot
-            click = {"ref": observed(directory, "查询记录")}
+            click: JsonObject = {"ref": observed(directory, "查询记录")}
             if arm == "codemode":
                 yield request("codemode", code="return unwrap(await tools.browser_click(inputs));", inputs=click)
             elif arm == "purpose":
@@ -72,20 +74,35 @@ def test_paired_matrix_checks_real_provider_schema_and_costs(tmp_path: Path, mon
         assert row["query_linked_reads"] == int(arm == "purpose")
         runs.append({**row, "wording": "original", "repeat": 1})
     assert [row["model_calls"] for row in runs] == [6, 6, 5, 4]
-    kwargs = {"target": TARGET, "arms": arms, "cases": ["quoted"], "wordings": ["original"],
-              "repeats": 1, "source": gate.production_source_digest(), "harness": gate.harness_digest()}
-    assert gate.audit_matrix(tmp_path, runs, **kwargs)["http_requests"] == 21
+    def audit(rows: list[JsonObject]) -> JsonObject:
+        return gate.audit_matrix(tmp_path, rows, target=TARGET, arms=arms, cases=["quoted"], wordings=["original"],
+                                 repeats=1, source=production_source_digest(), harness=gate.harness_digest())
+
+    assert audit(runs)["http_requests"] == 21
     purpose = runs[-1]
-    bad_clicks = {**purpose, "page_state": {**decode_json_object(purpose["page_state"]), "clicks": 2}}
+    bad_clicks: JsonObject = {**purpose, "page_state": {**decode_json_object(purpose["page_state"]), "clicks": 2}}
     assert gate.score(tmp_path / "purpose", "quoted", gate.CASES["quoted"], bad_clicks)["passed"] is False
-    wrong_answer = {**purpose, "answer": "已经受理，回执码 OTHER_627。[s1]"}
+    wrong_answer: JsonObject = {**purpose, "answer": "已经受理，回执码 OTHER_627。[s1]"}
     assert gate.score(tmp_path / "purpose", "quoted", gate.CASES["quoted"], wrong_answer)["passed"] is False
-    wrong_citation = {**purpose, "answer": "备注已受理，回执码 NOTE_624。[s9]"}
+    wrong_citation: JsonObject = {**purpose, "answer": "备注已受理，回执码 NOTE_624。[s9]"}
     assert gate.score(tmp_path / "purpose", "quoted", gate.CASES["quoted"], wrong_citation)["passed"] is False
     with pytest.raises(AssertionError, match="duplicate"):
-        gate.audit_matrix(tmp_path, [*runs, runs[0]], **kwargs)
+        audit([*runs, runs[0]])
     with pytest.raises(AssertionError, match="different task, fixture, or authority"):
-        gate.audit_matrix(tmp_path, [*runs[:-1], {**runs[-1], "fixture_digest": "changed"}], **kwargs)
+        audit([*runs[:-1], {**runs[-1], "fixture_digest": "changed"}])
+    read_records = followup.jsonl
+    leaks: tuple[tuple[str, JsonValue], ...] = (("browser_followups", True), ("browser_fill_text", base.NOTE))
+    for key, value in leaks:
+        def leaked_records(path: Path, key: str = key, value: JsonValue = value) -> list[JsonObject]:
+            rows = read_records(path)
+            if path.name == "snapshots.jsonl":
+                return [{**row, "snapshot": {**decode_json_object(row["snapshot"]), key: value}} for row in rows]
+            return rows
+
+        with monkeypatch.context() as patch:
+            patch.setattr(followup, "jsonl", leaked_records)
+            with pytest.raises(AssertionError, match="Production browser follow-ups leaked"):
+                audit(runs)
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
@@ -159,7 +176,7 @@ def test_model_purpose_is_stripped_and_native_id_preserved(tmp_path: Path) -> No
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "browser.observe", "browser.interact"})),
                           task_kind="chat")
     with gate.intervention(tmp_path, "purpose"):
-        snapshot = gate.base.expose_leaves(build_turn_snapshot(session, native=True), session)
+        snapshot = base.expose_leaves(build_turn_snapshot(session, native=True), session)
         for purpose in gate.PURPOSES:
             reply = AssistantTurn(tool_calls=(ProviderToolCall("click-1", "browser_click", {"ref": "r", "purpose": purpose}),))
             plan = gate.normalize_candidate(reply, snapshot, "purpose")
@@ -178,14 +195,14 @@ def test_changed_region_requires_matching_document_and_a_settled_result() -> Non
     assert gate.changed_region(before, {**before, "regions": [{"key": "record", "text": "new", "busy": False}]}) == "new"
     regions = before["regions"]
     assert isinstance(regions, list)
-    unrelated = [*regions, {"key": "clock", "text": "tick", "busy": False}]
+    unrelated: list[JsonValue] = [*regions, {"key": "clock", "text": "tick", "busy": False}]
     assert gate.changed_region(before, {**before, "regions": unrelated}) == ""
 
 
 def test_explicit_payload_preserves_quotes_and_whitespace_and_skips_ambiguous_text() -> None:
-    assert gate.explicit_fill_text(gate.CASES["quoted"].question) == gate.base.NOTE
-    assert gate.explicit_fill_text(gate.PARAPHRASES["quoted"]) == gate.base.NOTE
-    assert gate.explicit_fill_text(gate.PARAPHRASES["quoted_block"]) == gate.base.NOTE
+    assert gate.explicit_fill_text(gate.CASES["quoted"].question) == base.NOTE
+    assert gate.explicit_fill_text(gate.PARAPHRASES["quoted"]) == base.NOTE
+    assert gate.explicit_fill_text(gate.PARAPHRASES["quoted_block"]) == base.NOTE
     assert gate.explicit_fill_text('备注请原样输入下面两行。\n  "first"  \n请保留原文 ') == '  "first"  \n请保留原文 '
     assert gate.explicit_fill_text("不要填备注。请原样输入下面两行。\na\nb") is None
     assert gate.explicit_fill_text(gate.CASES["quoted"].question + "\n这是附加说明。") is None
@@ -199,9 +216,9 @@ def test_frozen_fill_roundtrip_and_admission(tmp_path: Path) -> None:
     session = TaskSession(TaskPolicy(frozenset({"control", "web.read", "browser.observe", "browser.interact"})),
                           task_kind="chat")
     with gate.intervention(tmp_path, "bound_text"):
-        snapshot = gate.base.expose_leaves(build_turn_snapshot(session, native=True), session)
-        bound = gate.with_fill_text(snapshot, gate.base.NOTE)
-        bound = gate.refresh_snapshot_contract(bound)
+        snapshot = base.expose_leaves(build_turn_snapshot(session, native=True), session)
+        bound: TurnSnapshot = gate.with_fill_text(snapshot, base.NOTE)
+        bound = refresh_snapshot_contract(bound)
         request_context = ProviderRequestContext(1, bound, None, "", ())
         payload = request_context.to_payload()
         restored = ProviderRequestContext.from_payload(payload).snapshot
@@ -210,17 +227,18 @@ def test_frozen_fill_roundtrip_and_admission(tmp_path: Path) -> None:
             "ref": "current", "source": gate.BOUND_SOURCE}),))
         plan = gate.normalize_candidate(reply, restored, "bound_text")
         assert not plan.protocol_error and plan.calls[0].call_id == "fill-1"
-        assert plan.calls[0].args["inputs"] == {"ref": "current", "value": gate.base.NOTE}
-        assert gate.base.NOTE not in str(plan.calls[0].args["code"])
+        assert plan.calls[0].args["inputs"] == {"ref": "current", "value": base.NOTE}
+        assert base.NOTE not in str(plan.calls[0].args["code"])
         invalid = decode_text_turn('{"tool":"browser_fill","args":{"ref":"current","source":"other"}}')
         assert gate.normalize_candidate(invalid, restored, "bound_text").protocol_error
         invalid = decode_text_turn('{"tool":"browser_fill","args":{"ref":"current","source":"task_text","value":"extra"}}')
         assert gate.normalize_candidate(invalid, restored, "bound_text").protocol_error
         assert gate.normalize_candidate(reply, replace(bound, allowed=("codemode", "browser_fill")), "bound_text").protocol_error
         raw = decode_json_object(payload["snapshot"])
+        invalid_binding: JsonObject = {**raw, "experiment_fill_binding": {"version": True,
+            "source": gate.BOUND_SOURCE, "text": base.NOTE}}
         with pytest.raises(ValueError):
-            provider_receipts.restore_snapshot({**raw, "experiment_fill_binding": {"version": True,
-                "source": gate.BOUND_SOURCE, "text": gate.base.NOTE}})
+            provider_receipts.restore_snapshot(invalid_binding)
         with pytest.raises(ValueError):
             provider_receipts.restore_snapshot({k: v for k, v in raw.items() if k != "experiment_fill_binding"})
 
@@ -249,10 +267,10 @@ def test_bound_fill_uses_real_provider_snapshot_and_browser_receipt(
                 if item.get("kind") == "provider_request"]
     assert payloads
     snap = decode_json_object(payloads[0]["snapshot"])
-    assert decode_json_object(snap["experiment_fill_binding"])["text"] == gate.base.NOTE
+    assert decode_json_object(snap["experiment_fill_binding"])["text"] == base.NOTE
     with gate.intervention(directory, "bound_text"):
         restored = ProviderRequestContext.from_payload(payloads[0]).snapshot
-    assert isinstance(restored, gate.BoundFillSnapshot) and restored.fill_text == gate.base.NOTE
+    assert isinstance(restored, gate.BoundFillSnapshot) and restored.fill_text == base.NOTE
     assert gate.audit_matrix(tmp_path, [{**row, "wording": wording, "repeat": 1}], target=TARGET,
         arms=["bound_text"], cases=["quoted"], wordings=[wording], repeats=1, source=str(row["source_digest"]),
         harness=str(row["harness_digest"]))["http_requests"] == 4
@@ -261,7 +279,11 @@ def test_bound_fill_uses_real_provider_snapshot_and_browser_receipt(
 def test_citation_fallback_only_accepts_an_unambiguous_opened_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     ledger = ResearchLedger()
     read = {"https://example.com/record", "https://example.com/条目，细节"}
-    monkeypatch.setattr(ledger, "canonical_opened_url", lambda url: url if url in read else "")
+
+    def opened_url(url: str) -> str:
+        return url if url in read else ""
+
+    monkeypatch.setattr(ledger, "canonical_opened_url", opened_url)
     resolve = gate.resolve_citation_boundary
     assert resolve("https://example.com/record，并把原文填入", ledger) == "https://example.com/record"
     assert resolve("https://example.com/条目，细节", ledger) == "https://example.com/条目，细节"

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from inspect import getattr_static
@@ -16,6 +16,7 @@ from codey.codemode.runtime import NodeWorkerRuntime
 from codey.codemode.types import ToolCatalogSnapshot
 from codey.completion.contract import CompletionCheck
 from codey.operations import completion_gate, kernel_protocol
+from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import tool_facts
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
@@ -30,7 +31,7 @@ from codey.runtime.core.models import ToolResult
 from codey.toolchain import tool_prompt
 from codey.toolchain.result_schema import browser_output_schema, validate_output
 from codey.toolchain.tool_spec import ToolSpec, thaw_schema_value
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 from tools import mechanical_surface, structured_surface
 from tools.completion_artifact_audit import EffectReceipt, tool_receipts
 from tools.completion_explanation_ab import ExperimentProvider, Target, append_json
@@ -148,8 +149,8 @@ def entry_schemas(snapshot: TurnSnapshot, *, defaults: bool, stale_refs: bool,
     for entry in catalog.entries:
         name = entry.name
         schema = decode_json_object(thaw_schema_value(entry.parameters))
-        properties = decode_json_object(schema["properties"])
-        required = list(schema["required"]) if isinstance(schema["required"], list) else []
+        properties: JsonObject = decode_json_object(schema["properties"])
+        required: list[JsonValue] = list(schema["required"]) if isinstance(schema["required"], list) else []
         description = entry.description
         output = decode_json_object(thaw_schema_value(entry.output_schema))
         if name in structured_surface.ACTION_TOOLS:
@@ -327,7 +328,7 @@ def transmitted_reads(payload: JsonObject, reads: JsonObject, observations: Json
 
 @contextmanager
 def prototype(directory: Path, scenario: str, config: str, *,
-              runtime_action: Callable[[list[EffectReceipt]], JsonObject | None] | None = None) -> Iterator[None]:
+              runtime_action: Callable[[list[EffectReceipt]], JsonObject | None] | None = None) -> Generator[None, None, None]:
     features = CONFIGS[config]
     same_plan_edits = config == EDIT_BOUNDARY_CONTROL
     build = kernel_protocol.build_turn_snapshot
@@ -339,7 +340,11 @@ def prototype(directory: Path, scenario: str, config: str, *,
     guidance_property: object = getattr_static(ToolSuccessRequirement, "execution_guidance")
     guidance_getter: object = getattr(guidance_property, "fget", None)
     assert callable(guidance_getter)
-    execution_guidance: Callable[[ToolSuccessRequirement], str] = guidance_getter
+
+    def execution_guidance(requirement: ToolSuccessRequirement) -> str:
+        value: object = guidance_getter(requirement)
+        return require_json_string(value, "execution_guidance")
+
     required_verdict = completion_gate._required_checks_verdict
     repair_text = tool_prompt.tool_repair_text
     digest = NodeWorkerRuntime.contract_digest
@@ -476,7 +481,8 @@ def prototype(directory: Path, scenario: str, config: str, *,
             if entry.name == "browser_wait":
                 params = decode_json_object(thaw_schema_value(entry.parameters))
                 required = params.get("required", [])
-                params["required"] = [key for key in required if key != "timeout_ms"] if isinstance(required, list) else []
+                filtered: list[JsonValue] = [key for key in required if key != "timeout_ms"] if isinstance(required, list) else []
+                params["required"] = filtered
                 entry = replace(entry, parameters=params,
                     description=entry.description + " Omitted timeout_ms defaults to 5000. Explicit invalid values are rejected.")
             entries.append(entry)
@@ -506,7 +512,7 @@ def prototype(directory: Path, scenario: str, config: str, *,
                 if not complete:
                     return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
                         "Original receipt or read window is incomplete. Obtain complete evidence before editing the answer."))
-        if requirement.tool != "browser_read":
+        if requirement.tool != "browser_read" or requirement.browser_text is not None:
             return observe(requirement, eligible, results)
         if results is not None and any(results[ref].truncated for ref, _row in eligible if ref in results):
             return ToolObservation(RequirementEvaluation("observation_selector_unavailable",
@@ -514,7 +520,8 @@ def prototype(directory: Path, scenario: str, config: str, *,
         return mechanical_surface.read_observation(requirement, eligible, results)
 
     def deliver_file_result(session: TaskSession, done_text: object, *, context: object = None,
-                            observations: Mapping[str, ToolObservation] | None = None) -> completion_gate.GateVerdict:
+                            observations: Mapping[str, ToolObservation] | None = None,
+                            metadata: BrowserMetadata | MetadataPending | None = None) -> completion_gate.GateVerdict:
         normalized = CompletionContext.from_value(context)
         if scenario == "upload_bound":
             if observations and all(item.evaluation.passed for item in observations.values()):
@@ -527,12 +534,12 @@ def prototype(directory: Path, scenario: str, config: str, *,
                     if isinstance(explanation, str):
                         output["explanation"] = explanation.rstrip() + "\n\n" + UPLOAD_SCOPE_NOTE
                         done_text = json.dumps(output, ensure_ascii=False)
-            return evaluate(session, done_text, context=context, observations=observations)
+            return evaluate(session, done_text, context=context, observations=observations, metadata=metadata)
         selected = file_delivery(session, normalized, upload=scenario == "upload")
         for field, observation in selected.items():
             issue = observation.evaluation
             if not issue.passed:
-                verdict = evaluate(session, done_text, context=context, observations=observations)
+                verdict = evaluate(session, done_text, context=context, observations=observations, metadata=metadata)
                 if not verdict.complete:
                     return verdict
                 append_json(directory / "protocol-events.jsonl", {"kind": "file_delivery_rejected",
@@ -543,7 +550,7 @@ def prototype(directory: Path, scenario: str, config: str, *,
         scope_note = "\n" + UPLOAD_SCOPE_NOTE if facts.get("effect_verified") is False else ""
         text = (str(done_text or "") + "\n\nVerified tool receipt fields." + scope_note
                 + "\n```json\n" + json.dumps(facts, ensure_ascii=False) + "\n```").strip()
-        verdict = evaluate(session, text, context=context, observations=observations)
+        verdict = evaluate(session, text, context=context, observations=observations, metadata=metadata)
         if verdict.complete:
             append_json(directory / "protocol-events.jsonl", {"kind": "file_delivery",
                 "fields": facts, "receipt_refs": {field: list(observation.result_refs)

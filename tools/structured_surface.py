@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -23,19 +23,14 @@ from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.requirement import RequirementEvaluation
-from codey.policies.tool_requirement import ToolObservation, ToolSuccessRequirement
 from codey.providers.base import ProviderToolDefinition, tools_from_specs
 from codey.providers.text_tool_schema import text_tool_schema
-from codey.runtime.core.execution_record import ExecutionRecord
-from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_prompt import json_contract_text
 from codey.toolchain.tool_spec import (
-    ToolSpec,
     _check_spec_value_against_schema,
     thaw_schema_value,
-    validate_args_with_spec,
 )
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, unique_json_fields
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tools import mechanical_surface
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import ExperimentProvider, Target, append_json
@@ -129,7 +124,7 @@ def entry_schemas(snapshot: TurnSnapshot, *, stale_refs: bool = False) -> dict[s
         schema = decode_json_object(thaw_schema_value(entry.parameters))
         if entry.name in ACTION_TOOLS:
             properties = decode_json_object(schema["properties"])
-            required = list(schema["required"]) if isinstance(schema["required"], list) else []
+            required: list[JsonValue] = list(schema["required"]) if isinstance(schema["required"], list) else []
             named = {key: value for key, value in properties.items() if key != "ref"}
             named["name"] = {"type": "string", "minLength": 1}
             if stale_refs:
@@ -200,11 +195,7 @@ def prechecked_invoke(host: CodeModeHost, name: str, args: dict[str, object],
     entry = host._catalog.get(name)
     if entry is not None:
         schema = decode_json_object(thaw_schema_value(entry.parameters))
-        properties = decode_json_object(schema.get("properties", {}))
-        required = schema.get("required", [])
-        spec = ToolSpec(name=name, parameters=tuple(properties.items()),
-                        required=tuple(str(key) for key in required) if isinstance(required, list) else ())
-        error = validate_args_with_spec(spec, args)
+        error = _check_spec_value_against_schema(name, "args", schema, args, strict=True)
         if error:
             raise ValueError(error)
     return original(host, name, args)
@@ -212,7 +203,7 @@ def prechecked_invoke(host: CodeModeHost, name: str, args: dict[str, object],
 
 def metrics(directory: Path) -> JsonObject:
     path = directory / "structured-events.jsonl"
-    events = [decode_json_object(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+    events: list[JsonObject] = [parse_json_object(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
     receipts = tool_receipts(directory / "state") if (directory / "state" / "durable.sqlite3").exists() else []
     reused = 0
     for receipt in receipts:
@@ -232,12 +223,11 @@ def metrics(directory: Path) -> JsonObject:
 
 
 @contextmanager
-def prototype(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None]:
+def prototype(directory: Path, scenario: str, *, enabled: bool) -> Generator[None, None, None]:
     if not enabled:
         yield
         return
     build = kernel_protocol.build_turn_snapshot
-    observe = ToolSuccessRequirement._observe_value
     prepare = completion_output.prepare_completion_output
     required_verdict = completion_gate._required_checks_verdict
     invoke = CodeModeHost.invoke
@@ -263,17 +253,19 @@ def prototype(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None
                       require_tool_call: bool = False) -> dict[str, object]:
             if current is None:
                 raise ValueError("structured entry has no frozen turn contract")
-            self.schemas = entry_schemas(current, stale_refs=scenario == "stale_ref")
-            schema = plan_schema(self.schemas)
-            properties = decode_json_object(schema["properties"])
-            specs = tuple(replace(spec, parameters=(("steps", properties["steps"]),),
-                                  required=("steps",), description=DESCRIPTION, declarations="", json_examples=())
-                          if spec.name == "codemode" else spec for spec in current.model_specs)
-            wire_schema = text_tool_schema(tools_from_specs(specs))
-            contract = ("Visible tools: " + ", ".join(spec.name for spec in specs)
-                        + "\n\nTool contract (use exactly these shapes):\n" + json_contract_text(specs))
+            if current.input_binding is None:
+                self.schemas = entry_schemas(current, stale_refs=scenario == "stale_ref")
+                schema = plan_schema(self.schemas)
+                properties = decode_json_object(schema["properties"])
+                specs = tuple(replace(spec, parameters=(("steps", properties["steps"]),),
+                                      required=("steps",), description=DESCRIPTION, declarations="", json_examples=())
+                              if spec.name == "codemode" else spec for spec in current.model_specs)
+                wire_schema: object = text_tool_schema(tools_from_specs(specs))
+                tool_call_schema = dict(decode_json_object(wire_schema))
+                tool_call_contract = ("Visible tools: " + ", ".join(spec.name for spec in specs)
+                            + "\n\nTool contract (use exactly these shapes):\n" + json_contract_text(specs))
             return super()._generate(messages, tools, timeout=timeout, checkpoints=checkpoints,
-                tool_call_json=tool_call_json, tool_call_schema=wire_schema, tool_call_contract=contract,
+                tool_call_json=tool_call_json, tool_call_schema=tool_call_schema, tool_call_contract=tool_call_contract,
                 tool_call_observations=tool_call_observations, tool_call_history_groups=tool_call_history_groups,
                 output_token_limit=output_token_limit, require_tool_call=require_tool_call)
 
@@ -282,11 +274,13 @@ def prototype(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None
             if not isinstance(normalized, str):
                 return normalized
             try:
-                action = decode_json_object(json.loads(normalized, object_pairs_hook=unique_json_fields))
+                action = parse_json_object(normalized)
             except (ValueError, TypeError):
                 return normalized
-            if action.get("tool") != "codemode" or self.fixed_acquisition and self.exchange == 1:
+            if (action.get("tool") != "codemode" or self.fixed_acquisition and self.exchange == 1
+                    or current is not None and current.input_binding is not None):
                 return normalized
+            args: JsonObject
             try:
                 args = compile_plan(decode_json_object(action.get("args")), self.schemas)
                 append_json(directory / "structured-events.jsonl", {"kind": "compiled_plan", "exchange": self.exchange,
@@ -296,18 +290,14 @@ def prototype(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None
                 append_json(directory / "structured-events.jsonl", {"kind": "invalid_plan", "exchange": self.exchange,
                     "proposal": action, "error": detail})
                 args = {"code": "throw Error(inputs.error);", "inputs": {"error": detail}}
-            lowered = json.dumps({"tool": "codemode", "args": args}, ensure_ascii=False, sort_keys=True)
+            lowered_action: JsonObject = {"tool": "codemode", "args": args}
+            lowered = json.dumps(lowered_action, ensure_ascii=False, sort_keys=True)
             append_json(directory / "structured-translations.jsonl", {"original": normalized, "lowered": lowered})
             return lowered
 
-    def source_observe(requirement: ToolSuccessRequirement, eligible: list[tuple[str, ExecutionRecord]],
-                       results: Mapping[str, ToolResult] | None) -> ToolObservation:
-        return (mechanical_surface.read_observation(requirement, eligible, results)
-                if requirement.tool == "browser_read" else observe(requirement, eligible, results))
-
     def assemble(session: TaskSession, text: str, context: CompletionContext) -> completion_output.CompletionOutput:
         output = prepare(session, text, context)
-        if scenario in {"structured", "upload_bound", "research", "source_failure", "source_failure_fixed"}:
+        if scenario in {"structured", "legacy_structured", "upload_bound", "research", "source_failure", "source_failure_fixed"}:
             return output
         facts = mechanical_surface.committed_facts(session, context, scenario)
         append_json(directory / "structured-events.jsonl", {"kind": "fact_report", "model_summary": text, "facts": facts})
@@ -322,7 +312,10 @@ def prototype(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None
                     if not evaluation.passed and key.startswith("tool_succeeded:")]
         if failures:
             declarations = session.policy.required_checks
-            ordered = tuple(sorted(declarations, key=lambda item: not item.startswith("tool_succeeded:")))
+            def feedback_order(item: str) -> bool:
+                return not item.startswith("tool_succeeded:")
+
+            ordered = tuple(sorted(declarations, key=feedback_order))
             view = replace(session, policy=replace(session.policy, required_checks=ordered))
             append_json(directory / "structured-events.jsonl", {"kind": "binding_failure", "checks": failures})
             return required_verdict(view, checks, evaluations)
@@ -338,7 +331,6 @@ def prototype(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None
         stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", capture))
         stack.enter_context(patch.object(CodeModeHost, "invoke", checked))
         stack.enter_context(patch.object(NodeWorkerRuntime, "contract_digest", contract_digest))
-        stack.enter_context(patch.object(ToolSuccessRequirement, "_observe_value", source_observe))
         stack.enter_context(patch.object(kernel_control, "prepare_completion_output", assemble))
         stack.enter_context(patch.object(completion_gate, "_required_checks_verdict", causal_verdict))
         stack.enter_context(patch("tools.browser_production_live_gate.ExperimentProvider", StructuredProvider))

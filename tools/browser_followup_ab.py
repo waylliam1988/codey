@@ -12,11 +12,10 @@ import json
 import re
 import sqlite3
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Collection, Generator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
 from unittest.mock import patch
 
 from codey.operations import kernel_context, kernel_protocol
@@ -25,12 +24,24 @@ from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot, re
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_guidance import task_result_context
 from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import _browser_body
 from codey.protocols.text_turn import DecodedTextTurn, decode_text_turn
-from codey.providers.base import AssistantTurn
+from codey.providers.base import AssistantTurn, ProviderToolResult
+from codey.providers.text_result_views import TextResultSpan
+from codey.research.answer_contract import AnswerScope
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
-from codey.runtime.core.operation_payload import RuntimeOperationState
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
+from codey.types.json_value import (
+    JsonObject,
+    JsonValue,
+    canonical_json_object,
+    decode_json_object,
+    parse_json_object,
+    require_json_integer,
+    require_json_string,
+    require_json_strings,
+)
 from tools import browser_leaf_exposure_ab as base
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import tool_receipts
@@ -80,7 +91,7 @@ def harness_digest() -> str:
 def expose(snapshot: TurnSnapshot, session: KernelSessionView, variant: Variant) -> TurnSnapshot:
     candidate = base.expose_leaves(snapshot, session)
     names = tuple(name for name in candidate.tool_names if name in snapshot.tool_names or name in variant.leaves)
-    inventory = tuple(dict.fromkeys((*names, *candidate.nested_tool_names)))
+    inventory = tuple({name: None for name in (*names, *candidate.nested_tool_names)})
     specs, executors = {s.name: s for s in candidate.frozen_specs}, dict(candidate.custom_executors)
     return refresh_snapshot_contract(replace(candidate, tool_names=names,
         frozen_specs=tuple(specs[name] for name in inventory),
@@ -113,8 +124,8 @@ def lower(plan: ToolPlan, snapshot: TurnSnapshot, variant: Variant) -> ToolPlan:
             f"unwrap(await tools.{extra}({{}}));return action;")
     converted = ToolCall("codemode", {"code": code, "inputs": call.args}, call.call_id)
     # The generated execution input passes the original normalizer too.
-    checked = _ORIGINAL_NORMALIZE(decode_text_turn(json.dumps(
-        {"tool": converted.name, "args": converted.args}, ensure_ascii=False)), snapshot=snapshot)
+    payload: JsonObject = {"tool": converted.name, "args": converted.args}
+    checked = _ORIGINAL_NORMALIZE(decode_text_turn(json.dumps(payload, ensure_ascii=False)), snapshot=snapshot)
     if checked.protocol_error:
         raise AssertionError(f"generated program failed original admission: {checked.protocol_error}")
     return replace(plan, calls=[converted])
@@ -129,8 +140,23 @@ def children(result: ToolResult, session: TaskSession) -> list[tuple[str, ToolRe
             if isinstance(ref, str) and ref in session._memory_results] if isinstance(refs, list) else []
 
 
+def retain_browser_surface(snapshot: TurnSnapshot, _session: KernelSessionView) -> TurnSnapshot:
+    """Let each experimental arm own its offer, using the existing frozen authority."""
+    return snapshot
+
+
+def call_payload(call: ToolCall) -> JsonObject:
+    payload: object = asdict(call)
+    return decode_json_object(payload)
+
+
+def variant_payload(variant: Variant) -> JsonObject:
+    payload: object = asdict(variant)
+    return canonical_json_object(payload)
+
+
 @contextmanager
-def intervention(directory: Path, variant: Variant) -> Iterator[None]:
+def intervention(directory: Path, variant: Variant) -> Generator[None, None, None]:
     build_original = kernel_protocol.build_turn_snapshot
     context_original = task_result_context
     freeze_original = KernelContext.freeze
@@ -151,19 +177,22 @@ def intervention(directory: Path, variant: Variant) -> Iterator[None]:
             "added": [name for name in candidate.tool_names if name not in baseline.tool_names], "snapshot": payload})
         return restored
 
-    def normalize(reply: DecodedTextTurn | AssistantTurn, **kwargs: Any) -> ToolPlan:
-        plan = _ORIGINAL_NORMALIZE(reply, **kwargs)
-        snapshot = kwargs.get("snapshot")
-        if not isinstance(snapshot, TurnSnapshot):
+    def normalize(reply: DecodedTextTurn | AssistantTurn, *, policy: TaskPolicy | None = None,
+                  controller_allowed: Collection[str] | None = None, snapshot_names: tuple[str, ...] | None = None,
+                  snapshot: TurnSnapshot | None = None) -> ToolPlan:
+        plan = _ORIGINAL_NORMALIZE(reply, policy=policy, controller_allowed=controller_allowed,
+                                   snapshot_names=snapshot_names, snapshot=snapshot)
+        if snapshot is None:
             return plan
         lowered = lower(plan, snapshot, variant)
         if lowered != plan:
-            append_json(directory / "lowering.jsonl", {"proposed": [asdict(call) for call in plan.calls],
-                "executed": [asdict(call) for call in lowered.calls]})
+            append_json(directory / "lowering.jsonl", {"proposed": [call_payload(call) for call in plan.calls],
+                "executed": [call_payload(call) for call in lowered.calls]})
         return lowered
 
-    def context(session: TaskSession, result: ToolResult, scope: Any, **kwargs: Any) -> str:
-        text = context_original(session, result, scope, **kwargs)
+    def context(session: TaskSession, result: ToolResult, scope: AnswerScope | None, *,
+                tool_names: tuple[str, ...] | None = None) -> str:
+        text = context_original(session, result, scope, tool_names=tool_names)
         rows = children(result, session)
         # No duplicated state: render the actual committed followup receipt.
         if (result.call.name == "codemode" and result.call.args.get("code") in {
@@ -173,12 +202,15 @@ def intervention(directory: Path, variant: Variant) -> Iterator[None]:
             ref, child = rows[-1]
             text += (f"\n\nAutomatic followup, separately committed as {ref}. "
                      "The previous action was not undone; do not repeat it to recover output.\n"
-                     + context_original(session, child, scope, **kwargs))
+                     + context_original(session, child, scope, tool_names=tool_names))
             if child.ok and child.call.name == "browser_snapshot":
                 text += "\nUse refs from this new observation; earlier refs are obsolete."
         return text
 
-    def freeze(context: KernelContext, state: RuntimeOperationState, snapshot: TurnSnapshot, **kwargs: Any) -> None:
+    def freeze(context: KernelContext, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int,
+               prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
+               counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
+               coding_context_prepared: bool = False, initial_source_batch: bool = False, handoff: str | None = None) -> None:
         hints = []
         if variant.reference_guidance:
             hints.append(REFERENCE_GUIDANCE)
@@ -189,10 +221,13 @@ def intervention(directory: Path, variant: Variant) -> Iterator[None]:
             hints.append("After a successful direct browser_click, the runtime also attempts browser_read when authorized. "
                          "Its separate receipt contains formal evidence if successful; inspect it before requesting another read.")
         if hints:
-            kwargs["prompt"] = str(kwargs.get("prompt", "")) + "\n\n" + "\n".join(hints)
-        freeze_original(context, state, snapshot, **kwargs)
+            prompt += "\n\n" + "\n".join(hints)
+        freeze_original(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
+                        counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
+                        initial_source_batch=initial_source_batch, handoff=handoff)
 
-    with (patch.object(kernel_protocol, "build_turn_snapshot", build),
+    with (patch.object(kernel_protocol, "offer_browser_tools", retain_browser_surface),
+          patch.object(kernel_protocol, "build_turn_snapshot", build),
           patch.object(kernel_protocol, "normalize_turn", normalize),
           patch.object(kernel_context, "task_result_context", context),
           patch.object(KernelContext, "freeze", freeze)):
@@ -200,7 +235,7 @@ def intervention(directory: Path, variant: Variant) -> Iterator[None]:
 
 
 def jsonl(path: Path) -> list[JsonObject]:
-    return [decode_json_object(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines()] \
+    return [parse_json_object(line) for line in path.read_text(encoding="utf-8").splitlines()] \
         if path.exists() else []
 
 
@@ -218,8 +253,9 @@ def phase_metrics(directory: Path) -> JsonObject:
     turns: dict[int, list[ToolResult]] = {}
     receipts = {row.identity: row.result for row in tool_receipts(directory / "state")}
     with sqlite3.connect((directory / "state/durable.sqlite3").resolve().as_uri() + "?mode=ro", uri=True) as db:
-        for raw, in db.execute("SELECT intent FROM effects WHERE category='tool_call' ORDER BY rowid"):
-            intent = decode_json_object(json.loads(raw))
+        intent_rows: list[tuple[object]] = db.execute("SELECT intent FROM effects WHERE category='tool_call' ORDER BY rowid").fetchall()
+        for raw, in intent_rows:
+            intent = parse_json_object(require_json_string(raw, "intent"))
             result = receipts.get(str(intent.get("effect_id")))
             if result is not None:
                 turns.setdefault(int(str(intent["turn"])), []).append(result)
@@ -228,7 +264,7 @@ def phase_metrics(directory: Path) -> JsonObject:
     for index, (action, response) in enumerate(zip(actions, responses, strict=True), 1):
         rows = turns.get(index, [])
         stale = any(not row.ok and isinstance(v := row.canonical.get("value"), dict)
-                    and v.get("reason") == "stale_ref" for row in rows)
+                    and decode_json_object(v).get("reason") == "stale_ref" for row in rows)
         tool = action.get("tool")
         phase = "submission" if tool == "done" else "recovery" if stale or previous_stale else "operation"
         payload = decode_json_object(response["payload"])
@@ -261,7 +297,7 @@ def run_variant(directory: Path, case: base.Case, name: str, target: Target, *, 
                 response_bytes=response_bytes, seconds=seconds)
 
     @contextmanager
-    def configure(path: Path, _arm: str) -> Iterator[None]:
+    def configure(path: Path, _arm: str) -> Generator[None, None, None]:
         with intervention(path, variant):
             yield
 
@@ -277,7 +313,7 @@ def run_variant(directory: Path, case: base.Case, name: str, target: Target, *, 
                 and (not case.required or any(r.call.name == "browser_read" for r in formal))
                 and (not case.field_value or decode_json_object(row["page_state"]).get("value") == case.field_value)
                 and (not case.required or decode_json_object(row["page_state"]).get("clicks") == 1))
-    row.update(variant=name, configuration=decode_json_object(json.loads(json.dumps(asdict(variant)))), harness_digest=script,
+    row.update(variant=name, configuration=variant_payload(variant), harness_digest=script,
         facts_match=facts, operation_passed=operated,
         passed=bool(row["passed"]) and facts and bool(formal) and operated,
         formal_matching_reads=len(formal), automatic_programs=sum(r.call.name == "codemode" and
@@ -287,8 +323,9 @@ def run_variant(directory: Path, case: base.Case, name: str, target: Target, *, 
     return row
 
 
-def audit_matrix(directory: Path, runs: list[JsonObject], manifest: dict[str, Any]) -> JsonObject:
-    expected = len(manifest["variants"]) * len(manifest["cases"]) * len(manifest["wordings"]) * manifest["repeats"]
+def audit_matrix(directory: Path, runs: list[JsonObject], manifest: JsonObject) -> JsonObject:
+    expected = (len(decode_json_object(manifest["variants"])) * len(require_json_strings(manifest["cases"], "cases"))
+                * len(require_json_strings(manifest["wordings"], "wordings")) * require_json_integer(manifest["repeats"], "repeats"))
     if len(runs) != expected:
         raise AssertionError("incomplete experiment matrix")
     configs: set[str] = set()
@@ -308,7 +345,8 @@ def audit_matrix(directory: Path, runs: list[JsonObject], manifest: dict[str, An
             if request.get("attempt") != 1:
                 raise AssertionError("HTTP retry in the measured matrix")
             payload = decode_json_object(request["payload"])
-            configs.add(json.dumps({key: payload.get(key) for key in ("model", "temperature", "seed", "stream")}, sort_keys=True))
+            sampling: JsonObject = {key: payload.get(key) for key in ("model", "temperature", "seed", "stream")}
+            configs.add(json.dumps(sampling, sort_keys=True))
         http_count += len(wire)
         if run["case"] != "visible":
             first = json.dumps(wire[0]["payload"], ensure_ascii=False)
@@ -329,17 +367,22 @@ def audit_matrix(directory: Path, runs: list[JsonObject], manifest: dict[str, An
             specs = snap.get("specs")
             if not isinstance(specs, list):
                 raise AssertionError("missing frozen spec inventory")
-            authorities.add(json.dumps({"policy": snap.get("policy"), "allowed": snap.get("allowed"),
+            def spec_name(value: JsonValue) -> str:
+                return str(decode_json_object(value)["name"])
+
+            authority: JsonObject = {"policy": snap.get("policy"), "allowed": snap.get("allowed"),
                 "nested": snap.get("nested_tool_names"),
-                "specs": sorted(specs, key=lambda s: str(decode_json_object(s)["name"]))}, sort_keys=True))
+                "specs": sorted(specs, key=spec_name)}
+            authorities.add(json.dumps(authority, sort_keys=True))
         if len(inputs) != 1 or len(authorities) != 1:
             raise AssertionError("paired task, grants or execution contracts differ")
-    expected_sampling = json.dumps({"model": manifest["target"]["model"], "temperature": 0,
-        "seed": manifest["target"]["seed"], "stream": False}, sort_keys=True)
+    target = decode_json_object(manifest["target"])
+    expected_config: JsonObject = {"model": target["model"], "temperature": 0, "seed": target["seed"], "stream": False}
+    expected_sampling = json.dumps(expected_config, sort_keys=True)
     if configs != {expected_sampling}:
         raise AssertionError("model sampling configuration differs")
     result: JsonObject = {"units": len(runs), "paired_groups": len(paired), "http_requests": http_count,
-        "sampling": json.loads(next(iter(configs))), "same_inputs_and_authority": True,
+        "sampling": parse_json_object(next(iter(configs))), "same_inputs_and_authority": True,
         "no_initial_answer_leak": True, "no_hidden_retries": True, "phase_costs_reconcile": True}
     write_json(directory / "audit.json", result)
     return result
@@ -347,7 +390,7 @@ def audit_matrix(directory: Path, runs: list[JsonObject], manifest: dict[str, An
 
 def aggregate(runs: list[JsonObject]) -> JsonObject:
     output: JsonObject = {}
-    for name in dict.fromkeys(str(row["variant"]) for row in runs):
+    for name in {str(row["variant"]): None for row in runs}:
         rows = [row for row in runs if row["variant"] == name]
         summary: JsonObject = {"units": len(rows), "passed": sum(bool(row["passed"]) for row in rows),
             "interactive_units": sum(row["case"] != "visible" for row in rows),
@@ -355,29 +398,48 @@ def aggregate(runs: list[JsonObject]) -> JsonObject:
         for metric in ("model_calls", "prompt_tokens", "completion_tokens", "inference_seconds", "seconds",
                        "stale_ref_errors", "done_attempts", "javascript_proposals", "automatic_programs"):
             summary[metric] = round(sum(float(str(row[metric])) for row in rows), 3)
-        summary["browser_calls"] = dict(sum((Counter(decode_json_object(row["browser_calls"])) for row in rows), Counter()))
+        counts: Counter[str] = Counter()
+        for row in rows:
+            for tool, count in decode_json_object(row["browser_calls"]).items():
+                counts[tool] += require_json_integer(count, tool)
+        summary["browser_calls"] = dict(counts)
         output[name] = summary
     return output
+
+
+class Options(argparse.Namespace):
+    run_dir: Path
+    base_url: str
+    variants: list[str]
+    cases: list[str]
+    wordings: list[str]
+    repeats: int
+    max_turns: int
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
-    parser.add_argument("--variants", nargs="+", choices=tuple(VARIANTS), default=list(VARIANTS))
-    parser.add_argument("--cases", nargs="+", choices=tuple(base.CASES), default=list(base.CASES))
-    parser.add_argument("--wordings", nargs="+", choices=("original", "paraphrase"), default=["original", "paraphrase"])
+    default_variants: list[str] = list(VARIANTS)
+    default_cases: list[str] = list(base.CASES)
+    default_wordings: list[str] = ["original", "paraphrase"]
+    parser.add_argument("--variants", nargs="+", choices=tuple(VARIANTS), default=default_variants)
+    parser.add_argument("--cases", nargs="+", choices=tuple(base.CASES), default=default_cases)
+    parser.add_argument("--wordings", nargs="+", choices=("original", "paraphrase"), default=default_wordings)
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--max-turns", type=int, default=10)
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Options())
     if args.repeats < 1 or args.max_turns < 1 or len(args.variants) != len(set(args.variants)):
         parser.error("positive budgets and distinct variants required")
     source, script = production_source_digest(), harness_digest()
     target = select_target(90, args.base_url)
     args.run_dir.mkdir(parents=True, exist_ok=False)
-    manifest = {"source_digest": source, "harness_digest": script, "target": asdict(target),
-        "variants": {name: asdict(VARIANTS[name]) for name in args.variants},
-        "wordings": args.wordings, "cases": args.cases, "max_turns": args.max_turns, "repeats": args.repeats}
+    target_payload: object = asdict(target)
+    manifest: JsonObject = {"source_digest": source, "harness_digest": script, "target": decode_json_object(target_payload),
+        "variants": {name: variant_payload(VARIANTS[name]) for name in args.variants},
+        "wordings": [wording for wording in args.wordings], "cases": [case for case in args.cases],
+        "max_turns": args.max_turns, "repeats": args.repeats}
     write_json(args.run_dir / "manifest.json", manifest)
     runs: list[JsonObject] = []
     try:

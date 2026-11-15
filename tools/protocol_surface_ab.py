@@ -8,7 +8,7 @@ import posixpath
 import subprocess
 import sys
 import traceback
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from pathlib import Path
@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 from codey.completion.contract import CHECK_FAIL, CHECK_PASS, CompletionCheck
 from codey.operations import completion_gate, research_completion_checks
+from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_inputs import CompletionCheckInput
 from codey.operations.task_session import TaskSession
@@ -23,7 +24,7 @@ from codey.policies.tool_requirement import ToolObservation
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.constants import STALE_READ_REFERENCE_ERROR
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, decode_json_value
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, decode_json_value, parse_json_object
 from tools import browser_entry_surface as entry
 from tools import browser_production_live_gate as gate
 from tools import protocol_surface as surface
@@ -64,7 +65,7 @@ SCENARIOS = {
     entry.WAIT_RECOVERY: entry.SCENARIOS[entry.WAIT],
     entry.PROPERTIES_DELIVERY: entry.SCENARIOS[entry.PROPERTIES],
     entry.RESULT_DATA: entry.SCENARIOS[entry.RESULTS],
-    entry.COMBINED: tuple(dict.fromkeys(scenario for scenarios in entry.SCENARIOS.values() for scenario in scenarios)),
+    entry.COMBINED: tuple({scenario: None for scenarios in entry.SCENARIOS.values() for scenario in scenarios}),
     "B1": ("basic", "snapshot_restore", "stale_ref"),
     "B2": ("upload_bound", "structured"),
     "B3": ("legacy_structured", "upload", "hybrid", "stale_edit"),
@@ -83,7 +84,8 @@ ENTRY_VARIANTS = {entry.WAIT_RECOVERY: entry.WAIT, entry.PROPERTIES_DELIVERY: en
 
 
 def fixture_navigation_value(result: ToolResult) -> JsonObject | None:
-    value = result.canonical.get("value")
+    raw_value = result.canonical.get("value")
+    value = decode_json_object(raw_value) if isinstance(raw_value, dict) else None
     if (result.call.name == "browser_navigate" and result.ok and result.call.args.get("url") == gate.URL
             and isinstance(value, dict) and value.get("url") == gate.URL and value.get("http_status") == 200):
         return decode_json_object(value)
@@ -99,9 +101,12 @@ def page_reset_progress(receipts: list[EffectReceipt]) -> tuple[list[list[str]],
     for receipt in receipts:
         result = receipt.result
         name, args = result.call.name, result.call.args
-        value = result.canonical.get("value")
+        raw_value = result.canonical.get("value")
+        value = decode_json_object(raw_value) if isinstance(raw_value, dict) else None
         if name in PAGE_TRANSITIONS:
-            current, targets, page_id = [], {}, None
+            current = []
+            targets = {}
+            page_id = None
             if (navigation := fixture_navigation_value(result)) is not None:
                 current.append(receipt.identity)
                 page_id = navigation.get("page_id")
@@ -113,8 +118,8 @@ def page_reset_progress(receipts: list[EffectReceipt]) -> tuple[list[list[str]],
             if (isinstance(value, dict) and value.get("page_id") == page_id and value.get("page_url") == gate.URL
                     and isinstance(elements := value.get("elements"), list)):
                 for label in ("Locality", "Load record"):
-                    refs = [element.get("ref") for element in elements
-                            if isinstance(element, dict) and element.get("name") == label]
+                    refs = [decode_json_object(element).get("ref") for element in elements
+                            if isinstance(element, dict) and decode_json_object(element).get("name") == label]
                     if len(refs) == 1 and isinstance(refs[0], str):
                         targets[label] = refs[0]
         if name != PAGE_RESET_STEPS[len(current)]:
@@ -130,10 +135,12 @@ def page_reset_progress(receipts: list[EffectReceipt]) -> tuple[list[list[str]],
                                        or value.get("matched") is not True):
             continue
         if name == "browser_read":
-            observation = result.canonical.get("research_observation")
-            source = observation.get("source") if isinstance(observation, dict) else None
+            raw_observation = result.canonical.get("research_observation")
+            observation = decode_json_object(raw_observation) if isinstance(raw_observation, dict) else None
+            source = observation.get("source") if observation is not None else None
             if (result.truncated or not isinstance(observation, dict) or not isinstance(source, dict)
-                    or source.get("truncated") is not False or source.get("final_url") != gate.URL
+                    or decode_json_object(source).get("truncated") is not False
+                    or decode_json_object(source).get("final_url") != gate.URL
                     or "QUARTZ_851" not in str(observation.get("text", ""))):
                 continue
         current.append(receipt.identity)
@@ -252,12 +259,14 @@ def project_done_refs(session: TaskSession, context: CompletionContext, path: st
         return session, []
     kept: list[JsonValue] = []
     removed: list[JsonValue] = []
-    for ref in raw:
+    for raw_ref in raw:
+        ref = decode_json_value(raw_ref)
         if (isinstance(ref, dict) and set(ref) == {"id", "revision"}
                 and isinstance(identity := ref["id"], str) and identity.startswith("task_turn_effect:")
                 and identity in receipts and type(ref["revision"]) is int and ref["revision"] > 0):
             try:
-                answer_references([ref], context.knowledge_store, project=str(context.knowledge_project or ""),
+                references: list[JsonValue] = [ref]
+                answer_references(references, context.knowledge_store, project=str(context.knowledge_project or ""),
                                   session_id=str(context.knowledge_session_id or ""))
             except (ValueError, TypeError, KeyError):
                 removed.append(ref)
@@ -269,21 +278,22 @@ def project_done_refs(session: TaskSession, context: CompletionContext, path: st
 
 
 @contextmanager
-def edit_completion_projection(directory: Path) -> Iterator[None]:
+def edit_completion_projection(directory: Path) -> Generator[None, None, None]:
     evaluate = completion_gate.evaluate
     check_refs = research_completion_checks.knowledge_reference_checks
 
     def evaluate_projected(session: TaskSession, done_text: object, *, context: object = None,
-                           observations: Mapping[str, ToolObservation] | None = None) -> completion_gate.GateVerdict:
+                           observations: Mapping[str, ToolObservation] | None = None,
+                           metadata: BrowserMetadata | MetadataPending | None = None) -> completion_gate.GateVerdict:
         projected, removed = project_done_refs(session, CompletionContext.from_value(context), "result.json")
         if not removed:
-            return evaluate(session, done_text, context=context, observations=observations)
+            return evaluate(session, done_text, context=context, observations=observations, metadata=metadata)
 
         def check_projected(current: TaskSession, check_context: object = None) -> list[CompletionCheck]:
             return check_refs(projected if current is session else current, check_context)
 
         with patch.object(research_completion_checks, "knowledge_reference_checks", check_projected):
-            verdict = evaluate(session, done_text, context=context, observations=observations)
+            verdict = evaluate(session, done_text, context=context, observations=observations, metadata=metadata)
         append_json(directory / "protocol-events.jsonl", {"kind": "projected_done_refs", "removed": removed,
                     "accepted": verdict.complete})
         return verdict
@@ -294,7 +304,7 @@ def edit_completion_projection(directory: Path) -> Iterator[None]:
 
 def file_handoff_audit(directory: Path, receipts: list[EffectReceipt], *, code: str = FILE_HANDOFF_CODE) -> JsonObject:
     log = directory / "provider.jsonl"
-    events = [decode_json_object(json.loads(line))
+    events: list[JsonObject] = [parse_json_object(line)
               for line in log.read_text(encoding="utf-8").splitlines()] if log.exists() else []
     actions = [int(str(row["exchange"])) for row in events if row.get("type") == "runtime_action"
                and (decode_json_object(decode_json_object(row["action"])["args"]).get("code") == code
@@ -326,7 +336,7 @@ def file_handoff_audit(directory: Path, receipts: list[EffectReceipt], *, code: 
 def page_reset_navigation_audit(directory: Path, receipts: list[EffectReceipt]) -> JsonObject:
     log = directory / "provider.jsonl"
     actions = [event["exchange"] for line in log.read_text(encoding="utf-8").splitlines()
-               if (event := decode_json_object(json.loads(line))).get("type") == "runtime_action"] if log.exists() else []
+               if (event := parse_json_object(line)).get("type") == "runtime_action"] if log.exists() else []
     parents = [row for row in receipts if row.result.call.name == "codemode"
                and row.result.call.args.get("code") == PAGE_RESET_NAVIGATION_CODE
                and "repair_of" not in row.result.call.args]
@@ -347,7 +357,7 @@ def page_reset_navigation_audit(directory: Path, receipts: list[EffectReceipt]) 
 
 
 @contextmanager
-def page_reset_completion(directory: Path) -> Iterator[None]:
+def page_reset_completion(directory: Path) -> Generator[None, None, None]:
     """Add a fixture check to the production proof in this experiment process."""
     evaluate = completion_gate.evaluate
     observed: list[tuple[list[list[str]], list[str]]] = []
@@ -361,9 +371,10 @@ def page_reset_completion(directory: Path) -> Iterator[None]:
         return [CompletionCheck(PAGE_RESET_CHECK, CHECK_FAIL, f"page_reset_round_{len(completed) + 1}_missing_{missing}")]
 
     def evaluate_with_feedback(session: TaskSession, done_text: object, *, context: object = None,
-                               observations: Mapping[str, ToolObservation] | None = None) -> completion_gate.GateVerdict:
+                               observations: Mapping[str, ToolObservation] | None = None,
+                               metadata: BrowserMetadata | MetadataPending | None = None) -> completion_gate.GateVerdict:
         observed.clear()
-        verdict = evaluate(session, done_text, context=context, observations=observations)
+        verdict = evaluate(session, done_text, context=context, observations=observations, metadata=metadata)
         if not observed:
             return verdict
         completed, current = observed[-1]
@@ -406,9 +417,9 @@ def task_text(task: str, scenario: str) -> str:
 
 
 def artifact_metrics(directory: Path) -> JsonObject:
-    receipts = tool_receipts(directory / "state") if (directory / "state/durable.sqlite3").exists() else []
+    receipts: list[EffectReceipt] = tool_receipts(directory / "state") if (directory / "state/durable.sqlite3").exists() else []
     path = directory / "protocol-events.jsonl"
-    events = [decode_json_object(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+    events: list[JsonObject] = [parse_json_object(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
     counts: JsonObject = {}
     for tool in ("browser_upload", "browser_download", "browser_navigate", "browser_fill", "browser_click"):
         counts[tool] = sum(row.result.ok and row.result.call.name == tool for row in receipts)
@@ -472,7 +483,7 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
           if entry_features and arm == "B" else nullcontext(),
           page_reset_completion(directory) if gate_enabled else nullcontext(),
           edit_completion_projection(directory) if config == EDIT_CONTINUATION and arm == "B" else nullcontext(),
-          patch("codey.app.provider_services.provider_tab_availability", return_value={}),
+          patch("codey.app.provider_services.provider_tab_availability", return_value=dict[str, object]()),
           patch("codey.app.review_service.run_review", return_value=None)):
         row = decode_json_object(gate.run_case(directory, mode, target, max_turns=max_turns,
             task_transform=lambda task: task_text(task, scenario), acquisition_action=acquisition_action,
@@ -506,9 +517,10 @@ def run_arm(directory: Path, scenario: str, arm: str, config: str, target: Targe
             row["runtime_navigation"] = page_reset_navigation_audit(directory, receipts)
         row["page_reset_gate_enabled"] = gate_enabled
         checks = directory / "page-reset-checks.jsonl"
-        row["page_reset_gate_checks"] = (
-            [decode_json_object(json.loads(line)) for line in checks.read_text(encoding="utf-8").splitlines()]
+        gate_checks: list[JsonValue] = (
+            [parse_json_object(line) for line in checks.read_text(encoding="utf-8").splitlines()]
             if checks.exists() else [])
+        row["page_reset_gate_checks"] = gate_checks
     if scenario == "return_failure":
         passed = passed and metrics["browser_download"] == 1 and metrics["repaired_parent"] is True
     uploads, downloads = int(str(metrics["browser_upload"])), int(str(metrics["browser_download"]))
@@ -557,7 +569,7 @@ def run_worker(directory: Path, scenario: str, arm: str, config: str, target: Ta
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "worker.log").write_text(output + error, encoding="utf-8")
     if not error and (directory / "summary.json").exists():
-        return decode_json_object(json.loads((directory / "summary.json").read_text(encoding="utf-8")))
+        return parse_json_object((directory / "summary.json").read_text(encoding="utf-8"))
     row: JsonObject = {"scenario": scenario, "arm": arm, "config": config, "passed": False,
                        "error": error or "missing worker summary"}
     edit.write_json(directory / "worker-failure.json", row)
@@ -579,7 +591,7 @@ def check_evidence(paths: list[Path], target: Target) -> list[str]:
     seen: set[str] = set()
     accepted: list[str] = []
     for path in paths:
-        report = decode_json_object(json.loads((path / "summary.json").read_text(encoding="utf-8")))
+        report = parse_json_object((path / "summary.json").read_text(encoding="utf-8"))
         config = str(report.get("config"))
         if config not in {"B1", "B2", "B3", "B4"} or config in seen:
             raise ValueError("combination needs exactly one complete independent report for each B1-B4")
@@ -616,7 +628,28 @@ def diagnostics(root: Path) -> int:
     return 0 if result.returncode == 0 and stable else 1
 
 
-def matrix(args: argparse.Namespace, target: Target) -> int:
+class Options(argparse.Namespace):
+    run_dir: Path | None
+    config: str
+    scenario: list[str] | None
+    repeats: int
+    timeout: float
+    budget: float
+    max_turns: int
+    seed: int
+    kobold_base_url: str
+    evidence: list[Path]
+    entry_feature: list[str] | None = None
+    plan: bool
+    diagnostics: bool
+    worker_case: str | None
+    worker_arm: str | None
+    expected_model: str | None
+
+
+def matrix(args: Options, target: Target) -> int:
+    if args.run_dir is None:
+        raise ValueError("--run-dir is required")
     evidence = check_evidence(args.evidence, target) if args.config == "combined" else []
     root = args.run_dir.resolve()
     root.mkdir(parents=True, exist_ok=False)
@@ -627,10 +660,10 @@ def matrix(args: argparse.Namespace, target: Target) -> int:
         "source_before": before, "harnesses": hashes, "request_timeout": target.timeout,
         "worker_budget": args.budget, "max_turns": args.max_turns, "combination_evidence": list(evidence),
         "scope": "Controlled Chromium; text JSON schema provider; shared neutral task. Optional review unavailable.",
-        "diagnostics": [str(name) for name in sorted(DIAGNOSTIC_SCENARIOS)], "automatic_failure_reruns": False}
+        "diagnostics": [name for name in sorted(DIAGNOSTIC_SCENARIOS)], "automatic_failure_reruns": False}
     entry_features = frozenset(args.entry_feature or ()) if args.config == entry.COMBINED else frozenset()
     if entry_features:
-        manifest["entry_features"] = sorted(entry_features)
+        manifest["entry_features"] = [feature for feature in sorted(entry_features)]
     edit.write_json(root / "manifest.json", manifest)
     frozen = root / "frozen-harness"
     for name in hashes:
@@ -645,7 +678,8 @@ def matrix(args: argparse.Namespace, target: Target) -> int:
             pair.mkdir()
             pair_rows = []
             for arm in (("A", "B") if (repeat + index) % 2 == 0 else ("B", "A")):
-                print(json.dumps({"starting": scenario, "config": args.config, "arm": arm, "repetition": repeat + 1}), flush=True)
+                starting: JsonObject = {"starting": scenario, "config": args.config, "arm": arm, "repetition": repeat + 1}
+                print(json.dumps(starting), flush=True)
                 if entry_features:
                     row = run_worker(pair / arm, scenario, arm, args.config, target, budget=args.budget,
                                      max_turns=args.max_turns, entry_features=entry_features)
@@ -687,9 +721,9 @@ def matrix(args: argparse.Namespace, target: Target) -> int:
             "completion_tokens": sum(int(str(row["completion_tokens"])) for row in values)
                                  if all(type(row.get("completion_tokens")) is int for row in values) else None}
     outcomes: JsonObject = {"A_only": 0, "B_only": 0, "both": 0, "neither": 0, "incomparable": 0}
-    for pair in pairs:
-        label = ("incomparable" if pair["comparable"] is not True else "both" if pair["A_passed"] and pair["B_passed"]
-                 else "A_only" if pair["A_passed"] else "B_only" if pair["B_passed"] else "neither")
+    for pair_result in pairs:
+        label = ("incomparable" if pair_result["comparable"] is not True else "both" if pair_result["A_passed"] and pair_result["B_passed"]
+                 else "A_only" if pair_result["A_passed"] else "B_only" if pair_result["B_passed"] else "neither")
         outcomes[label] = int(str(outcomes[label])) + 1
     report = {**manifest, "source_after": after, "source_stable": before == after,
         "harnesses_stable": hashes == harness_digests(), "runs": list(rows), "pairs": list(pairs), "arms": per_arm,
@@ -711,7 +745,8 @@ def main() -> int:
     parser.add_argument("--max-turns", type=int, default=10)
     parser.add_argument("--seed", type=int, default=123456789)
     parser.add_argument("--kobold-base-url", default="http://127.0.0.1:5001/v1")
-    parser.add_argument("--evidence", type=Path, action="append", default=[])
+    evidence_paths: list[Path] = []
+    parser.add_argument("--evidence", type=Path, action="append", default=evidence_paths)
     parser.add_argument("--entry-feature", action="append", choices=sorted(entry.FEATURES))
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--plan", action="store_true")
@@ -719,7 +754,7 @@ def main() -> int:
     parser.add_argument("--worker-case", choices=SCENARIOS["combined"], help=argparse.SUPPRESS)
     parser.add_argument("--worker-arm", choices=("A", "B"), help=argparse.SUPPRESS)
     parser.add_argument("--expected-model", help=argparse.SUPPRESS)
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Options())
     if min(args.repeats, args.timeout, args.budget, args.max_turns) <= 0:
         parser.error("repeats, timeout, budget and max-turns must be positive")
     if args.scenario and len(args.scenario) != len(set(args.scenario)):
@@ -746,11 +781,12 @@ def main() -> int:
                     FILE_HANDOFF: "Both arms use the static edit boundary. B schedules the first file read.",
                     EDIT_CONTINUATION: "Production A. B uses bounded file reads and typed completion references.",
                     **{name: name for name in (*entry.FEATURES, *ENTRY_VARIANTS, entry.COMBINED)}}
-        print(json.dumps({"config": args.config, "scenarios": args.scenario or SCENARIOS[args.config],
+        plan: JsonObject = {"config": args.config, "scenarios": [name for name in args.scenario or SCENARIOS[args.config]],
             "units": 2 * args.repeats * len(args.scenario or SCENARIOS[args.config]),
-            "diagnostic_scenarios": sorted(DIAGNOSTIC_SCENARIOS),
+            "diagnostic_scenarios": [name for name in sorted(DIAGNOSTIC_SCENARIOS)],
             "features": features[args.config] if args.config in features else str(surface.CONFIGS[args.config]),
-            "combination_requires": ["B1", "B2", "B3", "B4"]}, indent=2))
+            "combination_requires": ["B1", "B2", "B3", "B4"]}
+        print(json.dumps(plan, indent=2))
         return 0
     if args.run_dir is None:
         parser.error("--run-dir is required")

@@ -1,7 +1,6 @@
 """Deterministic protocol ablations; all model HTTP is scripted, Chromium is real."""
 from __future__ import annotations
 
-import argparse
 import base64
 import hashlib
 import http.client
@@ -29,7 +28,10 @@ from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import declaration
 from codey.policies.task_policy import TaskPolicy
-from codey.policies.tool_requirement import ToolSuccessRequirement, require_tool_success
+from codey.policies.tool_requirement import BrowserTextSelector, ToolSuccessRequirement, require_tool_success
+from codey.providers.token_accounting import ContextBudget
+from codey.research.ledger import OpenedSource
+from codey.research.ledger_receipts import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.input_attachments import InputAttachmentStore
@@ -55,7 +57,7 @@ from tools import receipt_bound_edit_ab as edit_probe
 from tools import structured_surface
 from tools.browser_production_live_gate import DOWNLOAD_BYTES, URL
 from tools.completion_artifact_audit import EffectReceipt, artifacts, tool_receipts
-from tools.completion_explanation_ab import Target
+from tools.completion_explanation_ab import ExperimentProvider, Target
 
 TARGET = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
 
@@ -118,6 +120,32 @@ def test_b1_invalid_explicit_wait_does_not_execute(tmp_path: Path, timeout: obje
     with surface.prototype(tmp_path, "basic", "B1"), pytest.raises(ValueError, match="timeout_ms"):
         host.invoke("browser_wait", {"condition": "text", "value": "ready", "timeout_ms": timeout})
     assert not calls
+
+
+@pytest.mark.parametrize(("args", "valid"), [
+    ({"url": URL}, True), ({"target": "task"}, True),
+    ({"target": "other"}, False), ({"url": 1}, False),
+    ({"url": URL, "target": "task"}, False), ({"url": URL, "extra": True}, False),
+])
+def test_experiment_preflight_preserves_complete_frozen_navigation_schema(args: JsonObject, valid: bool) -> None:
+    snapshot = build_turn_snapshot(session())
+    frozen = catalog.build_codemode_catalog(snapshot.frozen_specs, task_navigation_url=URL)
+    host = CodeModeHost(execution_id="schema", catalog=frozen.entries,
+                        execute=lambda call: ToolResult(call, "unused", ok=True), allow_writes=True)
+    calls: list[JsonObject] = []
+
+    def original(_host: CodeModeHost, name: str, parameters: dict[str, object]) -> object:
+        assert name == "browser_navigate"
+        calls.append(decode_json_object(parameters))
+        return None
+
+    if valid:
+        structured_surface.prechecked_invoke(host, "browser_navigate", dict(args), original)
+        assert calls == [args]
+    else:
+        with pytest.raises(ValueError):
+            structured_surface.prechecked_invoke(host, "browser_navigate", dict(args), original)
+        assert not calls
 
 
 def test_b1_default_enters_original_executor_and_keeps_explicit_value(tmp_path: Path) -> None:
@@ -197,6 +225,26 @@ def test_b2_binding_uses_original_body_and_rejects_invalid_evidence(tmp_path: Pa
     if defect == "none":
         assert outcome.value == "complete original" and outcome.result_refs == ("read",)
     assert "value" not in result.canonical
+
+
+@pytest.mark.parametrize("config", ["B2", "combined"])
+@pytest.mark.parametrize("defect", ["none", "missing_marker", "truncated"])
+def test_experiment_retains_production_browser_field_selection(tmp_path: Path, config: str, defect: str) -> None:
+    body = "Weight 173 grams." if defect != "missing_marker" else "No weight available."
+    source = OpenedSource(URL, URL, "Weight", "2026-11-16T00:00:00Z", hashlib.sha256(body.encode()).hexdigest()[:16])
+    receipt = replace(read_result(body), truncated=defect == "truncated", canonical={
+        "research_observation": source_snapshot(source, body, {}),
+        "read_passages": [{"start": 0, "end": len(body)}],
+    })
+    requirement = ToolSuccessRequirement("browser_read", "codemode", answer_pointer="/amount",
+        result_pointer="/text", browser_text=BrowserTextSelector(URL, "Weight ", " grams."))
+    with surface.prototype(tmp_path, "hybrid", config):
+        observation = requirement._observe_value([("read", record(receipt))], {"read": receipt})
+    assert observation.evaluation.passed is (defect == "none")
+    if defect == "none":
+        assert observation.value == "173" and observation.result_refs == ("read",)
+    else:
+        assert observation.evaluation.reason_code == "observation_selector_unavailable"
 
 
 @pytest.mark.parametrize("config", ["A", "B2"])
@@ -295,7 +343,7 @@ def test_b3_only_complete_prior_parent_reads_are_delivered(defect: str) -> None:
 def test_b3_context_reduction_revokes_undelivered_edit_handles(defect: str) -> None:
     reads: JsonObject = {"read": {"path": "result.json", "result_ref": "read"}}
     observations: JsonObject = {"read": {"text": "complete file", "path": "result.json", "text_complete": True}}
-    actual = observations if defect == "none" else {} if defect == "omitted" else {
+    actual: JsonObject = observations if defect == "none" else {} if defect == "omitted" else {
         "read": {"text": "complete" if defect == "partial" else "other file", "path": "result.json", "text_complete": True}}
     payload: JsonObject = {"messages": [{"role": "user", "content": surface.READ_OBSERVATIONS_PREFIX + json.dumps(actual)}]}
     assert surface.transmitted_reads(payload, reads, observations) == (reads if defect == "none" else {})
@@ -355,7 +403,7 @@ def upload_actions(directory: Path) -> list[JsonObject]:
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 @pytest.mark.parametrize("arm", ["A", "B"])
 def test_b2_real_upload_binding_paired_without_edit_or_typed_helpers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str) -> None:
-    done: JsonObject = {"tool": "done", "args": {"summary": "已选择附件，服务器接收未核验。"}}
+    done: JsonObject = {"tool": "done", "args": {"paragraphs": ["已选择附件，服务器接收未核验。"]}}
     install_http(monkeypatch, [*upload_actions(tmp_path), done])
     row = probe.run_arm(tmp_path / "run", "upload_bound", arm, "B2", TARGET, max_turns=5)
     assert row["passed"], row
@@ -382,7 +430,7 @@ def test_receipt_delivery_uses_original_file_and_page_data(
         code += "unwrap(await tools.browser_download({ref:s.elements.find(e=>e.name==='Download fixture').ref}));"
     code += "return unwrap(await tools.browser_read({}));"
     summary = "已完成工具操作，请查看实际回执。"
-    done: JsonObject = {"tool": "done", "args": {"summary": summary}}
+    done: JsonObject = {"tool": "done", "args": {"paragraphs": [summary]} if scenario == "upload_bound" else {"summary": summary}}
     actions: list[JsonObject] = upload_actions(tmp_path) if upload else [
         {"tool": "codemode", "args": {"code": code, "inputs": inputs}}]
     install_http(monkeypatch, [done] if scenario == "return_failure" else [*actions, done])
@@ -472,6 +520,7 @@ def test_b3_real_conflict_observation_boundary_and_external_field_preservation(t
         read_message = next(str(m["content"]) for m in reversed(object_rows(messages)) if isinstance(m, dict)
                             and str(m.get("content", "")).startswith("Complete file observations"))
         observations = parse_json_object(read_message.split("\n", 1)[1])
+        action: JsonObject
         if exchange == 1:
             action = plan(*browser_steps(), step("file", "read_file", {"path": "result.json"}))
         elif exchange in {2, 4}:
@@ -501,6 +550,12 @@ def test_b3_real_conflict_observation_boundary_and_external_field_preservation(t
 def test_edit_boundary_rejects_new_receipt_for_precomposed_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str,
 ) -> None:
+    class ScriptedProvider(ExperimentProvider):
+        @property
+        def context_budget(self) -> ContextBudget:
+            return replace(super().context_budget, window_tokens=65536)
+
+    monkeypatch.setattr(surface, "ExperimentProvider", ScriptedProvider)
     external = {"marker": secrets.token_hex(16)}
     monkeypatch.setattr(gate, "EXTERNAL_FIELD", external)
     exchange = 0
@@ -615,6 +670,7 @@ def test_file_handoff_delivers_read_before_edit(
             assert bool(reads) is (arm == "B")
             if arm == "B":
                 assert "read_authorized_project_file" in wire
+        action: JsonObject
         if exchange == 1:
             action = plan(*browser_steps())
         elif not reads:
@@ -755,8 +811,9 @@ def test_production_hybrid_completes_with_misfiled_browser_receipt(
         observe = kwargs["observe"]
         assert callable(observe)
         observe(attempt=1, data=json.dumps(payload).encode(), phase="request", response_bytes=0, seconds=0.0)
+        action: JsonObject
         if calls == 1:
-            action: JsonObject = {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
+            action = {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
         else:
             messages = payload["messages"]
             assert isinstance(messages, list)
@@ -898,7 +955,8 @@ def test_production_download_delivers_only_authorized_recovery(
     receipts = tool_receipts(directory / "state")
     download, = [r for r in receipts if r.result.call.name == "browser_download"]
     read, = [r for r in receipts if r.result.call.name == "browser_read"]
-    parent, = [r.result for r in receipts if r.result.call.name == "codemode"]
+    parent, = [r.result for r in receipts if r.result.call.name == "codemode"
+               and download.identity in require_json_strings(r.result.canonical.get("child_effect_ids", []), "children")]
     assert download.result.ok and decode_json_object(download.result.canonical["value"])["sha256"] == digest
     if failure == "result_contract":
         assert not parent.ok and parent.audit["error_code"] == failure
@@ -986,7 +1044,8 @@ def test_production_result_contract_points_to_successful_download_receipt(
         assert read.ok and read.call.args["result_ref"] == download.identity
     else:
         assert not reads
-    parent, = [r.result for r in receipts if r.result.call.name == "codemode"]
+    parent, = [r.result for r in receipts if r.result.call.name == "codemode"
+               and download.identity in require_json_strings(r.result.canonical.get("child_effect_ids", []), "children")]
     assert not parent.ok and parent.audit["error_code"] == "result_contract"
     assert "repair" not in parent.canonical and "recovered_return" not in parent.canonical
 
@@ -1075,9 +1134,8 @@ def test_b4_page_reset_requires_real_second_fill_and_click(tmp_path: Path, monke
 def test_page_reset_gate_rejects_early_done_and_accepts_completed_rounds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str,
 ) -> None:
-    action = page_reset_action()
     done: JsonObject = {"tool": "done", "args": {"summary": "两次加载完成，净重 173，校验码 QUARTZ_851。"}}
-    install_http(monkeypatch, [action, done, action, done])
+    install_http(monkeypatch, [page_reset_action(navigate=False), done, page_reset_action(), done])
     directory = tmp_path / "run"
     row = probe.run_arm(directory, "page_reset", arm, probe.PAGE_RESET_GATE, TARGET, max_turns=5)
     assert row["stop_reason"] == "done", row
@@ -1127,7 +1185,8 @@ def test_page_reset_runtime_navigation_starts_once_and_still_requires_second_loa
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str,
 ) -> None:
     done: JsonObject = {"tool": "done", "args": {"summary": "净重 173，校验码 QUARTZ_851。"}}
-    install_http(monkeypatch, [page_reset_action(reread=True), done, page_reset_action(navigate=arm == "A"), done])
+    install_http(monkeypatch, [page_reset_action(navigate=False, reread=True), done,
+                               page_reset_action(navigate=arm == "A"), done])
     directory = tmp_path / "run"
     row = probe.run_arm(directory, "page_reset", arm, probe.PAGE_RESET_NAVIGATION, TARGET, max_turns=7)
     assert row["passed"] and row["page_reset_gate_enabled"], row
@@ -1182,7 +1241,7 @@ def test_page_reset_runtime_navigation_delivers_failure_without_retry(tmp_path: 
 
     monkeypatch.setattr(BrowserSession, "_navigate_on_browser_thread", fail_second)
     done: JsonObject = {"tool": "done", "args": {"summary": "净重 173，校验码 QUARTZ_851。"}}
-    install_http(monkeypatch, [page_reset_action(), done, done, done, done])
+    install_http(monkeypatch, [page_reset_action(navigate=False), done, done, done, done])
     directory = tmp_path / "run"
     row = probe.run_arm(directory, "page_reset", "B", probe.PAGE_RESET_NAVIGATION, TARGET, max_turns=7)
     nav = decode_json_object(row["runtime_navigation"])
@@ -1255,7 +1314,7 @@ def test_b4_repair_delivers_original_body_on_wire_without_reexecution(tmp_path: 
     exchange = 0
     directory = tmp_path / "run"
     code = ("for (let i=0;i<2;i++) {"
-        "unwrap(await tools.browser_navigate({url:inputs.url}));"
+        "if(i>0) unwrap(await tools.browser_navigate({url:inputs.url}));"
         "let s=unwrap(await tools.browser_snapshot({}));"
         "unwrap(await tools.browser_fill({ref:s.elements.find(e=>e.name==='Locality').ref,value:'福州'}));"
         "s=unwrap(await tools.browser_snapshot({}));"
@@ -1361,7 +1420,7 @@ def test_combination_checks_evidence_content(tmp_path: Path, monkeypatch: pytest
             elif defect == "source":
                 report["source_after"] = "changed"
             elif defect == "harness":
-                report["harnesses"] = {}
+                report["harnesses"] = dict[str, JsonValue]()
             elif defect == "failed":
                 rows[-1]["passed"] = False
             elif defect == "duplicate_arm":
@@ -1397,7 +1456,7 @@ def test_matrix_preserves_negative_baseline_and_alternates_pairs(tmp_path: Path,
     monkeypatch.setattr(probe, "run_worker", worker)
     monkeypatch.setattr(edit_probe, "production_source_digest", lambda: "source")
     monkeypatch.setattr(probe, "harness_digests", lambda: {"tools/protocol_surface_ab.py": "hash"})
-    args = argparse.Namespace(config="B2", run_dir=tmp_path / "matrix", scenario=None, repeats=2,
+    args = probe.Options(config="B2", run_dir=tmp_path / "matrix", scenario=None, repeats=2,
                               evidence=list[Path](), budget=300, max_turns=10)
     assert probe.matrix(args, TARGET) == 1  # A's genuine scoring failures remain failures.
     report = parse_json_object((tmp_path / "matrix" / "summary.json").read_text(encoding="utf-8"))
@@ -1424,7 +1483,7 @@ def test_matrix_stops_before_queuing_after_transport_or_worker_failure(tmp_path:
     monkeypatch.setattr(probe, "run_worker", worker)
     monkeypatch.setattr(edit_probe, "production_source_digest", lambda: "source")
     monkeypatch.setattr(probe, "harness_digests", lambda: {})
-    args = argparse.Namespace(config="B4", run_dir=tmp_path / "run", scenario=None, repeats=2,
+    args = probe.Options(config="B4", run_dir=tmp_path / "run", scenario=None, repeats=2,
                               evidence=list[Path](), budget=300, max_turns=10)
     assert probe.matrix(args, TARGET) == 1
     assert calls == ["A"]

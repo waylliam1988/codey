@@ -14,20 +14,23 @@ import json
 import re
 import subprocess
 import time
-from collections.abc import Callable, Collection, Iterator, Mapping
+from collections.abc import Callable, Collection, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import asdict, dataclass, fields, replace
+from dataclasses import asdict, dataclass, replace
+from itertools import pairwise
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 from unittest.mock import patch
 
 from codey.automation.browser_session import BrowserSession, _browser_call
 from codey.codemode.kernel import CodeModeKernelExecutor
 from codey.operations import completion_gate, kernel_context, kernel_protocol, provider_receipts
 from codey.operations.browser_copy import committed_children
-from codey.operations.browser_upload import upload_wait_plan
+from codey.operations.browser_text_report import BrowserMetadata, MetadataPending
+from codey.operations.browser_waits import wait_plan as upload_wait_plan
 from codey.operations.kernel_context import KernelContext
-from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot, refresh_snapshot_contract
+from codey.operations.kernel_protocol import TurnSnapshot, refresh_snapshot_contract
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_guidance import task_result_context
@@ -46,7 +49,7 @@ from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolPlan, ToolResult
 from codey.runtime.core.operation_payload import RuntimeExecutionCounters, RuntimeOperationState
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, validate_args_with_spec
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 from tools import browser_followup_ab as ab
 from tools import browser_leaf_exposure_ab as base
 from tools.browser_production_live_gate import schema_tool_names, select_target
@@ -150,9 +153,12 @@ def explicit_fill_text(task: str) -> str | None:
     literal = "备注" in instruction and any(word in instruction for word in ("原文", "原样"))
     if literal and "代码块" in instruction:
         match = re.fullmatch(r"```(?:text)?\r?\n(?P<body>[\s\S]+?)\r?\n```(?:\r?\n)?", tail)
-        if match is None or re.search(r"(?m)^\s*```", match["body"]):
+        if match is None:
             return None
-        value = match["body"]
+        body: object = match.group("body")
+        value = require_json_string(body, "body")
+        if re.search(r"(?m)^\s*```", value):
+            return None
     elif literal and re.search(r"(?:以下|下面)(?:两|2)行", instruction):
         if not re.fullmatch(r"[^\r\n]+\r?\n[^\r\n]+", tail):
             return None
@@ -178,8 +184,12 @@ _restoring_fill_text: ContextVar[str] = ContextVar("restoring_fill_text", defaul
 
 
 def with_fill_text(snapshot: TurnSnapshot, value: str) -> BoundFillSnapshot:
-    return BoundFillSnapshot(**{field.name: getattr(snapshot, field.name) for field in fields(TurnSnapshot)},
-                             fill_text=value)
+    bound = BoundFillSnapshot(snapshot.allowed, snapshot.contract_text)
+    attributes: dict[str, object] = vars(snapshot)
+    for name, attribute in attributes.items():
+        object.__setattr__(bound, name, attribute)
+    object.__setattr__(bound, "fill_text", value)
+    return bound
 
 
 def model_fill_spec(spec: ToolSpec) -> ToolSpec:
@@ -263,8 +273,9 @@ def normalize_candidate(reply: DecodedTextTurn | AssistantTurn, snapshot: TurnSn
             return kernel_protocol._invalid_plan("The declared wait cannot be run within this tool contract.", tool=call.name)
         inputs["waits"] = list(waits.waits)
         code = RESULT + (WAIT if waits.waits else "") + READ
-    args = {"code": code, "inputs": inputs}
-    checked = normalize(decode_text_turn(json.dumps({"tool": "codemode", "args": args}, ensure_ascii=False)),
+    lowered_args: JsonObject = {"code": code, "inputs": inputs}
+    lowered: JsonObject = {"tool": "codemode", "args": lowered_args}
+    checked = normalize(decode_text_turn(json.dumps(lowered, ensure_ascii=False)),
                         snapshot=snapshot)
     if checked.protocol_error:
         raise AssertionError(checked.protocol_error)
@@ -284,7 +295,7 @@ def observe_regions(browser: BrowserSession) -> JsonObject:
     if doc is None:
         return {}
     page = browser._page_on_browser_thread()
-    rows = page.evaluate(REGIONS)
+    rows: object = page.evaluate(REGIONS)
     return decode_json_object({"document": doc, "regions": rows})
 
 
@@ -334,12 +345,17 @@ def guard_capture(browser: BrowserSession, baseline: JsonObject, *, wait_seconds
         cancellation.wait(0.1)
 
 
+@runtime_checkable
+class SnapshotSpecsDescriptor(Protocol):
+    def __get__(self, snapshot: TurnSnapshot, owner: type[TurnSnapshot] | None = None) -> tuple[ToolSpec, ...]: ...
+
+
 @contextmanager
-def intervention(directory: Path, arm: str) -> Iterator[None]:
+def intervention(directory: Path, arm: str) -> Generator[None, None, None]:
     original_snapshot = KernelContext.request_snapshot
-    model_specs_property: object = vars(TurnSnapshot)["model_specs"]
-    assert isinstance(model_specs_property, property)
-    original_specs: Callable[[TurnSnapshot], object] = model_specs_property.__get__
+    model_specs_property: object = TurnSnapshot.model_specs
+    assert isinstance(model_specs_property, SnapshotSpecsDescriptor)
+    original_specs: Callable[[TurnSnapshot], tuple[ToolSpec, ...]] = model_specs_property.__get__
     original_freeze = KernelContext.freeze
     original_execute = ExecutionDelegate._execute_browser_operation
     original_capture = BrowserSession.capture
@@ -349,9 +365,7 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
     generated: set[str] = set()
 
     def model_specs(snapshot: TurnSnapshot) -> tuple[ToolSpec, ...]:
-        specs = original_specs(snapshot)
-        assert isinstance(specs, tuple) and all(isinstance(spec, ToolSpec) for spec in specs)
-        frozen = tuple(spec for spec in specs if isinstance(spec, ToolSpec))
+        frozen = original_specs(snapshot)
         if arm in PURPOSE_ARMS and set(base.DIRECT_TOOLS) <= set(snapshot.tool_names):
             bound = isinstance(snapshot, BoundFillSnapshot) or bool(_restoring_fill_text.get())
             return tuple(model_click_spec(spec) if spec.name == "browser_click" else
@@ -384,12 +398,15 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
             raise ValueError("Frozen fill binding lacks its authorized tool contract")
         return with_fill_text(snapshot, value)
 
-    def request_snapshot(context: KernelContext, snapshot: TurnSnapshot) -> tuple[TurnSnapshot, str]:
-        baseline, handoff = original_snapshot(context, snapshot)
+    def request_snapshot(context: KernelContext, snapshot: TurnSnapshot, *,
+                         delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
+        baseline, handoff = original_snapshot(context, snapshot, delivered_results=delivered_results)
         candidate = baseline
         research = context.execution.research_tools
         browser = research.browser_session if research is not None else None
-        if arm != "codemode" and not handoff and not context.session.policy.strict_research and browser is not None:
+        # Receipt progress now produces handoff text on ordinary browser turns too.
+        # Exposure still intersects the frozen nested tools, policy and allowlist.
+        if arm != "codemode" and not context.session.policy.strict_research and browser is not None:
             offered = base.expose_leaves(baseline, context.session)
             if set(base.DIRECT_TOOLS) <= set(offered.tool_names) and browser.document_identity() is not None:
                 candidate = offered
@@ -419,7 +436,8 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
             items = kernel_protocol._response_objects(reply)
             if isinstance(items, list) and len(items) == 1 and items[0][0] in {"browser_fill", "browser_click"}:
                 generated.add(call_key(call))
-                append_json(directory / "lowering.jsonl", {"proposed": items[0][0], "executed": asdict(call),
+                executed: object = asdict(call)
+                append_json(directory / "lowering.jsonl", {"proposed": items[0][0], "executed": decode_json_object(executed),
                     "bound_fill": isinstance(snapshot, BoundFillSnapshot) and items[0][0] == "browser_fill"})
         return plan
 
@@ -506,7 +524,7 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
             return rendered
         first = children[0][1]
         value = first.canonical.get("value")
-        delivery = value.get("delivery") if isinstance(value, dict) else None
+        delivery = decode_json_object(value).get("delivery") if isinstance(value, dict) else None
         if delivery in {"delivered", "verified"}:
             rendered += "\nThe action was delivered. Recover missing output without repeating the action."
         elif delivery == "uncertain":
@@ -519,21 +537,19 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
         return rendered
 
     def evaluate(session: TaskSession, done_text: object, *, context: object = None,
-                 observations: Mapping[str, ToolObservation] | None = None) -> completion_gate.GateVerdict:
+                 observations: Mapping[str, ToolObservation] | None = None,
+                 metadata: BrowserMetadata | MetadataPending | None = None) -> completion_gate.GateVerdict:
         if arm in PURPOSE_ARMS and (pending := pending_click(session)) is not None:
             value = decode_json_object(pending[1].canonical["value"])
             uncertain = value.get("delivery") == "uncertain"
             append_json(directory / "pending-submissions.jsonl", {
                 "reason": "click_delivery_uncertain" if uncertain else "query_result_unconfirmed", "click": pending[0]})
             return completion_gate.GateVerdict(False, UNCERTAIN if uncertain else PENDING, None)
-        return original_gate(session, done_text, context=context, observations=observations)
-
-    def keep_baseline(snapshot: TurnSnapshot, _session: KernelSessionView) -> TurnSnapshot:
-        return snapshot
+        return original_gate(session, done_text, context=context, observations=observations, metadata=metadata)
 
     # Each arm offers only its own browser surface. The production offer is
     # already enabled on ordinary Chat, so it must stay out of this experiment.
-    with (patch.object(kernel_protocol, "offer_browser_tools", keep_baseline),
+    with (patch.object(kernel_protocol, "offer_browser_tools", ab.retain_browser_surface),
           patch.object(TurnSnapshot, "model_specs", property(model_specs)),
           patch.object(provider_receipts, "snapshot_description", describe),
           patch.object(provider_receipts, "restore_snapshot", restore),
@@ -547,7 +563,8 @@ def intervention(directory: Path, arm: str) -> Iterator[None]:
 
 
 def call_key(call: ToolCall) -> str:
-    return json.dumps(asdict(call), sort_keys=True, ensure_ascii=False)
+    payload: object = asdict(call)
+    return json.dumps(decode_json_object(payload), sort_keys=True, ensure_ascii=False)
 
 
 def harness_digest() -> str:
@@ -571,7 +588,8 @@ def score(directory: Path, name: str, case: base.Case, row: JsonObject) -> JsonO
     receipts = tool_receipts(directory / "state")
     expected_clicks = 0 if name == "visible" else 2 if name == "controls" else 1
     delivered = [(i, item) for i, item in enumerate(receipts) if item.result.call.name == "browser_click"
-                 and isinstance(value := item.result.canonical.get("value"), dict) and value.get("delivery") == "delivered"]
+                 and isinstance(value := item.result.canonical.get("value"), dict)
+                 and decode_json_object(value).get("delivery") == "delivered"]
     state = decode_json_object(row["page_state"])
     clicks_match = state.get("clicks") == len(delivered) == expected_clicks
     field_matches = not case.field_value or state.get("value") == case.field_value
@@ -582,7 +600,7 @@ def score(directory: Path, name: str, case: base.Case, row: JsonObject) -> JsonO
     answer = str(row["answer"])
     matching = [item for item in reads if (body := _browser_body(item.result)) is not None
                 and ab.facts_present(body, case.facts) and "STALE_041" not in body]
-    citations = set(re.findall(r"\[([^\[\]\s]+)\]", answer))
+    citations = {match.group()[1:-1] for match in re.finditer(r"\[[^\[\]\s]+\]", answer)}
     exact = [item for item in matching if citations.intersection(read_passage_refs(item.result.canonical["read_passages"]))]
     cited = [item for item in matching if item in exact or item.result.canonical.get("source_id") in citations]
     waits = [item for item in receipts[last_click + 1:] if item.result.ok and item.result.call.name == "browser_wait"
@@ -630,7 +648,7 @@ def run_unit(directory: Path, name: str, case: base.Case, arm: str, target: Targ
                 response_bytes=response_bytes, seconds=seconds)
 
     @contextmanager
-    def configure(path: Path, _arm: Arm) -> Iterator[None]:
+    def configure(path: Path, _arm: Arm) -> Generator[None, None, None]:
         with intervention(path, arm):
             yield
 
@@ -649,10 +667,15 @@ def authority(snapshot: JsonObject) -> str:
     specs, executors = snapshot["specs"], snapshot["executors"]
     if not isinstance(specs, list) or not isinstance(executors, list):
         raise AssertionError("Missing frozen definitions or executors")
-    return json.dumps({"policy": snapshot["policy"], "allowed": snapshot["allowed"],
+
+    def name(row: JsonValue) -> str:
+        return str(decode_json_object(row)["name"])
+
+    payload: JsonObject = {"policy": snapshot["policy"], "allowed": snapshot["allowed"],
         "nested": snapshot["nested_tool_names"],
-        "specs": sorted(specs, key=lambda row: str(decode_json_object(row)["name"])),
-        "executors": sorted(executors, key=lambda row: str(decode_json_object(row)["name"]))}, sort_keys=True)
+        "specs": sorted(specs, key=name),
+        "executors": sorted(executors, key=name)}
+    return json.dumps(payload, sort_keys=True)
 
 
 def audit_matrix(directory: Path, runs: list[JsonObject], *, target: Target, arms: list[str],
@@ -673,9 +696,11 @@ def audit_matrix(directory: Path, runs: list[JsonObject], *, target: Target, arm
             raise AssertionError("Unbound page or mixed source versions")
         snapshots = ab.jsonl(unit / "snapshots.jsonl")
         snapshot = decode_json_object(snapshots[0]["snapshot"])
-        if any("browser_fill_text" in decode_json_object(row["snapshot"]) for row in snapshots):
+        if any(decode_json_object(row["snapshot"]).get("browser_fill_text") is not None
+               or decode_json_object(row["snapshot"]).get("browser_followups") is True for row in snapshots):
             raise AssertionError("Production browser follow-ups leaked into an experimental arm")
-        pairs.setdefault(identity[:3], set()).add(((unit / "input.json").read_bytes(),
+        pair = (run["case"], run["wording"], run["repeat"])
+        pairs.setdefault(pair, set()).add(((unit / "input.json").read_bytes(),
                                                   str(run["fixture_digest"]), authority(snapshot)))
         provider = ab.jsonl(unit / "provider.jsonl")
         sent = [event for event in provider if event.get("phase") == "request"]
@@ -698,7 +723,7 @@ def audit_matrix(directory: Path, runs: list[JsonObject], *, target: Target, arm
             raise AssertionError("First model request does not expose the arm's expected tools")
         if (str(run["variant"]) in PURPOSE_ARMS) != ('"purpose"' in json.dumps(schema)):
             raise AssertionError("Click purpose declaration differs from the arm")
-        task = decode_json_object(json.loads((unit / "input.json").read_bytes()))["task"]
+        task = parse_json_object((unit / "input.json").read_text(encoding="utf-8"))["task"]
         if not isinstance(task, str):
             raise AssertionError("Missing paired task text")
         expected_text = explicit_fill_text(task) if run["variant"] == "bound_text" else None
@@ -738,9 +763,10 @@ def summarize(runs: list[JsonObject]) -> JsonObject:
 
 def paired_comparisons(runs: list[JsonObject]) -> list[JsonValue]:
     """Compare cost on matched successes as well as completion over all cells."""
-    grouped = {(str(row["case"]), str(row["wording"]), str(row["repeat"]), str(row["variant"])): row for row in runs}
+    grouped: dict[tuple[str, str, str, str], JsonObject] = {
+        (str(row["case"]), str(row["wording"]), str(row["repeat"]), str(row["variant"])): row for row in runs}
     comparisons: list[JsonValue] = []
-    for before, after in zip(ARMS, ARMS[1:], strict=False):
+    for before, after in pairwise(ARMS):
         pairs = [(row, other) for (case, wording, repeat, arm), row in grouped.items() if arm == before
                  and (other := grouped.get((case, wording, repeat, after))) is not None]
         if not pairs:
@@ -809,23 +835,38 @@ def resolve_citation_boundary(url: str, ledger: ResearchLedger) -> str:
     return next(iter(candidates)) if len(candidates) == 1 else url
 
 
+class Options(argparse.Namespace):
+    run_dir: Path
+    base_url: str
+    arms: list[str]
+    cases: list[str]
+    wordings: list[str]
+    repeats: int
+    max_turns: int
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
-    parser.add_argument("--arms", nargs="+", choices=ARMS, default=list(ARMS))
-    parser.add_argument("--cases", nargs="+", choices=tuple(CASES), default=list(CASES))
-    parser.add_argument("--wordings", nargs="+", choices=("original", "paraphrase"), default=["original", "paraphrase"])
+    default_arms: list[str] = list(ARMS)
+    default_cases: list[str] = list(CASES)
+    default_wordings: list[str] = ["original", "paraphrase"]
+    parser.add_argument("--arms", nargs="+", choices=ARMS, default=default_arms)
+    parser.add_argument("--cases", nargs="+", choices=tuple(CASES), default=default_cases)
+    parser.add_argument("--wordings", nargs="+", choices=("original", "paraphrase"), default=default_wordings)
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--max-turns", type=int, default=10)
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Options())
     if args.repeats < 1 or args.max_turns < 1 or any(len(values) != len(set(values)) for values in
             (args.arms, args.cases, args.wordings)):
         parser.error("Use positive budgets and distinct arms, cases and wordings")
     source, harness = production_source_digest(), harness_digest()
     target = select_target(90, args.base_url)
     args.run_dir.mkdir(parents=True, exist_ok=False)
-    write_json(args.run_dir / "manifest.json", {"source_digest": source, "harness_digest": harness, "target": asdict(target),
+    target_payload: object = asdict(target)
+    write_json(args.run_dir / "manifest.json", {"source_digest": source, "harness_digest": harness,
+        "target": decode_json_object(target_payload),
         "arms": args.arms, "cases": args.cases, "wordings": args.wordings, "max_turns": args.max_turns,
         "repeats": args.repeats})
     runs: list[JsonObject] = []

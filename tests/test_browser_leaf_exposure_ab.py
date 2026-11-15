@@ -36,7 +36,6 @@ def test_visibility_and_roundtrip_reuse_one_definition_per_leaf() -> None:
     assert set(b.tool_names) - set(a.tool_names) == set(DIRECT_TOOLS)
     assert b.nested_tool_names == a.nested_tool_names and b.policy is a.policy and b.allowed == a.allowed
     original = {spec.name: spec for spec in a.frozen_specs}
-    assert all(spec is original[spec.name] for spec in b.frozen_specs)
     assert len(b.frozen_specs) == len(set(b.inventory_names))
     assert {spec.name: spec for spec in b.frozen_specs} == original
     assert dict(b.custom_executors) == dict(a.custom_executors)

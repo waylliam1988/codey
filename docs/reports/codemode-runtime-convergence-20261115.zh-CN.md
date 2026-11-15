@@ -49,7 +49,7 @@
 
 最终核心批次退出码为 0。进程退出清理 RAM 临时目录时出现 WinError 3（目标文件已经不存在）的 RuntimeWarning，保留在 production-core-final.log；这不是测试断言或生产执行失败。
 
-扩展实验批次不是全绿：production-01 为 23 failed / 366 passed，production-02 为 4 failed / 68 passed。上述核心批次的范围明确，不覆盖或抹去扩展批次失败。未修改的 browser_entry_candidates、browser_entry_followup 与 browser_chat_followup_gate 实验仍有旧输入或测试假设的问题；尤其后者的 request_snapshot hook 缺少当前生产签名中的 delivered_results 参数。对应生产入口与实验合同在本轮之前已存在，未扩大到这些实验的整体迁移。保存的模型原始回复文件没有改动。
+扩展实验批次不是全绿：production-01 为 23 failed / 366 passed，production-02 为 4 failed / 68 passed。上述核心批次的范围明确，不覆盖或抹去扩展批次失败。截至本批次结束，未修改的 browser_entry_candidates、browser_entry_followup 与 browser_chat_followup_gate 实验仍有旧输入或测试假设的问题；尤其后者的 request_snapshot hook 缺少当前生产签名中的 delivered_results 参数。对应生产入口与实验合同在本轮之前已存在，本批次未扩大到这些实验的整体迁移。保存的模型原始回复文件没有改动。随后对这些失败的逐项归因与迁移见 [2026-11-16 实验合同复查](browser-experiment-contracts-20261116.zh-CN.md)，后续结果不覆盖本表的历史失败。
 
 日志与原始故障证据仅保留在本地 `.e2e-artifacts/codemode-20261115/`，不将 provider 请求、sqlite 或临时产物提交到 Git。
 

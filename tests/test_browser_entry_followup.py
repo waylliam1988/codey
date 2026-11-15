@@ -1,9 +1,8 @@
 """Current production controls for browser entry experiments with real Chromium."""
 from __future__ import annotations
 
-import base64
 import hashlib
-import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -11,8 +10,10 @@ import pytest
 from codey.codemode.replay import DurableCodeModeReplay
 from codey.runtime.core.models import ToolCall
 from codey.storage.input_attachments import InputAttachmentStore
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object, require_json_strings
 from tests.test_browser_entry_candidates import action, browser_code, done
+from tests.test_browser_structured_upload_production import action as upload_action
+from tests.test_browser_structured_upload_production import observed_controls
 from tests.test_protocol_surface import TARGET
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_entry_surface as entry
@@ -58,6 +59,8 @@ def test_identical_wait_fault_then_real_timeout_and_recovery(
     assert not registered_invalid
     error = first_feedback(directory).splitlines()[1]
     field = "condition" if scenario == "snapshot_restore" else "timeout_ms"
+    if arm == "B" and field == "condition":
+        field = "args.condition"
     assert error.startswith("browser_wait") and f"'{field}'" in error
     timed, waited = [r for r in receipts if r.call.name == "browser_wait"]
     assert not timed.ok and "wait timed out" in timed.model_text and waited.ok
@@ -78,7 +81,7 @@ def test_properties_distinguish_missing_read_from_missing_final_facts(
     summary = "已读取页面。" if mode == "missing_business_facts" else "净重 173 克，校验码 QUARTZ_851。"
     if scenario == "legacy_structured":
         summary += f" URL {gate.URL}，token SCHEMA_TOKEN_74。"
-    replies: list[JsonObject] = [done(summary)] * 3
+    replies: list[JsonObject] = [done(summary, explanation=scenario == "structured")] * 3
     config = entry.PROPERTIES_DELIVERY
     if mode == "missing_token":
         # Omit only the property read. A fabricated correct-looking token in done cannot supply its receipt.
@@ -105,37 +108,33 @@ def test_properties_distinguish_missing_read_from_missing_final_facts(
         assert token.call.args["code"] == "window.__contractToken"
         assert decode_json_object(token.canonical["value"])["value"] == "SCHEMA_TOKEN_74"
         assert "SCHEMA_TOKEN_74" in first_result
-        assert row["stop_reason"] == "done"
+        if mode == "missing_business_facts" and scenario == "structured":
+            assert row["stop_reason"] == "answer_repair_exhausted" and "answer_text_missing" in str(row["answer"])
+        else:
+            assert row["stop_reason"] == "done"
 
 
-@pytest.mark.parametrize("scenario", ["upload_bound", "download"])
 def test_real_ambiguous_controls_and_named_file_actions_with_original_receipts(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fixture_html = gate.HTML.replace("</body>", "<button>Duplicate</button><button>Duplicate</button></body>")
     code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
             "const ambiguous=await browser.click({target_name:'Duplicate',role:'button'});"
             "const absent=await browser.click({target_name:'No such control',role:'button'});")
-    inputs: dict[str, str] = {}
-    if scenario == "upload_bound":
-        content = b"UPLOAD_BYTES_82\n"
-        attachment = InputAttachmentStore(tmp_path / "inputs", "fixture").put("fixture.txt", base64.b64encode(content).decode())
-        inputs["attachment"] = str(attachment["id"])
-        code += ("const file=await browser.upload({target_name:'Attachment',attachment_id:inputs.attachment});"
-                 "unwrap(await tools.browser_wait({condition:'text',value:'UPLOAD_BYTES_82',timeout_ms:5000}));")
-        summary = "已选择附件。"
-    else:
-        content = gate.DOWNLOAD_BYTES
-        code += "const file=await browser.download({target_name:'Download fixture',role:'link'});"
-        summary = "fixture-download.txt SHA256 " + hashlib.sha256(content).hexdigest()
-    install_http(monkeypatch, [action(code + "return {ambiguous,absent,file,body:await browser.read({})};", **inputs), done(summary)])
+    content = gate.DOWNLOAD_BYTES
+    code += "const file=await browser.download({target_name:'Download fixture',role:'link'});"
+    summary = "fixture-download.txt SHA256 " + hashlib.sha256(content).hexdigest()
+    program = action(code + "return {ambiguous,absent,file,body:await browser.read({})};")
+    install_http(monkeypatch, [program, done(summary)])
     directory = tmp_path / "run"
-    row = probe.run_arm(directory, scenario, "B", entry.COMBINED, TARGET, max_turns=3,
+    row = probe.run_arm(directory, "download", "B", entry.COMBINED, TARGET, max_turns=3,
                         entry_features=frozenset({entry.TARGETS, entry.RESULTS}), fixture_html=fixture_html)
     assert row["passed"], row
     receipts = tool_receipts(directory / "state")
     assert not any(r.result.call.name == "browser_click" for r in receipts)
-    parent, = [r.result for r in receipts if r.result.call.name == "codemode"]
+    file, = [r for r in receipts if r.result.call.name == "browser_download"]
+    parent, = [r.result for r in receipts if r.result.call.name == "codemode"
+               and file.identity in require_json_strings(r.result.canonical["child_effect_ids"], "child_effect_ids")]
     data = decode_json_object(parent.canonical["value"])
     snapshots = [decode_json_object(r.result.canonical["value"]) for r in receipts
                  if r.result.call.name == "browser_snapshot" and r.result.ok]
@@ -143,21 +142,53 @@ def test_real_ambiguous_controls_and_named_file_actions_with_original_receipts(
     for index, (key, error) in enumerate((("ambiguous", "target_ambiguous"), ("absent", "target_missing"))):
         failure = decode_json_object(data[key])
         assert failure["status"] == "failed"
-        detail = decode_json_object(json.loads(str(failure["error"])))
+        detail = parse_json_object(str(failure["error"]))
         assert detail["code"] == error
         assert detail["snapshot"] == failure["snapshot"] == {key: snapshots[index][key] for key in ("page_id", "generation")}
         candidates = detail["candidates"]
         assert isinstance(candidates, list)
         assert candidates.count({"name": "Duplicate", "role": "button"}) == 2
-    file, = [r for r in receipts if r.result.call.name in {"browser_upload", "browser_download"}]
     value = decode_json_object(file.result.canonical["value"])
     assert value["sha256"] == hashlib.sha256(content).hexdigest()
-    if scenario == "upload_bound":
-        assert file.result.call.args["attachment_id"] == inputs["attachment"]
-        assert value["effect_verified"] is False
     projected = decode_json_object(data["file"])
     assert projected["data"] == value and projected["receipt_ref"] == file.identity
-    feedback = first_feedback(directory)
+    feedback, = [text for results in request_results(directory).values() for text in results
+                 if text.startswith(RESULT_DATA) and file.identity in text]
     assert feedback.startswith(RESULT_DATA)
-    wire = decode_json_object(json.loads(feedback.removeprefix(RESULT_DATA)))
+    wire = parse_json_object(feedback.removeprefix(RESULT_DATA))
     assert decode_json_object(wire["value"])["file"] == projected
+
+
+def test_structured_upload_resolves_ambiguous_names_with_observed_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory = tmp_path / "run"
+    html = gate.HTML.replace('<label>Attachment<input type="file"',
+        '<fieldset><legend>Invoice</legend><label>Attachment<input type="file" id="invoice"></label></fieldset>'
+        '<fieldset><legend>Receipt</legend><label>Attachment<input id="receipt" type="file"').replace(
+        '</label>\n<p id="uploaded">', '</label></fieldset>\n<p id="uploaded">')
+
+    def replies() -> Iterator[JsonObject]:
+        yield upload_action("observe")
+        controls = observed_controls(directory)
+        assert [row["group"] for row in controls] == ["Invoice", "Receipt"]
+        attachment, = InputAttachmentStore(directory / "state", "browser-file-fixture").root.glob("att_*.json")
+        yield upload_action("select", attachment_id=attachment.stem, target={"name": "Attachment"})
+        yield upload_action("select", attachment_id=attachment.stem, target={"id": controls[1]["id"]})
+        yield upload_action("read", wait_for_text="UPLOAD_BYTES_82")
+        yield done("已选择附件并读取页面，服务器接收状态尚未核验。", explanation=True)
+
+    install_http(monkeypatch, replies())
+    row = probe.run_arm(directory, "upload_bound", "B", entry.COMBINED, TARGET, max_turns=6,
+                        entry_features=frozenset({entry.TARGETS, entry.RESULTS}), fixture_html=html)
+    assert row["passed"], row
+    receipts = tool_receipts(directory / "state")
+    rejected, selected = [r for r in receipts if r.result.call.name == "browser_upload"]
+    assert not rejected.result.ok and selected.result.ok
+    assert '"dom_id": "invoice"' in rejected.result.model_text and '"dom_id": "receipt"' in rejected.result.model_text
+    value = decode_json_object(selected.result.canonical["value"])
+    assert value["effect_verified"] is False and value["sha256"] == hashlib.sha256(b"UPLOAD_BYTES_82\n").hexdigest()
+    parent, = [r.result for r in receipts if r.result.ok and r.result.call.name == "codemode"
+               and selected.identity in require_json_strings(r.result.canonical["child_effect_ids"], "child_effect_ids")]
+    assert parent.canonical["value"] == value
+    assert not any(r.result.call.name == "browser_click" for r in receipts)
