@@ -52,7 +52,7 @@
 
 前一轮宽回归曾因 R 盘占满出现 `No space left on device`，那份 JUnit 记录 39 failures、199 errors，结果受到环境污染，不能充当生产通过证据。可读的本轮测试证据已归档并校验 SHA256、ZIP 完整性，排除的浏览器缓存及被占用临时文件有清单。随后转到 D 盘的测试被用户主动停止，只产生部分结果，不计入通过数。
 
-用户恢复 R 盘空间后，已逐字节恢复原 `.pytest-local.toml`，测试临时目录重新指向 R 盘。后续测试、缓存、日志和实机产物全部位于 `R:\codey-closure-resume-20261115`；修改代码、报告及 Git 提交使用原仓库 `D:\codey`。没有建立或复制 worktree。本轮残留测试浏览器已单独关闭，未操作用户普通浏览器。
+用户恢复 R 盘空间后，已逐字节恢复原 `.pytest-local.toml`，测试临时目录重新指向 R 盘。恢复后的测试、缓存、日志和实机产物当时写入 `R:\codey-closure-resume-20261115`；实机记录现已按用户要求搬到下述仓库归档目录，pytest、缓存及静态检查数据仍留在 R 盘。修改代码、报告及 Git 提交使用原仓库 `D:\codey`。没有建立或复制 worktree。本轮残留测试浏览器已单独关闭，未操作用户普通浏览器。
 
 已有首次实机记录仍保留在 `.e2e-artifacts/browser-contract-closure-20261115/`：开发期 12/15 的运行中途源代码变化，只作诊断；随后代码固定的一轮为 13/17。其失败分别是说明重复 token、未声明文件类型时写入字符串、旧 stale-ref 负例未触发，以及 Research 漏等待并重新导航。没有用后来成功覆盖这些失败。
 
@@ -94,16 +94,20 @@ typed-copy 的 decimal、precision、string、multi、renamed 均通过：每项
 
 **证据位置**
 
-最终完整矩阵、类型复制矩阵及逐场景原始请求、provider 传输、提案、事件、回执和状态库在：
+最终完整矩阵、类型复制矩阵及逐场景原始请求、provider 传输、提案、事件、回执和状态库，已归档到仓库内 `.e2e-artifacts/browser-contract-closure-20261115/resumed-live/`：
 
-- `R:\codey-closure-resume-20261115\artifacts\full-surface-current\`
-- `R:\codey-closure-resume-20261115\artifacts\typed-copy-current\`
-- `R:\codey-closure-resume-20261115\artifacts\current-live-audit.json`：逐场景工具计数、模型提案、错误及原始证据 SHA256。
+- [full-surface-current](../../.e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/)：完整实机矩阵。
+- [typed-copy-current](../../.e2e-artifacts/browser-contract-closure-20261115/resumed-live/typed-copy-current/)：类型复制实机矩阵。
+- [current-live-audit.json](../../.e2e-artifacts/browser-contract-closure-20261115/resumed-live/current-live-audit.json)：逐场景工具计数、模型提案、错误及原始证据 SHA256。
+- [explanation-history-current/replay.json](../../.e2e-artifacts/browser-contract-closure-20261115/resumed-live/explanation-history-current/replay.json)：历史实机回复的离线复核。
+- [stale-edit-rerun-current](../../.e2e-artifacts/browser-contract-closure-20261115/resumed-live/stale-edit-rerun-current/) 及 [中止记录](../../.e2e-artifacts/browser-contract-closure-20261115/resumed-live/stale-edit-rerun-canceled.json)：按用户要求中止的补跑。
+- [migration-manifest.json](../../.e2e-artifacts/browser-contract-closure-20261115/resumed-live/migration-manifest.json)：迁移文件清单、新旧路径和逐文件 SHA256。
 - `R:\codey-closure-resume-20261115\artifacts\static-checks-final.json`：最终静态结果，与首次错误调用清单分开。
 - `R:\codey-closure-resume-20261115\artifacts\regression-*.xml`：生产回归、旧断言首次失败及独立基线。
-- `R:\codey-closure-resume-20261115\artifacts\stale-edit-rerun-canceled.json`：按用户要求中止的补跑。
 
-同名 [JSON 报告](browser-contract-closure-20261115.json) 保存本次分类、数目、路径与关键文件摘要；大体积实机产物保留在 R 盘，不纳入 Git。11 月 10—15 日原审计的 32 条根因继续引用原索引，本轮明确更新直接工具、说明、等待、来源类型、Research 和通用编辑停滞等相关条目，不把未重新执行的其余历史记录写成新通过。
+本次迁移共 1,044 个文件、73,935,966 字节（约 70.5 MiB）；逐文件比较迁移前原件、目标副本的 SHA256 一致后，才移除 R 盘对应原件。原始请求、回执、状态库及归档结果未改写，其中记录的运行时 R 盘路径保持原样，通过迁移清单映射到现位置。没有搬动 pytest、缓存或静态检查数据，也没有追加实机运行。
+
+同名 [JSON 报告](browser-contract-closure-20261115.json) 保存本次分类、数目、当前位置、迁移清单摘要与关键文件摘要；实机产物已移入仓库目录，沿用 `.e2e-artifacts/` 的 Git 忽略规则，原始数据不纳入 Git。11 月 10—15 日原审计的 32 条根因继续引用原索引，本轮明确更新直接工具、说明、等待、来源类型、Research 和通用编辑停滞等相关条目，不把未重新执行的其余历史记录写成新通过。
 
 **剩余限制**
 

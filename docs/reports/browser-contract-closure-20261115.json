@@ -9,9 +9,10 @@
     "base_head": "69d52f68f72abc3758c97fd00f6b9396d284e1d0",
     "production_source_digest": "f7b00caa32ea6b3262e3c0eb44d0259465a67000b2f62c470f7f99a64ffe7de6",
     "no_worktree_copy": true,
-    "latest_user_instruction": "stop additional runs; summarize and commit",
-    "artifact_root": "R:\\codey-closure-resume-20261115\\artifacts",
-    "source_and_git_root": "D:\\codey"
+    "latest_user_instruction": "Move R live artifacts into the existing repository archive; update report locations and commit. No additional test or model runs.",
+    "artifact_root": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live",
+    "source_and_git_root": "D:\\codey",
+    "non_live_artifact_root": "R:\\codey-closure-resume-20261115\\artifacts"
   },
   "verdict": "Declared mechanical steps, typed copying and scoped explanation repair are integrated. Model repair and undeclared semantics remain imperfect; full-surface gate is red (13/17).",
   "implementation": {
@@ -122,7 +123,7 @@
       "restored_old_snapshots": false,
       "strict_restore_contract_changed": false,
       "native_replay": "equivalent constructed control, not original native wire",
-      "path": "R:\\codey-closure-resume-20261115\\artifacts\\explanation-history-current\\replay.json",
+      "path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/explanation-history-current/replay.json",
       "sha256": "6d1f0f8de7e73eb126e4b282bcbcd6adffd9ae05632d3597051a211e0c7219c1",
       "interpretation": "Compatibility/evidence rejection, not proof of 20 model fixes."
     }
@@ -334,7 +335,7 @@
       "expected_source_blocks": 2,
       "failed_acceptances": 4,
       "cli_exit_code": 1,
-      "summary": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\summary.json",
+      "summary": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/summary.json",
       "summary_sha256": "fe8c497c96205ab17d8c65bf37849478fa5625d8ee5128a41368209dcf7adbf2",
       "source_before": "f7b00caa32ea6b3262e3c0eb44d0259465a67000b2f62c470f7f99a64ffe7de6",
       "source_after": "f7b00caa32ea6b3262e3c0eb44d0259465a67000b2f62c470f7f99a64ffe7de6",
@@ -343,7 +344,7 @@
           "case": "basic",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\basic\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/basic/summary.json",
           "sha256": {
             "summary.json": "2ae7d83b2386c477c3902621cc98e8fbe89d469b8906ac7f94f286c1dc0570a6",
             "request.json": "06f8c0815eaff68e4f1e323d06f7f4ce9c05cfe0eb10ecb1910165c48d04e154",
@@ -441,7 +442,7 @@
           "case": "codemode",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\codemode\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/codemode/summary.json",
           "sha256": {
             "summary.json": "8714212081f91f6febae7633181ff7c04fa184ea9cd3c912921c287443f337f1",
             "request.json": "be5daabc2453d448e94ce14dda633c726b22eaa0d4e9fcd4100d1e98c0f99554",
@@ -515,7 +516,7 @@
           "case": "download",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\download\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/download/summary.json",
           "sha256": {
             "summary.json": "fe43afde2b41542022f23bc8dbc6f3950d549b7563b72b080b0d7ed2ff4cca6d",
             "request.json": "aa8f63cfe587791fbcee508b31dd04ea7d47c6cd2d77ceeb0a436a6e2357b79d",
@@ -587,7 +588,7 @@
           "case": "fixed_failure",
           "passed": true,
           "stop_reason": "blocked",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\fixed_failure\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/fixed_failure/summary.json",
           "sha256": {
             "summary.json": "50df367e89b0af6aa9db52baef42239b86bd2d7ad6747997a0cc07d1f883b68c",
             "request.json": "9660605d893a8dfc1111b2ec01f46c3ad03faf697b49bc7d845cd303aeefa524",
@@ -696,7 +697,7 @@
           "case": "hybrid",
           "passed": false,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\hybrid\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/hybrid/summary.json",
           "sha256": {
             "summary.json": "697e24250a5c3711c04f278be616362a965f90aa310a1c41471403cacc98620b",
             "request.json": "c0d3286e08ef775c9282b75217461036cd5b69403ec2572c47fab1092885ee0a",
@@ -814,7 +815,7 @@
           "case": "hybrid_codemode",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\hybrid_codemode\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/hybrid_codemode/summary.json",
           "sha256": {
             "summary.json": "86f26b8df99af012a01b01e83dfb69fdb2ad3d346090d56dd86f59fa3f537004",
             "request.json": "c025e9f88e2ac16b705bec4994bf275ff1f4a57520ea37e53f4ca5bc3a0b0e6c",
@@ -898,7 +899,7 @@
           "case": "legacy_structured",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\legacy_structured\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/legacy_structured/summary.json",
           "sha256": {
             "summary.json": "e71a96686d9f26703d171b62126faae39f7e7a8e8aa800dd51d563eeccededab",
             "request.json": "05b5cf5ae7b2d0cb8b6c2cd822a9530a32773108b3b98ae9fe9ac32f8df141e0",
@@ -1019,7 +1020,7 @@
           "case": "reread",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\reread\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/reread/summary.json",
           "sha256": {
             "summary.json": "ee4766d1f03492033b06f2a2bed742a57ad6a5560ae3b35ca475214f79582f7e",
             "request.json": "a2be5a303ed62a721974168e83a63b5c23b74f448d737c0ae6c0b63274e977b6",
@@ -1128,7 +1129,7 @@
           "case": "research",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\research\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/research/summary.json",
           "sha256": {
             "summary.json": "a2c1bcd49236a70257f502c43483dcba59a84c51d21a9a3532371763c671486f",
             "request.json": "94909c7e875e36f778986a92efd9202d148a7b092aad8713ff2b571c69f16a2a",
@@ -1344,7 +1345,7 @@
           "case": "research_codemode",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\research_codemode\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/research_codemode/summary.json",
           "sha256": {
             "summary.json": "b9262cc6c96bb9fdd680af9947166ea286ed547f93d27f79bcd1693bf757d204",
             "request.json": "1f3e85d4081da6536cbd0520fcdab788c60110fd98b1530c7ad67e133056b9c3",
@@ -1558,7 +1559,7 @@
           "case": "research_sequence",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\research_sequence\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/research_sequence/summary.json",
           "sha256": {
             "summary.json": "59d730ec99a7934cf7c0d0546d1dceaa21edf3d3bec460e10720029d6e3d72bf",
             "request.json": "b58354490dfc2073a06fdb2bb8ce418a93f82d786891449f55e085ea2b8d6026",
@@ -1692,7 +1693,7 @@
           "case": "source_failure",
           "passed": true,
           "stop_reason": "blocked",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\source_failure\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/source_failure/summary.json",
           "sha256": {
             "summary.json": "9499beaedf07950104a6152908da17a8cf3704214e4496bad937c29cc1e403c7",
             "request.json": "f262eb8c39a03b5a94b62802297f2479a6d3880452435c388acfc020108f1f04",
@@ -1794,7 +1795,7 @@
           "case": "stale_edit",
           "passed": false,
           "stop_reason": "no_progress",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\stale_edit\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/stale_edit/summary.json",
           "sha256": {
             "summary.json": "d885d34d83f83d80f9ebee779e91e80e6c55a921f7883a5e8fe633373fc39cd1",
             "request.json": "0c630038dd8f6e73b5e6cb65e2fce72378ff3b5d9f14042bf648491443657b43",
@@ -1977,7 +1978,7 @@
           "case": "stale_ref",
           "passed": false,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\stale_ref\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/stale_ref/summary.json",
           "sha256": {
             "summary.json": "d9f80a15c1a87a5602de97c1af8cffd45ba82df5f4612bdb8c23ac6e486a3f23",
             "request.json": "2d1a64473abc61662f2fa67f18044ae126de8cf39130e3edeb9d3a899731c58f",
@@ -2075,7 +2076,7 @@
           "case": "stale_ref_injected",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\stale_ref_injected\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/stale_ref_injected/summary.json",
           "sha256": {
             "summary.json": "4887796f9c15cb8bf7dc033b4de6f33ce39f676e23bc234f0795ba2c7ba837c3",
             "request.json": "06f8c0815eaff68e4f1e323d06f7f4ce9c05cfe0eb10ecb1910165c48d04e154",
@@ -2252,7 +2253,7 @@
           "case": "structured",
           "passed": false,
           "stop_reason": "no_progress",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\structured\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/structured/summary.json",
           "sha256": {
             "summary.json": "0185be1425cc3be66cee471e0acdd4b256397df3a2415213f29a885118ff5085",
             "request.json": "952de0851f6031ab273802229395fe56c26200c625fa54b11b63a4d112c31ab0",
@@ -2397,7 +2398,7 @@
           "case": "upload",
           "passed": true,
           "stop_reason": "done",
-          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\upload\\summary.json",
+          "summary_path": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/full-surface-current/upload/summary.json",
           "sha256": {
             "summary.json": "6d36a55fd239ea4bdce6fcd62c3d546f231b4f7c3f295eeb55e676e65aca27bc",
             "request.json": "94bf1b13d75ededb2ba592d7f88e5e2be3249fea3e516208094c6286d82e4242",
@@ -2473,7 +2474,7 @@
       "passed": 5,
       "runs": 5,
       "cli_exit_code": 0,
-      "summary": "R:\\codey-closure-resume-20261115\\artifacts\\typed-copy-current\\summary.json",
+      "summary": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/typed-copy-current/summary.json",
       "summary_sha256": "cd60ac2feda5db1b1dc4eb10bc4a5ac614f73e29a6a16a041bce19bed57fb6d5",
       "source_before": "f7b00caa32ea6b3262e3c0eb44d0259465a67000b2f62c470f7f99a64ffe7de6",
       "source_after": "f7b00caa32ea6b3262e3c0eb44d0259465a67000b2f62c470f7f99a64ffe7de6",
@@ -2533,7 +2534,7 @@
     "canceled_additional_stale_edit_run": {
       "status": "user_canceled",
       "reason": "用户要求不用跑了、汇总报告并 commit；已停止进程，不再启动验证。",
-      "directory": "R:\\codey-closure-resume-20261115\\artifacts\\stale-edit-rerun-current",
+      "directory": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/stale-edit-rerun-current",
       "completed_summary_exists": false,
       "counted_as_pass_or_fail": false,
       "overwrites_matrix": false
@@ -2612,5 +2613,48 @@
     "Current live stale-edit did not reach file mutation/conflict; latest additional run was canceled by user. Previous completed run and production regressions cover conflict handling separately.",
     "Current matrix is one controlled-fixture run; do not combine changing matrix versions into an improvement rate or claim general model reliability.",
     "Historical raw replies were selected problem traces, not all 2415 provider files; old snapshot compatibility limits offline replay."
-  ]
+  ],
+  "artifact_migration": {
+    "completed_at": "2026-11-15T19:33:03.150741+08:00",
+    "source_root": "R:\\codey-closure-resume-20261115\\artifacts",
+    "destination_root": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live",
+    "manifest": ".e2e-artifacts/browser-contract-closure-20261115/resumed-live/migration-manifest.json",
+    "manifest_sha256": "a4c74d8f9b599f73de5d7a47d6fda1b7aba9f253095f81dadcb77624c69a0319",
+    "file_count": 1044,
+    "bytes": 73935966,
+    "status": "moved_and_sha256_verified",
+    "original_live_entries_removed": true,
+    "pytest_moved": false,
+    "static_checks_moved": false,
+    "cache_moved": false,
+    "raw_contents_rewritten": false,
+    "raw_runtime_paths": "Preserved verbatim inside original requests, receipts, databases and run reports; use the per-file manifest to resolve their archive location.",
+    "artifacts_tracked_in_git": false,
+    "git_ignore_rule": ".e2e-artifacts/",
+    "report_path_fields_updated": [
+      "/historical/offline_explanation_replay/path",
+      "/live/full_surface/summary",
+      "/live/full_surface/cases/0/summary_path",
+      "/live/full_surface/cases/1/summary_path",
+      "/live/full_surface/cases/2/summary_path",
+      "/live/full_surface/cases/3/summary_path",
+      "/live/full_surface/cases/4/summary_path",
+      "/live/full_surface/cases/5/summary_path",
+      "/live/full_surface/cases/6/summary_path",
+      "/live/full_surface/cases/7/summary_path",
+      "/live/full_surface/cases/8/summary_path",
+      "/live/full_surface/cases/9/summary_path",
+      "/live/full_surface/cases/10/summary_path",
+      "/live/full_surface/cases/11/summary_path",
+      "/live/full_surface/cases/12/summary_path",
+      "/live/full_surface/cases/13/summary_path",
+      "/live/full_surface/cases/14/summary_path",
+      "/live/full_surface/cases/15/summary_path",
+      "/live/full_surface/cases/16/summary_path",
+      "/live/typed_copy/summary",
+      "/live/canceled_additional_stale_edit_run/directory"
+    ],
+    "final_verification": "All archived files rehashed after source cleanup; Windows extended-length paths used for the inventory and hashing.",
+    "paths_over_259_characters": 71
+  }
 }
