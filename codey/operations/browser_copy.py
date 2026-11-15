@@ -209,26 +209,31 @@ class CopyTurn:
         source: dict[str, dict[str, object]] = {
             key: {"type": "string"} for key in (("key_column", "key", "column") if kind == "table" else ("pointer",))}
         if self.business_key and kind == "table":
-            source["key"] = {"type": "string", "enum": [self.business_key]}
+            del source["key"]
         if len(available) > 1:
             source["id"] = {"type": "string", "enum": [str(row["id"]) for row in available]}
-        target: dict[str, dict[str, object]] = {"file": {"type": "string", "enum": [self.target.path]},
-                                              "field": {"type": "string", "enum": [self.target.field]}}
         preview = [{**{key: row[key] for key in ("id", "title", "columns") if key in row},
                     **({"rows": rows[:3]} if isinstance(rows := row.get("rows"), list) else {})}
                    for row in available[:8]]
-        return freeze_spec_parameters(replace(original, declarations="", json_examples=(), required=("source", "target"),
+        bound_key = (f"Bound row key: {json.dumps(self.business_key, ensure_ascii=False)}. "
+                     if self.business_key and kind == "table" else "")
+        destination: JsonObject = {"file": self.target.path, "field": self.target.field}
+        return freeze_spec_parameters(replace(original, declarations="", json_examples=(), required=("source",),
             description=f"Copy the {kind} source value to the authorized {self.target.value_type} field. "
-            f"Observed source IDs and previews: {json.dumps(preview, ensure_ascii=False)}. "
+            f"Bound destination: {json.dumps(destination, ensure_ascii=False)}. "
+            f"{bound_key}Observed source IDs and previews: {json.dumps(preview, ensure_ascii=False)}. "
             "Use a JSON Pointer such as /parcel/label for JSON. After a file version conflict, retry with the same source.",
-            parameters=(("source", _object(source)), ("target", _object(target)))))
+            parameters=(("source", _object(source)),)))
 
     def lower(self, args: JsonObject) -> JsonObject:
         if self.phase == "observe":
             return {"code": OBSERVE, "inputs": {"url": self.target.url, "capture": CAPTURE}}
         selector = decode_json_object(args["source"])
         data = self.data or {}
-        available = objects(data, observation_kind(data))
+        kind = observation_kind(data)
+        available = objects(data, kind)
+        if self.business_key and kind == "table":
+            selector["key"] = self.business_key
         if len(available) == 1:
             selector["id"] = available[0]["id"]
         select_source(data, selector, self.target.value_type)

@@ -48,12 +48,15 @@ def test_copy_scope_is_explicit_and_narrow() -> None:
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 @pytest.mark.parametrize("case", [
-    "table", "json", "expired", "changed_data", "changed_file", "wrong_selector", "wrong_target", "raw_code", "duplicate", "parent_return", "observe_return", "unconfirmed",
+    "table", "generalized", "unbound_key", "json", "expired", "changed_data", "changed_file", "wrong_selector", "wrong_target", "wrong_key", "raw_code", "duplicate", "parent_return", "observe_return", "unconfirmed",
 ])
 def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str) -> None:
-    table = case in {"table", "wrong_selector", "duplicate"}
-    path, field = ("ledger.json", "payable") if table else ("dispatch.json", "carrier_label")
-    task = (f"打开 {URL}，把 Retail 表中 B-17 的 Due 以整数原样写入 ledger.json 的 payable。"
+    table = case in {"table", "generalized", "unbound_key", "wrong_selector", "wrong_key", "duplicate"}
+    path, field = (("vouchers.json", "outstanding") if case == "generalized" else
+                   ("ledger.json", "payable") if table else ("dispatch.json", "carrier_label"))
+    key = "RZ-824" if case == "generalized" else "lot_17" if case == "unbound_key" else "B-17"
+    key_column, column = ("Batch", "Balance") if case == "generalized" else ("Lot", "Due")
+    task = (f"打开 {URL}，把 Retail 表中 {key} 的 {column} 以整数原样写入 {path} 的 {field}。"
             if table else f"打开 {URL}，把运单号原样写入 dispatch.json 的 carrier_label，保留前导零。")
     task += "保留其他字段。"
     if case == "unconfirmed":
@@ -74,16 +77,19 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
             return converted
 
         monkeypatch.setattr(CopyTurn, "lower", missing_return)
-    selector: JsonObject = {"id": "table-2", "key_column": "Lot", "key": "B-17", "column": "Due"} if table else {"pointer": "/parcel/label"}
-    edit: JsonObject = {"tool": "codemode", "args": {"source": selector, "target": {"file": path, "field": field}}}
+    selector: JsonObject = {"id": "table-2", "key_column": key_column, "column": column} if table else {"pointer": "/parcel/label"}
+    if case == "unbound_key":
+        selector["key"] = key
+    edit: JsonObject = {"tool": "codemode", "args": {"source": selector}}
     proposals: list[JsonObject] = (
         [{"tool": "codemode", "args": {"code": "return null;"}}, OBSERVE] if case == "raw_code" else [OBSERVE])
     if case == "wrong_selector":
-        proposals.append({"tool": "codemode", "args": {"source": {**selector, "column": "Amount"},
-                                                     "target": {"file": path, "field": field}}})
+        proposals.append({"tool": "codemode", "args": {"source": {**selector, "column": "Amount"}}})
     elif case == "wrong_target":
         proposals.append({"tool": "codemode", "args": {"source": selector,
                                                      "target": {"file": path, "field": "parcel.label"}}})
+    elif case == "wrong_key":
+        proposals.append({"tool": "codemode", "args": {"source": {**selector, "key": "B-19"}}})
     if case == "duplicate":
         proposals.extend([edit, {"tool": "ask_user", "args": {
             "question": "B-17 对应两行，应使用哪一行？", "options": ["Due 为 962", "Due 为 963"]}}])
@@ -104,6 +110,8 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     active: BrowserSearchProvider | None = None
 
     html = TABLE if table else JSON_PAGE
+    if table:
+        html = html.replace("B-17", key).replace("Lot", key_column).replace("Due", column)
     if case == "duplicate":
         html = html.replace("<tr><td>B-19</td><td>100</td></tr>", "<tr><td>B-17</td><td>963</td></tr>")
 
@@ -188,6 +196,8 @@ def test_browser_copy_default_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert parse_json_object(file.read_text(encoding="utf-8")) == {
         **initial, field: 962 if table else "000784" if case == "changed_data" else "000783", "external": "keep"}
     previous, final = [decode_json_object(item.call.args["browser_source"]) for item in edits]
+    if table:
+        assert decode_json_object(final["selector"])["key"] == key
     if case in {"expired", "changed_data"}:
         assert edits[0].audit["error_code"] == EXPIRED
         assert previous["ref"] != final["ref"]

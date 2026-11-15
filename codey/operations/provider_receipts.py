@@ -225,7 +225,7 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
         raise ValueError("captured input binding changes execution authority")
     if binding.kind == "browser_copy":
         if copy is None or copy.phase not in {"observe", "edit"} or copy.spec(execution) != model:
-            raise ValueError("captured input binding differs from its copy observation")
+            raise ValueError("captured input binding differs from its copy observation; start a new request")
     elif copy is not None or set(dict(model.parameters)) != {"upload"} or model.required != ("upload",):
         raise ValueError("invalid captured upload input binding")
     return binding

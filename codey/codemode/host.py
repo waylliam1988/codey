@@ -162,5 +162,8 @@ class CodeModeHost:
         if set(args) != {"base_result_ref", "changes"} or not isinstance(ref, str) or ref not in self._complete_reads:
             raise ValueError("use an original complete tools.read_file result from this program")
         path, text = self._complete_reads[ref]
-        content = replace_json_fields(text, decode_json_object(args["changes"]))
+        try:
+            content = replace_json_fields(text, decode_json_object(args["changes"]))
+        except ValueError as exc:
+            raise ValueError(f"target file {path!r}: {exc}") from exc
         return {"path": path, "content": content, "base_result_ref": ref}

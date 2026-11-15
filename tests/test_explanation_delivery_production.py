@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from codey.codemode.json_edit import JSON_FIELD_EDIT_PROGRAM
 from codey.policies.tool_requirement import require_browser_read_field, require_tool_success
 from codey.storage.input_attachments import InputAttachmentStore
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
@@ -75,6 +76,39 @@ def test_fact_and_paragraph_repairs_use_current_receipts_without_repeating_reads
     assert isinstance(messages, list)
     assert any(isinstance(message, dict) and isinstance(content := message.get("content"), str)
                and escaped in content for message in messages)
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
+def test_missing_one_fact_repairs_only_explanation_after_committed_edit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    draft = "已读取并写入当前记录。\n\n净重为173克，其他字段已保留。"
+    corrected = draft + "校验码为 QUARTZ_851。"
+    install_http(monkeypatch, [{"tool": "done", "args": {"summary": text}} for text in (draft, corrected)])
+    program = ACQUISITION.replace("const tabs=",
+        "unwrap(await tools.browser_eval({code:'window.__record'}));\n"
+        "await (async () => {\n" + JSON_FIELD_EDIT_PROGRAM + "\n})();\nconst tabs=")
+    acquisition: JsonObject = {"tool": "codemode", "args": {"code": program, "inputs": {
+        "url": URL, "city": "福州", "wait_text": "鱼丸", "path": "result.json",
+        "changes": {"amount": 173, "code": "QUARTZ_851"}}}}
+    directory = tmp_path / "run"
+    row = run_case(directory, "hybrid", TARGET, max_turns=3, explanation_output=True, restore_snapshots=True,
+        additional_required_tools=EXPLANATION_FACTS, explanation_schema=schema(), acquisition_action=acquisition)
+    assert row["passed"] is True and row["stop_reason"] == "done", row
+    assert parse_json_object(str(row["answer"]))["explanation"] == corrected
+    attempts = row["repair_attempts"]
+    assert isinstance(attempts, list) and len(attempts) == 1
+    feedback = str(decode_json_object(attempts[0])["reason"])
+    assert "answer_text_missing" in feedback and 'Expected selected value (JSON): "QUARTZ_851"' in feedback
+    assert "Expected selected value (JSON): 173" not in feedback
+    assert "Do not repeat the tool execution" in feedback
+    receipts = tool_receipts(directory / "state")
+    for tool in ("browser_read", "browser_click", "read_file", "edit"):
+        selected = [receipt for receipt in receipts if receipt.result.call.name == tool]
+        assert len(selected) == 1 and selected[0].result.ok, tool
+    read = next(receipt for receipt in receipts if receipt.result.call.name == "browser_read")
+    assert read.identity in feedback
+    assert row["restored_snapshots"] and row["raw_explanation_preserved"] is True
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")

@@ -36,11 +36,14 @@ def upload_snapshot() -> TurnSnapshot:
     return build_turn_snapshot(session)
 
 
-def copy_snapshot() -> TurnSnapshot:
+def copy_snapshot(*, table: bool = False, business_key: str = "RZ-824") -> TurnSnapshot:
     session = TaskSession(TaskPolicy(grants=GRANTS), task_kind="hybrid",
-                          task_text=f"把 {URL} 的运单号原样写入 dispatch.json 的 carrier_label，保留前导零。")
-    data: JsonObject = {"tables": [], "records": [{"id": "json-1", "title": "shipment",
-                         "text": '{"parcel":{"label":"000783"}}'}]}
+        task_text=(f"把 {URL} 中 {business_key} 的 Balance 原样写入 vouchers.json 的 outstanding，整数。" if table else
+                   f"把 {URL} 的运单号原样写入 dispatch.json 的 carrier_label，保留前导零。"))
+    data: JsonObject = ({"tables": [{"id": "table-1", "columns": ["Batch", "Balance"],
+                                    "rows": [[business_key, "962"]], "rectangular": True}], "records": []} if table else
+                       {"tables": [], "records": [{"id": "json-1", "title": "shipment",
+                                                   "text": '{"parcel":{"label":"000783"}}'}]})
     session._memory_results["capture"] = ToolResult(ToolCall("browser_eval", {"code": CAPTURE}, call_id="observation:child:0"), "captured",
         ok=True, canonical={"value": {"value": data, "truncated": False}})
     session._memory_results["parent"] = ToolResult(ToolCall("codemode", {}), "observed", ok=True,
@@ -71,7 +74,7 @@ def test_binding_freezes_one_model_contract_and_preserves_native_identity(kind: 
     execution_parameters: dict[str, object] = dict(execution.parameters)
     assert "code" in execution_parameters and "upload" not in execution_parameters
     args: JsonObject = ({"upload": {"action": "observe"}} if kind == "upload" else {
-        "source": {"pointer": "/parcel/label"}, "target": {"file": "dispatch.json", "field": "carrier_label"}})
+        "source": {"pointer": "/parcel/label"}})
     native = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("original", "codemode", args),)),
                             snapshot=snapshot)
     text_payload: JsonObject = {"tool": "codemode", "args": args}
@@ -86,6 +89,61 @@ def test_binding_freezes_one_model_contract_and_preserves_native_identity(kind: 
     assert restored == snapshot
     assert normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("original", "codemode", args),)),
                           snapshot=restored).calls == native.calls
+
+
+@pytest.mark.parametrize("key", ["RZ-824", "lot_17"])
+def test_copy_only_requests_unbound_source_fields_and_restores_them(key: str) -> None:
+    snapshot = copy_snapshot(table=True, business_key=key)
+    binding = snapshot.input_binding
+    assert binding is not None
+    model = binding.model_spec
+    assert model.required == ("source",) and set(dict(model.parameters)) == {"source"}
+    source = canonical_json_object(dict(model.parameters)["source"])
+    expected = {"key_column", "column"} | ({"key"} if key == "lot_17" else set())
+    assert set(decode_json_object(source["properties"])) == expected
+    assert "vouchers.json" in model.description and "outstanding" in model.description
+    if key == "RZ-824":
+        assert key in model.description
+    selector: JsonObject = {"key_column": "Batch", "column": "Balance"}
+    if key == "lot_17":
+        selector["key"] = key
+    args: JsonObject = {"source": selector}
+    restored = restore_snapshot(parse_json_object(json.dumps(snapshot_description(snapshot), sort_keys=True)))
+    assert restored == snapshot
+    plan = normalize_turn(AssistantTurn(tool_calls=(ProviderToolCall("original", "codemode", args),)), snapshot=restored)
+    assert not plan.protocol_error and len(plan.calls) == 1
+    inputs = decode_json_object(plan.calls[0].args["inputs"])
+    assert inputs["path"] == "vouchers.json"
+    lowered_source = decode_json_object(inputs["source"])
+    assert decode_json_object(lowered_source["selector"]) == {**selector, "id": "table-1", "key": key}
+    assert args == {"source": selector}
+
+
+@pytest.mark.parametrize("old_field", ["target", "key"])
+def test_obsolete_copy_contract_requires_a_new_request(old_field: str) -> None:
+    payload = snapshot_description(copy_snapshot(table=True))
+    binding = decode_json_object(payload["input_binding"])
+    spec = decode_json_object(binding["model_spec"])
+    parameters = spec["parameters"]
+    assert isinstance(parameters, list)
+    if old_field == "target":
+        parameters.append(["target", {"type": "object", "properties": {
+            "file": {"type": "string", "enum": ["vouchers.json"]},
+            "field": {"type": "string", "enum": ["outstanding"]}},
+            "required": ["file", "field"], "additionalProperties": False}])
+        spec["required"] = ["source", "target"]
+    else:
+        pair = parameters[0]
+        assert isinstance(pair, list)
+        source = decode_json_object(pair[1])
+        properties = decode_json_object(source["properties"])
+        properties["key"] = {"type": "string", "enum": ["RZ-824"]}
+        source["properties"] = properties
+        source["required"] = ["key_column", "key", "column"]
+        parameters[0] = ["source", source]
+    payload["input_binding"] = {**binding, "model_spec": spec}
+    with pytest.raises(ValueError, match="copy observation; start a new request"):
+        restore_snapshot(payload)
 
 
 def test_invalid_batch_discards_previously_lowered_upload() -> None:
