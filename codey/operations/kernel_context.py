@@ -392,9 +392,14 @@ class KernelContext:
                 handoff = "\n\n".join(part for part in (guidance, handoff) if part)
             return snapshot, handoff
         from codey.operations.browser_detail import offer_page_details
-        from codey.operations.research_submission_handoff import research_submission_handoff
+        from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
 
         snapshot, handoff = research_submission_handoff(self.session, snapshot, self.completion_context, browser)
+        if snapshot.tool_names == ("submit_research_answer",):
+            return snapshot, handoff
+        snapshot, browser_handoff = research_browser_handoff(self.session, snapshot)
+        if browser_handoff:
+            return snapshot, "\n\n".join(part for part in (browser_handoff, handoff) if part)
         return (snapshot, handoff) if handoff else offer_page_details(self.session, snapshot, browser)
 
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",

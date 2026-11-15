@@ -188,7 +188,9 @@ def test_omission_reuses_field_observation_without_rewriting_the_draft() -> None
     output = prepare_completion_output(session, draft, CompletionContext())
     assert parse_json_object(output.text) == {"explanation": draft, "token": "TOKEN_74"}
     failed = evaluate(session, output.text, observations=output.observations)
-    assert not failed.complete and "answer_text_forbidden" in failed.followup and draft in failed.followup
+    assert not failed.complete and "answer_text_forbidden" in failed.followup
+    assert failed.error_source == "completion_explanation" and "Repair only /explanation" in failed.followup
+    assert "TOKEN_74" not in failed.followup
     corrected = prepare_completion_output(session, "已读取，保留业务分析。", CompletionContext())
     assert evaluate(session, corrected.text, observations=corrected.observations).complete
     assert len(session.executed) == 1

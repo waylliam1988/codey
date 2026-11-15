@@ -222,6 +222,13 @@ def _entry_output_check(submission: object, *, strict: bool) -> str:
     return declaration(output_format, output_schema, strict_research=strict)
 
 
+def _entry_browser_checks(submission: object, *, kind: str, strict: bool) -> tuple[str, ...]:
+    from codey.task.web_intent import explicit_browser_checks
+
+    task: object = getattr(submission, "task", "")
+    return explicit_browser_checks(task) if kind in {"chat", "hybrid"} and not strict and isinstance(task, str) else ()
+
+
 def build_task_policy(
     submission: object,
     *,
@@ -320,6 +327,7 @@ def build_task_policy(
     required_checks = (*required_checks, *((output,) if output else ()))
     required_checks = (*required_checks, *_entry_tool_checks(getattr(submission, "required_tools", ()), kind=kind,
                                                             strict=strict, explanation=has_explanation(required_checks)))
+    required_checks = tuple(dict.fromkeys((*required_checks, *_entry_browser_checks(submission, kind=kind, strict=strict))))
     requested_text = ",".join(sorted(requested)) if requested else "-"
     denied_text = ",".join(sorted(denied)) if denied else "-"
     source = f"kind:{kind or 'project'};project:{'yes' if has_project else 'no'};requested:{requested_text};strict:{'yes' if strict else 'no'};denied:{denied_text}"

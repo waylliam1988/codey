@@ -34,6 +34,37 @@ class WebIntent:
     browser_navigation_requested: bool = False
 
 
+def explicit_browser_checks(task: str) -> tuple[str, ...]:
+    """Admit explicit wait/read commands, without inferring authorization."""
+    from codey.policies.tool_requirement import require_tool_success
+
+    if len(explicit_web_intent(task).urls) > 1:
+        return ()
+    text = re.sub(r"```[\s\S]*?```|(?m:^[ \t]*>[^\n]*)", "", task)
+    text = _QUOTED.sub(lambda match: "" if re.search(r"\bbrowser_(?:wait|read)\b", match[0]) else match[0], text)
+    text = re.sub(r"`(browser_wait|browser_read)`", r"\1", text)
+    text = re.sub(r"`[^`\n]*`", "", text)
+    checks: list[str] = []
+    waiting = False
+    for clause in re.split(r"[。；;\n]", text):
+        for match in re.finditer(r"\bbrowser_(wait|read)\b", clause):
+            before, after = clause[:match.start()], clause[match.end():]
+            if _NEGATED.search(before):
+                continue
+            command = re.search(r"(?:调用|使用|执行|再|最后|\bcall|\buse|\bthen)\s*$", before, re.I)
+            predicate = re.match(r"\s*等待(?:页面)?(?:出现|显示)\s*([^，,。；;\n]+)", after)
+            if command is None and predicate is None:
+                continue
+            if match[1] == "wait":
+                value = predicate[1].strip().strip('"“”') if predicate else ""
+                args: dict[str, object] = {"condition": "text", "value": value} if value else {}
+                checks.append(require_tool_success("browser_wait", arguments=args, after="page_actions"))
+                waiting = True
+            elif waiting:
+                checks.append(require_tool_success("browser_read", after="browser_wait"))
+    return tuple(dict.fromkeys(checks))
+
+
 def source_url_key(url: str) -> str:
     try:
         parts = urlsplit(url)

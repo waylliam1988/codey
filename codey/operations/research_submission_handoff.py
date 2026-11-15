@@ -123,7 +123,29 @@ def research_submission_handoff(session: TaskSession, snapshot: TurnSnapshot, co
         return snapshot, ""
     specs = tuple(spec for spec in snapshot.frozen_specs if spec.name in SUBMISSION_TOOLS)
     return refresh_snapshot_contract(replace(snapshot, tool_names=SUBMISSION_TOOLS, nested_tool_names=(), frozen_specs=specs,
+                   browser_followups=False, browser_references=None, browser_fill_text=None,
                    custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in SUBMISSION_TOOLS))), (
         "The required post-wait page evidence is ready. Use submit_research_answer and cite "
         f"{labels} for the required page."
     )
+
+
+def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot) -> tuple[TurnSnapshot, str]:
+    """Reuse fixed browser leaf lowering inside an explicit Research workflow."""
+    from codey.operations.kernel_protocol import offer_browser_call
+
+    sequence = submission_sequence(session)
+    if snapshot.research_scope is None or not (sequence or declared_workflow_url(session)):
+        return snapshot, ""
+    names = {"browser_navigate", "browser_wait", "browser_read"} if sequence else set()
+    for check in session.policy.required_checks:
+        requirement = parse_tool_success_check(check)
+        if requirement is not None:
+            names.add(requirement.tool)
+    for name in sorted(names):
+        snapshot = offer_browser_call(snapshot, session, name, research=True)
+    return snapshot, ("For declared browser steps, use the offered direct browser tools. "
+                      "They execute fixed programs under this Research scope. Supply question_ref when the tool requires it. "
+                      "Submit one direct browser action per turn. "
+                      "For a query result, use browser_click purpose=result when offered to execute its declared waits and read. "
+                      "Use the declared page condition for browser_wait, then browser_read, and submit with citations.")

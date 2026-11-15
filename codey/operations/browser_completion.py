@@ -18,6 +18,27 @@ from codey.types.json_value import JsonObject, decode_json_object
 
 PAGE_EVIDENCE_TOOLS = frozenset({"browser_wait", "browser_read"})
 _FORM_ACTIONS = frozenset({"browser_fill", "browser_click"})
+PAGE_ACTIONS = PAGE_TRANSITIONS | _FORM_ACTIONS | {"browser_upload"}
+
+
+def ordered_browser_refs(tool: str, after: str, *, records: Mapping[str, ExecutionRecord],
+                         results: Mapping[str, ToolResult], document: JsonObject | None) -> set[str]:
+    """Select successful current-document receipts after the latest prerequisite."""
+    if document is None:
+        return set()
+    prerequisites = PAGE_ACTIONS if after == "page_actions" else frozenset({after})
+    eligible: set[str] = set()
+    ready = after == "page_actions"
+    for ref, result in committed_results(records, results, prerequisites | {tool}, include_failed=prerequisites):
+        if result.audit.get("browser_document") != document:
+            continue
+        if result.call.name in prerequisites:
+            eligible.clear()
+            ready = after == "page_actions" or result.ok and wait_matched_on_page(result, str(document.get("url", "")))
+        elif ready and result.ok:
+            if tool != "browser_wait" or wait_matched_on_page(result, str(document.get("url", ""))):
+                eligible.add(ref)
+    return eligible
 
 
 def committed_results(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],

@@ -1,0 +1,2616 @@
+{
+  "scope": {
+    "date_range": [
+      "2026-11-10",
+      "2026-11-15"
+    ],
+    "timezone": "Asia/Taipei",
+    "created_at": "2026-11-15T19:15:46.099502+08:00",
+    "base_head": "69d52f68f72abc3758c97fd00f6b9396d284e1d0",
+    "production_source_digest": "f7b00caa32ea6b3262e3c0eb44d0259465a67000b2f62c470f7f99a64ffe7de6",
+    "no_worktree_copy": true,
+    "latest_user_instruction": "stop additional runs; summarize and commit",
+    "artifact_root": "R:\\codey-closure-resume-20261115\\artifacts",
+    "source_and_git_root": "D:\\codey"
+  },
+  "verdict": "Declared mechanical steps, typed copying and scoped explanation repair are integrated. Model repair and undeclared semantics remain imperfect; full-surface gate is red (13/17).",
+  "implementation": {
+    "ordinary_wait": "Reuse canonical tool requirements with current-document/action ordering; explicit wait/read only; no authorization inference.",
+    "explanation_repair": "Independent receipt-bound fields assembled by application; feedback targets explanation only; settled work not re-exposed.",
+    "typed_copy": "Reuse one existing source-bound/version-checked edit for explicitly typed single-source JSON/table values; immutable exact JSON number lexemes; multiple fields to one file.",
+    "research_steps": "Eligible declared single-source Research workflows reuse direct leaves and existing CodeMode lowering, wait plans, citations and submit gate.",
+    "related_deterministic_fixes": [
+      "Clear navigation binding from explanation-only restore contract.",
+      "Use current document consistently in ordered completion checks and guidance.",
+      "Recognize 不运行测试 in existing copy admission.",
+      "Include Research sequence wait in existing query click plan."
+    ]
+  },
+  "historical": {
+    "prior_audit": "docs\\reports\\historical-error-reconciliation-20261115.json",
+    "prior_audit_sha256": "84ae87f23b4f2caeff980e277f16b15542cf2d5906d4b3d2c89b63928a1e4969",
+    "prior_audit_scope": {
+      "start": "2026-11-10",
+      "end": "2026-11-15",
+      "timezone": "Asia/Taipei",
+      "reports_indexed": 63,
+      "artifact_roots_indexed": 265,
+      "artifact_file_counts": {
+        "summary.json": 2500,
+        "provider.jsonl": 2415,
+        "verification.json": 1,
+        "batch-summary.json": 1
+      },
+      "unit": "files, not independent live tasks",
+      "all_provider_files_reexecuted": false,
+      "new_model_calls": 0
+    },
+    "prior_audit_root_causes": 32,
+    "all_provider_files_reexecuted": false,
+    "fixed_reply_groups": 8,
+    "related_historical_tests": 17,
+    "fixture_sha256": {
+      "tests/fixtures/task_contract_failure_replies_20261113.json": "a9cb34ccf4caa8b7619d9158591dc764272ede658934d94bbaaf234546f4afe1",
+      "tests/fixtures/historical_browser_failure_replies_20261115.json": "21472371ad48509758214efc15eea6a8cd8295d66196ced7f156d9da884783b6"
+    },
+    "classification_updates": [
+      {
+        "ids": [
+          "R02",
+          "R03",
+          "R04",
+          "R05",
+          "R16"
+        ],
+        "current": "已有直接工具在声明完整的 Research 流程复用；旧错误 JS 原样重放仍报错。",
+        "category": "avoidance_not_automatic_code_repair"
+      },
+      {
+        "ids": [
+          "R10",
+          "R11",
+          "R12"
+        ],
+        "current": "回执绑定字段由程序组装；说明错误只补说明，事实与段落验收不放宽；真实模型仍可能补正失败。",
+        "category": "reject_and_scoped_repair"
+      },
+      {
+        "ids": [
+          "R17"
+        ],
+        "current": "普通 Chat/Hybrid 明确等待及后续读取进入同一执行和完成合同，按当前文档及动作顺序核验。",
+        "category": "conditional_mechanical_handling"
+      },
+      {
+        "ids": [
+          "R19",
+          "R20",
+          "R22"
+        ],
+        "current": "单来源、同文件、显式类型的字段复制支持精确小数和多字段一次写入；语义来源仍需模型选择。",
+        "category": "conditional_mechanical_handling"
+      },
+      {
+        "ids": [
+          "R23"
+        ],
+        "current": "通用模型仍可能停在回执读取而没有 edit；当前 stale_edit 实机重现，不能称为解决。",
+        "category": "still_requires_model_correction"
+      },
+      {
+        "ids": [
+          "R25",
+          "R26"
+        ],
+        "current": "已有 Research 顺序合同复用直接步骤和查询后续计划；正文、等待后引用及提交门保持有效。",
+        "category": "conditional_mechanical_handling"
+      },
+      {
+        "ids": [
+          "R31"
+        ],
+        "current": "来源失败两场景准确记录 HTTP 403 并阻断；这是失败可解释性与合同收益。",
+        "category": "expected_source_block"
+      }
+    ],
+    "other_prior_rows": "Carried forward by reference; not independently reexecuted in this change.",
+    "offline_explanation_replay": {
+      "proposals": 20,
+      "missing_current_document_evidence": 16,
+      "protocol_errors": 4,
+      "new_model_calls": 0,
+      "restored_old_snapshots": false,
+      "strict_restore_contract_changed": false,
+      "native_replay": "equivalent constructed control, not original native wire",
+      "path": "R:\\codey-closure-resume-20261115\\artifacts\\explanation-history-current\\replay.json",
+      "sha256": "6d1f0f8de7e73eb126e4b282bcbcd6adffd9ae05632d3597051a211e0c7219c1",
+      "interpretation": "Compatibility/evidence rejection, not proof of 20 model fixes."
+    }
+  },
+  "regression": {
+    "unique_production_passes": 557,
+    "full_pytest_run": false,
+    "batches": [
+      {
+        "path": "R:\\codey-closure-resume-20261115\\artifacts\\regression-01.xml",
+        "sha256": "d5d93ba92f1e68fb789efc1caa91fa4b81282fb6eb70d9dd98f6c4f5e6735da8",
+        "passed": 106,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      {
+        "path": "R:\\codey-closure-resume-20261115\\artifacts\\regression-02.xml",
+        "sha256": "112e8e177e8009404271b28754c6e3f3addfd7d716e24a009dd7d770d97864e0",
+        "passed": 154,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      {
+        "path": "R:\\codey-closure-resume-20261115\\artifacts\\regression-03.xml",
+        "sha256": "04bf7fd7dde8021a10c86e6b5f109452fc895765b5f1837e08471ca31d532505",
+        "passed": 90,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      {
+        "path": "R:\\codey-closure-resume-20261115\\artifacts\\regression-04-updated-feedback.xml",
+        "sha256": "6ccc0e800dee63231e5fece9d7ba1ff7738b37f88c79e9d6574498db0d08d1e4",
+        "passed": 110,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      {
+        "path": "R:\\codey-closure-resume-20261115\\artifacts\\regression-05-production.xml",
+        "sha256": "f22c1200376675c530510e45009ca5a96dfc15ee894a93430a8771f3b7878ae1",
+        "passed": 79,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0
+      },
+      {
+        "path": "R:\\codey-closure-resume-20261115\\artifacts\\regression-06.xml",
+        "sha256": "56f37a1dcdff1d132b595008b4dee06f153b8ba2a83e4213be1b13fdc1173346",
+        "passed": 31,
+        "failure": 0,
+        "error": 0,
+        "skipped": 0
+      }
+    ],
+    "experimental_prototype": {
+      "current_passed": 95,
+      "current_failed": 21,
+      "head_baseline_passed": 95,
+      "head_baseline_failed": 21,
+      "comparison": {
+        "baseline_failures": 21,
+        "current_failures": 21,
+        "same_failed_nodes": true,
+        "new_failures": [],
+        "baseline_only": [],
+        "failed_nodes": [
+          "test_b1_real_wait_omission_uses_default",
+          "test_b4_page_reset_requires_real_second_fill_and_click[combined]",
+          "test_b4_real_return_failure_repairs_without_second_download[B-combined]",
+          "test_b4_repair_delivers_original_body_on_wire_without_reexecution",
+          "test_edit_boundary_rejects_new_receipt_for_precomposed_text[B]",
+          "test_file_handoff_delivers_read_before_edit[hybrid-B-edit-continuation]",
+          "test_file_handoff_delivers_read_before_edit[stale_edit-B-edit-continuation]",
+          "test_page_reset_gate_rejects_early_done_and_accepts_completed_rounds[A]",
+          "test_page_reset_gate_rejects_early_done_and_accepts_completed_rounds[B]",
+          "test_page_reset_runtime_navigation_delivers_failure_without_retry",
+          "test_page_reset_runtime_navigation_starts_once_and_still_requires_second_load[A]",
+          "test_page_reset_runtime_navigation_starts_once_and_still_requires_second_load[B]",
+          "test_production_download_delivers_only_authorized_recovery[-missing_return]",
+          "test_production_download_delivers_only_authorized_recovery[return download.path;-result_contract]",
+          "test_production_download_delivers_only_authorized_recovery[return {broken:undefined};-result_encoding]",
+          "test_production_result_contract_points_to_successful_download_receipt[False]",
+          "test_production_result_contract_points_to_successful_download_receipt[True]",
+          "test_receipt_delivery_uses_original_file_and_page_data[download-B]",
+          "test_receipt_delivery_uses_original_file_and_page_data[return_failure-B]",
+          "test_receipt_delivery_uses_original_file_and_page_data[upload-B]",
+          "test_receipt_delivery_uses_original_file_and_page_data[upload_bound-B]"
+        ]
+      },
+      "comparison_path": "R:\\codey-closure-resume-20261115\\artifacts\\protocol-baseline-comparison.json",
+      "comparison_sha256": "849f3640b8c113899560cc98c8eeaabdae2523718b6f2434135fc9139d51547f",
+      "baseline_method": "Load original HEAD production modules in memory using the same current test harness. No checkout/worktree copy or runtime module delivery.",
+      "interpretation": "Identical failing node names; not a claim of internal behavioral equivalence or a green prototype suite."
+    }
+  },
+  "static_checks": [
+    {
+      "name": "ruff",
+      "scope": "full repository",
+      "result": "passed",
+      "log": "R:\\codey-closure-resume-20261115\\artifacts\\ruff-current.log",
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "output": "All checks passed!"
+    },
+    {
+      "name": "mypy",
+      "scope": "codey: 688 files; Python 3.11",
+      "result": "passed",
+      "log": "R:\\codey-closure-resume-20261115\\artifacts\\mypy-current.log",
+      "sha256": "b33ac5e85f27a4ca86a297de1950b16ae4560c6ec65ef8acd90ec3d43bf9fc71",
+      "output": "Success: no issues found in 688 source files"
+    },
+    {
+      "name": "pyrefly",
+      "scope": "codey; Python 3.11; 35 existing suppressed, 158 warnings",
+      "result": "passed",
+      "log": "R:\\codey-closure-resume-20261115\\artifacts\\pyrefly-current.log",
+      "sha256": "f872588b925231d9a6045eba5299aba8ba9390ca3091591a13f7660e14a8c643",
+      "output": "INFO 0 errors (35 suppressed, 158 warnings not shown)"
+    },
+    {
+      "name": "ty",
+      "scope": "codey; Python 3.11",
+      "result": "passed",
+      "log": "R:\\codey-closure-resume-20261115\\artifacts\\ty-current.log",
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "output": "All checks passed!"
+    },
+    {
+      "name": "kernel precision",
+      "scope": "existing protected kernel and contract scopes",
+      "result": "passed",
+      "log": "R:\\codey-closure-resume-20261115\\artifacts\\precision-current.log",
+      "sha256": "a4235b3bf75e4945e89304625234e20fe199890bf1400658fd27a5d77cdb5c44",
+      "output": "kernel Any counts are zero; typed contract escape checks passed"
+    },
+    {
+      "name": "target mypy",
+      "scope": "10 touched tests/tools; explicit-package-bases; Python 3.11",
+      "result": "passed",
+      "log": "R:\\codey-closure-resume-20261115\\artifacts\\target-mypy-package-bases.log",
+      "sha256": "e522fa370334927ac2ccb7106100045b572938dd238093267de825336e6704f2",
+      "output": "Success: no issues found in 10 source files"
+    },
+    {
+      "name": "target pyrefly",
+      "scope": "10 touched tests/tools; Python 3.11",
+      "result": "passed",
+      "log": "R:\\codey-closure-resume-20261115\\artifacts\\target-pyrefly-current.log",
+      "sha256": "f90101717c785a169a0c3cc1b43dab67d62522035fea4b26fe23533f2fa97eeb",
+      "output": "INFO 0 errors"
+    },
+    {
+      "name": "target ty",
+      "scope": "10 touched tests/tools; Python 3.11",
+      "result": "passed",
+      "log": "R:\\codey-closure-resume-20261115\\artifacts\\target-ty-current.log",
+      "sha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "output": "All checks passed!"
+    }
+  ],
+  "scope_review": {
+    "changed_python_files": [
+      "codey/codemode/json_edit.py",
+      "codey/operations/browser_completion.py",
+      "codey/operations/browser_copy.py",
+      "codey/operations/browser_followups.py",
+      "codey/operations/browser_task_handoff.py",
+      "codey/operations/completion_gate.py",
+      "codey/operations/completion_output.py",
+      "codey/operations/kernel_context.py",
+      "codey/operations/kernel_control.py",
+      "codey/operations/kernel_prompt.py",
+      "codey/operations/kernel_protocol.py",
+      "codey/operations/provider_receipts.py",
+      "codey/operations/research_submission_handoff.py",
+      "codey/operations/task_execution.py",
+      "codey/policies/task_policy.py",
+      "codey/policies/tool_requirement.py",
+      "codey/task/web_intent.py",
+      "tests/test_browser_failure_handoff.py",
+      "tests/test_explanation_delivery_contract.py",
+      "tests/test_explanation_delivery_production.py",
+      "tools/browser_full_surface_live_gate.py",
+      "tools/browser_production_live_gate.py",
+      "tests/test_browser_contract_closure.py",
+      "tests/test_browser_research_direct_steps.py",
+      "tests/test_browser_stale_ref_injection.py",
+      "tests/test_browser_typed_copy.py",
+      "tools/browser_typed_copy_live_gate.py"
+    ],
+    "type_escape_matches": [],
+    "pytest_config_matches_original": true,
+    "pytest_config_sha256": "d03c2f9521e62f8b2a6ebc37bda7bd2ab93dcc91a39f1491588f85bfead034c8"
+  },
+  "live": {
+    "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+    "base_url": "http://127.0.0.1:5001/v1",
+    "temperature": 0,
+    "seed": 123456789,
+    "provider_protocol": "text; native covered by scripted production regressions",
+    "full_surface": {
+      "passed_acceptances": 13,
+      "runs": 17,
+      "completed_tasks": 11,
+      "expected_source_blocks": 2,
+      "failed_acceptances": 4,
+      "cli_exit_code": 1,
+      "summary": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\summary.json",
+      "summary_sha256": "fe8c497c96205ab17d8c65bf37849478fa5625d8ee5128a41368209dcf7adbf2",
+      "source_before": "f7b00caa32ea6b3262e3c0eb44d0259465a67000b2f62c470f7f99a64ffe7de6",
+      "source_after": "f7b00caa32ea6b3262e3c0eb44d0259465a67000b2f62c470f7f99a64ffe7de6",
+      "cases": [
+        {
+          "case": "basic",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\basic\\summary.json",
+          "sha256": {
+            "summary.json": "2ae7d83b2386c477c3902621cc98e8fbe89d469b8906ac7f94f286c1dc0570a6",
+            "request.json": "06f8c0815eaff68e4f1e323d06f7f4ce9c05cfe0eb10ecb1910165c48d04e154",
+            "provider.jsonl": "e9c2cf1289e71a10af1885fb355b447ac1324a300c657c426485407ebfec93d2",
+            "receipts.json": "d8080446276d8cced3e65b7a47cdbd15fb48df260d93c07ddd76be4308a9867f",
+            "proposals.jsonl": "a8b068c103e24ffe601541c34c7e89421a58d2c967b6675868d60c99afaa628b",
+            "task.txt": "4f71fe4aac7e97c3b1d98f993f9614042f5455c6a39a32e8f7f863be039f9ab7"
+          },
+          "model_action_counts": {
+            "browser_snapshot": 1,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "codemode": 2,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            9
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "fb1e2c609a7f20b98dff17a1c858606d433f2be6a7427441a32c71971ba162a4",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "e5c9b06d2ace5252aaf347ea75a78a80338773fe418dfc2eb601138aa663d796",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "880b0e98aebe34a306e9830745bf3f8af5d3e48b4de939e109637d18d1ba1c95",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "a943f46731448406a60c361bd333a4236af18340d8e02fc909cb0a13ac6567f6",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": {
+                  "name": "Locality",
+                  "role": "textbox"
+                },
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "bb2ea1117841a41c881023be0ec4c68b4g4e2",
+                "purpose": "result"
+              }
+            }
+          ],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        },
+        {
+          "case": "codemode",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\codemode\\summary.json",
+          "sha256": {
+            "summary.json": "8714212081f91f6febae7633181ff7c04fa184ea9cd3c912921c287443f337f1",
+            "request.json": "be5daabc2453d448e94ce14dda633c726b22eaa0d4e9fcd4100d1e98c0f99554",
+            "provider.jsonl": "02e18dd3fe5723bbd002151fe08d4ad73ee11b00db517d8258a6e04cd00ca4c5",
+            "receipts.json": "70f83786417344edf228bafaa458ff2a5dcbbc2eaefd419b05105252788e33ee",
+            "proposals.jsonl": "be3baa41c80c34b5504ed7655f859367d08c349a8e107c6d783fca835d77ba64",
+            "task.txt": "cf2d217c840ee02d1edb9a033894745e0057b91a7cc62b6ff5d5af34dc6c19e4"
+          },
+          "model_action_counts": {
+            "codemode": 3,
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "codemode": 4,
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1
+          },
+          "model_javascript_proposals": 3,
+          "errors": [],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            11
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "1c128f0bcdc19a8c693cdf2d5743e90ec67ff3f691ffef10130e12d8ba060d56",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "5ce0140dd527f5fb9fe0cf26795f1a03d2646330664d8d7a4041e652e4d00230",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "d7cab78d9f63c1f0f4bae0d9ca80d386329149b26315c812f711ae17dfc2a90d",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "3a4ce60ba58e3826f55e8a89c3218e7e9929a515657e1ed78c2d0b614758a907",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        },
+        {
+          "case": "download",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\download\\summary.json",
+          "sha256": {
+            "summary.json": "fe43afde2b41542022f23bc8dbc6f3950d549b7563b72b080b0d7ed2ff4cca6d",
+            "request.json": "aa8f63cfe587791fbcee508b31dd04ea7d47c6cd2d77ceeb0a436a6e2357b79d",
+            "provider.jsonl": "e0fc6e0db60f71083557be5ed2d0a5ad966371d1cc51e52bdd5618dc1bd121d3",
+            "receipts.json": "746a4bbb038fd4683605271806dcaffea604ce618cb1acdb5967fad3d5fe5e43",
+            "proposals.jsonl": "448dd6733abf3f074c7202727992c3b49b309e0d5efb46d9c125fc11b995d5bc",
+            "task.txt": "e743b3677fcfccca8983a9105583aa6b71d3bb98ae3ba3a1b66f353e16d435b3"
+          },
+          "model_action_counts": {
+            "codemode": 3,
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "codemode": 4,
+            "browser_navigate": 1,
+            "browser_snapshot": 1,
+            "browser_download": 1,
+            "browser_read": 1
+          },
+          "model_javascript_proposals": 3,
+          "errors": [],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            8
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "8a32b604e1fba67299838642f7d08ebde0b3971a4cded250a2910799c567563e",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "0c14e0560b06449d93a0bb39e20c9b19f6028ff6346f72d309a2715d98283b52",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "2c4ab1e9e97585b73025378b37417252a1bea99e961a0a14e7eb59714f2d95a7",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "046c90538175fd2175ca2d371137ea2f9b932f0d917e111e08bfad7660814e5d",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        },
+        {
+          "case": "fixed_failure",
+          "passed": true,
+          "stop_reason": "blocked",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\fixed_failure\\summary.json",
+          "sha256": {
+            "summary.json": "50df367e89b0af6aa9db52baef42239b86bd2d7ad6747997a0cc07d1f883b68c",
+            "request.json": "9660605d893a8dfc1111b2ec01f46c3ad03faf697b49bc7d845cd303aeefa524",
+            "provider.jsonl": "cffd9bb2c581475eef82949eed48da94d52d2d5239d2c6c2c2f1ae1b89280432",
+            "receipts.json": "59efeeb58406483f924f2e71901a0311bba5f944e90baf317ad7a4ade1d72052",
+            "proposals.jsonl": "0667ab57dd62bcf487843309ba34ae0b9c59988b819f0fd6d01df75091cb3e96",
+            "task.txt": "98a649db0e4dd1c91c8acba814e082857b9f798558accaf04bfa4135a3c029fd"
+          },
+          "model_action_counts": {
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "codemode": 1,
+            "browser_navigate": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [
+            {
+              "identity": "task_turn_effect:c85cad60c838254b",
+              "tool": "browser_read",
+              "args": {},
+              "model_text": "ERROR: could not load page: HTTP 403",
+              "canonical": {
+                "source_acquisition": {
+                  "attempts": [
+                    {
+                      "backend": "browser",
+                      "delivery": "confirmed",
+                      "detail": "could not load page: HTTP 403",
+                      "failure_code": "access_restricted",
+                      "final_url": "https://example.com/production-browser-record",
+                      "observation": "restricted",
+                      "requested_url": "https://example.com/production-browser-record",
+                      "status": "error"
+                    }
+                  ],
+                  "version": 1
+                },
+                "source_failure": {
+                  "code": "access_restricted",
+                  "detail": "ERROR: could not load page: HTTP 403",
+                  "url": "https://example.com/production-browser-record"
+                }
+              },
+              "audit": {
+                "browser_document": {
+                  "loader_id": "7F08BB82EB353A6F9553EA3B0AA01441",
+                  "target_id": "4FCFC77B67604817413553EAAC274154",
+                  "url": "https://example.com/production-browser-record"
+                }
+              }
+            }
+          ],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            3
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 2,
+              "request_sha256": "76b437578c96ceb1798d6960171faf45f809b3aff5e1d7eff1983e5df8a101d0",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [
+            {
+              "source_acquisition": {
+                "attempts": [
+                  {
+                    "backend": "browser",
+                    "delivery": "confirmed",
+                    "detail": "could not load page: HTTP 403",
+                    "failure_code": "access_restricted",
+                    "final_url": "https://example.com/production-browser-record",
+                    "observation": "restricted",
+                    "requested_url": "https://example.com/production-browser-record",
+                    "status": "error"
+                  }
+                ],
+                "version": 1
+              },
+              "source_failure": {
+                "code": "access_restricted",
+                "detail": "ERROR: could not load page: HTTP 403",
+                "url": "https://example.com/production-browser-record"
+              }
+            }
+          ],
+          "source_reads": 0,
+          "classification": "expected_source_block",
+          "interpretation": "受控 HTTP 403 被准确记录并阻断；不等于任务获取了来源。"
+        },
+        {
+          "case": "hybrid",
+          "passed": false,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\hybrid\\summary.json",
+          "sha256": {
+            "summary.json": "697e24250a5c3711c04f278be616362a965f90aa310a1c41471403cacc98620b",
+            "request.json": "c0d3286e08ef775c9282b75217461036cd5b69403ec2572c47fab1092885ee0a",
+            "provider.jsonl": "a42ccd9a8f87e2b327485f66cf51cd60d17a96f81970c4e9a324d4542f435123",
+            "receipts.json": "9f0033956f15ce3adb5a6bce29f7bb1421677cd26ceaa011263292e91a9bfa70",
+            "proposals.jsonl": "b709fd1de7eef8fc756f4a915c4bf6e8a4bd7a9872eeae83d2fec1ea2f789f8a",
+            "task.txt": "a6d9f564cea9988ce85ee0e14ac5fadc37ee0f44649b4d591f0bfbe242e56100"
+          },
+          "model_action_counts": {
+            "browser_snapshot": 1,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "codemode": 1,
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "codemode": 3,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1,
+            "read_file": 1,
+            "edit": 1
+          },
+          "model_javascript_proposals": 1,
+          "errors": [],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            12
+          ],
+          "edit_actions": [
+            {
+              "tool": "codemode",
+              "args": {
+                "code": "const read = await tools.read_file({path: inputs.path});\nreturn unwrap(await tools.edit({read, changes: inputs.changes}));",
+                "inputs": {
+                  "path": "result.json",
+                  "changes": {
+                    "amount": "173",
+                    "code": "QUARTZ_851"
+                  }
+                }
+              }
+            }
+          ],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "263aecf16f545572cf668afbfa73b498bb3d6af18d26ac47c23a4efd314cd1c8",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "88d337fd3e1baf194fc403fee462bb5a4300539fa8b22b15ae2fa3bf12b23d12",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "d1afcde60ee3366b31c376f2e37cf62674458d0c490d289a26a48aaba0a8b3b4",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "6b781b893588d00b84973868b97e345a9057eab2ce4427fe576313bd9ae78765",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 5,
+              "request_sha256": "131c4aacd14b7d14fffa78ee865bce8514fb881fe131e099adca29ac75a49098",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": "b2b27f6cac41c461ea4a02bc6a5b2e9c5g2e1",
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "b2b27f6cac41c461ea4a02bc6a5b2e9c5g4e2",
+                "purpose": "result"
+              }
+            }
+          ],
+          "result_views": [],
+          "project_result": {
+            "amount": "173",
+            "code": "QUARTZ_851"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "undeclared_contract_and_model_output",
+          "interpretation": "导航、等待、读取正确；模型在编辑 inputs 中提交 amount 字符串，任务未声明文件字段类型。"
+        },
+        {
+          "case": "hybrid_codemode",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\hybrid_codemode\\summary.json",
+          "sha256": {
+            "summary.json": "86f26b8df99af012a01b01e83dfb69fdb2ad3d346090d56dd86f59fa3f537004",
+            "request.json": "c025e9f88e2ac16b705bec4994bf275ff1f4a57520ea37e53f4ca5bc3a0b0e6c",
+            "provider.jsonl": "50fb05c7c72e37b67717a6b11bb62fbd8946390bcaf86fa9cff0234e97b9452e",
+            "receipts.json": "5b320eb38275780e28ff4aaddb0be2f7f552ca594804eaf4af65daf57365b39c",
+            "proposals.jsonl": "9998b4e678f9704dd5b1a5c6348ae2c705d02f9f6a88923af763152460f88acc",
+            "task.txt": "fd4e062aed20fd7a3168e698e5b3e640b81084d7ff2f227cfdddf0f545edd340"
+          },
+          "model_action_counts": {
+            "codemode": 2,
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "codemode": 3,
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1,
+            "read_file": 1,
+            "edit": 1
+          },
+          "model_javascript_proposals": 2,
+          "errors": [],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            12
+          ],
+          "edit_actions": [
+            {
+              "tool": "codemode",
+              "args": {
+                "code": "const read = await tools.read_file({path: inputs.path});\nreturn unwrap(await tools.edit({read, changes: inputs.changes}));",
+                "inputs": {
+                  "path": "result.json",
+                  "changes": {
+                    "amount": 173,
+                    "code": "QUARTZ_851"
+                  }
+                }
+              }
+            }
+          ],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "f7962d028f4a19e15d162aeabf0114916d47c31cabdfcc7daf6f9d971f2ddcc2",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "7383b81485c13ece9f15a529a887b7a337bc7bdc936d3f1bb178adf5850b6af6",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "d4ba2038b243c2a899b4b7a18b86642f971eedb56951f62271a9f52f417bebcb",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [],
+          "result_views": [],
+          "project_result": {
+            "amount": 173,
+            "code": "QUARTZ_851"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        },
+        {
+          "case": "legacy_structured",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\legacy_structured\\summary.json",
+          "sha256": {
+            "summary.json": "e71a96686d9f26703d171b62126faae39f7e7a8e8aa800dd51d563eeccededab",
+            "request.json": "05b5cf5ae7b2d0cb8b6c2cd822a9530a32773108b3b98ae9fe9ac32f8df141e0",
+            "provider.jsonl": "bd35d03aed4a513c0f11608fe6f2938abc053b08dd9c5ee4a206d20e776a7426",
+            "receipts.json": "70f97570ef75d9e492cf36e1bb7f15264d02d5eb310f01d189372588b0fc399c",
+            "proposals.jsonl": "c252dc6bb8acb4fa049e6cdff9769ab9a820535605de6409f93d2dc5368d253a",
+            "task.txt": "a1b825c506db96fac56bcf0c304d7d6f01217e7182b7d0237b5e55b5ed21edb3"
+          },
+          "model_action_counts": {
+            "browser_snapshot": 1,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_tab_list": 1,
+            "browser_eval": 1,
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "codemode": 4,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1,
+            "browser_tab_list": 1,
+            "browser_eval": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            13
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "19c446ac6c45f36e43f7c6fc27e81a74170568e79865f96b528b8634d6c44aa1",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "b015ecf416f44a973181504a18d888dc0fa60f48a7f1f1863d98102e4f776450",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "5532228f7dbc2c514be577707bd775d659326d3bd0c03c0a7e7a707a5a827707",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "45ca6880afa0a0b8ae72591f4522247f10f3eb34db26c9581df19c6cc2a20794",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 5,
+              "request_sha256": "0f8c90f05035e9dd483623de3a6e9f29a083554955104fde720c26711235a159",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 6,
+              "request_sha256": "53d48568d3c42f8528d020d69ee166f71fd704a743760bb10d8e843258eaaf45",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": "[b27159bafcd464d30bace336998bfaf2bg2e1]",
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "b27159bafcd464d30bace336998bfaf2bg4e2",
+                "purpose": "result"
+              }
+            },
+            {
+              "tool": "browser_tab_list",
+              "args": {}
+            },
+            {
+              "tool": "browser_eval",
+              "args": {
+                "code": "window.__contractToken"
+              }
+            }
+          ],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        },
+        {
+          "case": "reread",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\reread\\summary.json",
+          "sha256": {
+            "summary.json": "ee4766d1f03492033b06f2a2bed742a57ad6a5560ae3b35ca475214f79582f7e",
+            "request.json": "a2be5a303ed62a721974168e83a63b5c23b74f448d737c0ae6c0b63274e977b6",
+            "provider.jsonl": "eb2dd8984b3fb13d0e6c81e0f072c0fc9b072db78a8c9e28c9df6e5a2938ebed",
+            "receipts.json": "18e2e37de89d22fca4f53832abbfda8260407ce58f24451252f3768e0d038c5e",
+            "proposals.jsonl": "9607806fcd968aff13b3092579651a74038264d023169ffeebf7cbf25ed3882d",
+            "task.txt": "700b9b610f5ef67e02b289b3613e1aef4bfbb5100daa76c5498861eb898adfb0"
+          },
+          "model_action_counts": {
+            "browser_snapshot": 1,
+            "browser_read": 1,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "browser_read": 2,
+            "codemode": 2,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            10
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "fd3a4542c9b57988ab973535ef0beb1df8c2ddc1288b7af187007fd79129e771",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "3015a6c0ccd541751403bc964e022d80e5cd1f972037f12487c6141fbdc36c67",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "7a1f5066ffa4e98fdccbbffe5ac544f8343048acd7b5f5b0ddfbfd409a08897e",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "04c96345f18c19b3548fbf67548605ba0a2250d00fea80f02eb03032f7d66528",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 5,
+              "request_sha256": "9cad110640a378ab7ece2ae8a3277685a6b304e7fc2b73e268e28e1fe1c2a376",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_read",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": {
+                  "name": "Locality",
+                  "role": "textbox"
+                },
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "b001d96d5367241c5905055408a613305g4e2",
+                "purpose": "result"
+              }
+            }
+          ],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 6,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 2,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        },
+        {
+          "case": "research",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\research\\summary.json",
+          "sha256": {
+            "summary.json": "a2c1bcd49236a70257f502c43483dcba59a84c51d21a9a3532371763c671486f",
+            "request.json": "94909c7e875e36f778986a92efd9202d148a7b092aad8713ff2b571c69f16a2a",
+            "provider.jsonl": "a99eb9470a0b2ecbc3d20973037b39213bc69b3df00febbfce6e1f105177c194",
+            "receipts.json": "7ed78953674ba47f4475f9e228e17280cbc572b05e03b5ef46f3594c62fb1292",
+            "task.txt": "c04c397e573f6873e0f4f1a2726a321b8c4b7d692c9c815953da64f4c10637b5"
+          },
+          "model_action_counts": {
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "browser_fill": 1,
+            "browser_click": 2,
+            "browser_read": 2,
+            "browser_wait": 1,
+            "submit_research_answer": 1
+          },
+          "successful_receipt_counts": {
+            "open_url": 1,
+            "codemode": 8,
+            "browser_navigate": 1,
+            "browser_snapshot": 3,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_read": 2,
+            "browser_wait": 1,
+            "submit_research_answer": 1,
+            "_publish_research_answer": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [
+            {
+              "identity": "task_turn_effect:a276da0cdb76e9e8",
+              "tool": "codemode",
+              "args": {
+                "code": "return unwrap(await tools.browser_click(inputs));",
+                "inputs": {
+                  "purpose": "action",
+                  "ref": "[b10997a72634d4ac0b9a11167c449cf97g4e2] button \"Load record\""
+                },
+                "language": "javascript"
+              },
+              "model_text": "ERROR: stale browser element reference; take a fresh browser_snapshot\nCurrent codemode contract:\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}",
+              "canonical": {
+                "child_effect_ids": [
+                  "task_turn_effect:f9b3c40615e0b3b9"
+                ]
+              },
+              "audit": {
+                "catalog_digest": "sha256:171596969de6ae61ddfa6d993de29f3cb2b6cae55799faecb3269a0a76f048f4",
+                "child_calls": 1,
+                "codemode_execution_id": "run_d8d54cd03ced488289f8f23db67a7cfd:turn:4:codemode:4c530af8c83cce4c",
+                "error_code": "execution_error"
+              }
+            },
+            {
+              "identity": "task_turn_effect:f9b3c40615e0b3b9",
+              "tool": "browser_click",
+              "args": {
+                "ref": "[b10997a72634d4ac0b9a11167c449cf97g4e2] button \"Load record\""
+              },
+              "model_text": "ERROR: stale browser element reference; take a fresh browser_snapshot",
+              "canonical": {
+                "value": {
+                  "action": "click",
+                  "delivery": "not_delivered",
+                  "reason": "stale_ref",
+                  "ref": "[b10997a72634d4ac0b9a11167c449cf97g4e2] button \"Load record\"",
+                  "text": "ERROR: stale browser element reference; take a fresh browser_snapshot"
+                }
+              },
+              "audit": {
+                "browser_document": {
+                  "loader_id": "0F22D35E72BF50F4EB658D2B45E14A65",
+                  "target_id": "F1F856EF190B7EB11E344FAF4280F13D",
+                  "url": "https://example.com/production-browser-record"
+                }
+              }
+            }
+          ],
+          "done_proposals": 0,
+          "tools_before_done_proposals": [],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "ef867b2365fe260cf36ff0b15225e3a8e1d055c0291ae13302f34561695f6a36",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "c79abb697661c071531716f69c5b39c6842be2acee8ae1b2d31b2573bd59af69",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "b6b810aecdcc99caa828f32644ff93bc9e011c0e5136793bdaf47bdee60299e6",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "3ddd61c5b70d7a365bb0b46c4949e814612fdcb780d7dae9a152105429c898c3",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 5,
+              "request_sha256": "11722e68874f7894290694868bce854b4136693cd748975e247f78c46ff49f60",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 6,
+              "request_sha256": "c6458a02f7af3186d1159770526709c932f9ec7db9551d778feb7f6f2e3408a4",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 7,
+              "request_sha256": "9c1fe16c2d05f77f9cdd5ed54265ca36359f272ee553babbff4e28edde1d44ae",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 8,
+              "request_sha256": "e3efa77504fb29df020239c4b2efab6de71e3c343854f99d2f5518e163cf85ee",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 9,
+              "request_sha256": "d79d226018c4c2d8e336417cf550424ee9761ebf430b9d32fcbacdef21e59d7f",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 10,
+              "request_sha256": "83f01b98aa07bff0ed5fe1210ffbd536e1a7ecccd644e1dbe9e234b2387c6fa6",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [
+            {
+              "tool": "browser_navigate",
+              "args": {
+                "url": "https://example.com/production-browser-record"
+              }
+            },
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": "b10997a72634d4ac0b9a11167c449cf97g2e1",
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "[b10997a72634d4ac0b9a11167c449cf97g4e2] button \"Load record\"",
+                "purpose": "action"
+              }
+            },
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "b10997a72634d4ac0b9a11167c449cf97g5e2",
+                "purpose": "action"
+              }
+            },
+            {
+              "tool": "browser_read",
+              "args": {}
+            },
+            {
+              "tool": "browser_wait",
+              "args": {
+                "condition": "text",
+                "timeout_ms": 5000,
+                "value": "鱼丸"
+              }
+            },
+            {
+              "tool": "browser_read",
+              "args": {}
+            }
+          ],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 1,
+          "source_failure_receipts": [],
+          "source_reads": 2,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        },
+        {
+          "case": "research_codemode",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\research_codemode\\summary.json",
+          "sha256": {
+            "summary.json": "b9262cc6c96bb9fdd680af9947166ea286ed547f93d27f79bcd1693bf757d204",
+            "request.json": "1f3e85d4081da6536cbd0520fcdab788c60110fd98b1530c7ad67e133056b9c3",
+            "provider.jsonl": "c313cfbbe1a1454c44f5a7f16a29a2ef25b29f3a19505e0b3c732604f967a015",
+            "receipts.json": "bc5197cba325420936db703ef8205bddda4c4c4be78fef88f4a8449dcdc36da6",
+            "task.txt": "f02d3cb498096a238eb855df81905063c0907f108a09a7e773bba097aa8e1e16"
+          },
+          "model_action_counts": {
+            "codemode": 5,
+            "submit_research_answer": 1
+          },
+          "successful_receipt_counts": {
+            "open_url": 1,
+            "browser_navigate": 1,
+            "codemode": 3,
+            "browser_snapshot": 6,
+            "browser_fill": 4,
+            "browser_read": 2,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "submit_research_answer": 1,
+            "_publish_research_answer": 1
+          },
+          "model_javascript_proposals": 5,
+          "errors": [
+            {
+              "identity": "task_turn_effect:b1ae7dcf155874de",
+              "tool": "codemode",
+              "args": {
+                "code": "const result = await tools.browser_navigate({url: 'https://example.com/production-browser-record'});",
+                "inputs": {},
+                "language": "javascript"
+              },
+              "model_text": "CodeMode returned undefined. A missing return OR returning a nonexistent property produces undefined. Check the declared Result<T> shape: successful tool data is inside result.value. Return an explicit JSON value; use return null only for an intentional empty result.\nInvoked tool return types (Result<T> success data is result.value):\ntools.browser_navigate: Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"url\": string; \"page_id\": string; \"generation\": number; \"http_status\": number | null; \"content_type\": string; \"previous_url\": string }>\nCommitted child receipts (effects already executed): task_turn_effect:b61cb31aa1bad704. Correct only the return expression. Use repair_of=cmr_0c302fd90789cb59 to replay these settled child receipts; do not repeat the child calls.\nCurrent codemode contract:\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}",
+              "canonical": {
+                "child_effect_ids": [
+                  "task_turn_effect:b61cb31aa1bad704"
+                ],
+                "repair": {
+                  "catalog_digest": "sha256:2d7953426036e6bc94e0a040cb05222be0bc0e4f63bfe044ef4abdf673f9a315",
+                  "failure_code": "missing_return",
+                  "parent_effect_id": "run_89311f4ce764452590fb076ea3ed8eb1:turn:1:codemode:97ccdfcd1ecbac75",
+                  "session_id": "headless_fb807571f941",
+                  "token": "cmr_0c302fd90789cb59"
+                }
+              },
+              "audit": {
+                "catalog_digest": "sha256:c27c5f393d6db8fa6bcef320a9f4161987f5340e7dd12ee69ef54bb53d49e6d1",
+                "child_calls": 1,
+                "codemode_execution_id": "run_89311f4ce764452590fb076ea3ed8eb1:turn:1:codemode:97ccdfcd1ecbac75",
+                "error_code": "missing_return"
+              }
+            },
+            {
+              "identity": "task_turn_effect:4acf269b28741d8e",
+              "tool": "browser_click",
+              "args": {
+                "ref": "bbcc94c319474466fa94fb5e0b31da49fg2e2"
+              },
+              "model_text": "ERROR: stale browser element reference; take a fresh browser_snapshot",
+              "canonical": {
+                "value": {
+                  "action": "click",
+                  "delivery": "not_delivered",
+                  "reason": "stale_ref",
+                  "ref": "bbcc94c319474466fa94fb5e0b31da49fg2e2",
+                  "text": "ERROR: stale browser element reference; take a fresh browser_snapshot"
+                }
+              },
+              "audit": {
+                "browser_document": {
+                  "loader_id": "A1E0CB10E52B980B0245523BB9F6176F",
+                  "target_id": "6C2425137CA0E1E52148DC0A6CE1A458",
+                  "url": "https://example.com/production-browser-record"
+                }
+              }
+            },
+            {
+              "identity": "task_turn_effect:302341b3278a7de3",
+              "tool": "browser_wait",
+              "args": {
+                "condition": "text",
+                "timeout_ms": 5000,
+                "value": "鱼丸"
+              },
+              "model_text": "ERROR: wait timed out: text",
+              "canonical": {
+                "value": {
+                  "action": "wait",
+                  "condition": "text",
+                  "matched": false,
+                  "page_url": "https://example.com/production-browser-record",
+                  "text": "ERROR: wait timed out: text"
+                }
+              },
+              "audit": {
+                "browser_document": {
+                  "loader_id": "A1E0CB10E52B980B0245523BB9F6176F",
+                  "target_id": "6C2425137CA0E1E52148DC0A6CE1A458",
+                  "url": "https://example.com/production-browser-record"
+                }
+              }
+            },
+            {
+              "identity": "task_turn_effect:81b6b4652ba5f4df",
+              "tool": "browser_click",
+              "args": {
+                "ref": "bbcc94c319474466fa94fb5e0b31da49fg4e2"
+              },
+              "model_text": "ERROR: stale browser element reference; take a fresh browser_snapshot",
+              "canonical": {
+                "value": {
+                  "action": "click",
+                  "delivery": "not_delivered",
+                  "reason": "stale_ref",
+                  "ref": "bbcc94c319474466fa94fb5e0b31da49fg4e2",
+                  "text": "ERROR: stale browser element reference; take a fresh browser_snapshot"
+                }
+              },
+              "audit": {
+                "browser_document": {
+                  "loader_id": "A1E0CB10E52B980B0245523BB9F6176F",
+                  "target_id": "6C2425137CA0E1E52148DC0A6CE1A458",
+                  "url": "https://example.com/production-browser-record"
+                }
+              }
+            },
+            {
+              "identity": "task_turn_effect:430dc88d49595210",
+              "tool": "codemode",
+              "args": {
+                "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = unwrap(snapshot).elements;\nconst localityInput = elements.find(e => e.name === 'Locality');\nif (localityInput) {\n  await tools.browser_fill({ref: localityInput.ref, value: '福州'});\n}\nconst newSnapshot = await tools.browser_snapshot({});\nconst loadButton = newSnapshot.elements.find(e => e.name === 'Load record');\nif (loadButton) {\n  await tools.browser_click({ref: loadButton.ref});\n}\nawait tools.browser_wait({condition: 'text', value: '鱼丸', timeout_ms: 5000});\nreturn unwrap(await tools.browser_read({}));",
+                "inputs": {
+                  "path": "https://example.com/production-browser-record"
+                },
+                "language": "javascript"
+              },
+              "model_text": "tools.browser_snapshot returned Result<T>, not its data. Undeclared result field \"elements\"; use unwrap(result).elements or result.value.elements. Receipt metadata result_ref stays on result.\nCurrent codemode contract:\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}",
+              "canonical": {
+                "child_effect_ids": [
+                  "task_turn_effect:f412bc070f3dff79",
+                  "task_turn_effect:43fcfd168512d554",
+                  "task_turn_effect:d4e620d1ec9191d1"
+                ]
+              },
+              "audit": {
+                "catalog_digest": "sha256:c27c5f393d6db8fa6bcef320a9f4161987f5340e7dd12ee69ef54bb53d49e6d1",
+                "child_calls": 3,
+                "codemode_execution_id": "run_89311f4ce764452590fb076ea3ed8eb1:turn:4:codemode:5d6be98f431edd2a",
+                "error_code": "result_contract"
+              }
+            }
+          ],
+          "done_proposals": 0,
+          "tools_before_done_proposals": [],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "5d531239536226ddc05fe322017f50a4aed4b2c7f8c01c28335f91a121c56069",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "13ee7c348dd2e12a60e66eb535d8b33c3325d75d9e38c8df55df4ec43898caa6",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "bf342012877951977f8a61ccf9b9d315fffd68b0fea61dbe4f89899c8d729321",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "2e292ceb64c8735682b6801b7be5afa5bec5326432864aec1c17a2c3ac9f8725",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 5,
+              "request_sha256": "67a73bfc2ab155a70faff18d89b14c5a19007e8c44601d37cb5a0d8f6abd37d5",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 6,
+              "request_sha256": "66c3dd56bb92a6ed6dd902eb123eff4c3a1a713d313dc474002c9f812506fa24",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 2,
+          "source_failure_receipts": [],
+          "source_reads": 2,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        },
+        {
+          "case": "research_sequence",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\research_sequence\\summary.json",
+          "sha256": {
+            "summary.json": "59d730ec99a7934cf7c0d0546d1dceaa21edf3d3bec460e10720029d6e3d72bf",
+            "request.json": "b58354490dfc2073a06fdb2bb8ce418a93f82d786891449f55e085ea2b8d6026",
+            "provider.jsonl": "956c640d16a39c8b2d6ea48d2f2e68f81c7482e4d3c2cdae9ebfbccc48bfe75b",
+            "receipts.json": "87c1767f1755362c5d271c03a5eb7cf79a25df595ed2de4f7a2fad7a8a4d56d2",
+            "task.txt": "c04c397e573f6873e0f4f1a2726a321b8c4b7d692c9c815953da64f4c10637b5"
+          },
+          "model_action_counts": {
+            "browser_navigate": 1,
+            "browser_snapshot": 1,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1,
+            "submit_research_answer": 1
+          },
+          "successful_receipt_counts": {
+            "open_url": 1,
+            "codemode": 6,
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1,
+            "submit_research_answer": 1,
+            "_publish_research_answer": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [],
+          "done_proposals": 0,
+          "tools_before_done_proposals": [],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "c8e9ef5caa3f47b6889525206092f449c67e0cd4a931b7b344fa2c9a85f9e6a9",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "b8b80204bd772c2880f447949adbc8ae24917a1ea589cb3ebd8391765a311899",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "0fb105bb0aa08efecd66f5561eba7370f222d9164fc0fa12633ceea037864d63",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "e4f6bf36f29386afd2c4f342b3f9ef3b38fcb8c6710bb1c7b06d07efd5abd8b7",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 5,
+              "request_sha256": "6496b5c2c49cb7f2055e071568afe610d536617e56111bfe437aa37be3f9c9c7",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 6,
+              "request_sha256": "4c4b1b224a0d0f1bdff2bc0d7e7b634e6528eb0c23b393df8fe10e44618cee10",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 7,
+              "request_sha256": "5345297be61a30363b4d6439e7741c10ac3aaa2443ad2c63dd1a23a92fe65190",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [
+            {
+              "tool": "browser_navigate",
+              "args": {
+                "url": "https://example.com/production-browser-record"
+              }
+            },
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": "bbfdeabb68ebe4f059ec2c2861c23c833g2e1",
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "bbfdeabb68ebe4f059ec2c2861c23c833g4e2",
+                "purpose": "action"
+              }
+            },
+            {
+              "tool": "browser_wait",
+              "args": {
+                "condition": "text",
+                "timeout_ms": 5000,
+                "value": "鱼丸"
+              }
+            },
+            {
+              "tool": "browser_read",
+              "args": {}
+            }
+          ],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        },
+        {
+          "case": "source_failure",
+          "passed": true,
+          "stop_reason": "blocked",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\source_failure\\summary.json",
+          "sha256": {
+            "summary.json": "9499beaedf07950104a6152908da17a8cf3704214e4496bad937c29cc1e403c7",
+            "request.json": "f262eb8c39a03b5a94b62802297f2479a6d3880452435c388acfc020108f1f04",
+            "provider.jsonl": "3e382274cde0d683383b7cc133f95027f6cbe51ef33b7ff133f4843ebca32a6e",
+            "receipts.json": "083fe25d38155d6de217504968aca27a01b1f0d02cec848e2cb58d5a9011cb59",
+            "proposals.jsonl": "6026b924e9bc68d6a570631d4ac67fc8a035da7811e2d816f35bcf7dd5b35486",
+            "task.txt": "a13b63fee50dcc025e2ef31f4d3387d70b4780c269904dff1b701749960169d9"
+          },
+          "model_action_counts": {
+            "done": 1
+          },
+          "successful_receipt_counts": {},
+          "model_javascript_proposals": 0,
+          "errors": [
+            {
+              "identity": "task_turn_effect:a4fa047270c792f9",
+              "tool": "open_url",
+              "args": {
+                "url": "https://example.com/production-browser-record"
+              },
+              "model_text": "ERROR: could not load page: HTTP 403",
+              "canonical": {
+                "source_acquisition": {
+                  "attempts": [
+                    {
+                      "backend": "browser",
+                      "delivery": "confirmed",
+                      "detail": "could not load page: HTTP 403",
+                      "failure_code": "access_restricted",
+                      "final_url": "https://example.com/production-browser-record",
+                      "observation": "restricted",
+                      "requested_url": "https://example.com/production-browser-record",
+                      "status": "error"
+                    }
+                  ],
+                  "version": 1
+                },
+                "source_failure": {
+                  "code": "access_restricted",
+                  "detail": "ERROR: could not load page: HTTP 403",
+                  "url": "https://example.com/production-browser-record"
+                }
+              },
+              "audit": {}
+            }
+          ],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            1
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "d35a7acd1f84649d0716afaafb57b2a7a907d0b21a7d626c55b897a1ccf1effc",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [
+            {
+              "source_acquisition": {
+                "attempts": [
+                  {
+                    "backend": "browser",
+                    "delivery": "confirmed",
+                    "detail": "could not load page: HTTP 403",
+                    "failure_code": "access_restricted",
+                    "final_url": "https://example.com/production-browser-record",
+                    "observation": "restricted",
+                    "requested_url": "https://example.com/production-browser-record",
+                    "status": "error"
+                  }
+                ],
+                "version": 1
+              },
+              "source_failure": {
+                "code": "access_restricted",
+                "detail": "ERROR: could not load page: HTTP 403",
+                "url": "https://example.com/production-browser-record"
+              }
+            }
+          ],
+          "source_reads": 0,
+          "classification": "expected_source_block",
+          "interpretation": "受控 HTTP 403 被准确记录并阻断；不等于任务获取了来源。"
+        },
+        {
+          "case": "stale_edit",
+          "passed": false,
+          "stop_reason": "no_progress",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\stale_edit\\summary.json",
+          "sha256": {
+            "summary.json": "d885d34d83f83d80f9ebee779e91e80e6c55a921f7883a5e8fe633373fc39cd1",
+            "request.json": "0c630038dd8f6e73b5e6cb65e2fce72378ff3b5d9f14042bf648491443657b43",
+            "provider.jsonl": "20fefe2f773a71c122f27ff54111e08cfa65cd3ed0ab3c7c34b8eb7cfa5a471d",
+            "receipts.json": "f2f920b5e744ee75213180800cebe00b269e1f362e3245f21ea74aad41cf8e39",
+            "task.txt": "9460e818e31aed625b099971e744ceb63493cc434dcf02010b01bbbf5e0864bc"
+          },
+          "model_action_counts": {
+            "browser_snapshot": 1,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "read_tool_result": 4
+          },
+          "successful_receipt_counts": {
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "codemode": 2,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1,
+            "read_tool_result": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [
+            {
+              "identity": "task_turn_effect:1f5243f79010bc3f",
+              "tool": "read_tool_result",
+              "args": {
+                "result_ref": "task_turn_effect:4291bf9a3da73457",
+                "view": "value"
+              },
+              "model_text": "ERROR: canonical value unavailable in this receipt; available views: output. Read failure does not authorize re-execution.",
+              "canonical": {
+                "output_available": false
+              },
+              "audit": {}
+            },
+            {
+              "identity": "task_turn_effect:0e25ae4978445143",
+              "tool": "read_tool_result",
+              "args": {
+                "result_ref": "task_turn_effect:4291bf9a3da73457",
+                "view": "value"
+              },
+              "model_text": "ERROR: canonical value unavailable in this receipt; available views: output. Read failure does not authorize re-execution.",
+              "canonical": {
+                "output_available": false
+              },
+              "audit": {}
+            },
+            {
+              "identity": "task_turn_effect:2b14a39e48019d47",
+              "tool": "read_tool_result",
+              "args": {
+                "result_ref": "task_turn_effect:4291bf9a3da73457",
+                "view": "value"
+              },
+              "model_text": "ERROR: canonical value unavailable in this receipt; available views: output. Read failure does not authorize re-execution.",
+              "canonical": {
+                "output_available": false
+              },
+              "audit": {}
+            }
+          ],
+          "done_proposals": 0,
+          "tools_before_done_proposals": [],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "cb72551f4d0fa1eb51e2914378ccc4f328dce9aeeeaacfc597243721f70b48c7",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "02784b6338f6fc7fb624c60f41214a7ac43bb904e9ee6e300463655e9411dff3",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "5f6fe9fa7db370d330cf55323c88b37fd7986d9c0cb4086b8e8b6d7c4f3b37b0",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "93419915cef3bacc7a559a9dcf42e9af36450de33e4a7bcd81b40305ec24fb4e",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 5,
+              "request_sha256": "647c34d19a3a0c0ea7bf584acea90e1c99b3de312e742ed3716bd763db10af1e",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 6,
+              "request_sha256": "e31a5b0be6dfcc3eba57fc1714c6dc050020bcee2eb1b4b0b87460acf9171cf0",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 7,
+              "request_sha256": "49ffc5a1c23fc4500fb9441ae33bc300a57524dd1352ee1041f3948aeef79437",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": {
+                  "name": "Locality",
+                  "role": "textbox"
+                },
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "bd4e1eb8b9d9d4cf899d061a6c6375914g4e2",
+                "purpose": "result"
+              }
+            }
+          ],
+          "result_views": [
+            {
+              "tool": "read_tool_result",
+              "args": {
+                "result_ref": "task_turn_effect:353caa60edb7f236",
+                "view": "value"
+              }
+            },
+            {
+              "tool": "read_tool_result",
+              "args": {
+                "result_ref": "task_turn_effect:4291bf9a3da73457",
+                "view": "value"
+              }
+            },
+            {
+              "tool": "read_tool_result",
+              "args": {
+                "result_ref": "task_turn_effect:4291bf9a3da73457",
+                "view": "value"
+              }
+            },
+            {
+              "tool": "read_tool_result",
+              "args": {
+                "result_ref": "task_turn_effect:4291bf9a3da73457",
+                "view": "value"
+              }
+            }
+          ],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "model_output_and_coverage_not_reached",
+          "interpretation": "对只有 output 的回执反复请求 value；没有实际编辑，未触达版本冲突。"
+        },
+        {
+          "case": "stale_ref",
+          "passed": false,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\stale_ref\\summary.json",
+          "sha256": {
+            "summary.json": "d9f80a15c1a87a5602de97c1af8cffd45ba82df5f4612bdb8c23ac6e486a3f23",
+            "request.json": "2d1a64473abc61662f2fa67f18044ae126de8cf39130e3edeb9d3a899731c58f",
+            "provider.jsonl": "6a7384d934a73174f23cb2b0bebb0618e9c82724871a9626e50b67664a5299f9",
+            "receipts.json": "4367dd839376972b3927fc879779650764821e336bb3cc54dd22b6e591fedbc8",
+            "proposals.jsonl": "a8b068c103e24ffe601541c34c7e89421a58d2c967b6675868d60c99afaa628b",
+            "task.txt": "cbeb483d8817c5f73c42b073c20a5336895ca065336e60aa27d56476cbe80cb3"
+          },
+          "model_action_counts": {
+            "browser_snapshot": 1,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "codemode": 2,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            9
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "ce9074223443978786f3d17e3f1b24ad89d7b4fdb5475ca32dfd99d47cfcedbf",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "6d2eeb429cb3e4f1da6bfa7682b7c3424af10081f895a57525bdbbb71fe0a68d",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "28519149cebd6aa5db005b4d0c4fc8ebfe00b85f87e255002bacaea2650fb595",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "5c3da1df8ddacbd035ecf64ce27b5b9fd3d10634bceff8a6894b5c75bbf524b8",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": {
+                  "name": "Locality",
+                  "role": "textbox"
+                },
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "bf9f811f6594f4cb5b442f531be28b737g4e2",
+                "purpose": "result"
+              }
+            }
+          ],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "coverage_not_triggered",
+          "interpretation": "使用刷新后的正确引用并完成任务，没有真实 stale-ref；旧负例覆盖未触发。"
+        },
+        {
+          "case": "stale_ref_injected",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\stale_ref_injected\\summary.json",
+          "sha256": {
+            "summary.json": "4887796f9c15cb8bf7dc033b4de6f33ce39f676e23bc234f0795ba2c7ba837c3",
+            "request.json": "06f8c0815eaff68e4f1e323d06f7f4ce9c05cfe0eb10ecb1910165c48d04e154",
+            "provider.jsonl": "fa0b6cd5f67d0fe8b47deb8496186a9a008d41c2359eeda911004c63459fd90a",
+            "receipts.json": "2ab1f0f2c69109849a2b5ffcde030afa5b9b682aafd90824539187c0e0a14ce1",
+            "proposals.jsonl": "4a2bcf9e3a9af516440eda15f8ae3ec2476bb91be86fc41dbc3c436bd686584f",
+            "task.txt": "4f71fe4aac7e97c3b1d98f993f9614042f5455c6a39a32e8f7f863be039f9ab7"
+          },
+          "model_action_counts": {
+            "browser_snapshot": 2,
+            "browser_fill": 2,
+            "browser_click": 1,
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "browser_navigate": 1,
+            "browser_snapshot": 3,
+            "codemode": 2,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [
+            {
+              "identity": "task_turn_effect:b7943ac31aa1fa11",
+              "tool": "codemode",
+              "args": {
+                "code": "const ref=inputs.ref;const action=unwrap(await tools.browser_fill({ref,value:inputs.value}));unwrap(await tools.browser_snapshot({}));return action;",
+                "inputs": {
+                  "ref": {
+                    "name": "Locality",
+                    "role": "textbox"
+                  },
+                  "value": "福州"
+                },
+                "language": "javascript"
+              },
+              "model_text": "ERROR: stale browser element reference; take a fresh browser_snapshot\nCurrent codemode contract:\nWrite an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\nArguments (JSON Schema; only declared fields): {\"additionalProperties\":false,\"properties\":{\"code\":{\"type\":\"string\"},\"inputs\":{\"additionalProperties\":true,\"description\":\"Named JSON data fields exposed as read-only inputs in JavaScript.\",\"type\":\"object\"},\"language\":{\"enum\":[\"javascript\",\"js\"],\"type\":\"string\"},\"repair_of\":{\"description\":\"Optional kernel-issued token for a return-only receipt replay.\",\"pattern\":\"^cmr_[A-Za-z0-9_-]{6,64}$\",\"type\":\"string\"}},\"required\":[\"code\"],\"type\":\"object\"}",
+              "canonical": {
+                "child_effect_ids": [
+                  "task_turn_effect:bbf0c8d813da2e70"
+                ]
+              },
+              "audit": {
+                "catalog_digest": "sha256:92a0480937a1d2daefecc008ca52327a2b8c733af729bc26a9138e891195adb4",
+                "child_calls": 1,
+                "codemode_execution_id": "run_624179ee42274c808698d2bc3f84eae8:turn:2:codemode:be8c734e5fdfd294",
+                "error_code": "execution_error"
+              }
+            },
+            {
+              "identity": "task_turn_effect:bbf0c8d813da2e70",
+              "tool": "browser_fill",
+              "args": {
+                "ref": "b42076169eeae4591a996ad5815049c50g2e1",
+                "value": "福州"
+              },
+              "model_text": "ERROR: stale browser element reference; take a fresh browser_snapshot",
+              "canonical": {
+                "value": {
+                  "action": "fill",
+                  "delivery": "not_delivered",
+                  "reason": "stale_ref",
+                  "ref": "b42076169eeae4591a996ad5815049c50g2e1",
+                  "text": "ERROR: stale browser element reference; take a fresh browser_snapshot"
+                }
+              },
+              "audit": {
+                "browser_document": {
+                  "loader_id": "DCA93035E54249A943B376E0032C12AE",
+                  "target_id": "EDF485441EF7F08236554224E7D250F9",
+                  "url": "https://example.com/production-browser-record"
+                }
+              }
+            }
+          ],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            12
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "f626c4d6929b5097a6f20d7ca9e4e24e80d49b9571e6851e09422eed57408bd7",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "33bb97421ef71682317a385e37129e9e978ed6ce0587e5c63f1135830c4d8d54",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "6c97f3e2e2ed02616abc727e999339a3b11f0c773507402bb32940d69c14fbca",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "440301a83d22729aa372f1b615172a606248be376cd034305c6479ae952fbaad",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 5,
+              "request_sha256": "ca5a6a1051b975a6bb6a5c9bf718abbc9f7771a042edd4e262e761edf4f8b902",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 6,
+              "request_sha256": "b15abd08a46e571720c21723a105fe5800785f63e5c1eed94b69d18ab0913807",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": {
+                  "name": "Locality",
+                  "role": "textbox"
+                },
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": {
+                  "name": "Locality",
+                  "role": "textbox"
+                },
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "b42076169eeae4591a996ad5815049c50g6e2",
+                "purpose": "result"
+              }
+            }
+          ],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 1,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        },
+        {
+          "case": "structured",
+          "passed": false,
+          "stop_reason": "no_progress",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\structured\\summary.json",
+          "sha256": {
+            "summary.json": "0185be1425cc3be66cee471e0acdd4b256397df3a2415213f29a885118ff5085",
+            "request.json": "952de0851f6031ab273802229395fe56c26200c625fa54b11b63a4d112c31ab0",
+            "provider.jsonl": "6949cd32c835be9da05fa5999d133d52961ee2c00bbe4dc08397af4444677c07",
+            "receipts.json": "8c85d8313ef44780e669f5dbe93f15e9b1100e9f455c511f60b766753896f63f",
+            "proposals.jsonl": "1effc08b63e5f5cf1cc34dffc1c7c51231aed3a04dfe0a2963e7e3a55a513c08",
+            "task.txt": "d8cf0e6e942ccc6900d077c1bbf2294fca9938c00fb039909f659425c682d148"
+          },
+          "model_action_counts": {
+            "browser_snapshot": 1,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_eval": 1,
+            "browser_tab_list": 1,
+            "done": 4
+          },
+          "successful_receipt_counts": {
+            "browser_navigate": 1,
+            "browser_snapshot": 2,
+            "codemode": 4,
+            "browser_fill": 1,
+            "browser_click": 1,
+            "browser_wait": 1,
+            "browser_read": 1,
+            "browser_eval": 1,
+            "browser_tab_list": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [],
+          "done_proposals": 4,
+          "tools_before_done_proposals": [
+            13,
+            13,
+            13,
+            13
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "a2694ff1112572e958c237523a398a817ec18518d08b3b7d11b72c56442904c5",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "652da0bc883dd22d8cc6f9837e70fae54647d0a9aea629b2b5c5ea332aa84619",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "38bcb9447e6fa6cfd0dfdc869986d6988b5a0aae0b1768e05bd2f1431f0ee3bc",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "0dac49303f0b6031ed67bb350563d967bee09b7c757c975b943e633621a4eb29",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 5,
+              "request_sha256": "8753b94728208305e3fbdda866280c56ab0a039b09746bc795fc93c3dd728372",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 6,
+              "request_sha256": "9831db0857a2208f7fc6e43643ca7c9bbf6c5d6ef7fca54aa42890ed51fd8c98",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 7,
+              "request_sha256": "8663999e445bf471d82b1539253478b29e348489a1ece0cdb3f599b13d3cb410",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 8,
+              "request_sha256": "5cc980ffdd7d450682e563d9e0c0fd162853345f047d8fb627b537b58a46faf7",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 9,
+              "request_sha256": "6cab6f0145432c7ebb409c6bd6b94f9550e6cee7670ff9cb55a0a6aae3bfc3d0",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [
+            {
+              "tool": "browser_snapshot",
+              "args": {}
+            },
+            {
+              "tool": "browser_fill",
+              "args": {
+                "ref": {
+                  "name": "Locality",
+                  "role": "textbox"
+                },
+                "value": "福州"
+              }
+            },
+            {
+              "tool": "browser_click",
+              "args": {
+                "ref": "bde021b49da5e4988b6a1606959fb5c8dg4e2",
+                "purpose": "result"
+              }
+            },
+            {
+              "tool": "browser_eval",
+              "args": {
+                "code": "window.__contractToken"
+              }
+            },
+            {
+              "tool": "browser_tab_list",
+              "args": {}
+            }
+          ],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "model_output",
+          "interpretation": "四次 done 提案；先删掉 URL，仍重复 token。错误被拦下，未完成说明补正。"
+        },
+        {
+          "case": "upload",
+          "passed": true,
+          "stop_reason": "done",
+          "summary_path": "R:\\codey-closure-resume-20261115\\artifacts\\full-surface-current\\upload\\summary.json",
+          "sha256": {
+            "summary.json": "6d36a55fd239ea4bdce6fcd62c3d546f231b4f7c3f295eeb55e676e65aca27bc",
+            "request.json": "94bf1b13d75ededb2ba592d7f88e5e2be3249fea3e516208094c6286d82e4242",
+            "provider.jsonl": "4a23c3d1f24d6868425da4866459790c8f0c148103b5d83cd84e536dd7e30158",
+            "receipts.json": "051492ffc9395793f1e8da02439cda96e842637d1355093f7265f2705edb1c8a",
+            "proposals.jsonl": "5a293c300c998c067b3cf3f20ca432345ec4eaceae9acf653f9023726183b06f",
+            "task.txt": "18b3ef9665f4fe2fc4b43831e119b9c443f7c6560a5d133d378f51eb711eaba7"
+          },
+          "model_action_counts": {
+            "codemode": 3,
+            "done": 1
+          },
+          "successful_receipt_counts": {
+            "open_url": 1,
+            "browser_navigate": 2,
+            "codemode": 3,
+            "browser_snapshot": 1,
+            "browser_upload": 1,
+            "browser_wait": 1,
+            "browser_read": 1
+          },
+          "model_javascript_proposals": 0,
+          "errors": [],
+          "done_proposals": 1,
+          "tools_before_done_proposals": [
+            10
+          ],
+          "edit_actions": [],
+          "requests": [
+            {
+              "exchange": 1,
+              "request_sha256": "efc9e4eee4a5478514a1b8afad1b82facd01c2a59b970f68a4ff38c6318924d8",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 2,
+              "request_sha256": "8f73f085551a7cb996959f6d415c50b144b37c7be6bd902d948226fe7b11b04a",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 3,
+              "request_sha256": "11e0d8bc859187bab808e016851186f002a91ec7632b2f5206b14a9841f2316b",
+              "temperature": 0,
+              "seed": 123456789
+            },
+            {
+              "exchange": 4,
+              "request_sha256": "1b99f21aa30871564372f1356456b3ed49c5e092577310c8ac4a52061dc8f3dc",
+              "temperature": 0,
+              "seed": 123456789
+            }
+          ],
+          "model_browser_actions": [],
+          "result_views": [],
+          "project_result": {
+            "amount": 0,
+            "code": "unknown"
+          },
+          "true_stale_conflicts": 0,
+          "fresh_read_recovery": false,
+          "restored_snapshots": 0,
+          "failed_stale_refs": 0,
+          "source_failure_receipts": [],
+          "source_reads": 1,
+          "classification": "accepted",
+          "interpretation": "通过当前场景验收；中途错误仍保留在原始回执。"
+        }
+      ]
+    },
+    "typed_copy": {
+      "passed": 5,
+      "runs": 5,
+      "cli_exit_code": 0,
+      "summary": "R:\\codey-closure-resume-20261115\\artifacts\\typed-copy-current\\summary.json",
+      "summary_sha256": "cd60ac2feda5db1b1dc4eb10bc4a5ac614f73e29a6a16a041bce19bed57fb6d5",
+      "source_before": "f7b00caa32ea6b3262e3c0eb44d0259465a67000b2f62c470f7f99a64ffe7de6",
+      "source_after": "f7b00caa32ea6b3262e3c0eb44d0259465a67000b2f62c470f7f99a64ffe7de6",
+      "cases": [
+        {
+          "case": "decimal",
+          "passed": true,
+          "stop_reason": "done",
+          "content": "{\"balance\":-0.1250,\"label\":\"unknown\",\"untouched\":9007199254740993.123456789}\n",
+          "expected": "{\"balance\":-0.1250,\"label\":\"unknown\",\"untouched\":9007199254740993.123456789}\n",
+          "successful_edits": 1,
+          "source_captures": 1,
+          "model_javascript_proposals": 0
+        },
+        {
+          "case": "precision",
+          "passed": true,
+          "stop_reason": "done",
+          "content": "{\"balance\":123456789012345.67890123456789,\"label\":\"unknown\",\"untouched\":9007199254740993.123456789}\n",
+          "expected": "{\"balance\":123456789012345.67890123456789,\"label\":\"unknown\",\"untouched\":9007199254740993.123456789}\n",
+          "successful_edits": 1,
+          "source_captures": 1,
+          "model_javascript_proposals": 0
+        },
+        {
+          "case": "string",
+          "passed": true,
+          "stop_reason": "done",
+          "content": "{\"balance\":0,\"label\":\"000783\",\"untouched\":9007199254740993.123456789}\n",
+          "expected": "{\"balance\":0,\"label\":\"000783\",\"untouched\":9007199254740993.123456789}\n",
+          "successful_edits": 1,
+          "source_captures": 1,
+          "model_javascript_proposals": 0
+        },
+        {
+          "case": "multi",
+          "passed": true,
+          "stop_reason": "done",
+          "content": "{\"balance\":123456789012345.67890123456789,\"label\":\"000783\",\"untouched\":9007199254740993.123456789}\n",
+          "expected": "{\"balance\":123456789012345.67890123456789,\"label\":\"000783\",\"untouched\":9007199254740993.123456789}\n",
+          "successful_edits": 1,
+          "source_captures": 1,
+          "model_javascript_proposals": 0
+        },
+        {
+          "case": "renamed",
+          "passed": true,
+          "stop_reason": "done",
+          "content": "{\"due\":123456789012345.67890123456789,\"label\":\"unknown\",\"untouched\":9007199254740993.123456789}\n",
+          "expected": "{\"due\":123456789012345.67890123456789,\"label\":\"unknown\",\"untouched\":9007199254740993.123456789}\n",
+          "successful_edits": 1,
+          "source_captures": 1,
+          "model_javascript_proposals": 0
+        }
+      ]
+    },
+    "canceled_additional_stale_edit_run": {
+      "status": "user_canceled",
+      "reason": "用户要求不用跑了、汇总报告并 commit；已停止进程，不再启动验证。",
+      "directory": "R:\\codey-closure-resume-20261115\\artifacts\\stale-edit-rerun-current",
+      "completed_summary_exists": false,
+      "counted_as_pass_or_fail": false,
+      "overwrites_matrix": false
+    },
+    "prior_runs_preserved": [
+      {
+        "path": ".e2e-artifacts/browser-contract-closure-20261115/full-surface-first/summary.json",
+        "passed": 12,
+        "runs": 15,
+        "source_frozen": false,
+        "use": "development diagnostics only"
+      },
+      {
+        "path": ".e2e-artifacts/browser-contract-closure-20261115/full-surface-final/summary.json",
+        "passed": 13,
+        "runs": 17,
+        "source_frozen": true,
+        "use": "before final Research wait composition fix; not replacement of current outcome"
+      },
+      {
+        "path": ".e2e-artifacts/browser-contract-closure-20261115/typed-copy-first",
+        "completed_passes": 2,
+        "full_matrix_complete": false,
+        "use": "interrupted original decimal/precision run"
+      }
+    ]
+  },
+  "preserved_first_results": [
+    {
+      "path": "R:\\codey-closure-resume-20261115\\artifacts\\research-compose-baseline.xml",
+      "passed": 1,
+      "failed": 2,
+      "deselected": 7,
+      "reason": "Research query plan missing declared sequence wait"
+    },
+    {
+      "path": "R:\\codey-closure-resume-20261115\\artifacts\\research-compose-fixed.xml",
+      "passed": 10,
+      "failed": 0
+    },
+    {
+      "path": "R:\\codey-closure-resume-20261115\\artifacts\\regression-04.xml",
+      "passed": 109,
+      "failed": 1,
+      "reason": "stale feedback assertion expected forbidden draft to be repeated"
+    },
+    {
+      "path": "R:\\codey-closure-resume-20261115\\artifacts\\regression-05.xml",
+      "passed": 159,
+      "failed": 23,
+      "reason": "21 original prototype failures and 2 stale feedback assertions"
+    },
+    {
+      "path": "R:\\codey-closure-resume-20261115\\artifacts\\static-checks.json",
+      "reason": "initial target mypy duplicate module invocation; corrected invocation has separate log"
+    },
+    {
+      "path": ".e2e-artifacts/contract-closure-regression-final-junit.xml",
+      "failures": 39,
+      "errors": 199,
+      "environment_contaminated": true,
+      "reason": "R disk full; not passing evidence"
+    },
+    {
+      "path": ".e2e-artifacts/contract-closure-regression-disk.log",
+      "status": "user_stopped_partial"
+    }
+  ],
+  "remaining_limits": [
+    "Bad free JavaScript and source semantics still require model correction; direct steps reduce avoidable code generation.",
+    "Explanation-only feedback and narrowed tools prevent repeated settled actions but cannot guarantee model compliance.",
+    "Undeclared file types are not guessed from current placeholder values; generic Hybrid may still write a string.",
+    "Typed copy recognizes explicit single-source, same-file, top-level field tasks; no currency conversion, units, rounding or ambiguous type inference.",
+    "Research still requires correct query intent, observed evidence and post-wait citations; not every click is automatically a result query.",
+    "Old stale-ref negative fixture did not trigger rejection; dedicated injected real stale-ref scenario passed independently.",
+    "Current live stale-edit did not reach file mutation/conflict; latest additional run was canceled by user. Previous completed run and production regressions cover conflict handling separately.",
+    "Current matrix is one controlled-fixture run; do not combine changing matrix versions into an improvement rate or claim general model reliability.",
+    "Historical raw replies were selected problem traces, not all 2415 provider files; old snapshot compatibility limits offline replay."
+  ]
+}

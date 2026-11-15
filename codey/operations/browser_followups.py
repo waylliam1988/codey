@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from codey.automation.browser_document import document_changed
 from codey.operations.browser_waits import BrowserWaitPlan, wait_plan
-from codey.policies.browser_requirement import BrowserPageRounds, parse_browser_requirement
+from codey.policies.browser_requirement import BrowserPageRounds, BrowserResearchSequence, parse_browser_requirement
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters, thaw_schema_value
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object
@@ -79,10 +79,12 @@ def model_spec(spec: ToolSpec, fill_text: str | None, *, click_purposes: tuple[s
     return spec
 
 
-def allows_surface(snapshot: TurnSnapshot, direct_names: tuple[str, ...] = DIRECT_TOOLS) -> bool:
+def allows_surface(snapshot: TurnSnapshot, direct_names: tuple[str, ...] = DIRECT_TOOLS, *, research: bool = False) -> bool:
     policy = snapshot.policy
     names = {"codemode", *direct_names}
-    return (policy is not None and not policy.strict_research and snapshot.research_scope is None
+    scope_matches = (policy is not None and policy.strict_research and snapshot.research_scope is not None
+                     if research else policy is not None and not policy.strict_research and snapshot.research_scope is None)
+    return (policy is not None and scope_matches
             and snapshot.browser_copy is None
             and snapshot.input_binding is None
             and "codemode" in snapshot.tool_names and set(direct_names) <= set(snapshot.nested_tool_names)
@@ -100,7 +102,7 @@ def _click_wait_plan(checks: tuple[str, ...]) -> BrowserWaitPlan:
     waits: list[JsonObject] = []
     for check in checks:
         rule = parse_browser_requirement(check)
-        if isinstance(rule, BrowserPageRounds):
+        if isinstance(rule, (BrowserPageRounds, BrowserResearchSequence)):
             args: JsonObject = {"condition": rule.condition, "value": rule.value, "timeout_ms": 5000}
             if args not in waits:
                 waits.append(args)

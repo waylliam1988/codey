@@ -51,7 +51,8 @@ def test_fact_and_paragraph_repairs_use_current_receipts_without_repeating_reads
     assert str(amount) in str(first["reason"]) and stale in str(first["reason"])
     assert "answer_text_missing" in str(numeric["reason"]) and fractional in str(numeric["reason"])
     assert "output_format_invalid" in str(second["reason"]) and escaped in str(second["reason"])
-    assert "answer_text_forbidden" in str(third["reason"]) and repeated in str(third["reason"])
+    assert "answer_text_forbidden" in str(third["reason"]) and "Repair only /explanation" in str(third["reason"])
+    assert repeated not in str(third["reason"]) and TOKEN not in str(third["reason"])
     assert "output_format_invalid" in str(fourth["reason"])
     checks = decode_json_object(row["posthoc_output_checks"])
     assert checks["facts_mentioned"] is True and checks["schema_valid"] is True

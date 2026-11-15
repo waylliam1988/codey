@@ -27,6 +27,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
+from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
@@ -153,6 +154,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              expected_amount: int = 173, expected_code: str = "QUARTZ_851",
              declare_required_tools: bool = True,
              codemode_only: bool = False,
+             inject_stale_ref: bool = False,
              additional_required_tools: tuple[str, ...] = (),
              explanation_bindings: tuple[str, ...] = BINDINGS,
              explanation_schema: JsonObject | None = None) -> dict[str, object]:
@@ -193,6 +195,22 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     final_write_check = tool_runtime._write_text_after_final_path_check
+    original_fill = BrowserSession.fill
+    stale_ref_injected = False
+
+    def inject_before_fill(browser: BrowserSession, ref: str, value: str) -> BrowserToolOutput:
+        nonlocal stale_ref_injected
+        if not stale_ref_injected:
+            before = browser.generation
+            observation = browser.snapshot()
+            if not observation.ok:
+                raise ValueError("stale-ref fixture could not refresh controls")
+            stale_ref_injected = True
+            (directory / "stale-ref-injection.json").write_text(json.dumps({
+                "trigger": "before_first_fill", "submitted_ref": ref,
+                "generation_before": before, "generation_after": browser.generation,
+            }), encoding="utf-8")
+        return original_fill(browser, ref, value)
 
     def inject_before_version_check(root: Path, rel: str, content: str, *, tool: str,
                                     expected_version: str | None = None) -> ToolOutcome | None:
@@ -235,8 +253,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             "先观察页面，把 Locality 填为福州；使用最新的控件引用，点击 Load record，调用 browser_wait 等待出现鱼丸，最后 browser_read 当前页。"
             "每一步检查工具结果，不要猜控件引用。"
             "最后报告实际净重和校验码，不要用 snapshot 或点击结果替代 browser_read 正文。不要运行测试或命令。")
-    if codemode_only or mode == "research":
-        task += (("Use codemode only. " if codemode_only else "浏览器操作通过 codemode 完成。")
+    if codemode_only:
+        task += ("Use codemode only. "
                  + "用 unwrap 获得结构化 snapshot.elements，每项有 ref/role/name。"
                  "填写后重新 snapshot 获取新 ref。browser_read 返回字符串，"
                  "直接 return unwrap(await tools.browser_read({}))，不要再取 .text。")
@@ -330,6 +348,8 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                 stack.enter_context(patch.object(kernel_protocol, "build_turn_snapshot", restored_snapshot))
             if stale_edit:
                 stack.enter_context(patch.object(tool_runtime, "_write_text_after_final_path_check", inject_before_version_check))
+            if inject_stale_ref:
+                stack.enter_context(patch.object(BrowserSession, "fill", inject_before_fill))
             if reread:
                 stack.enter_context(patch("codey.research.ledger.now_iso", return_value="2026-11-10T00:00:00+00:00"))
             stack.enter_context(patch.object(provider, "_guard_request", route_document))
@@ -408,7 +428,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                   and (not explanation_output or output_checks.get("schema_valid") is True
                        and output_checks.get("exact_fields") is True and output_checks.get("facts_mentioned") is True
                        and explanation_quality.get("bound_values_repeated") is False)
-                  and (not stale_ref or failed_refs >= 1)
+                  and (not (stale_ref or inject_stale_ref) or failed_refs >= 1)
                   and (not research_sequence or submission_only)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
                   and (mode != "hybrid" or file_correct))
@@ -427,6 +447,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             "successful_tools": sorted(successful), "answer": answer, "project_result": artifact, "navigations": navigations,
             "source_reads": reads, "failed_edits": failed_edits, "changed_after_read": changed_after_read,
             "downloads": [str(path) for path in downloads], "failed_stale_refs": failed_refs,
+            "stale_ref_injected": stale_ref_injected,
             "posthoc_output_checks": output_checks, "explanation_output": explanation_output,
             "source_failure_receipts": source_failures}
         if mode == "research":

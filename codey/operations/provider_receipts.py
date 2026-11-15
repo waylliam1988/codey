@@ -346,8 +346,10 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references)
     direct = tuple(spec.name for spec in specs if spec.executor == "browser" and spec.name in names)
-    if snapshot.browser_followups and (not set(direct) <= {*DIRECT_TOOLS, *SINGLE_STEP_TOOLS}
-            or not allows_surface(snapshot, direct)):
+    research = snapshot.research_scope is not None
+    direct_surface = {*DIRECT_TOOLS, "browser_wait", "browser_navigate"} if research else {*DIRECT_TOOLS, *SINGLE_STEP_TOOLS}
+    if snapshot.browser_followups and (not set(direct) <= direct_surface
+            or not allows_surface(snapshot, direct, research=research)):
         raise ValueError("captured browser follow-ups exceed the authorized browser interface")
     from codey.toolchain.tool_prompt import contract_semantics
 

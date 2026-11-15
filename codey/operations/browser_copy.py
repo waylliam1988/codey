@@ -7,8 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from codey.codemode.json_edit import JsonNumber, json_source_value
 from codey.policies.network import check_fetch_url
-from codey.policies.tool_requirement import decode_answer, json_pointer
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 
@@ -27,7 +27,7 @@ _OTHER_WORKFLOW = re.compile(
     r"不要\s*(?:写|复制)|不(?:要|需)修改|换算|计算|四舍五入|翻译"
     r"|(?:用\s*|\buse\s+)`?observe\b"
     r"|\b(?:codemode|convert|calculate|round|translate|do not write)\b", re.I)
-_NO_CHECK = re.compile(r"(?:不要|无需|不必)\s*(?:运行|执行|跑)?\s*(?:测试|验证)|\b(?:do not|don't|no need to)\s+(?:run\s+)?(?:tests?|verify)\b", re.I)
+_NO_CHECK = re.compile(r"(?:不要|无需|不必|不)\s*(?:运行|执行|跑)?\s*(?:测试|验证)|\b(?:do not|don't|no need to)\s+(?:run\s+)?(?:tests?|verify)\b", re.I)
 _CHECK = re.compile(r"(?:运行|执行|跑)\s*(?:测试|验证)|\b(?:pytest|verify|run\s+(?:the\s+)?(?:tests?|checks?))\b", re.I)
 
 CAPTURE = """() => ({
@@ -55,25 +55,51 @@ class CopyTarget:
     path: str
     field: str
     value_type: str
+    additional_fields: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        if (len({field for field, _ in self.fields}) != len(self.fields)
+                or any(value_type not in {"integer", "number", "string"} for _, value_type in self.fields)):
+            raise ValueError("copy fields must be unique and explicitly typed")
+
+    @property
+    def fields(self) -> tuple[tuple[str, str], ...]:
+        return ((self.field, self.value_type), *self.additional_fields)
 
 
 def copy_target(task: str) -> CopyTarget | None:
-    """Recognize explicitly typed copies of one web value into one named field."""
+    """Recognize explicit typed field copies to one file, without guessing types."""
     task = re.sub(r"```[\s\S]*?```", "", task)
     urls = {match.group(0).rstrip(".,;!?") for match in _URL.finditer(task)}
     targets = list(_TARGET.finditer(task))
-    integer = bool(re.search(r"整数|\binteger\b", task, re.I))
-    string = bool(re.search(r"字符串|保留前导零|\b(?:string|preserve leading zeros)\b", task, re.I))
-    if (len(urls) != 1 or len(targets) != 1 or integer == string or _OTHER_WORKFLOW.search(task)
+    if (len(urls) != 1 or not targets or _OTHER_WORKFLOW.search(task)
             or _CHECK.search(_NO_CHECK.sub("", task))
             or not re.search(r"写入|写进|写到|复制到|填入|\b(?:copy|write)\b", task, re.I)
-            or re.match(r"\s*(?:和|与|以及|及|或|、|\band\b|\bor\b)", task[targets[0].end():], re.I)):
+            or any(re.match(r"\s*(?:和|与|以及|及|或|、|\band\b|\bor\b)", task[target.end():], re.I)
+                   for target in targets)):
         return None
     url = next(iter(urls))
     if check_fetch_url(url, resolve=False):
         return None
-    first_path, first_field, second_path, second_field = targets[0].groups()
-    return CopyTarget(url, first_path or second_path, first_field or second_field, "integer" if integer else "string")
+    fields: list[tuple[str, str]] = []
+    paths: set[str] = set()
+    for target in targets:
+        start = max(task.rfind(mark, 0, target.start()) for mark in ("。", "；", ";", "\n")) + 1
+        ends = [index for mark in ("。", "；", ";", "\n") if (index := task.find(mark, target.end())) >= 0]
+        clause = task[start:min(ends) if ends else len(task)]
+        types = [name for name, pattern in (
+            ("integer", r"整数|\binteger\b"),
+            ("number", r"小数|十进制|\b(?:number|decimal|numeric)\b"),
+            ("string", r"字符串|保留前导零|\b(?:string|preserve leading zeros)\b"),
+        ) if re.search(pattern, clause, re.I)]
+        if len(types) != 1:
+            return None
+        first_path, first_field, second_path, second_field = target.groups()
+        paths.add(first_path or second_path)
+        fields.append((first_field or second_field, types[0]))
+    if len(paths) != 1 or len({field for field, _ in fields}) != len(fields):
+        return None
+    return CopyTarget(url, next(iter(paths)), *fields[0], tuple(fields[1:]))
 
 
 def captured_data(receipt: ToolResult) -> JsonObject | None:
@@ -101,7 +127,7 @@ def objects(data: JsonObject, kind: str) -> list[JsonObject]:
     return [decode_json_object(row) for row in rows]
 
 
-def select_source(data: JsonObject, selector: JsonObject, value_type: str) -> JsonValue:
+def select_source(data: JsonObject, selector: JsonObject, value_type: str) -> JsonValue | JsonNumber:
     kind = observation_kind(data)
     if not kind:
         raise ValueError("Observe a page with one unambiguous source format.")
@@ -114,16 +140,20 @@ def select_source(data: JsonObject, selector: JsonObject, value_type: str) -> Js
         pointer = require_json_string(selector.get("pointer"), "source.pointer")
         if not pointer.startswith("/"):
             raise ValueError("Use a JSON pointer such as /shipping/number.")
-        value = json_pointer(decode_answer(require_json_string(row.get("text"), "source JSON")), pointer)
+        value = json_source_value(require_json_string(row.get("text"), "source JSON"), pointer)
     else:
         value = _table_value(row, selector)
     if value_type == "string" and isinstance(value, str):
         return value
     if value_type == "integer":
-        if type(value) is int:
+        text = value.text if isinstance(value, JsonNumber) else value if isinstance(value, str) else ""
+        if re.fullmatch(r"-?[0-9]{1,1024}", text):
+            return int(text)
+    if value_type == "number":
+        if isinstance(value, JsonNumber):
             return value
-        if isinstance(value, str) and re.fullmatch(r"-?[0-9]{1,15}", value):
-            return int(value)
+        if isinstance(value, str):
+            return JsonNumber(value)
     raise ValueError(f"The selected value must match the task's {value_type} type.")
 
 
@@ -184,7 +214,9 @@ class CopyTurn:
         return parse_json_object(self.data_json) if self.data_json else None
 
     def payload(self) -> JsonObject:
-        return {"url": self.target.url, "path": self.target.path, "field": self.target.field, "type": self.target.value_type,
+        target: JsonObject = ({"fields": [{"field": field, "type": kind} for field, kind in self.target.fields]}
+                              if self.target.additional_fields else {"field": self.target.field, "type": self.target.value_type})
+        return {"url": self.target.url, "path": self.target.path, **target,
                 "phase": self.phase, "ref": self.ref, "data": self.data, "business_key": self.business_key}
 
     @classmethod
@@ -193,9 +225,20 @@ class CopyTurn:
             return require_json_string(data[key], key)
 
         phase = text("phase")
-        if phase not in {"observe", "edit", "done", "question"} or text("type") not in {"integer", "string"}:
+        if phase not in {"observe", "edit", "done", "question"}:
             raise ValueError("Invalid browser copy state")
-        return cls(CopyTarget(text("url"), text("path"), text("field"), text("type")), phase, text("ref"),
+        if "fields" in data:
+            if "field" in data or "type" in data:
+                raise ValueError("copy fields must have one representation")
+            raw = data["fields"]
+            if not isinstance(raw, list) or len(raw) < 2:
+                raise ValueError("multi-field copy requires at least two fields")
+            fields = [(require_json_string(row.get("field"), "field"), require_json_string(row.get("type"), "type"))
+                      for item in raw for row in [decode_json_object(item)]]
+            target = CopyTarget(text("url"), text("path"), *fields[0], tuple(fields[1:]))
+        else:
+            target = CopyTarget(text("url"), text("path"), text("field"), text("type"))
+        return cls(target, phase, text("ref"),
                    json.dumps(decode_json_object(data["data"]), ensure_ascii=False, sort_keys=True)
                    if data["data"] is not None else "", text("business_key"))
 
@@ -218,27 +261,43 @@ class CopyTurn:
         bound_key = (f"Bound row key: {json.dumps(self.business_key, ensure_ascii=False)}. "
                      if self.business_key and kind == "table" else "")
         destination: JsonObject = {"file": self.target.path, "field": self.target.field}
-        return freeze_spec_parameters(replace(original, declarations="", json_examples=(), required=("source",),
+        if self.target.additional_fields:
+            destination = {"file": self.target.path,
+                           "fields": [{"field": field, "type": kind} for field, kind in self.target.fields]}
+        parameter = "sources" if self.target.additional_fields else "source"
+        source_schema = (_object({field: _object(source) for field, _ in self.target.fields})
+                         if self.target.additional_fields else _object(source))
+        return freeze_spec_parameters(replace(original, declarations="", json_examples=(), required=(parameter,),
             description=f"Copy the {kind} source value to the authorized {self.target.value_type} field. "
             f"Bound destination: {json.dumps(destination, ensure_ascii=False)}. "
             f"{bound_key}Observed source IDs and previews: {json.dumps(preview, ensure_ascii=False)}. "
             "Use a JSON Pointer such as /parcel/label for JSON. After a file version conflict, retry with the same source.",
-            parameters=(("source", _object(source)),)))
+            parameters=((parameter, source_schema),)))
 
     def lower(self, args: JsonObject) -> JsonObject:
         if self.phase == "observe":
             return {"code": OBSERVE, "inputs": {"url": self.target.url, "capture": CAPTURE}}
-        selector = decode_json_object(args["source"])
+        selectors = (decode_json_object(args["sources"]) if self.target.additional_fields else
+                     {self.target.field: args["source"]})
+        if set(selectors) != {field for field, _ in self.target.fields}:
+            raise ValueError("select exactly the declared destination fields")
         data = self.data or {}
         kind = observation_kind(data)
         available = objects(data, kind)
-        if self.business_key and kind == "table":
-            selector["key"] = self.business_key
-        if len(available) == 1:
-            selector["id"] = available[0]["id"]
-        select_source(data, selector, self.target.value_type)
+        bound: JsonObject = {}
+        for field, value_type in self.target.fields:
+            selector = decode_json_object(selectors[field])
+            if self.business_key and kind == "table":
+                selector["key"] = self.business_key
+            if len(available) == 1:
+                selector["id"] = available[0]["id"]
+            select_source(data, selector, value_type)
+            bound[field] = selector
+        source: JsonObject = {"ref": self.ref}
+        source["selectors" if self.target.additional_fields else "selector"] = (bound if self.target.additional_fields else
+                                                                               bound[self.target.field])
         return {"code": EDIT, "inputs": {"path": self.target.path,
-            "source": {"ref": self.ref, "selector": selector}}}
+            "source": source}}
 
 
 def _object(properties: dict[str, dict[str, object]]) -> dict[str, object]:

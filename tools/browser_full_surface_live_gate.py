@@ -18,11 +18,11 @@ if __package__ in (None, ""):
 from tools.browser_production_live_gate import run_case, select_target
 from tools.completion_explanation_ab import Target, production_source_digest
 
-SCENARIOS = ("basic", "codemode", "structured", "legacy_structured", "reread", "stale_ref", "hybrid", "hybrid_codemode", "stale_edit", "upload", "download", "research", "research_sequence", "source_failure", "fixed_failure")
+SCENARIOS = ("basic", "codemode", "structured", "legacy_structured", "reread", "stale_ref", "hybrid", "hybrid_codemode", "stale_edit", "upload", "download", "research", "research_sequence", "source_failure", "fixed_failure", "research_codemode", "stale_ref_injected")
 
 
 def _case(root: Path, scenario: str, target: Target) -> dict[str, object]:
-    research = scenario in {"research", "research_sequence"}
+    research = scenario in {"research", "research_sequence", "research_codemode"}
     mode = "hybrid" if scenario in {"hybrid", "hybrid_codemode", "stale_edit"} else "research" if research else "chat"
     return run_case(root / scenario, mode, target, strict_research=research,
         restore_snapshots=scenario == "reread", reread=scenario == "reread", stale_edit=scenario == "stale_edit",
@@ -30,7 +30,8 @@ def _case(root: Path, scenario: str, target: Target) -> dict[str, object]:
         stale_ref=scenario == "stale_ref", source_failure=scenario in {"source_failure", "fixed_failure"},
         fixed_failure=scenario == "fixed_failure", upload_file=scenario == "upload", download_file=scenario == "download",
         research_sequence=scenario == "research_sequence", declare_required_tools=scenario not in {"hybrid", "hybrid_codemode"},
-        codemode_only=scenario in {"codemode", "hybrid_codemode"})
+        codemode_only=scenario in {"codemode", "hybrid_codemode", "research_codemode"},
+        inject_stale_ref=scenario == "stale_ref_injected")
 
 
 class Options(argparse.Namespace):

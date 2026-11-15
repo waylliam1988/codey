@@ -10,6 +10,7 @@ over-cap proof fails closed to blocked, never complete.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 
@@ -299,6 +300,30 @@ def _required_checks_verdict(
     return None
 
 
+def _explanation_repair_verdict(session: TaskSession, checks: list[CompletionCheck],
+                                evaluations: dict[str, RequirementEvaluation]) -> GateVerdict | None:
+    from codey.policies.output_requirement import EXPLANATION_GUIDANCE, has_explanation, is_output_check, schema_for
+
+    if session.policy.strict_research or not has_explanation(session.policy.required_checks):
+        return None
+    failed = [row for row in checks if row.status in {CHECK_FAIL, CHECK_NOT_RUN}]
+    if not failed or any(row.check_id not in evaluations or not (
+            row.check_id.startswith("output_json") or evaluations[row.check_id].reason_code.startswith("answer_"))
+            for row in failed):
+        return None
+    feedback = list(dict.fromkeys(f"{evaluations[row.check_id].reason_code}: {evaluations[row.check_id].feedback}"
+                                  for row in failed))
+    schema = next((schema_for(check) for check in session.policy.required_checks if is_output_check(check)), None)
+    properties = schema.get("properties") if schema is not None else None
+    explanation = properties.get("explanation") if isinstance(properties, dict) else None
+    if explanation is not None:
+        feedback.append("Active /explanation constraints (JSON schema): " + json.dumps(explanation, ensure_ascii=False))
+    feedback.append(EXPLANATION_GUIDANCE)
+    return GateVerdict(False, "Only the explanation needs repair. Browser actions and project edits are settled.\n\n"
+                       + "\n\n".join(feedback) + "\n\nRevise the complete explanation once; do not repeat an unchanged draft.",
+                       None, error_source="completion_explanation", error_type="answer_repair")
+
+
 def _collect_provider_checks(session: TaskSession, profile: str, checks: list[CompletionCheck]) -> None:
     inputs = CompletionCheckInput.capture(session)
     for key, (provider, profiles) in list(_PROVIDERS.items()):
@@ -402,7 +427,7 @@ def _required_tool_checks(
                                                        document=context.browser_document, report=report))
         elif requirement is not None:
             identity = requirement.check_id
-            observation = (requirement.observe(records, results=results) if observations is None
+            observation = (requirement.observe(records, results=results, browser_document=context.browser_document) if observations is None
                            else observations[identity])
             outcome = requirement.evaluate_observation(observation, final_text)
         else:
@@ -528,7 +553,8 @@ def _evaluate_inner(session: TaskSession, done_text: object, *, context: Complet
     deduped = _dedupe_checks(checks)
     # Task-declared required checks gate before the contract: the task entry
     # must prove its own checks ran, not just any globally registered check.
-    required_block = _required_checks_verdict(session, deduped, required_checks.evaluations)
+    required_block = (_explanation_repair_verdict(session, deduped, required_checks.evaluations)
+                      or _required_checks_verdict(session, deduped, required_checks.evaluations))
     if required_block is not None:
         feedback = research_completion_feedback(session, text, context, deduped)
         return replace(required_block, followup=required_block.followup + ("\n\n" + feedback if feedback else ""))

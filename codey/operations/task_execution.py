@@ -604,7 +604,7 @@ class ExecutionDelegate:
         return outcome
 
     def _browser_copy_content(self, path: str, canonical: str, args: ToolArgs) -> str | ToolOutcome:
-        from codey.codemode.json_edit import replace_json_fields
+        from codey.codemode.json_edit import JsonNumber, replace_json_fields
         from codey.operations.browser_copy import CAPTURE, EXPIRED, captured_data, copy_target, copy_turn, select_source
         from codey.operations.edit_base import edit_base_text
         from codey.task.web_intent import source_url_key
@@ -635,12 +635,18 @@ class ExecutionDelegate:
         if (not fresh.ok or fresh.observation.get("truncated") is not False
                 or fresh.observation.get("value") != data or browser.document_identity() != document):
             return ToolOutcome.error("The webpage data changed. Observe the authorized page again.", error_code=EXPIRED)
-        selector = decode_json_object(source["selector"])
-        if current.business_key and "key" in selector and selector["key"] != current.business_key:
-            return ToolOutcome.error("Select the row key specified by the task.")
-        value = select_source(data, selector, target.value_type)
+        selectors = (decode_json_object(source["selectors"]) if target.additional_fields else
+                     {target.field: source["selector"]})
+        if set(selectors) != {field for field, _ in target.fields}:
+            return ToolOutcome.error("Select exactly the fields declared by the task.")
+        changes: dict[str, JsonValue | JsonNumber] = {}
+        for field, value_type in target.fields:
+            selector = decode_json_object(selectors[field])
+            if current.business_key and "key" in selector and selector["key"] != current.business_key:
+                return ToolOutcome.error("Select the row key specified by the task.")
+            changes[field] = select_source(data, selector, value_type)
         baseline = edit_base_text(session, project, canonical, require_json_string(args["base_result_ref"], "base_result_ref"))
-        return replace_json_fields(baseline, {target.field: value})
+        return replace_json_fields(baseline, changes)
 
     def _opened_result(self, call: ToolCall, opened: ResearchToolOutput, url: str, *, ledger: ResearchLedger, turn: int,
                        tool_index: int) -> tuple[ToolResult, bool, int | None]:

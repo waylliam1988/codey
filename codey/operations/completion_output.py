@@ -73,8 +73,7 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
                 requirement.answer_pointer == "" or requirement.answer_pointer.split("/")[1] == "explanation"):
             raise OutputBindingError("A receipt binding overlaps the declared /explanation text destination.")
         binding_records = _upload_binding_records(requirement, records, bound_upload)
-        observation = (requirement.observe(binding_records, results=results, browser_document=context.browser_document)
-                       if requirement.binds_browser_fields else requirement.observe(binding_records, results=results))
+        observation = requirement.observe(binding_records, results=results, browser_document=context.browser_document)
         if requirement.answer_pointer is not None and not requirement.answer_contains and observation.evaluation.passed:
             pointer = requirement.answer_pointer
             path = tuple(part.replace("~1", "/").replace("~0", "~") for part in pointer[1:].split("/")) if pointer else ()

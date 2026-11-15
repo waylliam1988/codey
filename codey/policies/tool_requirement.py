@@ -106,12 +106,16 @@ class ToolSuccessRequirement:
     browser_text: BrowserTextSelector | None = None
     answer_contains: bool = False
     omit_from_explanation: bool = False
+    after: str = ""
 
     def __post_init__(self) -> None:
         if not _NAME.fullmatch(self.tool) or (self.via and not _NAME.fullmatch(self.via)):
             raise ValueError("tool requirement names must be canonical tool names")
         args = parse_json_object(self.arguments_json)
         object.__setattr__(self, "arguments_json", _json(args))
+        if self.after and (self.tool, self.after) not in {
+                ("browser_wait", "page_actions"), ("browser_read", "browser_wait")}:
+            raise ValueError("browser ordering requires wait after page actions or read after wait")
         if self.answer_pointer is not None:
             _validate_pointer(self.answer_pointer)
             _validate_pointer(self.result_pointer)
@@ -135,10 +139,12 @@ class ToolSuccessRequirement:
 
     @property
     def declaration(self) -> str:
-        if not self.via and self.arguments_json == "{}" and self.answer_pointer is None:
+        if not self.via and self.arguments_json == "{}" and self.answer_pointer is None and not self.after:
             return PREFIX + self.tool
         data: JsonObject = {"tool": self.tool, "via": self.via,
                             "args": parse_json_object(self.arguments_json)}
+        if self.after:
+            data["after"] = self.after
         if self.answer_pointer is not None:
             answer: JsonObject = {"pointer": self.answer_pointer, "result_pointer": self.result_pointer,
                                   "line": self.result_line}
@@ -154,7 +160,7 @@ class ToolSuccessRequirement:
 
     @property
     def check_id(self) -> str:
-        if not self.via and self.arguments_json == "{}" and self.answer_pointer is None:
+        if not self.via and self.arguments_json == "{}" and self.answer_pointer is None and not self.after:
             return self.declaration
         # Completion proofs contain bounded identifiers, never raw selectors.
         return PREFIX + hashlib.sha256(self.declaration.encode("utf-8")).hexdigest()[:32]
@@ -169,6 +175,9 @@ class ToolSuccessRequirement:
         else:
             execution = (f"Required execution: call {target} and receive a successful tool result. "
                          "Displayed examples and failed calls do not satisfy this requirement.")
+        if self.after:
+            execution += (" Use the current document, after its latest page action." if self.after == "page_actions" else
+                          " Read the current document after its latest successful declared wait.")
         return execution
 
     @property
@@ -213,8 +222,9 @@ class ToolSuccessRequirement:
 
     def evaluate(
         self, records: Mapping[str, ExecutionRecord], *, final_text: str = "", results: Mapping[str, ToolResult] | None = None,
+        browser_document: JsonObject | None = None,
     ) -> RequirementEvaluation:
-        return self.evaluate_observation(self.observe(records, results=results), final_text)
+        return self.evaluate_observation(self.observe(records, results=results, browser_document=browser_document), final_text)
 
     def observe(
         self, records: Mapping[str, ExecutionRecord], *, results: Mapping[str, ToolResult] | None = None,
@@ -225,8 +235,16 @@ class ToolSuccessRequirement:
         eligible: list[tuple[str, ExecutionRecord]] = []
         witnesses: set[str] = set()
         matching_execution = False
+        ordered: set[str] | None = None
+        if self.after:
+            from codey.operations.browser_completion import ordered_browser_refs
+
+            ordered = ordered_browser_refs(self.tool, self.after, records=records, results=results or {},
+                                           document=browser_document)
         for identity, row in records.items():
             if not _succeeded(row, self.tool):
+                continue
+            if ordered is not None and identity not in ordered:
                 continue
             digests = row.get("argument_digests", {})
             if not isinstance(digests, dict) or any(digests.get(key) != value for key, value in expected.items()):
@@ -384,8 +402,7 @@ class ToolSuccessRequirement:
                 if not isinstance(explanation, str):
                     return self._answer_failure("answer_explanation_missing", expected, refs)
                 if _contains_value(explanation, expected):
-                    result = self._answer_failure("answer_text_forbidden", expected, refs)
-                    return replace(result, feedback=result.feedback + "\n\nRejected explanation to revise:\n" + explanation)
+                    return self._answer_failure("answer_text_forbidden", expected, refs)
             return RequirementEvaluation()
         reason = "answer_type_mismatch" if type(actual) is not type(expected) else "answer_value_mismatch"
         result = self._answer_failure(reason, expected, refs)
@@ -393,6 +410,13 @@ class ToolSuccessRequirement:
             result.feedback + "\nActual answer value (JSON): " + _value_preview(actual))
 
     def _answer_failure(self, reason: str, expected: JsonValue, refs: list[str]) -> RequirementEvaluation:
+        if self.omit_from_explanation and reason in {"answer_text_forbidden", "answer_explanation_missing"}:
+            return RequirementEvaluation(reason,
+                "Execution and observation are already satisfied. Do not repeat tool execution. "
+                "Repair only /explanation: remove the value belonging to independent field "
+                f"{self.answer_pointer!r} from the prose. The application already fills that field from its receipt. "
+                "Preserve supported business facts and satisfy all explanation constraints together. "
+                "Submit the complete revised natural-language explanation in done.summary.", tuple(refs))
         view = "output" if self._binds_browser_body else "value"
         instruction = (EXPLANATION_GUIDANCE + " Preserve the remaining analysis; include the selected text in "
                        "done.summary and resubmit done. " if self.answer_contains else
@@ -461,11 +485,12 @@ def require_tool_success(
     answer_pointer: str | None = None, result_pointer: str = "", result_line: int | None = None,
     answer_contains: bool = False,
     omit_from_explanation: bool = False,
+    after: str = "",
 ) -> str:
     """Declare exact argument selectors, optionally bound to a successful parent."""
     return ToolSuccessRequirement(tool, via, _json(dict(arguments or {})),
                                   answer_pointer, result_pointer, result_line, answer_contains=answer_contains,
-                                  omit_from_explanation=omit_from_explanation).declaration
+                                  omit_from_explanation=omit_from_explanation, after=after).declaration
 
 
 def require_browser_read_field(*, url: str, prefix: str, suffix: str, answer_pointer: str,
@@ -485,7 +510,7 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
     data = parse_json_object(expression)
     if data.get("input") == "actions":
         raise ValueError("codemode.action has been removed; submit a new request using ordinary CodeMode")
-    if not {"tool", "via", "args"} <= set(data) or set(data) - {"tool", "via", "args", "answer"}:
+    if not {"tool", "via", "args"} <= set(data) or set(data) - {"tool", "via", "args", "answer", "after"}:
         raise ValueError("invalid structured tool requirement")
     binding = data.get("answer")
     fields = {"pointer", "result_pointer", "line"}
@@ -506,7 +531,7 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
         if isinstance(binding, dict) and binding["line"] is not None else None, browser_text,
         require_json_boolean(binding.get("contains", False), "contains") if isinstance(binding, dict) else False,
         require_json_boolean(binding.get("omit_from_explanation", False), "omit_from_explanation")
-        if isinstance(binding, dict) else False)
+        if isinstance(binding, dict) else False, require_json_string(data.get("after", ""), "after"))
     if requirement.declaration != check_id:
         raise ValueError("tool requirement must use its canonical check id")
     return requirement

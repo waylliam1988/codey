@@ -533,6 +533,7 @@ def _format_results(results: list[ToolResult], session: TaskSession, *,
 
 
 def _pending_execution_guidance(session: TaskSession) -> str:
+    from codey.operations.browser_followups import query_document
     from codey.policies.tool_requirement import parse_tool_success_check
 
     pending: list[str] = []
@@ -540,7 +541,8 @@ def _pending_execution_guidance(session: TaskSession) -> str:
         requirement = parse_tool_success_check(declaration)
         if requirement is None:
             continue
-        outcome = requirement.evaluate(session.executed, results=session._memory_results)
+        outcome = requirement.evaluate(session.executed, results=session._memory_results,
+                                       browser_document=query_document(session._memory_results))
         if outcome.reason_code in {"tool_execution_missing", "tool_parent_missing"}:
             pending.append(outcome.feedback)
     return "\n".join(pending)

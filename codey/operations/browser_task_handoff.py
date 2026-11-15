@@ -357,7 +357,8 @@ def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot,
                  and same_document(receipt.audit.get("browser_document"), context.browser_document))}
     waits = [rule for check in session.policy.required_checks
              if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_wait"]
-    waiting = any(not rule.observe(after, results=results).evaluation.passed for rule in waits)
+    waiting = any(not rule.observe(after, results=results, browser_document=context.browser_document).evaluation.passed
+                  for rule in waits)
     lines: list[str] = []
     call: ToolCall | None = None
     if waiting:

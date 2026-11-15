@@ -19,7 +19,7 @@ from codey.operations.kernel_contracts import (
     result_from_payload,
 )
 from codey.policies.browser_requirement import RESEARCH_PREFIX
-from codey.policies.tool_requirement import has_browser_field_bindings
+from codey.policies.tool_requirement import has_browser_field_bindings, parse_tool_success_check
 from codey.providers.base import AssistantTurn, ProviderToolResult
 from codey.runtime.core import operation_payload
 from codey.runtime.core.operation_payload import (
@@ -103,6 +103,7 @@ def evaluate_completion(context: KernelContext, state: RuntimeOperationState) ->
         completion_context = context.completion_context
         checks = context.session.policy.required_checks
         if (upload_completion_scope(context.session) is not None or report_scope(context.session) is not None or has_browser_field_bindings(checks)
+                or any(rule.after for check in checks if (rule := parse_tool_success_check(check)) is not None)
                 or any(check.startswith(RESEARCH_PREFIX) for check in checks)
                 or unconfirmed_clicks(context.session._memory_results)):
             tools = context.execution.research_tools
@@ -223,6 +224,16 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
         if messages is None or PAGE_DETAIL_TOOL in snapshot.tool_names or snapshot.tool_names == SUBMISSION_TOOLS:
             from codey.operations.kernel_protocol import build_turn_snapshot
             snapshot = build_turn_snapshot(context.session, native=context.native)
+        explanation_only = decision.get("error_source") == "completion_explanation"
+        if explanation_only:
+            from codey.operations.kernel_protocol import refresh_snapshot_contract
+
+            names = tuple(name for name in snapshot.tool_names if name in {"done", "read_tool_result"})
+            snapshot = refresh_snapshot_contract(replace(snapshot, tool_names=names, nested_tool_names=(),
+                frozen_specs=tuple(spec for spec in snapshot.frozen_specs if spec.name in names),
+                custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in names),
+                browser_followups=False, browser_references=None, browser_fill_text=None,
+                browser_copy=None, input_binding=None, task_navigation_url=None))
         # Both request-scoped providers and text-only providers render the
         # same frozen repair basis, including after a successful local write.
         research = context.execution.research_tools
@@ -237,7 +248,7 @@ def prepare_control_delivery(context: KernelContext, state: RuntimeOperationStat
             if decision["error"]:
                 messages[-1] = replace(messages[-1], user_content=prompt)
         context.freeze(state, snapshot, turn=turn + 1, prompt=prompt, messages=messages,
-                       counters=counters)
+                       counters=counters, coding_context_prepared=explanation_only)
         return
     if decision["purpose"] == "question":
         from codey.durable.questions import DurableUserQuestionStore

@@ -205,11 +205,13 @@ def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> T
     return refresh_snapshot_contract(offered)
 
 
-def offer_browser_call(snapshot: TurnSnapshot, session: KernelSessionView, name: str) -> TurnSnapshot:
+def offer_browser_call(snapshot: TurnSnapshot, session: KernelSessionView, name: str, *, research: bool = False) -> TurnSnapshot:
     """Offer an existing leaf through the same single-step CodeMode lowering."""
-    if (name not in browser_followups.SINGLE_STEP_TOOLS
+    eligible = ({*browser_followups.DIRECT_TOOLS, "browser_navigate", "browser_wait"}
+                if research else set(browser_followups.SINGLE_STEP_TOOLS))
+    if (name not in eligible
             or browser_followups.codemode_only(session.task_text)
-            or not browser_followups.allows_surface(snapshot, (name,))
+            or not browser_followups.allows_surface(snapshot, (name,), research=research)
             or name in session.controller_denied
             or (session.model_tool_names is not None and name not in session.model_tool_names)):
         return snapshot
@@ -479,8 +481,9 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
                 ("path", {"type": "string", "enum": [target.path]}),
                 ("base_result_ref", {"type": "string", "minLength": 1}),
                 ("browser_source", {"type": "object", "properties": {
-                    "ref": {"type": "string", "minLength": 1}, "selector": {"type": "object"}},
-                    "required": ["ref", "selector"], "additionalProperties": False}),
+                    "ref": {"type": "string", "minLength": 1},
+                    "selectors" if target.additional_fields else "selector": {"type": "object"}},
+                    "required": ["ref", "selectors" if target.additional_fields else "selector"], "additionalProperties": False}),
             ), required=("path", "base_result_ref", "browser_source"))) if spec.name == "edit" else spec for spec in frozen)
             if browser_copy.phase == "question":
                 browser_copy = CopyTurn(target)
@@ -992,7 +995,8 @@ def _lower_bound_inputs(
             (rule := parse_tool_success_check(check)) is not None and rule.tool == name and rule.via == "codemode"
             for check in checks)
         direct = snapshot.browser_followups and name in models and (
-            name in {"browser_fill", "browser_click", *browser_followups.SINGLE_STEP_TOOLS} or bound_observation)
+            name in {"browser_fill", "browser_click", *browser_followups.SINGLE_STEP_TOOLS} or bound_observation
+            or snapshot.research_scope is not None and name in {"browser_snapshot", "browser_read", "browser_navigate"})
         if not direct and (binding is None or name != binding.model_spec.name or name not in models):
             lowered.append((raw, args, call_id))
             continue

@@ -83,7 +83,7 @@ def test_compile_failure_offers_the_authorized_observation(kind: str, only: bool
     _, hint = browser_task_handoff(session, base, CompletionContext(browser_document=DOCUMENT), 1,
                                   delivered_results=[compile_failure()])
     action = next_step(hint)
-    assert action == ({"tool": "browser_snapshot", "args": {}} if kind == "chat" and not only else
+    assert action == ({"tool": "browser_snapshot", "args": {}} if not only else
         {"tool": "codemode", "args": {"code": "return unwrap(await tools.browser_snapshot(inputs));", "inputs": {}}})
 
 
@@ -93,7 +93,7 @@ def test_compile_failure_offers_the_authorized_observation(kind: str, only: bool
 def test_compile_recovery_requires_a_bound_page_and_preserves_actions(state: str) -> None:
     session = bound_session()
     failure = compile_failure()
-    delivered = [failure]
+    delivered: list[ToolResult] = [failure]
     document: JsonObject | None = DOCUMENT
     if state == "no_batch":
         delivered = []
