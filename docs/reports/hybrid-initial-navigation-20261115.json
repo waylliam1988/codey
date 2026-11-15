@@ -1,0 +1,767 @@
+{
+  "scope": "explicit initial browser navigation for ordinary Chat and Hybrid",
+  "source_final": "3dbbed1688a793fde699b20319e1c150769ab5d5b8c0f3a0dd643b6ce9841b88",
+  "historical_fixture": "tests/fixtures/hybrid_omitted_navigation_20261115.json",
+  "original_provider_sha256": "a3a208d9ff45c25e8b75de7e25e5bfedb28eabd7fc71a2a0409f81cd50ebba06",
+  "original_reply_sha256": [
+    "e65538d40545d040e33a1ee2ca2581f876e0eae1a97e274eb28617b969f418ca",
+    "1b61a31f5a0b5538b7b271c1a46215b3dc18f2d6bd0572780c1a5280dc50eb25",
+    "8e1dda816c58b9308843c24a7c9152744f506d8b8f5eba50caf027e5dddccf09"
+  ],
+  "historical_replays": [
+    {
+      "directory": ".e2e-artifacts/navigation-flow-history-complete/test_original_hybrid_replies_c0/replay",
+      "passed": true,
+      "stop_reason": "done",
+      "project_result": {
+        "amount": 173,
+        "code": "QUARTZ_851"
+      },
+      "requested_tools": [],
+      "navigations": [
+        "https://example.com/production-browser-record"
+      ],
+      "counts": {
+        "browser_navigate": 1,
+        "open_url": 0,
+        "browser_click": 1,
+        "browser_read": 1,
+        "read_file": 1,
+        "edit": 1
+      },
+      "successful_navigation_before_first_request": true
+    },
+    {
+      "directory": ".e2e-artifacts/navigation-flow-history-complete/test_original_hybrid_replies_c1/replay",
+      "passed": true,
+      "stop_reason": "done",
+      "project_result": {
+        "amount": 173,
+        "code": "QUARTZ_851"
+      },
+      "requested_tools": [
+        "tool_succeeded:open_url"
+      ],
+      "navigations": [
+        "https://example.com/production-browser-record",
+        "https://example.com/production-browser-record"
+      ],
+      "counts": {
+        "browser_navigate": 1,
+        "open_url": 1,
+        "browser_click": 1,
+        "browser_read": 1,
+        "read_file": 1,
+        "edit": 1
+      },
+      "successful_navigation_before_first_request": true
+    }
+  ],
+  "live_runs": [
+    {
+      "directory": ".e2e-artifacts/navigation-flow-live-first",
+      "passed": 11,
+      "runs": 13,
+      "source_before": "379ca2383c86b20d71e32f983654a292a32ab9e2c7620f87d3e5956fb27a95d5",
+      "source_after": "379ca2383c86b20d71e32f983654a292a32ab9e2c7620f87d3e5956fb27a95d5",
+      "cases": [
+        {
+          "scenario": "basic",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "structured",
+          "passed": false,
+          "stop_reason": "no_progress"
+        },
+        {
+          "scenario": "legacy_structured",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "reread",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "stale_ref",
+          "passed": false,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "hybrid",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "stale_edit",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "upload",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "download",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "research",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "research_sequence",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "source_failure",
+          "passed": true,
+          "stop_reason": "blocked"
+        },
+        {
+          "scenario": "fixed_failure",
+          "passed": true,
+          "stop_reason": "blocked"
+        }
+      ],
+      "hybrid_navigation": {
+        "directory": ".e2e-artifacts/navigation-flow-live-first/hybrid",
+        "passed": true,
+        "stop_reason": "done",
+        "project_result": {
+          "amount": 173,
+          "code": "QUARTZ_851"
+        },
+        "requested_tools": [],
+        "navigations": [
+          "https://example.com/production-browser-record"
+        ],
+        "counts": {
+          "browser_navigate": 1,
+          "open_url": 0,
+          "browser_click": 1,
+          "browser_read": 1,
+          "read_file": 1,
+          "edit": 1
+        },
+        "successful_navigation_before_first_request": true
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/navigation-flow-live-final",
+      "passed": 10,
+      "runs": 13,
+      "source_before": "8d731be613d60ba807858a427fe806d7f81a5e580d22a8a704b85084109cdd33",
+      "source_after": "8d731be613d60ba807858a427fe806d7f81a5e580d22a8a704b85084109cdd33",
+      "cases": [
+        {
+          "scenario": "basic",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "structured",
+          "passed": false,
+          "stop_reason": "no_progress"
+        },
+        {
+          "scenario": "legacy_structured",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "reread",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "stale_ref",
+          "passed": false,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "hybrid",
+          "passed": false,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "stale_edit",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "upload",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "download",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "research",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "research_sequence",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "source_failure",
+          "passed": true,
+          "stop_reason": "blocked"
+        },
+        {
+          "scenario": "fixed_failure",
+          "passed": true,
+          "stop_reason": "blocked"
+        }
+      ],
+      "hybrid_navigation": {
+        "directory": ".e2e-artifacts/navigation-flow-live-final/hybrid",
+        "passed": false,
+        "stop_reason": "done",
+        "project_result": {
+          "amount": "173",
+          "code": "QUARTZ_851"
+        },
+        "requested_tools": [],
+        "navigations": [
+          "https://example.com/production-browser-record"
+        ],
+        "counts": {
+          "browser_navigate": 1,
+          "open_url": 0,
+          "browser_click": 1,
+          "browser_read": 1,
+          "read_file": 1,
+          "edit": 1
+        },
+        "successful_navigation_before_first_request": true
+      }
+    },
+    {
+      "directory": ".e2e-artifacts/navigation-flow-live-complete",
+      "passed": 11,
+      "runs": 13,
+      "source_before": "3dbbed1688a793fde699b20319e1c150769ab5d5b8c0f3a0dd643b6ce9841b88",
+      "source_after": "3dbbed1688a793fde699b20319e1c150769ab5d5b8c0f3a0dd643b6ce9841b88",
+      "cases": [
+        {
+          "scenario": "basic",
+          "passed": false,
+          "stop_reason": "provider_failure"
+        },
+        {
+          "scenario": "structured",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "legacy_structured",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "reread",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "stale_ref",
+          "passed": false,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "hybrid",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "stale_edit",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "upload",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "download",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "research",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "research_sequence",
+          "passed": true,
+          "stop_reason": "done"
+        },
+        {
+          "scenario": "source_failure",
+          "passed": true,
+          "stop_reason": "blocked"
+        },
+        {
+          "scenario": "fixed_failure",
+          "passed": true,
+          "stop_reason": "blocked"
+        }
+      ],
+      "hybrid_navigation": {
+        "directory": ".e2e-artifacts/navigation-flow-live-complete/hybrid",
+        "passed": true,
+        "stop_reason": "done",
+        "project_result": {
+          "amount": 173,
+          "code": "QUARTZ_851"
+        },
+        "requested_tools": [],
+        "navigations": [
+          "https://example.com/production-browser-record"
+        ],
+        "counts": {
+          "browser_navigate": 1,
+          "open_url": 0,
+          "browser_click": 1,
+          "browser_read": 1,
+          "read_file": 1,
+          "edit": 1
+        },
+        "successful_navigation_before_first_request": true
+      }
+    }
+  ],
+  "live_failures": [
+    {
+      "directory": ".e2e-artifacts/navigation-flow-live-first/structured",
+      "classification": "model_answer_repair",
+      "reason": "模型在说明中重复独立绑定的 URL 或 token；生产完成检查拒绝，模型未补正。",
+      "raw_actions": [
+        {
+          "tool": "codemode",
+          "args": {
+            "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = unwrap(snapshot).elements;\n\n// Find the Locality input field\nlet localityRef = '';\nfor (const el of elements) {\n  if (el.name === 'Locality' || el.role === 'textbox' && el.name === 'Locality') {\n    localityRef = el.ref;\n    break;\n  }\n}\n\nif (!localityRef) {\n  // Fallback: find any textbox if name is not exact\n  for (const el of elements) {\n    if (el.role === 'textbox') {\n      localityRef = el.ref;\n      break;\n    }\n  }\n}\n\nawait tools.browser_fill({ref: localityRef, value: '福州'});\n\n// Re-snapshot because old refs are invalidated\nconst newSnapshot = await tools.browser_snapshot({});\nconst newElements = unwrap(newSnapshot).elements;\n\n// Find the Load record button\nlet loadRecordRef = '';\nfor (const el of newElements) {\n  if (el.name === 'Load record' || el.name === 'Load') {\n    loadRecordRef = el.ref;\n    break;\n  }\n}\n\nawait tools.browser_click({ref: loadRecordRef});\n\n// Wait for '鱼丸' to appear\\nawait tools.browser_wait({condition: 'text', value: '鱼丸', timeout_ms: 5000});\n\n// Read the page to get the final text\nconst pageText = unwrap(await tools.browser_read({}));\n\n// Get the contract token\nconst tokenResult = await tools.browser_eval({code: 'window.__contractToken'});\nconst token = unwrap(tokenResult).value;\n\n// Get the current tab URL\nconst tabList = await tools.browser_tab_list({});\nconst currentUrl = unwrap(tabList).page_url;\n\n// Extract specific values from pageText\n// The prompt asks for the values between '鱼丸净重为 ' and ' 克。'\n// and '记录校验码 ' and '。'\nconst weightMatch = pageText.match(/鱼丸净重为 (.*?) 克。/);\nconst weight = weightMatch ? weightMatch[1] : '未知';\n\nconst codeMatch = pageText.match(/记录校验码 (.*?)。/);\nconst code = codeMatch ? codeMatch[1] : '未知';\n\nreturn {\n  weight, \n  code, \n  token, \n  currentUrl, \n  fullText: pageText\n};",
+            "inputs": {}
+          }
+        },
+        {
+          "tool": "codemode",
+          "args": {
+            "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = unwrap(snapshot).elements;\n\nlet localityRef = '';\nfor (const el of elements) {\n  if (el.name === 'Locality' || (el.role === 'textbox' && el.name === 'Locality')) {\n    localityRef = el.ref;\n    break;\n  }\n}\n\nif (!localityRef) {\n  for (const el of elements) {\n    if (el.role === 'textbox') {\n      localityRef = el.ref;\n      break;\n    }\n  }\n}\n\nawait tools.browser_fill({ref: localityRef, value: '福州'});\n\nconst newSnapshot = await tools.browser_snapshot({});\nconst newElements = unwrap(newSnapshot).elements;\n\nlet loadRecordRef = '';\nfor (const el of newElements) {\n  if (el.name === 'Load record' || el.name === 'Load') {\n    loadRecordRef = el.ref;\n    break;\n  }\n}\n\nawait tools.browser_click({ref: loadRecordRef});\n\nawait tools.browser_wait({condition: 'text', value: '鱼丸', timeout_ms: 5000});\n\nconst pageText = unwrap(await tools.browser_read({}));\n\nconst tokenResult = await tools.browser_eval({code: 'window.__contractToken'});\nconst token = unwrap(tokenResult).value;\n\nconst tabList = await tools.browser_tab_list({});\nconst currentUrl = unwrap(tabList).page_url;\n\nconst weightMatch = pageText.match(/鱼丸净重为 (.*?) 克。/);\nconst weight = weightMatch ? weightMatch[1] : '未知';\n\nconst codeMatch = pageText.match(/记录校验码 (.*?)。/);\nconst code = codeMatch ? codeMatch[1] : '未知';\n\nreturn {\n  weight, \n  code, \n  token, \n  currentUrl, \n  fullText: pageText\n};",
+            "inputs": {}
+          }
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并成功将 Locality 填入“福州”。在点击 Load record 并等待“鱼丸”出现后，页面显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74，当前绑定的标签页 URL 为 https://example.com/production-browser-record。",
+            "open_questions": []
+          }
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并成功将 Locality 填入“福州”。在点击 Load record 并等待“鱼丸”出现后，页面显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74。",
+            "open_questions": []
+          }
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并成功将 Locality 填入“福州”。在点击 Load record 并等待“鱼丸”出现后，页面显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74。",
+            "open_questions": []
+          }
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并成功将 Locality 填入“福州”。在点击 Load record 并等待“鱼丸”出现后，页面显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74。",
+            "open_questions": []
+          }
+        }
+      ],
+      "reported_failure": "Stopped after repeated rejected completion proposals without progress.\n\nNot done yet (required check 'tool_succeeded:73d11444a36c4ebe70290490732e49df' is fail: answer_text_forbidden). Execution and observation are already satisfied. Do not repeat the tool execution. The application assembles the final JSON. In done.summary, supply only the natural-language explanation, not an inner JSON document. The application preserves that exact string in /explanation and fills declared receipt-bound fields from committed tool results. Repeat selected values in the explanation only when explicitly required. The required JSON schema describes the application's final output. Preserve the remaining analysis; remove the selected value from done.summary and resubmit done. The independent field remains receipt-bound.  Repair only the answer at pointer '/token' using the committed selected value below. Preserve its JSON type and content, including literal quotes. Do not copy a truncated preview; use read_tool_result with view=\"value\" for omitted detail.\nExpected selected value (JSON): \"SCHEMA_TOKEN_74\"\nCommitted result references: [\"task_turn_effect:9d4d00240ce9dd39\"] (total 1)\n\nRejected explanation to revise:\n通过生产工具打开页面并成功将 Locality 填入“福州”。在点击 Load record 并等待“鱼丸”出现后，页面显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74。\n\nPreserve the requested answer format. Encode any needed line breaks once as \\n inside JSON strings. Fenced examples are answer text and do not execute tools.\n\nUnaccepted draft:\n通过生产工具打开页面并成功将 Locality 填入“福州”。在点击 Load record 并等待“鱼丸”出现后，页面显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74。",
+      "summary_path": ".e2e-artifacts/navigation-flow-live-first/structured/summary.json",
+      "raw_request_response_path": ".e2e-artifacts/navigation-flow-live-first/structured/provider.jsonl"
+    },
+    {
+      "directory": ".e2e-artifacts/navigation-flow-live-first/stale_ref",
+      "classification": "coverage_not_triggered",
+      "reason": "模型采用新引用，未触发所要求的 stale-ref 错误；业务完成，覆盖未完成。",
+      "raw_actions": [
+        {
+          "tool": "browser_snapshot",
+          "args": {}
+        },
+        {
+          "tool": "browser_fill",
+          "args": {
+            "ref": {
+              "name": "Locality",
+              "role": "textbox"
+            },
+            "value": "福州"
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "ref": "b179b44133ae642338eded6455ec91765g4e2",
+            "purpose": "action"
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "condition": "text",
+            "timeout_ms": 5000,
+            "value": "鱼丸"
+          }
+        },
+        {
+          "tool": "browser_read",
+          "args": {}
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "根据 `browser_read` 获取的页面正文，福州样本的实际净重为 173 克，校验码为 QUARTZ_851。"
+          }
+        }
+      ],
+      "reported_failure": "根据 `browser_read` 获取的页面正文，福州样本的实际净重为 173 克，校验码为 QUARTZ_851。",
+      "summary_path": ".e2e-artifacts/navigation-flow-live-first/stale_ref/summary.json",
+      "raw_request_response_path": ".e2e-artifacts/navigation-flow-live-first/stale_ref/provider.jsonl"
+    },
+    {
+      "directory": ".e2e-artifacts/navigation-flow-live-final/structured",
+      "classification": "model_answer_repair",
+      "reason": "模型在说明中重复独立绑定的 URL 或 token；生产完成检查拒绝，模型未补正。",
+      "raw_actions": [
+        {
+          "tool": "codemode",
+          "args": {
+            "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = unwrap(snapshot).elements;\n\n// Find the Locality textbox\nlet localityRef = '';\nfor (const el of elements) {\n  if (el.name === 'Locality' || el.role === 'textbox' && el.name === 'Locality') {\n    localityRef = el.ref;\n    break;\n  }\n}\n\n// Fill Locality\nawait tools.browser_fill({ref: localityRef, value: '福州'});\n\n// Re-snapshot because old refs are invalidated\return await tools.browser_snapshot({});",
+            "inputs": {}
+          }
+        },
+        {
+          "tool": "browser_snapshot",
+          "args": {}
+        },
+        {
+          "tool": "codemode",
+          "args": {
+            "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = unwrap(snapshot).elements;\n\n// Find the Locality textbox\nlet localityRef = '';\nfor (const el of elements) {\n  if (el.name === 'Locality' || (el.role === 'textbox' && el.name === 'Locality')) {\n    localityRef = el.ref;\n    break;\n  }\n}\n\n// Fill Locality\nawait tools.browser_fill({ref: localityRef, value: '福州'});\n\n// Re-snapshot because old refs are invalidated\return await tools.browser_snapshot({});",
+            "inputs": {}
+          }
+        },
+        {
+          "tool": "browser_fill",
+          "args": {
+            "ref": "bc5f578b348134ac7a4b783fdbc9c10f2g2e1",
+            "value": "福州"
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "ref": "bc5f578b348134ac7a4b783fdbc9c10f2g4e2",
+            "purpose": "action"
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "condition": "text",
+            "timeout_ms": 5000,
+            "value": "鱼丸"
+          }
+        },
+        {
+          "tool": "browser_read",
+          "args": {}
+        },
+        {
+          "tool": "codemode",
+          "args": {
+            "code": "const tabList = await tools.browser_tab_list({});\nconst currentUrl = unwrap(tabList).page_url;\n\nconst tokenResult = await tools.browser_eval({code: 'window.__contractToken'});\nconst token = unwrap(tokenResult).value;\n\nreturn {currentUrl, token};",
+            "inputs": {}
+          }
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并成功将 Locality 填入“福州”。点击 Load record 后，页面加载出鱼丸记录，显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74，当前绑定的标签页 URL 为 https://example.com/production-browser-record。",
+            "open_questions": []
+          }
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并成功将 Locality 填入“福州”。点击 Load record 后，页面加载出鱼丸记录，显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74，当前绑定的标签页 URL 为 https://example.com/production-browser-record。",
+            "open_questions": []
+          }
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并成功将 Locality 填入“福州”。点击 Load record 后，页面加载出鱼丸记录，显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74，当前绑定的标签页 URL 为 https://example.com/production-browser-record。",
+            "open_questions": []
+          }
+        }
+      ],
+      "reported_failure": "Stopped after repeated rejected completion proposals without progress.\n\nNot done yet (required check 'tool_succeeded:1a5b23ef9383048edf13ea4daf046135' is fail: answer_text_forbidden). Execution and observation are already satisfied. Do not repeat the tool execution. The application assembles the final JSON. In done.summary, supply only the natural-language explanation, not an inner JSON document. The application preserves that exact string in /explanation and fills declared receipt-bound fields from committed tool results. Repeat selected values in the explanation only when explicitly required. The required JSON schema describes the application's final output. Preserve the remaining analysis; remove the selected value from done.summary and resubmit done. The independent field remains receipt-bound.  Repair only the answer at pointer '/page_url' using the committed selected value below. Preserve its JSON type and content, including literal quotes. Do not copy a truncated preview; use read_tool_result with view=\"value\" for omitted detail.\nExpected selected value (JSON): \"https://example.com/production-browser-record\"\nCommitted result references: [\"task_turn_effect:bab4b0c8ef13e26c\"] (total 1)\n\nRejected explanation to revise:\n通过生产工具打开页面并成功将 Locality 填入“福州”。点击 Load record 后，页面加载出鱼丸记录，显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74，当前绑定的标签页 URL 为 https://example.com/production-browser-record。\n\nPreserve the requested answer format. Encode any needed line breaks once as \\n inside JSON strings. Fenced examples are answer text and do not execute tools.\n\nUnaccepted draft:\n通过生产工具打开页面并成功将 Locality 填入“福州”。点击 Load record 后，页面加载出鱼丸记录，显示鱼丸净重为 173 克，记录校验码为 QUARTZ_851。\n\n脚本获取到的 token 为 SCHEMA_TOKEN_74，当前绑定的标签页 URL 为 https://example.com/production-browser-record。",
+      "summary_path": ".e2e-artifacts/navigation-flow-live-final/structured/summary.json",
+      "raw_request_response_path": ".e2e-artifacts/navigation-flow-live-final/structured/provider.jsonl"
+    },
+    {
+      "directory": ".e2e-artifacts/navigation-flow-live-final/stale_ref",
+      "classification": "coverage_not_triggered",
+      "reason": "模型采用新引用，未触发所要求的 stale-ref 错误；业务完成，覆盖未完成。",
+      "raw_actions": [
+        {
+          "tool": "browser_snapshot",
+          "args": {}
+        },
+        {
+          "tool": "browser_fill",
+          "args": {
+            "ref": {
+              "name": "Locality",
+              "role": "textbox"
+            },
+            "value": "福州"
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "ref": "b40f4ae75a6d146b28fd5d10c0382341bg4e2",
+            "purpose": "action"
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "condition": "text",
+            "timeout_ms": 5000,
+            "value": "鱼丸"
+          }
+        },
+        {
+          "tool": "browser_read",
+          "args": {}
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并完成操作。在填写 Locality 为“福州”后，点击 Load record 按钮，页面加载出鱼丸记录。根据 `browser_read` 获取的最终正文，实际净重为 173 克，校验码为 QUARTZ_851。"
+          }
+        }
+      ],
+      "reported_failure": "通过生产工具打开页面并完成操作。在填写 Locality 为“福州”后，点击 Load record 按钮，页面加载出鱼丸记录。根据 `browser_read` 获取的最终正文，实际净重为 173 克，校验码为 QUARTZ_851。",
+      "summary_path": ".e2e-artifacts/navigation-flow-live-final/stale_ref/summary.json",
+      "raw_request_response_path": ".e2e-artifacts/navigation-flow-live-final/stale_ref/provider.jsonl"
+    },
+    {
+      "directory": ".e2e-artifacts/navigation-flow-live-final/hybrid",
+      "classification": "model_file_type_without_declared_contract",
+      "reason": "模型明确提交 amount=\"173\"，编辑按请求写入字符串。生产没有该字段类型合同，done 未拦截；外部验收失败。",
+      "raw_actions": [
+        {
+          "tool": "codemode",
+          "args": {
+            "code": "const snapshot = unwrap(await tools.browser_snapshot({}));\nconst localityInput = snapshot.elements.find(e => e.name === 'Locality' || e.name === 'locality');\nif (localityInput) {\n  await tools.browser_fill({ref: localityInput.ref, value: '福州'});\n}\nconst secondSnapshot = unwrap(await tools.browser_snapshot({}));\nconst loadRecordBtn = secondSnapshot.elements.find(e => e.name === 'Load record' || e.name === 'Load Record');\nif (loadRecordBtn) {\n  await tools.browser_click({ref: loadRecordBtn.ref});\n}\nawait tools.browser_wait({condition: 'text', value: '鱼丸', timeout_ms: 5000});\nreturn unwrap(await tools.browser_read({}));",
+            "inputs": {
+              "path": "."
+            }
+          }
+        },
+        {
+          "tool": "codemode",
+          "args": {
+            "code": "const read = await tools.read_file({path: inputs.path});\nreturn unwrap(await tools.edit({read, changes: inputs.changes}));",
+            "inputs": {
+              "path": "result.json",
+              "changes": {
+                "amount": "173",
+                "code": "QUARTZ_851"
+              }
+            }
+          }
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过浏览器操作，在 https://example.com/production-browser-record 页面中将 Locality 填为“福州”，点击 Load record 后，页面显示鱼丸。根据 browser_read 的结果，实测净重为 173 克，校验码为 QUARTZ_851。项目中的 result.json 已更新为相应的数值。",
+            "knowledge_refs": []
+          }
+        }
+      ],
+      "reported_failure": "通过浏览器操作，在 https://example.com/production-browser-record 页面中将 Locality 填为“福州”，点击 Load record 后，页面显示鱼丸。根据 browser_read 的结果，实测净重为 173 克，校验码为 QUARTZ_851。项目中的 result.json 已更新为相应的数值。",
+      "summary_path": ".e2e-artifacts/navigation-flow-live-final/hybrid/summary.json",
+      "raw_request_response_path": ".e2e-artifacts/navigation-flow-live-final/hybrid/provider.jsonl"
+    },
+    {
+      "directory": ".e2e-artifacts/navigation-flow-live-complete/basic",
+      "classification": "upstream_environment_response",
+      "reason": "模型服务响应体以 HTTP 头开头，provider 判为 GenerationUnknownError；wire unknown 640 字节、仅一次请求，未重发。",
+      "raw_actions": [
+        {
+          "tool": "browser_snapshot",
+          "args": {}
+        },
+        {
+          "tool": "browser_fill",
+          "args": {
+            "ref": {
+              "name": "Locality",
+              "role": "textbox"
+            },
+            "value": "福州"
+          }
+        }
+      ],
+      "reported_failure": "provider failed [GenerationUnknownError]: upstream returned HTTP headers inside the JSON response body; repair or restart the model server before a new task; not resent",
+      "summary_path": ".e2e-artifacts/navigation-flow-live-complete/basic/summary.json",
+      "raw_request_response_path": ".e2e-artifacts/navigation-flow-live-complete/basic/provider.jsonl"
+    },
+    {
+      "directory": ".e2e-artifacts/navigation-flow-live-complete/stale_ref",
+      "classification": "coverage_not_triggered",
+      "reason": "模型采用新引用，未触发所要求的 stale-ref 错误；业务完成，覆盖未完成。",
+      "raw_actions": [
+        {
+          "tool": "browser_snapshot",
+          "args": {}
+        },
+        {
+          "tool": "browser_fill",
+          "args": {
+            "ref": {
+              "name": "Locality",
+              "role": "textbox"
+            },
+            "value": "福州"
+          }
+        },
+        {
+          "tool": "browser_click",
+          "args": {
+            "ref": "b7cf33458e7d74526bdbc1c4a6b051a2eg4e2",
+            "purpose": "action"
+          }
+        },
+        {
+          "tool": "browser_wait",
+          "args": {
+            "condition": "text",
+            "timeout_ms": 5000,
+            "value": "鱼丸"
+          }
+        },
+        {
+          "tool": "browser_read",
+          "args": {}
+        },
+        {
+          "tool": "done",
+          "args": {
+            "summary": "通过生产工具打开页面并完成操作。在填写 Locality 为“福州”后，点击 Load record 按钮，页面更新并显示出鱼丸记录。根据 `browser_read` 获取的最终正文，实际净重为 173 克，校验码为 QUARTZ_851。"
+          }
+        }
+      ],
+      "reported_failure": "通过生产工具打开页面并完成操作。在填写 Locality 为“福州”后，点击 Load record 按钮，页面更新并显示出鱼丸记录。根据 `browser_read` 获取的最终正文，实际净重为 173 克，校验码为 QUARTZ_851。",
+      "summary_path": ".e2e-artifacts/navigation-flow-live-complete/stale_ref/summary.json",
+      "raw_request_response_path": ".e2e-artifacts/navigation-flow-live-complete/stale_ref/provider.jsonl"
+    }
+  ],
+  "regressions": {
+    "first_passed": 461,
+    "first_failed": 2,
+    "affected_intermediate_passed": 227,
+    "affected_final_passed": 243,
+    "other_production_passed_in_first_batch": 268,
+    "latest_by_module_passed": 511,
+    "full_pytest_run": false,
+    "logs": [
+      ".e2e-artifacts/navigation-flow-20261115/before.log",
+      ".e2e-artifacts/navigation-flow-20261115/targeted-first.log",
+      ".e2e-artifacts/navigation-flow-20261115/production-first.log",
+      ".e2e-artifacts/navigation-flow-20261115/intent-final.log",
+      ".e2e-artifacts/navigation-flow-20261115/intent-verified.log",
+      ".e2e-artifacts/navigation-flow-20261115/history-final.log",
+      ".e2e-artifacts/navigation-flow-20261115/production-affected-final.log",
+      ".e2e-artifacts/navigation-flow-20261115/negation-before.log",
+      ".e2e-artifacts/navigation-flow-20261115/negation-verified.log",
+      ".e2e-artifacts/navigation-flow-20261115/ordering-verified.log",
+      ".e2e-artifacts/navigation-flow-20261115/ordering-combinations.log",
+      ".e2e-artifacts/navigation-flow-20261115/production-verified.log",
+      ".e2e-artifacts/navigation-flow-20261115/production-complete.log",
+      ".e2e-artifacts/navigation-flow-20261115/history-complete.log"
+    ]
+  },
+  "static": {
+    "ruff": "passed",
+    "mypy": "passed, 688 files",
+    "pyrefly": "0 errors, 35 suppressed, 158 warnings",
+    "ty": "passed",
+    "kernel_type_precision": "passed",
+    "changed_test_all_three_checkers": "passed"
+  },
+  "remaining_limits": [
+    "明确识别的导航表达、唯一授权 URL；不推断任意自然语言或复杂步骤次序。",
+    "普通 Hybrid 的文件字段类型没有因此自动获得合同；JS、控件选择及说明修复仍有模型失败。",
+    "实机为本机模型、真实 Chromium 和生产执行链，网页内容受控。"
+  ],
+  "basic_rerun": {
+    "directory": ".e2e-artifacts/navigation-flow-live-basic-retry/basic",
+    "passed": true,
+    "stop_reason": "done",
+    "project_result": {
+      "amount": 0,
+      "code": "unknown"
+    },
+    "requested_tools": [
+      "browser_click",
+      "browser_fill",
+      "browser_navigate",
+      "browser_read",
+      "browser_snapshot",
+      "browser_wait"
+    ],
+    "navigations": [
+      "https://example.com/production-browser-record"
+    ],
+    "counts": {
+      "browser_navigate": 1,
+      "open_url": 0,
+      "browser_click": 1,
+      "browser_read": 1,
+      "read_file": 0,
+      "edit": 0
+    },
+    "successful_navigation_before_first_request": true
+  },
+  "interrupted_diagnostic_run": {
+    "reason": "Stopped diagnostic run to complete same-clause navigation prohibition precedence before final verification. No completed matrix claimed.",
+    "source": "e23ae8c860a098f523b1037d12ec6ca73b0b64e297bf744afe42017068f5d1cc"
+  }
+}

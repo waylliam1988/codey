@@ -40,12 +40,13 @@ from codey.policies.tool_requirement import (
     parse_tool_success_check,
 )
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.task.web_intent import explicit_web_intent
 from codey.toolchain.tool_spec import _check_spec_value_against_schema, validate_args_with_spec
 from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 
 
 def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall | None:
-    """Only materialize a declared, uniquely bound prerequisite before interaction."""
+    """Materialize explicit navigation to one authorized task URL before interaction."""
     if session.task_kind not in {"chat", "hybrid"} or session.policy.strict_research:
         return None
     # An explicit page sequence already owns its transitions. Do not attach
@@ -60,8 +61,10 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
         return None
     requirements = [rule for check in session.policy.required_checks
                     if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_navigate"]
-    url = _task_navigation_url(session)
-    if not requirements or url is None or any(rule.via not in {"", "codemode"} for rule in requirements):
+    if not requirements and not explicit_web_intent(session.task_text).browser_navigation_requested:
+        return None
+    url = _task_navigation_url(session) if requirements else snapshot.task_navigation_url
+    if url is None or any(rule.via not in {"", "codemode"} for rule in requirements):
         return None
     args: JsonObject = {"url": url}
     for rule in requirements:

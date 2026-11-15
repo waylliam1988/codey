@@ -18,11 +18,12 @@ _URL_LINE = re.compile(r"[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?"
                        r"(?:(?:Source|URL|来源)[ \t]*[:：][ \t]*)?"
                        r"(?:<\x00\d+\x00>|\[[^\]\n]+\]\(\x00\d+\x00\)|\x00\d+\x00)[ \t。；.!?]*", re.I)
 _ACTION = re.compile(
-    r"web_search|open_url|上网|联网查询|在线查找|查网页|查资料|官方文档|浏览网页|读取网页|"
+    r"web_search|open_url|\bbrowser_navigate\b|上网|联网查询|在线查找|查网页|查资料|官方文档|浏览网页|读取网页|"
     r"\b(?:browse|search the web|look online)\b", re.IGNORECASE)
-_OPEN = re.compile(r"打开|访问|读取|浏览|看看|查看|分析|了解|\b(?:open|visit|inspect|read|look at|navigate to)\b", re.IGNORECASE)
+_OPEN = re.compile(r"打开|访问|读取|浏览|看看|查看|分析|了解|导航到|导航至|\b(?:open|visit|inspect|read|look at|navigate to)\b", re.IGNORECASE)
+_NAVIGATION = re.compile(r"\bbrowser_navigate\b|导航到|导航至|\bnavigate to\b", re.IGNORECASE)
 _NEGATED = re.compile(r"(?:不要|勿|禁止|不允许|无需|不需要|不用|不必|do not|don't|never|without)"
-                      r"(?:\s|直接|使用|用|再|去|帮我|请|directly\b)*$", re.IGNORECASE)
+                      r"(?:\s|直接|使用|调用|用|再|去|帮我|请|directly\b|call\b)*$", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class WebIntent:
     requested: bool
     urls: frozenset[str]
     original_urls: frozenset[str] = frozenset()
+    browser_navigation_requested: bool = False
 
 
 def source_url_key(url: str) -> str:
@@ -78,7 +80,7 @@ def explicit_web_intent(task: str) -> WebIntent:
     text = _CODE.sub("", task)
 
     def quoted_example(match: re.Match[str]) -> str:
-        return "" if _OPEN.search(match[0]) or _ACTION.search(match[0]) else match[0]
+        return "" if _OPEN.search(match[0]) or _ACTION.search(match[0]) or _NAVIGATION.search(match[0]) else match[0]
 
     text = _QUOTED.sub(quoted_example, text)
     url_tokens: dict[str, tuple[str, str | None]] = {}
@@ -97,6 +99,8 @@ def explicit_web_intent(task: str) -> WebIntent:
 
     text = _URL.sub(protect_url, text)
     requested = False
+    browser_navigation_requested = False
+    navigation_urls: set[str] = set()
     direct: dict[str, set[str | None] | None] = {}
     for clause in _request_clauses(text):
         targets = list(_URL_TOKEN.finditer(clause))
@@ -106,7 +110,7 @@ def explicit_web_intent(task: str) -> WebIntent:
         actions.sort(key=lambda match: match.start())
         permissions = [(action, _NEGATED.search(clause[:action.start()]) is None) for action in actions]
         requested = requested or any(positive for _, positive in permissions)
-        for target in targets:
+        for index, target in enumerate(targets):
             if target[0] not in url_tokens or not permissions:
                 continue
             preceding = [(action, positive) for action, positive in permissions if action.start() < target.start()]
@@ -114,7 +118,12 @@ def explicit_web_intent(task: str) -> WebIntent:
             key, original = url_tokens[target[0]]
             if not positive:
                 direct[key] = None
+                navigation_urls.discard(key)
                 continue
+            start = targets[index - 1].end() if index else 0
+            if _NAVIGATION.fullmatch(action[0]) or any(allowed_step and step.start() >= start
+                    and _NAVIGATION.fullmatch(step[0]) for step, allowed_step in preceding):
+                navigation_urls.add(key)
             candidates = direct.get(key)
             if key in direct and candidates is None and (
                     not _open_clause(action[0]) or action[0] in {"分析", "了解"}):
@@ -123,10 +132,15 @@ def explicit_web_intent(task: str) -> WebIntent:
                 direct[key] = {original}
             else:
                 candidates.add(original)
+        for navigation in _NAVIGATION.finditer(clause, targets[-1].end() if targets else 0):
+            browser_navigation_requested = _NEGATED.search(clause[:navigation.start()]) is None
+            if not browser_navigation_requested:
+                navigation_urls.clear()
     allowed = {key: candidates for key, candidates in direct.items() if candidates is not None}
     originals = {url for candidates in allowed.values() for url in candidates if url is not None}
     unambiguous = all(None not in candidates for candidates in allowed.values())
-    return WebIntent(requested, frozenset(allowed), frozenset(originals) if unambiguous else frozenset())
+    return WebIntent(requested, frozenset(allowed), frozenset(originals) if unambiguous else frozenset(),
+                     browser_navigation_requested or bool(navigation_urls & allowed.keys()))
 
 
 def source_requirements(task: str) -> dict[str, object]:

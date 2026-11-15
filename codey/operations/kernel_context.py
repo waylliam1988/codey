@@ -532,16 +532,27 @@ class KernelContext:
         from codey.operations.browser_task_handoff import initial_navigation
         from codey.operations.browser_upload import upload_scope
         from codey.operations.source_gaps import task_source_coverage
+        from codey.policies.tool_requirement import parse_tool_success_check
         from codey.task.web_intent import source_url_key
 
         coverage = task_source_coverage(self.session, self.completion_context.research_ledger)
         attempted = {source_url_key(url) for result in self.session._memory_results.values()
                      if result.call.name == "open_url" and isinstance(url := result.call.args.get("url"), str)}
         urls: list[str] = sorted(set(coverage.missing) - attempted) if "open_url" in snapshot.inventory_names else []
-        calls = [ToolCall("open_url", {"url": url}, call_id=f"required-source:{index}")
-                 for index, url in enumerate(urls)]
         upload = upload_scope(self.session)
         navigation = initial_navigation(self.session, snapshot)
+        # A requested browser navigation owns initial access to its page.
+        # Dedicated input bindings and explicit open_url requirements retain
+        # their existing initial source observations.
+        requires_open = snapshot.input_binding is not None or any(
+            (rule := parse_tool_success_check(check)) is not None and rule.tool == "open_url"
+            for check in self.session.policy.required_checks)
+        navigation_url = navigation.args.get("url") if navigation is not None else None
+        if navigation is not None and navigation.name == "codemode":
+            navigation_url = decode_json_object(navigation.args["inputs"]).get("url")
+        calls = [ToolCall("open_url", {"url": url}, call_id=f"required-source:{index}")
+                 for index, url in enumerate(urls) if requires_open or not isinstance(navigation_url, str)
+                 or source_url_key(url) != source_url_key(navigation_url)]
         if navigation is not None:
             calls.append(navigation)
         elif upload is not None and upload.navigate and upload.url in urls and "browser_navigate" in snapshot.inventory_names:

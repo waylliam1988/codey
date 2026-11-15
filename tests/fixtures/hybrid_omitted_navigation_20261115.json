@@ -1,0 +1,14 @@
+{
+  "source": ".e2e-artifacts/cc15-live-first/hybrid/provider.jsonl",
+  "source_sha256": "a3a208d9ff45c25e8b75de7e25e5bfedb28eabd7fc71a2a0409f81cd50ebba06",
+  "reply_sha256": [
+    "e65538d40545d040e33a1ee2ca2581f876e0eae1a97e274eb28617b969f418ca",
+    "1b61a31f5a0b5538b7b271c1a46215b3dc18f2d6bd0572780c1a5280dc50eb25",
+    "8e1dda816c58b9308843c24a7c9152744f506d8b8f5eba50caf027e5dddccf09"
+  ],
+  "replies": [
+    "{\"tool\":\"codemode\",\"args\":{\"code\":\"const snapshot = await tools.browser_snapshot({});\\nconst elements = unwrap(snapshot).elements;\\nconst localityRef = elements.find(e => e.name === 'Locality' || e.name === 'locality')?.ref;\\nif (!localityRef) return 'Locality ref not found';\\n\\nawait tools.browser_fill({ref: localityRef, value: '福州'});\\n\\nconst newSnapshot = await tools.browser_snapshot({});\\nconst newElements = unwrap(newSnapshot).elements;\\nconst loadRecordRef = newElements.find(e => e.name === 'Load record' || e.name === 'Load Record')?.ref;\\nif (!loadRecordRef) return 'Load record ref not found';\\n\\nawait tools.browser_click({ref: loadRecordRef});\\n\\nawait tools.browser_wait({condition: 'text', value: '鱼丸', timeout_ms: 5000});\\n\\nreturn unwrap(await tools.browser_read({}));\",\"inputs\":{}}}",
+    "{\"tool\":\"codemode\",\"args\":{\"code\":\"const read = await tools.read_file({path: inputs.path});\\nreturn unwrap(await tools.edit({read, changes: inputs.changes}));\",\"inputs\":{\"path\":\"result.json\",\"changes\":{\"amount\":173,\"code\":\"QUARTZ_851\"}}}\n}",
+    "{\"tool\":\"done\",\"args\":{\"summary\":\"通过生产工具打开页面并完成操作。首先将 Locality 填为“福州”，随后点击 Load record 并等待“鱼丸”出现。最终通过 browser_read 获取的页面内容显示：鱼丸净重为 173 克，校验码为 QUARTZ_851。已更新项目中的 result.json 文件。\",\"knowledge_refs\":[]}}"
+  ]
+}
