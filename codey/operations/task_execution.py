@@ -949,7 +949,7 @@ class ExecutionDelegate:
     def _lower_knowledge_sources(self, args: ToolArgs) -> tuple[ToolArgs, str]:
         import re
 
-        sources = dict(self.session.source_ids) if self.session is not None else {}
+        sources: dict[str, str] = dict(self.session.source_ids) if self.session is not None else {}
 
         def lower(value: object) -> tuple[str, str]:
             text = str(value or "").strip()
@@ -994,7 +994,7 @@ class ExecutionDelegate:
         if "source_ref" not in args:
             return args, ""
         reference = args.get("source_ref")
-        sources = dict(self.session.source_ids) if self.session is not None else {}
+        sources: dict[str, str] = dict(self.session.source_ids) if self.session is not None else {}
         if not isinstance(reference, str) or reference not in sources:
             return {}, "source_ref must be an exact opened source reference: " + ", ".join(sources)
         return {**args, "source_ref": sources[reference]}, ""

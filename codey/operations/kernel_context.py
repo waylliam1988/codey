@@ -537,7 +537,7 @@ class KernelContext:
         coverage = task_source_coverage(self.session, self.completion_context.research_ledger)
         attempted = {source_url_key(url) for result in self.session._memory_results.values()
                      if result.call.name == "open_url" and isinstance(url := result.call.args.get("url"), str)}
-        urls = sorted(set(coverage.missing) - attempted) if "open_url" in snapshot.inventory_names else []
+        urls: list[str] = sorted(set(coverage.missing) - attempted) if "open_url" in snapshot.inventory_names else []
         calls = [ToolCall("open_url", {"url": url}, call_id=f"required-source:{index}")
                  for index, url in enumerate(urls)]
         upload = upload_scope(self.session)

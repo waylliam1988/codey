@@ -91,7 +91,7 @@ def handoff_call(session: TaskSession, snapshot: TurnSnapshot,
     direct = call.name in snapshot.tool_names and not only and not task_selector
     if direct:
         spec = next(spec for spec in snapshot.model_specs if spec.name == call.name)
-        missing = [name for name in spec.required if name not in call.args]
+        missing: list[str] = [name for name in spec.required if name not in call.args]
         error = validate_args_with_spec(spec, call.args)
     else:
         if "codemode" not in snapshot.tool_names:
@@ -316,7 +316,7 @@ def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
         return snapshot, action, None
     _, value = current
     elements = value.get("elements")
-    candidates = [element for element in elements if isinstance(element, dict)
+    candidates: list[JsonObject] = [element for element in elements if isinstance(element, dict)
                   and element.get("role") in {"link", "button"} and element.get("disabled") is False] if isinstance(elements, list) else []
     if not candidates:
         return snapshot, "The current snapshot has no enabled download candidate. Inspect the page before choosing a target.", None

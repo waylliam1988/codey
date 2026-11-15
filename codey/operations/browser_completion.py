@@ -182,7 +182,7 @@ class _PageRound:
         if step not in _FORM_ACTIONS:
             return
         raw = result.canonical.get("value")
-        value = dict[str, object](raw) if isinstance(raw, dict) else {}
+        value: dict[str, object] = dict[str, object](raw) if isinstance(raw, dict) else {}
         delivered = (value.get("ref") == self.target_ref
                      and (value.get("delivery") == "verified" and result.call.args.get("value") == rule.fill_value
                           if step == "browser_fill" else value.get("delivery") == "delivered"))

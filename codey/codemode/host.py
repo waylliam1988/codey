@@ -87,7 +87,7 @@ class CodeModeHost:
         if index is None:
             index = self._next_child
             self._next_child += 1
-        decoded_args = decode_json_object(args)
+        decoded_args: JsonObject = decode_json_object(args)
         decoded_args = self._reference_args(index, tool_name, decoded_args)
         decoded_args, query = self._click_args(tool_name, decoded_args)
         if tool_name == "open_result":

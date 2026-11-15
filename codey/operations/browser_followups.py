@@ -127,10 +127,10 @@ def click_followup_plan(checks: tuple[str, ...], names: set[str]) -> ClickFollow
                         if name not in names and (name == "browser_read" or wait.waits or wait.missing))
     plans: JsonObject = {"action": []}
     if "browser_snapshot" in names:
-        plans["controls"] = [{"name": "browser_snapshot", "args": {}}]
+        plans["controls"] = [{"name": "browser_snapshot", "args": JsonObject()}]
     if not wait.missing and not unavailable:
         steps: list[JsonValue] = [{"name": "browser_wait", "args": args} for args in wait.waits]
-        plans["result"] = [*steps, {"name": "browser_read", "args": {}}]
+        plans["result"] = [*steps, {"name": "browser_read", "args": JsonObject()}]
     return ClickFollowupPlan(plans, wait.missing, unavailable)
 
 
