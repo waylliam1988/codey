@@ -5,7 +5,12 @@ import json
 import pytest
 
 from codey.codemode.kernel import CodeModeKernelExecutor
-from codey.codemode.protocol import CodeModeInputError, parse_codemode_args, parse_codemode_text
+from codey.codemode.protocol import (
+    CodeModeInputError,
+    analyze_codemode_source,
+    parse_codemode_args,
+    parse_codemode_text,
+)
 from codey.codemode.runtime import NodeWorkerRuntime
 from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -98,3 +103,34 @@ def test_runtime_entry_uses_same_preflight_before_invoking_tools() -> None:
     literal = r"// Keep the data unchanged" + "\nreturn '// wait\\nreturn 1;';"
     result = runtime.execute(literal, catalog=(), invoke=invoke, limits=CodeModeLimits(timeout_ms=5_000))
     assert result.ok and result.value == "// wait\nreturn 1;"
+
+
+@pytest.mark.parametrize("code", [
+    'return "process";', 'return "fetch failed";', '// import is ordinary text\nreturn 1;',
+    'return {process: "data", constructor: "field"};', 'return `globalThis ${1}`;',
+    'return ({process: 1}).process;',
+])
+def test_host_words_in_data_and_property_names_are_allowed(code: str) -> None:
+    assert analyze_codemode_source(code) == ()
+    assert parse_codemode_args({"code": code}).code == code
+
+
+@pytest.mark.parametrize("code,reason", [
+    ('process.env;', "process"), ('require("fs");', "require"), ('Function("return 1")();', "Function"),
+    ('tools.codemode({});', "recursive"), ('tools["codemode"]({});', "recursive"),
+    ('return `${process.env}`;', "process"), ('import data from "data";', "imports"),
+    ('return {process};', "process"), ('return new Function("return 1");', "Function"),
+])
+def test_actual_host_access_reports_structured_diagnostic(code: str, reason: str) -> None:
+    diagnostics = analyze_codemode_source(code)
+    assert diagnostics and reason in diagnostics[0].message
+    assert diagnostics[0].code == "sandbox_denied"
+    assert diagnostics[0].line == 1 and diagnostics[0].column >= 1
+
+
+@pytest.mark.parametrize("separator", [" ", "\n", "\r", "\u2028", "\u2029"])
+def test_source_diagnostic_locations_use_characters_and_javascript_line_breaks(separator: str) -> None:
+    prefix = 'const 文本 = "数据";'
+    diagnostic, = analyze_codemode_source(prefix + separator + "process.env;")
+    assert diagnostic.line == (1 if separator == " " else 2)
+    assert diagnostic.column == (len(prefix) + 2 if separator == " " else 1)

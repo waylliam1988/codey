@@ -38,14 +38,14 @@ class JsonNumber:
 
 JSON_FIELD_EDIT_PROGRAM = (
     "const read = await tools.read_file({path: inputs.path});\n"
-    "return unwrap(await tools.edit({read, changes: inputs.changes}));"
+    "return unwrap(await tools.edit({base_result_ref: read.result_ref, changes: inputs.changes}));"
 )
 
 JSON_FIELD_EDIT_GUIDANCE = (
     "To persist changes to existing top-level JSON fields, use this CodeMode program. "
     "Put the requested file in inputs.path and the requested field values in inputs.changes.\n"
     + JSON_FIELD_EDIT_PROGRAM + "\n"
-    "Pass read directly and unwrap only the edit result. Returning modified JSON alone does not write. "
+    "Pass read.result_ref as base_result_ref and unwrap only the edit result. Returning modified JSON alone does not write. "
     "If the file changed, rerun the same two lines to read the current file and repeat the edit."
 )
 

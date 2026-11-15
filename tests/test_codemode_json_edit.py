@@ -102,19 +102,19 @@ def test_headless_json_field_edit_conflicts_then_preserves_the_rest(tmp_path: Pa
     assert "rerun the same two lines" in feedback and "unwrap only the edit result" in feedback
     requests = [parse_json_object(line) for line in
                 (tmp_path / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert any("tools.edit({read, changes: inputs.changes})" in str(message.get("content", ""))
+    assert any("tools.edit({base_result_ref: read.result_ref, changes: inputs.changes})" in str(message.get("content", ""))
                for row in requests if row.get("phase") == "request"
                if isinstance(messages := decode_json_object(row["payload"]).get("messages"), list)
                for message in messages if isinstance(message, dict) and message.get("role") == "user")
 
 
 @pytest.mark.parametrize(("text", "read_options", "arguments", "error"), [
-    ('{"theme":"old"}\n', "", "{read: {...read}, changes: inputs.changes}", "Pass the original"),
-    ('{"theme":"old"}\n', "", "{path: inputs.path, read, changes: inputs.changes}", "requires {read, changes}"),
-    ('{\n"theme":"old"\n}\n', ", limit: 1", "{read, changes: inputs.changes}", "original complete"),
-    ('{"other":"old"}\n', "", "{read, changes: inputs.changes}", "fields do not exist"),
-    ('{"theme":"old","theme":"duplicate"}\n', "", "{read, changes: inputs.changes}", "duplicate JSON field"),
-    ('["old"]\n', "", "{read, changes: inputs.changes}", "file must contain a JSON object"),
+    ('{"theme":"old"}\n', "", "{base_result_ref: 'forged', changes: inputs.changes}", "original complete"),
+    ('{"theme":"old"}\n', "", "{path: inputs.path, base_result_ref: read.result_ref, changes: inputs.changes}", "original complete"),
+    ('{\n"theme":"old"\n}\n', ", limit: 1", "{base_result_ref: read.result_ref, changes: inputs.changes}", "original complete"),
+    ('{"other":"old"}\n', "", "{base_result_ref: read.result_ref, changes: inputs.changes}", "fields do not exist"),
+    ('{"theme":"old","theme":"duplicate"}\n', "", "{base_result_ref: read.result_ref, changes: inputs.changes}", "duplicate JSON field"),
+    ('["old"]\n', "", "{base_result_ref: read.result_ref, changes: inputs.changes}", "file must contain a JSON object"),
 ])
 def test_invalid_json_field_edit_does_not_dispatch_write(
     tmp_path: Path, text: str, read_options: str, arguments: str, error: str,

@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from contextvars import ContextVar
 
 from codey.runtime.core.models import ToolCall
 
 rpc_child_index: ContextVar[int | None] = ContextVar("codemode_child_index", default=None)
+rpc_child_allocator: ContextVar[Callable[[int], tuple[int, ...]] | None] = ContextVar("codemode_child_allocator", default=None)
 
 
 

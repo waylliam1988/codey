@@ -17,7 +17,7 @@ from threading import RLock
 from typing import NoReturn, Protocol, TypedDict, TypeGuard
 
 from codey.codemode.state import CodeModeStateStore, DurableCodeModeState
-from codey.codemode.types import ToolCatalogSnapshot
+from codey.codemode.types import DeliveryReference, ToolCatalogSnapshot
 from codey.durable.model import TaskCheckpoint
 from codey.durable.session import DurableSession
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -75,6 +75,7 @@ class ReplayRecord(TypedDict):
     effect_scope: str
     allow_writes: bool
     state: list[StateReference]
+    delivery: list[DeliveryReference]
 
 
 class CodeModeReplayError(ValueError):
@@ -355,6 +356,7 @@ class DurableCodeModeReplay:
         self.parent_effect_id = parent_effect_id
         self.state = DurableCodeModeState(durable, task_id)
         self._state_index = 0
+        self._delivery_index = 0
         self._children_seen: set[str] = set()
         self._lock = RLock()
         self._failure = ""
@@ -365,19 +367,20 @@ class DurableCodeModeReplay:
                 self._record(current)
                 return None
             records[execution_id] = {
-                "schema": 1,
+                "schema": 2,
                 "fingerprint": fingerprint,
                 "epoch_ms": int(time.time() * 1000),
                 "effect_scope": effect_scope,
                 "allow_writes": allow_writes,
                 "seed": secrets.randbits(32),
                 "state": [],
+                "delivery": [],
             }
             return {"codemode_replay": records}
 
         durable.transform_task_state(task_id, initialize)
         record = self._record(durable.task(task_id))
-        self.context = {"epochMs": record["epoch_ms"], "seed": record["seed"]}
+        self.context = {"epochMs": record["epoch_ms"], "seed": record["seed"], "executionId": execution_id}
 
     def invalidate(self, reason: str) -> None:
         """Permanently close this invocation, retaining its first fatal cause."""
@@ -415,11 +418,39 @@ class DurableCodeModeReplay:
         record = self._records(current)[self.execution_id]
         if (
             record["fingerprint"] != self.fingerprint
-            or record.get("schema") != 1
+            or record.get("schema") != 2
             or record.get("effect_scope") != self.effect_scope
         ):
             raise CodeModeReplayError("CodeMode recovery identity or metadata mismatch")
         return record
+
+    @property
+    def delivery(self) -> tuple[DeliveryReference, ...]:
+        record = self._record(self.durable.task(self.task_id))
+        return tuple(record["delivery"])
+
+    def record_delivery(self, call_id: str, child_index: int | None) -> None:
+        """Persist the logical result delivery frontier before writing the receipt to the guest."""
+        if not call_id or (child_index is not None and (type(child_index) is not int or child_index < 0)):
+            raise CodeModeReplayError("invalid CodeMode delivery identity")
+        with self.admission():
+            def apply(current: TaskCheckpoint) -> Mapping[str, object] | None:
+                records = self._records(current)
+                record = records[self.execution_id]
+                delivery = record["delivery"]
+                item: DeliveryReference = {"call_id": call_id, "child_index": child_index}
+                if self._delivery_index < len(delivery):
+                    if item != delivery[self._delivery_index]:
+                        raise CodeModeReplayError("CodeMode delivery identity changed during recovery")
+                    return None
+                if any(existing["call_id"] == call_id for existing in delivery):
+                    raise CodeModeReplayError("CodeMode result was delivered more than once")
+                delivery.append(item)
+                records[self.execution_id]["delivery"] = delivery
+                return {"codemode_replay": records}
+
+            self.durable.transform_task_state(self.task_id, apply)
+            self._delivery_index += 1
 
     def child(self, call: ToolCall, effect_id: str) -> None:
         """Inspect the original effect intent; never write a second child log."""
@@ -494,7 +525,8 @@ class DurableCodeModeReplay:
             for effect in self.durable.effects(self.task_id)
             if effect.intent.get("parent_effect_id") == self.parent_effect_id
         }
-        if self._children_seen != children or self._state_index != len(record["state"]):
+        if (self._children_seen != children or self._state_index != len(record["state"])
+                or self._delivery_index != len(record["delivery"])):
             raise CodeModeReplayError("CodeMode recovery did not consume its recorded control flow")
 
 
@@ -502,8 +534,14 @@ def _is_replay_record(value: JsonValue) -> TypeGuard[ReplayRecord]:
     if not isinstance(value, dict) or not set(ReplayRecord.__annotations__) <= value.keys():
         return False
     steps = value["state"]
+    delivery = value["delivery"]
     return (all(isinstance(value[key], str) for key in ("fingerprint", "effect_scope"))
             and all(type(value[key]) is int for key in ("schema", "epoch_ms", "seed"))
             and type(value["allow_writes"]) is bool and isinstance(steps, list)
             and all(isinstance(step, dict) and set(StateReference.__annotations__) <= step.keys()
-                    and isinstance(step["request"], str) and type(step["revision"]) is int for step in steps))
+                    and isinstance(step["request"], str) and type(step["revision"]) is int for step in steps)
+            and isinstance(delivery, list)
+            and all(isinstance(item, dict) and set(DeliveryReference.__annotations__) <= item.keys()
+                    and isinstance(item["call_id"], str)
+                    and (item["child_index"] is None or type(item["child_index"]) is int)
+                    for item in delivery))

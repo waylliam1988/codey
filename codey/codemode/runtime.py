@@ -3,21 +3,214 @@ from __future__ import annotations
 import hashlib
 import json
 import queue
+import secrets
 import shutil
 import subprocess
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import IO, Literal, Protocol
 
-from codey.codemode.identity import rpc_child_index
+from codey.codemode.catalog import build_catalog_snapshot, catalog_describe, catalog_search
+from codey.codemode.identity import rpc_child_allocator, rpc_child_index
 from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
-from codey.codemode.types import CodeModeLimits, CodeModeProgram, CodeModeResult, ToolCatalogEntry
+from codey.codemode.state import CodeModeStateStore
+from codey.codemode.types import CodeModeLimits, CodeModeProgram, CodeModeResult, DeliveryReference, ToolCatalogEntry
 from codey.runtime.core import cancellation
+from codey.types.json_value import decode_json_object, parse_json_object
 
 ToolInvoker = Callable[[str, dict[str, object]], object]
+WireMessage = dict[str, object]
+DeliveryRecorder = Callable[[str, int | None], None]
+SessionEventKind = Literal[
+    "started", "child_started", "child_finished", "pending", "done", "error", "terminated",
+]
+
+
+@dataclass(frozen=True)
+class CodeModeRequest:
+    code: str
+    catalog: tuple[ToolCatalogEntry, ...]
+    invoke: ToolInvoker
+    inputs: Mapping[str, object] = field(default_factory=dict)
+    state_store: CodeModeStateStore | None = None
+    replay_context: Mapping[str, object] | None = None
+    delivery: tuple[DeliveryReference, ...] = ()
+    on_delivery: DeliveryRecorder | None = None
+    limits: CodeModeLimits | None = None
+    execution_id: str = ""
+    tool_timeout_ms: int = 30_000
+
+    def __post_init__(self) -> None:
+        identity = self.execution_id
+        if not identity and self.replay_context is not None:
+            replay_identity = self.replay_context.get("executionId")
+            if isinstance(replay_identity, str):
+                identity = replay_identity
+        object.__setattr__(self, "execution_id", identity or "cme_" + secrets.token_hex(12))
+
+
+@dataclass(frozen=True)
+class CodeModeHandle:
+    execution_id: str
+
+
+@dataclass(frozen=True)
+class CodeModeEvent:
+    seq: int
+    kind: SessionEventKind
+    payload: Mapping[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CodeModeOutcome:
+    result: CodeModeResult | None
+    events: tuple[CodeModeEvent, ...] = ()
+
+
+class _SessionState:
+    def __init__(self, handle: CodeModeHandle, request: CodeModeRequest) -> None:
+        self.handle = handle
+        self.request = request
+        self.stopping = threading.Event()
+        self.finished = threading.Event()
+        self.condition = threading.Condition()
+        self.events: list[CodeModeEvent] = []
+        self.next_event = 0
+        self.result: CodeModeResult | None = None
+        self.failure: BaseException | None = None
+        self.reason = ""
+
+    def emit(self, kind: SessionEventKind, payload: Mapping[str, object] | None = None) -> None:
+        with self.condition:
+            self.events.append(CodeModeEvent(len(self.events), kind, dict(payload or {})))
+            self.condition.notify_all()
+
+
+class CodeModeSession:
+    """One observable lifecycle over the existing QuickJS worker driver."""
+
+    def __init__(
+        self, runtime: NodeWorkerRuntime | None = None, *,
+        restore: Callable[[str], CodeModeRequest | CodeModeOutcome] | None = None,
+    ) -> None:
+        self._runtime = runtime or NodeWorkerRuntime()
+        # The owner reconstructs capabilities and receipts through the kernel.
+        # Sessions never persist a second copy of requests or tool results.
+        self._restore = restore
+        self._states: dict[str, _SessionState] = {}
+        self._lock = threading.Lock()
+
+    def start(self, request: CodeModeRequest) -> CodeModeHandle:
+        if not request.execution_id or type(request.tool_timeout_ms) is not int or request.tool_timeout_ms <= 0:
+            raise ValueError("execution_id and a positive tool_timeout_ms are required")
+        handle = CodeModeHandle(request.execution_id)
+        state = _SessionState(handle, request)
+        parent_stop, parent_deadline = cancellation.current_event(), cancellation.current_deadline()
+        with self._lock:
+            if handle.execution_id in self._states:
+                raise ValueError("CodeMode execution already started")
+            self._states[handle.execution_id] = state
+        state.emit("started", {"execution_id": handle.execution_id})
+
+        def run() -> None:
+            try:
+                with cancellation.scope(parent_stop), cancellation.deadline_scope(parent_deadline):
+                    result = self._runtime._execute_request(request, state)
+                with state.condition:
+                    state.result = result
+                kind: SessionEventKind = ("terminated" if result.error_code == "terminated"
+                                          else "done" if result.ok else "error")
+                state.emit(kind, {"ok": result.ok, "value": result.value, "error": result.error,
+                                  "error_code": result.error_code, "child_calls": result.child_calls})
+            except BaseException as exc:
+                with state.condition:
+                    state.failure = exc
+                state.emit("error", {"error": str(exc)[:400]})
+            finally:
+                with state.condition:
+                    state.finished.set()
+                    state.condition.notify_all()
+
+        threading.Thread(target=run, name=f"codemode-{handle.execution_id}", daemon=True).start()
+        return handle
+
+    def _state(self, handle: CodeModeHandle) -> _SessionState:
+        with self._lock:
+            return self._states[handle.execution_id]
+
+    def wait(self, handle: CodeModeHandle, *, yield_ms: int) -> tuple[CodeModeEvent, ...]:
+        if type(yield_ms) is not int or yield_ms <= 0:
+            raise ValueError("yield_ms must be a positive integer")
+        state = self._state(handle)
+        with state.condition:
+            changed = state.condition.wait_for(
+                lambda: state.next_event < len(state.events) or state.finished.is_set(), yield_ms / 1000,
+            )
+            if not changed:
+                state.emit("pending", {"execution_id": handle.execution_id})
+            events = tuple(state.events[state.next_event:])
+            state.next_event = len(state.events)
+            return events
+
+    def outcome(self, handle: CodeModeHandle) -> CodeModeOutcome:
+        state = self._state(handle)
+        with state.condition:
+            if state.failure is not None:
+                raise state.failure
+            return CodeModeOutcome(state.result, tuple(state.events))
+
+    def terminate(self, handle: CodeModeHandle, *, reason: str) -> CodeModeOutcome:
+        if not reason.strip():
+            raise ValueError("termination reason must be non-empty")
+        state = self._state(handle)
+        with state.condition:
+            if not state.finished.is_set():
+                state.reason = reason
+                state.stopping.set()
+        # A pending outcome retains the live handle. Only the worker owner can
+        # publish terminated, after the admitted callbacks have settled.
+        return self.outcome(handle)
+
+    def recover(self, execution_id: str) -> CodeModeHandle | CodeModeOutcome:
+        handle = CodeModeHandle(execution_id)
+        with self._lock:
+            state = self._states.get(execution_id)
+        if state is None:
+            if self._restore is None:
+                raise KeyError(execution_id)
+            restored = self._restore(execution_id)
+            if isinstance(restored, CodeModeOutcome):
+                if restored.result is None:
+                    raise ValueError("restored outcome must be terminal")
+                return restored
+            if restored.execution_id != execution_id:
+                raise ValueError("restored CodeMode execution identity changed")
+            return self.start(restored)
+        return self.outcome(handle) if state.finished.is_set() else handle
+
+
+class _ChildCallAllocator:
+    def __init__(self, limit: int) -> None:
+        self._limit = limit
+        self._next = 0
+        self._lock = threading.Lock()
+
+    def reserve(self, count: int) -> tuple[int, ...]:
+        with self._lock:
+            if self._next + count > self._limit:
+                raise ValueError("codemode child call limit exceeded")
+            indices = tuple(range(self._next, self._next + count))
+            self._next += count
+            return indices
+
+    @property
+    def count(self) -> int:
+        with self._lock:
+            return self._next
 
 
 class CodeModeRuntime(Protocol):
@@ -31,8 +224,10 @@ class CodeModeRuntime(Protocol):
         catalog: Sequence[ToolCatalogEntry],
         invoke: ToolInvoker,
         inputs: Mapping[str, object] | None = None,
-        state_store: Any = None,
+        state_store: CodeModeStateStore | None = None,
         replay_context: Mapping[str, object] | None = None,
+        delivery: Sequence[DeliveryReference] = (),
+        on_delivery: DeliveryRecorder | None = None,
         limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
         """Run one program and mediate all host calls through ``invoke``."""
@@ -58,8 +253,8 @@ class NodeWorkerRuntime:
         contract = {"schema": 2, "runner": hashlib.sha256(self.runner.read_bytes()).hexdigest(),
                     "sandbox": {path.relative_to(assets).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
                                 for path in dependencies}, "memory_bytes": 64 * 1024 * 1024,
-                    "engine": json.loads(probe.stdout), "rpc": 1, "determinism": 1,
-                    "result_delivery": "issuance_order", "heap_mb": 128, "timeout": "per_attempt"}
+                    "engine": parse_json_object(probe.stdout), "rpc": 1, "determinism": 1,
+                    "result_delivery": "completion_order", "heap_mb": 128, "timeout": "per_attempt"}
         return hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     def execute(
@@ -69,26 +264,38 @@ class NodeWorkerRuntime:
         catalog: Sequence[ToolCatalogEntry],
         invoke: ToolInvoker,
         inputs: Mapping[str, object] | None = None,
-        state_store: Any = None,
+        state_store: CodeModeStateStore | None = None,
         replay_context: Mapping[str, object] | None = None,
+        delivery: Sequence[DeliveryReference] = (),
+        on_delivery: DeliveryRecorder | None = None,
         limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
+        session = CodeModeSession(self)
+        request = CodeModeRequest(code, tuple(catalog), invoke, {} if inputs is None else inputs,
+                                  state_store, replay_context, tuple(delivery), on_delivery, limits)
+        handle = session.start(request)
+        while True:
+            session.wait(handle, yield_ms=50)
+            outcome = session.outcome(handle)
+            if outcome.result is not None:
+                return outcome.result
+
+    def _execute_request(self, request: CodeModeRequest, control: _SessionState) -> CodeModeResult:
         cancellation.check()
-        active_limits = limits or CodeModeLimits()
+        active_limits = request.limits or CodeModeLimits()
         try:
-            program = parse_codemode_args({"code": code, "inputs": {} if inputs is None else inputs}, limits=active_limits)
+            program = parse_codemode_args({"code": request.code, "inputs": request.inputs}, limits=active_limits)
         except CodeModeInputError as exc:
             return CodeModeResult(False, error_code=exc.code, error=str(exc))
         with cancellation.linked_scope(deadline=time.monotonic() + active_limits.timeout_ms / 1000) as stop:
             try:
-                return self._run_worker(program, catalog, invoke, state_store, active_limits, stop, replay_context)
+                return self._run_worker(program, request, active_limits, stop, control)
             except cancellation.DeadlineExceeded:
                 return CodeModeResult(False, error_code="timeout", error="codemode execution timed out")
 
     def _run_worker(
-        self, program: CodeModeProgram, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
-        state_store: Any, limits: CodeModeLimits, stop: threading.Event,
-        replay_context: Mapping[str, object] | None,
+        self, program: CodeModeProgram, execution: CodeModeRequest, limits: CodeModeLimits,
+        stop: threading.Event, control: _SessionState,
     ) -> CodeModeResult:
         try:
             process = subprocess.Popen(
@@ -106,9 +313,10 @@ class NodeWorkerRuntime:
         stdout = process.stdout
         assert stdin is not None
         assert stdout is not None
-        messages: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=limits.max_pending_promises + 8)
+        messages: queue.Queue[WireMessage] = queue.Queue(maxsize=limits.max_pending_promises + 8)
+        completed: queue.Queue[str] = queue.Queue()
 
-        def publish(message: dict[str, Any]) -> None:
+        def publish(message: WireMessage) -> None:
             while not stop.is_set():
                 try:
                     messages.put(message, timeout=0.05)
@@ -125,12 +333,11 @@ class NodeWorkerRuntime:
                     publish({"type": "error", "code": "rpc_limit", "message": "worker RPC message exceeds its byte limit"})
                     return
                 try:
-                    message = json.loads(line)
-                except json.JSONDecodeError:
+                    message = parse_json_object(line)
+                except (ValueError, json.JSONDecodeError):
                     publish({"type": "error", "code": "protocol", "message": "worker emitted invalid JSON"})
                     continue
-                if isinstance(message, dict):
-                    publish(message)
+                publish({key: value for key, value in message.items()})
             publish({"type": "eof"})
 
         reader = threading.Thread(target=read_messages, daemon=True)
@@ -140,7 +347,7 @@ class NodeWorkerRuntime:
             "inputs": self._plain_json(program.inputs),
             "catalog": [
                 {"name": item.name, "description": item.description, "parameters": self._plain_json(item.parameters)}
-                for item in catalog
+                for item in execution.catalog
             ],
             "limits": {
                 "timeoutMs": limits.timeout_ms,
@@ -149,8 +356,9 @@ class NodeWorkerRuntime:
                 "maxPendingPromises": limits.max_pending_promises,
                 "maxOutputBytes": limits.max_output_bytes,
             },
-            "stateEnabled": state_store is not None,
-            "determinism": dict(replay_context) if replay_context is not None else {"epochMs": int(time.time() * 1000), "seed": 1},
+            "stateEnabled": execution.state_store is not None,
+            "determinism": (dict(execution.replay_context) if execution.replay_context is not None
+                            else {"epochMs": int(time.time() * 1000), "seed": 1}),
         }
         try:
             reader.start()
@@ -158,8 +366,10 @@ class NodeWorkerRuntime:
             with ThreadPoolExecutor(max_workers=limits.max_concurrent_calls) as executor:
                 try:
                     self._write_line(stdin, request)
-                    return self._drive(stdin, messages, invoke, state_store, limits, executor, stop,
-                                       {entry.name for entry in catalog if not entry.read_only})
+                    return self._drive(stdin, messages, completed, execution.invoke, execution.state_store,
+                                       limits, executor, stop,
+                                       {entry.name for entry in execution.catalog if not entry.read_only},
+                                       execution.catalog, execution.delivery, execution.on_delivery, control)
                 finally:
                     # Join running callbacks and reject queued work through the
                     # same cancellation context, before releasing the parent.
@@ -180,29 +390,61 @@ class NodeWorkerRuntime:
 
     def _drive(
         self,
-        stdin: Any,
-        messages: queue.Queue[dict[str, Any]],
+        stdin: IO[str],
+        messages: queue.Queue[WireMessage],
+        completed: queue.Queue[str],
         invoke: ToolInvoker,
-        state_store: Any,
+        state_store: CodeModeStateStore | None,
         limits: CodeModeLimits,
         executor: ThreadPoolExecutor,
         stop: threading.Event,
         write_tools: set[str],
+        catalog: Sequence[ToolCatalogEntry],
+        delivery: Sequence[DeliveryReference],
+        on_delivery: DeliveryRecorder | None,
+        control: _SessionState,
     ) -> CodeModeResult:
-        pending: dict[str, Future[dict[str, Any]]] = {}
-        child_index = 0
+        pending: dict[str, Future[WireMessage]] = {}
+        pending_indices: dict[str, int | None] = {}
+        ready_ids: list[str] = []
+        delivery_cursor = 0
+        allocator = _ChildCallAllocator(limits.max_child_calls)
+
+        def mark_completed(_future: Future[WireMessage], *, call_id: str) -> None:
+            completed.put(call_id)
+
+        def completion_callback(call_id: str) -> Callable[[Future[WireMessage]], None]:
+            def callback(done: Future[WireMessage]) -> None:
+                mark_completed(done, call_id=call_id)
+            return callback
+
         while True:
             cancellation.check()
-            self._flush_completed(pending, stdin)
+            if control.stopping.is_set():
+                self._wait_callbacks(pending)
+                self._flush_completed(pending, pending_indices, completed, ready_ids, stdin, delivery,
+                                      delivery_cursor, on_delivery)
+                self._write_line(stdin, {"type": "terminate", "reason": control.reason})
+                return CodeModeResult(False, error_code="terminated", error=control.reason,
+                                      child_calls=allocator.count)
+            try:
+                delivery_cursor = self._flush_completed(
+                    pending, pending_indices, completed, ready_ids, stdin, delivery, delivery_cursor, on_delivery,
+                )
+            except Exception as exc:
+                return CodeModeResult(False, error_code="delivery_journal", error=str(exc),
+                                      child_calls=allocator.count)
             try:
                 message = messages.get(timeout=0.05)
             except queue.Empty:
                 continue
             kind = message.get("type")
             if kind == "call":
-                if child_index >= limits.max_child_calls:
+                try:
+                    child_index = allocator.reserve(1)[0]
+                except ValueError:
                     return CodeModeResult(False, error_code="call_limit", error="codemode child call limit exceeded",
-                                          child_calls=child_index)
+                                          child_calls=allocator.count)
                 call_id = str(message.get("callId", ""))
                 if len(pending) >= limits.max_pending_promises:
                     self._write_line(stdin, {
@@ -213,53 +455,63 @@ class NodeWorkerRuntime:
                     writing = message.get("name") in write_tools
                     if writing:
                         self._wait_callbacks(pending)
-                    pending[call_id] = executor.submit(
-                        self._handle_call, message, invoke, stop, cancellation.current_deadline(), child_index,
+                    future = executor.submit(
+                        self._handle_call, message, invoke, stop,
+                        min(cancellation.current_deadline() or float("inf"),
+                            time.monotonic() + control.request.tool_timeout_ms / 1000),
+                        child_index, allocator.reserve, control,
                     )
+                    future.add_done_callback(completion_callback(call_id))
+                    pending[call_id] = future
+                    pending_indices[call_id] = child_index
                     if writing:
                         self._wait_callbacks(pending)
-                child_index += 1
                 continue
-            if kind == "state":
-                if len(pending) >= limits.max_pending_promises:
-                    return CodeModeResult(False, error_code="pending_limit", error="codemode pending promise limit exceeded",
-                                          child_calls=child_index)
-                response = self._handle_state(message, state_store)
-                ready: Future[dict[str, Any]] = Future()
-                ready.set_result(response)
-                pending[str(message["callId"])] = ready
+            if kind in {"state", "discover"}:
+                terminal = self._queue_immediate(
+                    kind, message, pending, pending_indices, limits.max_pending_promises, state_store, catalog,
+                    stdin, completion_callback,
+                )
+                if terminal is not None:
+                    return terminal
                 continue
             if kind == "done":
-                try:
-                    value_bytes = len(json.dumps(message.get("value"), ensure_ascii=False,
-                                                separators=(",", ":")).encode("utf-8"))
-                except UnicodeEncodeError:
-                    return CodeModeResult(False, error_code="result_encoding",
-                                          error="codemode result contains invalid Unicode",
-                                          child_calls=child_index)
-                if message.get("ok") is True and value_bytes > limits.max_output_bytes:
-                    return CodeModeResult(False, error_code="output_limit", error="codemode output exceeds its byte limit",
-                                          child_calls=child_index)
-                if message["ok"] is True and message["unawaitedCalls"]:
-                    return CodeModeResult(
-                        False, error_code="unawaited_calls",
-                        error="codemode returned with unawaited calls; await every tool and state call",
-                        child_calls=message["childCalls"],
-                    )
-                return CodeModeResult(
-                    bool(message.get("ok")), value=message.get("value"),
-                    output=str(message.get("output", "") or ""),
-                    error_code=str(message.get("errorCode", "") or ""),
-                    error=str(message.get("error", "") or ""),
-                    child_calls=int(message.get("childCalls", 0) or 0),
-                )
+                return self._finish_message(message, allocator.count, limits)
             if kind == "error":
                 return CodeModeResult(False, error_code=str(message.get("code", "worker_error")), error=str(message.get("message", "worker error")))
             if kind == "eof":
                 return CodeModeResult(False, error_code="worker_exit", error="codemode worker exited without a result")
 
     @staticmethod
-    def _wait_callbacks(pending: dict[str, Future[dict[str, Any]]]) -> None:
+    def _finish_message(message: WireMessage, issued_count: int, limits: CodeModeLimits) -> CodeModeResult:
+        try:
+            value_bytes = len(json.dumps(message.get("value"), ensure_ascii=False,
+                                        separators=(",", ":")).encode("utf-8"))
+        except UnicodeEncodeError:
+            return CodeModeResult(False, error_code="result_encoding",
+                                  error="codemode result contains invalid Unicode",
+                                  child_calls=issued_count)
+        if message.get("ok") is True and value_bytes > limits.max_output_bytes:
+            return CodeModeResult(False, error_code="output_limit", error="codemode output exceeds its byte limit",
+                                  child_calls=issued_count)
+        raw_child_calls = message.get("childCalls", 0)
+        child_calls = raw_child_calls if type(raw_child_calls) is int else issued_count
+        if message["ok"] is True and message["unawaitedCalls"]:
+            return CodeModeResult(
+                False, error_code="unawaited_calls",
+                error="codemode returned with unawaited calls; await every tool and state call",
+                child_calls=child_calls,
+            )
+        return CodeModeResult(
+            bool(message.get("ok")), value=message.get("value"),
+            output=str(message.get("output", "") or ""),
+            error_code=str(message.get("errorCode", "") or ""),
+            error=str(message.get("error", "") or ""),
+            child_calls=max(issued_count, child_calls),
+        )
+
+    @staticmethod
+    def _wait_callbacks(pending: dict[str, Future[WireMessage]]) -> None:
         from concurrent.futures import wait
 
         unfinished = set(pending.values())
@@ -268,12 +520,38 @@ class NodeWorkerRuntime:
             _, unfinished = wait(unfinished, timeout=0.05)
 
     @staticmethod
+    def _queue_immediate(
+        kind: object, message: WireMessage, pending: dict[str, Future[WireMessage]],
+        pending_indices: dict[str, int | None], pending_limit: int, state_store: CodeModeStateStore | None,
+        catalog: Sequence[ToolCatalogEntry], stdin: IO[str],
+        completion_callback: Callable[[str], Callable[[Future[WireMessage]], None]],
+    ) -> CodeModeResult | None:
+        if len(pending) >= pending_limit:
+            if kind == "discover":
+                NodeWorkerRuntime._write_line(stdin, {
+                    "type": "result", "callId": str(message.get("callId", "")), "ok": False,
+                    "errorCode": "pending_limit", "error": "codemode pending promise limit exceeded",
+                })
+                return None
+            return CodeModeResult(False, error_code="pending_limit", error="codemode pending promise limit exceeded")
+        response = (NodeWorkerRuntime._handle_state(message, state_store)
+                    if kind == "state" else NodeWorkerRuntime._handle_discovery(message, catalog))
+        call_id = str(message.get("callId", ""))
+        ready_future: Future[WireMessage] = Future()
+        ready_future.set_result(response)
+        ready_future.add_done_callback(completion_callback(call_id))
+        pending[call_id] = ready_future
+        pending_indices[call_id] = None
+        return None
+
+    @staticmethod
     def _handle_state(
-        message: dict[str, Any], state_store: Any,
-    ) -> dict[str, Any]:
+        message: WireMessage, state_store: CodeModeStateStore | None,
+    ) -> WireMessage:
         call_id = str(message.get("callId", ""))
         key = str(message.get("key", ""))
         operation = str(message.get("op", ""))
+        response: WireMessage
         if state_store is None:
             return {"type": "stateResult", "callId": call_id, "ok": False,
                     "errorCode": "state_unavailable", "error": "codemode state is unavailable"}
@@ -296,6 +574,48 @@ class NodeWorkerRuntime:
         return response
 
     @staticmethod
+    def _handle_discovery(message: WireMessage, catalog: Sequence[ToolCatalogEntry]) -> WireMessage:
+        snapshot = build_catalog_snapshot(catalog)
+        call_id = str(message.get("callId", ""))
+        operation = str(message.get("op", ""))
+        if operation == "describe":
+            path = message.get("path")
+            if not isinstance(path, str):
+                return {"type": "result", "callId": call_id, "ok": False,
+                        "errorCode": "argument_encoding", "error": "describe path must be a string"}
+            item = catalog_describe(snapshot, path)
+            value: object = None if item is None else {
+                "path": item.path, "signature": item.signature, "description": item.description,
+            }
+            return {"type": "result", "callId": call_id, "ok": True, "value": value}
+        if operation != "search":
+            return {"type": "result", "callId": call_id, "ok": False,
+                    "errorCode": "discovery_operation", "error": "unknown catalog discovery operation"}
+        query = message.get("query", "")
+        options = message.get("options", {})
+        if not isinstance(query, str) or not isinstance(options, dict):
+            return {"type": "result", "callId": call_id, "ok": False,
+                    "errorCode": "argument_encoding", "error": "search arguments are invalid"}
+        namespace = options.get("namespace")
+        limit = options.get("limit", 10)
+        offset = options.get("offset", 0)
+        if namespace is not None and not isinstance(namespace, str):
+            return {"type": "result", "callId": call_id, "ok": False,
+                    "errorCode": "argument_encoding", "error": "search namespace must be a string"}
+        if type(limit) is not int or type(offset) is not int:
+            return {"type": "result", "callId": call_id, "ok": False,
+                    "errorCode": "argument_encoding", "error": "search limit and offset must be integers"}
+        try:
+            result = catalog_search(snapshot, query, namespace=namespace, limit=limit, offset=offset)
+        except ValueError as exc:
+            return {"type": "result", "callId": call_id, "ok": False,
+                    "errorCode": "argument_encoding", "error": str(exc)}
+        return {"type": "result", "callId": call_id, "ok": True,
+                "value": {"items": [{"path": item.path, "signature": item.signature, "description": item.description}
+                                     for item in result.items],
+                          "remaining": result.remaining, "next_offset": result.next_offset}}
+
+    @staticmethod
     def _plain_json(value: object) -> object:
         if isinstance(value, Mapping):
             return {str(key): NodeWorkerRuntime._plain_json(item) for key, item in value.items()}
@@ -304,11 +624,32 @@ class NodeWorkerRuntime:
         return value
 
     @staticmethod
-    def _flush_completed(pending: dict[str, Future[dict[str, Any]]], stdin: Any) -> None:
-        for call_id, future in tuple(pending.items()):
-            if not future.done():
+    def _flush_completed(
+        pending: dict[str, Future[WireMessage]], pending_indices: dict[str, int | None], completed: queue.Queue[str],
+        ready_ids: list[str], stdin: IO[str], delivery: Sequence[DeliveryReference], delivery_cursor: int,
+        on_delivery: DeliveryRecorder | None,
+    ) -> int:
+        while True:
+            try:
+                call_id = completed.get_nowait()
+                if call_id not in ready_ids:
+                    ready_ids.append(call_id)
+            except queue.Empty:
                 break
-            pending.pop(call_id, None)
+        while ready_ids:
+            expected = delivery[delivery_cursor] if delivery_cursor < len(delivery) else None
+            expected_id = expected["call_id"] if expected is not None else ""
+            if expected_id and expected_id not in ready_ids:
+                break
+            call_id = expected_id or ready_ids[0]
+            ready_ids.remove(call_id)
+            future = pending.pop(call_id, None)
+            child_index = pending_indices.pop(call_id)
+            if expected is not None and expected["child_index"] != child_index:
+                raise ValueError("CodeMode result delivery changed its child identity")
+            if future is None:
+                continue
+            response: WireMessage
             try:
                 response = future.result()
             except Exception as exc:
@@ -316,41 +657,58 @@ class NodeWorkerRuntime:
                     "type": "result", "callId": call_id, "ok": False,
                     "errorCode": "host_execution_error", "error": str(exc)[:400],
                 }
+            if on_delivery is not None:
+                on_delivery(call_id, child_index)
             NodeWorkerRuntime._write_line(stdin, response, call_id=call_id)
+            if expected_id == call_id:
+                delivery_cursor += 1
+        return delivery_cursor
 
     @staticmethod
-    def _write_line(stdin: Any, payload: dict[str, Any], *, call_id: str = "") -> None:
+    def _write_line(stdin: IO[str], payload: WireMessage, *, call_id: str = "") -> None:
         try:
             # Node readline also splits on U+2028/U+2029. Keep the JSONL frame
             # ASCII so data separators cannot become transport delimiters.
             encoded = json.dumps(payload, ensure_ascii=True, allow_nan=False)
         except (TypeError, ValueError, OverflowError):
-            encoded = json.dumps({
+            encoded = json.dumps(dict[str, object]({
                 "type": "result", "callId": call_id, "ok": False,
                 "errorCode": "host_result_encoding",
                 "error": "host tool result is not JSON serializable",
-            })
+            }))
         stdin.write(encoded + "\n")
         stdin.flush()
 
     @staticmethod
     def _handle_call(
-        message: dict[str, Any], invoke: ToolInvoker, stop: threading.Event, deadline: float | None,
-        child_index: int,
-    ) -> dict[str, Any]:
+        message: WireMessage, invoke: ToolInvoker, stop: threading.Event, deadline: float | None,
+        child_index: int, allocate_child: Callable[[int], tuple[int, ...]],
+        control: _SessionState,
+    ) -> WireMessage:
         call_id = str(message.get("callId", ""))
         name = str(message.get("name", ""))
         args = message.get("args")
         if not isinstance(args, dict):
             return {"type": "result", "callId": call_id, "ok": False, "error": "tool args must be an object"}
+        started = False
         try:
             with cancellation.scope(stop), cancellation.deadline_scope(deadline):
                 cancellation.check()
-                token = rpc_child_index.set(child_index)
+                with control.condition:
+                    if control.stopping.is_set():
+                        raise RuntimeError("CodeMode execution is stopping; new child calls are closed")
+                    control.emit("child_started", {"call_id": call_id, "child_index": child_index, "name": name})
+                    started = True
+                index_token = rpc_child_index.set(child_index)
+                allocator_token = rpc_child_allocator.set(allocate_child)
                 try:
-                    value = invoke(name, dict(args))
+                    value = invoke(name, {key: item for key, item in decode_json_object(message["args"]).items()})
                 finally:
-                    rpc_child_index.reset(token)
+                    rpc_child_allocator.reset(allocator_token)
+                    rpc_child_index.reset(index_token)
             return {"type": "result", "callId": call_id, "ok": True, "value": value}
         except Exception as exc:
             return {"type": "result", "callId": call_id, "ok": False, "error": str(exc)[:400]}
+        finally:
+            if started:
+                control.emit("child_finished", {"call_id": call_id, "child_index": child_index, "name": name})

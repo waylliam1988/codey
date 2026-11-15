@@ -11,9 +11,16 @@ from unittest.mock import patch
 
 from codey.codemode import catalog as catalog_module
 from codey.codemode.host import CodeModeHost
-from codey.codemode.runtime import NodeWorkerRuntime, ToolInvoker
-from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry, ToolCatalogSnapshot
-from codey.types.json_value import JsonObject, JsonValue
+from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
+from codey.codemode.state import CodeModeStateStore
+from codey.codemode.types import (
+    CodeModeLimits,
+    CodeModeResult,
+    DeliveryReference,
+    ToolCatalogEntry,
+    ToolCatalogSnapshot,
+)
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object
 from tools.completion_explanation_ab import append_json
 from tools.structured_surface import prechecked_invoke
 
@@ -136,20 +143,22 @@ def prototype(directory: Path, features: frozenset[str], *, file_feedback: bool 
         return prechecked_invoke(host, name, args, invoke) if name == "browser_wait" else invoke(host, name, args)
 
     def execute_entry(runtime: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
-                      inputs: Mapping[str, object] | None = None, state_store: object = None,
-                      replay_context: Mapping[str, object] | None = None, limits: CodeModeLimits | None = None) -> CodeModeResult:
+                      inputs: Mapping[str, object] | None = None, state_store: CodeModeStateStore | None = None,
+                      replay_context: Mapping[str, object] | None = None,
+                      delivery: Sequence[DeliveryReference] = (), on_delivery: DeliveryRecorder | None = None,
+                      limits: CodeModeLimits | None = None) -> CodeModeResult:
         file_actions: list[JsonValue] = []
 
         def collect(name: str, args: dict[str, object]) -> object:
-            result = invoke(name, args)
+            result = decode_json_object(invoke(name, args))
             if (file_feedback and RESULTS in features and name in {"browser_upload", "browser_download"}
-                    and isinstance(result, dict) and result.get("ok") is True and result.get("result_ref")):
+                    and result.get("ok") is True and result.get("result_ref")):
                 row: JsonObject = {"tool": name, "receipt_ref": str(result["result_ref"])}
                 file_actions.append(row)
             return result
 
         result = execute(runtime, wrapped_code(code, catalog, features), catalog=catalog, invoke=collect, inputs=inputs,
-                         state_store=state_store, replay_context=replay_context, limits=limits)
+                         state_store=state_store, replay_context=replay_context, delivery=delivery, on_delivery=on_delivery, limits=limits)
         append_json(directory / "browser-entry-programs.jsonl", {"code": code, "ok": result.ok,
                     "error_code": result.error_code, "successful_file_actions": file_actions})
         if result.ok or not file_actions:

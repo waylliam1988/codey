@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 
 import pytest
 
 from codey.codemode.catalog import build_codemode_catalog, render_declarations, snapshot_catalog
+from codey.codemode.host import CodeModeHost
 from codey.codemode.runtime import NodeWorkerRuntime
-from codey.codemode.types import CodeModeLimits
+from codey.codemode.types import CodeModeLimits, ToolCatalogEntry
 from codey.operations.kernel_prompt import _browser_followup_context, _browser_read_context
 from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_tools
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
@@ -16,7 +18,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import JsonObject, canonical_json_object, decode_json_object, parse_json_object
+from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object, parse_json_object
 
 GRANTS = frozenset({"control", "web.read", "browser.observe", "browser.interact"})
 
@@ -65,16 +67,18 @@ def test_frozen_contract_dispatches_each_leaf_once(purpose: str, expected: list[
     assert next(s.declarations for s in snapshot.model_specs if s.name == "codemode") == render_declarations(catalog)
     calls: list[tuple[str, JsonObject]] = []
 
-    def invoke(name: str, args: dict[str, object]) -> object:
+    def invoke(name: str, args: JsonObject) -> ToolResult:
         calls.append((name, decode_json_object(args)))
-        return {"ok": True, "value": "leaf-result", "result_ref": f"receipt-{len(calls)}"}
+        return ToolResult(ok=True, call=ToolCall(name, decode_json_object(args)), model_text="leaf-result",
+                          canonical={"value": _valid_browser_value(name)})
 
     result = NodeWorkerRuntime().execute("return await tools.browser_click(inputs);", catalog=catalog.entries,
-        inputs={"ref": "observed", "purpose": purpose}, invoke=invoke)
+        inputs={"ref": "observed", "purpose": purpose},
+        invoke=_browser_host(catalog.entries, invoke).invoke)
     assert result.ok, result.error
     assert [name for name, _ in calls] == expected
     assert result.child_calls == len(expected)
-    assert result.value == {"ok": True, "value": "leaf-result", "result_ref": "receipt-1"}
+    assert result.value == {"ok": True, "value": _valid_browser_value("browser_click")}
     if purpose == "result":
         assert calls[1][1] == {**wait, "timeout_ms": 5000}
 
@@ -92,27 +96,38 @@ def test_unavailable_plan_rejects_before_click(failure: str) -> None:
         args["unexpected"] = True
     calls: list[str] = []
 
-    def invoke(name: str, _args: dict[str, object]) -> object:
+    def invoke(name: str, _args: JsonObject) -> ToolResult:
         calls.append(name)
-        return {"ok": True, "value": "unexpected"}
+        call = ToolCall(name, {})
+        return ToolResult(ok=True, call=call, model_text="unexpected", canonical={"value": _valid_browser_value(name)})
 
     limits = replace(CodeModeLimits(), max_child_calls=1, max_concurrent_calls=1) if failure == "budget" else None
     result = NodeWorkerRuntime().execute("return await tools.browser_click(inputs);", catalog=catalog.entries,
-                                        inputs=args, invoke=invoke, limits=limits)
-    assert not result.ok and not calls, result
+                                        inputs=args,
+                                        invoke=_browser_host(catalog.entries, invoke).invoke,
+                                        limits=limits)
+    assert not result.ok, result
+    assert not calls
 
 
-def test_read_failure_returns_failure_instead_of_successful_click() -> None:
+@pytest.mark.parametrize("raises", [False, True])
+def test_read_failure_returns_failure_instead_of_successful_click(raises: bool) -> None:
     session = TaskSession(TaskPolicy(GRANTS), task_kind="chat")
     catalog = snapshot_catalog(offer_browser_tools(build_turn_snapshot(session), session))
     calls: list[str] = []
 
-    def invoke(name: str, _args: dict[str, object]) -> object:
+    def invoke(name: str, _args: JsonObject) -> ToolResult:
         calls.append(name)
-        return {"ok": False, "error": "read unavailable"} if name == "browser_read" else {"ok": True, "value": "clicked"}
+        call = ToolCall(name, {})
+        if name == "browser_read":
+            if raises:
+                raise ValueError("read unavailable")
+            return ToolResult(ok=False, call=call, model_text="read unavailable")
+        return ToolResult(ok=True, call=call, model_text="clicked", canonical={"value": _valid_browser_value(name)})
 
     result = NodeWorkerRuntime().execute("return await tools.browser_click(inputs);", catalog=catalog.entries,
-                                        inputs={"ref": "observed", "purpose": "result"}, invoke=invoke)
+                                        inputs={"ref": "observed", "purpose": "result"},
+                                        invoke=_browser_host(catalog.entries, invoke).invoke)
     assert result.ok and calls == ["browser_click", "browser_read"]
     value = decode_json_object(result.value)
     assert value["ok"] is False and "do not repeat" in str(value["error"])
@@ -145,12 +160,37 @@ def test_composite_freezes_arguments_once_before_selecting_the_plan() -> None:
     catalog = snapshot_catalog(offer_browser_tools(build_turn_snapshot(session), session))
     calls: list[tuple[str, JsonObject]] = []
 
-    def invoke(name: str, args: dict[str, object]) -> object:
+    def invoke(name: str, args: JsonObject) -> ToolResult:
         calls.append((name, decode_json_object(args)))
-        return {"ok": True, "value": "leaf"}
+        return ToolResult(ok=True, call=ToolCall(name, decode_json_object(args)), model_text="leaf",
+                          canonical={"value": _valid_browser_value(name)})
 
     result = NodeWorkerRuntime().execute(
         'let reads=0; const args={ref:"observed", get purpose(){reads++; return reads===1?"controls":"result";}}; '
-        'await tools.browser_click(args); return reads;', catalog=catalog.entries, invoke=invoke)
+        'await tools.browser_click(args); return reads;', catalog=catalog.entries,
+        invoke=_browser_host(catalog.entries, invoke).invoke)
     assert result.ok and result.value == 1, result
-    assert calls == [("browser_click", {"ref": "observed", "purpose": "controls"}), ("browser_snapshot", {})]
+    assert calls == [("browser_click", {"ref": "observed"}), ("browser_snapshot", {})]
+
+
+def _valid_browser_value(name: str) -> JsonValue:
+    if name == "browser_read":
+        return "leaf"
+    if name == "browser_snapshot":
+        return {
+            "page_id": "page", "page_url": "https://example.test", "generation": 1, "text": "leaf",
+            "complete": True, "scope": "page", "text_truncated": False, "elements_truncated": False,
+            "elements": [], "contexts": [], "file_controls": [],
+        }
+    if name == "browser_wait":
+        return {"action": "wait", "condition": "text", "matched": True,
+                "page_url": "https://example.test", "text": "leaf"}
+    return {"action": "click", "delivery": "delivered", "text": "leaf", "ref": "observed",
+            "observation": "leaf", "effect_verified": True, "page_url": "https://example.test"}
+
+
+def _browser_host(catalog: Sequence[ToolCatalogEntry], invoke: Callable[[str, JsonObject], ToolResult]) -> CodeModeHost:
+    def execute(call: ToolCall) -> ToolResult:
+        return invoke(call.name, call.args)
+
+    return CodeModeHost(execution_id="test", catalog=catalog, execute=execute, allow_writes=True)

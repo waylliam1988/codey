@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from codey.codemode.types import ToolCatalogEntry, ToolCatalogSnapshot
+from codey.codemode.types import (
+    CatalogNamespaceSummary,
+    CatalogSearchItem,
+    CatalogSearchResult,
+    CatalogSummary,
+    ToolCatalogEntry,
+    ToolCatalogSnapshot,
+)
 from codey.operations.browser_references import BrowserReferences, reference_spec
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.result_schema import schema_typescript
@@ -166,43 +174,172 @@ def build_codemode_catalog(
     return build_catalog_snapshot(allowed)
 
 
-def render_declarations(snapshot: ToolCatalogSnapshot) -> str:
-    from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE, edit_guidance
+_PINNED = ("read_file", "grep", "browser_snapshot", "edit")
+MODEL_CATALOG_BUDGET_BYTES = 24_000
 
-    names = {entry.name for entry in snapshot.entries}
-    guidance = ""
-    if {"edit", "read_file"} <= names:
-        edit = next(entry for entry in snapshot.entries if entry.name == "edit")
-        parameters = canonical_json_object(edit.parameters)
-        guidance = edit_guidance(require_json_strings(parameters["required"], "required"),
-                                 tuple(canonical_json_object(parameters["properties"])))
+
+def _edit_guidance(snapshot: ToolCatalogSnapshot) -> str:
+    from codey.codemode.json_edit import edit_guidance
+
+    if not {"edit", "read_file"} <= {entry.name for entry in snapshot.entries}:
+        return ""
+    edit = next(entry for entry in snapshot.entries if entry.name == "edit")
+    parameters = canonical_json_object(edit.parameters)
+    return edit_guidance(require_json_strings(parameters.get("required", []), "required"),
+                         tuple(canonical_json_object(parameters.get("properties", {}))))
+
+
+def _entry_signatures(entry: ToolCatalogEntry, *, json_edit: bool) -> tuple[str, ...]:
+    value = schema_typescript(entry.output_schema)
+    ordinary = f"{entry.name}(args: {schema_typescript(entry.parameters)}): Result<{value}>;"
+    if entry.name == "edit" and json_edit:
+        return (f"edit(args: {{base_result_ref: string; changes: Record<string, JsonEditValue>}}): Result<{value}>;",
+                ordinary)
+    return (ordinary,)
+
+
+def _entry_declarations(entry: ToolCatalogEntry, *, json_edit: bool) -> tuple[str, ...]:
+    lines = [f"  // {line}" for line in entry.description.splitlines()]
+    for name, schema in canonical_json_object(entry.parameters.get("properties", {})).items():
+        description = canonical_json_object(schema).get("description")
+        if isinstance(description, str) and description:
+            lines.append(f"  // {entry.name}.{name}: {description}")
+    lines.extend("  " + signature for signature in _entry_signatures(entry, json_edit=json_edit))
+    return tuple(lines)
+
+
+def render_declarations(snapshot: ToolCatalogSnapshot, *, budget_bytes: int = MODEL_CATALOG_BUDGET_BYTES) -> str:
+    """Render a bounded model view; discovery retains the complete frozen contract."""
+    from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
+
+    guidance = _edit_guidance(snapshot)
     json_edit = guidance == JSON_FIELD_EDIT_GUIDANCE
-    lines = ["// tools.NAME uses NAME's declared arguments; returns Result<T>."]
-    if guidance:
-        lines.extend("// " + line for line in guidance.splitlines())
+    header = ["// tools.NAME uses NAME's declared arguments; returns Result<T>."]
+    header.extend("// " + line for line in guidance.splitlines())
     if json_edit:
-        lines.append("type JsonEditValue = null | boolean | number | string | JsonEditValue[] | {[key: string]: JsonEditValue};")
-    lines.extend((
-        "type ToolResult<T> =",
-        "  | {ok: true; value: T; result_ref?: string}",
-        "  | {ok: false; error: string};",
+        header.append("type JsonEditValue = null | boolean | number | string | JsonEditValue[] | {[key: string]: JsonEditValue};")
+    header.extend((
+        "type ToolResult<T> = {ok: true; value: T; result_ref?: string} | {ok: false; error: string};",
         "type Result<T> = Promise<ToolResult<T>>;",
         "declare function unwrap<T>(result: ToolResult<T>): T;",
         "declare const tools: {",
     ))
+    footer = [
+        "};", "type CatalogSearchItem = {path: string; signature: string; description: string};",
+        "declare function search(query?: string, options?: {namespace?: string; limit?: number; offset?: number}): Promise<{items: CatalogSearchItem[]; remaining: number; next_offset: number | null}>;",
+        "declare function describe(path: string): Promise<CatalogSearchItem | null>;",
+        "// Discovery only: await describe('tools.NAME') for the full omitted declaration. Calls still require authorization.",
+        f"// catalog_digest={snapshot.digest}",
+    ]
+    groups: dict[str, int] = {}
     for entry in snapshot.entries:
-        # Aggregated leaves no longer have standalone model definitions.
-        # Keep their semantics as well as their argument/return shapes.
-        lines.extend(f"  // {line}" for line in entry.description.splitlines())
-        properties = canonical_json_object(entry.parameters.get("properties", {}))
-        for name, schema in properties.items():
-            description = canonical_json_object(schema).get("description")
-            if description:
-                lines.append(f"  // {entry.name}.{name}: {description}")
-        value = schema_typescript(entry.output_schema)
-        if entry.name == "edit" and json_edit:
-            lines.append("  // Pass the original complete read result and a nonempty object of existing top-level fields.")
-            lines.append(f"  edit(args: {{read: Awaited<ReturnType<typeof tools.read_file>>; changes: Record<string, JsonEditValue>}}): Result<{value}>;")
-        lines.append(f"  {entry.name}(args: {schema_typescript(entry.parameters)}): Result<{value}>;")
-    lines.extend(("};", f"// catalog_digest={snapshot.digest}"))
-    return "\n".join(lines)
+        namespace = _catalog_namespace(entry)
+        groups[namespace] = groups.get(namespace, 0) + 1
+    footer.extend(f"// {namespace}: {count} tools" for namespace, count in sorted(groups.items()))
+    size = len("\n".join((*header, *footer)).encode("utf-8"))
+    if type(budget_bytes) is not int or budget_bytes < size:
+        raise ValueError(f"catalog budget must cover the {size}-byte discovery header")
+    selected: dict[str, tuple[str, ...]] = {}
+    priority = {name: index for index, name in enumerate(_PINNED)}
+
+    def entry_order(entry: ToolCatalogEntry) -> tuple[int, str]:
+        return priority.get(entry.name, len(priority)), entry.name
+
+    for entry in sorted(snapshot.entries, key=entry_order):
+        lines = _entry_declarations(entry, json_edit=json_edit)
+        cost = len(("\n".join(lines) + "\n").encode("utf-8"))
+        if size + cost <= budget_bytes:
+            selected[entry.name] = lines
+            size += cost
+    body = [line for entry in snapshot.entries for line in selected.get(entry.name, ())]
+    return "\n".join((*header, *body, *footer))
+
+
+def _catalog_namespace(entry: ToolCatalogEntry) -> str:
+    return entry.namespace or "tools"
+
+
+def _catalog_item(entry: ToolCatalogEntry, snapshot: ToolCatalogSnapshot) -> CatalogSearchItem:
+    from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE
+
+    signatures = _entry_signatures(entry, json_edit=_edit_guidance(snapshot) == JSON_FIELD_EDIT_GUIDANCE)
+    declarations = _entry_declarations(entry, json_edit=_edit_guidance(snapshot) == JSON_FIELD_EDIT_GUIDANCE)
+    descriptions = [line.removeprefix("  // ") for line in declarations if line.startswith("  // ")]
+    if entry.name == "edit" and _edit_guidance(snapshot):
+        descriptions.append(_edit_guidance(snapshot))
+    return CatalogSearchItem("tools." + entry.name, "\n".join("tools." + line for line in signatures),
+                             "\n".join(descriptions))
+
+
+def catalog_summary(snapshot: ToolCatalogSnapshot, *, budget: int = 2_000) -> CatalogSummary:
+    """Budget in UTF-8 bytes, including namespace counts and short signatures."""
+    if type(budget) is not int or budget <= 0:
+        raise ValueError("catalog summary budget must be a positive byte count")
+    groups: dict[str, list[CatalogSearchItem]] = {}
+    for entry in snapshot.entries:
+        groups.setdefault(_catalog_namespace(entry), []).append(_catalog_item(entry, snapshot))
+    lines = [f"{namespace}: {len(entries)} tools" for namespace, entries in sorted(groups.items())]
+    used = len("\n".join(lines).encode("utf-8"))
+    if used > budget:
+        raise ValueError("catalog summary budget cannot cover namespace counts")
+    selected: dict[str, list[CatalogSearchItem]] = {namespace: [] for namespace in groups}
+    candidates = [(namespace, item) for namespace, entries in groups.items() for item in entries]
+    priority = {"tools." + name: index for index, name in enumerate(_PINNED)}
+
+    def item_order(pair: tuple[str, CatalogSearchItem]) -> tuple[int, str]:
+        return priority.get(pair[1].path, len(priority)), pair[1].path
+
+    for namespace, item in sorted(candidates, key=item_order):
+        line = "- " + item.signature.splitlines()[0]
+        cost = len(("\n" + line).encode("utf-8"))
+        if used + cost <= budget:
+            lines.append(line)
+            selected[namespace].append(item)
+            used += cost
+    namespaces = tuple(CatalogNamespaceSummary(name, len(items), tuple(selected[name]))
+                       for name, items in sorted(groups.items()))
+    return CatalogSummary(len(snapshot.entries), sum(len(items) for items in selected.values()), namespaces,
+                          "\n".join(lines))
+
+
+def _search_terms(value: str) -> tuple[str, ...]:
+    return tuple(term for term in re.split(r"[\W_]+", value.casefold()) if term)
+
+
+def catalog_search(
+    snapshot: ToolCatalogSnapshot,
+    query: str = "",
+    *,
+    namespace: str | None = None,
+    limit: int = 10,
+    offset: int = 0,
+) -> CatalogSearchResult:
+    if type(limit) is not int or limit <= 0 or type(offset) is not int or offset < 0:
+        raise ValueError("catalog search limit must be positive and offset must be non-negative")
+    normalized_namespace = namespace.casefold() if namespace is not None else None
+    terms = _search_terms(query)
+    ranked: list[tuple[int, CatalogSearchItem]] = []
+    for entry in snapshot.entries:
+        item = _catalog_item(entry, snapshot)
+        current_namespace = _catalog_namespace(entry).casefold()
+        if normalized_namespace is not None and current_namespace != normalized_namespace:
+            continue
+        haystack = " ".join((item.path, item.description, item.signature)).casefold()
+        words = _search_terms(haystack)
+        if terms and not all(term in words or term in haystack for term in terms):
+            continue
+        score = sum((3 if term in _search_terms(item.path) else 1) for term in terms)
+        ranked.append((-score, item))
+    def ranking(pair: tuple[int, CatalogSearchItem]) -> tuple[int, str]:
+        return pair[0], pair[1].path
+
+    ranked.sort(key=ranking)
+    matches = [item for _, item in ranked]
+    page = tuple(matches[offset:offset + limit])
+    remaining = max(0, len(matches) - offset - len(page))
+    next_offset = offset + len(page) if remaining else None
+    return CatalogSearchResult(page, remaining, next_offset)
+
+
+def catalog_describe(snapshot: ToolCatalogSnapshot, path: str) -> CatalogSearchItem | None:
+    return next((_catalog_item(entry, snapshot) for entry in snapshot.entries if "tools." + entry.name == path), None)

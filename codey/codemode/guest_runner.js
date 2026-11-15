@@ -64,6 +64,18 @@ function unwrap(result) {
 function encodeJson(value, label, errorCode, properties = {}) {
   const locations = new WeakMap();
   return JSON.stringify(value, function (key, item) {
+    for (const text of [key, ...(typeof item === "string" ? [item] : [])]) {
+      for (let i = 0; i < text.length; i++) {
+        const unit = text.charCodeAt(i);
+        if (unit >= 0xD800 && unit <= 0xDBFF) {
+          const next = text.charCodeAt(++i);
+          if (next >= 0xDC00 && next <= 0xDFFF) continue;
+        } else if (unit < 0xDC00 || unit > 0xDFFF) continue;
+        const error = new Error(label + " must contain valid Unicode strings");
+        error.code = errorCode;
+        throw error;
+      }
+    }
     const location = locations.has(this) ? locations.get(this) + "[" + JSON.stringify(key) + "]" : "$";
     if (item !== null && typeof item === "object") locations.set(item, location);
     if (item === undefined || ["function", "symbol", "bigint"].includes(typeof item)
@@ -88,9 +100,8 @@ function checkedToolResult(value, name) {
     get(target, property, receiver) {
       if (typeof property === "string" && !["then", "toJSON", "ok", "value", "error", "result_ref"].includes(property)
           && !Reflect.has(target, property)) {
-        const hint = name === "read_file" && property === "base_result_ref"
-          ? ". For whole-file edits, use readResult.result_ref, not readResult.value.result_ref."
-          : "; use unwrap(result)." + property + " or result.value." + property + ". Receipt metadata result_ref stays on result.";
+        const hint = "; use unwrap(result)." + property + " or result.value." + property
+          + ". Receipt metadata result_ref stays on result.";
         const error = new Error("tools." + name + " returned Result<T>, not its data. Undeclared result field "
           + JSON.stringify(property) + hint);
         error.code = "result_contract";
@@ -118,54 +129,15 @@ function toolsProxy(path = []) {
   });
 }
 
-function callTool(name, args, compose = true) {
+function callTool(name, args) {
     if (!active.catalog.has(name)) {
       throw new Error(`tool is not in the frozen catalog: ${name}`);
-    }
-    if (compose && name === "browser_click" && args !== null && typeof args === "object" && Object.hasOwn(args, "purpose")) {
-      args = JSON.parse(encodeJson(args, "Arguments for tools." + name, "argument_encoding",
-        active.catalog.get(name)?.parameters?.properties));
-      const plans = active.catalog.get(name)?.parameters?.["x-codey-click-plans"];
-      const steps = plans && Object.hasOwn(plans, args.purpose) ? plans[args.purpose] : undefined;
-      if (!Array.isArray(steps) || Object.keys(args).some(key => !["ref", "purpose"].includes(key))) {
-        throw new Error("The requested click follow-up is unavailable or its arguments are invalid.");
-      }
-      if (active.calls + 1 + steps.length > active.limits.maxChildCalls) {
-        throw new Error("codemode child call limit cannot cover the requested click follow-up");
-      }
-      const record = {observed: false};
-      active.issued.set(Symbol(), record);
-      const promise = (async () => {
-        const click = await callTool(name, args, false);
-        if (!click.ok) return click;
-        for (const step of steps) {
-          const result = await callTool(step.name, step.args);
-          if (!result.ok) {
-            return {ok: false, error: "Click delivered; " + step.name + " failed: " + result.error
-              + ". Continue from the committed receipts; do not repeat the click."};
-          }
-        }
-        return click;
-      })();
-      return Object.freeze({
-        then(accept, decline) { record.observed = true; return promise.then(accept, decline); },
-        catch(decline) { record.observed = true; return promise.catch(decline); },
-        finally(callback) { record.observed = true; return promise.finally(callback); },
-      });
     }
     if (active.calls >= active.limits.maxChildCalls) {
       throw new Error("codemode child call limit exceeded");
     }
     if (active.pending >= active.limits.maxPendingPromises) {
       throw new Error("codemode pending promise limit exceeded");
-    }
-    if (name === "edit" && args !== null && typeof args === "object"
-        && (Object.hasOwn(args, "read") || Object.hasOwn(args, "changes"))) {
-      const ref = active.readReceipts.get(args.read);
-      if (!ref || !Object.hasOwn(args, "read") || !Object.hasOwn(args, "changes") || Object.keys(args).length !== 2) {
-        throw new Error("JSON edit requires {read, changes}. Pass the original tools.read_file result from this program as read. Do not unwrap read.");
-      }
-      args = {base_result_ref: ref, changes: args.changes};
     }
     const encodedArgs = encodeJson(args, "Arguments for tools." + name, "argument_encoding",
       active.catalog.get(name)?.parameters?.properties);
@@ -181,20 +153,49 @@ function stateCall(op, key, value) {
   if (!active?.stateEnabled) {
     return Promise.reject(new Error("codemode state is unavailable"));
   }
+  if (active.pending >= active.limits.maxPendingPromises) {
+    throw new Error("codemode pending promise limit exceeded");
+  }
+  const encoded = encodeJson({op, key, ...(op === "store" ? {value} : {})}, "State arguments", "argument_encoding");
   const callId = `state-${++nextStateCall}`;
+  active.pending += 1;
   const result = trackedCall(callId, true);
-  send({ type: "state", callId, op, key, ...(op === "store" ? { value } : {}) });
+  send({ type: "state", callId, ...JSON.parse(encoded) });
   return result;
 }
 
-function trackedCall(callId, state = false, name = "") {
+function search(query = "", options = {}) {
+  if (active.pending >= active.limits.maxPendingPromises) {
+    throw new Error("codemode pending promise limit exceeded");
+  }
+  const encoded = encodeJson({query, options}, "search arguments", "argument_encoding");
+  const callId = `discover-${++nextStateCall}`;
+  active.pending += 1;
+  const result = trackedCall(callId, false, "", true);
+  send({ type: "discover", callId, op: "search", ...JSON.parse(encoded) });
+  return result;
+}
+
+function describe(path) {
+  if (active.pending >= active.limits.maxPendingPromises) {
+    throw new Error("codemode pending promise limit exceeded");
+  }
+  const encoded = encodeJson({path}, "describe arguments", "argument_encoding");
+  const callId = `discover-${++nextStateCall}`;
+  active.pending += 1;
+  const result = trackedCall(callId, false, "", true);
+  send({ type: "discover", callId, op: "describe", ...JSON.parse(encoded) });
+  return result;
+}
+
+function trackedCall(callId, state = false, name = "", discovery = false) {
   let resolve;
   let reject;
   const promise = new Promise((accept, decline) => {
     resolve = accept;
     reject = decline;
   });
-  const record = { resolve, reject, state, name, observed: false };
+  const record = { resolve, reject, state, discovery, name, observed: false };
   pending.set(callId, record);
   active.issued.set(callId, record);
   return Object.freeze({
@@ -218,18 +219,8 @@ function unawaitedCallCount() {
   return [...active.issued.values()].filter((call) => !call.observed).length;
 }
 
-function deniedSource(code) {
-  return /\b(?:process|require|import|fetch|eval|globalThis|__dirname|__filename|child_process|fs|constructor)\b/i.test(code)
-    || /\bFunction\s*\(/.test(code)
-    || /tools\s*(?:\.\s*codemode|\[\s*["']codemode["']\s*\])/i.test(code);
-}
-
 async function execute(request) {
   const code = String(request.code ?? "");
-  if (deniedSource(code)) {
-    send({ type: "done", ok: false, errorCode: "sandbox_denied", error: "direct host access is denied", childCalls: 0, unawaitedCalls: 0 });
-    return;
-  }
   const catalog = Array.isArray(request.catalog) ? request.catalog : [];
   const limits = request.limits ?? {};
   active = {
@@ -243,7 +234,6 @@ async function execute(request) {
     calls: 0,
     pending: 0,
     issued: new Map(),
-    readReceipts: new WeakMap(),
     stateEnabled: Boolean(request.stateEnabled),
   };
   Object.assign(globalThis, {
@@ -251,6 +241,8 @@ async function execute(request) {
     unwrap,
     store: (key, value) => stateCall("store", String(key), value),
     load: (key) => stateCall("load", String(key)),
+    search,
+    describe,
     console: Object.freeze({ log: rejectConsole, error: rejectConsole }),
   });
   // Fix the ambient clock and PRNG for one durable execution. Reconstructing
@@ -329,16 +321,17 @@ async function execute(request) {
 return async (line) => {
   let message;
   try { message = JSON.parse(line); } catch { send({ type: "error", code: "protocol", message: "invalid request JSON" }); return; }
+  if (message.type === "terminate") {
+    for (const waiter of pending.values()) waiter.reject(new Error(String(message.reason)));
+    return;
+  }
   if (message.type === "result" || message.type === "stateResult") {
     const waiter = pending.get(message.callId);
     if (!waiter) return;
     pending.delete(message.callId);
-    if (active && message.type === "result") active.pending = Math.max(0, active.pending - 1);
+    if (active && (message.type === "result" || message.type === "stateResult")) active.pending = Math.max(0, active.pending - 1);
     if (message.ok) {
-      const result = waiter.state ? message.value : checkedToolResult(message.value, waiter.name);
-      if (active && waiter.name === "read_file" && result?.ok === true && typeof result.result_ref === "string") {
-        active.readReceipts.set(result, result.result_ref);
-      }
+      const result = waiter.state || waiter.discovery ? message.value : checkedToolResult(message.value, waiter.name);
       waiter.resolve(result);
     } else {
       const error = new Error(String(message.error ?? "tool call failed"));

@@ -3,16 +3,27 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
+from typing import TypedDict
 
 from codey.toolchain.result_schema import text_output_schema
+from codey.types.json_value import JsonValue, canonical_json_object
 
 
-def _freeze_value(value: object) -> object:
-    if isinstance(value, Mapping):
+class DeliveryReference(TypedDict):
+    call_id: str
+    child_index: int | None
+
+
+def _freeze_value(value: JsonValue) -> object:
+    if isinstance(value, dict):
         return MappingProxyType({key: _freeze_value(item) for key, item in value.items()})
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
         return tuple(_freeze_value(item) for item in value)
     return value
+
+
+def _freeze_mapping(value: Mapping[str, object]) -> Mapping[str, object]:
+    return MappingProxyType({key: _freeze_value(item) for key, item in canonical_json_object(value).items()})
 
 
 @dataclass(frozen=True)
@@ -31,16 +42,15 @@ class CodeModeLimits:
     max_rpc_bytes: int = 1_000_000
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "source_bytes",
-            "timeout_ms",
-            "max_child_calls",
-            "max_concurrent_calls",
-            "max_output_bytes",
-            "max_pending_promises",
-            "max_rpc_bytes",
+        for field_name, value in (
+            ("source_bytes", self.source_bytes),
+            ("timeout_ms", self.timeout_ms),
+            ("max_child_calls", self.max_child_calls),
+            ("max_concurrent_calls", self.max_concurrent_calls),
+            ("max_output_bytes", self.max_output_bytes),
+            ("max_pending_promises", self.max_pending_promises),
+            ("max_rpc_bytes", self.max_rpc_bytes),
         ):
-            value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise ValueError(f"{field_name} must be a positive integer")
         if self.max_concurrent_calls > self.max_child_calls:
@@ -55,7 +65,7 @@ class CodeModeProgram:
     repair_of: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "inputs", _freeze_value(self.inputs))
+        object.__setattr__(self, "inputs", _freeze_mapping(self.inputs))
         object.__setattr__(self, "repair_of", str(self.repair_of or "").strip())
 
 
@@ -76,15 +86,60 @@ class ToolCatalogEntry:
             raise ValueError("catalog tool name must be non-empty")
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "description", str(self.description or ""))
-        frozen = _freeze_value(self.parameters)
-        object.__setattr__(self, "parameters", frozen if isinstance(frozen, Mapping) else MappingProxyType({}))
-        object.__setattr__(self, "output_schema", _freeze_value(self.output_schema))
+        object.__setattr__(self, "parameters", _freeze_mapping(self.parameters))
+        object.__setattr__(self, "output_schema", _freeze_mapping(self.output_schema))
 
 
 @dataclass(frozen=True)
 class ToolCatalogSnapshot:
     entries: tuple[ToolCatalogEntry, ...]
     digest: str
+
+    def summary(self, *, budget: int = 2_000) -> CatalogSummary:
+        from codey.codemode.catalog import catalog_summary
+
+        return catalog_summary(self, budget=budget)
+
+    def search(
+        self, query: str = "", *, namespace: str | None = None, limit: int = 10, offset: int = 0,
+    ) -> CatalogSearchResult:
+        from codey.codemode.catalog import catalog_search
+
+        return catalog_search(self, query, namespace=namespace, limit=limit, offset=offset)
+
+    def describe(self, path: str) -> CatalogSearchItem | None:
+        from codey.codemode.catalog import catalog_describe
+
+        return catalog_describe(self, path)
+
+
+@dataclass(frozen=True)
+class CatalogSearchItem:
+    path: str
+    signature: str
+    description: str
+
+
+@dataclass(frozen=True)
+class CatalogSearchResult:
+    items: tuple[CatalogSearchItem, ...]
+    remaining: int
+    next_offset: int | None
+
+
+@dataclass(frozen=True)
+class CatalogNamespaceSummary:
+    name: str
+    count: int
+    entries: tuple[CatalogSearchItem, ...]
+
+
+@dataclass(frozen=True)
+class CatalogSummary:
+    total: int
+    shown: int
+    namespaces: tuple[CatalogNamespaceSummary, ...]
+    text: str
 
 
 @dataclass(frozen=True)

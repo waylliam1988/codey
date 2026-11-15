@@ -13,7 +13,8 @@ from codey.codemode.identity import parent_execution_id
 from codey.codemode.output import externalize_value
 from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
-from codey.codemode.types import CodeModeLimits, ToolCatalogEntry, ToolCatalogSnapshot
+from codey.codemode.state import CodeModeStateStore
+from codey.codemode.types import CodeModeLimits, DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.operations.browser_references import BrowserReferences
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -23,7 +24,6 @@ from codey.types.json_value import JsonObject, JsonValue
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
     from codey.agents.tools import AgentToolFns
-    from codey.codemode.state import CodeModeStateStore
     from codey.durable import DurableStore
     from codey.durable.session import DurableSession
     from codey.operations.kernel_contracts import StopSignal, ToolExecutor
@@ -74,13 +74,18 @@ def _simplified_failure(result: ToolResult, spec: ToolSpec, children: Mapping[st
     return replace(result, model_text=tool_repair_text(detail, spec), audit=audit)
 
 
-class CodeModeReplay(Protocol):
+class CodeModeReplay(CodeModeStateStore, Protocol):
     @property
     def context(self) -> Mapping[str, object]: ...
 
     def assert_valid(self) -> None: ...
 
     def admission(self) -> AbstractContextManager[None]: ...
+
+    @property
+    def delivery(self) -> Sequence[DeliveryReference]: ...
+
+    def record_delivery(self, call_id: str, child_index: int | None) -> None: ...
 
 
 class CodeModeKernelExecutor:
@@ -160,6 +165,8 @@ class CodeModeKernelExecutor:
                 limits=self.limits,
                 state_store=state_store,
                 replay_context=self.replay.context if self.replay is not None else None,
+                delivery=self.replay.delivery if self.replay is not None else (),
+                on_delivery=self.replay.record_delivery if self.replay is not None else None,
             )
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
             # The runtime has joined its host callbacks. Return through the

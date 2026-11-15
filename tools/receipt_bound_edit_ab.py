@@ -23,8 +23,15 @@ from unittest.mock import patch
 
 from codey.app.headless_runner import HeadlessRequest, run_headless
 from codey.codemode import catalog as codemode_catalog
-from codey.codemode.runtime import NodeWorkerRuntime, ToolInvoker
-from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry, ToolCatalogSnapshot
+from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
+from codey.codemode.state import CodeModeStateStore
+from codey.codemode.types import (
+    CodeModeLimits,
+    CodeModeResult,
+    DeliveryReference,
+    ToolCatalogEntry,
+    ToolCatalogSnapshot,
+)
 from codey.env_names import NATIVE_TOOLS_ENV
 from codey.operations import kernel_protocol
 from codey.operations.kernel_protocol import KernelSessionView, TurnSnapshot
@@ -32,7 +39,7 @@ from codey.policies.tool_requirement import require_tool_success
 from codey.runtime.core import cancellation
 from codey.toolchain.tool_prompt import json_contract_text
 from codey.toolchain.tool_spec import is_text_batch_tool
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_integer
 from tools import local_model_gate_attempts as attempts
 from tools.shell_web_diagnostic_gate import select_target
 
@@ -120,7 +127,8 @@ def codemode_only_surface(snapshot: TurnSnapshot) -> TurnSnapshot:
     """Both arms expose project leaves through CodeMode, retaining their frozen executors."""
     outer = tuple(name for name in snapshot.tool_names
                   if name not in snapshot.nested_tool_names and not is_text_batch_tool(name))
-    inventory = tuple(dict.fromkeys((*outer, *snapshot.nested_tool_names)))
+    inventory_names: dict[str, None] = {name: None for name in (*outer, *snapshot.nested_tool_names)}
+    inventory = tuple(inventory_names)
     by_name = {spec.name: spec for spec in snapshot.frozen_specs}
     executors = dict(snapshot.custom_executors)
     return replace(snapshot, tool_names=outer,
@@ -132,7 +140,7 @@ def codemode_only_surface(snapshot: TurnSnapshot) -> TurnSnapshot:
 def helper_metrics(directory: Path) -> JsonObject:
     """Only successful guest envelopes confirm execution; failed programs stay unknown."""
     path = directory / "helper-executions.jsonl"
-    rows: list[JsonObject] = [decode_json_object(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines()
+    rows: list[JsonObject] = [parse_json_object(line) for line in path.read_text(encoding="utf-8").splitlines()
             ] if path.exists() else []
     return {
         "confirmed_helper_calls": sum(require_json_integer(row["helper_calls"], "helper_calls")
@@ -174,14 +182,15 @@ def prototype_helper(directory: Path, *, enabled: bool, helper: str = HELPER,
 
     def recorded_execute(
         runtime: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
-        inputs: Mapping[str, object] | None = None, state_store: object = None,
-        replay_context: Mapping[str, object] | None = None, limits: CodeModeLimits | None = None,
+        inputs: Mapping[str, object] | None = None, state_store: CodeModeStateStore | None = None,
+        replay_context: Mapping[str, object] | None = None,
+        delivery: Sequence[DeliveryReference] = (), on_delivery: DeliveryRecorder | None = None, limits: CodeModeLimits | None = None,
     ) -> CodeModeResult:
         expanded = helper + code + HELPER_SUFFIX if enabled else code
         with (directory / "programs.jsonl").open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps({"model_code": code, "executed_code": expanded}, ensure_ascii=False) + "\n")
+            stream.write(json.dumps(dict[str, str](model_code=code, executed_code=expanded), ensure_ascii=False) + "\n")
         result = execute(runtime, expanded, catalog=catalog, invoke=invoke, inputs=inputs,
-                         state_store=state_store, replay_context=replay_context, limits=limits)
+                         state_store=state_store, replay_context=replay_context, delivery=delivery, on_delivery=on_delivery, limits=limits)
         trace: JsonObject = {"ok": result.ok, "helper_calls": None, "helper_completed": None}
         if enabled and result.ok:
             envelope = decode_json_object(result.value)
@@ -214,7 +223,7 @@ def provider_metrics(path: Path, *, through_bytes: int | None = None) -> JsonObj
         with path.open("rb") as stream:
             transcript = stream.read(-1 if through_bytes is None else through_bytes).decode("utf-8")
         for line in transcript.splitlines():
-            row = decode_json_object(json.loads(line))
+            row = parse_json_object(line)
             identity = (str(row["recorder_id"]), require_json_integer(row["exchange"], "exchange"))
             if row["type"] == "request":
                 requests.add(identity)
@@ -297,7 +306,7 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
     summary: JsonObject = {"case": case.name, "arm": arm, "passed": False}
     try:
         with (interface(directory) if interface is not None else prototype_helper(directory, enabled=arm == "B"),
-              patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}),
+              patch.dict(os.environ, dict[str, str]({NATIVE_TOOLS_ENV: "1"})),
               attempts.isolate_gate_secondary_models(target)):
             result = run_headless(HeadlessRequest(
                 project=project, task=selected_task, intent="project", provider_id="local", max_turns=max_turns,
@@ -305,9 +314,9 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
                 project_changes_required=True,
                 required_tools=(require_tool_success("read_file", via="codemode"),
                                 require_tool_success("edit", via="codemode")),
-                model_selection={"model": target.model, "base_url": target.base_url},
+                model_selection=dict[str, object](model=target.model, base_url=target.base_url),
             ), emit_jsonl=observe, connect_provider=connect)
-        actual = decode_json_object(json.loads((project / "result.json").read_text(encoding="utf-8")))
+        actual = parse_json_object((project / "result.json").read_text(encoding="utf-8"))
         after = {path.relative_to(project).as_posix(): path.read_bytes() for path in project.rglob("*") if path.is_file()}
         changed = sorted(name for name in before.keys() | after.keys() if before.get(name) != after.get(name))
         changed_files: list[JsonValue] = [name for name in changed]
@@ -323,7 +332,7 @@ def run_arm(directory: Path, case: EditCase, arm: str, target: attempts.GateTarg
     tools = [row for row in events if row.get("type") == "tool"]
     programs = directory / "programs.jsonl"
     helper_programs = sum(mentions_helper_call(str(
-        decode_json_object(json.loads(line))["model_code"])) for line in programs.read_text(encoding="utf-8").splitlines()
+        parse_json_object(line)["model_code"])) for line in programs.read_text(encoding="utf-8").splitlines()
     ) if programs.exists() else 0
     edit_phase = provider_metrics(provider_path, through_bytes=first_edit_bytes) if first_edit_bytes is not None else None
     edit_phase_metrics = {"edit_phase_" + key: edit_phase[key] if edit_phase is not None else None
@@ -366,7 +375,7 @@ def run_worker(directory: Path, case: EditCase, arm: str, *, base_url: str, time
     (directory / "worker.log").write_text(output + error, encoding="utf-8")
     summary_path = directory / "summary.json"
     if summary_path.exists() and not error:
-        return decode_json_object(json.loads(summary_path.read_text(encoding="utf-8")))
+        return parse_json_object(summary_path.read_text(encoding="utf-8"))
     summary: JsonObject = {"case": case.name, "arm": arm, "passed": False, "first_pass_success": False,
                            "error": error, "seconds": timeout, "failed_edits": None,
                            "failed_codemode_calls": None, "confirmed_helper_calls": None,
@@ -400,16 +409,16 @@ def aggregate(rows: list[JsonObject], arm: str) -> JsonObject:
 
 def audit_run(root: Path) -> JsonObject:
     """Recompute derived adoption metrics from the unmodified model programs."""
-    summary = decode_json_object(json.loads((root / "summary.json").read_text(encoding="utf-8")))
-    manifest = decode_json_object(json.loads((root / "manifest.json").read_text(encoding="utf-8")))
+    summary = parse_json_object((root / "summary.json").read_text(encoding="utf-8"))
+    manifest = parse_json_object((root / "manifest.json").read_text(encoding="utf-8"))
     if manifest.get("interface_version") != INTERFACE_VERSION:
         raise ValueError(f"This auditor requires {INTERFACE_VERSION} artifacts; preserve earlier audits.")
     audited: list[JsonValue] = []
     pairs: dict[str, dict[str, tuple[JsonObject, int]]] = {}
     for programs in sorted(root.glob("??-*/*/programs.jsonl")):
         directory = programs.parent
-        row = decode_json_object(json.loads((directory / "summary.json").read_text(encoding="utf-8")))
-        code = [str(decode_json_object(json.loads(line))["model_code"])
+        row = parse_json_object((directory / "summary.json").read_text(encoding="utf-8"))
+        code = [str(parse_json_object(line)["model_code"])
                 for line in programs.read_text(encoding="utf-8").splitlines()]
         metrics = helper_metrics(directory)
         completed = require_json_integer(metrics["confirmed_helper_edits"], "confirmed_helper_edits")
@@ -438,6 +447,17 @@ def audit_run(root: Path) -> JsonObject:
     return audit
 
 
+class _Options(argparse.Namespace):
+    run_dir: Path
+    kobold_base_url: str
+    timeout: float
+    max_turns: int
+    repeats: int
+    worker_case: str | None
+    worker_arm: str | None
+    audit_only: bool
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, required=True)
@@ -448,7 +468,7 @@ def main() -> int:
     parser.add_argument("--worker-case", choices=[case.name for case in CASES], help=argparse.SUPPRESS)
     parser.add_argument("--worker-arm", choices=("A", "B"), help=argparse.SUPPRESS)
     parser.add_argument("--audit-only", action="store_true", help="Audit existing artifacts without calling a model.")
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=_Options())
     if args.repeats < 1 or args.max_turns < 1:
         parser.error("repeats and max-turns must be positive")
     if args.audit_only:
@@ -484,7 +504,7 @@ def main() -> int:
             pair = root / f"{repetition + 1:02d}-{case.name}"
             pair.mkdir()
             for arm in order:
-                print(json.dumps({"starting": case.name, "arm": arm, "repetition": repetition + 1}), flush=True)
+                print(json.dumps(dict[str, object](starting=case.name, arm=arm, repetition=repetition + 1)), flush=True)
                 row = run_worker(pair / arm, case, arm, base_url=args.kobold_base_url,
                                  timeout=args.timeout, max_turns=args.max_turns)
                 rows.append(row)

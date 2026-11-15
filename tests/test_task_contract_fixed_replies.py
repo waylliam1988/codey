@@ -13,9 +13,10 @@ from typing import Protocol, TypedDict
 import pytest
 
 from codey.codemode.replay import DurableCodeModeReplay
-from codey.codemode.runtime import NodeWorkerRuntime, ToolInvoker
-from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry
-from codey.types.json_value import decode_json_object, decode_json_value, parse_json_object
+from codey.codemode.runtime import DeliveryRecorder, NodeWorkerRuntime, ToolInvoker
+from codey.codemode.state import CodeModeStateStore
+from codey.codemode.types import CodeModeLimits, CodeModeResult, DeliveryReference, ToolCatalogEntry
+from codey.types.json_value import JsonObject, decode_json_object, decode_json_value, parse_json_object
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_prerequisite_ab as browser
 from tools.browser_production_live_gate import URL, run_case
@@ -30,13 +31,6 @@ pytestmark = pytest.mark.usefixtures(
 
 class RequestObserver(Protocol):
     def __call__(self, *, attempt: int, data: bytes, phase: str, response_bytes: int, seconds: float) -> None: ...
-
-
-class RuntimeExecute(Protocol):
-    def __call__(self, runtime: NodeWorkerRuntime, code: str, /, *, catalog: Sequence[ToolCatalogEntry],
-                 invoke: ToolInvoker, inputs: Mapping[str, object] | None = None, state_store: object = None,
-                 replay_context: Mapping[str, object] | None = None,
-                 limits: CodeModeLimits | None = None) -> CodeModeResult: ...
 
 
 class ControlFlowTrace(TypedDict):
@@ -124,15 +118,16 @@ def test_wrong_url_feedback_without_a_prior_compile_error(
 ) -> None:
     runtime_results: list[CodeModeResult] = []
     control_flow: list[ControlFlowTrace] = []
-    execute: RuntimeExecute = NodeWorkerRuntime.execute
+    execute = NodeWorkerRuntime.execute
     assert_valid = DurableCodeModeReplay.assert_valid
 
     def observed_execute(self: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry],
                          invoke: ToolInvoker, inputs: Mapping[str, object] | None = None,
-                         state_store: object = None, replay_context: Mapping[str, object] | None = None,
+                         state_store: CodeModeStateStore | None = None, replay_context: Mapping[str, object] | None = None,
+                         delivery: Sequence[DeliveryReference] = (), on_delivery: DeliveryRecorder | None = None,
                          limits: CodeModeLimits | None = None) -> CodeModeResult:
         result = execute(self, code, catalog=catalog, invoke=invoke, inputs=inputs, state_store=state_store,
-                         replay_context=replay_context, limits=limits)
+                         replay_context=replay_context, delivery=delivery, on_delivery=on_delivery, limits=limits)
         runtime_results.append(result)
         return result
 
@@ -193,7 +188,8 @@ def test_structured_delivery_with_controlled_summary(
              "const tabs=unwrap(await tools.browser_tab_list({}));return {body,token,tabs};")
     summary = "已加载记录，并读取了当前页面。\n\n" + (
         "净重 173 克，校验码 QUARTZ_851。" if complete else "已完成页面操作。")
-    install_http(monkeypatch, [browser.code_action(code), {"tool": "done", "args": {"summary": summary}}])
+    completion: JsonObject = {"paragraphs": [paragraph for paragraph in summary.split("\n\n")]}
+    install_http(monkeypatch, [browser.code_action(code), {"tool": "done", "args": completion}])
     result = run_case(tmp_path / "run", "chat", TARGET, explanation_output=True, max_turns=2)
     assert (result["stop_reason"] == "done") is complete, result
     assert result["facts_match"] is complete
@@ -204,8 +200,8 @@ def test_hybrid_outer_read_receipt_reaches_conflict_and_recovers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     correct = ("const r=await tools.read_file({path:'result.json'});"
-               "return unwrap(await tools.edit({read:r,changes:{amount:173,code:'QUARTZ_851'}}));")
-    invalid = correct.replace("read:r,", "read:unwrap(r),")
+               "return unwrap(await tools.edit({base_result_ref:r.result_ref,changes:{amount:173,code:'QUARTZ_851'}}));")
+    invalid = correct.replace("base_result_ref:r.result_ref,", "base_result_ref:unwrap(r).result_ref,")
     install_http(monkeypatch, [browser.code_action(browser.ROUND), browser.code_action(invalid),
         browser.code_action(correct), browser.code_action(correct),
         {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}])
