@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import secrets
+import time
 from collections.abc import Callable, Collection, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import asdict, replace
@@ -9,9 +11,10 @@ from typing import TYPE_CHECKING, Protocol
 
 from codey.codemode.catalog import build_catalog_snapshot, snapshot_catalog
 from codey.codemode.host import CodeModeHost
-from codey.codemode.identity import parent_execution_id
+from codey.codemode.identity import child_call_index, parent_execution_id
 from codey.codemode.output import externalize_value
 from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
+from codey.codemode.replay import CodeModeRepairContext, DurableCodeModeReplay, ExecutionTrace, digest
 from codey.codemode.runtime import CodeModeRuntime, NodeWorkerRuntime
 from codey.codemode.state import CodeModeStateStore
 from codey.codemode.types import CodeModeLimits, DeliveryReference, ToolCatalogEntry, ToolCatalogSnapshot
@@ -19,7 +22,7 @@ from codey.operations.browser_references import BrowserReferences
 from codey.runtime.core import cancellation
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.tool_spec import ToolSpec
-from codey.types.json_value import JsonObject, JsonValue
+from codey.types.json_value import JsonObject
 
 if TYPE_CHECKING:
     from codey.agents.request import ChangeTracker
@@ -87,6 +90,13 @@ class CodeModeReplay(CodeModeStateStore, Protocol):
 
     def record_delivery(self, call_id: str, child_index: int | None) -> None: ...
 
+    def child(self, call: ToolCall, effect_id: str) -> None: ...
+
+
+def _runtime_contract(runtime: CodeModeRuntime, limits: CodeModeLimits) -> str:
+    limit_payload: dict[str, int] = asdict(limits)
+    return digest({"runtime": runtime.contract_digest(), "limits": limit_payload})
+
 
 class CodeModeKernelExecutor:
     """Execute a parent codemode call while routing every child to the kernel."""
@@ -106,10 +116,10 @@ class CodeModeKernelExecutor:
         allow_writes: bool = False,
         state_store: CodeModeStateStore | None = None,
         replay: CodeModeReplay | None = None,
-        replay_child: Callable[[int, str, JsonObject], ToolResult] | None = None,
+        repair_context: CodeModeRepairContext | None = None,
+        runtime_contract: str | None = None,
         task_navigation_url: str | None = None,
         browser_references: BrowserReferences | None = None,
-        replay_browser_ref: Callable[[int, str, JsonValue], str] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -129,10 +139,10 @@ class CodeModeKernelExecutor:
         self.allow_writes = bool(allow_writes)
         self.state_store = state_store
         self.replay = replay
-        self.replay_child = replay_child
+        self.repair_context = repair_context
+        self.runtime_contract = runtime_contract
         self.task_navigation_url = task_navigation_url
         self.browser_references = browser_references
-        self.replay_browser_ref = replay_browser_ref
 
     def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -145,16 +155,45 @@ class CodeModeKernelExecutor:
             "codemode_execution_id": self.execution_id,
             "catalog_digest": self.catalog.digest,
         }
+        repair = self.repair_context
+
+        def replay_child(index: int, name: str, args: JsonObject) -> ToolResult:
+            assert repair is not None
+            receipt = repair.replay_child(index, name, args)
+            if self.replay is not None:
+                child = next(child for child in repair.children if child.position == index)
+                self.replay.child(receipt.call, child.effect_id)
+            return receipt
+
         host = CodeModeHost(
             execution_id=self.execution_id,
             catalog=self.catalog.entries,
             execute=self.execute_child,
             allow_writes=self.allow_writes,
-            replay=self.replay_child,
+            replay=replay_child if repair is not None else None,
             task_navigation_url=self.task_navigation_url,
             browser_references=self.browser_references,
-            replay_browser_ref=self.replay_browser_ref,
+            replay_browser_ref=repair.resolve_browser_ref if repair is not None else None,
         )
+        trace: ExecutionTrace | None = None
+
+        def record_delivery(call_id: str, child_index: int | None) -> None:
+            assert trace is not None
+            trace["delivery"].append({"call_id": call_id, "child_index": child_index})
+
+        context: Mapping[str, object]
+        delivery: Sequence[DeliveryReference]
+        on_delivery: Callable[[str, int | None], None]
+        if self.replay is not None:
+            context, delivery, on_delivery = self.replay.context, self.replay.delivery, self.replay.record_delivery
+        elif repair is not None:
+            context, delivery, on_delivery = repair.context, repair.delivery, repair.record_delivery
+        else:
+            trace = {"epoch_ms": int(time.time() * 1000), "seed": secrets.randbits(32),
+                     "runtime_contract": self.runtime_contract or _runtime_contract(self.runtime, self.limits),
+                     "delivery": []}
+            context = {"epochMs": trace["epoch_ms"], "seed": trace["seed"], "executionId": self.execution_id}
+            delivery, on_delivery = (), record_delivery
         try:
             state_store = self.state_store if self.state_store is not None else self.replay
             result = self.runtime.execute(
@@ -164,9 +203,9 @@ class CodeModeKernelExecutor:
                 invoke=host.invoke,
                 limits=self.limits,
                 state_store=state_store,
-                replay_context=self.replay.context if self.replay is not None else None,
-                delivery=self.replay.delivery if self.replay is not None else (),
-                on_delivery=self.replay.record_delivery if self.replay is not None else None,
+                replay_context=context,
+                delivery=delivery,
+                on_delivery=on_delivery,
             )
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded) as exc:
             # The runtime has joined its host callbacks. Return through the
@@ -179,6 +218,8 @@ class CodeModeKernelExecutor:
                 return ToolResult(ok=False, call=call, model_text=str(exc), audit=audit)
         audit["child_calls"] = result.child_calls
         if not result.ok:
+            if trace is not None:
+                audit["codemode_replay"] = trace
             audit["error_code"] = result.error_code
             return ToolResult(ok=False, call=call, model_text=result.error or "codemode execution failed", audit=audit)
         try:
@@ -240,6 +281,30 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
     if not effective_session_id and isinstance(intent_sink, KernelEffectSink):
         effective_session_id = intent_sink.session_id
 
+    def prepare_replay(
+        call: ToolCall, parent_id: str, child_sink: KernelEffectSink | None,
+        repair: CodeModeRepairContext | None, runtime_contract: str,
+    ) -> DurableCodeModeReplay | None:
+        if durable is None:
+            if repair is not None:
+                repair.bind_trace(repair.parent.audit.get("codemode_replay"), runtime_contract)
+            return None
+        from codey.durable.session import DurableSession
+
+        if not isinstance(durable, DurableSession):
+            raise TypeError("durable CodeMode requires a DurableSession")
+        if not isinstance(child_sink, KernelEffectSink):
+            raise ValueError("durable CodeMode requires the original effect sink")
+        if repair is not None:
+            return DurableCodeModeReplay.for_repair(durable, run_id, repair, runtime_contract)
+        return DurableCodeModeReplay(durable, run_id, parent_id,
+            digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
+                    "task_navigation_url": snapshot.task_navigation_url,
+                    "browser_references": snapshot.browser_references.payload() if snapshot.browser_references else None,
+                    "runtime": runtime_contract}),
+            parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_mutations,
+            runtime_contract=runtime_contract)
+
     def run_parent(call: ToolCall) -> ToolResult:  # noqa: C901, PLR0915
         from codey.operations.task_session import turn_effect_id
 
@@ -270,23 +335,15 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             )
         child_sink = intent_sink.for_child(call, turn=turn) if isinstance(intent_sink, KernelEffectSink) else intent_sink
         runtime = (runtime_factory or NodeWorkerRuntime)()
-        replay = None
-        if durable is not None:
-            from codey.durable.session import DurableSession
-
-            if not isinstance(durable, DurableSession):
-                raise TypeError("durable CodeMode requires a DurableSession")
-            if not isinstance(child_sink, KernelEffectSink):
-                raise ValueError("durable CodeMode requires the original effect sink")
-            from codey.codemode.replay import DurableCodeModeReplay, digest
-            limit_payload: dict[str, int] = asdict(limits or CodeModeLimits())
-            replay = DurableCodeModeReplay(durable, str(run_id), parent_id,
-                digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
-                        "task_navigation_url": snapshot.task_navigation_url,
-                        "browser_references": snapshot.browser_references.payload() if snapshot.browser_references else None,
-                        "limits": limit_payload,
-                        "runtime": runtime.contract_digest()}),
-                parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_mutations)
+        runtime_contract = _runtime_contract(runtime, limits or CodeModeLimits())
+        try:
+            replay = prepare_replay(call, parent_id, child_sink, repair_context, runtime_contract)
+        except ValueError as exc:
+            if repair_context is None:
+                raise
+            return ToolResult(ok=False, call=call, model_text=str(exc), audit={"error_code": "repair_rejected"},
+                              canonical={"child_effect_ids": child_effect_ids()})
+        if replay is not None and child_sink is not None:
             child_sink.admission_guard = replay.admission
 
         def execute_child(child: ToolCall) -> ToolResult:
@@ -303,10 +360,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                 event.metadata['parent_call_id'] = parent_id
                 event.metadata['tool_name'] = child.name
                 on_event(event)
-            try:
-                child_index = int(child.call_id.rsplit(":child:", 1)[1])
-            except (IndexError, ValueError) as exc:
-                raise ValueError("invalid CodeMode child identity") from exc
+            child_index = child_call_index(parent_id, child.call_id)
             child_effect_scope = f"{child_scope}:child:{child_index}"
             child_identity = turn_effect_id(f"{run_id}:{child_effect_scope}", turn, child_index)
             if replay is not None:
@@ -377,13 +431,13 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             allow_writes=allow_mutations,
             state_store=repair_state_store if repair_context is not None else state_store,
             replay=replay,
-            replay_child=repair_context.replay_child if repair_context is not None else None,
+            repair_context=repair_context,
+            runtime_contract=runtime_contract,
             artifact_store=managed_outputs,
             session_id=session_id,
             run_id=str(run_id or ""),
             task_navigation_url=snapshot.task_navigation_url,
             browser_references=snapshot.browser_references,
-            replay_browser_ref=repair_context.resolve_browser_ref if repair_context is not None else None,
         ).execute(call)
         if repair_context is not None:
             try:
@@ -391,7 +445,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             except ValueError as exc:
                 return ToolResult(
                     ok=False, call=call,
-                    model_text=repair_context.failure or (result.model_text if not result.ok else str(exc)),
+                    model_text=repair_context.failure or (result.model_text if not result.ok
+                        and result.audit.get("error_code") != "delivery_journal" else str(exc)),
                     audit={**result.audit, "error_code": "repair_rejected"},
                     canonical={"child_effect_ids": child_effect_ids()},
                 )

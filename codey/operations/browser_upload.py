@@ -338,9 +338,9 @@ class UploadEvidence:
                 if (_NEGATED_ASSERTION.search(clause[:claim.start()])
                         or _UNVERIFIED_ASSERTION.search(clause[claim.end():])):
                     continue
-                instruction = ("请只修正 done.summary 中没有回执支持的上传或服务器接收状态，保留其余分析。"
+                instruction = ("请只修正说明中没有回执支持的上传或服务器接收状态，保留其余分析。"
                                "重新提交 done，不要重复选择或上传附件。" if chinese else
-                               "Correct only the unsupported upload or server-acceptance claim in done.summary; "
+                               "Correct only the unsupported upload or server-acceptance claim in the explanation; "
                                "preserve the remaining analysis. Resubmit done without selecting or uploading again.")
                 return (self.status(chinese=chinese) + " " + instruction
                         + "\n\nRejected explanation to revise:\n" + explanation)

@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from threading import RLock
 from typing import NoReturn, Protocol, TypedDict, TypeGuard
 
+from codey.codemode.identity import child_call_index
 from codey.codemode.state import CodeModeStateStore, DurableCodeModeState
 from codey.codemode.types import DeliveryReference, ToolCatalogSnapshot
 from codey.durable.model import TaskCheckpoint
@@ -67,15 +68,19 @@ class StateReference(TypedDict):
     revision: int
 
 
-class ReplayRecord(TypedDict):
-    schema: int
-    fingerprint: str
+class ExecutionTrace(TypedDict):
     epoch_ms: int
     seed: int
+    runtime_contract: str
+    delivery: list[DeliveryReference]
+
+
+class ReplayRecord(ExecutionTrace):
+    schema: int
+    fingerprint: str
     effect_scope: str
     allow_writes: bool
     state: list[StateReference]
-    delivery: list[DeliveryReference]
 
 
 class CodeModeReplayError(ValueError):
@@ -109,8 +114,11 @@ class CodeModeRepairContext:
     catalog_digest: str
     children: tuple[ReplayChildView, ...]
     receipts: Mapping[str, ToolResult]
+    parent: ToolResult
     _used_positions: set[int]
     failure: str = ""
+    trace: ExecutionTrace | None = None
+    _delivery_index: int = 0
 
     def _reject(self, message: str) -> NoReturn:
         if not self.failure:
@@ -120,14 +128,46 @@ class CodeModeRepairContext:
     def readonly_state(self, replay: CodeModeStateStore) -> ReceiptOnlyStateStore:
         return ReceiptOnlyStateStore(replay)
 
+    def _child(self, position: int) -> ReplayChildView:
+        child = next((child for child in self.children if child.position == position), None)
+        if child is None:
+            self._reject(f"repair issued a child call outside the original sequence at step {position + 1}; "
+                         f"the original sequence has {len(self.children)} steps")
+        return child
+
+    def bind_trace(self, value: object, runtime_contract: str) -> None:
+        trace = execution_trace(value)
+        if trace["runtime_contract"] != runtime_contract:
+            self._reject("repair runtime contract changed; refusing receipt replay")
+        self.trace = trace
+
+    @property
+    def context(self) -> Mapping[str, object]:
+        if self.trace is None:
+            self._reject("repair execution context is unavailable")
+        return {"epochMs": self.trace["epoch_ms"], "seed": self.trace["seed"], "executionId": self.parent_effect_id}
+
+    @property
+    def delivery(self) -> tuple[DeliveryReference, ...]:
+        if self.trace is None:
+            self._reject("repair result delivery is unavailable")
+        return tuple(self.trace["delivery"])
+
+    def record_delivery(self, call_id: str, child_index: int | None) -> None:
+        item: DeliveryReference = {"call_id": call_id, "child_index": child_index}
+        if self._delivery_index >= len(self.delivery) or item != self.delivery[self._delivery_index]:
+            self._reject("repair changed the original result delivery sequence")
+        self._delivery_index += 1
+
     def resolve_browser_ref(self, position: int, tool_name: str, selector: JsonValue) -> str:
         """Resolve a repair from the original observed ref, never the new page."""
         from codey.operations.browser_references import BrowserReferences
         from codey.types.json_value import decode_json_object
 
-        if position >= len(self.children) or position < 0 or self.children[position].tool_name != tool_name:
+        expected = self._child(position)
+        if expected.tool_name != tool_name:
             self._reject("repair changed the browser child sequence")
-        original = self.receipts[self.children[position].effect_id].call.args.get("ref")
+        original = self.receipts[expected.effect_id].call.args.get("ref")
         for receipt_ref, receipt in self.receipts.items():
             if receipt.call.name != "browser_snapshot" or not receipt.ok or receipt.truncated:
                 continue
@@ -146,10 +186,7 @@ class CodeModeRepairContext:
         self._reject("repair has no original complete control observation; use the original string ref")
 
     def replay_child(self, position: int, tool_name: str, args: JsonObject) -> ToolResult:
-        if position < 0 or position >= len(self.children):
-            self._reject(f"repair issued a child call outside the original sequence at step {position + 1}; "
-                         f"the original sequence has {len(self.children)} steps")
-        expected = self.children[position]
+        expected = self._child(position)
         if tool_name != expected.tool_name:
             self._reject(f"repair changed the child tool at step {position + 1}: "
                          f"expected {expected.tool_name}; received {tool_name}")
@@ -180,6 +217,8 @@ class CodeModeRepairContext:
         if remaining:
             raise CodeModeReplayError("repair did not consume the original child sequence; remaining steps: "
                                       + ", ".join(remaining))
+        if self.trace is not None and self._delivery_index != len(self.delivery):
+            self._reject("repair did not consume the original result delivery sequence")
 
 
 class ReceiptOnlyStateStore:
@@ -266,12 +305,18 @@ def resolve_repair_context(
     children: list[ReplayChildView] = []
     from codey.runtime.effects.effect_records import compute_args_digest
 
-    for position, effect_id in enumerate(raw_children):
+    for effect_id in raw_children:
         if not isinstance(effect_id, str):
             raise CodeModeReplayError("repair child receipts are unavailable")
         child = receipts.get(effect_id)
         if child is None:
             raise CodeModeReplayError("repair child receipt is missing or unsettled")
+        try:
+            position = child_call_index(parent_effect_id, child.call.call_id)
+        except ValueError as exc:
+            raise CodeModeReplayError(str(exc)) from exc
+        if children and position <= children[-1].position:
+            raise CodeModeReplayError("repair child receipt positions are duplicated or out of order")
         result_ref = child.audit.get("result_ref")
         if not isinstance(result_ref, str) or not result_ref:
             result_ref = effect_id
@@ -290,7 +335,7 @@ def resolve_repair_context(
             raise CodeModeReplayError("shape repair requires the complete successful read-only child sequence")
     return CodeModeRepairContext(
         token=token, parent_effect_id=parent_effect_id, failure_code=failure_code,
-        catalog_digest=current_catalog_digest, children=tuple(children), receipts=receipts,
+        catalog_digest=current_catalog_digest, children=tuple(children), receipts=receipts, parent=parent_result,
         _used_positions=set(),
     )
 
@@ -349,11 +394,15 @@ class DurableCodeModeReplay:
         parent_effect_id: str,
         effect_scope: str = "",
         allow_writes: bool = False,
+        runtime_contract: str,
+        readonly: bool = False,
     ) -> None:
         self.durable, self.task_id, self.execution_id = durable, task_id, execution_id
         self.fingerprint = fingerprint
         self.effect_scope = effect_scope
         self.parent_effect_id = parent_effect_id
+        self.runtime_contract = runtime_contract
+        self.readonly = readonly
         self.state = DurableCodeModeState(durable, task_id)
         self._state_index = 0
         self._delivery_index = 0
@@ -366,9 +415,12 @@ class DurableCodeModeReplay:
             if execution_id in records:
                 self._record(current)
                 return None
+            if readonly:
+                raise CodeModeReplayError("repair original recovery journal is unavailable")
             records[execution_id] = {
-                "schema": 2,
+                "schema": 3,
                 "fingerprint": fingerprint,
+                "runtime_contract": runtime_contract,
                 "epoch_ms": int(time.time() * 1000),
                 "effect_scope": effect_scope,
                 "allow_writes": allow_writes,
@@ -382,6 +434,19 @@ class DurableCodeModeReplay:
         record = self._record(durable.task(task_id))
         self.context = {"epochMs": record["epoch_ms"], "seed": record["seed"], "executionId": execution_id}
 
+    @classmethod
+    def for_repair(cls, durable: DurableSession, task_id: str, repair: CodeModeRepairContext,
+                   runtime_contract: str) -> DurableCodeModeReplay:
+        record = cls._records(durable.task(task_id)).get(repair.parent_effect_id)
+        if record is None or record["runtime_contract"] != runtime_contract:
+            raise CodeModeReplayError("repair original runtime contract is unavailable or changed")
+        parent_effect_id = durable.effect(repair.children[0].effect_id).intent.get("parent_effect_id")
+        if not isinstance(parent_effect_id, str) or not parent_effect_id:
+            raise CodeModeReplayError("repair original parent effect is unavailable")
+        return cls(durable, task_id, repair.parent_effect_id, record["fingerprint"],
+                   parent_effect_id=parent_effect_id, effect_scope=record["effect_scope"],
+                   allow_writes=record["allow_writes"], runtime_contract=runtime_contract, readonly=True)
+
     def invalidate(self, reason: str) -> None:
         """Permanently close this invocation, retaining its first fatal cause."""
         with self._lock:
@@ -389,7 +454,7 @@ class DurableCodeModeReplay:
                 self._failure = reason
 
     @contextmanager
-    def admission(self) -> Generator[None]:
+    def admission(self) -> Generator[None, None, None]:
         """Serialize invalidation with intent admission and state transactions.
 
         The caller releases this guard before executing an admitted tool. Its
@@ -418,8 +483,9 @@ class DurableCodeModeReplay:
         record = self._records(current)[self.execution_id]
         if (
             record["fingerprint"] != self.fingerprint
-            or record.get("schema") != 2
+            or record.get("schema") != 3
             or record.get("effect_scope") != self.effect_scope
+            or record["runtime_contract"] != self.runtime_contract
         ):
             raise CodeModeReplayError("CodeMode recovery identity or metadata mismatch")
         return record
@@ -445,6 +511,8 @@ class DurableCodeModeReplay:
                     return None
                 if any(existing["call_id"] == call_id for existing in delivery):
                     raise CodeModeReplayError("CodeMode result was delivered more than once")
+                if self.readonly:
+                    raise CodeModeReplayError("repair changed the original result delivery sequence")
                 delivery.append(item)
                 records[self.execution_id]["delivery"] = delivery
                 return {"codemode_replay": records}
@@ -461,6 +529,8 @@ class DurableCodeModeReplay:
             except KeyError:
                 # No original intent means dispatch has not started: execute_turn
                 # will commit the one authoritative intent before running it.
+                if self.readonly:
+                    raise CodeModeReplayError("repair child receipt is missing") from None
                 return
             if (
                 effect.intent.get("parent_effect_id") != self.parent_effect_id
@@ -500,6 +570,8 @@ class DurableCodeModeReplay:
                     return None
                 if index != len(steps) or len(steps) >= 256:
                     raise CodeModeReplayError("CodeMode state recovery sequence exceeds its budget")
+                if self.readonly:
+                    raise CodeModeReplayError("repair changed the original state operation sequence")
                 state = self.state.values_at(current)
                 if op == "store":
                     state = self.state.prepare_store(current, key, value)
@@ -530,18 +602,32 @@ class DurableCodeModeReplay:
             raise CodeModeReplayError("CodeMode recovery did not consume its recorded control flow")
 
 
+def _is_execution_trace(value: JsonValue) -> TypeGuard[ExecutionTrace]:
+    if not isinstance(value, dict) or not set(ExecutionTrace.__annotations__) <= value.keys():
+        return False
+    delivery = value["delivery"]
+    return (all(type(value[key]) is int for key in ("epoch_ms", "seed"))
+            and isinstance(value["runtime_contract"], str) and isinstance(delivery, list)
+            and all(isinstance(item, dict) and set(DeliveryReference.__annotations__) == item.keys()
+                    and isinstance(item["call_id"], str) and bool(item["call_id"])
+                    and (item["child_index"] is None or type(item["child_index"]) is int and item["child_index"] >= 0)
+                    for item in delivery))
+
+
+def execution_trace(value: object) -> ExecutionTrace:
+    decoded = canonical_json_object(value)
+    if not _is_execution_trace(decoded):
+        raise CodeModeReplayError("repair original execution trace is unavailable or invalid")
+    return decoded
+
+
 def _is_replay_record(value: JsonValue) -> TypeGuard[ReplayRecord]:
     if not isinstance(value, dict) or not set(ReplayRecord.__annotations__) <= value.keys():
         return False
     steps = value["state"]
-    delivery = value["delivery"]
     return (all(isinstance(value[key], str) for key in ("fingerprint", "effect_scope"))
             and all(type(value[key]) is int for key in ("schema", "epoch_ms", "seed"))
             and type(value["allow_writes"]) is bool and isinstance(steps, list)
             and all(isinstance(step, dict) and set(StateReference.__annotations__) <= step.keys()
-                    and isinstance(step["request"], str) and type(step["revision"]) is int for step in steps)
-            and isinstance(delivery, list)
-            and all(isinstance(item, dict) and set(DeliveryReference.__annotations__) <= item.keys()
-                    and isinstance(item["call_id"], str)
-                    and (item["child_index"] is None or type(item["child_index"]) is int)
-                    for item in delivery))
+                     and isinstance(step["request"], str) and type(step["revision"]) is int for step in steps)
+            and _is_execution_trace(value))

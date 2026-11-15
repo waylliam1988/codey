@@ -77,10 +77,11 @@ def test_observed_file_controls_are_selected_without_model_javascript(
             yield action("select", attachment_id=identity, target={"name": "Attachment"})
         yield action("observe")
         controls = observed_controls(directory)
+        target: JsonObject
         if case == "ambiguous":
             assert [row["group"] for row in controls] == ["Invoice", "Receipt"]
             yield action("select", attachment_id=identity, target={"name": "Attachment"})
-            target: JsonObject = {"id": controls[1]["id"]}
+            target = {"id": controls[1]["id"]}
         elif case == "expired":
             assert provider is not None and BrowserSession.from_provider(provider).navigate(URL).ok
             yield action("select", attachment_id=identity, target={"id": controls[0]["id"]})
@@ -96,7 +97,9 @@ def test_observed_file_controls_are_selected_without_model_javascript(
         if case == "premature":
             yield action("observe", url=URL)
         yield action("read", wait_for_text="UPLOAD_BYTES_82")
-        yield {"tool": "done", "args": {"summary": "已选择附件并检查页面。"}}
+        done_args: JsonObject = ({"paragraphs": ["已选择附件并检查页面。"]} if strict else
+                                 {"summary": "已选择附件并检查页面。"})
+        yield {"tool": "done", "args": done_args}
 
     install_http(monkeypatch, replies())
 
@@ -161,7 +164,7 @@ def test_labeled_source_prefetch_and_status_retry_preserve_analysis_without_reup
                  "附件已选择，服务器接收尚未核验。") + analysis
     replies: list[JsonObject] = [action("observe"),
         action("select", attachment_id=identity, target={"name": "Attachment"}), action("read"),
-        {"tool": "done", "args": {"summary": draft}}, {"tool": "done", "args": {"summary": corrected}}]
+        {"tool": "done", "args": {"paragraphs": [draft]}}, {"tool": "done", "args": {"paragraphs": [corrected]}}]
     install_http(monkeypatch, replies)
     directory = tmp_path / "run"
 
@@ -188,5 +191,6 @@ def test_labeled_source_prefetch_and_status_retry_preserve_analysis_without_reup
     requests = [json.dumps(row["payload"], ensure_ascii=False) for row in transcript if row.get("phase") == "request"]
     source_ref = next(row.identity for row in receipt_rows if row.result.call.name == "open_url")
     assert "Structured attachment selection" in requests[0] and source_ref in requests[0]
-    assert draft in requests[-1] and "done.summary" in requests[-1]
+    assert draft in requests[-1] and "done.paragraphs" in requests[-1]
+    assert "done.summary" not in requests[-1]
     assert len(requests) == 5

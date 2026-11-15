@@ -4,7 +4,7 @@ import re
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from codey.codemode.identity import rpc_child_allocator, rpc_child_index
+from codey.codemode.identity import rpc_child_admission, rpc_child_allocator, rpc_child_index
 from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE, replace_json_fields
 from codey.codemode.types import ToolCatalogEntry
 from codey.operations.browser_references import BrowserReferences
@@ -138,6 +138,8 @@ class CodeModeHost:
     def _invoke_one(
         self, index: int, tool_name: str, args: JsonObject, *, query: bool,
     ) -> ToolResult:
+        if admit := rpc_child_admission.get():
+            admit()
         if tool_name not in self._catalog:
             raise ValueError(f"tool is not in the frozen catalog: {tool_name}")
         decoded_args = self._reference_args(index, tool_name, args)

@@ -1,42 +1,62 @@
 from __future__ import annotations
 
 import time
-from types import SimpleNamespace
+from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
-from tests.support.provider_actions import ProviderActions
+from codey.operations.kernel_contracts import ToolExecutor
+from codey.operations.kernel_driver import drive_provider_request
+from codey.operations.provider_request import prepare_provider_request
+from codey.operations.provider_session import adapt_provider
+from codey.operations.task_session import TaskSession
+from codey.providers.requests import SendTextRequest
+from codey.research.tools import ResearchTools
+from codey.runtime.core.models import ToolResult
+from codey.types.json_value import JsonObject, decode_json_object, require_json_string
+from tests.test_codemode_replay_authority import _durable
+
+
+def _allow_url(*args: object, **kwargs: object) -> None:
+    return None
+
+
+@dataclass
+class _Receipts:
+    _memory_results: dict[str, ToolResult]
+
+
+class _AckProvider:
+    def send(self, *args: object) -> str:
+        return "ack"
 
 
 def _run_codemode(
-    session: object,
-    project: object,
+    session: TaskSession,
+    project: Path,
     *,
     turn: int,
     call_id: str,
     code: str,
-    inputs: dict[str, object],
-    executor: object = None,
+    inputs: JsonObject,
+    executor: ToolExecutor | None = None,
     repair_of: str | None = None,
-    research_tools: object = None,
+    research_tools: ResearchTools | None = None,
     session_id: str = "",
-):
+) -> ToolResult:
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.kernel_protocol import build_turn_snapshot
     from codey.runtime.core.models import ToolCall
 
     snapshot = build_turn_snapshot(session)
-    builder_args = {
-        "session": session, "snapshot": snapshot, "run_id": "repair-run", "effect_scope": "task",
-        "turn": turn, "project_path": project, "session_id": session_id,
-    }
-    if executor is not None:
-        builder_args["executors"] = {"open_url": executor}
-    if research_tools is not None:
-        builder_args["research_tools"] = research_tools
-    parent = build_execute_turn_executor(**builder_args)
-    args: dict[str, object] = {"code": code, "inputs": inputs}
+    parent = build_execute_turn_executor(
+        session=session, snapshot=snapshot, run_id="repair-run", effect_scope="task",
+        turn=turn, project_path=project, session_id=session_id,
+        executors={"open_url": executor} if executor is not None else None, research_tools=research_tools,
+    )
+    args: JsonObject = {"code": code, "inputs": inputs}
     if repair_of is not None:
         args["repair_of"] = repair_of
     return execute_turn(
@@ -75,39 +95,41 @@ def test_browser_file_replay_bounds_original_data_and_requires_settled_success(f
 
     tools = ["browser_download", "browser_read", "browser_read"]
     catalog = build_catalog_snapshot([
-        ToolCatalogEntry(name, name, output_schema=browser_output_schema(name)) for name in dict.fromkeys(tools)
+        ToolCatalogEntry(name, name, output_schema=browser_output_schema(name)) for name in sorted(set(tools))
     ])
     download = {"action": "download", "delivery": "delivered", "text": "file", "ref": "ref",
                 "path": "file.txt", "suggested_filename": "file.txt", "handle": "out_file", "bytes": 4,
                 "sha256": "a" * 64}
     children = {
-        "download": ToolResult(ToolCall("browser_download", {}, "one"), "file", ok=not failed_child,
+        "download": ToolResult(ToolCall("browser_download", {}, "run:parent:child:0"), "file", ok=not failed_child,
                                canonical={"value": download}),
-        "large": ToolResult(ToolCall("browser_read", {}, "two"), "大" * 5000, ok=True),
-        "partial": ToolResult(ToolCall("browser_read", {}, "three"), "partial", ok=True, truncated=True),
+        "large": ToolResult(ToolCall("browser_read", {}, "run:parent:child:1"), "大" * 5000, ok=True),
+        "partial": ToolResult(ToolCall("browser_read", {}, "run:parent:child:2"), "partial", ok=True, truncated=True),
     }
     metadata = repair_metadata("session", "run:parent", "result_encoding", list(children),
                                repair_catalog_digest(catalog, tools))
     parent = ToolResult(ToolCall("codemode", {}, "parent"), "failed", ok=False,
                         canonical={"repair": metadata, "child_effect_ids": list(children)})
-    result = browser_file_replay_value(SimpleNamespace(_memory_results=children), parent, str(metadata["token"]),
+    result = browser_file_replay_value(_Receipts(children), parent, str(metadata["token"]),
                                       session_id="session", run_id="run", catalog=catalog)
     if failed_child:
         assert result is None
         return
     assert result is not None
-    file, large, partial = result["replayed"]
+    rows = result["replayed"]
+    assert isinstance(rows, list)
+    file, large, partial = (decode_json_object(item) for item in rows)
     assert file["data"] == download and not file["truncated"]
     assert large["data"] is None and large["truncated"] and large["data_omitted"]
     assert partial["data"] == {"text": children["partial"].model_text}
     assert partial["truncated"] and not partial["data_omitted"]
 
 
-def test_return_only_repair_reuses_the_original_child_receipt(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_return_only_repair_reuses_the_original_child_receipt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
 
-    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: None)
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", _allow_url)
 
     session = TaskSession(
         TaskPolicy(frozenset({"control", "project.read", "web.read"})),
@@ -116,10 +138,10 @@ def test_return_only_repair_reuses_the_original_child_receipt(tmp_path, monkeypa
     class Source:
         calls = 0
 
-        def search(self, _query: str, *, limit: int):
+        def search(self, query: str, *, limit: int) -> list[JsonObject]:
             return []
 
-        def fetch(self, url: str):
+        def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
             return {"status": "ok", "url": url, "title": "Article", "content_kind": "html",
                     "text": f"V{self.calls}\n" * 80}
@@ -135,7 +157,7 @@ def test_return_only_repair_reuses_the_original_child_receipt(tmp_path, monkeypa
     )
     assert not failed.ok
     assert failed.audit["error_code"] in {"missing_return", "result_encoding"}, failed.model_text
-    token = failed.canonical["repair"]["token"]
+    token = require_json_string(decode_json_object(failed.canonical["repair"])["token"], "token")
     assert isinstance(token, str) and token.startswith("cmr_")
     assert source.calls == 1
     repaired = _run_codemode(
@@ -144,26 +166,26 @@ def test_return_only_repair_reuses_the_original_child_receipt(tmp_path, monkeypa
         inputs={"url": "https://example.test/article"}, repair_of=token,
     )
     assert repaired.ok, repaired.model_text
-    assert "V1" in repaired.canonical["value"]
+    assert "V1" in require_json_string(repaired.canonical["value"], "value")
     assert repaired.audit["recovery_disposition"] == "receipt_replay"
     assert source.calls == 1
 
 
-def test_repair_token_is_bound_to_the_original_session(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_repair_token_is_bound_to_the_original_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.research.tools import ResearchTools
 
-    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: None)
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", _allow_url)
     policy = TaskPolicy(frozenset({"control", "project.read", "web.read"}))
 
     class Source:
         calls = 0
 
-        def search(self, _query: str, *, limit: int):
+        def search(self, query: str, *, limit: int) -> list[JsonObject]:
             return []
 
-        def fetch(self, url: str):
+        def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
             return {"status": "ok", "url": url, "title": "Article", "content_kind": "html",
                     "text": "V1\n" * 80}
@@ -177,7 +199,7 @@ def test_repair_token_is_bound_to_the_original_session(tmp_path, monkeypatch: py
         code="const result = await tools.open_url({url: inputs.url}); return result.value.missing;",
         inputs={"url": "https://example.test/article"},
     )
-    token = failed.canonical["repair"]["token"]
+    token = require_json_string(decode_json_object(failed.canonical["repair"])["token"], "token")
 
     foreign = TaskSession(policy, project=str(tmp_path))
     foreign._memory_results.update(original._memory_results)
@@ -193,19 +215,19 @@ def test_repair_token_is_bound_to_the_original_session(tmp_path, monkeypatch: py
     assert source.calls == 1
 
 
-def test_fresh_codemode_execution_reads_the_new_source_version(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fresh_codemode_execution_reads_the_new_source_version(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
-    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: None)
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", _allow_url)
 
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "web.read"})), project=str(tmp_path))
     class Source:
         calls = 0
 
-        def search(self, _query: str, *, limit: int):
+        def search(self, query: str, *, limit: int) -> list[JsonObject]:
             return []
 
-        def fetch(self, url: str):
+        def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
             return {"status": "ok", "url": url, "title": "Article", "content_kind": "html",
                     "text": f"V{self.calls}\n" * 80}
@@ -219,29 +241,29 @@ def test_fresh_codemode_execution_reads_the_new_source_version(tmp_path, monkeyp
         code="return unwrap(await tools.open_url({url: inputs.url}));",
         inputs={"url": "https://example.test/article"},
     )
-    assert first.ok and "V1" in first.canonical["value"]
+    assert first.ok and "V1" in require_json_string(first.canonical["value"], "value")
     fresh = _run_codemode(
         session, tmp_path, turn=2, call_id="fresh", research_tools=research_tools,
         code="return unwrap(await tools.open_url({url: inputs.url}));",
         inputs={"url": "https://example.test/article"},
     )
-    assert fresh.ok and "V2" in fresh.canonical["value"]
+    assert fresh.ok and "V2" in require_json_string(fresh.canonical["value"], "value")
     assert source.calls == 2
 
 
-def test_repair_argument_change_fails_without_fetching_again(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_repair_argument_change_fails_without_fetching_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
-    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: None)
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", _allow_url)
 
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "web.read"})), project=str(tmp_path))
     class Source:
         calls = 0
 
-        def search(self, _query: str, *, limit: int):
+        def search(self, query: str, *, limit: int) -> list[JsonObject]:
             return []
 
-        def fetch(self, url: str):
+        def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
             return {"status": "ok", "url": url, "title": "Article", "content_kind": "html",
                     "text": "V1\n" * 80}
@@ -255,7 +277,7 @@ def test_repair_argument_change_fails_without_fetching_again(tmp_path, monkeypat
         code="const result = await tools.open_url({url: inputs.url}); return result.value.missing;",
         inputs={"url": "https://example.test/article"},
     )
-    token = failed.canonical["repair"]["token"]
+    token = require_json_string(decode_json_object(failed.canonical["repair"])["token"], "token")
     mismatch = _run_codemode(
         session, tmp_path, turn=2, call_id="repair", research_tools=research_tools,
         code="return unwrap(await tools.open_url({url: inputs.url}));",
@@ -266,7 +288,7 @@ def test_repair_argument_change_fails_without_fetching_again(tmp_path, monkeypat
     assert source.calls == 1
 
 
-def test_receipt_only_repair_rejects_state_writes_without_reapplying_them(tmp_path) -> None:
+def test_receipt_only_repair_rejects_state_writes_without_reapplying_them(tmp_path: Path) -> None:
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.kernel_protocol import build_turn_snapshot
@@ -283,17 +305,18 @@ def test_receipt_only_repair_rejects_state_writes_without_reapplying_them(tmp_pa
     parent = build_execute_turn_executor(
         session=session, snapshot=snapshot, run_id="r", effect_scope="outer", turn=0,
         project_path=project, managed_outputs=managed, workspace_revision_store=revisions,
-        intent_sink=sink, durable=mutations.durable,
+        intent_sink=sink, durable=_durable(mutations),
     )
     try:
         failed = execute_turn(
             session, [first_call], executors={"codemode": parent}, run_id="r", effect_scope="outer", turn=0,
-            snapshot=snapshot, intent_sink=sink, durable=mutations.durable, project_path=project,
+            snapshot=snapshot, intent_sink=sink, durable=_durable(mutations), project_path=project,
             managed_outputs=managed, workspace_revision_store=revisions,
         )[0]
         assert not failed.ok
-        ProviderActions(SimpleNamespace(send=lambda _: "ack"), sink).send("results")
-        token = failed.canonical["repair"]["token"]
+        reference = prepare_provider_request(sink, SendTextRequest("results"), counters=None)
+        drive_provider_request(sink, adapt_provider(_AckProvider()), reference)
+        token = require_json_string(decode_json_object(failed.canonical["repair"])["token"], "token")
         repair_call = ToolCall(
             "codemode",
             {"repair_of": token, "code": "await store('counter', 2); return 1;"},
@@ -303,21 +326,21 @@ def test_receipt_only_repair_rejects_state_writes_without_reapplying_them(tmp_pa
         repair_parent = build_execute_turn_executor(
             session=session, snapshot=repair_snapshot, run_id="r", effect_scope="outer", turn=1,
             project_path=project, managed_outputs=managed, workspace_revision_store=revisions,
-            intent_sink=sink, durable=mutations.durable,
+            intent_sink=sink, durable=_durable(mutations),
         )
         repaired = execute_turn(
             session, [repair_call], executors={"codemode": repair_parent}, run_id="r", effect_scope="outer", turn=1,
-            snapshot=repair_snapshot, intent_sink=sink, durable=mutations.durable, project_path=project,
+            snapshot=repair_snapshot, intent_sink=sink, durable=_durable(mutations), project_path=project,
             managed_outputs=managed, workspace_revision_store=revisions,
         )[0]
         assert not repaired.ok
-        assert "repair" in repaired.model_text.lower()
-        assert mutations.durable.task("r").state["codemode_state"]["counter"] == 1
+        assert repaired.audit["error_code"] == "repair_rejected"
+        assert decode_json_object(_durable(mutations).task("r").state["codemode_state"])["counter"] == 1
     finally:
-        mutations.durable.close()
+        _durable(mutations).close()
 
 
-def test_parallel_repair_binds_receipts_to_original_child_indices(tmp_path) -> None:
+def test_parallel_repair_binds_receipts_to_original_child_indices(tmp_path: Path) -> None:
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.operations.kernel_execution import execute_turn
     from codey.operations.kernel_protocol import build_turn_snapshot
@@ -356,7 +379,7 @@ def test_parallel_repair_binds_receipts_to_original_child_indices(tmp_path) -> N
     ))
     assert not failed.ok
     print("PARALLEL", failed.model_text, failed.audit, failed.canonical)
-    token = failed.canonical["repair"]["token"]
+    token = require_json_string(decode_json_object(failed.canonical["repair"])["token"], "token")
     repaired = run(1, ToolCall(
         "codemode",
         {"repair_of": token, "code": "const rows = await Promise.all([tools.read_file({path:'same'}), tools.read_file({path:'same'})]); return rows.map(row => row.value.text);"},
@@ -366,7 +389,7 @@ def test_parallel_repair_binds_receipts_to_original_child_indices(tmp_path) -> N
     assert repaired.canonical["value"] == ["ORIGINAL_CALL_0", "ORIGINAL_CALL_1"]
 
 
-def test_repair_after_durable_restore_reuses_the_original_child_receipt(tmp_path) -> None:
+def test_repair_after_durable_restore_reuses_the_original_child_receipt(tmp_path: Path) -> None:
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.durable import DurableSession, SQLiteDurableStore
     from codey.operations.kernel_context import KernelContext
@@ -400,19 +423,19 @@ def test_repair_after_durable_restore_reuses_the_original_child_receipt(tmp_path
     parent = build_execute_turn_executor(
         session=session, snapshot=snapshot, run_id="r", effect_scope="outer", turn=0,
         project_path=project, managed_outputs=managed, workspace_revision_store=revisions,
-        intent_sink=sink, durable=mutations.durable,
+        intent_sink=sink, durable=_durable(mutations),
     )
     first = execute_turn(
         session, [first_call], executors={"codemode": parent}, run_id="r", effect_scope="outer", turn=0,
-        snapshot=snapshot, intent_sink=sink, durable=mutations.durable, project_path=project,
+        snapshot=snapshot, intent_sink=sink, durable=_durable(mutations), project_path=project,
         managed_outputs=managed, workspace_revision_store=revisions,
     )[0]
     assert not first.ok
-    token = first.canonical["repair"]["token"]
+    token = require_json_string(decode_json_object(first.canonical["repair"])["token"], "token")
     # The direct execute_turn fixture bypasses the provider driver. Complete
     # the existing parent result delivery through the same durable provider
     # effect path used in production before starting the next turn.
-    delivery_batch = ToolResultDeliveryStore(durable=mutations.durable).load_batches("s", "r")[0]
+    delivery_batch = ToolResultDeliveryStore(durable=_durable(mutations)).load_batches("s", "r")[0]
     mutations.begin_provider_effect(
         "s", "r",
         RuntimeEffectIntent(
@@ -430,7 +453,7 @@ def test_repair_after_durable_restore_reuses_the_original_child_receipt(tmp_path
             sent_state="settled", replay_class=ReplayClass.UNSAFE,
         ),
     )
-    mutations.durable.close()
+    _durable(mutations).close()
 
     durable = DurableSession(SQLiteDurableStore(_state / "durable.sqlite3"))
     reopened_mutations = RuntimeMutationLine(durable=durable)
@@ -442,7 +465,7 @@ def test_repair_after_durable_restore_reuses_the_original_child_receipt(tmp_path
     KernelContext(
         fresh,
         KernelRunRequest(
-            transport=KernelTransportDeps(provider=object(), provider_id="local", run_id="r"),
+            transport=KernelTransportDeps(provider=adapt_provider(_AckProvider()), provider_id="local", run_id="r"),
             execution=KernelExecutionDeps(project_path=project, workspace_revision_store=revisions),
             observation=KernelObservationDeps(intent_sink=reopened_sink),
         ),
@@ -467,26 +490,26 @@ def test_repair_after_durable_restore_reuses_the_original_child_receipt(tmp_path
             managed_outputs=managed, workspace_revision_store=revisions,
         )[0]
         assert repaired.ok, repaired.model_text
-        assert repaired.canonical["value"]["text"] == "V1\n"
+        assert decode_json_object(repaired.canonical["value"])["text"] == "V1\n"
         assert repaired.audit["recovery_disposition"] == "receipt_replay"
     finally:
         durable.close()
 
 
-def test_repair_rejects_when_the_replayed_tool_is_revoked(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_repair_rejects_when_the_replayed_tool_is_revoked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
-    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: None)
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", _allow_url)
 
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "web.read"})), project=str(tmp_path))
 
     class Source:
         calls = 0
 
-        def search(self, _query: str, *, limit: int):
+        def search(self, query: str, *, limit: int) -> list[JsonObject]:
             return []
 
-        def fetch(self, url: str):
+        def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
             return {"status": "ok", "url": url, "title": "Article", "content_kind": "html", "text": "V1\n" * 80}
 
@@ -498,7 +521,7 @@ def test_repair_rejects_when_the_replayed_tool_is_revoked(tmp_path, monkeypatch:
         code="const result = await tools.open_url({url: inputs.url}); return result.value.missing;",
         inputs={"url": "https://example.test/article"},
     )
-    token = failed.canonical["repair"]["token"]
+    token = require_json_string(decode_json_object(failed.canonical["repair"])["token"], "token")
     session.policy = TaskPolicy(frozenset({"control", "project.read"}))
     revoked = _run_codemode(
         session, tmp_path, turn=2, call_id="repair", research_tools=research_tools,
@@ -512,22 +535,22 @@ def test_repair_rejects_when_the_replayed_tool_is_revoked(tmp_path, monkeypatch:
 
 @pytest.mark.parametrize("repair_of", [None, "cmr_missing"])
 def test_missing_or_absent_repair_authorization_never_reuses_a_child(
-    tmp_path, repair_of: str | None, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, repair_of: str | None, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from codey.operations.task_session import TaskSession
     from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall
 
-    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", lambda *args, **kwargs: None)
+    monkeypatch.setattr("codey.research.source_gateway.check_fetch_url", _allow_url)
 
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read", "web.read"})), project=str(tmp_path))
     class Source:
         calls = 0
 
-        def search(self, _query: str, *, limit: int):
+        def search(self, query: str, *, limit: int) -> list[JsonObject]:
             return []
 
-        def fetch(self, url: str):
+        def fetch(self, url: str) -> dict[str, object]:
             self.calls += 1
             return {"status": "ok", "url": url, "title": "Article", "content_kind": "html",
                     "text": "fresh\n" * 80}
@@ -545,7 +568,7 @@ def test_missing_or_absent_repair_authorization_never_reuses_a_child(
         session=session, snapshot=snapshot, run_id="repair-run", effect_scope="task", turn=1,
         project_path=tmp_path, research_tools=research_tools,
     )
-    args: dict[str, object] = {"code": "return unwrap(await tools.open_url({url: inputs.url}));",
+    args: JsonObject = {"code": "return unwrap(await tools.open_url({url: inputs.url}));",
                                 "inputs": {"url": "https://example.test/article"}}
     if repair_of is not None:
         args["repair_of"] = repair_of

@@ -159,7 +159,7 @@ def test_paragraph_contract_is_structured_and_restorable(paragraphs: list[object
     snapshot = restore_snapshot(snapshot_description(build_turn_snapshot(session, native=native)))
     args = decode_json_object({"paragraphs": paragraphs})
     reply = (AssistantTurn(tool_calls=(ProviderToolCall("done-1", "done", args),)) if native else
-             decode_text_turn(json.dumps({"tool": "done", "args": args})))
+             decode_text_turn(json.dumps(dict[str, object](tool="done", args=args))))
     plan = normalize_turn(reply, snapshot=snapshot)
     valid = bool(paragraphs) and all(isinstance(part, str) and "\n" not in part for part in paragraphs)
     assert bool(plan.protocol_error) is (not valid)
@@ -184,11 +184,11 @@ def test_explanation_interface_only_exposes_paragraphs(kind: str, native: bool, 
     assert "exactly one property: paragraphs" in done.description
     submitted: JsonObject = {"paragraphs": ["Business explanation."], extra: None}
     reply = (AssistantTurn(tool_calls=(ProviderToolCall("done-1", "done", submitted),)) if native else
-             decode_text_turn(json.dumps({"tool": "done", "args": submitted})))
+             decode_text_turn(json.dumps(dict[str, object](tool="done", args=submitted))))
     assert f"unexpected arg '{extra}'" in normalize_turn(reply, snapshot=snapshot).protocol_error
     legacy: JsonObject = {"summary": "Earlier prose form."}
     legacy_reply = (AssistantTurn(tool_calls=(ProviderToolCall("done-2", "done", legacy),)) if native else
-                    decode_text_turn(json.dumps({"tool": "done", "args": legacy})))
+                    decode_text_turn(json.dumps(dict[str, object](tool="done", args=legacy))))
     assert normalize_turn(legacy_reply, snapshot=snapshot).protocol_error
     direct = AssistantTurn(text="Direct prose") if native else decode_text_turn("Direct prose")
     assert "done.paragraphs" in normalize_turn(direct, snapshot=snapshot).protocol_error
@@ -611,7 +611,7 @@ def test_ordinary_hybrid_rejects_wrong_type_then_copies_from_receipt_without_bro
     directory = tmp_path / "hybrid"
     replies: list[JsonObject] = [
         code_action(LOAD + WAIT + "return unwrap(await tools.browser_read({}));"),
-        code_action("const read=await tools.read_file({path:'result.json'});return unwrap(await tools.edit({read,changes:{amount:'173',code:'QUARTZ_851'}}));"),
+        code_action("const read=await tools.read_file({path:'result.json'});return unwrap(await tools.edit({base_result_ref:read.result_ref,changes:{amount:'173',code:'QUARTZ_851'}}));"),
         code_action("const read=await tools.read_file({path:'result.json'});unwrap(read);return unwrap(await tools.edit({path:'result.json',base_result_ref:read.result_ref,declared_fields:true}));"),
         {"tool": "done", "args": {"summary": "已写入净重 173 克和校验码 QUARTZ_851。"}},
     ]

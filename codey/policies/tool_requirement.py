@@ -226,7 +226,7 @@ class ToolSuccessRequirement:
                     "Match numbers as complete JSON numbers, not as parts of larger numbers or identifiers. "
                     "The application checks this occurrence without rewriting your explanation. "
                     "Reuse committed evidence when repairing only the answer.")
-        content = ("In done.summary, supply only the natural-language explanation. " if explanation else
+        content = ("Supply only natural-language explanation text. " if explanation else
                    "In done.summary, supply only unbound JSON fields, or {} when none are needed. ")
         evidence = ("The latest matching receipt for the current browser document must be complete."
                     if self._binds_latest_browser_fields else

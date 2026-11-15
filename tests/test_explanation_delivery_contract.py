@@ -174,7 +174,7 @@ def test_combined_answer_repairs_preserve_whitespace_paths_and_code() -> None:
     assert evaluate(session, output.text, observations=output.observations).complete
 
 
-def test_omission_reuses_field_observation_without_rewriting_the_draft() -> None:
+def test_omission_reuses_field_observation_and_removes_only_the_declared_value() -> None:
     check = require_tool_success("read_file", answer_pointer="/token", result_pointer="/fact", omit_from_explanation=True)
     requirement = parse_tool_success_check(check)
     assert requirement is not None and requirement.omit_from_explanation
@@ -185,10 +185,12 @@ def test_omission_reuses_field_observation_without_rewriting_the_draft() -> None
     session = TaskSession(TaskPolicy(frozenset({"control", "project.read"}), required_checks=(
         declaration("json_explanation", json.dumps(schema)), check)), task_kind="chat")
     commit(session, "TOKEN_74")
-    draft = "已读。TOKEN_74"
+    draft = "已读。TOKEN_74 业务分析和 ID_TOKEN_74 保留。"
     output = prepare_completion_output(session, draft, CompletionContext())
-    assert parse_json_object(output.text) == {"explanation": draft, "token": "TOKEN_74"}
-    failed = evaluate(session, output.text, observations=output.observations)
+    assert parse_json_object(output.text) == {"explanation": "已读。 业务分析和 ID_TOKEN_74 保留。", "token": "TOKEN_74"}
+    assert evaluate(session, output.text, observations=output.observations).complete
+    unfiltered: JsonObject = {"explanation": draft, "token": "TOKEN_74"}
+    failed = evaluate(session, json.dumps(unfiltered), observations=output.observations)
     assert not failed.complete and "answer_text_forbidden" in failed.followup
     assert failed.error_source == "completion_explanation" and "Repair only /explanation" in failed.followup
     assert "TOKEN_74" not in failed.followup

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import IO, Literal, Protocol
 
 from codey.codemode.catalog import build_catalog_snapshot, catalog_describe, catalog_search
-from codey.codemode.identity import rpc_child_allocator, rpc_child_index
+from codey.codemode.identity import rpc_child_admission, rpc_child_allocator, rpc_child_index
 from codey.codemode.protocol import CodeModeInputError, parse_codemode_args
 from codey.codemode.state import CodeModeStateStore
 from codey.codemode.types import CodeModeLimits, CodeModeProgram, CodeModeResult, DeliveryReference, ToolCatalogEntry
@@ -88,6 +88,11 @@ class _SessionState:
         with self.condition:
             self.events.append(CodeModeEvent(len(self.events), kind, dict(payload or {})))
             self.condition.notify_all()
+
+    def admit_child(self) -> None:
+        with self.condition:
+            if self.stopping.is_set():
+                raise RuntimeError("CodeMode execution is stopping; new child calls are closed")
 
 
 class CodeModeSession:
@@ -254,7 +259,8 @@ class NodeWorkerRuntime:
                     "sandbox": {path.relative_to(assets).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
                                 for path in dependencies}, "memory_bytes": 64 * 1024 * 1024,
                     "engine": parse_json_object(probe.stdout), "rpc": 1, "determinism": 1,
-                    "result_delivery": "completion_order", "heap_mb": 128, "timeout": "per_attempt"}
+                    "result_delivery": "completion_order_terminal_drain", "child_admission": "per_effect",
+                    "heap_mb": 128, "timeout": "per_attempt"}
         return hashlib.sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     def execute(
@@ -338,7 +344,7 @@ class NodeWorkerRuntime:
                     publish({"type": "error", "code": "protocol", "message": "worker emitted invalid JSON"})
                     continue
                 publish({key: value for key, value in message.items()})
-            publish({"type": "eof"})
+            publish({"type": "error", "code": "worker_exit", "message": "codemode worker exited without a result"})
 
         reader = threading.Thread(target=read_messages, daemon=True)
         request = {
@@ -408,6 +414,7 @@ class NodeWorkerRuntime:
         pending_indices: dict[str, int | None] = {}
         ready_ids: list[str] = []
         delivery_cursor = 0
+        terminal: WireMessage | None = None
         allocator = _ChildCallAllocator(limits.max_child_calls)
 
         def mark_completed(_future: Future[WireMessage], *, call_id: str) -> None:
@@ -434,6 +441,13 @@ class NodeWorkerRuntime:
             except Exception as exc:
                 return CodeModeResult(False, error_code="delivery_journal", error=str(exc),
                                       child_calls=allocator.count)
+            if terminal is not None:
+                if delivery_cursor < len(delivery) and delivery[delivery_cursor]["call_id"] not in pending:
+                    return self._finish_message(terminal, allocator.count, limits, delivery_complete=False)
+                if pending:
+                    self._wait_callbacks(pending)
+                    continue
+                return self._finish_message(terminal, allocator.count, limits)
             try:
                 message = messages.get(timeout=0.05)
             except queue.Empty:
@@ -468,22 +482,26 @@ class NodeWorkerRuntime:
                         self._wait_callbacks(pending)
                 continue
             if kind in {"state", "discover"}:
-                terminal = self._queue_immediate(
+                failure = self._queue_immediate(
                     kind, message, pending, pending_indices, limits.max_pending_promises, state_store, catalog,
                     stdin, completion_callback,
                 )
-                if terminal is not None:
-                    return terminal
+                if failure is not None:
+                    return failure
                 continue
             if kind == "done":
-                return self._finish_message(message, allocator.count, limits)
+                terminal = message
+                continue
             if kind == "error":
                 return CodeModeResult(False, error_code=str(message.get("code", "worker_error")), error=str(message.get("message", "worker error")))
-            if kind == "eof":
-                return CodeModeResult(False, error_code="worker_exit", error="codemode worker exited without a result")
 
     @staticmethod
-    def _finish_message(message: WireMessage, issued_count: int, limits: CodeModeLimits) -> CodeModeResult:
+    def _finish_message(
+        message: WireMessage, issued_count: int, limits: CodeModeLimits, *, delivery_complete: bool = True,
+    ) -> CodeModeResult:
+        if message.get("ok") is True and not delivery_complete:
+            return CodeModeResult(False, error_code="delivery_journal",
+                error="CodeMode returned before issuing its recorded result deliveries", child_calls=issued_count)
         try:
             value_bytes = len(json.dumps(message.get("value"), ensure_ascii=False,
                                         separators=(",", ":")).encode("utf-8"))
@@ -695,15 +713,16 @@ class NodeWorkerRuntime:
             with cancellation.scope(stop), cancellation.deadline_scope(deadline):
                 cancellation.check()
                 with control.condition:
-                    if control.stopping.is_set():
-                        raise RuntimeError("CodeMode execution is stopping; new child calls are closed")
+                    control.admit_child()
                     control.emit("child_started", {"call_id": call_id, "child_index": child_index, "name": name})
                     started = True
                 index_token = rpc_child_index.set(child_index)
                 allocator_token = rpc_child_allocator.set(allocate_child)
+                admission_token = rpc_child_admission.set(control.admit_child)
                 try:
                     value = invoke(name, {key: item for key, item in decode_json_object(message["args"]).items()})
                 finally:
+                    rpc_child_admission.reset(admission_token)
                     rpc_child_allocator.reset(allocator_token)
                     rpc_child_index.reset(index_token)
             return {"type": "result", "callId": call_id, "ok": True, "value": value}
