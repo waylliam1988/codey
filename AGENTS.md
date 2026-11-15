@@ -11,28 +11,31 @@ Before implementing:
 - Inspect the relevant code and context before making assumptions.
 - State assumptions that materially affect the solution.
 - If multiple interpretations would lead to different outcomes, explain the tradeoffs and ask when the choice cannot be resolved from context.
-- If a simpler approach meets the goal, prefer it.
+- Prefer the simplest approach that solves the underlying problem and remains maintainable.
 - Continue with a reasonable, low-risk assumption when it can be verified. Stop and ask when uncertainty blocks a correct solution or could cause material harm.
 
 ## 2. Simplicity First
 
-**Write the least complex solution that meets the requirements.**
+**Solve the underlying problem with the least complexity needed for a maintainable result.**
 
 - Do not add features, configuration, or abstractions that are not needed.
 - Match the complexity of the solution to the complexity of the problem.
 - Handle failures that can reasonably occur at system boundaries; avoid speculative defensive code.
 - Prefer clarity and maintainability over minimizing line count.
+- Avoid accumulating local patches when a focused refactor would address the underlying cause more clearly.
 
 Ask yourself: “Is every part of this solution needed to meet the goal?” If not, simplify it.
 
 ## 3. Surgical Changes
 
-**Change only what the task requires.**
+**Keep changes focused on the task, including refactoring needed for a sound solution.**
 
 When editing existing code:
 
 - Do not change adjacent code, comments, or formatting without a reason tied to the task.
 - Do not refactor unrelated behavior.
+- Refactor when it meaningfully removes duplication, clarifies ownership, or prevents the same class of problem from recurring.
+- Judge scope by what is needed to solve the problem, not by the fewest changed lines. Explain consequential refactoring choices and verify affected behavior.
 - Follow existing conventions unless they conflict with the requested outcome.
 - Mention unrelated issues only when they are material to the user or could affect the result; do not fix them unless asked.
 
