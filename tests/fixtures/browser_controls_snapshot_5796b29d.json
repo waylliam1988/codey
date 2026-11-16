@@ -1,0 +1,2125 @@
+{
+  "allowed": [
+    "list_dir",
+    "read_file",
+    "read_files",
+    "grep",
+    "find_references",
+    "parallel",
+    "codemode",
+    "web_search",
+    "open_url",
+    "source_search",
+    "knowledge_search",
+    "knowledge_read",
+    "read_tool_result",
+    "done",
+    "ask_user",
+    "browser_click",
+    "browser_download",
+    "browser_eval",
+    "browser_fill",
+    "browser_navigate",
+    "browser_read",
+    "browser_scroll",
+    "browser_snapshot",
+    "browser_tab_list",
+    "browser_tab_new",
+    "browser_tab_switch",
+    "browser_upload",
+    "browser_wait"
+  ],
+  "browser_copy": null,
+  "browser_fill_text": null,
+  "browser_followups": true,
+  "browser_references": {
+    "controls": [
+      {
+        "context": "",
+        "context_id": "",
+        "disabled": false,
+        "name": "Locality",
+        "ref": "bc6b570d532f648118b4b193e0e4bd62cg4e1",
+        "role": "textbox"
+      },
+      {
+        "context": "",
+        "context_id": "",
+        "disabled": false,
+        "name": "Load record",
+        "ref": "bc6b570d532f648118b4b193e0e4bd62cg4e2",
+        "role": "button"
+      },
+      {
+        "context": "",
+        "context_id": "",
+        "disabled": false,
+        "name": "Attachment",
+        "ref": "bc6b570d532f648118b4b193e0e4bd62cg4e3",
+        "role": "textbox"
+      },
+      {
+        "context": "",
+        "context_id": "",
+        "disabled": false,
+        "name": "Download fixture",
+        "ref": "bc6b570d532f648118b4b193e0e4bd62cg4e4",
+        "role": "link"
+      }
+    ],
+    "document_json": "{\"loader_id\":\"045F1EB8851EB094F290E053D9642A0C\",\"target_id\":\"226F632230978C8406253D9C5F6B8AC2\",\"url\":\"https://example.com/production-browser-record\"}",
+    "generation": 4,
+    "receipt_ref": "task_turn_effect:359ca475746d9861"
+  },
+  "contract_text": "- codemode: Write an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}\n  codemode(args: { \"code\": string; \"inputs\"?: {  }; \"language\"?: \"javascript\" | \"js\"; \"repair_of\"?: string /* pattern \"^cmr_[A-Za-z0-9_-]{6,64}$\" */ })\n  {\"tool\":\"codemode\",\"args\":{\"code\":\"const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\",\"inputs\":{\"path\":\"app.py\"}}}\n// tools.NAME uses NAME's declared arguments; returns Result<T>.\ntype ToolResult<T> = {ok: true; value: T; result_ref?: string} | {ok: false; error: string};\ntype Result<T> = Promise<ToolResult<T>>;\ndeclare function unwrap<T>(result: ToolResult<T>): T;\ndeclare const tools: {\n  // Click a ref from the latest browser snapshot; stale refs are rejected. Choose ref as the observed string or {role,name,context?} from the current frozen snapshot. Context is its observed label. Descriptions must match exactly one control; for duplicate context labels use the actual string ref. For a query or detail needed to answer, use purpose=result when offered to read the result. For a menu or form needed for another action, use controls to observe new refs. Use action when the click itself is the requested outcome. Only declared purpose values are available. If result is unavailable, omit purpose for an atomic click, then explicitly wait and read as required. Returns the click result; follow-up observations are delivered in child receipts. A failed follow-up returns failure even when the click was delivered.\n  browser_click(args: { \"ref\": string | { \"role\": string /* length 1..* */; \"name\": string; \"context\"?: string }; \"purpose\"?: \"result\" | \"controls\" | \"action\" }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"ref\": string; \"observation\": string; \"effect_verified\": boolean; \"page_url\": string }>;\n  // Download through an authorized link ref. Return a managed path, byte count, SHA256 and artifact handle; the suggested filename never chooses a host path.\n  browser_download(args: { \"ref\": string }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"ref\": string; \"path\": string; \"suggested_filename\": string; \"handle\": string; \"bytes\": number; \"sha256\": string }>;\n  // Evaluate page JavaScript only when the browser effect capability is authorized.\n  // browser_eval.code: Page JavaScript expression or function, e.g. document.title or () => document.title; not a function body with a bare return.\n  browser_eval(args: { \"code\": string /* length 1..* */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"value\": unknown; \"truncated\": boolean }>;\n  // Fill and verify a textbox ref from the latest browser snapshot. Choose ref as the observed string or {role,name,context?} from the current frozen snapshot. Context is its observed label. Descriptions must match exactly one control; for duplicate context labels use the actual string ref.\n  browser_fill(args: { \"ref\": string | { \"role\": string /* length 1..* */; \"name\": string; \"context\"?: string }; \"value\": string }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"ref\": string; \"value_length\": number }>;\n  // Use {target: \"task\"} to open the task URL at the chosen time. Use {url: \"...\"} for other authorized pages. Navigate the current browser page to a user-authorized URL.\n  browser_navigate(args: { \"target\": \"task\" } | { \"url\": string /* length 1..* */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"url\": string; \"page_id\": string; \"generation\": number; \"http_status\": number | null; \"content_type\": string; \"previous_url\": string }>;\n  // Capture the currently bound page through the Research source and passage pipeline.\n  browser_read(args: { \"offset\"?: number /* range 0..* */; \"limit\"?: number /* range 500..12000 */ }): Result<string>;\n  // Scroll the bound page by a bounded amount.\n  browser_scroll(args: { \"direction\": \"up\" | \"down\" | \"left\" | \"right\"; \"amount\": number /* range 1..20000 */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"ref\": string; \"observation\": string; \"effect_verified\": boolean; \"page_url\": string }>;\n  // Observe the bound page as bounded text and named interactive element refs.\n  browser_snapshot(args: { \"max_elements\"?: number /* range 1..80 */; \"max_text\"?: number /* range 500..12000 */ }): Result<{ \"page_id\": string; \"page_url\": string; \"generation\": number; \"text\": string; \"complete\": boolean; \"scope\": string; \"text_truncated\": boolean; \"elements_truncated\": boolean; \"elements\": Array<{ \"ref\": string; \"role\": string; \"name\": string; \"disabled\": boolean; \"context_id\"?: string; \"value\": string | null; \"checked\": boolean | null }>; \"contexts\"?: Array<{ \"id\": string; \"kind\": string; \"label\": string; \"basis\": string }>; \"file_controls\"?: Array<{ \"id\": string; \"name\": string; \"dom_id\": string; \"field_name\": string; \"group\": string; \"disabled\": boolean }> }>;\n  // List pages in tabs; page_url identifies the currently bound browser page.\n  browser_tab_list(args: {  }): Result<{ \"text\": string; \"page_url\": string; \"tabs\": Array<{ \"index\": number; \"page_id\": string; \"url\": string; \"title\": string }> }>;\n  // Open a new tab at a user-authorized URL.\n  browser_tab_new(args: { \"url\": string /* length 1..* */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"url\": string; \"page_id\": string; \"generation\": number; \"http_status\": number | null; \"content_type\": string }>;\n  // Switch to a tab index from the latest tab list.\n  browser_tab_switch(args: { \"index\": number /* range 0..* */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"index\": number; \"url\": string }>;\n  // Select a user-imported attachment from this chat in a file input. Returns verified selection metadata, not proof of server submission. Host filesystem paths are not accepted.\n  browser_upload(args: { \"ref\": string; \"attachment_id\": string /* pattern \"^att_[a-f0-9]{64}$\" */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"ref\": string; \"attachment_id\": string; \"name\": string; \"media_type\": string; \"bytes\": number; \"sha256\": string; \"effect_verified\": boolean }>;\n  // Wait for one explicit bounded condition on the bound page.\n  browser_wait(args: { \"condition\": \"text\" | \"selector\" | \"url_contains\"; \"value\": string; \"timeout_ms\": number /* range 100..30000 */ }): Result<{ \"action\": string; \"condition\": string; \"matched\": boolean; \"page_url\": string; \"text\": string }>;\n  // Find bounded lexical reference hints for a simple symbol. This is not semantic resolution; use read_file before editing.\n  find_references(args: { \"symbol\": string; \"path\"?: string }): Result<string>;\n  // Search file contents for literal text before reading when the location is unknown. Uses packaged ripgrep. Defaults to literal, case-insensitive matching; set literal=false for regex, case_sensitive=true for exact case, include for one positive glob, exclude for positive globs to omit, and before_context/after_context for surrounding lines. Use rg braces for alternatives, e.g. include='*.{py,ts}'; comma-separated globs are not alternatives. Globs are relative to the workspace root even when path narrows the search. Exclude directories with an array such as exclude=['src/vendor/**']. Searches hidden and ignored files within the admitted workspace scope, excluding build/VCS directories and symlinks. CodeMode value is a page object with matches and explicit coverage; column_byte is one-based UTF-8 bytes. Read matched files for context.\n  // grep.include: One rg glob string, not an array. Combine alternatives with braces, e.g. *.{py,ts}.\n  grep(args: { \"query\": string; \"path\"?: string; \"offset\"?: number /* range 1..* */; \"limit\"?: number /* range 1..* */; \"literal\"?: boolean; \"case_sensitive\"?: boolean; \"include\"?: string; \"exclude\"?: Array<string>; \"before_context\"?: number /* range 0..* */; \"after_context\"?: number /* range 0..* */ }): Result<{ \"query\": string; \"path\": string; \"include\": string; \"exclude\": Array<string>; \"literal\": boolean; \"case_sensitive\": boolean; \"has_more\": boolean; \"scan_complete\": boolean; \"offset\": number /* range 1..* */; \"limit\": number /* range 1..* */; \"before_context\": number /* range 0..* */; \"after_context\": number /* range 0..* */; \"next_offset\": number /* range 0..* */; \"matches\": Array<{ \"path\": string; \"text\": string; \"line\": number /* range 1..* */; \"column_byte\": number /* range 1..* */ }>; \"context\": Array<{ \"path\": string; \"text\": string; \"line\": number /* range 1..* */; \"relation\": \"before\" | \"after\" | \"between\" }>; \"coverage\": { \"files_admitted\": number /* range 0..* */; \"bytes_admitted\": number /* range 0..* */; \"oversized\": number /* range 0..* */; \"unreadable\": number /* range 0..* */; \"budget_limited\": boolean } }>;\n  // read a structured object and its pinned revision, conditions, provenance and references; also accepts legacy note ids. Source reads accept offset/limit for bounded pinned windows; source and evidence reads yield original passages for citations. For knowledge_read, pass the note id exactly as returned; do not prepend facts/ or append .md. An opened-source sN or read-passage pN is a reading locator, not a stored knowledge id.\n  knowledge_read(args: { \"id\": string; \"revision\"?: number; \"offset\"?: number /* range 0..* */; \"limit\"?: number /* range 500..12000 */ }): Result<string>;\n  // search scoped knowledge FIRST; returns pinned versions, evidence, conditions and recall paths. Try mechanism or constraint queries to investigate cross-topic links; a path is not proof.\n  knowledge_search(args: { \"query\": string; \"depth\"?: number }): Result<string>;\n  // List files in a directory.\n  list_dir(args: { \"path\"?: string }): Result<string>;\n  // read a page's text; for PDFs, pages selects bounded page ranges\n  open_url(args: { \"url\": string; \"offset\"?: number; \"limit\"?: number; \"pages\"?: string }): Result<string>;\n  // Read one file. Large files are returned in complete-line pages. In CodeMode, value is an object: value.text is the page text (a string), with start_line, end_line, total_lines, next_offset and text_complete metadata.\n  read_file(args: { \"path\": string; \"offset\"?: number /* range 1..* */; \"limit\"?: number /* range 1..* */ }): Result<{ \"path\": string; \"text\": string; \"start_line\": number /* range 1..* */; \"end_line\": number /* range 0..* */; \"total_lines\": number /* range 0..* */; \"next_offset\": number /* range 0..* */; \"text_complete\": boolean }>;\n  // search within a source already opened with open_url; returns locators, offsets, and PDF pages\n  source_search(args: { \"url\": string; \"query\": string; \"limit\"?: number }): Result<string>;\n  // search the web for ranked results\n  web_search(args: { \"query\": string }): Result<string>;\n};\ntype CatalogSearchItem = {path: string; signature: string; description: string};\ndeclare function search(query?: string, options?: {namespace?: string; limit?: number; offset?: number}): Promise<{items: CatalogSearchItem[]; remaining: number; next_offset: number | null}>;\ndeclare function describe(path: string): Promise<CatalogSearchItem | null>;\n// Discovery only: await describe('tools.NAME') for the full omitted declaration. Calls still require authorization.\n// catalog_digest=sha256:0322dcf7c4f40cad863a5a5ba5ad03acaba8b87d2808d6690100b5639fcfa3c5\n// browser: 13 tools\n// knowledge: 2 tools\n// project: 4 tools\n// source: 3 tools\n\n- read_tool_result: Read a stored result from this task without repeating its execution. Use view=value for the full canonical JSON value, or view=output (default) for display/command output. A missing canonical value is an error; display text cannot replace it. Use query (a literal keyword, 1-512 characters) to locate a bounded excerpt in long output; offset starts the search or selects a page. Not a regular expression.\n  read_tool_result(args: { \"result_ref\": string; \"view\"?: \"output\" | \"value\"; \"offset\"?: number /* range 0..* */; \"limit\"?: number /* range 1..8000 */; \"query\"?: string })\n  {\"tool\":\"read_tool_result\",\"args\":{\"result_ref\":\"...\",\"query\":\"FAILED\",\"limit\":4000}}\n\n- done: The application assembles the final JSON. The done arguments object has exactly one property: paragraphs. Do not add summary, report_sections or any other property. Supply natural-language paragraphs in done.paragraphs, one string per paragraph without embedded line breaks, not an inner JSON document. The application joins them with a blank line in /explanation and fills declared receipt-bound fields from committed tool results. Repeat selected values in the explanation only when explicitly required. Explicitly omitted receipt-bound metadata is removed by exact value; other prose is preserved. The required JSON schema describes the application's final output.\n  done(args: { \"paragraphs\": Array<string /* length 1..*; pattern \"\\\\A[^\\\\r\\\\n]+\\\\Z\" */> /* items 1..* */ })\n  {\"tool\":\"done\",\"args\":{\"paragraphs\":[\"First paragraph.\",\"Second paragraph.\"]}}\n\n- ask_user: Ask a bounded choice question and pause for the user's answer. This authorizes no command. Must be the only call in the turn.\n  ask_user(args: { \"question\": string; \"options\": Array<string>; \"descriptions\"?: Array<string>; \"allow_free_text\"?: boolean })\n  {\"tool\":\"ask_user\",\"args\":{\"question\":\"Which scope?\",\"options\":[\"Collect tests\",\"Run tests\"]}}\n\n- browser_snapshot: Observe the bound page as bounded text and named interactive element refs.\n  browser_snapshot(args: { \"max_elements\"?: number /* range 1..80 */; \"max_text\"?: number /* range 500..12000 */ })\n  {\"tool\":\"browser_snapshot\",\"args\":{}}\n\n- browser_fill: Fill and verify a textbox ref from the latest browser snapshot. Choose ref as the observed string or {role,name,context?} from the current frozen snapshot. Context is its observed label. Descriptions must match exactly one control; for duplicate context labels use the actual string ref. After verified fill, use the automatically returned new snapshot refs.\n  browser_fill(args: { \"ref\": string | { \"role\": string /* length 1..* */; \"name\": string; \"context\"?: string }; \"value\": string })\n\n- browser_click: Click a ref from the latest browser snapshot; stale refs are rejected. Choose ref as the observed string or {role,name,context?} from the current frozen snapshot. Context is its observed label. Descriptions must match exactly one control; for duplicate context labels use the actual string ref. For a query or detail needed to answer, use purpose=result when offered to read the result. For a menu or form needed for another action, use controls to observe new refs. Use action when the click itself is the requested outcome. Only declared purpose values are available. If result is unavailable, omit purpose for an atomic click, then explicitly wait and read as required. Returns the click result; follow-up observations are delivered in child receipts. A failed follow-up returns failure even when the click was delivered.\n  browser_click(args: { \"ref\": string | { \"role\": string /* length 1..* */; \"name\": string; \"context\"?: string }; \"purpose\"?: \"result\" | \"controls\" | \"action\" })\n  {\"tool\":\"browser_click\",\"args\":{\"ref\":\"<snapshot ref>\"}}\n\n- browser_read: Capture the currently bound page through the Research source and passage pipeline.\n  browser_read(args: { \"offset\"?: number /* range 0..* */; \"limit\"?: number /* range 500..12000 */ })\n  {\"tool\":\"browser_read\",\"args\":{}}\n\n- browser_wait: Wait for one explicit bounded condition on the bound page.\n  browser_wait(args: { \"condition\": \"text\" | \"selector\" | \"url_contains\"; \"value\": string; \"timeout_ms\": number /* range 100..30000 */ })\n  {\"tool\":\"browser_wait\",\"args\":{\"condition\":\"text\",\"value\":\"...\",\"timeout_ms\":5000}}",
+  "executors": [
+    {
+      "binding": null,
+      "name": "codemode"
+    },
+    {
+      "binding": null,
+      "name": "read_tool_result"
+    },
+    {
+      "binding": null,
+      "name": "done"
+    },
+    {
+      "binding": null,
+      "name": "ask_user"
+    },
+    {
+      "binding": null,
+      "name": "browser_snapshot"
+    },
+    {
+      "binding": null,
+      "name": "browser_fill"
+    },
+    {
+      "binding": null,
+      "name": "browser_click"
+    },
+    {
+      "binding": null,
+      "name": "browser_read"
+    },
+    {
+      "binding": null,
+      "name": "browser_wait"
+    },
+    {
+      "binding": null,
+      "name": "browser_download"
+    },
+    {
+      "binding": null,
+      "name": "browser_eval"
+    },
+    {
+      "binding": null,
+      "name": "browser_navigate"
+    },
+    {
+      "binding": null,
+      "name": "browser_scroll"
+    },
+    {
+      "binding": null,
+      "name": "browser_tab_list"
+    },
+    {
+      "binding": null,
+      "name": "browser_tab_new"
+    },
+    {
+      "binding": null,
+      "name": "browser_tab_switch"
+    },
+    {
+      "binding": null,
+      "name": "browser_upload"
+    },
+    {
+      "binding": null,
+      "name": "find_references"
+    },
+    {
+      "binding": null,
+      "name": "grep"
+    },
+    {
+      "binding": null,
+      "name": "knowledge_read"
+    },
+    {
+      "binding": null,
+      "name": "knowledge_search"
+    },
+    {
+      "binding": null,
+      "name": "list_dir"
+    },
+    {
+      "binding": null,
+      "name": "open_url"
+    },
+    {
+      "binding": null,
+      "name": "read_file"
+    },
+    {
+      "binding": null,
+      "name": "source_search"
+    },
+    {
+      "binding": null,
+      "name": "web_search"
+    }
+  ],
+  "ignore_runtime_claims": false,
+  "implementation_id": "06b9e7b89a90104859a42261db815e04bfbaa3e7830c3c827a892dbf6bdcfff9",
+  "input_binding": null,
+  "nested_tool_names": [
+    "browser_click",
+    "browser_download",
+    "browser_eval",
+    "browser_fill",
+    "browser_navigate",
+    "browser_read",
+    "browser_scroll",
+    "browser_snapshot",
+    "browser_tab_list",
+    "browser_tab_new",
+    "browser_tab_switch",
+    "browser_upload",
+    "browser_wait",
+    "find_references",
+    "grep",
+    "knowledge_read",
+    "knowledge_search",
+    "list_dir",
+    "open_url",
+    "read_file",
+    "source_search",
+    "web_search"
+  ],
+  "policy": {
+    "denied_capabilities": [
+      "project.verify",
+      "project.write",
+      "shell.approval"
+    ],
+    "grants": [
+      "browser.effect",
+      "browser.interact",
+      "browser.observe",
+      "control",
+      "knowledge.read",
+      "project.read",
+      "web.read"
+    ],
+    "required_checks": [
+      "output_json_explanation:{\"additionalProperties\":false,\"properties\":{\"explanation\":{\"minLength\":1,\"pattern\":\"\\\\A[^\\\\S\\\\r\\\\n]*\\\\S[^\\\\r\\\\n]*(?:\\\\r?\\\\n[^\\\\S\\\\r\\\\n]*\\\\S[^\\\\r\\\\n]*)*(?:\\\\r?\\\\n[^\\\\S\\\\r\\\\n]*){2,}[^\\\\S\\\\r\\\\n]*\\\\S[^\\\\r\\\\n]*(?:\\\\r?\\\\n[^\\\\S\\\\r\\\\n]*\\\\S[^\\\\r\\\\n]*)*\\\\Z\",\"type\":\"string\"},\"page_url\":{\"minLength\":1,\"type\":\"string\"},\"token\":{\"minLength\":1,\"type\":\"string\"}},\"required\":[\"explanation\",\"page_url\",\"token\"],\"type\":\"object\"}",
+      "tool_succeeded:browser_click",
+      "tool_succeeded:browser_eval",
+      "tool_succeeded:browser_fill",
+      "tool_succeeded:browser_navigate",
+      "tool_succeeded:browser_read",
+      "tool_succeeded:browser_snapshot",
+      "tool_succeeded:browser_tab_list",
+      "tool_succeeded:browser_wait",
+      "tool_succeeded:{\"answer\":{\"line\":null,\"omit_from_explanation\":true,\"pointer\":\"/page_url\",\"result_pointer\":\"/page_url\"},\"args\":{},\"tool\":\"browser_tab_list\",\"via\":\"codemode\"}",
+      "tool_succeeded:{\"answer\":{\"line\":null,\"omit_from_explanation\":true,\"pointer\":\"/token\",\"result_pointer\":\"/value\"},\"args\":{\"code\":\"window.__contractToken\"},\"tool\":\"browser_eval\",\"via\":\"codemode\"}",
+      "tool_succeeded:{\"answer\":{\"browser_text\":{\"prefix\":\"鱼丸净重为 \",\"suffix\":\" 克。\",\"url\":\"https://example.com/production-browser-record\"},\"contains\":true,\"line\":null,\"pointer\":\"/explanation\",\"result_pointer\":\"/text\"},\"args\":{},\"tool\":\"browser_read\",\"via\":\"codemode\"}",
+      "tool_succeeded:{\"answer\":{\"browser_text\":{\"prefix\":\"记录校验码 \",\"suffix\":\"。\",\"url\":\"https://example.com/production-browser-record\"},\"contains\":true,\"line\":null,\"pointer\":\"/explanation\",\"result_pointer\":\"/text\"},\"args\":{},\"tool\":\"browser_read\",\"via\":\"codemode\"}",
+      "tool_succeeded:{\"after\":\"page_actions\",\"args\":{\"condition\":\"text\",\"value\":\"鱼丸\"},\"stage\":1,\"tool\":\"browser_wait\",\"via\":\"\"}",
+      "tool_succeeded:{\"after\":\"browser_wait\",\"args\":{},\"stage\":1,\"tool\":\"browser_read\",\"via\":\"\"}"
+    ],
+    "source": "kind:chat;project:yes;requested:browser.effect,browser.interact,browser.observe,web.read;strict:no;denied:project.write,shell.approval;verification:forbidden",
+    "sources_open_required": false,
+    "strict_research": false,
+    "version": 1
+  },
+  "research_scope": null,
+  "schema_version": 9,
+  "specs": [
+    {
+      "aliases": [],
+      "declarations": "// tools.NAME uses NAME's declared arguments; returns Result<T>.\ntype ToolResult<T> = {ok: true; value: T; result_ref?: string} | {ok: false; error: string};\ntype Result<T> = Promise<ToolResult<T>>;\ndeclare function unwrap<T>(result: ToolResult<T>): T;\ndeclare const tools: {\n  // Click a ref from the latest browser snapshot; stale refs are rejected. Choose ref as the observed string or {role,name,context?} from the current frozen snapshot. Context is its observed label. Descriptions must match exactly one control; for duplicate context labels use the actual string ref. For a query or detail needed to answer, use purpose=result when offered to read the result. For a menu or form needed for another action, use controls to observe new refs. Use action when the click itself is the requested outcome. Only declared purpose values are available. If result is unavailable, omit purpose for an atomic click, then explicitly wait and read as required. Returns the click result; follow-up observations are delivered in child receipts. A failed follow-up returns failure even when the click was delivered.\n  browser_click(args: { \"ref\": string | { \"role\": string /* length 1..* */; \"name\": string; \"context\"?: string }; \"purpose\"?: \"result\" | \"controls\" | \"action\" }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"ref\": string; \"observation\": string; \"effect_verified\": boolean; \"page_url\": string }>;\n  // Download through an authorized link ref. Return a managed path, byte count, SHA256 and artifact handle; the suggested filename never chooses a host path.\n  browser_download(args: { \"ref\": string }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"ref\": string; \"path\": string; \"suggested_filename\": string; \"handle\": string; \"bytes\": number; \"sha256\": string }>;\n  // Evaluate page JavaScript only when the browser effect capability is authorized.\n  // browser_eval.code: Page JavaScript expression or function, e.g. document.title or () => document.title; not a function body with a bare return.\n  browser_eval(args: { \"code\": string /* length 1..* */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"value\": unknown; \"truncated\": boolean }>;\n  // Fill and verify a textbox ref from the latest browser snapshot. Choose ref as the observed string or {role,name,context?} from the current frozen snapshot. Context is its observed label. Descriptions must match exactly one control; for duplicate context labels use the actual string ref.\n  browser_fill(args: { \"ref\": string | { \"role\": string /* length 1..* */; \"name\": string; \"context\"?: string }; \"value\": string }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"ref\": string; \"value_length\": number }>;\n  // Use {target: \"task\"} to open the task URL at the chosen time. Use {url: \"...\"} for other authorized pages. Navigate the current browser page to a user-authorized URL.\n  browser_navigate(args: { \"target\": \"task\" } | { \"url\": string /* length 1..* */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"url\": string; \"page_id\": string; \"generation\": number; \"http_status\": number | null; \"content_type\": string; \"previous_url\": string }>;\n  // Capture the currently bound page through the Research source and passage pipeline.\n  browser_read(args: { \"offset\"?: number /* range 0..* */; \"limit\"?: number /* range 500..12000 */ }): Result<string>;\n  // Scroll the bound page by a bounded amount.\n  browser_scroll(args: { \"direction\": \"up\" | \"down\" | \"left\" | \"right\"; \"amount\": number /* range 1..20000 */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"ref\": string; \"observation\": string; \"effect_verified\": boolean; \"page_url\": string }>;\n  // Observe the bound page as bounded text and named interactive element refs.\n  browser_snapshot(args: { \"max_elements\"?: number /* range 1..80 */; \"max_text\"?: number /* range 500..12000 */ }): Result<{ \"page_id\": string; \"page_url\": string; \"generation\": number; \"text\": string; \"complete\": boolean; \"scope\": string; \"text_truncated\": boolean; \"elements_truncated\": boolean; \"elements\": Array<{ \"ref\": string; \"role\": string; \"name\": string; \"disabled\": boolean; \"context_id\"?: string; \"value\": string | null; \"checked\": boolean | null }>; \"contexts\"?: Array<{ \"id\": string; \"kind\": string; \"label\": string; \"basis\": string }>; \"file_controls\"?: Array<{ \"id\": string; \"name\": string; \"dom_id\": string; \"field_name\": string; \"group\": string; \"disabled\": boolean }> }>;\n  // List pages in tabs; page_url identifies the currently bound browser page.\n  browser_tab_list(args: {  }): Result<{ \"text\": string; \"page_url\": string; \"tabs\": Array<{ \"index\": number; \"page_id\": string; \"url\": string; \"title\": string }> }>;\n  // Open a new tab at a user-authorized URL.\n  browser_tab_new(args: { \"url\": string /* length 1..* */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"url\": string; \"page_id\": string; \"generation\": number; \"http_status\": number | null; \"content_type\": string }>;\n  // Switch to a tab index from the latest tab list.\n  browser_tab_switch(args: { \"index\": number /* range 0..* */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"index\": number; \"url\": string }>;\n  // Select a user-imported attachment from this chat in a file input. Returns verified selection metadata, not proof of server submission. Host filesystem paths are not accepted.\n  browser_upload(args: { \"ref\": string; \"attachment_id\": string /* pattern \"^att_[a-f0-9]{64}$\" */ }): Result<{ \"action\": string; \"delivery\": string; \"text\": string; \"ref\": string; \"attachment_id\": string; \"name\": string; \"media_type\": string; \"bytes\": number; \"sha256\": string; \"effect_verified\": boolean }>;\n  // Wait for one explicit bounded condition on the bound page.\n  browser_wait(args: { \"condition\": \"text\" | \"selector\" | \"url_contains\"; \"value\": string; \"timeout_ms\": number /* range 100..30000 */ }): Result<{ \"action\": string; \"condition\": string; \"matched\": boolean; \"page_url\": string; \"text\": string }>;\n  // Find bounded lexical reference hints for a simple symbol. This is not semantic resolution; use read_file before editing.\n  find_references(args: { \"symbol\": string; \"path\"?: string }): Result<string>;\n  // Search file contents for literal text before reading when the location is unknown. Uses packaged ripgrep. Defaults to literal, case-insensitive matching; set literal=false for regex, case_sensitive=true for exact case, include for one positive glob, exclude for positive globs to omit, and before_context/after_context for surrounding lines. Use rg braces for alternatives, e.g. include='*.{py,ts}'; comma-separated globs are not alternatives. Globs are relative to the workspace root even when path narrows the search. Exclude directories with an array such as exclude=['src/vendor/**']. Searches hidden and ignored files within the admitted workspace scope, excluding build/VCS directories and symlinks. CodeMode value is a page object with matches and explicit coverage; column_byte is one-based UTF-8 bytes. Read matched files for context.\n  // grep.include: One rg glob string, not an array. Combine alternatives with braces, e.g. *.{py,ts}.\n  grep(args: { \"query\": string; \"path\"?: string; \"offset\"?: number /* range 1..* */; \"limit\"?: number /* range 1..* */; \"literal\"?: boolean; \"case_sensitive\"?: boolean; \"include\"?: string; \"exclude\"?: Array<string>; \"before_context\"?: number /* range 0..* */; \"after_context\"?: number /* range 0..* */ }): Result<{ \"query\": string; \"path\": string; \"include\": string; \"exclude\": Array<string>; \"literal\": boolean; \"case_sensitive\": boolean; \"has_more\": boolean; \"scan_complete\": boolean; \"offset\": number /* range 1..* */; \"limit\": number /* range 1..* */; \"before_context\": number /* range 0..* */; \"after_context\": number /* range 0..* */; \"next_offset\": number /* range 0..* */; \"matches\": Array<{ \"path\": string; \"text\": string; \"line\": number /* range 1..* */; \"column_byte\": number /* range 1..* */ }>; \"context\": Array<{ \"path\": string; \"text\": string; \"line\": number /* range 1..* */; \"relation\": \"before\" | \"after\" | \"between\" }>; \"coverage\": { \"files_admitted\": number /* range 0..* */; \"bytes_admitted\": number /* range 0..* */; \"oversized\": number /* range 0..* */; \"unreadable\": number /* range 0..* */; \"budget_limited\": boolean } }>;\n  // read a structured object and its pinned revision, conditions, provenance and references; also accepts legacy note ids. Source reads accept offset/limit for bounded pinned windows; source and evidence reads yield original passages for citations. For knowledge_read, pass the note id exactly as returned; do not prepend facts/ or append .md. An opened-source sN or read-passage pN is a reading locator, not a stored knowledge id.\n  knowledge_read(args: { \"id\": string; \"revision\"?: number; \"offset\"?: number /* range 0..* */; \"limit\"?: number /* range 500..12000 */ }): Result<string>;\n  // search scoped knowledge FIRST; returns pinned versions, evidence, conditions and recall paths. Try mechanism or constraint queries to investigate cross-topic links; a path is not proof.\n  knowledge_search(args: { \"query\": string; \"depth\"?: number }): Result<string>;\n  // List files in a directory.\n  list_dir(args: { \"path\"?: string }): Result<string>;\n  // read a page's text; for PDFs, pages selects bounded page ranges\n  open_url(args: { \"url\": string; \"offset\"?: number; \"limit\"?: number; \"pages\"?: string }): Result<string>;\n  // Read one file. Large files are returned in complete-line pages. In CodeMode, value is an object: value.text is the page text (a string), with start_line, end_line, total_lines, next_offset and text_complete metadata.\n  read_file(args: { \"path\": string; \"offset\"?: number /* range 1..* */; \"limit\"?: number /* range 1..* */ }): Result<{ \"path\": string; \"text\": string; \"start_line\": number /* range 1..* */; \"end_line\": number /* range 0..* */; \"total_lines\": number /* range 0..* */; \"next_offset\": number /* range 0..* */; \"text_complete\": boolean }>;\n  // search within a source already opened with open_url; returns locators, offsets, and PDF pages\n  source_search(args: { \"url\": string; \"query\": string; \"limit\"?: number }): Result<string>;\n  // search the web for ranked results\n  web_search(args: { \"query\": string }): Result<string>;\n};\ntype CatalogSearchItem = {path: string; signature: string; description: string};\ndeclare function search(query?: string, options?: {namespace?: string; limit?: number; offset?: number}): Promise<{items: CatalogSearchItem[]; remaining: number; next_offset: number | null}>;\ndeclare function describe(path: string): Promise<CatalogSearchItem | null>;\n// Discovery only: await describe('tools.NAME') for the full omitted declaration. Calls still require authorization.\n// catalog_digest=sha256:0322dcf7c4f40cad863a5a5ba5ad03acaba8b87d2808d6690100b5639fcfa3c5\n// browser: 13 tools\n// knowledge: 2 tools\n// project: 4 tools\n// source: 3 tools",
+      "description": "Write an async JavaScript function body using tools.* and return its JSON result explicitly. Use return null for an intentional empty result. Normal authorization applies. Returning modified data does not persist it; invoke the declared action tool to change external state. Calls return Result<T>; use unwrap(await tools.NAME(...)) to obtain T. Access only fields declared for that tool's output schema. Await all tool/store/load calls. console.log/error fail; only return delivers data. No direct filesystem, process, network, shell or recursive CodeMode access. Preserve argument strings exactly, including whether quote characters are present. Put task data (paths, search queries, file contents) in inputs, not JS string literals. Read it as inputs.name; inputs is immutable JSON data, never executable source. Example inputs={\"path\": \"app.py\"}; JavaScript: const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\nMultiline data arguments: {\"code\": \"return inputs.text;\", \"inputs\": {\"text\": \"first\\nsecond\\n\"}}",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "codemode",
+      "grant": "control",
+      "json_examples": [
+        "{\"tool\":\"codemode\",\"args\":{\"code\":\"const result = await tools.read_file({path:inputs.path}); const file = unwrap(result); return file.text;\",\"inputs\":{\"path\":\"app.py\"}}}"
+      ],
+      "name": "codemode",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "code",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "inputs",
+          {
+            "additionalProperties": true,
+            "description": "Named JSON data fields exposed as read-only inputs in JavaScript.",
+            "type": "object"
+          }
+        ],
+        [
+          "language",
+          {
+            "enum": [
+              "javascript",
+              "js"
+            ],
+            "type": "string"
+          }
+        ],
+        [
+          "repair_of",
+          {
+            "description": "Optional kernel-issued token for a return-only receipt replay.",
+            "pattern": "^cmr_[A-Za-z0-9_-]{6,64}$",
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "safe",
+      "required": [
+        "code"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Read a stored result from this task without repeating its execution. Use view=value for the full canonical JSON value, or view=output (default) for display/command output. A missing canonical value is an error; display text cannot replace it. Use query (a literal keyword, 1-512 characters) to locate a bounded excerpt in long output; offset starts the search or selects a page. Not a regular expression.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "receipt",
+      "grant": "control",
+      "json_examples": [
+        "{\"tool\":\"read_tool_result\",\"args\":{\"result_ref\":\"...\",\"query\":\"FAILED\",\"limit\":4000}}"
+      ],
+      "name": "read_tool_result",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "result_ref",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "view",
+          {
+            "enum": [
+              "output",
+              "value"
+            ],
+            "type": "string"
+          }
+        ],
+        [
+          "offset",
+          {
+            "minimum": 0,
+            "type": "integer"
+          }
+        ],
+        [
+          "limit",
+          {
+            "maximum": 8000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        ],
+        [
+          "query",
+          {
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "safe",
+      "required": [
+        "result_ref"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "The application assembles the final JSON. The done arguments object has exactly one property: paragraphs. Do not add summary, report_sections or any other property. Supply natural-language paragraphs in done.paragraphs, one string per paragraph without embedded line breaks, not an inner JSON document. The application joins them with a blank line in /explanation and fills declared receipt-bound fields from committed tool results. Repeat selected values in the explanation only when explicitly required. Explicitly omitted receipt-bound metadata is removed by exact value; other prose is preserved. The required JSON schema describes the application's final output.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "project",
+      "grant": "control",
+      "json_examples": [
+        "{\"tool\":\"done\",\"args\":{\"paragraphs\":[\"First paragraph.\",\"Second paragraph.\"]}}"
+      ],
+      "name": "done",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "paragraphs",
+          {
+            "items": {
+              "minLength": 1,
+              "pattern": "\\A[^\\r\\n]+\\Z",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "unsafe",
+      "required": [
+        "paragraphs"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Ask a bounded choice question and pause for the user's answer. This authorizes no command. Must be the only call in the turn.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "control",
+      "grant": "control",
+      "json_examples": [
+        "{\"tool\":\"ask_user\",\"args\":{\"question\":\"Which scope?\",\"options\":[\"Collect tests\",\"Run tests\"]}}"
+      ],
+      "name": "ask_user",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "question",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "options",
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        ],
+        [
+          "descriptions",
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        ],
+        [
+          "allow_free_text",
+          {
+            "type": "boolean"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "safe",
+      "required": [
+        "question",
+        "options"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Observe the bound page as bounded text and named interactive element refs.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.observe",
+      "json_examples": [
+        "{\"tool\":\"browser_snapshot\",\"args\":{}}"
+      ],
+      "name": "browser_snapshot",
+      "namespace": "browser.observe",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "type": "boolean"
+          },
+          "contexts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "basis": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "label",
+                "basis"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "elements": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "checked": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "context_id": {
+                  "type": "string"
+                },
+                "disabled": {
+                  "type": "boolean"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string"
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "ref",
+                "role",
+                "name",
+                "disabled",
+                "value",
+                "checked"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "elements_truncated": {
+            "type": "boolean"
+          },
+          "file_controls": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "disabled": {
+                  "type": "boolean"
+                },
+                "dom_id": {
+                  "type": "string"
+                },
+                "field_name": {
+                  "type": "string"
+                },
+                "group": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "dom_id",
+                "field_name",
+                "group",
+                "disabled"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "page_id": {
+            "type": "string"
+          },
+          "page_url": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "text_truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "page_id",
+          "page_url",
+          "generation",
+          "text",
+          "complete",
+          "scope",
+          "text_truncated",
+          "elements_truncated",
+          "elements"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "max_elements",
+          {
+            "maximum": 80,
+            "minimum": 1,
+            "type": "integer"
+          }
+        ],
+        [
+          "max_text",
+          {
+            "maximum": 12000,
+            "minimum": 500,
+            "type": "integer"
+          }
+        ]
+      ],
+      "preconditions": [
+        "browser_bound"
+      ],
+      "replay_class": "unsafe",
+      "required": []
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Fill and verify a textbox ref from the latest browser snapshot.",
+      "effect": "page_mutation",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.interact",
+      "json_examples": [
+        "{\"tool\":\"browser_fill\",\"args\":{\"ref\":\"<snapshot ref>\",\"value\":\"...\"}}"
+      ],
+      "name": "browser_fill",
+      "namespace": "browser.interact",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "value_length": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action",
+          "delivery",
+          "text",
+          "ref",
+          "value_length"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "ref",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "value",
+          {
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [
+        "browser_bound",
+        "fresh_snapshot"
+      ],
+      "replay_class": "unsafe",
+      "required": [
+        "ref",
+        "value"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Click a ref from the latest browser snapshot; stale refs are rejected.",
+      "effect": "page_mutation",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.interact",
+      "json_examples": [
+        "{\"tool\":\"browser_click\",\"args\":{\"ref\":\"<snapshot ref>\"}}"
+      ],
+      "name": "browser_click",
+      "namespace": "browser.interact",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "effect_verified": {
+            "type": "boolean"
+          },
+          "observation": {
+            "type": "string"
+          },
+          "page_url": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "delivery",
+          "text",
+          "ref",
+          "observation",
+          "effect_verified",
+          "page_url"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "ref",
+          {
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [
+        "browser_bound",
+        "fresh_snapshot"
+      ],
+      "replay_class": "unsafe",
+      "required": [
+        "ref"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Capture the currently bound page through the Research source and passage pipeline.",
+      "effect": "read",
+      "evidence_route": "source_read",
+      "executor": "browser",
+      "grant": "browser.observe",
+      "json_examples": [
+        "{\"tool\":\"browser_read\",\"args\":{}}"
+      ],
+      "name": "browser_read",
+      "namespace": "browser.read",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "offset",
+          {
+            "minimum": 0,
+            "type": "integer"
+          }
+        ],
+        [
+          "limit",
+          {
+            "maximum": 12000,
+            "minimum": 500,
+            "type": "integer"
+          }
+        ]
+      ],
+      "preconditions": [
+        "browser_bound"
+      ],
+      "replay_class": "unsafe",
+      "required": []
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Wait for one explicit bounded condition on the bound page.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.observe",
+      "json_examples": [
+        "{\"tool\":\"browser_wait\",\"args\":{\"condition\":\"text\",\"value\":\"...\",\"timeout_ms\":5000}}"
+      ],
+      "name": "browser_wait",
+      "namespace": "browser.observe",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "condition": {
+            "type": "string"
+          },
+          "matched": {
+            "type": "boolean"
+          },
+          "page_url": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "condition",
+          "matched",
+          "page_url",
+          "text"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "condition",
+          {
+            "enum": [
+              "text",
+              "selector",
+              "url_contains"
+            ],
+            "type": "string"
+          }
+        ],
+        [
+          "value",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "timeout_ms",
+          {
+            "maximum": 30000,
+            "minimum": 100,
+            "type": "integer"
+          }
+        ]
+      ],
+      "preconditions": [
+        "browser_bound"
+      ],
+      "replay_class": "unsafe",
+      "required": [
+        "condition",
+        "value",
+        "timeout_ms"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Download through an authorized link ref. Return a managed path, byte count, SHA256 and artifact handle; the suggested filename never chooses a host path.",
+      "effect": "external_effect",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.effect",
+      "json_examples": [
+        "{\"tool\":\"browser_download\",\"args\":{\"ref\":\"<snapshot ref>\"}}"
+      ],
+      "name": "browser_download",
+      "namespace": "browser.effect",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "handle": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "suggested_filename": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "delivery",
+          "text",
+          "ref",
+          "path",
+          "suggested_filename",
+          "handle",
+          "bytes",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "ref",
+          {
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [
+        "browser_bound",
+        "fresh_snapshot",
+        "managed_output_storage"
+      ],
+      "replay_class": "unsafe",
+      "required": [
+        "ref"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Evaluate page JavaScript only when the browser effect capability is authorized.",
+      "effect": "page_mutation",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.effect",
+      "json_examples": [
+        "{\"tool\":\"browser_eval\",\"args\":{\"code\":\"document.title\"}}"
+      ],
+      "name": "browser_eval",
+      "namespace": "browser.effect",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "value": {}
+        },
+        "required": [
+          "action",
+          "delivery",
+          "text",
+          "value",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "code",
+          {
+            "description": "Page JavaScript expression or function, e.g. document.title or () => document.title; not a function body with a bare return.",
+            "minLength": 1,
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [
+        "browser_bound"
+      ],
+      "replay_class": "unsafe",
+      "required": [
+        "code"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Navigate the current browser page to a user-authorized URL.",
+      "effect": "navigation",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.interact",
+      "json_examples": [
+        "{\"tool\":\"browser_navigate\",\"args\":{\"url\":\"https://example.com\"}}"
+      ],
+      "name": "browser_navigate",
+      "namespace": "browser.interact",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page_id": {
+            "type": "string"
+          },
+          "previous_url": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "delivery",
+          "text",
+          "url",
+          "page_id",
+          "generation",
+          "http_status",
+          "content_type",
+          "previous_url"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "url",
+          {
+            "minLength": 1,
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "unsafe",
+      "required": [
+        "url"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Scroll the bound page by a bounded amount.",
+      "effect": "page_mutation",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.interact",
+      "json_examples": [
+        "{\"tool\":\"browser_scroll\",\"args\":{\"direction\":\"down\",\"amount\":500}}"
+      ],
+      "name": "browser_scroll",
+      "namespace": "browser.interact",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "effect_verified": {
+            "type": "boolean"
+          },
+          "observation": {
+            "type": "string"
+          },
+          "page_url": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "delivery",
+          "text",
+          "ref",
+          "observation",
+          "effect_verified",
+          "page_url"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "direction",
+          {
+            "enum": [
+              "up",
+              "down",
+              "left",
+              "right"
+            ],
+            "type": "string"
+          }
+        ],
+        [
+          "amount",
+          {
+            "maximum": 20000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        ]
+      ],
+      "preconditions": [
+        "browser_bound"
+      ],
+      "replay_class": "unsafe",
+      "required": [
+        "direction",
+        "amount"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "List pages in tabs; page_url identifies the currently bound browser page.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.interact",
+      "json_examples": [
+        "{\"tool\":\"browser_tab_list\",\"args\":{}}"
+      ],
+      "name": "browser_tab_list",
+      "namespace": "browser.interact",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "page_url": {
+            "type": "string"
+          },
+          "tabs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "index": {
+                  "type": "integer"
+                },
+                "page_id": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "index",
+                "page_id",
+                "url",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "page_url",
+          "tabs"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [],
+      "preconditions": [],
+      "replay_class": "unsafe",
+      "required": []
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Open a new tab at a user-authorized URL.",
+      "effect": "navigation",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.interact",
+      "json_examples": [
+        "{\"tool\":\"browser_tab_new\",\"args\":{\"url\":\"https://example.com\"}}"
+      ],
+      "name": "browser_tab_new",
+      "namespace": "browser.interact",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "http_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page_id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "delivery",
+          "text",
+          "url",
+          "page_id",
+          "generation",
+          "http_status",
+          "content_type"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "url",
+          {
+            "minLength": 1,
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "unsafe",
+      "required": [
+        "url"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Switch to a tab index from the latest tab list.",
+      "effect": "navigation",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.interact",
+      "json_examples": [
+        "{\"tool\":\"browser_tab_switch\",\"args\":{\"index\":0}}"
+      ],
+      "name": "browser_tab_switch",
+      "namespace": "browser.interact",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "delivery",
+          "text",
+          "index",
+          "url"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "index",
+          {
+            "minimum": 0,
+            "type": "integer"
+          }
+        ]
+      ],
+      "preconditions": [
+        "browser_bound"
+      ],
+      "replay_class": "unsafe",
+      "required": [
+        "index"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "Select a user-imported attachment from this chat in a file input. Returns verified selection metadata, not proof of server submission. Host filesystem paths are not accepted.",
+      "effect": "external_effect",
+      "evidence_route": "none",
+      "executor": "browser",
+      "grant": "browser.effect",
+      "json_examples": [
+        "{\"tool\":\"browser_upload\",\"args\":{\"ref\":\"<snapshot ref>\",\"attachment_id\":\"<user attachment id>\"}}"
+      ],
+      "name": "browser_upload",
+      "namespace": "browser.effect",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "attachment_id": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "delivery": {
+            "type": "string"
+          },
+          "effect_verified": {
+            "type": "boolean"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "delivery",
+          "text",
+          "ref",
+          "attachment_id",
+          "name",
+          "media_type",
+          "bytes",
+          "sha256",
+          "effect_verified"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "ref",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "attachment_id",
+          {
+            "pattern": "^att_[a-f0-9]{64}$",
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [
+        "browser_bound",
+        "fresh_snapshot",
+        "explicit_file_authorization"
+      ],
+      "replay_class": "unsafe",
+      "required": [
+        "ref",
+        "attachment_id"
+      ]
+    },
+    {
+      "aliases": [
+        "references"
+      ],
+      "declarations": "",
+      "description": "Find bounded lexical reference hints for a simple symbol. This is not semantic resolution; use read_file before editing.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "project",
+      "grant": "project.read",
+      "json_examples": [
+        "{\"tool\":\"find_references\",\"args\":{\"symbol\":\"createRouter\",\"path\":\".\"}}"
+      ],
+      "name": "find_references",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "symbol",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "path",
+          {
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "safe",
+      "required": [
+        "symbol"
+      ]
+    },
+    {
+      "aliases": [
+        "search"
+      ],
+      "declarations": "",
+      "description": "Search file contents for literal text before reading when the location is unknown. Uses packaged ripgrep. Defaults to literal, case-insensitive matching; set literal=false for regex, case_sensitive=true for exact case, include for one positive glob, exclude for positive globs to omit, and before_context/after_context for surrounding lines. Use rg braces for alternatives, e.g. include='*.{py,ts}'; comma-separated globs are not alternatives. Globs are relative to the workspace root even when path narrows the search. Exclude directories with an array such as exclude=['src/vendor/**']. Searches hidden and ignored files within the admitted workspace scope, excluding build/VCS directories and symlinks. CodeMode value is a page object with matches and explicit coverage; column_byte is one-based UTF-8 bytes. Read matched files for context.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "project",
+      "grant": "project.read",
+      "json_examples": [
+        "{\"tool\":\"grep\",\"args\":{\"query\":\"login handler\",\"path\":\".\"}}",
+        "{\"tool\":\"grep\",\"args\":{\"query\":\"TODO\",\"path\":\"src\",\"include\":\"*.{py,ts}\",\"exclude\":[\"src/vendor/**\"]}}"
+      ],
+      "name": "grep",
+      "namespace": "core",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "after_context": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "before_context": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "case_sensitive": {
+            "type": "boolean"
+          },
+          "context": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "line": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "relation": {
+                  "enum": [
+                    "before",
+                    "after",
+                    "between"
+                  ],
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "line",
+                "text",
+                "relation"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "coverage": {
+            "additionalProperties": false,
+            "properties": {
+              "budget_limited": {
+                "type": "boolean"
+              },
+              "bytes_admitted": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "files_admitted": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "oversized": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "unreadable": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "files_admitted",
+              "bytes_admitted",
+              "oversized",
+              "unreadable",
+              "budget_limited"
+            ],
+            "type": "object"
+          },
+          "exclude": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "include": {
+            "type": "string"
+          },
+          "limit": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "literal": {
+            "type": "boolean"
+          },
+          "matches": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "column_byte": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "line": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "line",
+                "column_byte",
+                "text"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "next_offset": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "offset": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "scan_complete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query",
+          "path",
+          "include",
+          "exclude",
+          "literal",
+          "case_sensitive",
+          "has_more",
+          "scan_complete",
+          "offset",
+          "limit",
+          "before_context",
+          "after_context",
+          "next_offset",
+          "matches",
+          "context",
+          "coverage"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": true,
+      "parameters": [
+        [
+          "query",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "path",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "offset",
+          {
+            "minimum": 1,
+            "type": "integer"
+          }
+        ],
+        [
+          "limit",
+          {
+            "minimum": 1,
+            "type": "integer"
+          }
+        ],
+        [
+          "literal",
+          {
+            "type": "boolean"
+          }
+        ],
+        [
+          "case_sensitive",
+          {
+            "type": "boolean"
+          }
+        ],
+        [
+          "include",
+          {
+            "description": "One rg glob string, not an array. Combine alternatives with braces, e.g. *.{py,ts}.",
+            "type": "string"
+          }
+        ],
+        [
+          "exclude",
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        ],
+        [
+          "before_context",
+          {
+            "minimum": 0,
+            "type": "integer"
+          }
+        ],
+        [
+          "after_context",
+          {
+            "minimum": 0,
+            "type": "integer"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "safe",
+      "required": [
+        "query"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "read a structured object and its pinned revision, conditions, provenance and references; also accepts legacy note ids. Source reads accept offset/limit for bounded pinned windows; source and evidence reads yield original passages for citations. For knowledge_read, pass the note id exactly as returned; do not prepend facts/ or append .md. An opened-source sN or read-passage pN is a reading locator, not a stored knowledge id.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "knowledge",
+      "grant": "knowledge.read",
+      "json_examples": [
+        "{\"tool\":\"knowledge_read\",\"args\":{\"id\":\"<note id>\"}}"
+      ],
+      "name": "knowledge_read",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "id",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "revision",
+          {
+            "type": "integer"
+          }
+        ],
+        [
+          "offset",
+          {
+            "minimum": 0,
+            "type": "integer"
+          }
+        ],
+        [
+          "limit",
+          {
+            "maximum": 12000,
+            "minimum": 500,
+            "type": "integer"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "safe",
+      "required": [
+        "id"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "search scoped knowledge FIRST; returns pinned versions, evidence, conditions and recall paths. Try mechanism or constraint queries to investigate cross-topic links; a path is not proof.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "knowledge",
+      "grant": "knowledge.read",
+      "json_examples": [
+        "{\"tool\":\"knowledge_search\",\"args\":{\"query\":\"...\"}}"
+      ],
+      "name": "knowledge_search",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": true,
+      "parameters": [
+        [
+          "query",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "depth",
+          {
+            "type": "integer"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "safe",
+      "required": [
+        "query"
+      ]
+    },
+    {
+      "aliases": [
+        "ls"
+      ],
+      "declarations": "",
+      "description": "List files in a directory.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "project",
+      "grant": "project.read",
+      "json_examples": [
+        "{\"tool\":\"list_dir\",\"args\":{\"path\":\".\"}}"
+      ],
+      "name": "list_dir",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": true,
+      "parameters": [
+        [
+          "path",
+          {
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "safe",
+      "required": []
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "read a page's text; for PDFs, pages selects bounded page ranges",
+      "effect": "read",
+      "evidence_route": "source_read",
+      "executor": "source",
+      "grant": "web.read",
+      "json_examples": [
+        "{\"tool\":\"open_url\",\"args\":{\"url\":\"https://...\",\"offset\":0,\"limit\":6000,\"pages\":\"1-5\"}}"
+      ],
+      "name": "open_url",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "url",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "offset",
+          {
+            "type": "integer"
+          }
+        ],
+        [
+          "limit",
+          {
+            "type": "integer"
+          }
+        ],
+        [
+          "pages",
+          {
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "unsafe",
+      "required": [
+        "url"
+      ]
+    },
+    {
+      "aliases": [
+        "read"
+      ],
+      "declarations": "",
+      "description": "Read one file. Large files are returned in complete-line pages. In CodeMode, value is an object: value.text is the page text (a string), with start_line, end_line, total_lines, next_offset and text_complete metadata.",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "project",
+      "grant": "project.read",
+      "json_examples": [
+        "{\"tool\":\"read_file\",\"args\":{\"path\":\"app.py\"}}",
+        "{\"tool\":\"read_file\",\"args\":{\"path\":\"app.py\",\"offset\":301,\"limit\":300}}"
+      ],
+      "name": "read_file",
+      "namespace": "core",
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "end_line": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "next_offset": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "start_line": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          },
+          "text_complete": {
+            "type": "boolean"
+          },
+          "total_lines": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path",
+          "text",
+          "start_line",
+          "end_line",
+          "total_lines",
+          "next_offset",
+          "text_complete"
+        ],
+        "type": "object"
+      },
+      "parallel_safe": true,
+      "parameters": [
+        [
+          "path",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "offset",
+          {
+            "minimum": 1,
+            "type": "integer"
+          }
+        ],
+        [
+          "limit",
+          {
+            "minimum": 1,
+            "type": "integer"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "safe",
+      "required": [
+        "path"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "search within a source already opened with open_url; returns locators, offsets, and PDF pages",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "source",
+      "grant": "web.read",
+      "json_examples": [
+        "{\"tool\":\"source_search\",\"args\":{\"url\":\"https://...\",\"query\":\"...\",\"limit\":6}}"
+      ],
+      "name": "source_search",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "url",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "query",
+          {
+            "type": "string"
+          }
+        ],
+        [
+          "limit",
+          {
+            "type": "integer"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "unsafe",
+      "required": [
+        "query",
+        "url"
+      ]
+    },
+    {
+      "aliases": [],
+      "declarations": "",
+      "description": "search the web for ranked results",
+      "effect": "read",
+      "evidence_route": "none",
+      "executor": "source",
+      "grant": "web.read",
+      "json_examples": [
+        "{\"tool\":\"web_search\",\"args\":{\"query\":\"...\"}}"
+      ],
+      "name": "web_search",
+      "namespace": "core",
+      "output_schema": {
+        "type": "string"
+      },
+      "parallel_safe": false,
+      "parameters": [
+        [
+          "query",
+          {
+            "type": "string"
+          }
+        ]
+      ],
+      "preconditions": [],
+      "replay_class": "unsafe",
+      "required": [
+        "query"
+      ]
+    }
+  ],
+  "task_navigation_url": "https://example.com/production-browser-record",
+  "tool_names": [
+    "codemode",
+    "read_tool_result",
+    "done",
+    "ask_user",
+    "browser_snapshot",
+    "browser_fill",
+    "browser_click",
+    "browser_read",
+    "browser_wait"
+  ]
+}

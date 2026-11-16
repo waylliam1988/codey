@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_browser_entry_candidates import action, done
-from tests.test_protocol_surface import TARGET
+from codey.types.json_value import JsonObject
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_field_binding_probe as probe
 from tools.completion_artifact_audit import tool_receipts
+from tools.completion_explanation_ab import Target
 
 SELECTORS = {
     "text": {"prefix": "Net mass = ", "suffix": " g", "type": "integer"},
@@ -52,6 +52,8 @@ def test_generic_selector_with_real_browser_and_versioned_edit(
 
     navigate = f"unwrap(await tools.browser_navigate({{url:{json.dumps(case.url)}}}));"
     acquisition = f"{navigate}const r=await {case.acquisition};"
+    if case.acquisition.startswith("tools.browser_eval"):
+        acquisition += "unwrap(await tools.browser_read({}));"
     if defect == "reload":
         acquisition += navigate
     acquisition += "await store('source',r.result_ref);"
@@ -60,10 +62,12 @@ def test_generic_selector_with_real_browser_and_versioned_edit(
     field, = case.expected
     edit = (f"const read=await tools.read_file({{path:{json.dumps(case.path)}}});"
             f"const location={{...{json.dumps(selector)},ref:await load('source')}};"
-            f"return unwrap(await tools.edit({{read,changes:{{{json.dumps(field)}:location}}}}));")
-    install_http(monkeypatch, [action(acquisition), action(edit), action(edit), done("检查完成。")])
+            f"return unwrap(await tools.edit({{base_result_ref:read.result_ref,changes:{{{json.dumps(field)}:location}}}}));")
+    replies: list[JsonObject] = [{"tool": "codemode", "args": {"code": code}} for code in (acquisition, edit, edit)]
+    replies.append({"tool": "done", "args": {"summary": "检查完成。"}})
+    install_http(monkeypatch, replies)
     directory = tmp_path / "run"
-    row = probe.run_case(directory, case, TARGET, max_turns=4)
+    row = probe.run_case(directory, case, Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10), max_turns=4)
     assert row["passed"] is (not defect), row
     assert row["backup_preserved"] is True
     receipts = tool_receipts(directory / "state")

@@ -261,11 +261,14 @@ class ToolSuccessRequirement:
         witnesses: set[str] = set()
         matching_execution = False
         ordered: set[str] | None = None
+        prerequisite_refs: frozenset[str] = frozenset()
         if self.after:
-            from codey.operations.browser_completion import ordered_browser_refs
+            from codey.operations.browser_completion import ordered_browser_progress
 
-            ordered = ordered_browser_refs(self.tool, self.after, records=records, results=results or {},
-                                           document=browser_document, stage=self.stage)
+            progress = ordered_browser_progress(self.tool, self.after, records=records, results=results or {},
+                                                document=browser_document, stage=self.stage)
+            ordered = set(progress.refs)
+            prerequisite_refs = progress.prerequisite_refs
         for identity, row in records.items():
             if not _succeeded(row, self.tool):
                 continue
@@ -303,6 +306,7 @@ class ToolSuccessRequirement:
                                     and children.intersection(parent.get("child_effect_ids", ()))}
         outcome = (ToolObservation(RequirementEvaluation()) if self.answer_pointer is None
                    else self._observe_value(eligible, results))
+        witnesses.update(prerequisite_refs)
         return replace(outcome, evaluation=replace(outcome.evaluation, evidence_refs=tuple(sorted(witnesses))))
 
     def _observe_value(

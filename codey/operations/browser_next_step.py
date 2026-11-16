@@ -12,6 +12,7 @@ from codey.operations.browser_completion import (
     committed_results,
     complete_page_passages,
     ordered_browser_progress,
+    page_effect_possible,
     post_wait_passages,
     wait_matched_on_page,
 )
@@ -52,7 +53,7 @@ def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, Executio
             "Recover that stage on its original document before advancing; its waits cannot attach to the current click.")
     invalidators = PAGE_EVIDENCE_INVALIDATORS if pages or workflow else PAGE_ACTIONS
     actions = [(ref, row) for ref, row in committed_results(records, results, invalidators, include_failed=invalidators)
-               if same_document(row.audit.get("browser_document"), document)]
+               if same_document(row.audit.get("browser_document"), document) and page_effect_possible(row)]
     query = pending_click(results, document)
     clicks = [(ref, row) for ref, row in actions if row.call.name == "browser_click"
               and (row.ok or delivery(row) in {"delivered", "uncertain"})]

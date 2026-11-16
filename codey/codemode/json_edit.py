@@ -11,6 +11,7 @@ from codey.types.json_value import JsonValue
 
 _WHITESPACE = re.compile(r"[ \t\r\n]*")
 _NUMBER = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\Z")
+_JSON_START = re.compile(r"[\[{]")
 
 
 @dataclass(frozen=True)
@@ -95,6 +96,23 @@ def _invalid_constant(value: str) -> NoReturn:
 
 _DECODER = json.JSONDecoder(object_pairs_hook=_unique, parse_int=JsonNumber, parse_float=JsonNumber,
                             parse_constant=_invalid_constant)
+
+
+def last_json_object(text: str) -> str | None:
+    """Locate complete outer objects in document order without rounding numbers."""
+    content = None
+    cursor = 0
+    while (match := _JSON_START.search(text, cursor)) is not None:
+        start = match.start()
+        try:
+            span: tuple[object, int] = _DECODER.raw_decode(text, start)
+        except ValueError:
+            cursor = start + 1
+            continue
+        value, cursor = span
+        if isinstance(value, dict):
+            content = text[start:cursor]
+    return content
 
 
 def json_source_value(text: str, pointer: str) -> object:

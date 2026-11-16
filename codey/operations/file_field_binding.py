@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 
-from codey.codemode.json_edit import JsonNumber, json_source_value, replace_json_fields
+from codey.codemode.json_edit import JsonNumber, json_source_value, last_json_object, replace_json_fields
 from codey.operations.task_session import TaskSession
 from codey.policies.requirement import RequirementEvaluation
 from codey.policies.tool_requirement import ToolObservation, ToolSuccessRequirement, parse_tool_success_check
@@ -82,11 +82,23 @@ def validate_content(checks: tuple[str, ...], path: str, content: str,
     return ""
 
 
+def _reported_json_object(text: str) -> str | None:
+    content = None
+    cursor = 0
+    for block in re.finditer(r"```([^`\r\n]*)\r?\n([\s\S]*?)```", text):
+        content = last_json_object(text[cursor:block.start()]) or content
+        if text[block.start(1):block.end(1)].strip().lower() in {"", "json"}:
+            content = last_json_object(text[block.start(2):block.end(2)]) or content
+        cursor = block.end()
+    return last_json_object(text[cursor:]) or content
+
+
 def reported_field_outcome(rule: ToolSuccessRequirement, observation: ToolObservation,
                            text: str, checks: tuple[str, ...]) -> RequirementEvaluation:
     """Check the final explicit JSON object, with no prose or file-identity inference."""
-    blocks = [match[1] for match in re.finditer(r"```(?:json)?[ \t]*\r?\n([\s\S]*?)```", text, re.I)]
-    content = blocks[-1] if blocks else text
+    content = _reported_json_object(text)
+    if content is None:
+        return RequirementEvaluation(evidence_refs=observation.evaluation.evidence_refs)
     file_pointer = "/" + rule.file_path.replace("~", "~0").replace("/", "~1") + (rule.answer_pointer or "")
     pointers = [file_pointer]
     if not any(other.file_path != rule.file_path and other.answer_pointer == rule.answer_pointer

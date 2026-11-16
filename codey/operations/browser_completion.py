@@ -27,6 +27,16 @@ class OrderedBrowserProgress:
     ready: bool = False
     uncertain: bool = False
     refs: frozenset[str] = frozenset()
+    prerequisite_refs: frozenset[str] = frozenset()
+
+
+def page_effect_possible(result: ToolResult) -> bool:
+    """Only an explicit pre-delivery rejection proves the page was untouched."""
+    value = result.canonical.get("value")
+    if result.ok or not isinstance(value, dict):
+        return True
+    action: Mapping[str, object] = value
+    return action.get("delivery") != "not_delivered"
 
 
 def ordered_browser_progress(tool: str, after: str, *, records: Mapping[str, ExecutionRecord],
@@ -40,12 +50,17 @@ def ordered_browser_progress(tool: str, after: str, *, records: Mapping[str, Exe
     ready = False
     uncertain = False
     click_stage = 0
+    clicks: set[str] = set()
+    prerequisite_refs: frozenset[str] = frozenset()
     for ref, result in committed_results(records, results, prerequisites | {tool, "browser_click"},
                                          include_failed=prerequisites | {"browser_click"}):
         if result.audit.get("browser_document") != document:
             continue
+        if result.call.name in PAGE_EVIDENCE_INVALIDATORS and not page_effect_possible(result):
+            continue
         if _stage_click(result):
             click_stage += 1
+            clicks.add(ref)
         if stage and click_stage != stage:
             continue
         if result.call.name in prerequisites:
@@ -56,19 +71,17 @@ def ordered_browser_progress(tool: str, after: str, *, records: Mapping[str, Exe
             uncertain = delivered == "uncertain"
             ready = ((result.ok or delivered == "delivered") and not uncertain if after == "page_actions" else
                      result.ok and wait_matched_on_page(result, str(document.get("url", ""))))
+            prerequisite_refs = frozenset({ref}) if ready else frozenset()
+            if ready and stage:
+                prerequisite_refs |= clicks
         elif result.call.name == "browser_click":
             eligible.clear()
             ready = False
+            prerequisite_refs = frozenset()
         elif result.call.name == tool and ready and result.ok:
             if tool != "browser_wait" or wait_matched_on_page(result, str(document.get("url", ""))):
                 eligible.add(ref)
-    return OrderedBrowserProgress(ready, uncertain, frozenset(eligible))
-
-
-def ordered_browser_refs(tool: str, after: str, *, records: Mapping[str, ExecutionRecord],
-                         results: Mapping[str, ToolResult], document: JsonObject | None, stage: int = 0) -> set[str]:
-    return set(ordered_browser_progress(tool, after, records=records, results=results,
-                                       document=document, stage=stage).refs)
+    return OrderedBrowserProgress(ready, uncertain, frozenset(eligible), prerequisite_refs)
 
 
 def browser_click_stage(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
@@ -136,8 +149,9 @@ def ordered_page_passages(url: str, *, records: Mapping[str, ExecutionRecord], r
         if result.audit.get("browser_document") != document:
             continue
         if result.call.name in invalidated_by:
-            wait = ""
-            passages.clear()
+            if page_effect_possible(result):
+                wait = ""
+                passages.clear()
         elif result.call.name == "browser_wait" and wait_matches(ref, result):
             wait = ref
         elif wait and result.call.name == "browser_read" and (read_refs is None or ref in read_refs):

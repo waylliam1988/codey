@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
@@ -46,6 +46,7 @@ class BrowserReferences:
     document_json: str
     generation: int
     controls: tuple[ObservedControl, ...]
+    presentation_version: Literal[1, 2] = 2
 
     def __post_init__(self) -> None:
         if (not self.receipt_ref or self.generation < 0 or not parse_json_object(self.document_json)
@@ -116,13 +117,22 @@ class BrowserReferences:
 
     def payload(self) -> JsonObject:
         return {"receipt_ref": self.receipt_ref, "document_json": self.document_json, "generation": self.generation,
-                "controls": [row.payload() for row in self.controls]}
+                "controls": [row.payload() for row in self.controls], "presentation_version": self.presentation_version}
 
     @classmethod
     def restore(cls, raw: JsonValue) -> BrowserReferences:
         row = decode_json_object(raw)
-        if set(row) != {"receipt_ref", "document_json", "generation", "controls"} or not isinstance(row["controls"], list):
+        expected = {"receipt_ref", "document_json", "generation", "controls"}
+        if set(row) not in (expected, expected | {"presentation_version"}) or not isinstance(row["controls"], list):
             raise ValueError("Invalid frozen browser control binding.")
+        raw_version = require_json_integer(row.get("presentation_version", 2), "control presentation version")
+        presentation_version: Literal[1, 2]
+        if raw_version == 1:
+            presentation_version = 1
+        elif raw_version == 2:
+            presentation_version = 2
+        else:
+            raise ValueError("Unsupported frozen browser control presentation version.")
         controls: list[ObservedControl] = []
         for raw_control in row["controls"]:
             control = decode_json_object(raw_control)
@@ -135,7 +145,7 @@ class BrowserReferences:
                 require_json_boolean(control["disabled"], "disabled")))
         return cls(require_json_string(row["receipt_ref"], "receipt_ref"),
                    require_json_string(row["document_json"], "document_json"),
-                   require_json_integer(row["generation"], "generation"), tuple(controls))
+                   require_json_integer(row["generation"], "generation"), tuple(controls), presentation_version)
 
 
 def reference_spec(spec: ToolSpec, references: BrowserReferences | None) -> ToolSpec:
@@ -145,7 +155,16 @@ def reference_spec(spec: ToolSpec, references: BrowserReferences | None) -> Tool
     choices = references.choices()
     selector: JsonObject = {"type": "object", "properties": {
         "role": {"type": "string", "minLength": 1}, "name": {"type": "string"}, "context": {"type": "string"}},
-        "required": ["role", "name"], "additionalProperties": False, "enum": choices}
+        "required": ["role", "name"], "additionalProperties": False}
+    if references.presentation_version == 1:
+        # Decode the original presentation through the same frozen identity and
+        # execution contract. This does not install an older executor.
+        return freeze_spec_parameters(replace(spec, parameters=tuple(
+            (key, {"anyOf": [schema, selector]}) if key == "ref" else (key, schema) for key, schema in spec.parameters),
+            description=spec.description + " Choose ref as the observed string or {role,name,context?} from the current "
+            "frozen snapshot. Context is its observed label. Descriptions must match exactly one control; "
+            "for duplicate context labels use the actual string ref."))
+    selector["enum"] = choices
     example = " Example ref argument: " + json.dumps(choices[0], ensure_ascii=False) if choices else ""
     return freeze_spec_parameters(replace(spec, parameters=tuple(
         (key, {"anyOf": [selector, schema]} if choices else schema) if key == "ref" else (key, schema)

@@ -316,10 +316,28 @@ def test_admission_keeps_single_click_and_mixed_navigation_stages(task: str, exp
     assert [rule.stage for rule in rules] == expected
 
 
-def test_selected_post_edit_verification_output_is_not_an_edit_prerequisite(tmp_path: Path) -> None:
+def test_selected_verification_requires_its_saved_output_before_the_edit_entry(tmp_path: Path) -> None:
     session, context = declared_session(tmp_path)
-    session.task_text = "Run diagnostics once, then find BUILD_ID in its saved output. " + session.task_text
-    session.selected_verification = VerificationCandidate("diagnostics", ".", "task")
+    command = "python -m unittest -q"
+    (tmp_path / "test_build_id.py").write_text(
+        "import unittest\nprint('BUILD_ID=84')\n"
+        "class BuildTest(unittest.TestCase):\n    def test_ready(self):\n        self.assertTrue(True)\n",
+        encoding="utf-8")
+    session.task_text = f"Run `{command}` once, then find BUILD_ID in its saved output. " + session.task_text
+    session.policy = TaskPolicy(GRANTS | {"project.verify"}, required_checks=session.policy.required_checks)
+    session.verification_forbidden = False
+    session.selected_verification = VerificationCandidate(command, ".", "task")
+    snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
+    assert snapshot.input_binding is None and "read_tool_result" in snapshot.tool_names
+    assert "run" in snapshot.inventory_names
+    revisions = WorkspaceRevisionStore(tmp_path.parent / (tmp_path.name + "-versions"))
+    ran, = execute_turn(session, [ToolCall("run", {"command": command, "path": "."})],
+        project_path=tmp_path, run_id="requested-read", turn=1, workspace_revision_store=revisions)
+    assert ran.ok, ran.model_text
+    run_ref = next(ref for ref, result in session._memory_results.items() if result.call.name == "run")
+    read, = execute_turn(session, [ToolCall("read_tool_result", {"result_ref": run_ref, "query": "BUILD_ID"})],
+        project_path=tmp_path, run_id="requested-read", turn=2, workspace_revision_store=revisions)
+    assert read.ok, read.model_text
     snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
     assert snapshot.input_binding is not None
 

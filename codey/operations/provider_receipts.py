@@ -118,7 +118,8 @@ def snapshot_description(snapshot: TurnSnapshot) -> JsonObject:
             "task_navigation_url": snapshot.task_navigation_url,
             "browser_copy": snapshot.browser_copy.payload() if snapshot.browser_copy is not None else None,
             "input_binding": json_value(snapshot.input_binding),
-            "implementation_id": runtime_implementation_id(), "allowed": json_value(snapshot.allowed),
+            "implementation_id": runtime_implementation_id() if snapshot.implementation_compatible else "",
+            "allowed": json_value(snapshot.allowed),
             "contract_text": snapshot.contract_text, "tool_names": list(snapshot.tool_names),
             "nested_tool_names": list(snapshot.nested_tool_names),
             "research_scope": snapshot.research_scope.to_payload() if snapshot.research_scope is not None else None,
@@ -272,8 +273,25 @@ def _snapshot_payload(raw: object) -> tuple[JsonObject, int]:
     return payload, version
 
 
+def _restore_model_contract(snapshot: TurnSnapshot, raw_references: object) -> TurnSnapshot:
+    from codey.operations.kernel_protocol import render_snapshot_contract
+    from codey.toolchain.tool_prompt import contract_semantics
+
+    contract = contract_semantics(snapshot.contract_text)
+    references = snapshot.browser_references
+    if (contract != contract_semantics(render_snapshot_contract(snapshot))
+            and references is not None and isinstance(raw_references, dict)
+            and "presentation_version" not in raw_references):
+        # Two historical presentations shared snapshot version 9. Select only
+        # a presentation whose complete generated contract matches the artifact.
+        snapshot = replace(snapshot, browser_references=replace(references, presentation_version=1))
+    if contract != contract_semantics(render_snapshot_contract(snapshot)):
+        raise ValueError("captured contract text differs from its frozen model definitions")
+    return snapshot
+
+
 def restore_snapshot(payload: object) -> TurnSnapshot:
-    from codey.operations.kernel_protocol import TurnSnapshot, render_snapshot_contract
+    from codey.operations.kernel_protocol import TurnSnapshot
     from codey.policies.output_requirement import explanation_spec, has_explanation
     from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import custom_executor_for
@@ -375,8 +393,4 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     if snapshot.browser_followups and (not set(direct) <= direct_surface
             or not allows_surface(snapshot, direct, research=research)):
         raise ValueError("captured browser follow-ups exceed the authorized browser interface")
-    from codey.toolchain.tool_prompt import contract_semantics
-
-    if contract_semantics(contract) != contract_semantics(render_snapshot_contract(snapshot)):
-        raise ValueError("captured contract text differs from its frozen model definitions")
-    return snapshot
+    return _restore_model_contract(snapshot, raw_references)

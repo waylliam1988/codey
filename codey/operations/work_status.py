@@ -76,11 +76,6 @@ def work_status(session: TaskSession, context: CompletionContext, *,
     before_edit = list(other)
     if (requested := requested_output_read_check(session, context.task or session.task_text)) is not None:
         other.append(requested)
-        from codey.operations.explicit_execution_requirements import _output_read_requirement
-
-        requirement = _output_read_requirement(context.task or session.task_text)
-        selected = session.selected_verification
-        if selected is None or requirement is None or selected.command != requirement[0]:
-            before_edit.append(requested)
+        before_edit.append(requested)
     return WorkStatus(tuple(tools), tuple(browser), tuple(project_evidence_checks(session, context)),
                       tuple(other), tuple(before_edit))

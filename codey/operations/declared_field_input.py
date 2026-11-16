@@ -103,7 +103,8 @@ def offer(session: TaskSession, snapshot: TurnSnapshot, context: CompletionConte
     if not retryable:
         return snapshot, "Repeated file version conflicts exhausted the fixed copy retry limit. Inspect the concurrent changes."
     original = next(spec for spec in snapshot.frozen_specs if spec.name == "codemode")
-    sources = tuple({ref: None for row in fields for ref in row.observation.evaluation.evidence_refs})
+    witnesses = {ref for row in fields for ref in row.observation.evaluation.evidence_refs}
+    sources = tuple(ref for ref in records if ref in witnesses)
     offered = replace(snapshot, input_binding=ModelInputBinding("declared_fields", model_spec(original, tuple(retryable)), sources),
                       tool_names=tuple(name for name in snapshot.tool_names if name in {"codemode", "ask_user"}),
                       browser_followups=False, browser_references=None, browser_fill_text=None, task_navigation_url=None)

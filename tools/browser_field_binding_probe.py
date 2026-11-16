@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,7 +30,7 @@ from codey.policies.tool_requirement import (
 )
 from codey.research.browser_search import BrowserSearchProvider
 from codey.runtime.core.models import ToolCall, ToolResult
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_string
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object, require_json_string
 from tools.browser_production_live_gate import select_target
 from tools.completion_artifact_audit import rejection_audit, tool_receipts
 from tools.completion_explanation_ab import (
@@ -150,7 +150,8 @@ def select_value(receipt: ToolResult, selector: JsonObject, url: str, *, table_p
 
 
 @contextmanager
-def field_binding(directory: Path, *, table_projection: str = TABLE, expire_url: str | None = None) -> Iterator[None]:
+def field_binding(directory: Path, *, table_projection: str = TABLE,
+                  expire_url: str | None = None) -> Generator[None, None, None]:
     invoke = CodeModeHost.invoke
     execute = ExecutionDelegate._execute_browser_operation
     browser: BrowserSession | None = None
@@ -212,16 +213,18 @@ def field_binding(directory: Path, *, table_projection: str = TABLE, expire_url:
             append_json(directory / "bindings.jsonl", {"status": "rejected", "reason": reason})
             return {"ok": False, "error": reason}
         result = invoke(host, name, {**args, "changes": changes})
-        assert isinstance(result, dict)
+        output = decode_json_object(result)
         append_json(directory / "bindings.jsonl", {
-            "status": "applied" if result.get("ok") is True else "edit_failed",
+            "status": "applied" if output.get("ok") is True else "edit_failed",
             "file_read_ref": file_ref, "document": document, "selectors": selectors, "changes": changes,
         })
         return result
 
+    def receipt_tools(checks: tuple[str, ...]) -> frozenset[str]:
+        return browser_receipt_tools(checks) | {"browser_read", "browser_eval"}
+
     with (patch.object(ExecutionDelegate, "_execute_browser_operation", observe),
-          patch.object(task_execution, "browser_receipt_tools",
-                       lambda rules: browser_receipt_tools(rules) | {"browser_read", "browser_eval"}),
+          patch.object(task_execution, "browser_receipt_tools", receipt_tools),
           patch.object(CodeModeHost, "invoke", bind)):
         yield
 
@@ -236,8 +239,8 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
     project.mkdir()
     state = directory / "state"
     file = project / case.path
-    initial: JsonObject = {**(dict.fromkeys(case.expected) if initial_fields is None else initial_fields),
-                           "metadata": {"keep": "00017"}}
+    initial: JsonObject = {field: None for field in case.expected} if initial_fields is None else dict(initial_fields)
+    initial["metadata"] = {"keep": "00017"}
     external: JsonObject = {**initial, "external_revision": EXTERNAL_FIELD}
     write_json(file, initial)
     backup = project / "backup.json"
@@ -274,16 +277,18 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
         if "receipt:table" in case.acquisition else
         "JSON 定位格式示例 {id:'record',pointer:'/a/b',type:'string'}。根据回执选择原始字段。"
     )
+    source_read = "unwrap(await tools.browser_read({}));\n" if case.acquisition.startswith("tools.browser_eval") else ""
     task = (f"打开 {case.url}。{case.task} 保留其他字段和 backup.json，只用 CodeMode。不要运行测试或命令。"
             "先用一段 CodeMode 执行下面的采集程序。inputs.url 为任务指定 URL。\n"
             "unwrap(await tools.browser_navigate({url:inputs.url}));\n"
             f"const capture=await {case.acquisition};\n"
+            + source_read +
             "const data=unwrap(capture); await store('source',capture.result_ref); return data;\n"
             "然后在下一次 CodeMode 调用中执行以下程序，inputs.path 是目标路径，"
             "inputs.field 是目标字段名，inputs.selector 是网页定位：\n"
             "const read=await tools.read_file({path:inputs.path});\n"
             "const ref=await load('source');\n"
-            "return unwrap(await tools.edit({read,changes:{[inputs.field]:{...inputs.selector,ref}}}));\n"
+            "return unwrap(await tools.edit({base_result_ref:read.result_ref,changes:{[inputs.field]:{...inputs.selector,ref}}}));\n"
             "inputs.selector 只传定位，不传值。回执编号由 store/load 传递。"
             + selector_shape +
             "如果真实版本冲突，重新完整读取文件，使用同一网页回执和定位重试。成功写入后调用 done。")
@@ -293,12 +298,19 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
     before = production_source_digest()
     recorder = (provider_factory(target, directory) if provider_factory is not None
                 else ExperimentProvider(target, directory, fixed_acquisition=False))
+
+    def connect(_provider_id: str, **_kwargs: object) -> ExperimentProvider:
+        return recorder
+
+    available: dict[str, bool] = {"local": True}
+    unavailable: dict[str, bool] = {}
+    selection: dict[str, str] = {"model": target.model, "base_url": target.base_url}
     try:
         with (field_binding(directory, table_projection=table_projection, expire_url=case.url if expire_source else None),
-              patch.dict(os.environ, {NATIVE_TOOLS_ENV: "1"}),
+              patch.dict(os.environ, dict[str, str]([(NATIVE_TOOLS_ENV, "1")])),
               patch.object(BrowserSearchProvider, "_guard_request", route),
-              patch("codey.app.provider_services.provider_availability", return_value={"local": True}),
-              patch("codey.app.provider_services.provider_tab_availability", return_value={}),
+              patch("codey.app.provider_services.provider_availability", return_value=available),
+              patch("codey.app.provider_services.provider_tab_availability", return_value=unavailable),
               patch("codey.app.review_service.run_review", return_value=None)):
             result = run_headless(HeadlessRequest(
                 project, task, intent="hybrid", provider_id="local", max_turns=max_turns, state_home=state,
@@ -306,19 +318,19 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
                 requested_capabilities=("web.read", "browser.observe", "browser.interact", "browser.effect"),
                 required_tools=(require_tool_success("browser_navigate", via="codemode"),
                                 require_tool_success("edit", via="codemode", arguments={"path": case.path})),
-                model_selection={"model": target.model, "base_url": target.base_url},
-            ), emit_jsonl=observe, connect_provider=lambda *_args, **_kwargs: recorder)
+                model_selection=selection,
+            ), emit_jsonl=observe, connect_provider=connect)
     finally:
         recorder.close()
     receipts = tool_receipts(state)
     audit = receipt_audit([(item.identity, item.result) for item in receipts])
     write_json(directory / "receipts.json", audit)
-    disk = decode_json_object(json.loads(file.read_text(encoding="utf-8")))
+    disk = parse_json_object(file.read_text(encoding="utf-8"))
     stable = before == production_source_digest()
     backup_preserved = backup.read_bytes() == backup_before
     unchanged_on_conflict = bool(edit_snapshots) and edit_snapshots[0] == injected_bytes
     binding_log = directory / "bindings.jsonl"
-    bindings: list[JsonValue] = [decode_json_object(json.loads(line))
+    bindings: list[JsonValue] = [parse_json_object(line)
         for line in binding_log.read_text(encoding="utf-8").splitlines()] if binding_log.exists() else []
     applied = [r for r in bindings if isinstance(r, dict) and r.get("status") == "applied"]
     correctly_bound = len(applied) == 1 and applied[0]["changes"] == case.expected
@@ -336,12 +348,18 @@ def run_case(directory: Path, case: Case, target: Target, *, max_turns: int,
     return summary
 
 
+class Options(argparse.Namespace):
+    run_dir: Path
+    max_turns: int
+    base_url: str
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--max-turns", default=8, type=int)
     parser.add_argument("--base-url", default="http://127.0.0.1:5001/v1")
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Options())
     root = args.run_dir.resolve()
     root.mkdir(parents=True, exist_ok=False)
     target = select_target(90, args.base_url)
