@@ -548,16 +548,6 @@ button { font-family: inherit; cursor: pointer; border: 0; background: transpare
 .icon-btn.send:not(.disabled) { color: var(--text); }
 .icon-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
 
-/* ===== IMPROVEMENT: Keyboard shortcut hints ===== */
-.shortcut-hints {
-  display: flex; gap: 12px; padding: 4px 4px 0;
-  font-size: 10px; color: var(--faint); font-family: var(--font-mono);
-}
-.shortcut-hints kbd {
-  font: inherit; background: var(--panel-2); padding: 0px 4px;
-  border-radius: 3px; border: 1px solid var(--border-2);
-}
-
 /* ================================================
    4. DIFF DRAWER IMPROVEMENTS
    ================================================ */
@@ -1097,19 +1087,12 @@ button { font-family: inherit; cursor: pointer; border: 0; background: transpare
         </div>
       </div>
     </div>
-    <!-- Keyboard hints -->
-    <div class="shortcut-hints" style="opacity:1">
-      <span><kbd>Enter</kbd> send</span>
-      <span><kbd>Shift+Enter</kbd> newline</span>
-      <span><kbd>Ctrl+N</kbd> new chat</span>
-    </div>
   </div>
 </div>
 
 <div class="demo-note">
   <strong>Key improvements:</strong><br>
   • <strong>Attachment chips</strong> — Bounded max-width (200px), cleaner remove button with × icon. Images show a small thumbnail inline.<br>
-  • <strong>Keyboard shortcut hints</strong> — Appear below the composer on focus/hover. Use <code>kbd</code> elements styled with <code>--panel-2</code> background. Very subtle, doesn't distract.<br>
   • <strong>Focus retention</strong> — Composer focus border stays quiet (<code>var(--border)</code>), consistent with the "quiet field focus" rule.<br>
   • <strong>Provider dot ring</strong> — The green dot with its soft ring stays visible and meaningful.
 </div>
@@ -1602,7 +1585,7 @@ tests/test_ui_architecture.py::test_no_hardcoded_hex PASSED
   <strong>8. Shell Approval</strong> — Left accent stripe on pending approvals, split Allow button.<br>
   <strong>9. Command Results</strong> — Hover feedback on collapsed rows.<br>
   <strong>10. Diff Drawer</strong> — Mini bar charts for file change stats.<br>
-  <strong>11. Composer</strong> — Keyboard shortcut hints on focus, better attachment chip layout.<br>
+  <strong>11. Composer</strong> — Better attachment chip layout.<br>
   <strong>12. Settings</strong> — Smoother toggle animation, custom checkboxes matching monochrome language.<br>
   <strong>13. Empty State</strong> — Character pond with green ripples, centered composer.<br>
   <strong>14. Question Cards</strong> — Option descriptions, better radio alignment.<br>
