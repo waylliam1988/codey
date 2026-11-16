@@ -9,6 +9,7 @@ from playwright.sync_api import Route
 from codey.automation.browser_session import BrowserSession, _browser_call
 from codey.operations.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
+from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_protocol import build_turn_snapshot, offer_browser_tools
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
@@ -84,13 +85,17 @@ def test_labels_are_observed_unique_contexts_and_unknown_controls_still_work(
 def test_pending_query_has_an_executable_recovery_without_a_tool_checklist(
     production_browser: tuple[TaskSession, ResearchTools, BrowserSession], uncertain: bool,
 ) -> None:
-    session, _, _ = production_browser
-    session._memory_results['click'] = ToolResult(ToolCall('browser_click', {'ref': 'old'}), 'sent', ok=not uncertain,
+    session, tools, browser = production_browser
+    assert ExecutionDelegate(session=session, research_tools=tools).execute(ToolCall('browser_navigate', {'url': URL}))[1]
+    document = browser.document_identity()
+    click = ToolResult(ToolCall('browser_click', {'ref': 'old'}), 'sent', ok=not uncertain,
         canonical={'value': {'delivery': 'uncertain' if uncertain else 'delivered'}},
-        audit={'query_baseline': {'document': {'loader_id': 'original'}}})
+        audit={'browser_document': document, 'query_baseline': {'document': document}})
+    session._memory_results['click'] = click
+    project_execution_record(session, 'click', click.call, click, ok=click.ok)
     base = offer_browser_tools(build_turn_snapshot(session), session)
-    snapshot, text = browser_task_handoff(session, base, CompletionContext())
+    snapshot, text = browser_task_handoff(session, base, CompletionContext(browser_document=document))
     name = 'browser_snapshot' if uncertain else 'browser_read'
     assert name in snapshot.tool_names
     assert '"tool": "' + name + '"' in text
-    assert 'without repeating' in text or 'uncertain' in text
+    assert 'do not click again' in text or 'uncertain' in text

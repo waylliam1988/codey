@@ -16,6 +16,7 @@ from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_gate import _browser_completion_block
 from codey.operations.kernel_context import KernelContext
 from codey.operations.kernel_contracts import KernelExecutionDeps, KernelRunRequest, KernelTransportDeps
+from codey.operations.kernel_facts import project_execution_record
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_execution import ExecutionDelegate
 from codey.operations.task_session import TaskSession
@@ -51,6 +52,7 @@ def start_query(session: TaskSession, tools: ResearchTools, browser: BrowserSess
         query_click.reset(token)
     assert ok, click.model_text
     session._memory_results['query'] = click
+    project_execution_record(session, 'query', click.call, click, ok=click.ok)
     return decode_json_object(click.audit['query_baseline'])
 
 
@@ -69,7 +71,7 @@ def test_push_state_keeps_pending_and_blocks_a_second_click_with_a_fresh_ref(
     assert not ok and decode_json_object(denied.canonical['value'])['delivery'] == 'not_delivered'
     assert browser.evaluate('window.clicks').observation['value'] == 1
     _, hint = browser_task_handoff(session, build_turn_snapshot(session), CompletionContext(browser_document=current))
-    assert 'without repeating' in hint
+    assert 'do not click again' in hint
     assert _browser_completion_block(session, 'Finished', CompletionContext(browser_document=current)) is not None
 
 
@@ -175,6 +177,7 @@ def test_declared_wait_after_push_state_still_settles_the_original_query(
     wait, ok, _ = delegate.execute(ToolCall('browser_wait', {'condition': 'text', 'value': 'CORRECT_173', 'timeout_ms': 5000}))
     assert ok
     session._memory_results['wait'] = wait
+    project_execution_record(session, 'wait', wait.call, wait, ok=wait.ok)
     _, hint = browser_task_handoff(session, build_turn_snapshot(session), CompletionContext(browser_document=browser.document_identity()))
     assert 'tools.browser_read(inputs)' in hint  # This frozen request exposes the existing CodeMode entry.
     read, ok, _ = delegate.execute(ToolCall('browser_read', {}))

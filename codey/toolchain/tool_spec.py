@@ -10,7 +10,7 @@ are denied, never passed as ``control``.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Protocol
@@ -20,7 +20,7 @@ from codey.toolchain.constants import ARGUMENT_CONTENT_GUIDANCE, PAGE_DETAIL_TOO
 from codey.toolchain.result_schema import text_output_schema
 from codey.toolchain.tool_prompt import json_contract_text as json_contract_text
 from codey.toolchain.tool_prompt import model_tool_description
-from codey.types.json_value import ToolArgs
+from codey.types.json_value import ToolArgs, canonical_json_object
 
 _TEXT_BATCH_TOOLS = frozenset({"parallel", "read_files"})
 SOURCE_GAPS_GUIDANCE = (
@@ -96,7 +96,8 @@ class ToolSpec:
 def _freeze_schema_value(value: object) -> object:
     """Freeze every nested schema mapping and sequence."""
     if isinstance(value, Mapping):
-        return MappingProxyType({key: _freeze_schema_value(item) for key, item in value.items()})
+        mapping: Mapping[object, object] = value
+        return MappingProxyType({key: _freeze_schema_value(item) for key, item in mapping.items()})
     if isinstance(value, (list, tuple)):
         return tuple(_freeze_schema_value(item) for item in value)
     return value
@@ -105,7 +106,8 @@ def _freeze_schema_value(value: object) -> object:
 def thaw_schema_value(value: object) -> object:
     """Create an independent JSON-compatible transport value."""
     if isinstance(value, Mapping):
-        return {key: thaw_schema_value(item) for key, item in value.items()}
+        mapping: Mapping[object, object] = value
+        return {key: thaw_schema_value(item) for key, item in mapping.items()}
     if isinstance(value, (list, tuple)):
         return [thaw_schema_value(item) for item in value]
     return value
@@ -120,7 +122,7 @@ def freeze_spec_parameters(spec: ToolSpec) -> ToolSpec:
     try:
         params = tuple(
             (key, _freeze_schema_value(schema))
-            for key, schema in (getattr(spec, "parameters", ()) or ())
+            for key, schema in spec.parameters
         )
     except Exception as exc:
         raise RuntimeError(f"tool snapshot freeze failed for {getattr(spec, 'name', '?')}: {exc}") from exc
@@ -343,6 +345,10 @@ def _all_specs() -> dict[str, ToolSpec]:
     )
     codemode_inputs = {"path": "app.py"}
     data_example = {"code": "return inputs.text;", "inputs": {"text": "first\nsecond\n"}}
+    code_example: dict[str, object] = {"tool": "codemode", "args": {
+        "code": codemode_example, "inputs": codemode_inputs}}
+    input_schema: dict[str, object] = {"type": "object", "additionalProperties": True,
+        "description": "Named JSON data fields exposed as read-only inputs in JavaScript."}
     specs["codemode"] = ToolSpec(
         name="codemode",
         grant="control",
@@ -364,15 +370,13 @@ def _all_specs() -> dict[str, ToolSpec]:
         ),
         parameters=(
             ("code", {"type": "string"}),
-            ("inputs", {"type": "object", "additionalProperties": True,
-                        "description": "Named JSON data fields exposed as read-only inputs in JavaScript."}),
+            ("inputs", input_schema),
             ("language", {"type": "string", "enum": ["javascript", "js"]}),
             ("repair_of", {"type": "string", "pattern": "^cmr_[A-Za-z0-9_-]{6,64}$",
                            "description": "Optional kernel-issued token for a return-only receipt replay."}),
         ),
         required=("code",),
-        json_examples=(json.dumps({"tool": "codemode", "args": {"code": codemode_example,
-                        "inputs": codemode_inputs}}, separators=(",", ":")),),
+        json_examples=(json.dumps(code_example, separators=(",", ":")),),
     )
     specs["ask_user"] = ToolSpec(
         name="ask_user", grant="control", replay_class="safe", executor="control",
@@ -491,7 +495,7 @@ def _valid_custom_schema(schema: object) -> bool:
         return True
     if "anyOf" in schema:
         alternatives = schema["anyOf"]
-        return (set(schema) == {"anyOf"} and isinstance(alternatives, (list, tuple)) and bool(alternatives)
+        return (schema.keys() == {"anyOf"} and isinstance(alternatives, (list, tuple)) and bool(alternatives)
                 and all(_valid_custom_schema(item) for item in alternatives))
     kind = schema.get("type")
     if kind not in {"string", "integer", "number", "boolean", "object", "array", "null"}:
@@ -541,14 +545,17 @@ def register_custom_tool(
             return False
     if any(not (item or "").strip() for item in required):
         return False
-    example_args: dict[str, object] = {
-        key: ([] if isinstance(schema, Mapping) and schema.get("type") == "array" else
-                   {} if isinstance(schema, Mapping) and schema.get("type") == "object" else
-                   0 if isinstance(schema, Mapping) and schema.get("type") in {"integer", "number"} else
-                   False if isinstance(schema, Mapping) and schema.get("type") == "boolean" else "")
-        for key, schema in parameters if key in set(required)
-    }
-    example = json.dumps({"tool": canonical, "args": example_args}, ensure_ascii=False)
+    example_args: dict[str, object] = {}
+    for key, schema in parameters:
+        if key not in required:
+            continue
+        kind = str(schema.get("type", "")) if isinstance(schema, Mapping) else ""
+        empty_array: list[object] = []
+        empty_object: dict[str, object] = {}
+        example_args[key] = empty_array if kind == "array" else empty_object if kind == "object" else (
+            0 if kind in {"integer", "number"} else False if kind == "boolean" else "")
+    example_action: dict[str, object] = {"tool": canonical, "args": example_args}
+    example = json.dumps(example_action, ensure_ascii=False)
     tool_specs()[canonical] = ToolSpec(
         name=canonical,
         aliases=(),
@@ -604,7 +611,7 @@ def tool_requires_trusted_recovery(name: object) -> bool:
         return True
     if spec is None:
         return True
-    return str(getattr(spec, "replay_class", "unsafe") or "unsafe").strip().lower() != "safe"
+    return (spec.replay_class or "unsafe").strip().lower() != "safe"
 
 
 def _policy_allows(policy: ToolPolicy, grant: str) -> bool:
@@ -687,7 +694,7 @@ def visible_tool_names_for_snapshot(
 def _schema_for_spec(spec: ToolSpec) -> dict[str, object]:
     properties: dict[str, object] = {}
     for param_name, schema in spec.parameters:
-        properties[param_name] = dict(schema) if isinstance(schema, Mapping) else {"type": "string"}
+        properties[param_name] = canonical_json_object(schema) if isinstance(schema, Mapping) else {"type": "string"}
     return {
         "type": "object",
         "properties": properties,
@@ -839,15 +846,16 @@ def _check_boolean_value(spec_name: str, key: str, value: object) -> str:
 def _check_array_value(spec_name: str, key: str, schema: object, value: object, *, strict: bool = False) -> str:
     if not isinstance(value, list):
         return _spec_type_error(spec_name, key, "array", value)
+    items: list[object] = value
     if not isinstance(schema, Mapping) or schema.get("items") is None:
         return ""
     for bound_name, compare in (("minItems", len(value) < int(schema.get("minItems", 0))),
                            ("maxItems", len(value) > int(schema.get("maxItems", len(value))))):
         if compare:
             return f"{spec_name} arg '{key}' violates {bound_name}={schema[bound_name]}"
-    if schema.get("uniqueItems") and any(value[i] == value[j] for i in range(len(value)) for j in range(i)):
+    if schema.get("uniqueItems") and any(items[i] == items[j] for i in range(len(items)) for j in range(i)):
         return f"{spec_name} arg '{key}' requires unique items"
-    for index, item in enumerate(value):
+    for index, item in enumerate(items):
         error = _check_spec_value_against_schema(spec_name, f"{key}[{index}]", schema["items"], item, strict=strict)
         if error:
             return error
@@ -864,7 +872,7 @@ def _check_object_value(spec_name: str, key: str, schema: object, value: object,
                 # 通用层严格按声明检查，不接受 edit 的历史别名。
                 if required_key not in value:
                     return f"{spec_name} arg '{key}' missing required property '{required_key}'"
-        properties = schema.get("properties", {})
+        properties: object = schema.get("properties", {})
         if isinstance(properties, Mapping):
             for child_key, child_value in value.items():
                 canonical_child_key = str(child_key)
@@ -887,17 +895,19 @@ def _json_value_equal(left: object, right: object) -> bool:
         return type(left) is type(right) and left == right
     if isinstance(left, (int, float)) and isinstance(right, (int, float)):
         return left == right
-    if type(left) is not type(right):
-        return False
-    if isinstance(left, dict):
-        if not isinstance(right, dict) or left.keys() != right.keys():
+    if isinstance(left, Mapping):
+        if not isinstance(right, Mapping) or left.keys() != right.keys():
             return False
-        return all(_json_value_equal(value, right[key]) for key, value in left.items())
-    if isinstance(left, list):
-        if not isinstance(right, list) or len(left) != len(right):
+        left_mapping: Mapping[object, object] = left
+        right_mapping: Mapping[object, object] = right
+        return all(_json_value_equal(value, right_mapping[key]) for key, value in left_mapping.items())
+    if isinstance(left, (list, tuple)):
+        if not isinstance(right, (list, tuple)) or len(left) != len(right):
             return False
-        return all(_json_value_equal(a, b) for a, b in zip(left, right, strict=True))
-    return left == right
+        left_items: Sequence[object] = left
+        right_items: Sequence[object] = right
+        return all(_json_value_equal(a, b) for a, b in zip(left_items, right_items, strict=True))
+    return type(left) is type(right) and left == right
 
 
 def _check_spec_value_against_schema(spec_name: str, key: str, schema: object, value: object, *, strict: bool = False) -> str:
@@ -1004,16 +1014,22 @@ def _declared_map(spec: ToolSpec) -> tuple[dict[str, object], str, bool]:
     except Exception:
         declared = {}
     try:
-        executor = str(getattr(spec, "executor", "") or "")
+        executor = str(spec.executor or "")
     except Exception:
         executor = ""
     return declared, executor, executor in {"project", "source", "knowledge"}
 
 
 def _validate_required_presence(spec: ToolSpec, declared: dict[str, object], is_builtin: bool, args: dict[str, object]) -> str:
-    required = tuple(key for key in spec.required if not (
-        isinstance(args.get(key), str) and isinstance(schema := declared.get(key), Mapping)
-        and schema.get("minLength") == 0))
+    required_keys: list[str] = []
+    for key in spec.required:
+        schema = declared.get(key)
+        if isinstance(args.get(key), str) and isinstance(schema, Mapping):
+            bounds: Mapping[str, object] = schema
+            if bounds.get("minLength") == 0:
+                continue
+        required_keys.append(key)
+    required = tuple(required_keys)
     if is_builtin:
         missing_key = _builtin_required_satisfied(spec.name, required, args)
         if missing_key:

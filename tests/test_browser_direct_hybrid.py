@@ -99,10 +99,7 @@ def test_hybrid_fills_refreshes_waits_reads_and_edits_once(
         if not declared_wait:
             yield {"tool": "browser_wait", "args": wait}
             yield {"tool": "browser_read", "args": {}}
-        yield {"tool": "codemode", "args": {"code": (
-            "const r=await tools.read_file({path:'result.json'});"
-            "const data=JSON.parse(unwrap(r).text);data.amount=173;data.code='QUARTZ_851';"
-            "return unwrap(await tools.edit({path:'result.json',content:JSON.stringify(data),base_result_ref:r.result_ref}));")}}
+        yield {"tool": "codemode", "args": {"path": "result.json"}}
         yield {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
 
     install_http(monkeypatch, replies())
@@ -145,7 +142,7 @@ def test_direct_read_reaches_bound_metadata_without_repeating_browser_work(
             assert isinstance(names, list)
             name = next(name for name in ("browser_eval", "browser_tab_list") if name in names)
             yield {"tool": name, "args": {"code": "window.__contractToken"} if name == "browser_eval" else {}}
-        yield {"tool": "done", "args": {"summary": "已读取当前记录。\n\n净重 173 克，校验码 QUARTZ_851。"}}
+        yield {"tool": "done", "args": {"paragraphs": ["已读取当前记录。", "净重 173 克，校验码 QUARTZ_851。"]}}
 
     install_http(monkeypatch, replies())
     result = run_case(directory, "chat", Target("http://scripted.test/v1", "fixture", 123456789, 10),

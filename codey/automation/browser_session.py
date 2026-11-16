@@ -56,6 +56,12 @@ class BrowserToolOutput:
     observation: JsonObject
 
 
+class BrowserReferenceError(RuntimeError):
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
 @dataclass
 class _ElementRef:
     handle: ElementHandle
@@ -649,7 +655,10 @@ class BrowserSession:
     def _resolve_ref(self, ref: str) -> tuple[Page, ElementHandle]:
         page = self._page_on_browser_thread()
         entry = self._refs.get(ref)
-        if entry is None or entry.page_token != id(page) or entry.generation != self._generation or entry.url != page.url:
+        if entry is None:
+            raise BrowserReferenceError("unknown_ref", "unknown browser element reference; choose a ref field from "
+                                        "observed controls or take a browser_snapshot. Expiry is not established.")
+        if entry.page_token != id(page) or entry.generation != self._generation or entry.url != page.url:
             raise RuntimeError("stale browser element reference; take a fresh browser_snapshot")
         if entry.document is not None and not same_document(entry.document, self._document_identity_on_browser_thread()):
             raise RuntimeError("stale browser element reference; the document changed")
@@ -664,7 +673,9 @@ class BrowserSession:
             if entry.role is not None and (_element_role(metadata) != entry.role
                     or _element_name(metadata) != entry.name):
                 raise RuntimeError("stale browser element reference; observed role or name changed")
-            if metadata.get("disabled") is True or not entry.handle.is_visible() or not entry.handle.is_enabled():
+            if metadata.get("disabled") is True or not entry.handle.is_enabled():
+                raise BrowserReferenceError("disabled_control", "the observed control is disabled; choose an enabled control")
+            if not entry.handle.is_visible():
                 raise RuntimeError("stale browser element reference; control is no longer available")
             if entry.context is not None and (
                     context_node is None or entry.context_node is None or not same_node(context_node, entry.context_node)
@@ -684,6 +695,8 @@ class BrowserSession:
 
     @staticmethod
     def _stale_ref_output(action: str, ref: str, error: RuntimeError, *, reason: str = "stale_ref") -> BrowserToolOutput:
+        if reason == "stale_ref" and isinstance(error, BrowserReferenceError):
+            reason = error.reason
         return BrowserToolOutput(
             f"ERROR: {error}", False,
             {"action": action, "ref": ref, "delivery": "not_delivered", "reason": reason},

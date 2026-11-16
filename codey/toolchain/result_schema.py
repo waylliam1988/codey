@@ -151,7 +151,9 @@ def schema_typescript(schema: Mapping[str, object]) -> str:
         return " | ".join(schema_typescript(item) for item in alternatives if isinstance(item, Mapping))
     values = schema.get("enum")
     if isinstance(values, (list, tuple)):
-        return " | ".join(json.dumps(value, ensure_ascii=False) for value in values)
+        from codey.toolchain.tool_spec import thaw_schema_value
+
+        return " | ".join(json.dumps(thaw_schema_value(value), ensure_ascii=False) for value in values)
     kind = schema.get("type")
     if kind == "object":
         properties = schema.get("properties", {})

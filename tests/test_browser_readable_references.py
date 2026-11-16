@@ -97,7 +97,8 @@ def test_only_current_complete_controls_are_bound(truncation: str) -> None:
     if truncation == "controls":
         value["elements_truncated"] = True
     if truncation == "context":
-        value["contexts"] = []
+        empty_contexts: list[JsonValue] = []
+        value["contexts"] = empty_contexts
     session._memory_results["snapshot"] = replace(original, canonical={"value": value}, truncated=truncation == "receipt")
     document = {**DOCUMENT, "loader_id": "new"} if truncation == "document" else DOCUMENT
     snapshot = offer_browser_tools(build_turn_snapshot(session), session)
@@ -135,7 +136,8 @@ def test_outer_and_nested_use_the_same_ref_schema_and_frozen_binding() -> None:
     properties = decode_json_object(canonical_json_object(nested.parameters)["properties"])
     assert canonical_json_object(dict(outer.parameters)["ref"]) == properties["ref"]
     assert "anyOf" in decode_json_object(properties["ref"])
-    assert '"context"?: string' in render_declarations(snapshot_catalog(frozen))
+    choice: JsonObject = {"role": "textbox", "name": "备注", "context": "订单 A-173"}
+    assert json.dumps(choice, ensure_ascii=False) in render_declarations(snapshot_catalog(frozen))
     action: JsonObject = {"tool": "browser_fill", "args": {"ref": {"role": "textbox", "name": "备注"}, "value": "x"}}
     assert not normalize_turn(decode_text_turn(json.dumps(action)), snapshot=frozen).protocol_error
 
@@ -218,10 +220,12 @@ def test_chromium_rejects_changed_meaning_before_delivery(
         mutate(browser, mutations[change])
     result = program(session, tools, restore_snapshot(snapshot_description(frozen)),
                      "return unwrap(await tools.browser_click({ref:{role:'button',name:'Query'}}));")
-    assert not result.ok and "stale" in result.model_text, result.model_text
+    assert not result.ok, result.model_text
     assert browser.evaluate("window.delivered===true").observation["value"] is False
     clicks = [row for row in session._memory_results.values() if row.call.name == "browser_click"]
     assert len(clicks) == 1 and decode_json_object(clicks[0].canonical["value"])["delivery"] == "not_delivered"
+    assert decode_json_object(clicks[0].canonical["value"])["reason"] == (
+        "disabled_control" if change == "disabled" else "stale_ref")
     assert isinstance(clicks[0].call.args["ref"], str)
 
 

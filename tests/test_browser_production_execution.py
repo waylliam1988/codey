@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from types import SimpleNamespace
+from typing import TypeAlias
 
 import pytest
-from playwright.sync_api import Page, Route
+from playwright.sync_api import Route
 
 from codey.automation.browser_session import BrowserSession
-from codey.operations.kernel_facts import bind_source_identity, project_result_observation
+from codey.operations.kernel_facts import bind_source_identity, project_execution_record, project_result_observation
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_execution import ExecutionDelegate, build_research_tools
 from codey.operations.task_session import TaskSession
@@ -19,6 +20,7 @@ from codey.research.ledger import ResearchLedger
 from codey.research.tools import ResearchTools
 from codey.research.web_sources import WebSourceProvider
 from codey.runtime.core.models import ToolCall, ToolResult
+from codey.types.json_value import decode_json_object
 from tests.support.real_cdp import chromium_executable
 
 pytestmark = pytest.mark.usefixtures("public_source_dns")
@@ -26,16 +28,17 @@ URL = "https://example.com/production-browser-article"
 HTML = """<html><body><label>City<input id='city'></label>
 <button onclick="document.querySelector('article').textContent='Verified Fuzhou amount is 37 grams.'">Load</button>
 <article>Initial article amount is 17 grams.</article></body></html>"""
+BrowserFixture: TypeAlias = tuple[TaskSession, ResearchTools, BrowserSession]
 
 
-@pytest.fixture
-def production_browser() -> Iterator[tuple[TaskSession, ResearchTools, BrowserSession]]:
-    provider = BrowserSearchProvider(headless=True, browser_path=chromium_executable())
-
-    def fixture_route(route: Route) -> None:
+class FixtureBrowser(BrowserSearchProvider):
+    def _guard_request(self, route: Route) -> None:
         route.fulfill(status=200, content_type="text/html", body=HTML)
 
-    provider._guard_request = fixture_route  # type: ignore[method-assign]
+
+@pytest.fixture()
+def production_browser() -> Iterator[BrowserFixture]:
+    provider = FixtureBrowser(headless=True, browser_path=chromium_executable())
     browser = BrowserSession.from_provider(provider)
     tools = ResearchTools(search=provider, store=None, changes=None, browser_session=browser)
     session = TaskSession(policy=TaskPolicy(grants=frozenset({
@@ -56,8 +59,12 @@ def _delegate(session: TaskSession, tools: ResearchTools) -> ExecutionDelegate:
 def _ref(delegate: ExecutionDelegate, role: str) -> str:
     result, ok, _ = delegate.execute(ToolCall("browser_snapshot", {}))
     assert ok
-    observation = result.canonical["value"]
-    assert isinstance(observation, dict)
+    session = delegate.session
+    assert session is not None
+    identity = f"snapshot-{len(session._memory_results)}"
+    session._memory_results[identity] = result
+    project_execution_record(session, identity, result.call, result, ok=True)
+    observation = decode_json_object(result.canonical["value"])
     elements = observation["elements"]
     assert isinstance(elements, list)
     return next(str(row["ref"]) for row in elements if isinstance(row, dict) and row["role"] == role)
@@ -69,7 +76,7 @@ def _settle(session: TaskSession, tools: ResearchTools, result: ToolResult) -> T
     return committed
 
 
-def test_http_first_browser_actions_explain_explicit_takeover(production_browser) -> None:
+def test_http_first_browser_actions_explain_explicit_takeover(production_browser: BrowserFixture) -> None:
     session, tools, _browser = production_browser
     result, ok, _ = _delegate(session, tools).execute(ToolCall("browser_snapshot", {}))
     assert not ok
@@ -77,7 +84,7 @@ def test_http_first_browser_actions_explain_explicit_takeover(production_browser
     assert "HTTP-first source" in result.model_text
 
 
-def test_actions_and_reads_share_worker_but_only_committed_reads_establish_evidence(production_browser) -> None:
+def test_actions_and_reads_share_worker_but_only_committed_reads_establish_evidence(production_browser: BrowserFixture) -> None:
     session, tools, browser = production_browser
     delegate = _delegate(session, tools)
     nav, ok, _ = delegate.execute(ToolCall("browser_navigate", {"url": URL}))
@@ -99,7 +106,7 @@ def test_actions_and_reads_share_worker_but_only_committed_reads_establish_evide
     assert not tools.ledger.opened_sources
     stale, ok, _ = delegate.execute(ToolCall("browser_click", {"ref": ref}))
     assert not ok
-    assert stale.canonical["value"]["reason"] == "stale_ref"
+    assert decode_json_object(stale.canonical["value"])["reason"] == "stale_ref"
 
     read, ok, _ = delegate.execute(ToolCall("browser_read", {}))
     assert ok, read.model_text
@@ -118,7 +125,7 @@ def test_actions_and_reads_share_worker_but_only_committed_reads_establish_evide
     assert replay.source_ids == session.source_ids
 
 
-def test_eval_is_visible_action_output_and_invalidates_refs_without_citations(production_browser) -> None:
+def test_eval_is_visible_action_output_and_invalidates_refs_without_citations(production_browser: BrowserFixture) -> None:
     session, tools, _ = production_browser
     delegate = _delegate(session, tools)
     delegate.execute(ToolCall("browser_navigate", {"url": URL}))
@@ -130,7 +137,7 @@ def test_eval_is_visible_action_output_and_invalidates_refs_without_citations(pr
     assert not delegate.execute(ToolCall("browser_click", {"ref": ref}))[1]
 
 
-def test_browser_actions_cannot_smuggle_source_evidence(production_browser) -> None:
+def test_browser_actions_cannot_smuggle_source_evidence(production_browser: BrowserFixture) -> None:
     session, tools, _ = production_browser
     forged = ToolResult(ok=True, call=ToolCall("browser_snapshot", {}), model_text="fake",
                         canonical={"read_passages": [{"ref": "fake"}]})
@@ -138,18 +145,23 @@ def test_browser_actions_cannot_smuggle_source_evidence(production_browser) -> N
         project_result_observation(session, forged.call, forged, ok=True, research_ledger=tools.ledger)
 
 
-def test_browser_read_rejects_http_error_page_before_evidence(production_browser, monkeypatch) -> None:
+def test_browser_read_rejects_http_error_page_before_evidence(
+    production_browser: BrowserFixture, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session, tools, browser = production_browser
 
     def error_route(route: Route) -> None:
         route.fulfill(status=503, content_type="text/html",
                       body="<html><body><app-root>Loading...</app-root></body></html>")
 
-    browser.provider._guard_request = error_route  # type: ignore[method-assign]
+    monkeypatch.setattr(browser.provider, "_guard_request", error_route)
     delegate = _delegate(session, tools)
     navigated, ok, _ = delegate.execute(ToolCall("browser_navigate", {"url": URL}))
     assert ok, navigated.model_text
-    monkeypatch.setattr(Page, "content", lambda _: pytest.fail("HTTP error must be rejected before reading the DOM"))
+    def forbidden_content(_page: object) -> str:
+        raise AssertionError("HTTP error must be rejected before reading the DOM")
+
+    monkeypatch.setattr("playwright.sync_api.Page.content", forbidden_content)
     captured, ok, _ = delegate.execute(ToolCall("browser_read", {}))
     assert not ok
     assert "HTTP 503" in captured.model_text
@@ -157,7 +169,7 @@ def test_browser_read_rejects_http_error_page_before_evidence(production_browser
     assert tools.ledger.read_passages == {}
 
 
-def test_browser_navigation_rejects_javascript_before_page_goto(production_browser) -> None:
+def test_browser_navigation_rejects_javascript_before_page_goto(production_browser: BrowserFixture) -> None:
     session, tools, _ = production_browser
     delegate = _delegate(session, tools)
     result, ok, _ = delegate.execute(ToolCall("browser_navigate", {
@@ -186,7 +198,7 @@ def test_missing_browser_resource_cannot_fall_back_to_custom_executor() -> None:
     assert not ok and "session unavailable" in result.model_text
 
 
-def test_browser_resource_cannot_grant_unauthorized_actions(production_browser) -> None:
+def test_browser_resource_cannot_grant_unauthorized_actions(production_browser: BrowserFixture) -> None:
     _, tools, _ = production_browser
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"browser.observe"})), task_kind="chat")
     result, ok, _ = ExecutionDelegate(session=session, research_tools=tools).execute(
@@ -211,7 +223,9 @@ def test_default_provider_wrapper_shares_one_browser_without_starting_chromium()
 
 
 @pytest.mark.parametrize("kind", ["chat", "research", "hybrid"])
-def test_codemode_browser_children_use_kernel_receipts_and_original_answer_scope(production_browser, kind: str) -> None:
+def test_codemode_browser_children_use_kernel_receipts_and_original_answer_scope(
+    production_browser: BrowserFixture, kind: str,
+) -> None:
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.operations.kernel_execution import execute_turn
     from codey.research.answer_contract import answer_scope
@@ -245,7 +259,8 @@ def test_codemode_browser_children_use_kernel_receipts_and_original_answer_scope
     assert session.source_ids == {"s1": URL}
     scope = answer_scope(session)
     assert scope.aliases and scope.attempt_refs
-    assert len(result.canonical["child_effect_ids"]) == 7
+    children = result.canonical["child_effect_ids"]
+    assert isinstance(children, list) and len(children) == 7
     assert "read_passages" not in result.canonical  # The parent references, never rewrites, child evidence.
 
     from codey.operations.kernel_prompt import operation_receipts, working_context

@@ -344,6 +344,10 @@ class ExecutionDelegate:
             if call.name in {"browser_read", PAGE_DETAIL_TOOL}:
                 return read_browser_source(self, browser, call, turn=turn, tool_index=tool_index)
             output = self._browser_action(browser, call)
+            if self.session is not None:
+                from codey.operations.browser_references import reference_failure
+
+                output = reference_failure(output, self.session._memory_results)
             value = dict(output.observation)
             baseline = value.pop("query_baseline", None)
             value["text"] = value.get("text", output.model_text)

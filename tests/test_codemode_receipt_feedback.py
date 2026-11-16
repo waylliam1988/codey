@@ -174,7 +174,10 @@ def test_wrong_source_and_invalid_ref_can_reobserve_and_reselect(
     for wire in (after_rejection, after_observing):
         assert "Historical source selections" in wire and wrong_url in wire and "North warehouse" in wire
         assert "r1" in wire
-    assert "fresh browser_snapshot" in after_rejection and "reselect" in after_rejection
+    if reference == "expired":
+        assert "fresh browser_snapshot" in after_rejection and "reselect" in after_rejection
+    else:
+        assert "unknown browser element reference" in after_rejection and "browser_snapshot" in after_rejection
     assert "Target absent on observed page" in after_observing
     receipts = [row.result for row in tool_receipts(directory / "state")]
     opened = [row for row in receipts if row.call.name == "open_result"]
@@ -182,7 +185,8 @@ def test_wrong_source_and_invalid_ref_can_reobserve_and_reselect(
     assert all(row.ok for row in opened)
     rejected = [row for row in receipts if row.call.name == "browser_click" and not row.ok]
     assert len(rejected) == 1
-    assert decode_json_object(rejected[0].canonical["value"])["reason"] == "stale_ref"
+    assert decode_json_object(rejected[0].canonical["value"])["reason"] == (
+        "stale_ref" if reference == "expired" else "unknown_ref")
     north_snapshots = [decode_json_object(row.canonical["value"]) for row in receipts
                        if row.ok and row.call.name == "browser_snapshot"
                        and decode_json_object(row.canonical["value"])["page_url"] == wrong_url]

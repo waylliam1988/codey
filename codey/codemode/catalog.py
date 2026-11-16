@@ -25,7 +25,10 @@ if TYPE_CHECKING:
     from codey.operations.kernel_protocol import TurnSnapshot
 
 
-def snapshot_catalog(snapshot: TurnSnapshot, *, allow_writes: bool = True) -> ToolCatalogSnapshot:
+def snapshot_catalog(
+    snapshot: TurnSnapshot, *, allow_writes: bool = True, observed_choices: bool = True,
+) -> ToolCatalogSnapshot:
+    """Derive model choices or replay capabilities from the same frozen specs."""
     names = set(snapshot.nested_tool_names)
     writable = allow_writes and snapshot.policy is not None and snapshot.policy.allows("project.write")
     return build_codemode_catalog(
@@ -35,7 +38,7 @@ def snapshot_catalog(snapshot: TurnSnapshot, *, allow_writes: bool = True) -> To
         task_navigation_url=snapshot.task_navigation_url,
         browser_followup_checks=(snapshot.policy.required_checks if snapshot.policy else ())
         if snapshot.browser_followups else None,
-        browser_references=snapshot.browser_references,
+        browser_references=snapshot.browser_references if observed_choices else None,
     )
 
 

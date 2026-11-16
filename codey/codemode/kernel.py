@@ -276,6 +276,9 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
 
     specs = {spec.name: spec for spec in snapshot.frozen_specs}
     catalog = snapshot_catalog(snapshot, allow_writes=allow_writes)
+    # Observed choices describe this turn's controls; replay authorization uses
+    # the frozen execution contracts and the original child arguments instead.
+    repair_catalog = snapshot_catalog(snapshot, allow_writes=allow_writes, observed_choices=False)
     # The catalog has already selected project writes and browser capabilities
     # independently. Host mutation support is not a project permission grant.
     allow_mutations = any(not entry.read_only for entry in catalog.entries)
@@ -328,7 +331,7 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             try:
                 repair_context = resolve_repair_context(
                     session, repair_token_value, session_id=effective_session_id,
-                    run_id=str(run_id or ""), catalog=catalog,
+                    run_id=str(run_id or ""), catalog=repair_catalog,
                 )
             except CodeModeReplayError as exc:
                 return ToolResult(
@@ -556,12 +559,12 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                 child_names = [session.executed[ref]["name"] for ref in ordered_child_effect_ids]
                 metadata = repair_metadata(
                     effective_session_id, parent_id, str(result.audit.get("repair_category", result.audit["error_code"])), ordered_child_effect_ids,
-                    repair_catalog_digest(catalog, child_names),
+                    repair_catalog_digest(repair_catalog, child_names),
                 )
                 result = replace(result, canonical={**result.canonical, "repair": metadata})
                 if durable is not None and repair_context is None:
                     value = browser_file_replay_value(session, result, str(metadata["token"]),
-                        session_id=effective_session_id, run_id=str(run_id or ""), catalog=catalog)
+                        session_id=effective_session_id, run_id=str(run_id or ""), catalog=repair_catalog)
                     if value is not None:
                         audit = dict(result.audit)
                         audit["original_error_code"] = audit.pop("error_code")

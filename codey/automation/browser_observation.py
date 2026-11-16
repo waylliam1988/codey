@@ -1,6 +1,8 @@
 """Observed structural labels and their text projection; no business ownership inference."""
 from __future__ import annotations
 
+import json
+
 from playwright.sync_api import ElementHandle, Page
 
 from codey.types.json_value import JsonObject, decode_json_object, require_json_string
@@ -113,8 +115,5 @@ def render_controls(elements: list[JsonObject], contexts: list[JsonObject]) -> s
         if context is not None and context_id != previous:
             rows.append(f"Context [{context_id}] {context['kind']}: {context['label']} ({context['basis']})")
         previous = context_id if isinstance(context_id, str) else ""
-        rows.append(("  " if context is not None else "")
-                    + f"[{element['ref']}] {element['role']} \"{element['name']}\""
-                    + (f" value={element['value']!r}" if element['value'] is not None else "")
-                    + (" disabled" if element['disabled'] else ""))
+        rows.append(("  " if context is not None else "") + json.dumps(element, ensure_ascii=False))
     return "\n".join(rows)

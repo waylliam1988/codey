@@ -98,7 +98,8 @@ def test_semantic_actions_use_snapshot_refs_and_reject_stale_refs(
     filled = interaction.fill(f" [{query_ref}] ", "福州小吃")
     assert filled.ok and filled.observation["ref"] == query_ref
     stale = interaction.click(f"[{button_ref}]")
-    assert stale.observation["reason"] == "stale_ref"
+    # This low-level session has no formal receipt history establishing provenance.
+    assert stale.observation["reason"] == "unknown_ref"
     assert stale.observation["delivery"] == "not_delivered"
 
     second = interaction.snapshot()

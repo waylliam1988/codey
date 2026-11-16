@@ -103,7 +103,10 @@ def test_wait_and_read_require_the_correct_document_and_order(case: str) -> None
         record("browser_click")
     wait = next(rule for check in policy.required_checks
                 if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_wait")
-    assert wait.observe(session.executed, results=session._memory_results, browser_document=document).evaluation.passed is (case == "valid")
+    assert wait.stage == 1
+    # A later click cannot erase the already settled evidence for stage one.
+    assert wait.observe(session.executed, results=session._memory_results, browser_document=document).evaluation.passed is (
+        case in {"valid", "after_new_click"})
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
