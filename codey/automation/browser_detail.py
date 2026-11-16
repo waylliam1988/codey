@@ -118,7 +118,8 @@ class DetailControl:
         return {"index": self.index, "name": self.name, "owner": self.owner}
 
     def choice(self, document: JsonObject) -> str:
-        raw = json.dumps([document, self.payload()], sort_keys=True, ensure_ascii=False)
+        identity: list[JsonObject] = [document, self.payload()]
+        raw = json.dumps(identity, sort_keys=True, ensure_ascii=False)
         return "detail-" + hashlib.sha256(raw.encode()).hexdigest()[:12]
 
 
@@ -127,16 +128,21 @@ def _inspect(page: Page, task: str, selected: DetailControl | None = None) -> Js
     # come from Chromium rather than prototypes overridden by site code.
     cdp = page.context.new_cdp_session(page)
     try:
-        tree = decode_json_object(cdp.send("Page.getFrameTree"))
+        tree_value: object = cdp.send("Page.getFrameTree")
+        tree = decode_json_object(tree_value)
         frame = decode_json_object(decode_json_object(tree["frameTree"])["frame"])
-        world = decode_json_object(cdp.send("Page.createIsolatedWorld", {
+        world_args: JsonObject = {
             "frameId": require_json_string(frame["id"], "frame id"), "worldName": "codey-read-disclosure",
-        }))
-        args = {"task": re.sub(r"https?://[^\s<>，。；]+", "", task), "selected": selected.payload() if selected else None}
-        evaluated = decode_json_object(cdp.send("Runtime.evaluate", {
+        }
+        world_value: object = cdp.send("Page.createIsolatedWorld", world_args)
+        world = decode_json_object(world_value)
+        args: JsonObject = {"task": re.sub(r"https?://[^\s<>，。；]+", "", task), "selected": selected.payload() if selected else None}
+        evaluate_args: JsonObject = {
             "contextId": require_json_integer(world["executionContextId"], "context id"),
             "expression": f"({_DETAILS})({json.dumps(args, ensure_ascii=True)})", "returnByValue": True,
-        }))
+        }
+        evaluated_value: object = cdp.send("Runtime.evaluate", evaluate_args)
+        evaluated = decode_json_object(evaluated_value)
         value = decode_json_object(evaluated["result"]).get("value")
         return decode_json_object(value) if isinstance(value, dict) else None
     finally:
@@ -174,7 +180,7 @@ def read_detail(browser: BrowserSession, document: JsonObject, task: str, choice
         if value is None or browser._document_identity_on_browser_thread() != document:
             return None
         return {"status": "ok", "url": document["url"], "title": value["title"], "text": value["text"],
-                "truncated": False, "observation": "current_page"}
+                "truncated": False, "observation": "current_page", "record_context": selected.owner}
 
     try:
         return _browser_call(read)

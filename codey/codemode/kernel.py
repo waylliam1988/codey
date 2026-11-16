@@ -121,6 +121,8 @@ class CodeModeKernelExecutor:
         task_navigation_url: str | None = None,
         browser_references: BrowserReferences | None = None,
         bound_edit: Callable[[int, JsonObject], JsonObject] | None = None,
+        browser_stage: Callable[[], int] | None = None,
+        original_browser_wait: Callable[[int], JsonObject | None] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -145,6 +147,8 @@ class CodeModeKernelExecutor:
         self.task_navigation_url = task_navigation_url
         self.browser_references = browser_references
         self.bound_edit = bound_edit
+        self.browser_stage = browser_stage
+        self.original_browser_wait = original_browser_wait
 
     def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -176,6 +180,8 @@ class CodeModeKernelExecutor:
             task_navigation_url=self.task_navigation_url,
             browser_references=self.browser_references,
             replay_browser_ref=repair.resolve_browser_ref if repair is not None else None,
+            browser_stage=self.browser_stage,
+            original_browser_wait=repair.original_wait_args if repair is not None else self.original_browser_wait,
             bound_edit=self.bound_edit,
         )
         trace: ExecutionTrace | None = None
@@ -406,6 +412,21 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             from codey.operations.kernel_events import _event_call
             from codey.runtime.observe.events import RunEvent
             from codey.toolchain.runtime import ToolOutcome
+            if (child.name == "edit" and snapshot.input_binding is None and project_path is not None
+                    and snapshot.policy is not None):
+                from codey.agents.protocol import canonical_project_path
+                from codey.operations.declared_field_input import free_program_required
+                from codey.operations.file_field_binding import file_rules
+
+                path = child.args.get("path")
+                rules = (file_rules(snapshot.policy.required_checks, canonical_project_path(project_path, path))
+                         if isinstance(path, str) else ())
+                if (rules and not free_program_required(session.task_text) and any(
+                        session.executed[ref]["name"] in {rule.tool for rule in rules}
+                        for ref in child_effect_ids_by_index.values())):
+                    raise ValueError("The declared file source was acquired in this program. Return its evidence first. "
+                                     "The next request supplies the frozen destination-only copy input; "
+                                     "do not parse, convert or write the declared values in this program.")
             # Kernel argument rejection creates no intent or receipt. Validate
             # before recording a child that durable replay must account for.
             _, error = _validate_tool_args(child.name, child.args, frozen_specs=specs)
@@ -478,6 +499,19 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             base_state_store = replay if replay is not None else state_store
             if base_state_store is not None:
                 repair_state_store = repair_context.readonly_state(base_state_store)
+        def browser_stage() -> int:
+            from codey.operations.browser_completion import browser_click_stage
+            from codey.operations.browser_followups import query_document
+
+            browser = research_tools.browser_session if research_tools is not None else None
+            document = browser.document_identity() if browser is not None else query_document(session._memory_results)
+            return browser_click_stage(session.executed, session._memory_results, document)
+
+        def original_browser_wait(index: int) -> JsonObject | None:
+            identity = turn_effect_id(f"{run_id}:{child_scope}:child:{index}", turn, index)
+            receipt = session._memory_results.get(identity)
+            return receipt.call.args if receipt is not None and receipt.call.name == "browser_wait" else None
+
         result = CodeModeKernelExecutor(
             execution_id=parent_id,
             catalog=catalog,
@@ -494,6 +528,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             run_id=str(run_id or ""),
             task_navigation_url=snapshot.task_navigation_url,
             browser_references=snapshot.browser_references,
+            browser_stage=browser_stage,
+            original_browser_wait=original_browser_wait,
             bound_edit=bound_edit if snapshot.input_binding is not None
                 and snapshot.input_binding.kind == "declared_fields" and snapshot.input_binding.source_refs else None,
         ).execute(call)

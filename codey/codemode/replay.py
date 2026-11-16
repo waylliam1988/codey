@@ -185,6 +185,13 @@ class CodeModeRepairContext:
                 return ref
         self._reject("repair has no original complete control observation; use the original string ref")
 
+    def original_wait_args(self, position: int) -> JsonObject:
+        """An omitted timeout reuses the original completed call, never current progress."""
+        child = self._child(position)
+        if child.tool_name != "browser_wait":
+            self._reject("repair changed the browser child sequence")
+        return self.receipts[child.effect_id].call.args
+
     def replay_child(self, position: int, tool_name: str, args: JsonObject) -> ToolResult:
         expected = self._child(position)
         if tool_name != expected.tool_name:

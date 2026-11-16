@@ -10,6 +10,7 @@ from typing import NoReturn
 
 from codey.policies.output_requirement import EXPLANATION_GUIDANCE, JSON_ANSWER_GUIDANCE
 from codey.policies.requirement import RequirementEvaluation
+from codey.research.source_document import SourceReadScope
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.types.json_value import (
@@ -74,6 +75,8 @@ class BrowserTextSelector:
     url: str
     prefix: str
     suffix: str
+    context: str = ""
+    query_result: bool = False
 
     def __post_init__(self) -> None:
         from codey.policies.network import check_fetch_url
@@ -83,6 +86,10 @@ class BrowserTextSelector:
         if any(not marker.strip() or len(marker) > 256 or marker.splitlines() != [marker]
                for marker in (self.prefix, self.suffix)):
             raise ValueError("browser text selectors require bounded, nonempty single-line markers")
+        if not isinstance(self.context, str) or len(self.context) > 256 or self.context != self.context.strip():
+            raise ValueError("browser text context must be a bounded observed record label")
+        if type(self.query_result) is not bool:
+            raise ValueError("query_result must be a boolean")
 
     def select(self, text: str) -> str:
         start = text.find(self.prefix)
@@ -110,6 +117,8 @@ class ToolSuccessRequirement:
     stage: int = 0
     file_path: str = ""
     value_type: str = ""
+    report_label: str = ""
+    report_allow_missing: bool = False
 
     def __post_init__(self) -> None:
         if not _NAME.fullmatch(self.tool) or (self.via and not _NAME.fullmatch(self.via)):
@@ -137,10 +146,15 @@ class ToolSuccessRequirement:
         ):
             raise ValueError("absolute result lines require read_file /text and a positive integer")
         if self.browser_text is not None and (
-            self.tool != "browser_read" or (self.via != "codemode" and not self.file_path) or not self.answer_pointer
+            self.tool != "browser_read" or (self.via != "codemode" and not self.file_path and not self.report_label) or not self.answer_pointer
             or self.result_pointer != "/text" or self.result_line is not None
         ):
             raise ValueError("browser text selectors require browser_read via codemode and a named answer field")
+        if (type(self.report_allow_missing) is not bool or (self.report_allow_missing and not self.report_label)
+                or not isinstance(self.report_label, str) or len(self.report_label) > 256
+                or (self.report_label and (not self.report_label.strip() or self.report_label.splitlines() != [self.report_label]
+                    or self.browser_text is None or self.file_path or self.answer_contains or self.omit_from_explanation))):
+            raise ValueError("report fields require a browser selector, label and independent Markdown destination")
         if self.file_path or self.value_type:
             from pathlib import PurePosixPath
 
@@ -166,14 +180,21 @@ class ToolSuccessRequirement:
             answer: JsonObject = {"pointer": self.answer_pointer, "result_pointer": self.result_pointer,
                                   "line": self.result_line}
             if self.browser_text is not None:
-                answer["browser_text"] = {"url": self.browser_text.url, "prefix": self.browser_text.prefix,
-                                          "suffix": self.browser_text.suffix}
+                selector: JsonObject = {"url": self.browser_text.url, "prefix": self.browser_text.prefix,
+                                        "suffix": self.browser_text.suffix}
+                if self.browser_text.context:
+                    selector["context"] = self.browser_text.context
+                if self.browser_text.query_result:
+                    selector["query_result"] = True
+                answer["browser_text"] = selector
             if self.answer_contains:
                 answer["contains"] = True
             if self.omit_from_explanation:
                 answer["omit_from_explanation"] = True
             if self.file_path:
                 answer.update(file_path=self.file_path, value_type=self.value_type)
+            if self.report_label:
+                answer.update(report_label=self.report_label, report_allow_missing=self.report_allow_missing)
             data["answer"] = answer
         return PREFIX + _json(data)
 
@@ -191,6 +212,8 @@ class ToolSuccessRequirement:
             execution = (f"Required execution: inside {self.via}, call tools.{target}. "
                     "The child call and its parent must both commit successfully. "
                     f"A separate top-level {self.tool} call does not satisfy this requirement.")
+        elif self.report_label:
+            execution = "Required evidence: successfully read the declared source and record through a formal source-reading tool. "
         else:
             execution = (f"Required execution: call {target} and receive a successful tool result. "
                          "Displayed examples and failed calls do not satisfy this requirement.")
@@ -209,6 +232,10 @@ class ToolSuccessRequirement:
         execution = self.execution_guidance if execution is None else execution
         if self.answer_pointer is None:
             return execution
+        if self.report_label:
+            return (execution + f" Deliver the explicitly declared field {self.report_label!r}. "
+                    f"Use {{{{field:{self.answer_pointer}}}}} in submit_research_answer.markdown; the application "
+                    "expands its frozen exact value and original citation. Repair only the answer when evidence is ready.")
         if self.file_path:
             return (execution + f" File {self.file_path!r} field {self.answer_pointer!r} must match the committed "
                     f"browser text selector as declared JSON {self.value_type}. Follow the task's declared edit mode "
@@ -263,14 +290,10 @@ class ToolSuccessRequirement:
         ordered: set[str] | None = None
         prerequisite_refs: frozenset[str] = frozenset()
         if self.after:
-            from codey.operations.browser_completion import ordered_browser_progress
-
-            progress = ordered_browser_progress(self.tool, self.after, records=records, results=results or {},
-                                                document=browser_document, stage=self.stage)
-            ordered = set(progress.refs)
-            prerequisite_refs = progress.prerequisite_refs
+            ordered, prerequisite_refs = _ordered_requirement_refs(self, records, results or {}, browser_document)
         for identity, row in records.items():
-            if not _succeeded(row, self.tool):
+            name = row.get("name")
+            if not isinstance(name, str) or not self._accepts_tool(name) or not _succeeded(row, name):
                 continue
             if ordered is not None and identity not in ordered:
                 continue
@@ -289,7 +312,21 @@ class ToolSuccessRequirement:
                 return ToolObservation(RequirementEvaluation("tool_parent_missing",
                     "The child execution succeeded, but no successful required parent committed it. " + guidance))
             return ToolObservation(RequirementEvaluation("tool_execution_missing", guidance))
-        if self.binds_browser_fields and results is not None:
+        if self.report_label and results is not None and self.browser_text is not None:
+            # A report can retain several records and documents. Select its
+            # own source/record/field before choosing that scope's latest read.
+            eligible = _latest_report_reads(eligible, results, self.browser_text)
+            if not eligible:
+                target = self.browser_text.context or self.browser_text.url
+                required = ("a confirmed query result" if self.browser_text.query_result else "formal record ownership")
+                return ToolObservation(RequirementEvaluation("report_record_evidence_missing",
+                    f"{self.report_label}: no read establishes {required} for {target!r}. "
+                    "Inspect the current observed record or its query/detail candidates. "
+                    "A successful reread of an unrelated or unchanged view does not establish this field."))
+            witnesses = {identity for identity, _ in eligible} | {
+                ref for ref, parent in records.items() if self.via and _succeeded(parent, self.via)
+                and any(identity in parent.get("child_effect_ids", ()) for identity, _ in eligible)}
+        elif self.binds_browser_fields and results is not None:
             eligible = [(identity, row) for identity, row in eligible
                         if browser_document is not None
                         and (self.browser_text is None or browser_document.get("url") == self.browser_text.url)
@@ -309,6 +346,14 @@ class ToolSuccessRequirement:
         witnesses.update(prerequisite_refs)
         return replace(outcome, evaluation=replace(outcome.evaluation, evidence_refs=tuple(sorted(witnesses))))
 
+    def _accepts_tool(self, name: str) -> bool:
+        if self.report_label and not self.via:
+            from codey.toolchain.constants import PAGE_DETAIL_TOOL
+            from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES
+
+            return name in SOURCE_READ_TOOL_NAMES | {"browser_read", PAGE_DETAIL_TOOL}
+        return name == self.tool
+
     def _observe_value(
         self, eligible: list[tuple[str, ExecutionRecord]], results: Mapping[str, ToolResult] | None,
     ) -> ToolObservation:
@@ -322,14 +367,17 @@ class ToolSuccessRequirement:
                     raise ValueError("full receipts unavailable")
                 receipt = results[identity]
                 if (not isinstance(receipt, ToolResult) or not receipt.ok
-                        or canonical_tool_name(receipt.call.name) != self.tool
+                        or not self._accepts_tool(canonical_tool_name(receipt.call.name))
                         or {key: argument_digest(value) for key, value in receipt.call.args.items()}
                         != row.get("argument_digests")):
                     raise ValueError("receipt differs from committed execution")
                 if ((self._binds_browser_body or self.binds_browser_fields or self.tool == "browser_upload")
                         and receipt.call.call_id != row.get("call_id")):
                     raise ValueError("browser receipt identity differs from committed execution")
-                value = (_browser_body(receipt, url=self.browser_text.url if self.browser_text is not None else None)
+                scope = report_read_scope(receipt, self.browser_text, include_missing=True) if self.report_label and self.browser_text is not None else None
+                value = ((scope.text if scope is not None else None) if self.report_label else
+                         _query_body(receipt, self.browser_text) if self.browser_text is not None and self.browser_text.context else
+                         _browser_body(receipt, url=self.browser_text.url if self.browser_text is not None else None)
                          if self._binds_browser_body
                          else decode_json_value(receipt.canonical["value"]))
             except (KeyError, ValueError, TypeError):
@@ -349,6 +397,15 @@ class ToolSuccessRequirement:
             try:
                 if self.browser_text is not None:
                     assert isinstance(value, str)
+                    if self.report_allow_missing and self.browser_text.prefix not in value:
+                        observed.append((identity, None, "null"))
+                        continue
+                    if self.report_label and self.browser_text.prefix not in value:
+                        return ToolObservation(RequirementEvaluation("report_field_not_observed",
+                            f"{self.report_label}: the complete formal read of the selected record lacks this field. "
+                            "Select its current observed query/detail action to investigate the missing information; "
+                            "rereading the unchanged view cannot load it. If a click is already delivered, continue "
+                            "its wait/read recovery without clicking again."))
                     selected = self.browser_text.select(value)
                 elif self._binds_browser_body:
                     selected = value
@@ -403,6 +460,10 @@ class ToolSuccessRequirement:
 
     def evaluate_observation(self, observation: ToolObservation, final_text: str) -> RequirementEvaluation:
         if not observation.evaluation.passed or self.answer_pointer is None:
+            return observation.evaluation
+        if self.report_label:
+            # Research checks the Markdown and its exact passage bindings in
+            # the original submission/compilation transaction.
             return observation.evaluation
         outcome = self._evaluate_answer(observation, final_text)
         return replace(outcome, evidence_refs=observation.evaluation.evidence_refs)
@@ -485,6 +546,167 @@ def omit_selected_text(text: str, selected: str) -> str:
     return re.sub(_text_occurrence(selected), "", text) if selected else text
 
 
+def _query_body(receipt: ToolResult, selector: BrowserTextSelector) -> str | None:
+    """Select only a confirmed record region covered by the formal read window."""
+    from codey.research.ledger_receipts import source_observation
+
+    region = receipt.audit.get("query_region")
+    if not isinstance(region, dict) or not receipt.audit.get("query_click"):
+        return None
+    raw_context = region.get("context")
+    context = decode_json_object(raw_context) if isinstance(raw_context, dict) else None
+    text = region.get("text")
+    if (context is None or context.get("label") != selector.context
+            or region.get("visible") is not True or not isinstance(text, str) or not text):
+        return None
+    source, body, _pages = source_observation(receipt.canonical.get("research_observation"))
+    if receipt.truncated or source.truncated or source.final_url != selector.url:
+        return None
+    passages = receipt.canonical.get("read_passages")
+    if not isinstance(passages, list):
+        return None
+    for raw in passages:
+        row = decode_json_object(raw)
+        start, end = row.get("start"), row.get("end")
+        if (type(start) is int and type(end) is int and 0 <= start < end <= len(body)
+                and text in " ".join(body[start:end].split())):
+            return text
+    return None
+
+
+def report_read_scope(receipt: ToolResult, selector: BrowserTextSelector, *,
+                      require_complete: bool = True, include_missing: bool = False) -> SourceReadScope | None:
+    """Select formal source ownership independently of an explicit after-query obligation."""
+    from codey.research.ledger_receipts import source_observation
+    from codey.task.web_intent import source_url_key
+
+    try:
+        source, body, _pages = source_observation(receipt.canonical.get("research_observation"))
+    except ValueError:
+        return None
+    if (require_complete and (receipt.truncated or source.truncated)) or source_url_key(selector.url) not in {
+            source_url_key(source.requested_url), source_url_key(source.final_url)}:
+        return None
+    scopes: list[tuple[int, int, bool]] = []
+    if not selector.query_result and not receipt.audit.get("query_click"):
+        if not selector.context:
+            scopes.append((0, len(body), True))
+        rows = receipt.audit.get("record_regions")
+        matches: list[JsonObject] = [row for raw in rows if isinstance(raw, dict) for row in (decode_json_object(raw),)
+                   if row.get("label") == selector.context] if isinstance(rows, list) else []
+        if len(matches) == 1:
+            start, end = matches[0].get("start"), matches[0].get("end")
+            if type(start) is int and type(end) is int and 0 <= start < end <= len(body):
+                scopes.append((start, end, matches[0].get("complete") is True))
+    raw_region = receipt.audit.get("query_region")
+    if isinstance(raw_region, dict) and receipt.audit.get("query_click"):
+        region = decode_json_object(raw_region)
+        context = region.get("context")
+        target = region.get("text")
+        if (region.get("visible") is True and isinstance(target, str) and target
+                and (not selector.context or isinstance(context, dict) and context.get("label") == selector.context)):
+            located = SourceReadScope.locate(body, target)
+            if located.start is not None and located.end is not None:
+                scopes.append((located.start, located.end, False))
+    rows = receipt.canonical.get("read_passages")
+    passages = [decode_json_object(raw) for raw in rows] if isinstance(rows, list) else []
+    for start, end, complete in scopes:
+        selected = body[start:end]
+        if not complete and not include_missing and selector.prefix not in selected:
+            continue
+        covered = start
+        for row in passages:
+            lower, upper = row.get("start"), row.get("end")
+            if type(lower) is int and type(upper) is int and lower <= covered < upper:
+                covered = max(covered, upper)
+        if covered >= end:
+            return SourceReadScope(selected, start, end)
+        if not require_complete:
+            for row in passages:
+                lower, upper = row.get("start"), row.get("end")
+                if (type(lower) is int and type(upper) is int and max(start, lower) < min(end, upper)
+                        and (not complete or selector.prefix in body[max(start, lower):min(end, upper)])):
+                    return SourceReadScope(selected, start, end)
+    return None
+
+
+def _report_query_target(receipt: ToolResult, results: Mapping[str, ToolResult]) -> JsonObject | None:
+    ref = receipt.audit.get("query_click")
+    click = results.get(ref) if isinstance(ref, str) else None
+    baseline = click.audit.get("query_baseline") if click is not None else None
+    if not isinstance(baseline, dict) or not isinstance(target := baseline.get("target"), dict):
+        return None
+    return {"document": baseline.get("document"), "target": target}
+
+
+def _report_field_targets(receipt: ToolResult, results: Mapping[str, ToolResult],
+                          selector: BrowserTextSelector) -> list[JsonObject]:
+    if (target := _report_query_target(receipt, results)) is not None:
+        return [target]
+    scope = report_read_scope(receipt, selector, require_complete=False)
+    if scope is None or scope.start is None:
+        return []
+    try:
+        value = selector.select(scope.text)
+    except ValueError:
+        return []
+    start = scope.start + scope.text.index(selector.prefix) + len(selector.prefix)
+    end = start + len(value)
+    audit = decode_json_object(receipt.audit)
+    regions = audit.get("record_regions")
+    targets: list[JsonObject] = []
+    for raw in regions if isinstance(regions, list) else []:
+        row = decode_json_object(raw)
+        if row.get("label") != selector.context:
+            continue
+        bindings = row.get("query_targets")
+        for binding in bindings if isinstance(bindings, list) else []:
+            observed = decode_json_object(binding)
+            lower, upper = observed.get("start"), observed.get("end")
+            if type(lower) is int and type(upper) is int and lower <= start < end <= upper:
+                targets.append({"document": audit.get("browser_document"), "target": observed.get("target")})
+    return targets
+
+
+def _latest_report_reads(eligible: list[tuple[str, ExecutionRecord]], results: Mapping[str, ToolResult],
+                         selector: BrowserTextSelector) -> list[tuple[str, ExecutionRecord]]:
+    scoped = [(ref, row) for ref, row in eligible if ref in results
+              and report_read_scope(results[ref], selector, require_complete=False, include_missing=True) is not None]
+    latest: tuple[str, ExecutionRecord] | None = None
+    for ref, row in scoped:
+        receipt = results[ref]
+        matches_field = report_read_scope(receipt, selector, require_complete=False) is not None
+        target = _report_query_target(receipt, results)
+        replaces_target = latest is not None and target is not None and target in _report_field_targets(results[latest[0]], results, selector)
+        if latest is None or matches_field or replaces_target:
+            latest = (ref, row)
+    return [latest] if latest is not None else []
+
+
+def _ordered_requirement_refs(rule: ToolSuccessRequirement, records: Mapping[str, ExecutionRecord],
+                              results: Mapping[str, ToolResult], document: JsonObject | None,
+                              ) -> tuple[set[str], frozenset[str]]:
+    from codey.operations.browser_completion import ordered_browser_progress
+
+    documents = [document]
+    if rule.report_label and rule.browser_text is not None:
+        documents = []
+        for result in results.values():
+            if report_read_scope(result, rule.browser_text, require_complete=False, include_missing=True) is None:
+                continue
+            raw = result.audit.get("browser_document")
+            if isinstance(raw, dict) and (observed := decode_json_object(raw)) not in documents:
+                documents.append(observed)
+    eligible: set[str] = set()
+    prerequisites: frozenset[str] = frozenset()
+    for current_document in documents:
+        progress = ordered_browser_progress(rule.tool, rule.after, records=records, results=results,
+                                            document=current_document, stage=rule.stage)
+        eligible.update(progress.refs)
+        prerequisites |= progress.prerequisite_refs
+    return eligible, prerequisites
+
+
 def _browser_body(receipt: ToolResult, *, url: str | None = None) -> str | None:
     from codey.research.ledger_receipts import source_observation
 
@@ -545,6 +767,14 @@ def require_browser_file_field(*, url: str, prefix: str, suffix: str, path: str,
         browser_text=BrowserTextSelector(url, prefix, suffix), file_path=path, value_type=value_type).declaration
 
 
+def require_browser_report_field(*, url: str, prefix: str, suffix: str, pointer: str, label: str,
+                                 context: str = "", allow_missing: bool = False, query_result: bool = False) -> str:
+    """An explicit caller requirement, not an inferred natural-language checklist."""
+    return ToolSuccessRequirement("browser_read", answer_pointer=pointer, result_pointer="/text",
+        browser_text=BrowserTextSelector(url, prefix, suffix, context, query_result), report_label=label,
+        report_allow_missing=allow_missing).declaration
+
+
 def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
     if not check_id.startswith(PREFIX):
         return None
@@ -559,14 +789,17 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
     binding = data.get("answer")
     fields = {"pointer", "result_pointer", "line"}
     if "answer" in data and (not isinstance(binding, dict) or not fields <= set(binding)
-                            or set(binding) - fields - {"browser_text", "contains", "omit_from_explanation", "file_path", "value_type"}):
+                            or set(binding) - fields - {"browser_text", "contains", "omit_from_explanation", "file_path", "value_type", "report_label", "report_allow_missing"}):
         raise ValueError("invalid answer observation binding")
     browser_text = None
     if isinstance(binding, dict) and "browser_text" in binding:
         selector = decode_json_object(binding["browser_text"])
-        if set(selector) != {"url", "prefix", "suffix"}:
+        if not {"url", "prefix", "suffix"} <= set(selector) or set(selector) - {"url", "prefix", "suffix", "context", "query_result"}:
             raise ValueError("invalid browser text selector")
-        browser_text = BrowserTextSelector(*(require_json_string(selector[key], key) for key in ("url", "prefix", "suffix")))
+        browser_text = BrowserTextSelector(require_json_string(selector["url"], "url"),
+            require_json_string(selector["prefix"], "prefix"), require_json_string(selector["suffix"], "suffix"),
+            require_json_string(selector.get("context", ""), "context"),
+            require_json_boolean(selector.get("query_result", False), "query_result"))
     requirement = ToolSuccessRequirement(require_json_string(data["tool"], "tool"),
         require_json_string(data["via"], "via"), _json(data["args"]),
         require_json_string(binding["pointer"], "pointer") if isinstance(binding, dict) else None,
@@ -578,7 +811,9 @@ def parse_tool_success_check(check_id: str) -> ToolSuccessRequirement | None:
         if isinstance(binding, dict) else False, require_json_string(data.get("after", ""), "after"),
         require_json_integer(data.get("stage", 0), "stage"),
         require_json_string(binding.get("file_path", ""), "file_path") if isinstance(binding, dict) else "",
-        require_json_string(binding.get("value_type", ""), "value_type") if isinstance(binding, dict) else "")
+        require_json_string(binding.get("value_type", ""), "value_type") if isinstance(binding, dict) else "",
+        require_json_string(binding.get("report_label", ""), "report_label") if isinstance(binding, dict) else "",
+        require_json_boolean(binding.get("report_allow_missing", False), "report_allow_missing") if isinstance(binding, dict) else False)
     if requirement.declaration != check_id:
         raise ValueError("tool requirement must use its canonical check id")
     return requirement

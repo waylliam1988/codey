@@ -311,7 +311,7 @@ class ExecutionDelegate:
             trace_document = (call.name in browser_receipt_tools(checks)
                               or self.session.task_kind in {"chat", "hybrid"}
                               or traces_workflow_document(self.session, call.name)
-                              or (call.name == "browser_read" and self._research_scope is not None)
+                              or self._research_scope is not None
                               or (call.name in browser_text_report.METADATA_TOOLS and browser_text_report.report_scope(self.session) is not None)
                               or (call.name in browser_upload.UPLOAD_RECEIPTS and browser_upload.upload_scope(self.session) is not None)
                               or (call.name == "browser_snapshot" and call.args.get("file_inputs_only") is True)

@@ -9,7 +9,7 @@ from playwright.sync_api import CDPSession, ElementHandle, Error, Page
 
 from codey.types.json_value import JsonObject, decode_json_object, require_json_integer, require_json_string
 
-_TARGET = """el => {
+QUERY_TARGET = """el => {
     let target = null, relation = '';
     if (el.matches('summary') && el.parentElement?.matches('details')) {
         target = el.parentElement; relation = 'native-details';
@@ -43,7 +43,7 @@ def _send(cdp: CDPSession, method: str, params: dict[str, object] | None = None)
 
 def bind_query_target(page: Page, control: ElementHandle) -> JsonObject | None:
     """Persist a browser node identity, never a selector to rediscover after restart."""
-    observed = control.evaluate_handle(_TARGET)
+    observed = control.evaluate_handle(QUERY_TARGET)
     try:
         node_handle = observed.get_property('node')
         target = node_handle.as_element()
@@ -61,7 +61,7 @@ def bind_query_target(page: Page, control: ElementHandle) -> JsonObject | None:
             binding: JsonObject = {'backend_node_id': backend, 'relation': relation}
             observe_query_target(page, binding)
             still_controlled: object = control.evaluate(
-                '(el, node) => { const current = (' + _TARGET + ')(el); return !!current && current.node === node; }', target)
+                '(el, node) => { const current = (' + QUERY_TARGET + ')(el); return !!current && current.node === node; }', target)
             if still_controlled is not True:
                 raise QueryObservationError('query_target_changed', 'The control relationship changed before the click.')
             return binding

@@ -379,7 +379,8 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     raw_references = payload.get("browser_references")
     references = BrowserReferences.restore(raw_references) if raw_references is not None else None
     if (fill_text is not None and not followups or references is not None
-            and (input_binding is not None or copy is not None or not {"browser_fill", "browser_click"} & set(nested))):
+            and (input_binding is not None
+                 or copy is not None or not {"browser_fill", "browser_click"} & set(nested))):
         raise ValueError("invalid captured browser input binding")
     snapshot = TurnSnapshot(allowed=None if allowed is None else tuple(allowed), contract_text=contract,
         tool_names=tuple(names), policy=policy, frozen_specs=tuple(specs),
@@ -387,7 +388,11 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
         research_scope=scope, ignore_runtime_claims=ignore_runtime_claims,
         browser_copy=copy, input_binding=input_binding, task_navigation_url=navigation_url,
         browser_followups=followups, browser_fill_text=fill_text, browser_references=references)
-    direct = tuple(spec.name for spec in specs if spec.executor == "browser" and spec.name in names)
+    from codey.toolchain.constants import PAGE_DETAIL_TOOL
+
+    # Native disclosure reads have their own frozen choice contract. They
+    # coexist with, but do not lower through, the browser follow-up programs.
+    direct = tuple(spec.name for spec in specs if spec.executor == "browser" and spec.name in names and spec.name != PAGE_DETAIL_TOOL)
     research = snapshot.research_scope is not None
     direct_surface = {*DIRECT_TOOLS, "browser_wait", "browser_navigate"} if research else {*DIRECT_TOOLS, *SINGLE_STEP_TOOLS}
     if snapshot.browser_followups and (not set(direct) <= direct_surface

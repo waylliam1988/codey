@@ -160,7 +160,8 @@ def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, Executio
             return BrowserNextStep(ToolCall("browser_wait", args),
                                    feedback, "evidence" if narrow_tools else "advice")
         latest_wait = max(latest_wait, matching[-1])
-    needs_read = query is not None or bool(pages) or any(rule.tool == "browser_read" and rule.stage in {0, stage} for rule in rules)
+    needs_read = query is not None or bool(pages) or any(
+        rule.tool == "browser_read" and not rule.report_label and rule.stage in {0, stage} for rule in rules)
     read = any(row.ok and row.call.name == "browser_read" and complete_page_passages(row, url)
                for _, row in current[latest_wait + 1:])
     page_ready = all(bool(post_wait_passages(page, records=records, results=results, document=document)[1]) for page in pages)

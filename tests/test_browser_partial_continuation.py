@@ -313,7 +313,7 @@ def test_bad_wait_arguments_after_a_delivered_click_resume_at_wait(
     monkeypatch.setattr(KernelContext, "request_snapshot", capture)
 
     def replies() -> Iterator[JsonObject]:
-        yield code_action(LOAD + "return unwrap(await tools.browser_wait({condition:'text',value:'鱼丸'}));")
+        yield code_action(LOAD + "return unwrap(await tools.browser_wait({condition:'text',value:'鱼丸',timeout_ms:'5000'}));")
         wait = next_step(captured[-1])
         assert wait["tool"] == "browser_wait"
         yield wait

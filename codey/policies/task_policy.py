@@ -196,7 +196,9 @@ def _entry_tool_checks(raw: object, *, kind: str, strict: bool, explanation: boo
             declared.append(browser.declaration)
         else:
             requirement = parse_tool_success_check(name) or ToolSuccessRequirement(name)
-            if (requirement.browser_text is not None and not requirement.file_path or requirement.answer_contains
+            if requirement.report_label and not (kind == "research" and strict):
+                raise ValueError("Markdown receipt fields require strict whole-task Research")
+            if (requirement.browser_text is not None and not requirement.file_path and not requirement.report_label or requirement.answer_contains
                     or requirement.omit_from_explanation) and not explanation:
                 raise ValueError("browser text fields and explanation occurrence rules require json_explanation")
             if requirement.answer_contains or requirement.omit_from_explanation:
@@ -317,7 +319,7 @@ def build_task_policy(
     grants -= denied
 
     strict_checks = RESEARCH_ANSWER_REQUIRED_CHECKS if kind == "research" else STRICT_RESEARCH_REQUIRED_CHECKS
-    required_checks = strict_checks if strict else (("research_sources_opened",) if sources_open_required else ())
+    required_checks: tuple[str, ...] = strict_checks if strict else (("research_sources_opened",) if sources_open_required else ())
     changes_required: object = getattr(submission, "project_changes_required", False)
     if changes_required is True:
         required_checks = (*required_checks, "project_changes_required")
@@ -327,7 +329,8 @@ def build_task_policy(
     required_checks = (*required_checks, *((output,) if output else ()))
     required_checks = (*required_checks, *_entry_tool_checks(getattr(submission, "required_tools", ()), kind=kind,
                                                             strict=strict, explanation=has_explanation(required_checks)))
-    required_checks = tuple(dict.fromkeys((*required_checks, *_entry_browser_checks(submission, kind=kind, strict=strict))))
+    unique_checks = {check: None for check in (*required_checks, *_entry_browser_checks(submission, kind=kind, strict=strict))}
+    required_checks = tuple(unique_checks)
     requested_text = ",".join(sorted(requested)) if requested else "-"
     denied_text = ",".join(sorted(denied)) if denied else "-"
     source = f"kind:{kind or 'project'};project:{'yes' if has_project else 'no'};requested:{requested_text};strict:{'yes' if strict else 'no'};denied:{denied_text}"

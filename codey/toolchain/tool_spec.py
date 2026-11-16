@@ -271,8 +271,10 @@ def _browser_specs() -> dict[str, ToolSpec]:
             parameters=(("condition", {"type": "string", "enum": ["text", "selector", "url_contains"]}),
                         ("value", {"type": "string"}),
                         ("timeout_ms", {"type": "integer", "minimum": 100, "maximum": 30000})),
-            required=("condition", "value", "timeout_ms"),
-            description="Wait for one explicit bounded condition on the bound page.",
+            required=("condition", "value"),
+            description="Wait for one explicit bounded condition on the bound page. "
+                        "timeout_ms is optional: preserve an explicit value, otherwise use the matching current-stage "
+                        "declared timeout, or 5000 ms. Invalid timeouts are rejected.",
             json_examples=('{"tool":"browser_wait","args":{"condition":"text","value":"...","timeout_ms":5000}}',),
             preconditions=("browser_bound",),
         ),

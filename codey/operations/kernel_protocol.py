@@ -190,12 +190,14 @@ def refresh_snapshot_contract(snapshot: TurnSnapshot) -> TurnSnapshot:
 
 
 def offer_browser_tools(snapshot: TurnSnapshot, session: KernelSessionView) -> TurnSnapshot:
-    if (session.task_kind not in {"chat", "hybrid"} or browser_followups.codemode_only(session.task_text)
+    if (session.task_kind not in {"chat", "hybrid"}
             or not browser_followups.allows_surface(snapshot)
             or (exposed := session.model_tool_names) is not None
             and not set(browser_followups.DIRECT_TOOLS) <= set(exposed)
             or set(browser_followups.DIRECT_TOOLS) & set(session.controller_denied)):
         return snapshot
+    if browser_followups.codemode_only(session.task_text):
+        return refresh_snapshot_contract(replace(snapshot, browser_followups=True))
     direct_names: tuple[str, ...] = browser_followups.DIRECT_TOOLS
     if (browser_followups.allows_surface(snapshot, ("browser_wait",))
             and "browser_wait" not in session.controller_denied
@@ -212,11 +214,12 @@ def offer_browser_call(snapshot: TurnSnapshot, session: KernelSessionView, name:
     eligible = ({*browser_followups.DIRECT_TOOLS, "browser_navigate", "browser_wait"}
                 if research else set(browser_followups.SINGLE_STEP_TOOLS))
     if (name not in eligible
-            or browser_followups.codemode_only(session.task_text)
             or not browser_followups.allows_surface(snapshot, (name,), research=research)
             or name in session.controller_denied
             or (session.model_tool_names is not None and name not in session.model_tool_names)):
         return snapshot
+    if browser_followups.codemode_only(session.task_text):
+        return refresh_snapshot_contract(replace(snapshot, browser_followups=True))
     return refresh_snapshot_contract(replace(snapshot, browser_followups=True,
         tool_names=(*snapshot.tool_names, *((name,) if name not in snapshot.tool_names else ()))))
 
@@ -400,11 +403,15 @@ def _task_edit_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...]) -
 def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
                      scope: AnswerScope | None) -> tuple[ToolSpec, ...]:
     """Select completion once; bind investigation tools on their separate route."""
+    from codey.operations.browser_waits import wait_spec
     from codey.operations.chat_knowledge import chat_knowledge_spec, read_knowledge_versions
     from codey.policies.output_requirement import explanation_spec, has_explanation
     from codey.research.answer_contract import answer_spec
     from codey.research.questions import requires_question_ref
     from codey.research.tool_contract import done_spec_for_purpose, question_bound_spec
+
+    frozen = tuple(wait_spec(spec, session.policy.required_checks) if spec.name == "browser_wait" else spec
+                   for spec in frozen)
 
     explaining = has_explanation(session.policy.required_checks)
     if explaining and session.policy.strict_research:

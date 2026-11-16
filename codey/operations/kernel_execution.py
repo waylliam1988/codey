@@ -15,7 +15,7 @@ from collections.abc import Collection, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from codey.operations.kernel_contracts import StopSignal, ToolExecutor
 from codey.operations.kernel_errors import RecoveryFailed
@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     from codey.durable.session import DurableSession
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_effects import KernelEffectSink
+    from codey.operations.task_execution import ProjectPolicyCheck
     from codey.research.answer_contract import AnswerScope
     from codey.research.tools import ResearchTools
     from codey.storage.managed_outputs import ManagedOutputStore
@@ -75,6 +76,11 @@ class ToolDelegate(Protocol):
         turn: int = 0,
         tool_index: int = 0,
     ) -> tuple[ToolResult, bool, int | None]: ...
+
+
+@runtime_checkable
+class PolicyCheckingDelegate(Protocol):
+    def _policy_check(self, call: ToolCall) -> ProjectPolicyCheck: ...
 
 
 class SettleToolResult(Protocol):
@@ -187,7 +193,7 @@ def _explicit_policy_denial(
             )
         return None
     try:
-        handles = bool(delegate.handles(call.name if hasattr(call, "name") else ""))
+        handles = bool(delegate.handles(call.name))
     except Exception:
         return (
             _error_result(call, "policy check unavailable; refusing to run executor"),
@@ -197,9 +203,8 @@ def _explicit_policy_denial(
     if not handles:
         return None
     try:
-        check = getattr(delegate, "_policy_check", None)
-        if callable(check):
-            decision = check(call)
+        if isinstance(delegate, PolicyCheckingDelegate):
+            decision = delegate._policy_check(call)
             if decision.denied:
                 return (
                     policy_denial_result(call, decision.message, reason_code=decision.reason_code),
@@ -306,13 +311,35 @@ def execute_turn(
     """
 
     frozen_specs = frozen_spec_map(snapshot)
+    from codey.operations.browser_completion import browser_click_stage
+    from codey.operations.browser_followups import query_document
+    from codey.operations.browser_waits import complete_wait_args
+
+    normalized: list[ToolCall] = []
+    wait_turn, wait_base = effect_coordinates(session.turn if turn is None else turn, tool_index_base)
+    wait_scope = f"{run_id}:{effect_scope}" if effect_scope else run_id
+    for offset, call in enumerate(calls):
+        if call.name == "browser_wait":
+            spec = frozen_specs.get(call.name) if frozen_specs is not None else None
+            try:
+                stage = browser_click_stage(session.executed, session._memory_results, query_document(session._memory_results))
+                identity = turn_effect_id(wait_scope or "adhoc", wait_turn, wait_base + offset)
+                receipt = (delivered or {}).get(identity) or session._memory_results.get(identity)
+                original = receipt.call.args if receipt is not None and receipt.call.name == "browser_wait" else None
+                args = complete_wait_args(call.args, dict(spec.parameters).get("timeout_ms") if spec is not None else None,
+                                          stage=stage, original=original)
+            except ValueError as exc:
+                return [_error_result(call, str(exc))]
+            call = replace(call, args=args)
+        normalized.append(call)
+    calls = normalized
     if snapshot is not None:
         if not snapshot.implementation_compatible:
             return [_error_result(call, "captured tool implementation cannot be verified after restart; call not executed")
                     for call in calls]
         if session.policy != snapshot.policy:
             return [_error_result(call, "turn policy differs from the captured authorization") for call in calls]
-        if nested and durable is not None and (intent_sink is None or not getattr(intent_sink, "parent_effect_id", "")):
+        if nested and durable is not None and (intent_sink is None or not intent_sink.parent_effect_id):
             return [_error_result(call, "nested execution requires its admitted parent effect") for call in calls]
         available = snapshot.nested_tool_names if nested else snapshot.tool_names
         for call in calls:
@@ -541,7 +568,7 @@ def _reconcile_guarded_slot(
         )
     except Exception:
         try:
-            prior = getattr(session, "executed", {}).get(identity)
+            prior = session.executed.get(identity)
         except Exception:
             prior = None
         if prior is None:
@@ -597,7 +624,7 @@ def _execute_slots(  # noqa: PLR0915 - settlement order is one atomic state mach
     results: list[ToolResult] = []
     workspace_unconfirmed = False
     for offset, call in enumerate(calls or []):
-        name = str(getattr(call, "name", "") or "").strip().lower()
+        name = call.name.strip().lower()
         identity = turn_effect_id(identity_ref or "adhoc", active_turn, base_index + offset)
         with ExitStack() as admission:
             try:

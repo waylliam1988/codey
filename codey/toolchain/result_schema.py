@@ -30,7 +30,8 @@ def browser_output_schema(name: str) -> dict[str, object]:
                 "ref": string, "role": string, "name": string, "disabled": boolean, "context_id": string,
                 "value": {"anyOf": [string, {"type": "null"}]},
                 "checked": {"anyOf": [boolean, {"type": "null"}]},
-            }, optional=("context_id",))},
+                "query_relation": {"type": "string", "enum": ["", "aria-controls", "native-details"]},
+            }, optional=("context_id", "query_relation"))},
             "contexts": {"type": "array", "items": record({
                 "id": string, "kind": string, "label": string, "basis": string,
             })},

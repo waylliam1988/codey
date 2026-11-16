@@ -429,7 +429,23 @@ def _required_tool_checks(
             identity = requirement.check_id
             observation = (requirement.observe(records, results=results, browser_document=context.browser_document) if observations is None
                            else observations[identity])
-            if requirement.file_path:
+            if requirement.report_label:
+                from codey.research.answer_contract import answer_scope
+                from codey.research.answer_fields import freeze_field, render_fields, validate_fields
+                from codey.research.answer_report import AnswerReport
+
+                outcome = observation.evaluation
+                if outcome.passed:
+                    if not isinstance(report, AnswerReport):
+                        outcome = RequirementEvaluation("answer_report_missing", "Submit the original Research Markdown answer.")
+                    else:
+                        field = freeze_field(requirement, observation, results, answer_scope(session).aliases)
+                        try:
+                            render_fields((field,), report.markdown, report.state)
+                            validate_fields((field,), report.markdown, report.citation_bindings)
+                        except ValueError as exc:
+                            outcome = RequirementEvaluation("answer_field_missing", str(exc), observation.evaluation.evidence_refs)
+            elif requirement.file_path:
                 from codey.operations.work_status import tool_work_outcome
 
                 outcome = tool_work_outcome(session, requirement, observation, context)

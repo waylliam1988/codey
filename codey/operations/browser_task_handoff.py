@@ -48,11 +48,12 @@ from codey.types.json_value import JsonObject, decode_json_object, parse_json_ob
 
 def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall | None:
     """Materialize explicit navigation to one authorized task URL before interaction."""
-    if session.task_kind not in {"chat", "hybrid"} or session.policy.strict_research:
+    research = session.policy.strict_research and snapshot.research_scope is not None
+    if session.task_kind not in {"chat", "hybrid", "research"}:
         return None
-    # An explicit page sequence already owns its transitions. Do not attach
-    # a second opener based only on the accompanying unordered tool checklist.
-    if any(parse_browser_requirement(check) is not None for check in session.policy.required_checks):
+    # Repeated page rounds own their transitions. A single explicitly required
+    # navigation can initialize Research before any control interaction.
+    if any(isinstance(parse_browser_requirement(check), BrowserPageRounds) for check in session.policy.required_checks):
         return None
     specs = {spec.name: spec for spec in snapshot.frozen_specs}
     if "browser_navigate" not in snapshot.inventory_names:
@@ -62,6 +63,8 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
         return None
     requirements = [rule for check in session.policy.required_checks
                     if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_navigate"]
+    if research and not requirements:
+        return None
     if not requirements and not explicit_web_intent(session.task_text).browser_navigation_requested:
         return None
     url = _task_navigation_url(session) if requirements else snapshot.task_navigation_url
@@ -75,10 +78,16 @@ def initial_navigation(session: TaskSession, snapshot: TurnSnapshot) -> ToolCall
             args[key] = value
     if validate_args_with_spec(specs["browser_navigate"], args):
         return None
-    if any(rule.via == "codemode" for rule in requirements) or codemode_only(session.task_text):
+    if research or any(rule.via == "codemode" for rule in requirements) or codemode_only(session.task_text):
         if "codemode" not in snapshot.tool_names or "browser_navigate" not in snapshot.nested_tool_names:
             return None
-        return ToolCall("codemode", {"code": "return unwrap(await tools.browser_navigate(inputs));", "inputs": args},
+        code = "return unwrap(await tools.browser_navigate(inputs));"
+        if research:
+            if not {"browser_read", "browser_snapshot"} <= set(snapshot.nested_tool_names):
+                return None
+            code = ("const action = unwrap(await tools.browser_navigate(inputs)); "
+                    "unwrap(await tools.browser_read({})); unwrap(await tools.browser_snapshot({})); return action;")
+        return ToolCall("codemode", {"code": code, "inputs": args},
                         call_id="required-source:navigation")
     return ToolCall("browser_navigate", args, call_id="required-source:navigation")
 
@@ -122,15 +131,15 @@ def _call_handoff(session: TaskSession, snapshot: TurnSnapshot, call: ToolCall) 
 
 
 def query_result_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
-                         generation: int | None) -> tuple[TurnSnapshot, str]:
-    """Offer task-named controls, without inferring natural-language ordering."""
+                         generation: int | None, *, task_named: bool = True) -> tuple[TurnSnapshot, str]:
+    """Offer observed query controls under the calling task's selection policy."""
     if not snapshot.browser_followups or snapshot.input_binding is not None or snapshot.browser_copy is not None:
         return snapshot, ""
     checks = snapshot.policy.required_checks if snapshot.policy else ()
     if "result" not in click_followup_plan(checks, set(snapshot.nested_tool_names)).plans:
         return snapshot, ""
     records, results = tool_facts(session, context)
-    if any(same_document(row.audit.get("browser_document"), context.browser_document)
+    if task_named and any(same_document(row.audit.get("browser_document"), context.browser_document)
            and delivery(row) in {"verified", "delivered", "uncertain"} for _, row in committed_results(
                records, results, frozenset({"browser_click"}), include_failed=frozenset({"browser_click"}))):
         return snapshot, ""
@@ -140,7 +149,12 @@ def query_result_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
         return snapshot, ""
     current = _current_snapshot(session, context, generation)
     if current is None:
-        return snapshot, ""
+        if task_named:
+            return snapshot, ""
+        snapshot, action, error = handoff_call(session, snapshot, ToolCall("browser_snapshot", {}))
+        return snapshot, (error if action is None else
+            "If the current evidence answers the question, submit it. If information is still missing, "
+            "inspect the current query controls: " + json.dumps(action, ensure_ascii=False))
     _, observed = current
     contexts = observed.get("contexts")
     labels = {row["id"]: row for row in contexts if isinstance(row, dict)} if isinstance(contexts, list) else {}
@@ -154,20 +168,52 @@ def query_result_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
         name = row.get("name")
         if not isinstance(name, str) or not name.strip():
             continue
-        named = name in declared if declared else re.search(
+        named = (name in declared if declared else re.search(
             r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])", session.task_text, re.I) is not None
+            ) if task_named else row.get("query_relation") == "aria-controls"
         if not named:
             continue
-        offered, call, _ = handoff_call(session, snapshot, ToolCall("browser_click", {"ref": row["ref"], "purpose": "result"}))
+        ref = row["ref"]
+        references = snapshot.browser_references
+        if references is not None:
+            ref = next((choice for choice in references.choices() if references.resolve(choice) == row["ref"]), ref)
+        offered, call, _ = handoff_call(session, snapshot, ToolCall("browser_click", {"ref": ref, "purpose": "result"}))
         if call is not None:
             snapshot = offered
             candidate: JsonObject = {"name": name, "context": labels.get(row.get("context_id"), {}), "call": call}
             lines.append(json.dumps(candidate, ensure_ascii=False))
     if not lines:
         return snapshot, ""
-    return snapshot, ("When you reach the requested query/detail step, choose its matching current control below. "
+    introduction = ("When you reach the requested query/detail step, choose its matching current control below. "
+                    if task_named else "If the current evidence answers the question, submit it. To inspect missing information, "
+                    "choose its matching current query/detail control below. ")
+    return snapshot, (introduction +
                       "The result call clicks once, performs any declared waits and formally reads the result; "
                       "use its child receipts as evidence. Follow the task's ordering and prerequisites.\n" + "\n".join(lines))
+
+
+def confirmed_query_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext) -> str:
+    """Deliver the original query-to-passage association after acquisition has finished."""
+    if snapshot.research_scope is None:
+        return ""
+    records, results = tool_facts(session, context)
+    lines: list[str] = []
+    for ref, result in committed_results(records, results, frozenset({"browser_read"})):
+        click = result.audit.get("query_click")
+        if not isinstance(click, str) or not same_document(result.audit.get("browser_document"), context.browser_document):
+            continue
+        passages = result.canonical.get("read_passages")
+        refs = {passage for row in passages if isinstance(row, dict)
+                and isinstance(passage := row.get("ref"), str)} if isinstance(passages, list) else set()
+        labels = ", ".join(f"[{label}]" for label, passage in snapshot.research_scope.aliases if passage in refs)
+        if labels:
+            region = result.audit.get("query_region")
+            owner = region.get("context") if isinstance(region, dict) else None
+            lines.append(f"Confirmed query: click {click}, formal read {ref}, record "
+                         + json.dumps(owner, ensure_ascii=False) + f", result citations {labels}.")
+    return ("\n".join(lines) + "\nUse these new passages for the queried results. "
+            "Repair a missing or incorrect answer from these receipts; no repeat click is needed. "
+            "Investigate other missing information separately." if lines else "")
 
 
 def _metadata_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
@@ -494,6 +540,12 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
         lines.append("Execution exists but its observation is incomplete. Recover the missing evidence, not the click.")
     elif status.ready and not metadata and not recovery and not download and not query:
         lines.append("All required work checks passed. Prepare the final answer using the committed facts and submit it.")
+        facts = [{"path": rule.file_path, "field": rule.answer_pointer, "value": observation.value,
+                  "result_refs": list(observation.result_refs)} for rule, observation in observed
+                 if rule.file_path and observation.evaluation.passed]
+        if facts:
+            lines.append("Declared file facts from the committed source receipts (quoted data):\n"
+                         + json.dumps(facts, ensure_ascii=False))
     elif not pending and not metadata:
         lines.extend(row.feedback for row in status.browser if not row.passed)
         lines.extend(row.outcome.feedback for row in status.tools if not row.outcome.passed)

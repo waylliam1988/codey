@@ -393,16 +393,18 @@ class KernelContext:
                             "Use CodeMode for operations that need programming or composition.")
                 handoff = "\n\n".join(part for part in (guidance, handoff) if part)
             return snapshot, handoff
-        from codey.operations.browser_detail import offer_page_details
+        from codey.operations.browser_detail import offer_page_details, offer_query_controls
         from codey.operations.research_submission_handoff import research_browser_handoff, research_submission_handoff
 
         snapshot, handoff = research_submission_handoff(self.session, snapshot, context, browser)
         if snapshot.tool_names == ("submit_research_answer",):
             return snapshot, handoff
         snapshot, browser_handoff = research_browser_handoff(self.session, snapshot, context)
-        if browser_handoff:
+        if browser_handoff and not handoff:
             return snapshot, "\n\n".join(part for part in (browser_handoff, handoff) if part)
-        return (snapshot, handoff) if handoff else offer_page_details(self.session, snapshot, browser)
+        snapshot, query_handoff = offer_query_controls(self.session, snapshot, context, browser)
+        snapshot, detail_handoff = offer_page_details(self.session, snapshot, browser)
+        return snapshot, "\n\n".join(part for part in (handoff, browser_handoff, query_handoff, detail_handoff) if part)
 
     def freeze(self, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int, prompt: str = "",
                messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
@@ -552,6 +554,7 @@ class KernelContext:
                     coding_context_prepared=True, initial_source_batch=prefetched is not None)
 
     def prefetch_required_sources(self, snapshot: TurnSnapshot) -> bool:
+        from codey.operations.browser_detail import initial_query_access
         from codey.operations.browser_task_handoff import initial_navigation
         from codey.operations.browser_upload import upload_scope
         from codey.operations.source_gaps import task_source_coverage
@@ -582,6 +585,8 @@ class KernelContext:
             calls.append(ToolCall("browser_navigate", {"url": upload.url}, call_id="required-source:upload-page"))
         if not calls:
             return False
+        browser = self.execution.research_tools.browser_session if self.execution.research_tools is not None else None
+        calls[-1] = initial_query_access(self.session, snapshot, browser, calls[-1])
         # CodeMode aggregation hides this leaf from the model's outer catalog,
         # while the frozen inventory still authorizes it for the runtime.
         names: dict[str, None] = dict.fromkeys([*snapshot.tool_names, *[call.name for call in calls]])

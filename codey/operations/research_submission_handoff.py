@@ -1,6 +1,7 @@
 """Expose submission once the declared browser Research evidence is ready."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from codey.operations.completion_context import CompletionContext
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_session import TaskSession
+    from codey.runtime.core.execution_record import ExecutionRecord
+    from codey.runtime.core.models import ToolResult
     from codey.types.json_value import JsonObject
 
 
@@ -65,12 +68,17 @@ def traces_workflow_document(session: TaskSession, name: str) -> bool:
     return name in _DOCUMENT_TOOLS and bool(declared_workflow_url(session))
 
 
-def _workflow_passages(session: TaskSession, context: CompletionContext, document: JsonObject, url: str) -> tuple[set[str], str]:
-    records, results = tool_facts(session, context)
+def _current_document_records(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
+                              document: JsonObject | None) -> dict[str, ExecutionRecord]:
     # Keep parent receipts for via=codemode checks, but require page tools to
     # have run on this document. An earlier load of the same URL cannot count.
-    current = {ref: row for ref, row in records.items() if row["name"] not in _DOCUMENT_TOOLS
+    return {ref: row for ref, row in records.items() if row["name"] not in _DOCUMENT_TOOLS
                or ((result := results.get(ref)) is not None and result.audit.get("browser_document") == document)}
+
+
+def _workflow_passages(session: TaskSession, context: CompletionContext, document: JsonObject, url: str) -> tuple[set[str], str]:
+    records, results = tool_facts(session, context)
+    current = _current_document_records(records, results, document)
     witnesses: dict[str, frozenset[str]] = {}
     for check in session.policy.required_checks:
         rule = parse_tool_success_check(check)
@@ -94,14 +102,19 @@ def _workflow_passages(session: TaskSession, context: CompletionContext, documen
 
 def research_submission_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                                 browser: BrowserSession | None) -> tuple[TurnSnapshot, str]:
-    from codey.operations.kernel_protocol import refresh_snapshot_contract
-
     scope = snapshot.research_scope
     if browser is None or scope is None or "submit_research_answer" not in snapshot.tool_names:
         return snapshot, ""
     rule = submission_sequence(session)
     url = rule.url if rule is not None else declared_workflow_url(session)
     if not url:
+        if scope.fields and all(not field.feedback and field.value is not None for field in scope.fields):
+            unique = {f"[{label}]": None for field in scope.fields for label in field.labels}
+            labels = ", ".join(unique)
+            return snapshot, ("All explicitly declared report fields have formal evidence. "
+                f"Use the frozen field slots and their original citations {labels} for those fields. "
+                "Continue checking other requirements in the original question. "
+                "No new click or source read is needed to repair these fields in the answer.")
         return snapshot, ""
     document = browser.document_identity()
     if document is None or not isinstance(page_url := document.get("url"), str) or (
@@ -125,13 +138,21 @@ def research_submission_handoff(session: TaskSession, snapshot: TurnSnapshot, co
     labels = ", ".join(f"[{label}]" for label, ref in scope.aliases if ref in passages)
     if not labels:
         return snapshot, ""
+    if rule is None:
+        return snapshot, ("The declared wait/read obligations have formal evidence. "
+            f"Use {labels} for the required page. Continue checking other requirements in the original question; "
+            "the tool checklist does not declare the whole investigation complete.")
+    return _offer_submission(snapshot, "The required post-wait page evidence is ready. Use submit_research_answer and cite "
+                             f"{labels} for the required page.")
+
+
+def _offer_submission(snapshot: TurnSnapshot, guidance: str) -> tuple[TurnSnapshot, str]:
+    from codey.operations.kernel_protocol import refresh_snapshot_contract
+
     specs = tuple(spec for spec in snapshot.frozen_specs if spec.name in SUBMISSION_TOOLS)
     return refresh_snapshot_contract(replace(snapshot, tool_names=SUBMISSION_TOOLS, nested_tool_names=(), frozen_specs=specs,
                    browser_followups=False, browser_references=None, browser_fill_text=None,
-                   custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in SUBMISSION_TOOLS))), (
-        "The required post-wait page evidence is ready. Use submit_research_answer and cite "
-        f"{labels} for the required page."
-    )
+                   custom_executors=tuple(row for row in snapshot.custom_executors if row[0] in SUBMISSION_TOOLS))), guidance
 
 
 def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot,
@@ -152,10 +173,11 @@ def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot,
     from codey.operations.browser_task_handoff import browser_continuation_handoff
 
     records, results = tool_facts(session, context)
+    current = _current_document_records(records, results, context.browser_document)
     prerequisites = [rule for check in session.policy.required_checks
                      if (rule := parse_tool_success_check(check)) is not None
                      and rule.tool not in PAGE_EVIDENCE_TOOLS]
-    ready = all(rule.observe(records, results=results, browser_document=context.browser_document).evaluation.passed
+    ready = all(rule.observe(current, results=results, browser_document=context.browser_document).evaluation.passed
                 for rule in prerequisites)
     snapshot, continuation = browser_continuation_handoff(session, snapshot, context, workflow=True,
                                                           declared_actions_ready=ready)

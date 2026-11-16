@@ -56,8 +56,6 @@ def test_research_completes_with_direct_steps_and_cites_the_post_wait_read(
         return next(str(row["ref"]) for row in elements if isinstance(row, dict) and row.get("name") == name)
 
     def replies() -> Iterator[JsonObject]:
-        yield {"tool": "browser_navigate", "args": {"url": gate.URL}}
-        yield {"tool": "browser_snapshot", "args": {}}
         yield {"tool": "browser_fill", "args": {"ref": reference("Locality"), "value": "福州"}}
         click: JsonObject = {"ref": reference("Load record")}
         if composed:
@@ -66,7 +64,7 @@ def test_research_completes_with_direct_steps_and_cites_the_post_wait_read(
         if not composed:
             yield {"tool": "browser_wait", "args": {"condition": "text", "value": "鱼丸", "timeout_ms": 5000}}
             yield {"tool": "browser_read", "args": {}}
-        label = assert_submitting(directory)
+        label = assert_submitting(directory, narrowed=sequence)
         yield fixture.submission(label, current=True)
 
     install_http(monkeypatch, replies(), native=native)
@@ -75,7 +73,10 @@ def test_research_completes_with_direct_steps_and_cites_the_post_wait_read(
     assert result["passed"] is True, result
     calls = [row.result for row in tool_receipts(directory / "state")]
     reads = [result for result in calls if result.call.name == "browser_read" and result.ok]
-    assert len(reads) == 1 and "research_observation" in reads[0].canonical and "read_passages" in reads[0].canonical
+    assert len(reads) == 2 and all("research_observation" in row.canonical and "read_passages" in row.canonical for row in reads)
+    assert sum(row.call.name == "browser_navigate" and row.ok for row in calls) == 1
+    assert next(index for index, row in enumerate(calls) if row.call.name == "browser_navigate") < next(
+        index for index, row in enumerate(calls) if row.call.name == "browser_fill")
     assert sum(result.call.name == "browser_wait" and result.ok for result in calls) == 1
     assert sum(result.call.name == "browser_click" and result.ok for result in calls) == 1
     assert any(result.ok and result.call.name == "submit_research_answer" for result in calls)

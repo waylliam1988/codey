@@ -73,6 +73,7 @@ class _ElementRef:
     context_node: ElementHandle | None = None
     role: str | None = None
     name: str | None = None
+    query_target: JsonObject | None = None
 
 
 def normalize_element_ref(ref: str) -> str:
@@ -205,6 +206,14 @@ class BrowserSession:
     def capture(self) -> dict[str, object]:
         return _browser_call(self._capture_on_browser_thread)
 
+    def record_regions(self, labels: tuple[str, ...]) -> list[JsonObject]:
+        from codey.automation.browser_observation import observe_records
+
+        def observe() -> list[JsonObject]:
+            return observe_records(self._page_on_browser_thread(), labels)
+
+        return _browser_call(observe)
+
     def capture_query_result(self, baseline: JsonObject, *, pending: str) -> dict[str, object]:
         return _browser_call(self._capture_query_result, baseline, pending)
 
@@ -233,7 +242,8 @@ class BrowserSession:
                 if (page.get("status") == "ok" and isinstance(body, str)
                         and region in " ".join(body.split()) and self._query_observation(target) == current):
                     if target is not None:
-                        page["query_region"] = {"text": region, "relation": target["relation"], "visible": True}
+                        page["query_region"] = {"text": region, "relation": target["relation"], "visible": True,
+                                                "context": baseline.get("context")}
                     return page
             if time.monotonic() >= deadline:
                 raise QueryObservationError("query_update_unconfirmed", pending)
@@ -284,12 +294,13 @@ class BrowserSession:
             context_node = context_nodes.get(context_id)
             if context is not None:
                 contexts[context_id] = context
+            target = bind_query_target(page, handle) if metadata.get("query_relation") else None
             self._refs[ref] = _ElementRef(handle, id(page), self._generation, page.url, document,
                                          context if isinstance(context, dict) else None, context_node,
-                                         role, _element_name(metadata))
+                                         role, _element_name(metadata), target)
             elements.append({"ref": ref, "role": role, "name": name,
                              "context_id": context_id,
-                             **{key: metadata[key] for key in ("value", "disabled", "checked")}})
+                             **{key: metadata[key] for key in ("value", "disabled", "checked", "query_relation")}})
         for context_id, node in context_nodes.items():
             if context_id not in contexts:
                 node.dispose()
@@ -348,7 +359,11 @@ class BrowserSession:
         if query:
             try:
                 target = bind_query_target(page, handle)
+                original = self._refs[ref].query_target
+                if original is not None and target != original:
+                    raise QueryObservationError("query_target_changed", "The observed query target changed before the click.")
                 baseline = self._query_observation(target)
+                baseline["context"] = self._refs[ref].context
                 if target is not None:
                     baseline["target"] = target
             except QueryObservationError as exc:

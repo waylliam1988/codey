@@ -4,6 +4,7 @@ from typing import NotRequired, TypedDict
 
 from codey.research.knowledge_update_types import KnowledgeUpdate
 from codey.research.report_values import CitationBinding
+from codey.types.json_value import JsonObject
 
 
 class CitationOccurrence(TypedDict):
@@ -17,6 +18,7 @@ class AnswerScopePayload(TypedDict):
     aliases: list[list[str]]
     attempt_refs: list[str]
     schema_version: int
+    fields: NotRequired[list[JsonObject]]
 
 
 class UnsignedAnswerSubmission(TypedDict):

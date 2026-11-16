@@ -62,13 +62,16 @@ def assert_collecting(directory: Path) -> None:
     assert "post-wait page evidence is ready" not in json.dumps(request["messages"])
 
 
-def assert_submitting(directory: Path) -> str:
+def assert_submitting(directory: Path, *, narrowed: bool = True) -> str:
     request = requests(directory)[-1]
     schema = json.dumps(request.get("response_format", request.get("tools")))
-    assert "submit_research_answer" in schema and '"codemode"' not in schema
+    assert "submit_research_answer" in schema
+    assert ('"codemode"' not in schema) is narrowed
     messages = json.dumps(request["messages"], ensure_ascii=False)
     assert "QUARTZ_851" in messages
-    handoff = re.search(r"post-wait page evidence is ready\. Use submit_research_answer and cite \[(e\d+)\]", messages)
+    pattern = (r"post-wait page evidence is ready\. Use submit_research_answer and cite \[(e\d+)\]" if narrowed else
+               r"declared wait/read obligations have formal evidence\. Use \[(e\d+)\]")
+    handoff = re.search(pattern, messages)
     assert handoff is not None
     return handoff[1]
 
@@ -141,17 +144,17 @@ def test_production_handoff_requires_citable_read_on_current_document(
             assert_collecting(directory)
             yield fixture.submission("e2", current=True)
             return
-        label = assert_submitting(directory)
+        label = assert_submitting(directory, narrowed=not workflow)
         if case == "old_citation":
             assert label != "e1"
             yield fixture.submission("e1", current=False)
-            assert assert_submitting(directory) == label
+            assert assert_submitting(directory, narrowed=not workflow) == label
         if scenario == "lost_on_submit":
             yield fixture.submission(label, current=True)
             assert_collecting(directory)
             prefix = fixture.NAVIGATE if workflow else ""
             yield fixture.code_action(prefix + fixture.LOAD + fixture.WAIT + f"return {fixture.READ};")
-            label = assert_submitting(directory)
+            label = assert_submitting(directory, narrowed=not workflow)
         yield fixture.submission(label, current=True)
 
     install_http(monkeypatch, replies(), native=native)

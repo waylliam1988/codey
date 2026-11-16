@@ -69,13 +69,14 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
             continue
         if (requirement.answer_contains or requirement.omit_from_explanation) and not explanation:
             raise OutputBindingError("An explanation occurrence rule requires json_explanation.")
-        if requirement.browser_text is not None and not requirement.file_path and not explanation:
+        if requirement.browser_text is not None and not requirement.file_path and not requirement.report_label and not explanation:
             raise OutputBindingError("Browser text fields require json_explanation.")
         if explanation and not requirement.file_path and not requirement.answer_contains and requirement.answer_pointer is not None and (
                 requirement.answer_pointer == "" or requirement.answer_pointer.split("/")[1] == "explanation"):
             raise OutputBindingError("A receipt binding overlaps the declared /explanation text destination.")
         binding_records = _upload_binding_records(requirement, records, bound_upload)
         observation = requirement.observe(binding_records, results=results, browser_document=context.browser_document)
+        _validate_report_destination(requirement, session.policy.strict_research)
         if requirement.file_path and observation.evaluation.passed and requirement.answer_pointer:
             from codey.operations.file_field_binding import selected_value
 
@@ -89,7 +90,7 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
                 if key in file_values and file_values[key] != value:
                     raise OutputBindingError("Conflicting declared file facts target the same final answer field.")
                 file_values[key] = value
-        if requirement.answer_pointer is not None and not requirement.file_path and not requirement.answer_contains and observation.evaluation.passed:
+        if requirement.answer_pointer is not None and not requirement.file_path and not requirement.report_label and not requirement.answer_contains and observation.evaluation.passed:
             pointer = requirement.answer_pointer
             path = tuple(part.replace("~1", "/").replace("~0", "~") for part in pointer[1:].split("/")) if pointer else ()
             selected_schema = _field_schema(schema, path) if requirement.binds_browser_fields else None
@@ -125,6 +126,11 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
     if file_values:
         rendered = replace_json_fields(rendered, file_values)
     return CompletionOutput(rendered, observations)
+
+
+def _validate_report_destination(rule: ToolSuccessRequirement, strict_research: bool) -> None:
+    if rule.report_label and not strict_research:
+        raise OutputBindingError("Markdown receipt fields require the strict Research answer contract.")
 
 
 def explanation_text(text: str, checks: tuple[str, ...], observations: Mapping[str, ToolObservation]) -> str:

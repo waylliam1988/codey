@@ -394,7 +394,8 @@ def test_strict_research_resumes_each_declared_stage_and_submits_its_latest_pass
 
     monkeypatch.setattr(browser, "document_identity", current_document)
     snapshot, handoff = research_submission_handoff(session, build_turn_snapshot(session), context, browser)
-    assert snapshot.tool_names == ("submit_research_answer",), handoff
+    assert {"codemode", "submit_research_answer"} <= set(snapshot.tool_names), handoff
+    assert "tool checklist does not declare the whole investigation complete" in handoff
     assert "[e2]" in handoff and "[e1]" not in handoff
 
 

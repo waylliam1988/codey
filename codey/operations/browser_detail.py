@@ -12,7 +12,7 @@ from codey.operations import browser_followups
 from codey.operations.browser_upload import audit_upload_open, browser_delivered_source, matches_document
 from codey.research.answer_contract import whole_research
 from codey.research.source_reading import render_source_read
-from codey.runtime.core.models import ToolResult
+from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import source_url_key
 from codey.toolchain.constants import PAGE_DETAIL_TOOL
 from codey.toolchain.tool_spec import (
@@ -25,10 +25,10 @@ from codey.types.json_value import JsonObject, decode_json_object, require_json_
 
 if TYPE_CHECKING:
     from codey.automation.browser_session import BrowserSession
+    from codey.operations.completion_context import CompletionContext
     from codey.operations.kernel_protocol import TurnSnapshot
     from codey.operations.task_execution import ExecutionDelegate
     from codey.operations.task_session import TaskSession
-    from codey.runtime.core.models import ToolCall
     from codey.toolchain.tool_spec import ToolSpec
 
 
@@ -51,7 +51,44 @@ def audit_browser_open(result: ToolResult, session: TaskSession | None, browser:
     audit = {**result.audit, "browser_document": document}
     if (binding := browser.resource_binding()) is not None:
         audit["browser_resource"] = binding
-    return replace(result, audit=audit)
+    return audit_record_regions(replace(result, audit=audit), session, browser, document)
+
+
+def audit_record_regions(result: ToolResult, session: TaskSession, browser: BrowserSession,
+                          document: JsonObject, *, native_context: str = "") -> ToolResult:
+    """Bind observed ownership to offsets in this original formal source, without copying values."""
+    from codey.policies.tool_requirement import parse_tool_success_check
+    from codey.research.ledger_receipts import source_observation
+    from codey.research.source_document import SourceReadScope
+
+    labels = tuple({rule.browser_text.context: None for check in session.policy.required_checks
+                    if (rule := parse_tool_success_check(check)) is not None and rule.report_label
+                    and rule.browser_text is not None})
+    if (not result.ok or not labels or result.audit.get("query_region") is not None
+            or not same_document(document, browser.document_identity())):
+        return result
+    _source, text, _pages = source_observation(result.canonical.get("research_observation"))
+    observed: list[JsonObject] = ([{"context": {"label": native_context}, "text": text}] if native_context and native_context in labels else
+                                  browser.record_regions(labels))
+    regions: list[JsonObject] = []
+    for row in observed:
+        context = decode_json_object(row["context"])
+        scope = SourceReadScope.locate(text, require_json_string(row["text"], "record text"))
+        if scope.start is not None and scope.end is not None:
+            region: JsonObject = {"label": context["label"], "start": scope.start, "end": scope.end, "complete": True}
+            targets = row.get("targets")
+            bindings: list[JsonObject] = []
+            for raw in targets if isinstance(targets, list) else []:
+                target = decode_json_object(raw)
+                located = SourceReadScope.locate(text, require_json_string(target["text"], "target text"))
+                if (located.start is not None and located.end is not None
+                        and scope.start <= located.start < located.end <= scope.end):
+                    bindings.append({"start": located.start, "end": located.end, "target": target["target"]})
+            if bindings:
+                region["query_targets"] = list(bindings)
+            regions.append(region)
+    return (replace(result, audit={**result.audit, "record_regions": regions})
+            if regions and same_document(document, browser.document_identity()) else result)
 
 
 def _observed_document(session: TaskSession, browser: BrowserSession) -> JsonObject | None:
@@ -100,6 +137,42 @@ def offer_page_details(session: TaskSession, snapshot: TurnSnapshot,
         lines.append(f"- {json.dumps(control.owner, ensure_ascii=False)} / {json.dumps(control.name, ensure_ascii=False)} "
                      + json.dumps(action, ensure_ascii=False))
     return narrowed, "\n".join(lines)
+
+
+def offer_query_controls(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                         browser: BrowserSession | None) -> tuple[TurnSnapshot, str]:
+    """Offer optional ordinary Research queries from the same formally read document."""
+    from codey.operations.browser_task_handoff import (
+        browser_continuation_handoff,
+        confirmed_query_handoff,
+        query_result_handoff,
+    )
+    from codey.operations.kernel_protocol import offer_browser_call
+
+    if (browser is None or not _can_inspect(session) or snapshot.research_scope is None
+            or (document := _observed_document(session, browser)) is None
+            or not same_document(document, context.browser_document)):
+        return snapshot, ""
+    for name in ("browser_snapshot", "browser_click", "browser_read", "browser_wait"):
+        snapshot = offer_browser_call(snapshot, session, name, research=True)
+    snapshot, recovery = browser_continuation_handoff(session, snapshot, context)
+    if recovery:
+        return snapshot, recovery
+    snapshot, candidates = query_result_handoff(session, snapshot, context, browser.generation, task_named=False)
+    return snapshot, "\n\n".join(part for part in (confirmed_query_handoff(session, snapshot, context), candidates) if part)
+
+
+def initial_query_access(session: TaskSession, snapshot: TurnSnapshot,
+                         browser: BrowserSession | None, call: ToolCall) -> ToolCall:
+    """Read and observe in one existing program, retaining both formal child receipts."""
+    if (browser is None or not _can_inspect(session) or snapshot.research_scope is None
+            or call.name != "open_url" or "codemode" not in snapshot.tool_names
+            or not {"open_url", "browser_snapshot"} <= set(snapshot.nested_tool_names)):
+        return call
+    # A failed source read stops the program. An optional observation failure
+    # retains the source and its own failure receipt for normal model recovery.
+    return ToolCall("codemode", {"code": "const source = unwrap(await tools.open_url(inputs)); "
+                    "await tools.browser_snapshot({}); return source;", "inputs": call.args}, call.call_id)
 
 
 def selected_detail(session: TaskSession | None, browser: BrowserSession, call: ToolCall,
@@ -162,4 +235,8 @@ def read_browser_source(delegate: ExecutionDelegate, browser: BrowserSession, ca
         region = page.get("query_region")
         if isinstance(region, dict):
             result = replace(result, audit={**result.audit, "query_region": decode_json_object(region)})
+    if ok and session is not None and (current := browser.document_identity()) is not None:
+        native_context = page.get("record_context", "")
+        result = audit_record_regions(result, session, browser, current,
+            native_context=native_context if isinstance(native_context, str) else "")
     return result, ok, code

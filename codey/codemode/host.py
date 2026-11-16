@@ -11,6 +11,7 @@ from codey.operations.browser_references import BrowserReferences
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE, STALE_READ_REFERENCE_ERROR
 from codey.toolchain.result_schema import validate_output
+from codey.toolchain.tool_spec import _check_spec_value_against_schema
 from codey.types.json_value import JsonObject, JsonValue, canonical_json_object, decode_json_object
 
 
@@ -54,6 +55,8 @@ class CodeModeHost:
         task_navigation_url: str | None = None,
         browser_references: BrowserReferences | None = None,
         replay_browser_ref: Callable[[int, str, JsonValue], str] | None = None,
+        browser_stage: Callable[[], int] | None = None,
+        original_browser_wait: Callable[[int], JsonObject | None] | None = None,
         bound_edit: Callable[[int, JsonObject], JsonObject] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
@@ -73,6 +76,8 @@ class CodeModeHost:
         self._task_navigation_url = task_navigation_url
         self._browser_references = browser_references
         self._replay_browser_ref = replay_browser_ref
+        self._browser_stage = browser_stage
+        self._original_browser_wait = original_browser_wait
         self._bound_edit = bound_edit
         self._next_child = 0
         self._complete_reads: dict[str, ToolResult] = {}
@@ -145,6 +150,16 @@ class CodeModeHost:
         if tool_name not in self._catalog:
             raise ValueError(f"tool is not in the frozen catalog: {tool_name}")
         decoded_args = self._reference_args(index, tool_name, args)
+        if tool_name == "browser_wait":
+            from codey.operations.browser_waits import complete_wait_args
+
+            parameters = canonical_json_object(self._catalog[tool_name].parameters)
+            properties = decode_json_object(parameters.get("properties", {}))
+            decoded_args = complete_wait_args(decoded_args, properties.get("timeout_ms"),
+                stage=self._browser_stage() if self._browser_stage is not None else 0,
+                original=self._original_browser_wait(index) if self._original_browser_wait is not None else None)
+            if error := _check_spec_value_against_schema(tool_name, "args", parameters, decoded_args, strict=True):
+                raise ValueError(error)
         if tool_name == "edit" and self._bound_edit is not None:
             ref = decoded_args.get("base_result_ref")
             if not isinstance(ref, str) or ref not in self._complete_reads:

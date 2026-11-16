@@ -10,7 +10,7 @@ from urllib.parse import urlsplit, urlunsplit
 from codey.task.instruction_text import instruction_text, quoted_value
 from codey.types.json_value import canonical_json_object
 
-_CODE = re.compile(r"```[\s\S]*?```|`[^`\n]*`|(?m:^[ \t]*>[^\n]*)")
+_CODE = re.compile(r"```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`|(?m:^[ \t]*>[^\n]*)")
 _QUOTED = re.compile(r'"[^"\n]*"|“[^”\n]*”')
 _URL = re.compile(r"https?://[^\s<>`\"'、，。；！？（）\[\]]+", re.IGNORECASE)
 _CLAUSES = re.compile(r"[，。；;!?！？]|\.\s+|\.$")
@@ -19,7 +19,7 @@ _URL_LINE = re.compile(r"[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?"
                        r"(?:(?:Source|URL|来源)[ \t]*[:：][ \t]*)?"
                        r"(?:<\x00\d+\x00>|\[[^\]\n]+\]\(\x00\d+\x00\)|\x00\d+\x00)[ \t。；.!?]*", re.I)
 _ACTION = re.compile(
-    r"web_search|open_url|\bbrowser_navigate\b|上网|联网查询|在线查找|查网页|查资料|官方文档|浏览网页|读取网页|"
+    r"web_search|open_url|\bbrowser_navigate\b|上网|联网(?:查询)?|在线查找|查网页|查资料|官方文档|浏览网页|读取网页|"
     r"\b(?:browse|search the web|look online)\b", re.IGNORECASE)
 _OPEN = re.compile(r"打开|访问|读取|浏览|看看|查看|分析|了解|导航到|导航至|\b(?:open|visit|inspect|read|look at|navigate to)\b", re.IGNORECASE)
 _NAVIGATION = re.compile(r"\bbrowser_navigate\b|导航到|导航至|\bnavigate to\b", re.IGNORECASE)
@@ -106,7 +106,7 @@ def _open_clause(clause: str) -> bool:
     return bool(_OPEN.search(clause) or re.search(r"\bopen_url\b", clause, re.I))
 
 
-def _request_clauses(text: str) -> list[str]:
+def _request_clauses(text: str, *, source_lines: bool) -> list[str]:
     lines = [line for line in text.splitlines() if line.strip()]
     clauses: list[list[str]] = []
     for text_line in lines:
@@ -125,17 +125,24 @@ def _request_clauses(text: str) -> list[str]:
         before, after = rows[0] - 1, rows[-1] + 1
         targets = [(before, -1), (after, 0)]
         for line, index in targets:
-            if (0 <= line < len(lines) and clauses[line] and _open_clause(clauses[line][index])
+            if (0 <= line < len(lines) and clauses[line]
+                    and (_open_clause(clauses[line][index]) or source_lines and _ACTION.search(clauses[line][index]))
                     and _URL_TOKEN.search(clauses[line][index]) is None):
                 tokens = [match[0] for row in rows for match in _URL_TOKEN.finditer(lines[row])]
                 clauses[line][index] += " " + " ".join(tokens)
                 break
+        else:
+            # A source address on its own line is task input even when the
+            # surrounding question does not repeat an access verb.
+            for row in rows:
+                clauses[row] = [lines[row]]
+            continue
         for row in rows:
             clauses[row].clear()
     return [clause for line in clauses for clause in line]
 
 
-def explicit_web_intent(task: str) -> WebIntent:
+def explicit_web_intent(task: str, *, source_lines: bool = True) -> WebIntent:
     text = _CODE.sub("", task)
 
     def quoted_example(match: re.Match[str]) -> str:
@@ -161,8 +168,15 @@ def explicit_web_intent(task: str) -> WebIntent:
     browser_navigation_requested = False
     navigation_urls: set[str] = set()
     direct: dict[str, set[str | None] | None] = {}
-    for clause in _request_clauses(text):
+    for clause in _request_clauses(text, source_lines=source_lines):
         targets = list(_URL_TOKEN.finditer(clause))
+        if source_lines and _URL_LINE.fullmatch(clause):
+            for target in targets:
+                key, original = url_tokens[target[0]]
+                if key not in direct:
+                    direct[key] = {original}
+                    requested = True
+            continue
         actions = list(_ACTION.finditer(clause))
         if targets:
             actions.extend(_OPEN.finditer(clause))
@@ -213,7 +227,7 @@ def restored_source_requirements(state: Mapping[str, object]) -> frozenset[str]:
         task = state.get("input_text", state.get("task", ""))
         if not isinstance(task, str):
             raise ValueError("original source requirement input must be text")
-        return explicit_web_intent(task).urls
+        return explicit_web_intent(task, source_lines=False).urls
     payload = canonical_json_object(state["source_requirements"])
     if (set(payload) != {"version", "required_urls"}
             or type(payload["version"]) is not int or payload["version"] != 1):

@@ -15,6 +15,7 @@ from typing import Protocol
 from codey.knowledge.model import canonical_json
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
+from codey.research.answer_fields import AnswerField, freeze_field, render_fields
 from codey.research.answer_values import (
     AnswerScopePayload,
     AnswerSubmission,
@@ -24,6 +25,7 @@ from codey.research.answer_values import (
 from codey.research.knowledge_updates import normalize_updates, updates_schema
 from codey.research.passages import read_passage_refs
 from codey.research.questions import is_investigation_tool
+from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
 from codey.toolchain.tool_spec import ToolSpec
 from codey.types.json_value import ToolArgs, canonical_json_object, decode_json_object, require_json_string
@@ -97,6 +99,9 @@ class AnswerSessionView(ResearchPolicyView, Protocol):
     @property
     def _memory_results(self) -> Mapping[str, ToolResult]: ...
 
+    @property
+    def executed(self) -> Mapping[str, ExecutionRecord]: ...
+
 
 def whole_research(session: ResearchPolicyView) -> bool:
     return session.task_kind == "research" and session.policy.strict_research
@@ -112,20 +117,25 @@ class AnswerScope:
     aliases: tuple[tuple[str, str], ...]
     attempt_refs: tuple[str, ...]
     schema_version: int = ANSWER_SCOPE_VERSION
+    fields: tuple[AnswerField, ...] = ()
 
     @property
     def passage_refs(self) -> tuple[str, ...]:
         return tuple(ref for _, ref in self.aliases)
 
     def to_payload(self) -> AnswerScopePayload:
-        return {"task_digest": self.task_digest, "aliases": [list(row) for row in self.aliases],
-                "attempt_refs": list(self.attempt_refs), "schema_version": self.schema_version}
+        payload = AnswerScopePayload(task_digest=self.task_digest, aliases=[list(row) for row in self.aliases],
+                                     attempt_refs=list(self.attempt_refs), schema_version=self.schema_version)
+        if self.schema_version == 5:
+            payload["fields"] = [field.to_payload() for field in self.fields]
+        return payload
 
     @classmethod
     def from_payload(cls, raw: object) -> AnswerScope:
         raw = decode_json_object(raw)
-        if (set(raw) != set(cls.__dataclass_fields__)
-                or type(raw.get("schema_version")) is not int or raw["schema_version"] != ANSWER_SCOPE_VERSION):
+        version = raw.get("schema_version")
+        expected = {"task_digest", "aliases", "attempt_refs", "schema_version"} | ({"fields"} if version == 5 else set())
+        if (set(raw) != expected or type(version) is not int or version not in {ANSWER_SCOPE_VERSION, 5}):
             raise ValueError("invalid whole-task research scope")
         task_digest = require_json_string(raw.get("task_digest"), "task_digest")
         if re.fullmatch(r"[0-9a-f]{64}", task_digest) is None:
@@ -148,7 +158,13 @@ class AnswerScope:
                 or len({row[1] for row in bindings}) != len(bindings)
                 or any(not ref for ref in attempt_refs) or len(set(attempt_refs)) != len(attempt_refs)):
             raise ValueError("duplicate or invalid frozen research identity")
-        return cls(task_digest, tuple(bindings), attempt_refs)
+        raw_fields = raw.get("fields", [])
+        if not isinstance(raw_fields, list):
+            raise ValueError("invalid frozen answer fields")
+        fields = tuple(AnswerField.from_payload(row) for row in raw_fields)
+        if len({field.pointer for field in fields}) != len(fields) or any(set(field.labels) - {label for label, _ in bindings} for field in fields):
+            raise ValueError("duplicate or unread frozen answer field")
+        return cls(task_digest, tuple(bindings), attempt_refs, version, fields)
 
 
 def answer_scope(session: AnswerSessionView) -> AnswerScope:
@@ -166,8 +182,18 @@ def answer_scope(session: AnswerSessionView) -> AnswerScope:
         rows: object = original.canonical.get("read_passages", []) if original is not None and original.ok else list[str]()
         for ref in read_passage_refs(rows):
             labels.setdefault(ref, f"e{len(labels) + 1}")
-    return AnswerScope(digest(session.task_text), tuple((label, ref) for ref, label in labels.items()),
-                       tuple(attempts))
+    aliases = tuple((label, ref) for ref, label in labels.items())
+    from codey.policies.tool_requirement import parse_tool_success_check
+
+    fields: list[AnswerField] = []
+    document = next((decode_json_object(raw) for result in reversed(tuple(results.values()))
+                     if isinstance(raw := result.audit.get("browser_document"), dict)), None)
+    for check in session.policy.required_checks:
+        rule = parse_tool_success_check(check)
+        if rule is not None and rule.report_label:
+            observation = rule.observe(session.executed, results=results, browser_document=document)
+            fields.append(freeze_field(rule, observation, results, aliases))
+    return AnswerScope(digest(session.task_text), aliases, tuple(attempts), 5 if fields else ANSWER_SCOPE_VERSION, tuple(fields))
 
 
 def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
@@ -178,7 +204,8 @@ def citation_occurrences(markdown: str) -> list[CitationOccurrence]:
         labels = re.split(r"\s*[,，]\s*", match[1])
         if any(re.fullmatch(r"e[1-9][0-9]*", label) is None for label in labels):
             raise ValueError("Use explicit evidence labels such as [e1][e2] or [e1, e2]; no ranges or invented labels.")
-        rows.extend({"label": label, "start": match.start(), "end": match.end()} for label in dict.fromkeys(labels))
+        unique_labels: dict[str, None] = dict.fromkeys(labels)
+        rows.extend({"label": label, "start": match.start(), "end": match.end()} for label in unique_labels)
     return rows
 
 
@@ -186,13 +213,18 @@ def submit_answer(scope: AnswerScope, args: ToolArgs) -> AnswerSubmission:
     args = canonical_json_object(args)
     markdown_value = args.get("markdown")
     state = args.get("state")
-    if (not {"markdown", "state"} <= args.keys() or args.keys() - {"markdown", "state", "knowledge_updates"}
+    if (not {"markdown", "state"} <= args.keys() or any(key not in {"markdown", "state", "knowledge_updates"} for key in args)
             or not isinstance(state, str) or state not in ANSWER_STATES
             or not isinstance(markdown_value, str)
             or not 12 <= len(markdown_value.strip()) <= MAX_ANSWER_CHARACTERS):
         raise ValueError("Submit markdown (12..64000 characters) and state=answered/partial/unresolved.")
-    markdown = markdown_value.strip()
+    markdown = render_fields(scope.fields, markdown_value.strip(), state)
+    if len(markdown) > MAX_ANSWER_CHARACTERS:
+        raise ValueError("Expanded answer exceeds the Markdown size limit.")
     citations = citation_occurrences(markdown)
+    from codey.research.answer_fields import validate_fields
+
+    validate_fields(scope.fields, markdown, citations)
     aliases = dict(scope.aliases)
     updates = normalize_updates(args.get("knowledge_updates", []), set(aliases))
     unknown = {row["label"] for row in citations} - aliases.keys()
@@ -253,7 +285,10 @@ def answer_spec(spec: ToolSpec, scope: AnswerScope) -> ToolSpec:
                     "Include all premises needed by an inference; "
                     "source-stated facts are claims. Batch keys are not answer citations. "
                     "Omit this batch for ordinary answer delivery. "
-                    "The application validates and publishes this answer; no separate plan, finding, adoption or done is needed.",
+                    "The application validates and publishes this answer; no separate plan, finding, adoption or done is needed."
+                    + (" Explicit receipt fields are available as {{field:/pointer}} slots. The application expands each "
+                       "slot into its exact value and citation before publication; include all declared fields. "
+                       + canonical_json([field.to_payload() for field in scope.fields]) if scope.fields else ""),
         json_examples=(canonical_json({"tool": spec.name, "args": {"state": "partial" if scope.aliases else "unresolved",
             "markdown": ("Supported answer [" + scope.aliases[0][0] + "]. Remaining uncertainty: ...") if scope.aliases else
                         "The attempted investigation could not establish the answer. Remaining gap: ..."}}),)))
