@@ -1,8 +1,9 @@
-"""Derive a declared wait/read continuation from settled current-page effects."""
+"""Derive browser continuations from settled current-page effects."""
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Literal
 
 from codey.automation.browser_document import same_document
 from codey.operations.browser_completion import (
@@ -28,6 +29,38 @@ from codey.types.json_value import JsonObject, parse_json_object
 class BrowserNextStep:
     call: ToolCall | None
     feedback: str
+    kind: Literal["recovery", "evidence", "advice"] = "advice"
+
+
+def _control_recovery(records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
+                      document: JsonObject, observation_ref: str) -> BrowserNextStep | None:
+    actions = committed_results(records, results, PAGE_EVIDENCE_INVALIDATORS,
+                                include_failed=PAGE_EVIDENCE_INVALIDATORS)
+    if not actions:
+        return None
+    rejected_ref, rejected = actions[-1]
+    value = rejected.canonical.get("value")
+    if (rejected.ok or rejected.call.name != "browser_click" or delivery(rejected) != "not_delivered"
+            or not isinstance(value, dict) or value.get("reason") not in {"stale_ref", "unknown_ref", "invalid_ref_format"}
+            or not same_document(rejected.audit.get("browser_document"), document)):
+        return None
+    previous = next(((ref, row) for ref, row in reversed(actions[:-1]) if page_effect_possible(row)), None)
+    if previous is None:
+        return None
+    settled_ref, settled = previous
+    if (not settled.ok or settled.call.name != "browser_fill" or delivery(settled) != "verified"
+            or not same_document(settled.audit.get("browser_document"), document)):
+        return None
+    feedback = (f"browser_fill already completed and was verified in receipt {settled_ref}. "
+                f"The subsequent browser_click in receipt {rejected_ref} was not delivered: {rejected.model_text}\n"
+                "Continue the rejected click from the current page; do not restart the completed fill or the whole program. "
+                "The parent program outcome does not change these child receipts.")
+    if not observation_ref:
+        return BrowserNextStep(ToolCall("browser_snapshot", {}), feedback +
+            "\nNo complete current control snapshot is available. Observe once, then select the intended control.", "recovery")
+    return BrowserNextStep(ToolCall("browser_click", {}), feedback +
+        f"\nCurrent controls are available in settled snapshot {observation_ref}. "
+        "Choose the intended click target from that observation; another snapshot or fill is unnecessary.", "recovery")
 
 
 def _matching_waits(args: JsonObject, rows: list[tuple[str, ToolResult]], url: str) -> list[int]:
@@ -39,18 +72,25 @@ def _matching_waits(args: JsonObject, rows: list[tuple[str, ToolResult]], url: s
 
 def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, ExecutionRecord],
                       results: Mapping[str, ToolResult], document: JsonObject | None,
-                      names: set[str], workflow: bool = False) -> BrowserNextStep | None:
+                      names: set[str], workflow: bool = False,
+                      observation_ref: str = "", declared_actions_ready: bool = True) -> BrowserNextStep | None:
     if document is None or not isinstance(url := document.get("url"), str):
         return None
     active = tuple(check for check in checks if (page := parse_browser_requirement(check)) is None or page.url == url)
     pages = tuple(page for check in active if isinstance(page := parse_browser_requirement(check), BrowserResearchSequence))
     rules = tuple(rule for check in active if (rule := parse_tool_success_check(check)) is not None)
     stage = browser_click_stage(records, results, document)
-    earlier = [rule for rule in rules if rule.stage and rule.stage < stage and not rule.observe(
+    recovery = _control_recovery(records, results, document, observation_ref)
+    earlier = [rule for rule in rules if rule.stage and (rule.stage < stage or recovery is not None and rule.stage == stage)
+               and not rule.observe(
         records, results=results, browser_document=document).evaluation.passed]
     if earlier:
         return BrowserNextStep(None, "An earlier declared browser stage lacks settled evidence. "
             "Recover that stage on its original document before advancing; its waits cannot attach to the current click.")
+    if recovery is not None:
+        return recovery
+    if not declared_actions_ready:
+        return None
     invalidators = PAGE_EVIDENCE_INVALIDATORS if pages or workflow else PAGE_ACTIONS
     actions = [(ref, row) for ref, row in committed_results(records, results, invalidators, include_failed=invalidators)
                if same_document(row.audit.get("browser_document"), document) and page_effect_possible(row)]
@@ -63,12 +103,13 @@ def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, Executio
         inspected = any(row.ok and row.call.name == "browser_snapshot"
                         and same_document(row.audit.get("browser_document"), document)
                         for key in keys[keys.index(ref) + 1:] if (row := results.get(key)) is not None)
-        return BrowserNextStep(None if inspected else ToolCall("browser_snapshot", {}), UNCERTAIN)
+        return BrowserNextStep(None if inspected else ToolCall("browser_snapshot", {}), UNCERTAIN, "evidence")
     if not (query or clicks or pages or workflow or any(rule.after for rule in rules)):
         return None
     applicable = tuple(check for check in active if (rule := parse_tool_success_check(check)) is None
                        or not rule.stage or rule.stage == stage)
     current_rules = tuple(rule for check in applicable if (rule := parse_tool_success_check(check)) is not None)
+    narrow_tools = query is not None or bool(pages) or any(rule.after for rule in current_rules)
     if not (query or clicks or pages or workflow or any(rule.after for rule in current_rules)):
         return None
     for rule in current_rules:
@@ -82,7 +123,7 @@ def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, Executio
             inspected = any(row.ok and row.call.name == "browser_snapshot"
                             and same_document(row.audit.get("browser_document"), document)
                             for key in after if (row := results.get(key)) is not None)
-            return BrowserNextStep(None if inspected else ToolCall("browser_snapshot", {}), UNCERTAIN)
+            return BrowserNextStep(None if inspected else ToolCall("browser_snapshot", {}), UNCERTAIN, "evidence")
         if not progress.ready:
             return None
     plan = click_followup_plan(applicable, names, stage=stage)
@@ -117,13 +158,17 @@ def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, Executio
                         "do not click again." if clicks or query is not None else
                         "Complete the declared browser_wait next on the current document.")
             return BrowserNextStep(ToolCall("browser_wait", args),
-                                   feedback)
+                                   feedback, "evidence" if narrow_tools else "advice")
         latest_wait = max(latest_wait, matching[-1])
     needs_read = query is not None or bool(pages) or any(rule.tool == "browser_read" and rule.stage in {0, stage} for rule in rules)
     read = any(row.ok and row.call.name == "browser_read" and complete_page_passages(row, url)
                for _, row in current[latest_wait + 1:])
     page_ready = all(bool(post_wait_passages(page, records=records, results=results, document=document)[1]) for page in pages)
     if needs_read and (not read or not page_ready):
+        if not narrow_tools:
+            return BrowserNextStep(None, "The declared checklist still needs browser_read, but does not fix the remaining "
+                "action order. Complete the task's remaining control actions before reading their final result.")
         return BrowserNextStep(ToolCall("browser_read", {}),
-            "The declared waits are settled. Use browser_read on the same document for complete text; do not click again.")
+            "The declared waits are settled. Use browser_read on the same document for complete text; do not click again.",
+            "evidence")
     return None

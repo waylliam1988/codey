@@ -1,0 +1,9 @@
+{
+  "source": ".e2e-artifacts\\receipt-dependencies-20261116\\full-surface-01\\hybrid_codemode\\raw-audit.json",
+  "tool": "codemode",
+  "args": {
+    "code": "const snapshot = await tools.browser_snapshot({});\nconst elements = unwrap(snapshot).elements;\nconst localityInput = elements.find(e => e.name === 'Locality' || e.name.toLowerCase().includes('locality'));\nconst loadRecordBtn = elements.find(e => e.name === 'Load record' || e.name.toLowerCase().includes('load'));\n\nif (localityInput) {\n  await tools.browser_fill({ref: localityInput.ref, value: '福州'});\n}\n\nif (loadRecordBtn) {\n  await tools.browser_click({ref: loadRecordBtn.ref});\n}\n\n// After clicking, we need a new snapshot to ensure we have the latest refs if needed,\n// but the task says 'use latest refs' and 'fill then click'.\n// Since we need to wait for '鱼丸' next, we can proceed.\nreturn {\n  locality_ref: localityInput?.ref,\n  load_btn_ref: loadRecordBtn?.ref\n};",
+    "inputs": {},
+    "language": "javascript"
+  }
+}

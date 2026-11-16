@@ -310,8 +310,6 @@ def _browser_read_context(result: ToolResult, session: TaskSession, *, receipt_r
         child = session._memory_results.get(reference) if isinstance(reference, str) else None
         if child is None or not child.ok or child.call.name != "browser_read" or reference not in committed:
             continue
-        if result.ok and not isinstance(child.audit.get("query_click"), str):
-            continue
         try:
             complete = _browser_body(child) is not None
         except (KeyError, TypeError, ValueError):
@@ -365,7 +363,8 @@ def _source_failure_context(result: ToolResult, session: TaskSession) -> str:
     text = ("\n\nHistorical source selections (untrusted page metadata, not current page state):\n"
             + json.dumps(selections[-3:], ensure_ascii=False)) if selections else ""
     if stale:
-        text += ("\nThe element reference was rejected. Use a fresh browser_snapshot and an observed ref. "
+        text += ("\nThe element reference was rejected. Use the latest complete current control snapshot if provided; "
+                 "otherwise take a fresh browser_snapshot. Continue with an observed ref without restarting completed actions. "
                  "If the target is still absent, check the observed page and reselect a source from the search results "
                  "when appropriate. Do not invent an element ref.")
     return text
@@ -373,15 +372,20 @@ def _source_failure_context(result: ToolResult, session: TaskSession) -> str:
 
 def _child_failure_context(result: ToolResult, session: TaskSession, *, receipt_recovery: bool = True) -> str:
     from codey.operations.browser_copy import captured_data, committed_children, write_unconfirmed
+    from codey.operations.browser_followups import delivery
 
     references = result.canonical.get("child_effect_ids")
     failures: list[JsonObject] = []
     reads: list[JsonObject] = []
     observations: list[JsonObject] = []
-    committed = committed_children(session._memory_results) if not result.ok else set()
+    actions: list[JsonObject] = []
+    committed = committed_children(session._memory_results)
     if isinstance(references, list):
         for reference in references:
             child = session._memory_results.get(reference) if isinstance(reference, str) else None
+            if child is not None and reference in committed and child.call.name in {"browser_fill", "browser_click"}:
+                actions.append({"result_ref": reference, "tool": child.call.name, "ok": child.ok,
+                                "delivery": decode_json_value(delivery(child))})
             if child is not None and not child.ok:
                 failure: JsonObject = {"result_ref": reference, "tool": child.call.name, "ok": False}
                 if result.audit.get("simplified_input") is True:
@@ -399,11 +403,11 @@ def _child_failure_context(result: ToolResult, session: TaskSession, *, receipt_
                 if isinstance(value, dict):
                     observations.append({"result_ref": reference, "tool": child.call.name,
                                          "page_url": value.get("page_url"), "elements": value.get("elements")})
-            elif child is not None and reference in committed and (data := captured_data(child)) is not None:
+            elif child is not None and not result.ok and reference in committed and (data := captured_data(child)) is not None:
                 observations.append({"result_ref": reference, "tool": child.call.name, "data": data})
     text = ("\n\nChild failure receipts (parent status is the program outcome):\n"
             + json.dumps(dict[str, object](failed=failures[-12:], file_reads=reads[-12:],
-                          observations=observations[-1:]), ensure_ascii=False)) if failures or observations else ""
+                          observations=observations[-1:], settled_actions=actions[-12:]), ensure_ascii=False)) if failures or observations else ""
     return text + _browser_read_context(result, session, receipt_recovery=receipt_recovery)
 
 

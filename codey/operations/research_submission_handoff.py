@@ -155,11 +155,12 @@ def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot,
     prerequisites = [rule for check in session.policy.required_checks
                      if (rule := parse_tool_success_check(check)) is not None
                      and rule.tool not in PAGE_EVIDENCE_TOOLS]
-    if all(rule.observe(records, results=results, browser_document=context.browser_document).evaluation.passed
-           for rule in prerequisites):
-        snapshot, continuation = browser_continuation_handoff(session, snapshot, context, workflow=True)
-        if continuation:
-            return snapshot, continuation
+    ready = all(rule.observe(records, results=results, browser_document=context.browser_document).evaluation.passed
+                for rule in prerequisites)
+    snapshot, continuation = browser_continuation_handoff(session, snapshot, context, workflow=True,
+                                                          declared_actions_ready=ready)
+    if continuation:
+        return snapshot, continuation
     return snapshot, ("For declared browser steps, use the offered direct browser tools. "
                       "They execute fixed programs under this Research scope. Supply question_ref when the tool requires it. "
                       "Submit one direct browser action per turn. "

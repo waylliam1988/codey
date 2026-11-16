@@ -20,6 +20,7 @@ from codey.operations.browser_followups import (
     pending_click,
     unconfirmed_clicks,
 )
+from codey.operations.browser_next_step import BrowserNextStep, next_browser_step
 from codey.operations.browser_references import BrowserReferences
 from codey.operations.browser_text_report import MetadataPending, observe_metadata, report_scope
 from codey.operations.completion_context import CompletionContext
@@ -89,7 +90,7 @@ def handoff_call(session: TaskSession, snapshot: TurnSnapshot,
         return snapshot, None, f"{call.name} is unavailable under the current frozen authorization."
     only = codemode_only(session.task_text)
     if not only:
-        snapshot = offer_browser_call(snapshot, session, call.name)
+        snapshot = offer_browser_call(snapshot, session, call.name, research=snapshot.research_scope is not None)
     task_selector = call.name == "browser_navigate" and "target" in call.args
     direct = call.name in snapshot.tool_names and not only and not task_selector
     if direct:
@@ -354,19 +355,38 @@ def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
     return snapshot, "\n".join(lines), None
 
 
-def browser_continuation_handoff(session: TaskSession, snapshot: TurnSnapshot,
-                                 context: CompletionContext, *, workflow: bool = False) -> tuple[TurnSnapshot, str]:
-    from codey.operations.browser_next_step import next_browser_step
-
+def _browser_step(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext, *,
+                  workflow: bool = False, declared_actions_ready: bool = True) -> BrowserNextStep | None:
     records, results = tool_facts(session, context)
-    step = next_browser_step(session.policy.required_checks, records=records, results=results,
-        document=context.browser_document, names=set(snapshot.nested_tool_names), workflow=workflow)
-    if step is None:
-        return snapshot, ""
+    references = snapshot.browser_references
+    return next_browser_step(session.policy.required_checks, records=records, results=results,
+        document=context.browser_document, names=set(snapshot.nested_tool_names), workflow=workflow,
+        observation_ref=references.receipt_ref if references is not None else "", declared_actions_ready=declared_actions_ready)
+
+
+def _step_handoff(session: TaskSession, snapshot: TurnSnapshot, step: BrowserNextStep) -> tuple[TurnSnapshot, str]:
     if step.call is None:
         return snapshot, step.feedback
+    # Narrow outer choices only; fixed programs retain all frozen leaves for
+    # execution, recovery and newly declared work on subsequent turns.
+    if step.kind != "advice":
+        aliases = {*DIRECT_TOOLS, "browser_wait"} - {step.call.name, "browser_snapshot"}
+        snapshot = refresh_snapshot_contract(replace(snapshot,
+            tool_names=tuple(name for name in snapshot.tool_names if name not in aliases)))
     snapshot, action = _call_handoff(session, snapshot, step.call)
-    return snapshot, step.feedback + "\n" + action
+    references = snapshot.browser_references
+    controls_payload: list[JsonObject] = [row.payload() for row in references.controls] if references is not None else []
+    controls = ("\nCurrent controls from settled snapshot " + references.receipt_ref + ":\n"
+                + json.dumps(controls_payload, ensure_ascii=False)
+                if references is not None and step.call.name == "browser_click" and "ref" not in step.call.args else "")
+    return snapshot, step.feedback + controls + "\n" + action
+
+
+def browser_continuation_handoff(session: TaskSession, snapshot: TurnSnapshot,
+                                 context: CompletionContext, *, workflow: bool = False,
+                                 declared_actions_ready: bool = True) -> tuple[TurnSnapshot, str]:
+    step = _browser_step(session, snapshot, context, workflow=workflow, declared_actions_ready=declared_actions_ready)
+    return (snapshot, "") if step is None else _step_handoff(session, snapshot, step)
 
 
 def _project_edit_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
@@ -423,9 +443,15 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     records, results = tool_facts(session, context)
     rules = [rule for check in session.policy.required_checks
              if (rule := parse_tool_success_check(check)) is not None]
-    snapshot, waiting = browser_continuation_handoff(session, snapshot, context)
-    if waiting:
-        return snapshot, waiting
+    status = work_status(session, context)
+    step = _browser_step(session, snapshot, context)
+    if step is not None and step.kind != "recovery":
+        return _step_handoff(session, snapshot, step)
+    snapshot, project_edit = _project_edit_handoff(session, snapshot, context, status)
+    if project_edit:
+        return snapshot, project_edit
+    if step is not None:
+        return _step_handoff(session, snapshot, step)
     snapshot, navigation = _navigation_handoff(session, snapshot, context, generation)
     if navigation:
         return snapshot, navigation
@@ -438,10 +464,6 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     if not download:
         snapshot, query = query_result_handoff(session, snapshot, context, generation)
     interrupted = any(interrupted_query(row, context.browser_document) for _, row in unconfirmed_clicks(results))
-    status = work_status(session, context)
-    snapshot, project_edit = _project_edit_handoff(session, snapshot, context, status)
-    if project_edit:
-        return snapshot, project_edit
     if not rules:
         return snapshot, "\n".join(part for part in (recovery, query, project_edit,
             "The previous query document changed; its outcome remains unverified. "
