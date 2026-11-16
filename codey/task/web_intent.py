@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from itertools import groupby
 from urllib.parse import urlsplit, urlunsplit
 
+from codey.task.instruction_text import instruction_text, quoted_value
 from codey.types.json_value import canonical_json_object
 
 _CODE = re.compile(r"```[\s\S]*?```|`[^`\n]*`|(?m:^[ \t]*>[^\n]*)")
@@ -40,26 +41,19 @@ def explicit_browser_checks(task: str) -> tuple[str, ...]:
 
     if len(explicit_web_intent(task).urls) > 1:
         return ()
-    text = re.sub(r"```[\s\S]*?```|(?m:^[ \t]*>[^\n]*)", "", task)
-
-    def quoted_example(match: re.Match[str]) -> str:
-        return "" if re.search(r"\bbrowser_(?:wait|read)\b", match[0]) else match[0]
-
-    def inline_example(match: re.Match[str]) -> str:
-        return ("" if re.search(r"\bbrowser_(?:wait|read)\b", match[0])
-                and re.fullmatch(r"`browser_(?:wait|read)`", match[0]) is None else match[0])
-
-    text = _QUOTED.sub(quoted_example, text)
-    text = re.sub(r"`[^`\n]*`", inline_example, text)
-    text = re.sub(r"`(browser_wait|browser_read)`", r"\1", text)
+    text = instruction_text(task, inline_names=frozenset({"browser_click", "browser_wait", "browser_read"}))
     checks: list[str] = []
     waiting = False
     pending: list[tuple[str, dict[str, object], int]] = []
     clicks = 0
-    for clause in text.replace("。", "\n").replace("；", "\n").replace(";", "\n").split("\n"):
+    boundaries = [0, *(match.end() for match in re.finditer(r"[。；;\n]", text))]
+    for start, end in zip(boundaries, (*boundaries[1:], len(text)), strict=True):
+        clause = text[start:end]
+        original = task[start:end]
         clause_start = 0
         for match in re.finditer(r"\bbrowser_(?:wait|read)\b", clause):
-            before, after = clause[:match.start()], clause[match.end():]
+            before, after = clause[:match.start()], original[match.end():]
+            after = after.lstrip("`")
             clicks += _click_mentions(clause[clause_start:match.start()])
             clause_start = match.end()
             if _NEGATED.search(before):
@@ -84,14 +78,13 @@ def explicit_browser_checks(task: str) -> tuple[str, ...]:
 
 def _wait_literal(text: str) -> str:
     text = text.strip()
-    pairs = {'"': '"', "“": "”", "'": "'", "‘": "’", "`": "`"}
-    if text[:1] in pairs:
-        end = text.find(pairs[text[0]], 1)
-        return text[1:end] if end > 1 else ""
+    literal = quoted_value(text)
+    if literal is not None:
+        return literal
     boundary = re.search(r"(?:之后|以后|后)\s*(?=[，,。；;\n]|再|然后|调用|读取|$)|[，,。；;\n]|\b(?:then|before|after)\b", text)
     value = (text[:boundary.start()] if boundary is not None else text).strip()
     # An unquoted tool call or unmatched delimiter cannot be a literal predicate.
-    return "" if re.search(r"[\"“”‘’`]|\bbrowser_\w+\b", value) else value
+    return "" if re.search(r"[\"“”‘’「」『』`]|\bbrowser_\w+\b", value) else value
 
 
 def _click_mentions(text: str) -> int:

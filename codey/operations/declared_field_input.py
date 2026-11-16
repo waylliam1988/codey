@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 from codey.completion.contract import CHECK_NOT_APPLICABLE, CHECK_PASS
 from codey.operations.browser_copy import write_unconfirmed
 from codey.operations.completion_output import tool_facts
+from codey.task.instruction_text import instruction_text
 from codey.toolchain.constants import STALE_READ_REFERENCE_CODE
 from codey.toolchain.tool_spec import ToolSpec, freeze_spec_parameters
 from codey.types.json_value import JsonObject
@@ -35,7 +36,16 @@ def write_form(edit: ToolSpec) -> Literal["declared_fields", "content"] | None:
 
 
 def free_program_required(task: str) -> bool:
-    return re.search(r"\buse free javascript\b|\bwrite your own javascript\b|必须手写\s*(?:JavaScript|JS)", task, re.I) is not None
+    text = instruction_text(task)
+    required = False
+    for match in re.finditer(r"(?:\b(?:use\s+free|write\s+your\s+own)\s+|必须\s*手写\s*)"
+                             r"(?:JavaScript|JS)(?![A-Za-z0-9_])", text, re.I):
+        prefix = text[:match.start()]
+        required = re.search(
+            r"(?:\bdo\s+not|\bdon['’]t|\bnever|\bmust\s+not|\bshould\s+not|\bno\s+need\s+to|"
+            r"\bneed\s+not|\bwithout|不要|禁止|不允许|无需|不需要|不用|不必|别)(?:\s|直接|再|请|please\b)*$",
+            prefix, re.I) is None
+    return required
 
 
 def model_spec(original: ToolSpec, paths: tuple[str, ...]) -> ToolSpec:
