@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -113,7 +113,8 @@ def candidate(directory: Path, arm: Arm, *, rule: BrowserResearchSequence = RULE
             counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
             initial_source_batch=initial_source_batch, handoff=hint)
 
-    def preserve_snapshot(_context: KernelContext, snapshot: TurnSnapshot) -> tuple[TurnSnapshot, str]:
+    def preserve_snapshot(_context: KernelContext, snapshot: TurnSnapshot, *,
+                          delivered_results: Sequence[ToolResult] = ()) -> tuple[TurnSnapshot, str]:
         return snapshot, ""
 
     with (patch.object(KernelContext, "request_snapshot", preserve_snapshot),

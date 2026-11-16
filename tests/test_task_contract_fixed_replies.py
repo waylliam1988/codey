@@ -109,7 +109,11 @@ def test_original_failure_replies(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         assert result["version_check_reached"] is False
         assert result["true_stale_conflicts"] == 0
         assert result["project_result"] == {"amount": 0, "code": "unknown"}
-        assert any("read" in r.model_text and not r.ok for r in parents)
+        assert not any(r.call.name in {"read_file", "edit"} for r in receipts)
+        repairs = result["repair_attempts"]
+        assert isinstance(repairs, list)
+        assert any("codemode missing required arg 'path'" in str(decode_json_object(repair)["reason"])
+                   for repair in repairs)
 
 
 @pytest.mark.parametrize("followup", ["snapshot_only", "unchecked_fill", "checked_fill"])
@@ -206,7 +210,8 @@ def test_hybrid_outer_read_receipt_reaches_conflict_and_recovers(
         browser.code_action(correct), browser.code_action(correct),
         {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}])
     result = run_case(tmp_path / "run", "hybrid", TARGET, stale_edit=True,
-                      preserve_external_field=True, max_turns=5)
+                      preserve_external_field=True, max_turns=5,
+                      task_transform=lambda task: task + "\nWrite your own JavaScript for this task.")
     assert result["passed"] is True, result
     assert result["true_stale_conflicts"] == 1
     assert result["fresh_read_recovery"] is True

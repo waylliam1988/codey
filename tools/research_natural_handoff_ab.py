@@ -189,7 +189,8 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
     def freeze(context: KernelContext, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int,
                prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
-               coding_context_prepared: bool = False, initial_source_batch: bool = False) -> None:
+               coding_context_prepared: bool = False, initial_source_batch: bool = False,
+               handoff: str | None = None) -> None:
         scope = snapshot.research_scope
         if isinstance(scope, AnswerScope) and not acknowledge:
             tools = context.execution.research_tools
@@ -236,7 +237,7 @@ def experiment(directory: Path, arm: Arm) -> Generator[None, None, None]:
                 prompt += "\n\n" + hint
         original_freeze(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
             counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
-            initial_source_batch=initial_source_batch)
+            initial_source_batch=initial_source_batch, handoff=handoff)
 
     with (patch.object(ExecutionDelegate, "_execute_browser", read), patch.object(ExecutionDelegate, "_execute_source_open", opened),
           patch.object(TurnSnapshot, "model_specs", property(specs)), patch.object(kernel_protocol, "normalize_turn", lower),

@@ -1,0 +1,1475 @@
+{
+  "scope": {
+    "week_start": "2026-11-10",
+    "week_end": "2026-11-16",
+    "timezone": "Asia/Taipei",
+    "research": "October-November reports; mechanism review, not exhaustive transcript replay",
+    "reports_current_week": 75,
+    "research_reports": 83,
+    "artifact_roots": 273,
+    "provider_files": 2590,
+    "summary_files": 2693,
+    "counts_are_files_not_independent_trials": true
+  },
+  "head": "d379cc63d2066057735c764a55f6cff5d9a2e7a3",
+  "new_model_calls": 0,
+  "production_code_modified_by_this_audit": false,
+  "final_production_sha256": "1d5dd2555bb022f76edb84926f19838904f38ccac5c8f62ce90e85c6eb9651fd",
+  "final_production_file_count": 754,
+  "final_production_changed_during_validation": false,
+  "report": "docs/reports/historical-error-reconciliation-20261116.zh-CN.md",
+  "report_sha256": "eae670d045cb3b39b0c4e0d8c2265d2c5dcb4604ffaa98579e386e7be293af49",
+  "fixture_integrity": [
+    {
+      "fixture": "tests/fixtures/historical_browser_failure_replies_20261115.json",
+      "case": "string-text-1111",
+      "source": ".e2e-artifacts/protocol-isolated-live-20261111-01/B2/01-structured/A/provider.jsonl",
+      "source_sha256": "d0950a96fd180257a38200ae9ea6d3320bb34bc647e71ca4ee369ecdbe1033e5",
+      "source_hash_matches": true,
+      "reply_count": 4,
+      "reply_sha256": [
+        "e7d21718b4861fa88cd64fca135172eb016f39a6e5cbbc672eb48500ef6c2915",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f"
+      ],
+      "original_wire_contains_replies": true,
+      "reply_hashes_match": true
+    },
+    {
+      "fixture": "tests/fixtures/historical_browser_failure_replies_20261115.json",
+      "case": "string-text-1112",
+      "source": ".e2e-artifacts/browser-entry-followup-properties-autonomous/01-structured/A/provider.jsonl",
+      "source_sha256": "6428edcecae0832e1a3a015d929b10b2452e052f9a8bc51ca5a749441b27e54c",
+      "source_hash_matches": true,
+      "reply_count": 4,
+      "reply_sha256": [
+        "6dc6f3ab69166529f33b08591d861bf31cdb512c6859c04aa39707f7b29e273a",
+        "9864d6382e48829c1289c8d402a1675f61d36f57290aadeaf4585f8d989bcd81",
+        "9864d6382e48829c1289c8d402a1675f61d36f57290aadeaf4585f8d989bcd81",
+        "d433cfd6cbc6d16987e41b12c21d6fa19233d7e19f4ad1f07a90a0e099eb8b70"
+      ],
+      "original_wire_contains_replies": true,
+      "reply_hashes_match": true
+    },
+    {
+      "fixture": "tests/fixtures/historical_browser_failure_replies_20261115.json",
+      "case": "early-break-1114",
+      "source": ".e2e-artifacts/browser-production-relief-20261114/full-surface-tracked-first/stale_ref/provider.jsonl",
+      "source_sha256": "07f83ecca49798ef601f48331fe751d872ae257da47ef1792e736a502b36e062",
+      "source_hash_matches": true,
+      "reply_count": 4,
+      "reply_sha256": [
+        "ab1a9c481f3d84ddfa49a4205c2ad75278c16b17479ae82d37aead74f0de4bc4",
+        "cf4516ce8ab84f9b63256cd367617e788ed0dfb2916dfbfadc0d5369491248dd",
+        "8d116c6c60d2390af8fffd64048d42ec78e03f9c4857afa46e914b8d2fd7e7e5",
+        "99f640336ea0ac25eedec96a1686ed4433e68c24dbc59afab7ce5707ba1e73de"
+      ],
+      "original_wire_contains_replies": true,
+      "reply_hashes_match": true
+    },
+    {
+      "fixture": "tests/fixtures/historical_browser_failure_replies_20261115.json",
+      "case": "explanation-1115",
+      "source": ".e2e-artifacts/bound-edit-20261115/full-surface-first/structured/provider.jsonl",
+      "source_sha256": "b0cb0e8bc1b9239be3b83264e10ea5f99102240c905cc23906fd19eb419fa389",
+      "source_hash_matches": true,
+      "reply_count": 2,
+      "reply_sha256": [
+        "748c61383a5aaeb72617dcf6a6226bd91e7804df31192e53435cb8d43494f402",
+        "04b8faf045f6b928ab646be62e309a46ff049d69a3eb32ec32f3d49b5b5cc1c0"
+      ],
+      "original_wire_contains_replies": true,
+      "reply_hashes_match": true
+    },
+    {
+      "fixture": "tests/fixtures/task_contract_failure_replies_20261113.json",
+      "case": "basic",
+      "source": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/basic/provider.jsonl",
+      "source_sha256": "881d885337570af15fb8fc8bc812209ae810d71963fe85c9e131eb1d56710ef4",
+      "source_hash_matches": true,
+      "reply_count": 4,
+      "reply_sha256": [
+        "7bc7139d9c8bb020597500accdea9514aa51aeff8191854ac937891c87ad538e",
+        "a5aa53097bba73dcd4a52e8fe38a59b7169a081c0b95f566ffda611b7dedf748",
+        "a5aa53097bba73dcd4a52e8fe38a59b7169a081c0b95f566ffda611b7dedf748",
+        "a5aa53097bba73dcd4a52e8fe38a59b7169a081c0b95f566ffda611b7dedf748"
+      ],
+      "original_wire_contains_replies": true
+    },
+    {
+      "fixture": "tests/fixtures/task_contract_failure_replies_20261113.json",
+      "case": "structured",
+      "source": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/structured/provider.jsonl",
+      "source_sha256": "5696f6f270215c33b1bf4d07a70f28fd6b9de6f2da1a441bc597687747f65d65",
+      "source_hash_matches": true,
+      "reply_count": 4,
+      "reply_sha256": [
+        "6972fbbf4645e4661b6121c33775a59c6b2cc40e59ce4e5024cf773562a6b467",
+        "d5d728ac2c4d6d0883536c02ec4c5de3c03487aca639a95d5f237ef066056fae",
+        "79b7346a837f652080b81efa18833e05d4b891824504b01d7c6c5107127b8be1",
+        "78cc3a1a83a697bbe8f8f24cf8feff43ce03a51f7827596aace1d4ddf6b0af14"
+      ],
+      "original_wire_contains_replies": true
+    },
+    {
+      "fixture": "tests/fixtures/task_contract_failure_replies_20261113.json",
+      "case": "stale_ref",
+      "source": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/stale_ref/provider.jsonl",
+      "source_sha256": "3fd33cac20ee13d3c9f33befc00d63c94b7ee76c31ab104f5bb994f0d7728910",
+      "source_hash_matches": true,
+      "reply_count": 4,
+      "reply_sha256": [
+        "1e523f43ba719ea2058ee787d7d2f95c886ab0b13208bcea4fb846e9208aab45",
+        "01cf7c02f2e0ffe6e1051fcc8f1ef961db0721c816d29a04c24ed93d885aee85",
+        "01cf7c02f2e0ffe6e1051fcc8f1ef961db0721c816d29a04c24ed93d885aee85",
+        "01cf7c02f2e0ffe6e1051fcc8f1ef961db0721c816d29a04c24ed93d885aee85"
+      ],
+      "original_wire_contains_replies": true
+    },
+    {
+      "fixture": "tests/fixtures/task_contract_failure_replies_20261113.json",
+      "case": "stale_edit",
+      "source": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/stale_edit/provider.jsonl",
+      "source_sha256": "2043beca46c791adf1c7aaf85c9a4de8d216c7f59ffbd1258c1ecf0c9080b785",
+      "source_hash_matches": true,
+      "reply_count": 5,
+      "reply_sha256": [
+        "a60d676080f024d093ede7f45c84e063b1acfb9aa8ec5551cff6255847e5e565",
+        "42e9bf7bccb7006d7f66867225cc7ec428e66dc31080c0462ffd87b77fc1c13d",
+        "dcb31493b0098faeef35eb3e9cca6af662c47ee8f973e5309696126527ab822b",
+        "9bc67b003bb264a70767fba4c16feb91295bacf633570e4c08387823b0651cdb",
+        "d938ab0cdcaecd2ea900447d167e70858e47f3d19ff3d4b3767fca534763cca9"
+      ],
+      "original_wire_contains_replies": true
+    },
+    {
+      "fixture": "tests/fixtures/browser_handoff_failure_replies_20261114.json",
+      "case": "basic",
+      "source": ".e2e-artifacts/browser-review-20261114/full-surface-tracked/basic/provider.jsonl",
+      "source_sha256": "9a971040f0a7ad4224b5d55e179df3ab7538d713d849b37edf05ce390b81507f",
+      "source_hash_matches": true,
+      "reply_count": 1,
+      "reply_sha256": [
+        "a5bb644f2456ddaced47de5265ee77c8a08fccbcc03a58c5b084348f9f655222"
+      ],
+      "original_wire_contains_replies": true
+    },
+    {
+      "fixture": "tests/fixtures/browser_handoff_failure_replies_20261114.json",
+      "case": "download",
+      "source": ".e2e-artifacts/browser-mechanical-20261114-verified/download/provider.jsonl",
+      "source_sha256": "7cdda27f2f58aa9b170f08589e8256d3751333076678f01044217c1052e240f3",
+      "source_hash_matches": true,
+      "reply_count": 1,
+      "reply_sha256": [
+        "a68974266a4a7f617643841a6bc993bd9ded0ac91d3351c5aad9a79ea8e21222"
+      ],
+      "original_wire_contains_replies": true
+    }
+  ],
+  "root_cause_rows": [
+    {
+      "id": "R01",
+      "historical_error": "等待参数不合法，却被“回放未消费完”覆盖",
+      "prior_20261115_behavior": "**接住诊断缺陷**：全部子调用先按冻结 schema 校验再记账，保留具体字段错误",
+      "current_behavior": "具体 schema 诊断已保留；合法等待条件仍须给对",
+      "historical_report": "docs/reports/task-contract-fixed-replies-20261113.zh-CN.md",
+      "production_files": [
+        "codey/codemode/kernel.py"
+      ],
+      "regression_modules": [
+        "tests/test_task_contract_fixed_replies.py"
+      ],
+      "current_file_sha256": {
+        "codey/codemode/kernel.py": "22152e25b876ab981e57d2224a98574174f4d7d3fd1cd1e10a95f56a912ebc36",
+        "tests/test_task_contract_fixed_replies.py": "b04d64407ef752bb3857d989ac8d5d9198b6fe09ce21438950746287a944cdf7"
+      }
+    },
+    {
+      "id": "R02",
+      "historical_error": "`snapshot.elements`、`download.path` 直接访问 Result 外壳",
+      "prior_20261115_behavior": "**报错／交接**：准确 `result_contract`，Chat 可用直接入口",
+      "current_behavior": "正确诊断与部分结果交付已接入；自由 JS 仍须 unwrap",
+      "historical_report": "docs/reports/browser-mechanical-handoff-20261114.zh-CN.md",
+      "production_files": [
+        "codey/codemode/guest_runner.js",
+        "codey/operations/browser_followups.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_child_failure_feedback.py"
+      ],
+      "current_file_sha256": {
+        "codey/codemode/guest_runner.js": "e1ae8d0cbbaf3a4a575417077d7bbcd4e1f9d7bcce0dfc16c20070d80667466f",
+        "codey/operations/browser_followups.py": "0106c187a656fac5d83010f7fa730b15d670db36c6b924cd1607655a450ba245",
+        "tests/test_codemode_child_failure_feedback.py": "f21232a64e7d944b7b0f3d203be4ac87bc9f9831c976fa083cfdefccd4da9ae2"
+      }
+    },
+    {
+      "id": "R03",
+      "historical_error": "正确 unwrap 后又把读页字符串当 `.text` 对象",
+      "prior_20261115_behavior": "**报错**：11、12 日原回复今天仍四轮失败",
+      "current_behavior": "原样两日回放仍失败；不是自动纠错",
+      "historical_report": "docs/protocol-surface-isolated-live-20261111.zh-CN.md",
+      "production_files": [
+        "codey/codemode/guest_runner.js"
+      ],
+      "regression_modules": [
+        "tests/test_task_contract_fixed_replies.py"
+      ],
+      "current_file_sha256": {
+        "codey/codemode/guest_runner.js": "e1ae8d0cbbaf3a4a575417077d7bbcd4e1f9d7bcce0dfc16c20070d80667466f",
+        "tests/test_task_contract_fixed_replies.py": "b04d64407ef752bb3857d989ac8d5d9198b6fe09ce21438950746287a944cdf7"
+      }
+    },
+    {
+      "id": "R04",
+      "historical_error": "错误换行、注释吞语句、`eturn`／`ib` 等 JS 错误",
+      "prior_20261115_behavior": "**报错／交接**：有条件提供已绑定页的观察调用",
+      "current_behavior": "拒绝、交付已结算事实及当前恢复入口；不自动修改副作用程序",
+      "historical_report": "docs/browser-failure-handoff-20261114.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_task_handoff.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_failure_handoff.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_task_handoff.py": "f67287dfc9545d5584362eee85af18acfb23c6282d503c20c5b4f5224e7209ce",
+        "tests/test_browser_failure_handoff.py": "d19b0467bb70416045f0ea8f4f0c770a9c1b54dd9236cc65638901d5e05929b9"
+      }
+    },
+    {
+      "id": "R05",
+      "historical_error": "查找控件循环提前 break，按钮 ref 为空",
+      "prior_20261115_behavior": "**报错**，现有描述引用提供替代路径",
+      "current_behavior": "观察候选可减少手写循环；原错误循环仍失败",
+      "historical_report": "docs/reports/browser-production-relief-20261114.zh-CN.md",
+      "production_files": [
+        "codey/codemode/kernel.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_readable_references.py"
+      ],
+      "current_file_sha256": {
+        "codey/codemode/kernel.py": "22152e25b876ab981e57d2224a98574174f4d7d3fd1cd1e10a95f56a912ebc36",
+        "tests/test_browser_readable_references.py": "59bf936a7b595b676269922c6e101b5b136c71d117c45a4706ce009385c60177"
+      }
+    },
+    {
+      "id": "R06",
+      "historical_error": "把控件名称当 raw ref，或抄错长 ref",
+      "prior_20261115_behavior": "**条件接住机械抄写**：冻结的 role/name/context 对象可在外层和 CodeMode 共用",
+      "current_behavior": "冻结观察候选进入 schema 和示例；原 ref 身份仍校验，不猜重名目标",
+      "historical_report": "docs/reports/browser-production-relief-20261114.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_references.py",
+        "codey/codemode/host.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_readable_references.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_references.py": "3dab3daeb6ce8cac4bb4bd39c53a81759e636da3911abfbd34880fecaf0c8a2b",
+        "codey/codemode/host.py": "1e99c24d99536714edcdce2dff60c6357bb55e5a2b57c36d215d462aecdb1460",
+        "tests/test_browser_readable_references.py": "59bf936a7b595b676269922c6e101b5b136c71d117c45a4706ce009385c60177"
+      }
+    },
+    {
+      "id": "R07",
+      "historical_error": "URL 连字符抄成下划线，404 后空快照循环",
+      "prior_20261115_behavior": "**条件接住**：任务 URL 绑定、明确前置导航、404 的可执行返回提示",
+      "current_behavior": "唯一授权 URL 的绑定和首次导航可代办；手写错误 URL 不通用纠正",
+      "historical_report": "docs/reports/production-bound-arguments-20261113.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_protocol.py"
+      ],
+      "regression_modules": [
+        "tests/test_task_navigation_binding.py",
+        "tests/test_browser_failure_handoff.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_task_handoff.py": "f67287dfc9545d5584362eee85af18acfb23c6282d503c20c5b4f5224e7209ce",
+        "codey/operations/kernel_protocol.py": "415b1b735788693bc855b073818acd2a7d3d0dd6d3db733ab342d37276ea07fa",
+        "tests/test_task_navigation_binding.py": "78c371ac0518377a9d9797e5a7f6c67fdcc743be6dc4ecb9fe0c11b84a67d934",
+        "tests/test_browser_failure_handoff.py": "d19b0467bb70416045f0ea8f4f0c770a9c1b54dd9236cc65638901d5e05929b9"
+      }
+    },
+    {
+      "id": "R08",
+      "historical_error": "`open_result({id:'r2'})` 写错参数名",
+      "prior_20261115_behavior": "**接住窄错写**：观察到的合法 rN 可规范化为 result_id",
+      "current_behavior": "已观察合法 rN 的窄兼容保留；不替模型选来源",
+      "historical_report": "docs/reports/production-bound-arguments-20261113.zh-CN.md",
+      "production_files": [
+        "codey/codemode/host.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_open_result_arguments.py"
+      ],
+      "current_file_sha256": {
+        "codey/codemode/host.py": "1e99c24d99536714edcdce2dff60c6357bb55e5a2b57c36d215d462aecdb1460",
+        "tests/test_codemode_open_result_arguments.py": "51ce731d10b91d1cf14c6102ffa3c17539f2d196eda4fe3c645d218a8f96fdaa"
+      }
+    },
+    {
+      "id": "R09",
+      "historical_error": "browser_eval 误写独立的 `return window.x;`",
+      "prior_20261115_behavior": "**接住窄语法差异**：独立属性 return 在实际边界规范化",
+      "current_behavior": "窄规范化保留；任意脚本仍须写对",
+      "historical_report": "docs/browser-three-fixes-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/automation/browser_session.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_text_report_production.py"
+      ],
+      "current_file_sha256": {
+        "codey/automation/browser_session.py": "403319fc65635d26bb9dcb9e841feb20656baacf9ec7360547f09e388fb271ee",
+        "tests/test_browser_text_report_production.py": "25044fb0dad488476e182b39cde18efe6b408553790c593f4cf2dc60ebfc96a5"
+      }
+    },
+    {
+      "id": "R10",
+      "historical_error": "从 tab 列表猜第一项，答案抄错 URL/token",
+      "prior_20261115_behavior": "**接住已绑定元数据**：顶层 page_url、JSON 精确绑定和普通文本报告来自正式回执",
+      "current_behavior": "正式元数据和声明字段由回执组装；自由说明不获通用事实保证",
+      "historical_report": "docs/browser-convergence-seven-batches-20261110.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_text_report.py",
+        "codey/operations/completion_output.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_text_report_production.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_text_report.py": "e6ff7177b8bd6cf38a5dcad6624112affbea5ed547136f2bba1ca243df669388",
+        "codey/operations/completion_output.py": "9630861741837f506131ae87ac91c055dd1afc1eb60f37c35716a0cec3f6580e",
+        "tests/test_browser_text_report_production.py": "25044fb0dad488476e182b39cde18efe6b408553790c593f4cf2dc60ebfc96a5"
+      }
+    },
+    {
+      "id": "R11",
+      "historical_error": "业务事实已读到，答案漏掉或抄错",
+      "prior_20261115_behavior": "**有条件报错，默认仍可能接受**：已有 answer_contains／正文选值检查",
+      "current_behavior": "原场景已接入明确事实检查；声明输出 JSON 可核对；普通 Research 全文仍有漏项",
+      "historical_report": "docs/reports/completion-contract-boundaries-20261113.zh-CN.md",
+      "production_files": [
+        "codey/policies/tool_requirement.py",
+        "tools/browser_production_live_gate.py"
+      ],
+      "regression_modules": [
+        "tests/test_explanation_delivery_production.py",
+        "tests/test_task_contract_fixed_replies.py"
+      ],
+      "current_file_sha256": {
+        "codey/policies/tool_requirement.py": "dfd396e107925ebd72afbd79f3526e926880c7ba44d9031ce2cb35771243283a",
+        "tools/browser_production_live_gate.py": "4be5db85561adcefc395c4e65151ff42389c0e8833f3088f2aa3663cb4b009d0",
+        "tests/test_explanation_delivery_production.py": "039bf723354e46663faf0cc9f1e16f2bd2d55bbb9570ab4f58b2231a9daff2b6",
+        "tests/test_task_contract_fixed_replies.py": "b04d64407ef752bb3857d989ac8d5d9198b6fe09ce21438950746287a944cdf7"
+      }
+    },
+    {
+      "id": "R12",
+      "historical_error": "字面反斜杠换行冒充段落，重复不应重复的字段",
+      "prior_20261115_behavior": "**有条件报错，原场景未接全**：schema pattern 可检查真实段落",
+      "current_behavior": "原说明已改段落数组及正式组装，旧坏格式拒绝；不是任意文体语义校验",
+      "historical_report": "docs/reports/bound-copy-json-edit-20261115.zh-CN.md",
+      "production_files": [
+        "tools/browser_production_live_gate.py"
+      ],
+      "regression_modules": [
+        "tests/test_explanation_delivery_production.py"
+      ],
+      "current_file_sha256": {
+        "tools/browser_production_live_gate.py": "4be5db85561adcefc395c4e65151ff42389c0e8833f3088f2aa3663cb4b009d0",
+        "tests/test_explanation_delivery_production.py": "039bf723354e46663faf0cc9f1e16f2bd2d55bbb9570ab4f58b2231a9daff2b6"
+      }
+    },
+    {
+      "id": "R13",
+      "historical_error": "子动作已成功，父程序失败后正文被遮住",
+      "prior_20261115_behavior": "**接住交付缺口**：从成功原始子回执交付正文、来源及可恢复引用",
+      "current_behavior": "成功子回执交付已复用；父程序仍保留失败身份",
+      "historical_report": "docs/reports/codemode-receipt-feedback-20261113.zh-CN.md",
+      "production_files": [
+        "codey/operations/kernel_prompt.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_receipt_feedback.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/kernel_prompt.py": "8cb54ea4c86e51d1e2b4fb2c0737b4c99f79ead1c7ae0afa6101b09fc63d8f77",
+        "tests/test_codemode_receipt_feedback.py": "6d412aad74996ad7becd944cf7ecb4971f2693ca56783115019963b7acf12bff"
+      }
+    },
+    {
+      "id": "R14",
+      "historical_error": "已下载／上传，父返回编码出错，修复只返回计数",
+      "prior_20261115_behavior": "**条件接住**：合格的文件返回失败能交付有界的原回执数据，不重做文件动作",
+      "current_behavior": "合格回执恢复不重做文件动作；新恢复程序仍可能写错",
+      "historical_report": "docs/protocol-receipt-delivery-live-20261111.zh-CN.md",
+      "production_files": [
+        "codey/codemode/replay.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_replay_authority.py",
+        "tests/test_codemode_receipt_feedback.py"
+      ],
+      "current_file_sha256": {
+        "codey/codemode/replay.py": "6b8e6c96a2f3049ad1a496d1d3286709e354e13aa6002b4affe7bf3aaf90c07e",
+        "tests/test_codemode_replay_authority.py": "cf727de0a45125182694f6feeb760e853c5685359f0aa542b20149132b61259c",
+        "tests/test_codemode_receipt_feedback.py": "6d412aad74996ad7becd944cf7ecb4971f2693ca56783115019963b7acf12bff"
+      }
+    },
+    {
+      "id": "R15",
+      "historical_error": "不存在的 repair token、改变原调用顺序／参数",
+      "prior_20261115_behavior": "**报错**，保留具体首错；只回放原始已结算结果",
+      "current_behavior": "拒绝；只复用真实已结算结果，不扩大重放权限",
+      "historical_report": "docs/reports/codemode-recovery-and-reference-handles-progress-20261110.zh-CN.md",
+      "production_files": [
+        "codey/codemode/replay.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_repair_replay.py",
+        "tests/test_codemode_replay_authority.py"
+      ],
+      "current_file_sha256": {
+        "codey/codemode/replay.py": "6b8e6c96a2f3049ad1a496d1d3286709e354e13aa6002b4affe7bf3aaf90c07e",
+        "tests/test_codemode_repair_replay.py": "8bcbfbf121b5ef04416c74718b349c7856bd5def8c86417e9b7977005779ce84",
+        "tests/test_codemode_replay_authority.py": "cf727de0a45125182694f6feeb760e853c5685359f0aa542b20149132b61259c"
+      }
+    },
+    {
+      "id": "R16",
+      "historical_error": "填写使旧 ref 失效，下一轮仍取旧控件",
+      "prior_20261115_behavior": "**条件接住**：直接填写后自动观察；新描述引用绑定冻结观察",
+      "current_behavior": "直接填写提供新观察；明确旧引用继续拒绝，旧快照保留原冻结合同",
+      "historical_report": "docs/browser-followup-ab-20261113.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_followups.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_followups_production.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_followups.py": "0106c187a656fac5d83010f7fa730b15d670db36c6b924cd1607655a450ba245",
+        "tests/test_browser_followups_production.py": "f0afd341b827b38450c3362409f4a7dd3351e33c02adf312e42d125b727357a0"
+      }
+    },
+    {
+      "id": "R17",
+      "historical_error": "点击后漏等、漏读，或反复点击取结果",
+      "prior_20261115_behavior": "**条件接住**：两种入口共用 purpose=result 的点击→已声明等待→正式读取",
+      "current_behavior": "声明流程的固定后续步骤、续跑和完成检查共用回执；普通动态研究仍不全面",
+      "historical_report": "docs/reports/browser-production-relief-20261114.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_followups.py",
+        "codey/codemode/guest_runner.js"
+      ],
+      "regression_modules": [
+        "tests/test_browser_followups_production.py",
+        "tests/test_browser_query_handoff.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_followups.py": "0106c187a656fac5d83010f7fa730b15d670db36c6b924cd1607655a450ba245",
+        "codey/codemode/guest_runner.js": "e1ae8d0cbbaf3a4a575417077d7bbcd4e1f9d7bcce0dfc16c20070d80667466f",
+        "tests/test_browser_followups_production.py": "f0afd341b827b38450c3362409f4a7dd3351e33c02adf312e42d125b727357a0",
+        "tests/test_browser_query_handoff.py": "d5633b022fe4882d2a933b8ebfb569c59ca69a4f88a55a74efa5551cc114f8de"
+      }
+    },
+    {
+      "id": "R18",
+      "historical_error": "原文备注的引号／换行被模型改写",
+      "prior_20261115_behavior": "**条件接住**：可识别的直接填写任务冻结 task_text，按原文字节传入",
+      "current_behavior": "可识别任务的原文填写绑定保留；不能推成任意自然语言无损解析",
+      "historical_report": "docs/reports/browser-relief-experiments-20261114.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_followups.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_fill_history_audit.py",
+        "tests/test_browser_followups_production.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_followups.py": "0106c187a656fac5d83010f7fa730b15d670db36c6b924cd1607655a450ba245",
+        "tests/test_browser_fill_history_audit.py": "efbb81df4097dbdc5cc16f695420ffd52e0028478800c19ec4874f56b169eed5",
+        "tests/test_browser_followups_production.py": "f0afd341b827b38450c3362409f4a7dd3351e33c02adf312e42d125b727357a0"
+      }
+    },
+    {
+      "id": "R19",
+      "historical_error": "冲突后重读了文件，但全文写回丢失外部字段／精度",
+      "prior_20261115_behavior": "**接住局部更新路径**：原完整 read＋changes，只替换目标值文本；保留版本冲突",
+      "current_behavior": "局部更新和声明路径承担拼装；仍保留真实版本冲突，不代管任意手写全文",
+      "historical_report": "docs/protocol-edit-continuation-live-20261111.zh-CN.md",
+      "production_files": [
+        "codey/codemode/json_edit.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_json_edit.py"
+      ],
+      "current_file_sha256": {
+        "codey/codemode/json_edit.py": "10f76a869df65a29d1d5313f438869608c36e93704695ec1096e36ac0eb068bf",
+        "tests/test_codemode_json_edit.py": "c5dd16125cf9532c941994b83a045e6712e93ccecf010dfa7f4f2ac38519e43e"
+      }
+    },
+    {
+      "id": "R20",
+      "historical_error": "编辑路径、原读取凭证及 business_key 反复回填出错",
+      "prior_20261115_behavior": "**条件接住**：原读取对象助手、网页复制冻结目标及已绑定业务键复用",
+      "current_behavior": "完整声明时只选路径，程序读取并串接正式编辑；需满足来源、授权和前置条件",
+      "historical_report": "docs/reports/bound-copy-json-edit-20261115.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_copy.py",
+        "codey/codemode/host.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_copy_production.py",
+        "tests/test_codemode_json_edit.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_copy.py": "65d45d3c50c1d59ba0a810de71998aa50b274a5a8f6a00df7d783a7ef6648695",
+        "codey/codemode/host.py": "1e99c24d99536714edcdce2dff60c6357bb55e5a2b57c36d215d462aecdb1460",
+        "tests/test_browser_copy_production.py": "94240f57ead3d106399423edfebf5aa33836f4c1a3aba684f95cdc3efe16ef85",
+        "tests/test_codemode_json_edit.py": "c5dd16125cf9532c941994b83a045e6712e93ccecf010dfa7f4f2ac38519e43e"
+      }
+    },
+    {
+      "id": "R21",
+      "historical_error": "`changes.value` 多套外壳或错误字段名",
+      "prior_20261115_behavior": "**报错**：15 日反馈具体缺失／现有／提交字段及可能外壳",
+      "current_behavior": "诊断更具体；通用 JS 不自动拆壳，声明路径可避开该负担",
+      "historical_report": "docs/reports/hybrid-edit-receipt-20261113.zh-CN.md",
+      "production_files": [
+        "codey/codemode/json_edit.py",
+        "codey/codemode/host.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_json_edit.py",
+        "tests/test_hybrid_edit_receipt_ab.py"
+      ],
+      "current_file_sha256": {
+        "codey/codemode/json_edit.py": "10f76a869df65a29d1d5313f438869608c36e93704695ec1096e36ac0eb068bf",
+        "codey/codemode/host.py": "1e99c24d99536714edcdce2dff60c6357bb55e5a2b57c36d215d462aecdb1460",
+        "tests/test_codemode_json_edit.py": "c5dd16125cf9532c941994b83a045e6712e93ccecf010dfa7f4f2ac38519e43e",
+        "tests/test_hybrid_edit_receipt_ab.py": "1c3c03fea113bc7951b146b22930d5e0b0413de6225e500110953f9d7e6d9366"
+      }
+    },
+    {
+      "id": "R22",
+      "historical_error": "从旧文件的 unknown 或错误网页区域提取值后写入",
+      "prior_20261115_behavior": "**条件接住复制专用路径；通用路径依赖模型**",
+      "current_behavior": "声明字段、复制及目标范围路径有保护；任意语义映射仍靠模型",
+      "historical_report": "docs/browser-outcome-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_copy.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_copy_production.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_copy.py": "65d45d3c50c1d59ba0a810de71998aa50b274a5a8f6a00df7d783a7ef6648695",
+        "tests/test_browser_copy_production.py": "94240f57ead3d106399423edfebf5aa33836f4c1a3aba684f95cdc3efe16ef85"
+      }
+    },
+    {
+      "id": "R23",
+      "historical_error": "网页读完，反复读回执或只返回 JSON，始终没有实际 edit",
+      "prior_20261115_behavior": "**仍依赖模型**；有两行模板和缺编辑检查",
+      "current_behavior": "普通 Hybrid 的 WorkStatus 续跑及路径入口已补；模型仍可能不采用",
+      "historical_report": "docs/protocol-file-handoff-live-20261111.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_task_handoff.py",
+        "codey/operations/kernel_preparation.py"
+      ],
+      "regression_modules": [
+        "tests/test_codemode_json_edit.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_task_handoff.py": "f67287dfc9545d5584362eee85af18acfb23c6282d503c20c5b4f5224e7209ce",
+        "codey/operations/kernel_preparation.py": "35f4b98faae90166cc4dcd90e2866abe5805afacf2344ce88f96f5dc6b454d95",
+        "tests/test_codemode_json_edit.py": "c5dd16125cf9532c941994b83a045e6712e93ccecf010dfa7f4f2ac38519e43e"
+      }
+    },
+    {
+      "id": "R24",
+      "historical_error": "只做一轮却声称完成两轮",
+      "prior_20261115_behavior": "**明确轮次合同可报错**：原回执、导航和顺序核验，重复 read 不计新轮",
+      "current_behavior": "明确轮次、阶段和文档的回执检查有效；不把普通任务自动变成任意状态机",
+      "historical_report": "docs/protocol-page-reset-gate-live-20261111.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_completion.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_completion_production.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_completion.py": "59637a2eb00a0951a6a0f95bd791d1bc1251160fb49b51f7f5fa855e1c06091c",
+        "tests/test_browser_completion_production.py": "f17f8df88c315954e0ea548804f8f9e5882148d8a5fc887bfdee449c498a7e64"
+      }
+    },
+    {
+      "id": "R25",
+      "historical_error": "Strict Research 证据齐了仍反复采集、不提交",
+      "prior_20261115_behavior": "**条件接住**：明确单页等待／读取合同满足后收窄到提交入口",
+      "current_behavior": "明确页面流程满足后收窄至提交；不扩展成多来源语义充分性证明",
+      "historical_report": "docs/research-submission-handoff-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/operations/research_submission_handoff.py"
+      ],
+      "regression_modules": [
+        "tests/test_research_submission_handoff_production.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/research_submission_handoff.py": "1945b760e5ea1f8393187f1cb3f55a17cd3480083b39f625b978017b4a621206",
+        "tests/test_research_submission_handoff_production.py": "cb1f10e4b39861182cc45c2f07af28f11713c704df4cf44ae35326fcea379150"
+      }
+    },
+    {
+      "id": "R26",
+      "historical_error": "普通 Research 缺项却提前提交，或点击后仍用旧正文",
+      "prior_20261115_behavior": "**部分接住**：有记录绑定的原生 details 入口；通用交互继续用正式采集",
+      "current_behavior": "原生 details 有正式读取入口；普通事件按钮的便捷选择和读回仍覆盖不足",
+      "historical_report": "docs/research-control-choice-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_detail.py",
+        "codey/automation/browser_detail.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_detail_production.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_detail.py": "4d71c842c330f11e7d9a62eff7b50b3fba47bcc01f09606ec526be874031daa5",
+        "codey/automation/browser_detail.py": "e6004d866733a2dd98d8faffb8638d47c96f49ba5892fd58f5ac94b62dd951e4",
+        "tests/test_browser_detail_production.py": "483aa1feb4aa483eef07daea629dab6469dee73791c4d38a6a8881b788403f6e"
+      }
+    },
+    {
+      "id": "R27",
+      "historical_error": "选错来源、同页拿隔壁记录的字段作答",
+      "prior_20261115_behavior": "**仍依赖模型语义；机械范围有保护**",
+      "current_behavior": "唯一目标、控件与 passage 机械范围有保护；事实归属和语义仍须判断",
+      "historical_report": "docs/research-natural-handoff-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_detail.py",
+        "codey/research/source_reading.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_detail_production.py",
+        "tests/test_browser_scope_probe_audit.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_detail.py": "4d71c842c330f11e7d9a62eff7b50b3fba47bcc01f09606ec526be874031daa5",
+        "codey/research/source_reading.py": "f0fbd7278ea8fb5e6ff04af53b2b57799b514c935f46443f160c65c57aa53c4c",
+        "tests/test_browser_detail_production.py": "483aa1feb4aa483eef07daea629dab6469dee73791c4d38a6a8881b788403f6e",
+        "tests/test_browser_scope_probe_audit.py": "2d70efe136e4e3d82d1d1d9bd2550a44486dd184bb5c00dbbb1aaf88e1246d5f"
+      }
+    },
+    {
+      "id": "R28",
+      "historical_error": "已选对目标，正式 passage 仍混入邻居",
+      "prior_20261115_behavior": "**接住已确认目标范围**：初读、扩展、续读、恢复共用 SourceReadScope",
+      "current_behavior": "SourceReadScope 贯通初读、扩展、续读和恢复；先到达定向路径仍是前提",
+      "historical_report": "docs/reports/browser-target-scope-fix-20261114.zh-CN.md",
+      "production_files": [
+        "codey/research/source_document.py",
+        "codey/research/source_reading.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_scope_channels.py"
+      ],
+      "current_file_sha256": {
+        "codey/research/source_document.py": "f54c771dde6ac3023c9e5261208f013cd5db302e5c4aad7d7eeb6e6be5fa278f",
+        "codey/research/source_reading.py": "f0fbd7278ea8fb5e6ff04af53b2b57799b514c935f46443f160c65c57aa53c4c",
+        "tests/test_browser_scope_channels.py": "b9d84fa5a812896ff83ee38acc9a186cc5fb4fcd322f4446914775c54b3efcd1"
+      }
+    },
+    {
+      "id": "R29",
+      "historical_error": "页面重载、Shadow DOM 同名 ID、同文档节点被重用",
+      "prior_20261115_behavior": "**接住可确认的身份错误**：当前文档、原节点、DOM 根及关系检查",
+      "current_behavior": "文档、节点、根和关联身份检查保留；无法兜住全部业务语义变更",
+      "historical_report": "docs/reports/browser-shadow-query-batch-fixes-20261114.zh-CN.md",
+      "production_files": [
+        "codey/automation/browser_query.py"
+      ],
+      "regression_modules": [
+        "tests/test_browser_shadow_query_regressions.py",
+        "tests/test_browser_query_binding.py"
+      ],
+      "current_file_sha256": {
+        "codey/automation/browser_query.py": "e214b96d036d287e4ed2dc922ba665a64c4602b8e5004a9a351bf1a1c812ae93",
+        "tests/test_browser_shadow_query_regressions.py": "8235f6c7e01b405bfb0fc25cb0c1095d0d5b3ceb0562b19e980d2db5e0dcca6a",
+        "tests/test_browser_query_binding.py": "c09544322afde448d2b4dd7d6bb5328ee8fac73dfc1dd874a9fc23b742022170"
+      }
+    },
+    {
+      "id": "R30",
+      "historical_error": "把“附件已选入”说成“服务器已接收”",
+      "prior_20261115_behavior": "**接住可识别的越界断言**：effect_verified=false 保留，状态说明检查与单次选择回执复用",
+      "current_behavior": "明确送达状态与识别范围内的说明检查；不是通用自然语言真实性验证",
+      "historical_report": "docs/reports/source-upload-regressions-20261113.zh-CN.md",
+      "production_files": [
+        "codey/operations/browser_upload.py"
+      ],
+      "regression_modules": [
+        "tests/test_explanation_delivery_production.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/browser_upload.py": "94a62af7e3b60edefacf936edca6a2fae03ca8927744a10892f597285f1efbad",
+        "tests/test_explanation_delivery_production.py": "039bf723354e46663faf0cc9f1e16f2bd2d55bbb9570ab4f58b2231a9daff2b6"
+      }
+    },
+    {
+      "id": "R31",
+      "historical_error": "来源未访问就作答，或否定／背景 URL 被错误预取",
+      "prior_20261115_behavior": "**条件接住**：唯一明确必要来源预取，保留逐 URL 意图／否定；403 等失败真实阻断",
+      "current_behavior": "明确必要来源及任务指令视图已加强；多义来源、站点拒绝读取不伪装成功",
+      "historical_report": "docs/required-source-prefetch-ab-20261112.zh-CN.md",
+      "production_files": [
+        "codey/operations/kernel_context.py",
+        "codey/task/web_intent.py"
+      ],
+      "regression_modules": [
+        "tests/test_task_navigation_binding.py",
+        "tests/test_explanation_delivery_production.py"
+      ],
+      "current_file_sha256": {
+        "codey/operations/kernel_context.py": "d6dd969efd8bd6deac7a6c5bd034744ede398ade806a32aa5fb238a8fd031ae1",
+        "codey/task/web_intent.py": "0159642183c7fb1b65df15dc3ae94ca4fb9d987ada3e020ba0f6c66d6998ff6c",
+        "tests/test_task_navigation_binding.py": "78c371ac0518377a9d9797e5a7f6c67fdcc743be6dc4ecb9fe0c11b84a67d934",
+        "tests/test_explanation_delivery_production.py": "039bf723354e46663faf0cc9f1e16f2bd2d55bbb9570ab4f58b2231a9daff2b6"
+      }
+    },
+    {
+      "id": "R32",
+      "historical_error": "provider 超时、HTTP 头混入 JSON、长路径导致验收文件读取失败",
+      "prior_20261115_behavior": "**明确失败或独立处理**，不归为模型业务选择已修复",
+      "current_behavior": "单独记环境或上游失败；不归为模型业务错误已修复",
+      "historical_report": "docs/reports/browser-production-relief-20261114.zh-CN.md",
+      "production_files": [],
+      "regression_modules": [],
+      "current_file_sha256": {}
+    }
+  ],
+  "unchanged_transcript_replays": [
+    {
+      "case": "string-text-1111",
+      "fixture": "tests/fixtures/historical_browser_failure_replies_20261115.json",
+      "original_provider": ".e2e-artifacts/protocol-isolated-live-20261111-01/B2/01-structured/A/provider.jsonl",
+      "source_sha256": "d0950a96fd180257a38200ae9ea6d3320bb34bc647e71ca4ee369ecdbe1033e5",
+      "reply_count": 4,
+      "reply_sha256": [
+        "e7d21718b4861fa88cd64fca135172eb016f39a6e5cbbc672eb48500ef6c2915",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f",
+        "f7e0b21da6b314d2845f6cb75497d968851aab7c468b6446473735d8d515d97f"
+      ],
+      "new_model_calls": 0,
+      "scope": "unchanged_text_replies_current_task_contract_real_chromium",
+      "summary": ".e2e-artifacts/error-reconciliation-20261116/replay-final/test_unchanged_historical_repl0/run/summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 4,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {
+          "schema_valid": false,
+          "exact_fields": false,
+          "facts_mentioned": false,
+          "explanation": null,
+          "reason": "output_format_invalid"
+        },
+        "answer": "stopped after repeated tool results without progress"
+      }
+    },
+    {
+      "case": "string-text-1112",
+      "fixture": "tests/fixtures/historical_browser_failure_replies_20261115.json",
+      "original_provider": ".e2e-artifacts/browser-entry-followup-properties-autonomous/01-structured/A/provider.jsonl",
+      "source_sha256": "6428edcecae0832e1a3a015d929b10b2452e052f9a8bc51ca5a749441b27e54c",
+      "reply_count": 4,
+      "reply_sha256": [
+        "6dc6f3ab69166529f33b08591d861bf31cdb512c6859c04aa39707f7b29e273a",
+        "9864d6382e48829c1289c8d402a1675f61d36f57290aadeaf4585f8d989bcd81",
+        "9864d6382e48829c1289c8d402a1675f61d36f57290aadeaf4585f8d989bcd81",
+        "d433cfd6cbc6d16987e41b12c21d6fa19233d7e19f4ad1f07a90a0e099eb8b70"
+      ],
+      "new_model_calls": 0,
+      "scope": "unchanged_text_replies_current_task_contract_real_chromium",
+      "summary": ".e2e-artifacts/error-reconciliation-20261116/replay-final/test_unchanged_historical_repl1/run/summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 4,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {
+          "schema_valid": false,
+          "exact_fields": false,
+          "facts_mentioned": false,
+          "explanation": null,
+          "reason": "output_format_invalid"
+        },
+        "answer": "stopped after repeated tool results without progress"
+      }
+    },
+    {
+      "case": "early-break-1114",
+      "fixture": "tests/fixtures/historical_browser_failure_replies_20261115.json",
+      "original_provider": ".e2e-artifacts/browser-production-relief-20261114/full-surface-tracked-first/stale_ref/provider.jsonl",
+      "source_sha256": "07f83ecca49798ef601f48331fe751d872ae257da47ef1792e736a502b36e062",
+      "reply_count": 4,
+      "reply_sha256": [
+        "ab1a9c481f3d84ddfa49a4205c2ad75278c16b17479ae82d37aead74f0de4bc4",
+        "cf4516ce8ab84f9b63256cd367617e788ed0dfb2916dfbfadc0d5369491248dd",
+        "8d116c6c60d2390af8fffd64048d42ec78e03f9c4857afa46e914b8d2fd7e7e5",
+        "99f640336ea0ac25eedec96a1686ed4433e68c24dbc59afab7ce5707ba1e73de"
+      ],
+      "new_model_calls": 0,
+      "scope": "unchanged_text_replies_current_task_contract_real_chromium",
+      "summary": ".e2e-artifacts/error-reconciliation-20261116/replay-final/test_unchanged_historical_repl2/run/summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 0,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {},
+        "answer": "stopped after repeated tool results without progress"
+      }
+    },
+    {
+      "case": "explanation-1115",
+      "fixture": "tests/fixtures/historical_browser_failure_replies_20261115.json",
+      "original_provider": ".e2e-artifacts/bound-edit-20261115/full-surface-first/structured/provider.jsonl",
+      "source_sha256": "b0cb0e8bc1b9239be3b83264e10ea5f99102240c905cc23906fd19eb419fa389",
+      "reply_count": 2,
+      "reply_sha256": [
+        "748c61383a5aaeb72617dcf6a6226bd91e7804df31192e53435cb8d43494f402",
+        "04b8faf045f6b928ab646be62e309a46ff049d69a3eb32ec32f3d49b5b5cc1c0"
+      ],
+      "new_model_calls": 0,
+      "scope": "unchanged_text_replies_current_task_contract_real_chromium",
+      "summary": ".e2e-artifacts/error-reconciliation-20261116/replay-final/test_unchanged_historical_repl3/run/summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "max_turns",
+        "facts_match": false,
+        "source_reads": 1,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {
+          "schema_valid": false,
+          "exact_fields": false,
+          "facts_mentioned": false,
+          "explanation": null,
+          "reason": "output_format_invalid"
+        },
+        "answer": "max turns reached"
+      }
+    },
+    {
+      "case": "basic",
+      "fixture": "tests/fixtures/task_contract_failure_replies_20261113.json",
+      "original_provider": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/basic/provider.jsonl",
+      "source_sha256": "881d885337570af15fb8fc8bc812209ae810d71963fe85c9e131eb1d56710ef4",
+      "reply_count": 4,
+      "reply_sha256": [
+        "7bc7139d9c8bb020597500accdea9514aa51aeff8191854ac937891c87ad538e",
+        "a5aa53097bba73dcd4a52e8fe38a59b7169a081c0b95f566ffda611b7dedf748",
+        "a5aa53097bba73dcd4a52e8fe38a59b7169a081c0b95f566ffda611b7dedf748",
+        "a5aa53097bba73dcd4a52e8fe38a59b7169a081c0b95f566ffda611b7dedf748"
+      ],
+      "new_model_calls": 0,
+      "scope": "unchanged_text_replies_current_task_contract_real_chromium",
+      "summary": ".e2e-artifacts/error-reconciliation-20261116/replay-final/test_original_failure_replies_0/basic/summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 0,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {},
+        "answer": "stopped after repeated tool results without progress"
+      }
+    },
+    {
+      "case": "structured",
+      "fixture": "tests/fixtures/task_contract_failure_replies_20261113.json",
+      "original_provider": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/structured/provider.jsonl",
+      "source_sha256": "5696f6f270215c33b1bf4d07a70f28fd6b9de6f2da1a441bc597687747f65d65",
+      "reply_count": 4,
+      "reply_sha256": [
+        "6972fbbf4645e4661b6121c33775a59c6b2cc40e59ce4e5024cf773562a6b467",
+        "d5d728ac2c4d6d0883536c02ec4c5de3c03487aca639a95d5f237ef066056fae",
+        "79b7346a837f652080b81efa18833e05d4b891824504b01d7c6c5107127b8be1",
+        "78cc3a1a83a697bbe8f8f24cf8feff43ce03a51f7827596aace1d4ddf6b0af14"
+      ],
+      "new_model_calls": 0,
+      "scope": "unchanged_text_replies_current_task_contract_real_chromium",
+      "summary": ".e2e-artifacts/error-reconciliation-20261116/replay-final/test_original_failure_replies_1/structured/summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "max_turns",
+        "facts_match": false,
+        "source_reads": 1,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {
+          "schema_valid": false,
+          "exact_fields": false,
+          "facts_mentioned": false,
+          "explanation": null,
+          "reason": "output_format_invalid"
+        },
+        "answer": "max turns reached"
+      }
+    },
+    {
+      "case": "stale_ref",
+      "fixture": "tests/fixtures/task_contract_failure_replies_20261113.json",
+      "original_provider": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/stale_ref/provider.jsonl",
+      "source_sha256": "3fd33cac20ee13d3c9f33befc00d63c94b7ee76c31ab104f5bb994f0d7728910",
+      "reply_count": 4,
+      "reply_sha256": [
+        "1e523f43ba719ea2058ee787d7d2f95c886ab0b13208bcea4fb846e9208aab45",
+        "01cf7c02f2e0ffe6e1051fcc8f1ef961db0721c816d29a04c24ed93d885aee85",
+        "01cf7c02f2e0ffe6e1051fcc8f1ef961db0721c816d29a04c24ed93d885aee85",
+        "01cf7c02f2e0ffe6e1051fcc8f1ef961db0721c816d29a04c24ed93d885aee85"
+      ],
+      "new_model_calls": 0,
+      "scope": "unchanged_text_replies_current_task_contract_real_chromium",
+      "summary": ".e2e-artifacts/error-reconciliation-20261116/replay-final/test_original_failure_replies_2/stale_ref/summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "no_progress",
+        "facts_match": false,
+        "source_reads": 0,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {},
+        "answer": "stopped after repeated tool results without progress"
+      }
+    },
+    {
+      "case": "stale_edit",
+      "fixture": "tests/fixtures/task_contract_failure_replies_20261113.json",
+      "original_provider": ".e2e-artifacts/task-contract-boundaries-full-surface-20261113-final/stale_edit/provider.jsonl",
+      "source_sha256": "2043beca46c791adf1c7aaf85c9a4de8d216c7f59ffbd1258c1ecf0c9080b785",
+      "reply_count": 5,
+      "reply_sha256": [
+        "a60d676080f024d093ede7f45c84e063b1acfb9aa8ec5551cff6255847e5e565",
+        "42e9bf7bccb7006d7f66867225cc7ec428e66dc31080c0462ffd87b77fc1c13d",
+        "dcb31493b0098faeef35eb3e9cca6af662c47ee8f973e5309696126527ab822b",
+        "9bc67b003bb264a70767fba4c16feb91295bacf633570e4c08387823b0651cdb",
+        "d938ab0cdcaecd2ea900447d167e70858e47f3d19ff3d4b3767fca534763cca9"
+      ],
+      "new_model_calls": 0,
+      "scope": "unchanged_text_replies_current_task_contract_real_chromium",
+      "summary": ".e2e-artifacts/error-reconciliation-20261116/replay-final/test_original_failure_replies_3/stale_edit/summary.json",
+      "result": {
+        "passed": false,
+        "stop_reason": "max_turns",
+        "facts_match": false,
+        "source_reads": 1,
+        "failed_stale_refs": 0,
+        "true_stale_conflicts": 0,
+        "project_result": {
+          "amount": 0,
+          "code": "unknown"
+        },
+        "posthoc_output_checks": {},
+        "version_check_reached": false,
+        "answer": "max turns reached"
+      }
+    }
+  ],
+  "research_submission_boundary_replays": {
+    "scope": "offline_submission_contract_only",
+    "new_model_calls": 0,
+    "cases": [
+      {
+        "case": ".e2e-artifacts/research-natural-handoff-inline-20261112/interactive-A",
+        "original": {
+          "arm": "A",
+          "stop_reason": "done",
+          "answer": "根据提供的链接 https://example.com/warehouse/B-19，目前 B-19 这批货的状态和库位信息如下：\n\n- **当前状态**：实时记录尚未加载 [e1]\n- **库位**：页面标题显示为“批次 B-19” [e1]，但具体的库位编号（如 A1, B2 等）在当前页面中尚未明确标注。\n\n## 引用来源\n[e1]  — https://example.com/warehouse/B-19 (source a825f6389cf0833c, 0:26)",
+          "source_stable": true,
+          "passed": false,
+          "early_submit_only_turns": [],
+          "assessment_calls": 0,
+          "browser_reads": 0,
+          "missing_checks": 0,
+          "waits": 0,
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 6.984,
+          "prompt_tokens": 4226,
+          "completion_tokens": 113
+        },
+        "source_sha256": {
+          ".e2e-artifacts/research-natural-handoff-inline-20261112/interactive-A/input.json": "179968550827a26502c2a6392495a1174516c348a96ed9845ad7ccc63d17dc1b",
+          ".e2e-artifacts/research-natural-handoff-inline-20261112/interactive-A/provider.jsonl": "ae5ccae8a0ca5d8aab0d8573580e1963e24525dd6bbf132dbe38dfdf32a7607d",
+          ".e2e-artifacts/research-natural-handoff-inline-20261112/interactive-A/summary.json": "e0b1520da414dbce9bde63074df6a6dfe1d0a5f94b7f387abebc30a8dfe9ddb9",
+          ".e2e-artifacts/research-natural-handoff-inline-20261112/interactive-A/state/durable.sqlite3": "cf4aaf5291a909718c93bb8a885886430ed1d40d47ffc1f463c827d6460bed96"
+        },
+        "new_model_calls": 0,
+        "historical_files_unchanged": true,
+        "submissions": [
+          {
+            "receipt": "task_turn_effect:dbc208e1da166a17",
+            "original_tool_ok": true,
+            "original_args": {
+              "markdown": "根据提供的链接 https://example.com/warehouse/B-19，目前 B-19 这批货的状态和库位信息如下：\n\n- **当前状态**：实时记录尚未加载 [e1]\n- **库位**：页面标题显示为“批次 B-19” [e1]，但具体的库位编号（如 A1, B2 等）在当前页面中尚未明确标注。",
+              "state": "partial"
+            },
+            "matches_original_wire_args": true,
+            "read_aliases": [
+              [
+                "e1",
+                "pef3aa056a8ff"
+              ]
+            ],
+            "scope": "current_submission_boundary_with_original_receipts",
+            "accepted": true,
+            "markdown_preserved": true,
+            "declared_state": "partial",
+            "unknown_citation_control": "Unknown or unread evidence: e999999. Use the task-read [eN] labels, or read the original material first."
+          }
+        ]
+      },
+      {
+        "case": ".e2e-artifacts/research-natural-handoff-inline-20261112/missing-A",
+        "original": {
+          "arm": "A",
+          "stop_reason": "done",
+          "answer": "订单 A-173 目前的状态是**运输中** [e1]。\n\n关于预计送达时间，目前**尚未展开**（即还没有具体的预计送达时间） [e1]。\n\n## 引用来源\n[e1]  — https://example.com/orders/A-173 (source de645ef34b213d46, 0:63)",
+          "source_stable": true,
+          "passed": false,
+          "early_submit_only_turns": [],
+          "assessment_calls": 0,
+          "browser_reads": 0,
+          "missing_checks": 0,
+          "waits": 0,
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 3.406,
+          "prompt_tokens": 4261,
+          "completion_tokens": 64
+        },
+        "source_sha256": {
+          ".e2e-artifacts/research-natural-handoff-inline-20261112/missing-A/input.json": "bda871617a7353f04a5d6d186e794dd4507038c6b474d4aa34dafbf7fd6067e4",
+          ".e2e-artifacts/research-natural-handoff-inline-20261112/missing-A/provider.jsonl": "b871cb612e0c79dfd72b2a2d1e21f9ab932a158e2c11cceb8960527f713dce47",
+          ".e2e-artifacts/research-natural-handoff-inline-20261112/missing-A/summary.json": "4ee07e59b56989b75b501f05ef5dd9c7dd12acca0c0d2b23df34a3cd868753df",
+          ".e2e-artifacts/research-natural-handoff-inline-20261112/missing-A/state/durable.sqlite3": "e02570cdaa0fd2b5bd701cd3aa724064229beb43465c8cf10bdb788ecf0bfa04"
+        },
+        "new_model_calls": 0,
+        "historical_files_unchanged": true,
+        "submissions": [
+          {
+            "receipt": "task_turn_effect:4431c76732e787bf",
+            "original_tool_ok": true,
+            "original_args": {
+              "markdown": "订单 A-173 目前的状态是**运输中** [e1]。\n\n关于预计送达时间，目前**尚未展开**（即还没有具体的预计送达时间） [e1]。",
+              "state": "answered"
+            },
+            "matches_original_wire_args": true,
+            "read_aliases": [
+              [
+                "e1",
+                "pc28c6d715988"
+              ]
+            ],
+            "scope": "current_submission_boundary_with_original_receipts",
+            "accepted": true,
+            "markdown_preserved": true,
+            "declared_state": "answered",
+            "unknown_citation_control": "Unknown or unread evidence: e999999. Use the task-read [eN] labels, or read the original material first."
+          }
+        ]
+      },
+      {
+        "case": ".e2e-artifacts/research-control-choice-inline-20261112/interactive-B",
+        "original": {
+          "arm": "B",
+          "stop_reason": "done",
+          "answer": "根据提供的页面信息：\n\n- **当前状态**：实时记录尚未加载 [e1]。\n- **库位**：目前页面上显示为“批次 B-19”，但尚未明确具体的库位坐标（如 A1 或 01 等），仅确认了该批次 [e1]。\n\n**待补充**：由于“实时记录尚未加载”，若需查看更精确的状态（如当前在哪个具体的货架或正在运输中），可能需要点击“查实时记录”按钮。\n\n## 引用来源\n[e1]  — https://example.com/warehouse/B-19 (source f7529e829207b325, 0:24)",
+          "source_stable": true,
+          "passed": false,
+          "early_submit_only_turns": [],
+          "assessment_calls": 0,
+          "browser_reads": 0,
+          "missing_checks": 0,
+          "waits": 0,
+          "model_calls": 2,
+          "usage_complete": true,
+          "inference_seconds": 9.61,
+          "prompt_tokens": 8671,
+          "completion_tokens": 153,
+          "offered_turns": 1,
+          "selections": [
+            {
+              "event": "selected",
+              "choice": "detail-1",
+              "record": "批次 B-19",
+              "valid": true,
+              "turn": 1
+            }
+          ],
+          "successful_clicks": 1,
+          "automatic_reads": 0,
+          "avoided_other_record": true
+        },
+        "source_sha256": {
+          ".e2e-artifacts/research-control-choice-inline-20261112/interactive-B/input.json": "411402d7ab8d14193bd9e1627594f735f01eaca38b3defd2cd5a159b00d6449e",
+          ".e2e-artifacts/research-control-choice-inline-20261112/interactive-B/provider.jsonl": "4742f514f8f66a480c615fab9281a9eaa2ceab5b97b8c457935788acdf253b3c",
+          ".e2e-artifacts/research-control-choice-inline-20261112/interactive-B/summary.json": "6964f506eb043d4531b4153aeb54374be150e22a027a51297f6007593815fcef",
+          ".e2e-artifacts/research-control-choice-inline-20261112/interactive-B/state/durable.sqlite3": "324553e14a6a6d3bdba6076ed1fed566974343157f16e4418cd401d760aa172f"
+        },
+        "new_model_calls": 0,
+        "historical_files_unchanged": true,
+        "submissions": [
+          {
+            "receipt": "task_turn_effect:9d996ac73ff42f2b",
+            "original_tool_ok": true,
+            "original_args": {
+              "markdown": "根据提供的页面信息：\n\n- **当前状态**：实时记录尚未加载 [e1]。\n- **库位**：目前页面上显示为“批次 B-19”，但尚未明确具体的库位坐标（如 A1 或 01 等），仅确认了该批次 [e1]。\n\n**待补充**：由于“实时记录尚未加载”，若需查看更精确的状态（如当前在哪个具体的货架或正在运输中），可能需要点击“查实时记录”按钮。",
+              "state": "partial"
+            },
+            "matches_original_wire_args": true,
+            "read_aliases": [
+              [
+                "e1",
+                "pa3c0a7958bfa"
+              ]
+            ],
+            "scope": "current_submission_boundary_with_original_receipts",
+            "accepted": true,
+            "markdown_preserved": true,
+            "declared_state": "partial",
+            "unknown_citation_control": "Unknown or unread evidence: e999999. Use the task-read [eN] labels, or read the original material first."
+          }
+        ]
+      },
+      {
+        "case": ".e2e-artifacts/research-control-choice-inline-20261112/missing-A",
+        "original": {
+          "arm": "A",
+          "stop_reason": "done",
+          "answer": "订单 A-173 目前的状态是**运输中** [e1]。\n\n关于预计送达时间，目前**尚未展开**（即还没有具体的预计时间） [e1]。\n\n## 引用来源\n[e1]  — https://example.com/orders/A-173 (source 810e7a99917a8dde, 0:37)",
+          "source_stable": true,
+          "passed": false,
+          "early_submit_only_turns": [],
+          "assessment_calls": 0,
+          "browser_reads": 0,
+          "missing_checks": 0,
+          "waits": 0,
+          "model_calls": 1,
+          "usage_complete": true,
+          "inference_seconds": 5.39,
+          "prompt_tokens": 4255,
+          "completion_tokens": 62,
+          "offered_turns": 0,
+          "selections": [],
+          "successful_clicks": 0,
+          "automatic_reads": 0,
+          "avoided_other_record": true
+        },
+        "source_sha256": {
+          ".e2e-artifacts/research-control-choice-inline-20261112/missing-A/input.json": "a1c32ec711fe4ae030278bb3a8ccbd71c146547e998fc3d3eee6c192c98d6a00",
+          ".e2e-artifacts/research-control-choice-inline-20261112/missing-A/provider.jsonl": "112dea4adf9116d108d558bc036c1ee8985eb6943b53d2d6a898554eba4d743a",
+          ".e2e-artifacts/research-control-choice-inline-20261112/missing-A/summary.json": "7ec2a8ef59b86ae48314bab01c7b44cdd641d8572fec29b6473b5b69d56d7dc2",
+          ".e2e-artifacts/research-control-choice-inline-20261112/missing-A/state/durable.sqlite3": "4893646323e912da79c2a6ad3aef4420d404cc5e543d91d4222ad215108b1162"
+        },
+        "new_model_calls": 0,
+        "historical_files_unchanged": true,
+        "submissions": [
+          {
+            "receipt": "task_turn_effect:f8ab04a78c169999",
+            "original_tool_ok": true,
+            "original_args": {
+              "markdown": "订单 A-173 目前的状态是**运输中** [e1]。\n\n关于预计送达时间，目前**尚未展开**（即还没有具体的预计时间） [e1]。",
+              "state": "answered"
+            },
+            "matches_original_wire_args": true,
+            "read_aliases": [
+              [
+                "e1",
+                "p40347dee898e"
+              ]
+            ],
+            "scope": "current_submission_boundary_with_original_receipts",
+            "accepted": true,
+            "markdown_preserved": true,
+            "declared_state": "answered",
+            "unknown_citation_control": "Unknown or unread evidence: e999999. Use the task-read [eN] labels, or read the original material first."
+          }
+        ]
+      },
+      {
+        "case": ".e2e-artifacts/research-control-choice-inline-20261112/interactive-C",
+        "original": {
+          "arm": "C",
+          "stop_reason": "done",
+          "answer": "根据提供的记录，批次 B-19 的当前状态和库位如下：\n\n- **状态**：已入库 [e2]\n- **库位**：C-42 [e2]\n\n## 引用来源\n[e2]  — https://example.com/warehouse/B-19 (source 37a22359a056e179, 0:36)",
+          "source_stable": true,
+          "passed": true,
+          "early_submit_only_turns": [],
+          "assessment_calls": 0,
+          "browser_reads": 1,
+          "missing_checks": 0,
+          "waits": 0,
+          "model_calls": 2,
+          "usage_complete": true,
+          "inference_seconds": 9.921,
+          "prompt_tokens": 8968,
+          "completion_tokens": 86,
+          "offered_turns": 1,
+          "selections": [
+            {
+              "event": "selected",
+              "choice": "detail-1",
+              "record": "批次 B-19",
+              "valid": true,
+              "turn": 1
+            }
+          ],
+          "successful_clicks": 1,
+          "automatic_reads": 1,
+          "avoided_other_record": true
+        },
+        "source_sha256": {
+          ".e2e-artifacts/research-control-choice-inline-20261112/interactive-C/input.json": "411402d7ab8d14193bd9e1627594f735f01eaca38b3defd2cd5a159b00d6449e",
+          ".e2e-artifacts/research-control-choice-inline-20261112/interactive-C/provider.jsonl": "b9fb15d1e46418090c581414b77ab427aafd79b32ed07b135d63dcf128d16b87",
+          ".e2e-artifacts/research-control-choice-inline-20261112/interactive-C/summary.json": "6dcf1d77425b3fddeb8fff67eb56b73b6c8ebde73a297cea0891d8a819ccdf0b",
+          ".e2e-artifacts/research-control-choice-inline-20261112/interactive-C/state/durable.sqlite3": "99ed4bd3d8825ce341685bc1257594b3949de00e738a45575a91ce9d83e6b0bc"
+        },
+        "new_model_calls": 0,
+        "historical_files_unchanged": true,
+        "submissions": [
+          {
+            "receipt": "task_turn_effect:89a19e2e08a11c76",
+            "original_tool_ok": true,
+            "original_args": {
+              "markdown": "根据提供的记录，批次 B-19 的当前状态和库位如下：\n\n- **状态**：已入库 [e2]\n- **库位**：C-42 [e2]",
+              "state": "answered"
+            },
+            "matches_original_wire_args": true,
+            "read_aliases": [
+              [
+                "e1",
+                "pa3c0a7958bfa"
+              ],
+              [
+                "e2",
+                "p577137780696"
+              ]
+            ],
+            "scope": "current_submission_boundary_with_original_receipts",
+            "accepted": true,
+            "markdown_preserved": true,
+            "declared_state": "answered",
+            "unknown_citation_control": "Unknown or unread evidence: e999999. Use the task-read [eN] labels, or read the original material first."
+          }
+        ]
+      },
+      {
+        "case": ".e2e-artifacts/research-control-choice-inline-20261112/missing-D",
+        "original": {
+          "arm": "D",
+          "stop_reason": "done",
+          "answer": "订单 A-173 目前处于**运输中**状态 [e2]。\n\n预计送达时间为：**周五 18:20** [e2]。\n\n## 引用来源\n[e2]  — https://example.com/orders/A-173 (source 958167d0fb6b8be2, 0:48)",
+          "source_stable": true,
+          "passed": true,
+          "early_submit_only_turns": [],
+          "assessment_calls": 0,
+          "browser_reads": 1,
+          "missing_checks": 0,
+          "waits": 0,
+          "model_calls": 2,
+          "usage_complete": true,
+          "inference_seconds": 5.61,
+          "prompt_tokens": 9407,
+          "completion_tokens": 78,
+          "offered_turns": 3,
+          "selections": [
+            {
+              "event": "selected",
+              "choice": "detail-1",
+              "record": "订单 A-173",
+              "valid": true,
+              "turn": 1
+            }
+          ],
+          "successful_clicks": 1,
+          "automatic_reads": 1,
+          "avoided_other_record": true
+        },
+        "source_sha256": {
+          ".e2e-artifacts/research-control-choice-inline-20261112/missing-D/input.json": "a1c32ec711fe4ae030278bb3a8ccbd71c146547e998fc3d3eee6c192c98d6a00",
+          ".e2e-artifacts/research-control-choice-inline-20261112/missing-D/provider.jsonl": "53e6cb89480da53cbac7bdc296c18df2466767c94e2759bcac331c65b75f414c",
+          ".e2e-artifacts/research-control-choice-inline-20261112/missing-D/summary.json": "a75184e78adee86b97c6d53e873a1961fb27b7f5bd7ece3f99e14adffddfa422",
+          ".e2e-artifacts/research-control-choice-inline-20261112/missing-D/state/durable.sqlite3": "33871b8c145656fdeca2e6d477744d4f8c304d8ec31c45dd4739a91633402709"
+        },
+        "new_model_calls": 0,
+        "historical_files_unchanged": true,
+        "submissions": [
+          {
+            "receipt": "task_turn_effect:773dd06e2524ec3b",
+            "original_tool_ok": true,
+            "original_args": {
+              "markdown": "订单 A-173 目前处于**运输中**状态 [e2]。\n\n预计送达时间为：**周五 18:20** [e2]。",
+              "state": "answered"
+            },
+            "matches_original_wire_args": true,
+            "read_aliases": [
+              [
+                "e1",
+                "p40347dee898e"
+              ],
+              [
+                "e2",
+                "p0b2fde1cad3f"
+              ]
+            ],
+            "scope": "current_submission_boundary_with_original_receipts",
+            "accepted": true,
+            "markdown_preserved": true,
+            "declared_state": "answered",
+            "unknown_citation_control": "Unknown or unread evidence: e999999. Use the task-read [eN] labels, or read the original material first."
+          }
+        ]
+      }
+    ]
+  },
+  "validation": [
+    {
+      "file": ".e2e-artifacts/error-reconciliation-20261116/dependency-02.xml",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "file": ".e2e-artifacts/error-reconciliation-20261116/production-final.xml",
+      "tests": 89,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "file": ".e2e-artifacts/error-reconciliation-20261116/replay-02.xml",
+      "tests": 17,
+      "failures": 3,
+      "errors": 0
+    },
+    {
+      "file": ".e2e-artifacts/error-reconciliation-20261116/replay-03.xml",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "file": ".e2e-artifacts/error-reconciliation-20261116/replay-final.xml",
+      "tests": 17,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "file": ".e2e-artifacts/error-reconciliation-20261116/replay.xml",
+      "tests": 45,
+      "failures": 4,
+      "errors": 0
+    },
+    {
+      "file": ".e2e-artifacts/error-reconciliation-20261116/research-02.xml",
+      "tests": 94,
+      "failures": 0,
+      "errors": 0
+    },
+    {
+      "file": ".e2e-artifacts/error-reconciliation-20261116/research.xml",
+      "tests": 57,
+      "failures": 30,
+      "errors": 0
+    }
+  ],
+  "limits": [
+    "Selected failure corpus, not all indexed providers.",
+    "Rejection of legacy argument shape alone does not prove semantic detection.",
+    "Research replay checks submission admission, not browser execution, semantic correctness or publication.",
+    "Two incomplete answered submissions repeat one fixture task in separate historical runs.",
+    "Earlier batches ran while production changed; final before/after identity is stable.",
+    "Scripted candidate regressions do not remeasure live model quality."
+  ],
+  "priorities": [
+    {
+      "priority": "P0",
+      "action": "Separate raw replay from semantic-equivalent current-contract checks."
+    },
+    {
+      "priority": "P1",
+      "ids": [
+        "R17",
+        "R26",
+        "R27",
+        "R28"
+      ],
+      "action": "Evaluate ordinary Research dynamic control choice and formal readback using existing browser mechanisms."
+    },
+    {
+      "priority": "P1",
+      "ids": [
+        "R11",
+        "R24"
+      ],
+      "action": "Reuse explicit fact and stage checks when task requirements can be deterministically checked."
+    },
+    {
+      "priority": "P2",
+      "ids": [
+        "R02",
+        "R03",
+        "R04",
+        "R05",
+        "R23"
+      ],
+      "action": "Measure adoption of direct and bound paths separately from execution and final correctness."
+    }
+  ]
+}

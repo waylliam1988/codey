@@ -153,7 +153,8 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
         def prepare(context: KernelContext, state: RuntimeOperationState, snapshot: TurnSnapshot, *, turn: int,
                     prompt: str = "", messages: list[ProviderToolResult] | None = None, acknowledge: bool = False,
                     counters: RuntimeExecutionCounters | None = None, text_result_spans: tuple[TextResultSpan, ...] = (),
-                    coding_context_prepared: bool = False, initial_source_batch: bool = False) -> None:
+                    coding_context_prepared: bool = False, initial_source_batch: bool = False,
+                    handoff: str | None = None) -> None:
             nonlocal active
             research = context.execution.research_tools
             active = research.browser_session if research is not None else None
@@ -171,7 +172,7 @@ def experiment(directory: Path, case: natural.Case, arm: Arm) -> Generator[None,
                     append_json(directory / "choices.jsonl", {"event": "offered", "turn": turn, "controls": rows})
             freeze(context, state, snapshot, turn=turn, prompt=prompt, messages=messages, acknowledge=acknowledge,
                 counters=counters, text_result_spans=text_result_spans, coding_context_prepared=coding_context_prepared,
-                initial_source_batch=initial_source_batch)
+                initial_source_batch=initial_source_batch, handoff=handoff)
 
         def lower(reply: DecodedTextTurn | AssistantTurn, *, snapshot: TurnSnapshot) -> ToolPlan:
             if isinstance(reply, TextRequests) and any(item.tool == TOOL for item in reply.items):

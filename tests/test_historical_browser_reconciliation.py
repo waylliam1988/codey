@@ -69,12 +69,16 @@ def test_historical_bad_completion_needs_only_an_answer_repair(
     replies = (saved_replies("structured") if case == "omitted-facts-1113" else
                require_json_strings(historical_case(case)["replies"], "replies"))
     corrected = "已读取当前页面记录。\n\n净重173克，校验码QUARTZ_851。"
-    install_original_http(monkeypatch, [*replies, json.dumps({"tool": "done", "args": {"summary": corrected}})])
+    install_original_http(monkeypatch, [*replies, json.dumps({"tool": "done", "args": {
+        "paragraphs": corrected.split("\n\n")}})])
     row = run_case(tmp_path / "run", "chat", TARGET, max_turns=len(replies) + 1,
         explanation_output=True, restore_snapshots=True)
     assert row["passed"] is True and row["stop_reason"] == "done", row
     assert require_json_string(parse_json_object(str(row["answer"]))["explanation"], "explanation") == corrected
-    assert "output_format_invalid" in str(row["repair_attempts"]), row
+    repairs = row["repair_attempts"]
+    assert isinstance(repairs, list)
+    assert any("done missing required arg 'paragraphs'" in str(decode_json_object(repair)["reason"])
+               for repair in repairs), row
     for name in ("browser_click", "browser_read"):
         selected = [receipt.result for receipt in tool_receipts(tmp_path / "run/state") if receipt.result.call.name == name]
         assert len(selected) == 1 and selected[0].ok, name
