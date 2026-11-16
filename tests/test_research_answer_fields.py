@@ -58,10 +58,11 @@ def session_for(*, context: str = '', missing: bool = False, after: str = '') ->
 
 
 def read(session: TaskSession, body: str, *, context: str = '', region: str = '', record: str = '',
-         url: str = URL, tool: str = 'browser_read', target: int | None = None) -> ToolResult:
+         url: str = URL, tool: str = 'browser_read', target: int | None = None,
+         document: JsonObject | None = None) -> ToolResult:
     identity = 'read-' + str(len(session.executed))
     source = OpenedSource(url, url, 'Record UN-097', '2026-11-16T00:00:00Z', hashlib.sha256(body.encode()).hexdigest()[:16])
-    audit: JsonObject = {'browser_document': {**DOCUMENT, 'url': url}}
+    audit: JsonObject = {'browser_document': {**(DOCUMENT if document is None else document), 'url': url}}
     if context:
         audit.update(query_click='click-original', query_region={'context': {'label': context}, 'text': region,
                                                                 'visible': True, 'relation': 'aria-controls'})
@@ -252,6 +253,94 @@ def test_missing_field_invalidates_only_its_original_query_target(same_target: b
         assert [row['label'] for row in submitted['citations']] == ['e1']
 
 
+@pytest.mark.parametrize('context', ['', 'Record A'])
+@pytest.mark.parametrize('allow_missing', [False, True])
+def test_reloaded_query_cannot_fall_back_to_an_old_field(context: str, allow_missing: bool) -> None:
+    session = session_for(context=context, missing=allow_missing)
+    original = parse_tool_success_check(session.policy.required_checks[0])
+    assert original is not None and original.browser_text is not None
+    rule = replace(original, browser_text=replace(original.browser_text, query_result=True))
+    session.policy = replace(session.policy, required_checks=(rule.declaration,))
+    read(session, 'Value: 173 units.', context='Record A', region='Value: 173 units.', target=17)
+    read(session, 'No longer available.', context='Record A', region='No longer available.', target=29,
+         document={**DOCUMENT, 'loader_id': 'reloaded'})
+    scope = answer_scope(session)
+    assert scope.fields[0].value is None
+    args: JsonObject = {'markdown': 'Checked the latest quantity.\n{{field:/quantity}}', 'state': 'answered'}
+    with pytest.raises(ValueError, match='not established|lacks this field'):
+        submit_answer(scope, args)
+    if allow_missing:
+        submitted = submit_answer(scope, {**args, 'state': 'partial'})
+        assert 'Not established' in submitted['markdown'] and '173' not in submitted['markdown']
+        assert [row['label'] for row in submitted['citations']] == ['e2']
+    else:
+        with pytest.raises(ValueError, match='lacks this field'):
+            submit_answer(scope, {**args, 'state': 'partial'})
+
+
+@pytest.mark.parametrize('other_url', [URL, 'https://example.com/independent-record'])
+def test_new_document_for_another_record_does_not_invalidate_the_field(other_url: str) -> None:
+    session = session_for(context='Record A')
+    read(session, 'Value: 173 units.', context='Record A', region='Value: 173 units.', target=17)
+    read(session, 'No longer available.', context='Record B', region='No longer available.', target=29,
+         url=other_url, document={**DOCUMENT, 'loader_id': 'reloaded'})
+    scope = answer_scope(session)
+    assert scope.fields[0].value == '173' and scope.fields[0].labels == ('e1',)
+    assert '173' in submit_answer(scope, {'markdown': 'Record A quantity.\n{{field:/quantity}}',
+                                        'state': 'answered'})['markdown']
+
+
+@pytest.mark.parametrize('missing_prerequisite', ['query', 'wait'])
+def test_reloaded_record_requires_new_qualified_evidence_before_reusing_a_field(missing_prerequisite: str) -> None:
+    session = session_for(context='Record A', missing=True,
+                          after='browser_wait' if missing_prerequisite == 'wait' else '')
+    original = parse_tool_success_check(session.policy.required_checks[0])
+    assert original is not None and original.browser_text is not None
+    rule = replace(original, browser_text=replace(original.browser_text, query_result=True))
+    session.policy = replace(session.policy, required_checks=(rule.declaration,))
+    wait: JsonObject = {'condition': 'text', 'value': 'Ready', 'timeout_ms': 5000}
+    if missing_prerequisite == 'wait':
+        record(session, 'browser_wait', wait, DOCUMENT)
+    read(session, 'Value: 173 units.', context='Record A', region='Value: 173 units.', target=17)
+    document = {**DOCUMENT, 'loader_id': 'reloaded'}
+    if missing_prerequisite == 'query':
+        read(session, 'Record A\nNot loaded.', record='Record A', tool='open_url', document=document)
+    else:
+        read(session, 'No longer available.', context='Record A', region='No longer available.',
+             target=29, document=document)
+    scope = answer_scope(session)
+    assert scope.fields[0].value is None and scope.fields[0].feedback
+    args: JsonObject = {'markdown': 'Checked current quantity.\n{{field:/quantity}}', 'state': 'answered'}
+    for state in ('answered', 'partial'):
+        with pytest.raises(ValueError, match='confirmed query result'):
+            submit_answer(scope, {**args, 'state': state})
+    if missing_prerequisite == 'wait':
+        record(session, 'browser_wait', wait, document)
+    read(session, 'Value: 241 units.', context='Record A', region='Value: 241 units.', target=33, document=document)
+    submitted = submit_answer(answer_scope(session), args)
+    assert '241' in submitted['markdown'] and '173' not in submitted['markdown']
+
+
+def test_new_formal_source_invalidates_old_codemode_field_ownership() -> None:
+    session = session_for(context='Record A', missing=True)
+    original = parse_tool_success_check(session.policy.required_checks[0])
+    assert original is not None and original.browser_text is not None
+    rule = replace(original, via='codemode', browser_text=replace(original.browser_text, query_result=True))
+    session.policy = replace(session.policy, required_checks=(rule.declaration,))
+    child = read(session, 'Value: 173 units.', context='Record A', region='Value: 173 units.', target=17)
+    call = ToolCall('codemode', {'code': 'return unwrap(await tools.browser_read({}));'}, 'parent')
+    parent = ToolResult(call, 'Read committed.', ok=True, canonical={'child_effect_ids': [child.call.call_id]})
+    session._memory_results['parent'] = parent
+    project_execution_record(session, 'parent', call, parent, ok=True)
+    assert answer_scope(session).fields[0].value == '173'
+    read(session, 'Record A\nNot loaded.', record='Record A', tool='open_url',
+         document={**DOCUMENT, 'loader_id': 'reloaded'})
+    scope = answer_scope(session)
+    assert scope.fields[0].value is None and scope.fields[0].feedback
+    with pytest.raises(ValueError, match='confirmed query result'):
+        submit_answer(scope, {'markdown': 'Current quantity.\n{{field:/quantity}}', 'state': 'partial'})
+
+
 @pytest.mark.parametrize('fence', ['```text', '~~~'])
 def test_field_citation_inside_multiline_code_is_not_a_published_citation(fence: str) -> None:
     session = session_for()
@@ -291,6 +380,75 @@ def test_completion_gate_rechecks_report_values_and_formal_citation_positions() 
     read(session, 'Value: 173 units.')
     updated = _required_tool_checks(session, report.markdown, context, None, report)
     assert all(row.reason_code == 'answer_field_missing' for row in updated.evaluations.values())
+
+
+def test_completion_gate_rejects_a_field_answer_frozen_before_reload() -> None:
+    session = session_for(context='Record A', missing=True)
+    read(session, 'Value: 173 units.', context='Record A', region='Value: 173 units.', target=17)
+    submitted = submit_answer(answer_scope(session), {'markdown': 'Checked quantity.\n{{field:/quantity}}',
+                                                     'state': 'answered'})
+    report = AnswerReport(text=submitted['markdown'], markdown=submitted['markdown'], state='answered',
+        task_digest=submitted['task_digest'], proposal_digest=submitted['submission_digest'],
+        citation_bindings=tuple(submitted['citations']), source_versions=(), evidence_bindings=(),
+        knowledge_refs=(), knowledge_mutations=(), attempt_refs=(), selection_receipts=(), questions=())
+    document = {**DOCUMENT, 'loader_id': 'reloaded'}
+    read(session, 'No longer available.', context='Record A', region='No longer available.', target=29,
+         document=document)
+    updated = _required_tool_checks(session, report.markdown, CompletionContext(browser_document=document), None, report)
+    assert all(row.reason_code == 'answer_field_missing' for row in updated.evaluations.values())
+
+
+@pytest.mark.usefixtures('public_source_dns', 'scripted_local_api_connection', 'no_external_advisor_models')
+@pytest.mark.parametrize('native', [False, True])
+def test_production_reload_rejects_old_quantity_then_publishes_the_current_gap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native: bool,
+) -> None:
+    directory = tmp_path / 'run'
+    if native:
+        monkeypatch.setattr(live, 'ExperimentProvider', NativeExperimentProvider)
+    url = 'https://example.com/record/reload-check'
+    check = require_browser_report_field(url=url, prefix='Value: ', suffix=' units.', pointer='/quantity',
+        label='Quantity', context='Record A', allow_missing=True, query_result=True)
+    case = live.QueryCase('/record/reload-check', 'Query the quantity, reload, then query and report its current value.', '''
+<section aria-label="Record A"><h2>Record A</h2>
+<button aria-controls="quantity" onclick="const n=Number(sessionStorage.getItem('queries')||0)+1;
+sessionStorage.setItem('queries',String(n));document.getElementById('quantity').textContent=
+n===1?'Value: 173 units.':'No longer available.'">Refresh quantity</button>
+<article id="quantity">Not loaded.</article></section>''', (), (check,))
+
+    def replies() -> Iterator[JsonObject]:
+        yield decode_json_object(query_choices(directory)[0]['call'])
+        yield {'tool': 'codemode', 'args': {'code':
+            'unwrap(await tools.browser_navigate(inputs)); unwrap(await tools.browser_read({})); '
+            'return unwrap(await tools.browser_snapshot({}));', 'inputs': {'url': url}}}
+        yield decode_json_object(query_choices(directory)[0]['call'])
+        yield {'tool': 'submit_research_answer', 'args': {
+            'markdown': 'Checked the latest quantity.\n{{field:/quantity}}', 'state': 'answered'}}
+        message = json.dumps(requests(directory)[-1]['messages'], ensure_ascii=False)
+        assert 'not established' in message
+        yield {'tool': 'submit_research_answer', 'args': {
+            'markdown': 'Checked the latest quantity.\n{{field:/quantity}}', 'state': 'partial'}}
+
+    install_http(monkeypatch, replies(), native=native)
+    result = live.run_case(directory, case, Target('http://scripted.test/v1', 'fixture', 123456789, 10))
+    assert result['stop_reason'] == 'done' and result['source_stable'], result
+    assert 'Not established' in str(result['answer']) and '173' not in str(result['answer'])
+    receipts = [row.result for row in tool_receipts(directory / 'state')]
+    queries = [row for row in receipts if row.ok and row.call.name == 'browser_read' and row.audit.get('query_click')]
+    assert len(queries) == 2
+    assert decode_json_object(queries[0].audit['query_region'])['text'] == 'Value: 173 units.'
+    assert decode_json_object(queries[-1].audit['query_region'])['text'] == 'No longer available.'
+    assert queries[0].audit['browser_document'] != queries[-1].audit['browser_document']
+    submissions = [row for row in receipts if row.call.name == 'submit_research_answer']
+    assert [row.ok for row in submissions] == [False, True]
+    answer = decode_json_object(submissions[-1].canonical['research_submission'])
+    citations = answer['citations']
+    passages = queries[-1].canonical['read_passages']
+    assert isinstance(citations, list) and isinstance(passages, list)
+    assert {decode_json_object(row)['passage_ref'] for row in citations} == {
+        decode_json_object(row)['ref'] for row in passages}
+    assert sum(row.call.name == 'browser_click' for row in receipts) == 2
+    assert sum(row.ok and row.call.name == '_publish_research_answer' for row in receipts) == 1
 
 
 @pytest.mark.usefixtures('public_source_dns', 'scripted_local_api_connection', 'no_external_advisor_models')

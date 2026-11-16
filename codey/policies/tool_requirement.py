@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import NoReturn
 
+from codey.automation.browser_document import same_document
 from codey.policies.output_requirement import EXPLANATION_GUIDANCE, JSON_ANSWER_GUIDANCE
 from codey.policies.requirement import RequirementEvaluation
 from codey.research.source_document import SourceReadScope
@@ -285,6 +286,7 @@ class ToolSuccessRequirement:
         expected = {key: argument_digest(value)
                     for key, value in parse_json_object(self.arguments_json).items()}
         eligible: list[tuple[str, ExecutionRecord]] = []
+        observed_reads: list[tuple[str, ExecutionRecord]] = []
         witnesses: set[str] = set()
         matching_execution = False
         ordered: set[str] | None = None
@@ -293,7 +295,11 @@ class ToolSuccessRequirement:
             ordered, prerequisite_refs = _ordered_requirement_refs(self, records, results or {}, browser_document)
         for identity, row in records.items():
             name = row.get("name")
-            if not isinstance(name, str) or not self._accepts_tool(name) or not _succeeded(row, name):
+            if not isinstance(name, str) or not _succeeded(row, name):
+                continue
+            if self.report_label and self._accepts_tool(name, ownership=True):
+                observed_reads.append((identity, row))
+            if not self._accepts_tool(name):
                 continue
             if ordered is not None and identity not in ordered:
                 continue
@@ -315,7 +321,7 @@ class ToolSuccessRequirement:
         if self.report_label and results is not None and self.browser_text is not None:
             # A report can retain several records and documents. Select its
             # own source/record/field before choosing that scope's latest read.
-            eligible = _latest_report_reads(eligible, results, self.browser_text)
+            eligible = _latest_report_reads(eligible, results, self.browser_text, observed=observed_reads)
             if not eligible:
                 target = self.browser_text.context or self.browser_text.url
                 required = ("a confirmed query result" if self.browser_text.query_result else "formal record ownership")
@@ -346,8 +352,8 @@ class ToolSuccessRequirement:
         witnesses.update(prerequisite_refs)
         return replace(outcome, evaluation=replace(outcome.evaluation, evidence_refs=tuple(sorted(witnesses))))
 
-    def _accepts_tool(self, name: str) -> bool:
-        if self.report_label and not self.via:
+    def _accepts_tool(self, name: str, *, ownership: bool = False) -> bool:
+        if self.report_label and (ownership or not self.via):
             from codey.toolchain.constants import PAGE_DETAIL_TOOL
             from codey.toolchain.tool_spec import SOURCE_READ_TOOL_NAMES
 
@@ -669,8 +675,23 @@ def _report_field_targets(receipt: ToolResult, results: Mapping[str, ToolResult]
 
 
 def _latest_report_reads(eligible: list[tuple[str, ExecutionRecord]], results: Mapping[str, ToolResult],
-                         selector: BrowserTextSelector) -> list[tuple[str, ExecutionRecord]]:
+                         selector: BrowserTextSelector, *,
+                         observed: list[tuple[str, ExecutionRecord]]) -> list[tuple[str, ExecutionRecord]]:
+    """Keep regional ownership within one document of the selected source/record."""
+    # A formal read can establish a new document without satisfying this field's
+    # query/wait obligations. It invalidates old ownership, but cannot supply the answer.
+    ownership = replace(selector, query_result=False)
+    document: JsonObject | None = None
+    for ref, _ in observed:
+        receipt = results.get(ref)
+        if receipt is None:
+            continue
+        current = receipt.audit.get("browser_document")
+        if (same_document(current, current)
+                and report_read_scope(receipt, ownership, require_complete=False, include_missing=True) is not None):
+            document = decode_json_object(current)
     scoped = [(ref, row) for ref, row in eligible if ref in results
+              and (document is None or same_document(results[ref].audit.get("browser_document"), document))
               and report_read_scope(results[ref], selector, require_complete=False, include_missing=True) is not None]
     latest: tuple[str, ExecutionRecord] | None = None
     for ref, row in scoped:
