@@ -4,11 +4,12 @@ import pytest
 
 from codey.operations import kernel_prompt
 from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall, ToolResult
 
 
 def test_work_state_retains_failed_check_reference_and_marks_stale_verification():
-    session = TaskSession(policy=None, task_text="Keep public API", workspace_fingerprint="new")
+    session = TaskSession(policy=TaskPolicy(frozenset({"control"})), task_text="Keep public API", workspace_fingerprint="new")
     session.executed["exec-17"] = {"name": "run", "exit_code": 1, "ok": False, "workspace_fingerprint": "old"}
     session._memory_results["exec-17"] = ToolResult(ToolCall("run", {"command": "python -m pytest -q", "path": "."}),
                                                     "FAILED", ok=False, audit={"exit_code": 1})
@@ -20,7 +21,7 @@ def test_work_state_retains_failed_check_reference_and_marks_stale_verification(
 
 
 def test_result_delivery_includes_existing_receipt_ref():
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control"})))
     result = ToolResult(ToolCall("run", {}, call_id="call-a"), "FAILED", ok=False)
     session._memory_results["exec-17"] = result
     from codey.providers.base import ResultMetadata, result_metadata_from_text
@@ -82,14 +83,14 @@ def test_work_state_is_updated_before_each_actual_kernel_send():
 
 def test_a_denied_or_unknown_command_is_not_reported_as_completed():
     import json
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control"})))
     session.executed["denied"] = {"name": "run", "exit_code": None, "ok": False}
     state = json.loads(kernel_prompt.working_context(session).splitlines()[1])
     assert state["executions"][0]["status"] == "unknown"
 
 
 def test_runtime_projection_retains_actual_execution_timestamps():
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control"})))
     session.executed["exec-17"] = {"name": "run", "exit_code": 1, "ok": False}
     session._memory_results["exec-17"] = ToolResult(ToolCall("run", {"command": "pytest"}), "FAILED", ok=False,
         audit={"exit_code": 1, "command_started_at": "start", "command_finished_at": "finish"})
@@ -98,14 +99,14 @@ def test_runtime_projection_retains_actual_execution_timestamps():
 
 
 def test_read_file_facts_survive_independently_of_narrative_summaries():
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control"})))
     session.read_files.add("app.py")
     text = kernel_prompt.working_context(session)
     assert '"read_files": ["app.py"]' in text
 
 
 def test_following_file_reads_do_not_evict_the_last_command_receipt():
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control"})))
     session.executed['pytest-17'] = {'name':'run', 'exit_code':1, 'ok':False}
     session._memory_results['pytest-17'] = ToolResult(ToolCall('run', {'command':'python -m pytest -q'}),
                                                     'FAILED', ok=False)
@@ -117,7 +118,6 @@ def test_following_file_reads_do_not_evict_the_last_command_receipt():
 
 
 def test_pending_execution_guidance_uses_receipts_and_disappears_after_success():
-    from codey.policies.task_policy import TaskPolicy
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control", "knowledge.read"}),
         required_checks=("tool_succeeded:knowledge_read",)))
     session.last_done_text = "I read the knowledge."
@@ -131,7 +131,6 @@ def test_pending_execution_guidance_uses_receipts_and_disappears_after_success()
 
 
 def test_answer_binding_repair_does_not_request_repeating_successful_execution():
-    from codey.policies.task_policy import TaskPolicy
     from codey.policies.tool_requirement import require_tool_success
     session = TaskSession(policy=TaskPolicy(grants=frozenset({"control"}), required_checks=(
         require_tool_success("read_file", answer_pointer="/value", result_pointer="/text"),)))

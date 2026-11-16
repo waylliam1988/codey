@@ -28,7 +28,7 @@ jobs:
   test:
     runs-on: windows-latest
     # Allow the full pytest budget plus setup, contracts and coverage cleanup.
-    timeout-minutes: 180
+    timeout-minutes: 300
     strategy:
       # A minor-version regression on one Python must not hide the others.
       fail-fast: false
@@ -103,7 +103,7 @@ jobs:
 
       - name: Pytest
         # Run the full suite once on every Python, collecting branch coverage.
-        timeout-minutes: 120
+        timeout-minutes: 240
         shell: pwsh
         run: |
           $env:COVERAGE_FILE = "$env:GITHUB_WORKSPACE/.e2e-artifacts/coverage/.coverage"

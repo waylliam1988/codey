@@ -607,7 +607,7 @@ def test_explanation_repair_exhausts_a_finite_budget_without_repeating_browser(
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
-def test_ordinary_hybrid_rejects_wrong_type_then_copies_from_receipt_without_browser_repeat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ordinary_hybrid_rejects_same_program_edit_then_copies_from_receipt_without_browser_repeat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     directory = tmp_path / "hybrid"
     replies: list[JsonObject] = [
         code_action(LOAD + WAIT + "unwrap(await tools.browser_read({}));"
@@ -621,7 +621,12 @@ def test_ordinary_hybrid_rejects_wrong_type_then_copies_from_receipt_without_bro
                    declare_required_tools=False, restore_snapshots=True, max_turns=7)
     assert row["passed"] is True, row
     receipts = tool_receipts(directory / "state")
+    rejected = [receipt.result for receipt in receipts if receipt.result.call.name == "codemode" and not receipt.result.ok]
+    assert len(rejected) == 1
+    assert "The declared file source was acquired in this program" in rejected[0].model_text
     edits = [receipt.result for receipt in receipts if receipt.result.call.name == "edit"]
-    assert len(edits) == 2 and not edits[0].ok and edits[1].ok
-    assert edits[0].audit.get("error_code") == "file_field_mismatch"
+    # The source-acquisition boundary rejects the original program before an
+    # edit executes. The next frozen input copies the source's numeric type.
+    assert len(edits) == 1 and edits[0].ok
+    assert json.loads(str(edits[0].call.args["content"])) == {"amount": 173, "code": "QUARTZ_851"}
     assert sum(receipt.result.call.name == "browser_read" for receipt in receipts) == 1

@@ -1,7 +1,6 @@
 """Held-out continuation with genuine task-owned output reads on every arm."""
 import hashlib
 import json
-from types import SimpleNamespace
 
 
 def replay_response_schema(text):
@@ -40,10 +39,11 @@ def replay_recovery(provider, project, *, seed, enhanced, recoverable):
     from codey.operations.kernel_prompt import working_context
     from codey.operations.task_execution import ExecutionDelegate
     from codey.operations.task_session import TaskSession
+    from codey.policies.task_policy import TaskPolicy
     from codey.runtime.core.models import ToolCall, ToolResult
     from codey.storage.managed_outputs import ManagedOutputStore
 
-    session = TaskSession(policy=SimpleNamespace(allows=lambda _: True))
+    session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.read", "project.write", "project.verify"})))
     pytest_result = next(item for item in provider._messages if item.get('tool_call_id') == 'pytest-call')
     session.executed['exec-17'] = {'name': 'run', 'exit_code': 1, 'ok': False}
     session._memory_results['exec-17'] = ToolResult(ToolCall('run', {'command': 'python -m pytest -q'}),

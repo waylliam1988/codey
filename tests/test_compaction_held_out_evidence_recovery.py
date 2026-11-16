@@ -21,6 +21,7 @@ class ReplayProvider:
         self.questions.append(prompt)
         if len(self.questions) <= 8:
             assert 'exec-17' in prompt and '"exit_code": 1' in prompt
+            assert '"can_modify_project": true' in prompt
             return "Next: inspect the following module."
         if len(self.questions) == 9 and self.recoverable:
             return json.dumps({"read": {"result_ref": "observation-1", "offset": 0, "limit": 8000}})

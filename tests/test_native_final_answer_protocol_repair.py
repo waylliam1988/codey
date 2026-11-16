@@ -32,10 +32,22 @@ def test_native_answer_object_must_be_resent_through_declared_done(monkeypatch, 
             prompt = "\n".join(str(message.get("content", "")) for message in payload["messages"]
                                if message.get("role") in {"user", "tool"}
                                and str(message.get("content", "")) not in previous)
-            assert "final answer" in prompt and "summary string" in prompt
-            assert "requested final format" in prompt
-            assert "not the outer tool-call object" in prompt
-            if mistake == "fenced_summary":
+            assert not session.executed
+            if mistake == "malformed_object":
+                # There is no tool name to bind this rejection to done. Repair
+                # the native protocol without steering unfinished work to done.
+                assert "provider returned malformed tool calls" in prompt
+                assert not session.last_done_text
+                assert "Available tools:" in prompt
+                assert all(tool["function"]["name"] in prompt for tool in payload["tools"])
+                assert "Use the provided native tools" in prompt
+                assert "Pass schema properties directly as native arguments" in prompt
+                assert "summary string" not in prompt
+                assert payload["tools"] == requests[0]["tools"]
+            else:
+                assert "final answer" in prompt and "summary string" in prompt
+                assert "requested final format" in prompt
+                assert "not the outer tool-call object" in prompt
                 assert "without Markdown fences" in prompt
             calls = [{"id": "done-1", "type": "function",
                       "function": {"name": "done", "arguments": '{"summary":"{\\"product\\":323}"}'}}]

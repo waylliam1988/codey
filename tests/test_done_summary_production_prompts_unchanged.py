@@ -75,9 +75,13 @@ def test_initial_result_and_repair_prompt_surfaces_have_frozen_hashes() -> None:
     assert "not evidence that the host has no network access" in initial
     assert _sha256(initial) == "dffdc984840170210a6b9f0f2568a04a8e6de9b33102cd96e588a06ebbee6613"
     assert _sha256(result) == "591c80828028a2103608e4d5a081bfd484d6d0fb755950c423cf8241b9876522"
-    # Reviewed: the current done schema carries execution and source-coverage
-    # guidance; ordinary done repair still preserves the task's own format.
-    assert _sha256(repair) == "847d35bd8bcf6c31b385b2b149431e78826782dca86cba00443ee578553f552e"
+    # Reviewed: ordinary done no longer exposes Research report fields. Repair
+    # uses the frozen summary schema and preserves the task's requested format.
+    done = next(spec for spec in build_turn_snapshot(session).model_specs if spec.name == "done")
+    assert tuple(dict(done.parameters)) == ("summary",)
+    assert '"report_sections":' not in repair and '"open_questions":' not in repair
+    assert '"properties":{"summary":{"type":"string"}}' in repair
+    assert _sha256(repair) == "e5ebb6deb053d48d57addb92a457460e39d53f1a90bfdb6472bc7c595826983e"
 
 
 @dataclass(frozen=True)
@@ -126,9 +130,9 @@ def test_real_task_entry_initial_prompt_has_a_frozen_hash(tmp_path: Path, monkey
     assert "submit_research_review" not in prompt
     assert "Calls return Result<T>" in prompt
     assert "Only frozen read-only tools" not in prompt
-    # Reviewed: CodeMode now declares receipt-bound JSON field updates and
-    # explicitly requires an action call to persist data. Keep these semantics
-    # visible alongside the frozen prompt baseline.
-    assert "changes: Record<string, JsonEditValue>" in prompt
+    # Reviewed: the bounded catalog uses base_result_ref for JSON edits and
+    # exposes discovery for omitted declarations. Writes still require actions.
+    assert "base_result_ref: string; changes: Record<string, JsonEditValue>" in prompt
+    assert "await describe('tools.NAME') for the full omitted declaration" in prompt
     assert "Returning modified data does not persist it" in prompt
-    assert _sha256(prompt) == "3ca5b33ac342d51b53572fb2b45d0eccb5ea17c93b4fc2a6bc35fe34e2c93472"
+    assert _sha256(prompt) == "d5de36dcb368d9925b1ee816d2cff76e69519a60d58c84cbc02aa8f3da60ec42"

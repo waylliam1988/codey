@@ -15,7 +15,7 @@ def observations(text):
 
 
 def test_complete_result_is_available_without_ordering_a_redundant_receipt_read():
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write"})))
     result = ToolResult(ToolCall("run", {"command": "python -m unittest discover -v"}), "2 tests passed", ok=True)
     session._memory_results["exec-1"] = result
     text = _result_context(result, session)
@@ -27,7 +27,7 @@ def test_complete_result_is_available_without_ordering_a_redundant_receipt_read(
 
 
 def test_truncated_result_guides_literal_search_instead_of_reexecution():
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write"})))
     result = ToolResult(ToolCall("run", {}), "bounded preview", ok=False, truncated=True)
     session._memory_results["exec-1"] = result
     text = _result_context(result, session)
@@ -50,7 +50,7 @@ def test_readonly_task_can_report_blocked_in_user_requested_format(native):
 @pytest.mark.parametrize("fingerprint,passed,status", [("sha256:" + "a" * 64, True, "current_pass"),
     ("sha256:" + "b" * 64, True, "stale"), ("sha256:" + "a" * 64, False, "current_fail")])
 def test_verification_facts_are_explicit_without_claiming_task_completion(fingerprint, passed, status):
-    session = TaskSession(policy=None, workspace_revision=1, workspace_fingerprint="sha256:" + "a" * 64)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write"})), workspace_revision=1, workspace_fingerprint="sha256:" + "a" * 64)
     session.record_verification("python -m unittest discover -v", 1, passed, exit_code=0 if passed else 1,
         workspace_revision=1, workspace_fingerprint=fingerprint)
     text = working_context(session)
@@ -63,7 +63,7 @@ def test_verification_facts_are_explicit_without_claiming_task_completion(finger
 
 
 def test_missing_fingerprint_is_not_projected_as_current_passing_verification():
-    session = TaskSession(policy=None)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write"})))
     session.record_verification("python -m unittest discover -v", 0, True)
     assert observations(working_context(session))["verifications"][0]["state"] == "unknown"
 
@@ -71,21 +71,21 @@ def test_missing_fingerprint_is_not_projected_as_current_passing_verification():
 @pytest.mark.parametrize("exit_code,passed,status", [(None, True, "unknown"), (1, True, "current_fail"),
     (0, False, "current_fail")])
 def test_missing_or_conflicting_exit_status_cannot_become_passing_guidance(exit_code, passed, status):
-    session = TaskSession(policy=None, workspace_revision=1, workspace_fingerprint="sha256:" + "a" * 64)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write"})), workspace_revision=1, workspace_fingerprint="sha256:" + "a" * 64)
     session.record_verification("python -m unittest discover -v", 1, passed, exit_code=exit_code,
         workspace_revision=1, workspace_fingerprint="sha256:" + "a" * 64)
     assert observations(working_context(session))["verifications"][0]["state"] == status
 
 
 def test_matching_fingerprint_with_changed_revision_is_stale():
-    session = TaskSession(policy=None, workspace_revision=2, workspace_fingerprint="sha256:" + "a" * 64)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write"})), workspace_revision=2, workspace_fingerprint="sha256:" + "a" * 64)
     session.record_verification("python -m unittest discover -v", 1, True, exit_code=0,
         workspace_revision=1, workspace_fingerprint="sha256:" + "a" * 64)
     assert observations(working_context(session))["verifications"][0]["state"] == "stale"
 
 
 def test_latest_unknown_verification_replaces_prior_pass_for_the_same_command():
-    session = TaskSession(policy=None, workspace_revision=1, workspace_fingerprint="sha256:" + "a" * 64)
+    session = TaskSession(policy=TaskPolicy(frozenset({"control", "project.write"})), workspace_revision=1, workspace_fingerprint="sha256:" + "a" * 64)
     session.record_verification("python -m unittest discover -v", 1, True, exit_code=0,
         workspace_revision=1, workspace_fingerprint=session.workspace_fingerprint)
     session.record_verification("python -m unittest discover -v", 2, False,
