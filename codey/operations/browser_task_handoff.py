@@ -9,11 +9,10 @@ from dataclasses import replace
 from codey.automation.browser_document import same_document
 from codey.codemode.catalog import snapshot_catalog
 from codey.codemode.json_edit import edit_guidance
+from codey.completion.contract import CHECK_NOT_APPLICABLE, CHECK_PASS
 from codey.operations.browser_completion import committed_results, complete_page_passages
 from codey.operations.browser_followups import (
     DIRECT_TOOLS,
-    PENDING,
-    UNCERTAIN,
     click_followup_plan,
     codemode_only,
     delivery,
@@ -32,6 +31,7 @@ from codey.operations.kernel_protocol import (
     refresh_snapshot_contract,
 )
 from codey.operations.task_session import TaskSession
+from codey.operations.work_status import WorkStatus, work_status
 from codey.policies.browser_requirement import BrowserPageRounds, parse_browser_requirement
 from codey.policies.tool_requirement import (
     ToolObservation,
@@ -336,105 +336,63 @@ def _download_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Com
     return snapshot, "\n".join(lines), None
 
 
-def _wait_handoff(session: TaskSession, snapshot: TurnSnapshot,
-                  context: CompletionContext) -> tuple[TurnSnapshot, str]:
+def browser_continuation_handoff(session: TaskSession, snapshot: TurnSnapshot,
+                                 context: CompletionContext, *, workflow: bool = False) -> tuple[TurnSnapshot, str]:
+    from codey.operations.browser_next_step import next_browser_step
+
     records, results = tool_facts(session, context)
-    clicks = committed_results(records, results, frozenset({"browser_click"}), include_failed=frozenset({"browser_click"}))
-    if (not clicks or not same_document(clicks[-1][1].audit.get("browser_document"), context.browser_document)
-            or delivery(clicks[-1][1]) not in {"delivered", "uncertain"}):
+    step = next_browser_step(session.policy.required_checks, records=records, results=results,
+        document=context.browser_document, names=set(snapshot.nested_tool_names), workflow=workflow)
+    if step is None:
         return snapshot, ""
-    ref, result = clicks[-1]
-    if delivery(result) == "uncertain":
-        snapshot, action = _call_handoff(session, snapshot, ToolCall("browser_snapshot", {}))
-        return snapshot, UNCERTAIN + "\n" + action
-    from codey.operations.browser_completion import browser_click_stage
-
-    stage = browser_click_stage(records, results, context.browser_document)
-    plan = click_followup_plan(session.policy.required_checks, set(snapshot.nested_tool_names), stage=stage)
-    if plan.unavailable:
-        return snapshot, "Query follow-up unavailable: " + ", ".join(plan.unavailable) + "."
-    keys = tuple(records)
-    after = {key: records[key] for key in keys[keys.index(ref) + 1:]
-             if records[key]["name"] not in {"browser_wait", "browser_read"}
-             or ((receipt := results.get(key)) is not None
-                 and same_document(receipt.audit.get("browser_document"), context.browser_document))}
-    waits = [rule for check in session.policy.required_checks
-             if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_wait"
-             and rule.stage in {0, stage}]
-    waiting = any(not rule.observe(records, results=results, browser_document=context.browser_document).evaluation.passed
-                  for rule in waits)
-    lines: list[str] = []
-    call: ToolCall | None = None
-    if waiting:
-        lines.append(f"Click {ref} was delivered. Complete the declared browser_wait next; do not click again.")
-        steps = plan.plans.get("result")
-        for raw in steps if isinstance(steps, list) else []:
-            step = decode_json_object(raw)
-            args = decode_json_object(step["args"])
-            if step["name"] == "browser_wait" and not any(row.ok and row.call.name == "browser_wait"
-                    and row.call.args == args for key in after if (row := results.get(key)) is not None):
-                call = ToolCall("browser_wait", args)
-                break
-    elif (any((rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_read"
-              for check in session.policy.required_checks)
-            and not any(row["name"] == "browser_read" and row["ok"] for row in after.values())):
-        lines.append(f"Click {ref} and its declared waits are settled. Use browser_read next; do not click again.")
-        call = ToolCall("browser_read", {})
-    if plan.missing_waits and waiting:
-        lines.append("Automatic result read is unavailable: the wait condition is not fully declared. "
-                     "For a query, omit purpose for the atomic browser_click({ref}), then use browser_wait with an explicit "
-                     "page condition and timeout_ms, then browser_read. Do not substitute a sleep for a page condition.")
-    if call is not None:
-        snapshot, action = _call_handoff(session, snapshot, call)
-        lines.append(action)
-    return snapshot, "\n".join(lines)
+    if step.call is None:
+        return snapshot, step.feedback
+    snapshot, action = _call_handoff(session, snapshot, step.call)
+    return snapshot, step.feedback + "\n" + action
 
 
-def _pending_query_handoff(session: TaskSession, snapshot: TurnSnapshot,
-                           context: CompletionContext) -> tuple[TurnSnapshot, str]:
-    _, results = tool_facts(session, context)
-    click = pending_click(results, context.browser_document)
-    if click is not None:
-        uncertain = delivery(click[1]) == "uncertain"
-        call = ToolCall("browser_snapshot" if uncertain else "browser_read", {})
-        if not uncertain:
-            plan = click_followup_plan(session.policy.required_checks, set(snapshot.nested_tool_names))
-            steps = plan.plans.get("result")
-            if isinstance(steps, list):
-                refs = tuple(results)
-                subsequent = [results[ref] for ref in refs[refs.index(click[0]) + 1:]]
-                for raw in steps:
-                    step = decode_json_object(raw)
-                    args = decode_json_object(step["args"])
-                    if step["name"] == "browser_wait" and not any(row.ok and row.call.name == "browser_wait"
-                            and row.call.args == args and same_document(row.audit.get("query_wait_document"), context.browser_document)
-                            for row in subsequent):
-                        call = ToolCall("browser_wait", args)
-                        break
-        snapshot, action = _call_handoff(session, snapshot, call)
-        return snapshot, (UNCERTAIN if uncertain else PENDING) + "\n" + action
-    return snapshot, ""
+def _project_edit_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                          status: WorkStatus) -> tuple[TurnSnapshot, str]:
+    from codey.operations.declared_field_input import offer
 
-
-def _project_edit_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext) -> str:
+    offered, guidance = offer(session, snapshot, context, status)
+    if guidance:
+        return offered, guidance
     tools = {"codemode", "read_file", "edit"}
+    browser_names = {spec.name for spec in snapshot.frozen_specs if spec.executor == "browser"}
     if (session.task_kind != "hybrid" or not session.project_changes_required
-            or ".json" not in session.task_text.casefold() or "codemode" not in snapshot.tool_names
+            or "codemode" not in snapshot.tool_names
             or not {"read_file", "edit"} <= set(snapshot.nested_tool_names)
-            or tools & set(session.controller_denied)):
-        return ""
+            or tools & set(session.controller_denied)
+            or any(not row.observation.evaluation.passed for row in status.tools if row.rule.tool in browser_names)
+            or any(not row.passed for row in status.browser)):
+        return snapshot, ""
     records, results = tool_facts(session, context)
-    if committed_results(records, results, frozenset({"edit"})):
-        return ""
+    if status.ready:
+        return snapshot, ""
+    if pending_other := [row for row in status.other if row.status not in {CHECK_PASS, CHECK_NOT_APPLICABLE}]:
+        return snapshot, "Required work remains before editing: " + "; ".join(
+            f"{row.check_id}: {row.reason_code}" for row in pending_other)
     reads = committed_results(records, results, frozenset({"browser_read"}))
-    if not any(not result.truncated and same_document(result.audit.get("browser_document"), context.browser_document)
+    url = str((context.browser_document or {}).get("url", ""))
+    if not any(complete_page_passages(result, url)
+               and same_document(result.audit.get("browser_document"), context.browser_document)
                for _, result in reads):
-        return ""
+        return snapshot, ""
+    pending = [row for row in status.project if row.status not in {CHECK_PASS, CHECK_NOT_APPLICABLE}]
+    if committed_results(records, results, frozenset({"edit"})) and not any(
+            row.rule.file_path and not row.outcome.passed for row in status.tools):
+        return snapshot, "Required project work is incomplete: " + "; ".join(
+            f"{row.check_id}: {row.reason_code}" for row in pending)
     settled = ("The complete browser body has already been delivered. Continue with the file edit; "
                "an additional receipt read is unnecessary. ")
     edit = next(spec for spec in snapshot.frozen_specs if spec.name == "edit")
-    return (settled + "The requested project modification still needs an actual edit receipt. "
-            + edit_guidance(edit.required, dict(edit.parameters)))
+    guidance = (edit_guidance(edit.required, dict(edit.parameters))
+                if "content" in edit.required or "declared_fields" in dict(edit.parameters) else
+                "Read the requested target file completely and apply the requested changes using the frozen edit contract. "
+                "When base_result_ref is required, use the original outer read Result.result_ref.")
+    return snapshot, (settled + "The requested project modification still needs an actual edit receipt. "
+            + guidance)
 
 
 def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
@@ -447,10 +405,7 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     records, results = tool_facts(session, context)
     rules = [rule for check in session.policy.required_checks
              if (rule := parse_tool_success_check(check)) is not None]
-    snapshot, pending_query = _pending_query_handoff(session, snapshot, context)
-    if pending_query:
-        return snapshot, pending_query
-    snapshot, waiting = _wait_handoff(session, snapshot, context)
+    snapshot, waiting = browser_continuation_handoff(session, snapshot, context)
     if waiting:
         return snapshot, waiting
     snapshot, navigation = _navigation_handoff(session, snapshot, context, generation)
@@ -464,13 +419,15 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     if not download and not recovery:
         snapshot, query = query_result_handoff(session, snapshot, context, generation)
     interrupted = any(interrupted_query(row, context.browser_document) for _, row in unconfirmed_clicks(results))
-    project_edit = _project_edit_handoff(session, snapshot, context)
+    status = work_status(session, context)
+    snapshot, project_edit = _project_edit_handoff(session, snapshot, context, status)
+    if project_edit:
+        return snapshot, project_edit
     if not rules:
         return snapshot, "\n".join(part for part in (recovery, query, project_edit,
             "The previous query document changed; its outcome remains unverified. "
             "Use current-page observations for further work." if interrupted else "") if part)
-    observed = [(rule, rule.observe(records, results=results, browser_document=context.browser_document))
-                for rule in rules]
+    observed = [(row.rule, row.observation) for row in status.tools]
     pending = [(rule, outcome.evaluation) for rule, outcome in observed if not outcome.evaluation.passed]
     lines = ["Next step from committed receipts (reuse completed work):"]
     if interrupted:
@@ -494,8 +451,11 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
             for rule in missing_execution) + ".")
     elif outstanding:
         lines.append("Execution exists but its observation is incomplete. Recover the missing evidence, not the click.")
+    elif status.ready and not metadata and not recovery and not download and not query:
+        lines.append("All required work checks passed. Prepare the final answer using the committed facts and submit it.")
     elif not pending and not metadata:
-        lines.append("All declared tool executions have receipts. If they answer the task, deliver done using those facts.")
-    if project_edit:
-        lines.append(project_edit)
+        lines.extend(row.feedback for row in status.browser if not row.passed)
+        lines.extend(row.outcome.feedback for row in status.tools if not row.outcome.passed)
+        lines.extend(f"Required work remains: {row.check_id}: {row.reason_code}" for row in (*status.project, *status.other)
+                     if row.status not in {CHECK_PASS, CHECK_NOT_APPLICABLE})
     return snapshot, "\n".join(line for line in lines if line)

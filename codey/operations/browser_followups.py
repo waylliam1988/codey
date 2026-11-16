@@ -101,14 +101,17 @@ query_click: ContextVar[bool] = ContextVar("query_click", default=False)
 
 def _click_wait_plan(checks: tuple[str, ...], stage: int = 0) -> BrowserWaitPlan:
     waits: list[JsonObject] = []
+    pages: set[str] = set()
     for check in checks:
         rule = parse_browser_requirement(check)
         if isinstance(rule, (BrowserPageRounds, BrowserResearchSequence)):
+            pages.add(rule.url)
             args: JsonObject = {"condition": rule.condition, "value": rule.value, "timeout_ms": 5000}
             if args not in waits:
                 waits.append(args)
     plan = wait_plan(checks, tuple(waits), stage=stage)
-    if not stage and any((tool_rule := parse_tool_success_check(check)) is not None and tool_rule.stage for check in checks):
+    if len(pages) > 1 or not stage and any(
+            (tool_rule := parse_tool_success_check(check)) is not None and tool_rule.stage for check in checks):
         # A frozen CodeMode program may click more than once. Do not attach
         # another stage's waits to each click; the receipt handoff supplies them.
         return BrowserWaitPlan(plan.waits, (*plan.missing, {}))
@@ -127,6 +130,7 @@ class ClickFollowupPlan:
     plans: JsonObject
     missing_waits: tuple[JsonObject, ...]
     unavailable: tuple[str, ...]
+    waits: tuple[JsonObject, ...]
 
 
 def click_followup_plan(checks: tuple[str, ...], names: set[str], *, stage: int = 0) -> ClickFollowupPlan:
@@ -139,7 +143,7 @@ def click_followup_plan(checks: tuple[str, ...], names: set[str], *, stage: int 
     if not wait.missing and not unavailable:
         steps: list[JsonValue] = [{"name": "browser_wait", "args": args} for args in wait.waits]
         plans["result"] = [*steps, {"name": "browser_read", "args": JsonObject()}]
-    return ClickFollowupPlan(plans, wait.missing, unavailable)
+    return ClickFollowupPlan(plans, wait.missing, unavailable, wait.waits)
 
 
 def click_plans(checks: tuple[str, ...], names: set[str]) -> JsonObject:

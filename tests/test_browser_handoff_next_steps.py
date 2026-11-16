@@ -213,7 +213,8 @@ def test_current_body_hands_off_to_real_metadata_calls_without_repeating_work(
                 assert "All declared tool executions have receipts" not in handoffs[-1]
                 assert "browser_eval" in snapshots[-1].tool_names
             yield {"tool": offered, "args": {"code": "window.__contractToken"} if offered == "browser_eval" else {}}
-        yield {"tool": "done", "args": {"summary": "已读取当前记录。\n\n净重 173 克，校验码 QUARTZ_851。"}}
+        yield {"tool": "done", "args": ({"paragraphs": ["已读取当前记录。", "净重 173 克，校验码 QUARTZ_851。"]}
+                                         if json_output else {"summary": "已读取当前记录。\n\n净重 173 克，校验码 QUARTZ_851。"})}
 
     install_http(monkeypatch, replies())
     directory = tmp_path / "metadata"
@@ -445,7 +446,7 @@ def interrupted_action_probe(state: Path, port: int, operation: str, stage: str)
         _, hint = browser_task_handoff(session, build_turn_snapshot(session),
             CompletionContext(browser_document=browser.document_identity()), browser.generation)
         outcome["handoff"] = hint
-        assert "was delivered" in hint and "browser_wait next" in hint
+        assert "was delivered" in hint and "browser_wait next" in hint, hint
     if query:
         children = [row.call.name for row in session._memory_results.values()
                     if row.call.name in {"browser_click", "browser_wait", "browser_read"}]

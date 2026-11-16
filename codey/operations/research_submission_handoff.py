@@ -5,6 +5,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from codey.operations.browser_completion import (
+    PAGE_EVIDENCE_INVALIDATORS,
     PAGE_EVIDENCE_TOOLS,
     ordered_page_passages,
     post_wait_passages,
@@ -26,9 +27,7 @@ if TYPE_CHECKING:
 
 
 SUBMISSION_TOOLS = ("submit_research_answer",)
-_EVIDENCE_MUTATIONS = frozenset({"browser_fill", "browser_click", "browser_eval", "browser_scroll",
-                                 "browser_upload", "browser_download"})
-_DOCUMENT_TOOLS = PAGE_EVIDENCE_TOOLS | _EVIDENCE_MUTATIONS | {"browser_navigate", "browser_snapshot", "browser_tab_list"}
+_DOCUMENT_TOOLS = PAGE_EVIDENCE_TOOLS | PAGE_EVIDENCE_INVALIDATORS | {"browser_snapshot", "browser_tab_list"}
 
 
 def submission_sequence(session: TaskSession) -> BrowserResearchSequence | None:
@@ -42,18 +41,22 @@ def submission_sequence(session: TaskSession) -> BrowserResearchSequence | None:
 
 
 def declared_workflow_url(session: TaskSession) -> str:
-    """Recognize a single named source and an explicit wait/read tool workflow."""
+    """Recognize a named source and distinct declared wait/read stages."""
     if not whole_research(session) or len(session.required_source_urls) != 1:
         return ""
     tools: set[str] = set()
+    evidence_steps: set[tuple[str, int]] = set()
     for check in session.policy.required_checks:
         if check in RESEARCH_ANSWER_REQUIRED_CHECKS or check in STRICT_RESEARCH_REQUIRED_CHECKS:
             continue
         rule = parse_tool_success_check(check)
         if rule is None or rule.tool not in _DOCUMENT_TOOLS or rule.answer_pointer is not None:
             return ""
-        if rule.tool in PAGE_EVIDENCE_TOOLS and rule.tool in tools:
-            return ""
+        if rule.tool in PAGE_EVIDENCE_TOOLS:
+            step = (rule.tool, rule.stage)
+            if step in evidence_steps:
+                return ""
+            evidence_steps.add(step)
         tools.add(rule.tool)
     return next(iter(session.required_source_urls)) if tools >= PAGE_EVIDENCE_TOOLS else ""
 
@@ -77,10 +80,11 @@ def _workflow_passages(session: TaskSession, context: CompletionContext, documen
         if not evaluation.passed:
             return set(), evaluation.feedback
         if rule.tool in PAGE_EVIDENCE_TOOLS:
-            witnesses[rule.tool] = frozenset(ref for ref in evaluation.evidence_refs if current[ref]["name"] == rule.tool)
+            witnesses[rule.tool] = witnesses.get(rule.tool, frozenset()) | frozenset(
+                ref for ref in evaluation.evidence_refs if current[ref]["name"] == rule.tool)
     wait, passages = ordered_page_passages(url, records=current, results=results, document=document,
         wait_matches=lambda ref, result: ref in witnesses["browser_wait"] and wait_matched_on_page(result, url),
-        read_refs=witnesses["browser_read"], invalidated_by=_EVIDENCE_MUTATIONS)
+        read_refs=witnesses["browser_read"], invalidated_by=PAGE_EVIDENCE_INVALIDATORS)
     if not wait:
         return set(), "Complete the declared browser_wait on the required page after the page actions."
     if not passages:
@@ -130,7 +134,8 @@ def research_submission_handoff(session: TaskSession, snapshot: TurnSnapshot, co
     )
 
 
-def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot) -> tuple[TurnSnapshot, str]:
+def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot,
+                              context: CompletionContext) -> tuple[TurnSnapshot, str]:
     """Reuse fixed browser leaf lowering inside an explicit Research workflow."""
     from codey.operations.kernel_protocol import offer_browser_call
 
@@ -144,6 +149,17 @@ def research_browser_handoff(session: TaskSession, snapshot: TurnSnapshot) -> tu
             names.add(requirement.tool)
     for name in sorted(names):
         snapshot = offer_browser_call(snapshot, session, name, research=True)
+    from codey.operations.browser_task_handoff import browser_continuation_handoff
+
+    records, results = tool_facts(session, context)
+    prerequisites = [rule for check in session.policy.required_checks
+                     if (rule := parse_tool_success_check(check)) is not None
+                     and rule.tool not in PAGE_EVIDENCE_TOOLS]
+    if all(rule.observe(records, results=results, browser_document=context.browser_document).evaluation.passed
+           for rule in prerequisites):
+        snapshot, continuation = browser_continuation_handoff(session, snapshot, context, workflow=True)
+        if continuation:
+            return snapshot, continuation
     return snapshot, ("For declared browser steps, use the offered direct browser tools. "
                       "They execute fixed programs under this Research scope. Supply question_ref when the tool requires it. "
                       "Submit one direct browser action per turn. "

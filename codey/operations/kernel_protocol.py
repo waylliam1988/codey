@@ -99,7 +99,7 @@ class KernelSessionView(Protocol):
 class ModelInputBinding:
     """The captured model input; conversion still targets the original executor."""
 
-    kind: Literal["upload", "browser_copy"]
+    kind: Literal["upload", "browser_copy", "declared_fields"]
     model_spec: ToolSpec
 
     def __post_init__(self) -> None:
@@ -1063,6 +1063,10 @@ def _lower_bound_inputs(
             assert binding is not None
             if binding.kind == "upload":
                 converted = lower_upload_action(args, checks)
+            elif binding.kind == "declared_fields":
+                from codey.operations.declared_field_input import lower
+
+                converted = lower(args)
             else:
                 if snapshot.browser_copy is None:
                     raise ValueError("browser copy input has no captured observation")

@@ -19,6 +19,7 @@ from codey.types.json_value import JsonObject, decode_json_object
 PAGE_EVIDENCE_TOOLS = frozenset({"browser_wait", "browser_read"})
 _FORM_ACTIONS = frozenset({"browser_fill", "browser_click"})
 PAGE_ACTIONS = PAGE_TRANSITIONS | _FORM_ACTIONS | {"browser_upload"}
+PAGE_EVIDENCE_INVALIDATORS = PAGE_ACTIONS | {"browser_eval", "browser_scroll", "browser_download"}
 
 
 def ordered_browser_refs(tool: str, after: str, *, records: Mapping[str, ExecutionRecord],
@@ -100,7 +101,8 @@ def complete_page_passages(result: ToolResult, url: str) -> set[str]:
 def post_wait_passages(rule: BrowserResearchSequence, *, records: Mapping[str, ExecutionRecord],
                        results: Mapping[str, ToolResult], document: JsonObject) -> tuple[str, dict[str, tuple[str, str]]]:
     return ordered_page_passages(rule.url, records=records, results=results, document=document,
-        wait_matches=lambda _, result: matches_wait(result, url=rule.url, condition=rule.condition, value=rule.value))
+        wait_matches=lambda _, result: matches_wait(result, url=rule.url, condition=rule.condition, value=rule.value),
+        invalidated_by=PAGE_EVIDENCE_INVALIDATORS)
 
 
 def ordered_page_passages(url: str, *, records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
@@ -123,17 +125,28 @@ def ordered_page_passages(url: str, *, records: Mapping[str, ExecutionRecord], r
     return wait, passages
 
 
+def research_page_evidence(rule: BrowserResearchSequence, *, records: Mapping[str, ExecutionRecord],
+                           results: Mapping[str, ToolResult], document: JsonObject | None,
+                           ) -> tuple[RequirementEvaluation, dict[str, tuple[str, str]]]:
+    if document is None or document.get("url") != rule.url:
+        return RequirementEvaluation("browser_navigation_missing",
+            f"Use browser_navigate to open the required page {rule.url}."), {}
+    wait, passages = post_wait_passages(rule, records=records, results=results, document=document)
+    if not wait:
+        return RequirementEvaluation("browser_wait_missing", f"On the required current page, {rule.wait_step}"), {}
+    if not passages:
+        return RequirementEvaluation("browser_read_after_wait_missing",
+            "The required wait succeeded. Use browser_read on the same page to obtain complete text, then cite that read.",
+            (wait,)), {}
+    return RequirementEvaluation(evidence_refs=tuple({ref: None for pair in passages.values() for ref in pair})), passages
+
+
 def evaluate_research_sequence(rule: BrowserResearchSequence, *, records: Mapping[str, ExecutionRecord],
                                results: Mapping[str, ToolResult], document: JsonObject | None,
                                report: ResearchReport | None) -> RequirementEvaluation:
-    if document is None or document.get("url") != rule.url:
-        return RequirementEvaluation("browser_navigation_missing", f"Use browser_navigate to open the required page {rule.url}.")
-    wait, passages = post_wait_passages(rule, records=records, results=results, document=document)
-    if not wait:
-        return RequirementEvaluation("browser_wait_missing", f"On the required current page, {rule.wait_step}")
-    if not passages:
-        return RequirementEvaluation("browser_read_after_wait_missing",
-            "The required wait succeeded. Use browser_read on the same page to obtain complete text, then cite that read.", (wait,))
+    outcome, passages = research_page_evidence(rule, records=records, results=results, document=document)
+    if not outcome.passed:
+        return outcome
 
     cited: set[str] = set()
     target_passages: set[str] = set()

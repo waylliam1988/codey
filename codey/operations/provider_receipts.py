@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from codey.operations.browser_copy import CopyTurn
     from codey.operations.kernel_contracts import ToolExecutor
     from codey.operations.kernel_protocol import ModelInputBinding, TurnSnapshot
+    from codey.policies.task_policy import TaskPolicy
     from codey.toolchain.tool_spec import ToolSpec
 
 REQUEST_KIND = "provider_request"
@@ -198,7 +199,7 @@ def _restore_spec(value: object) -> ToolSpec:
 
 
 def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSpec],
-                           copy: CopyTurn | None) -> tuple[ModelInputBinding | None, bool]:
+                           copy: CopyTurn | None, policy: TaskPolicy) -> tuple[ModelInputBinding | None, bool]:
     from codey.operations.kernel_protocol import ModelInputBinding
 
     if payload is None:
@@ -215,6 +216,8 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
         binding = ModelInputBinding("upload", model)
     elif raw["kind"] == "browser_copy":
         binding = ModelInputBinding("browser_copy", model)
+    elif raw["kind"] == "declared_fields":
+        binding = ModelInputBinding("declared_fields", model)
     else:
         raise ValueError("unknown captured input binding")
     execution = next((spec for spec in specs if spec.name == model.name), None)
@@ -229,6 +232,19 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
         # Historical replies keep their frozen contract. Only execution needs
         # the current lowering implementation to match that contract.
         return binding, copy.spec(execution) == model
+    elif binding.kind == "declared_fields":
+        from codey.operations.declared_field_input import model_spec
+        from codey.operations.file_field_binding import file_rules
+        from codey.toolchain.tool_spec import thaw_schema_value
+
+        parameters = dict(model.parameters)
+        path_schema = decode_json_object(thaw_schema_value(parameters.get("path")))
+        paths = tuple(require_json_strings(path_schema.get("enum"), "declared destination paths"))
+        edit = next((spec for spec in specs if spec.name == "edit"), None)
+        if (copy is not None or not paths or not set(paths) <= {rule.file_path for rule in file_rules(policy.required_checks)}
+                or not {"read_file", "edit"} <= {spec.name for spec in specs} or edit is None
+                or "declared_fields" not in dict(edit.parameters) or model_spec(execution, paths) != model):
+            raise ValueError("invalid captured declared-field input binding")
     elif copy is not None or set(dict(model.parameters)) != {"upload"} or model.required != ("upload",):
         raise ValueError("invalid captured upload input binding")
     return binding, True
@@ -328,7 +344,7 @@ def restore_snapshot(payload: object) -> TurnSnapshot:
     from codey.operations.browser_copy import CopyTurn
 
     copy = CopyTurn.restore(decode_json_object(payload["browser_copy"])) if payload["browser_copy"] is not None else None
-    input_binding, binding_compatible = _restore_input_binding(raw_binding, names, specs, copy)
+    input_binding, binding_compatible = _restore_input_binding(raw_binding, names, specs, copy, policy)
     compatible = compatible and binding_compatible
     from codey.operations.browser_followups import DIRECT_TOOLS, MAX_TEXT, SINGLE_STEP_TOOLS, allows_surface
 

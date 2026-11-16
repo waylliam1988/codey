@@ -311,8 +311,8 @@ def _explanation_repair_verdict(session: TaskSession, checks: list[CompletionChe
             row.check_id.startswith("output_json") or evaluations[row.check_id].reason_code.startswith("answer_"))
             for row in failed):
         return None
-    feedback = list(dict.fromkeys(f"{evaluations[row.check_id].reason_code}: {evaluations[row.check_id].feedback}"
-                                  for row in failed))
+    feedback = list({f"{evaluations[row.check_id].reason_code}: {evaluations[row.check_id].feedback}": None
+                     for row in failed})
     schema = next((schema_for(check) for check in session.policy.required_checks if is_output_check(check)), None)
     properties = schema.get("properties") if schema is not None else None
     explanation = properties.get("explanation") if isinstance(properties, dict) else None
@@ -430,20 +430,9 @@ def _required_tool_checks(
             observation = (requirement.observe(records, results=results, browser_document=context.browser_document) if observations is None
                            else observations[identity])
             if requirement.file_path:
-                from pathlib import Path
+                from codey.operations.work_status import tool_work_outcome
 
-                from codey.operations.file_field_binding import validate_field
-                from codey.toolchain.runtime import WRITE_MAX_FILE_BYTES, safe_join
-                from codey.workspace.paths import read_text_bounded
-
-                try:
-                    root = session.project or context.project
-                    if not root:
-                        raise ValueError("File binding requires a project")
-                    content = read_text_bounded(safe_join(Path(root), requirement.file_path), max_bytes=WRITE_MAX_FILE_BYTES)
-                    outcome = validate_field(requirement, observation, content)
-                except (OSError, ValueError) as exc:
-                    outcome = RequirementEvaluation("file_field_unavailable", str(exc), observation.evaluation.evidence_refs)
+                outcome = tool_work_outcome(session, requirement, observation, context)
             else:
                 outcome = requirement.evaluate_observation(observation, final_text)
         else:

@@ -610,9 +610,10 @@ def test_explanation_repair_exhausts_a_finite_budget_without_repeating_browser(
 def test_ordinary_hybrid_rejects_wrong_type_then_copies_from_receipt_without_browser_repeat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     directory = tmp_path / "hybrid"
     replies: list[JsonObject] = [
-        code_action(LOAD + WAIT + "return unwrap(await tools.browser_read({}));"),
-        code_action("const read=await tools.read_file({path:'result.json'});return unwrap(await tools.edit({base_result_ref:read.result_ref,changes:{amount:'173',code:'QUARTZ_851'}}));"),
-        code_action("const read=await tools.read_file({path:'result.json'});unwrap(read);return unwrap(await tools.edit({path:'result.json',base_result_ref:read.result_ref,declared_fields:true}));"),
+        code_action(LOAD + WAIT + "unwrap(await tools.browser_read({}));"
+            "const read=await tools.read_file({path:'result.json'});"
+            "return unwrap(await tools.edit({base_result_ref:read.result_ref,changes:{amount:'173',code:'QUARTZ_851'}}));"),
+        {"tool": "codemode", "args": {"path": "result.json"}},
         {"tool": "done", "args": {"summary": "已写入净重 173 克和校验码 QUARTZ_851。"}},
     ]
     install_http(monkeypatch, replies)

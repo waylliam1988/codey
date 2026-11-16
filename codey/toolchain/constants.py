@@ -12,8 +12,9 @@ SEARCH_PAGE_MAX_RESULTS = 100
 PAGE_DETAIL_TOOL = "inspect_page_detail"
 ARGUMENT_CONTENT_GUIDANCE = "Preserve argument strings exactly, including whether quote characters are present."
 FULL_READ_REFERENCE_HINT = (
-    "Use the latest complete read_file receipt reference. In CodeMode pass readResult.result_ref, "
-    "not readResult.value.result_ref; value contains file data."
+    "Use the latest complete read_file receipt reference. The reference belongs to the original outer Result; "
+    "unwrap returns only file data. CodeMode example: const base=await tools.read_file({path:inputs.path}); "
+    "const data=unwrap(base); then pass base.result_ref as base_result_ref."
 )
 STALE_READ_REFERENCE_CODE = "stale_read_reference"
 STALE_READ_REFERENCE_ERROR = (

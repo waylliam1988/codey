@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from codey.codemode import catalog as catalog_module
 from codey.codemode.runtime import NodeWorkerRuntime, ToolInvoker
+from codey.codemode.state import CodeModeStateStore
 from codey.codemode.types import CodeModeLimits, CodeModeResult, ToolCatalogEntry, ToolCatalogSnapshot
 from codey.operations import completion_output, kernel_control
 from codey.operations.completion_context import CompletionContext
@@ -24,7 +25,7 @@ from codey.policies.tool_requirement import ToolObservation, ToolSuccessRequirem
 from codey.providers.base import ProviderToolDefinition
 from codey.runtime.core.execution_record import ExecutionRecord
 from codey.runtime.core.models import ToolResult
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tools.completion_artifact_audit import EffectReceipt, tool_receipts
 from tools.completion_explanation_ab import ExperimentProvider, Target, append_json
 
@@ -149,8 +150,10 @@ def committed_facts(session: TaskSession, context: CompletionContext, scenario: 
     records, results = completion_output.tool_facts(session, context)
     specs: list[tuple[str, str, str, JsonObject]] = [("page_text", "browser_read", "", {})]
     if scenario == "legacy_structured":
-        specs.extend((("page_url", "browser_tab_list", "/page_url", {}),
-                      ("token", "browser_eval", "/value", {"code": "window.__contractToken"})))
+        metadata: tuple[tuple[str, str, str, JsonObject], ...] = (
+            ("page_url", "browser_tab_list", "/page_url", {}),
+            ("token", "browser_eval", "/value", {"code": "window.__contractToken"}))
+        specs.extend(metadata)
     if scenario == "upload":
         specs.extend((name, "browser_upload", pointer, {}) for name, pointer in (
             ("filename", "/name"), ("sha256", "/sha256"), ("bytes", "/bytes"), ("effect_verified", "/effect_verified")))
@@ -182,14 +185,14 @@ def committed_facts(session: TaskSession, context: CompletionContext, scenario: 
 
 def metrics(directory: Path) -> JsonObject:
     path = directory / "mechanical-events.jsonl"
-    events = [decode_json_object(json.loads(line)) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+    events: list[JsonObject] = [parse_json_object(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
     return {"mechanical_repairs": sum(row["kind"] == "receipt_repair" for row in events),
             "mechanical_reports": sum(row["kind"] == "fact_report" for row in events),
             "mechanical_source_attempts": sum(row["kind"] == "required_source" for row in events)}
 
 
 @contextmanager
-def prototype(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None]:
+def prototype(directory: Path, scenario: str, *, enabled: bool) -> Generator[None, None, None]:
     if not enabled:
         yield
         return
@@ -236,7 +239,7 @@ def prototype(directory: Path, scenario: str, *, enabled: bool) -> Iterator[None
                 tool_call_history_groups=tool_call_history_groups, output_token_limit=output_token_limit, require_tool_call=require_tool_call)
 
     def typed_execute(runtime: NodeWorkerRuntime, code: str, *, catalog: Sequence[ToolCatalogEntry], invoke: ToolInvoker,
-                      inputs: Mapping[str, object] | None = None, state_store: object = None,
+                      inputs: Mapping[str, object] | None = None, state_store: CodeModeStateStore | None = None,
                       replay_context: Mapping[str, object] | None = None, limits: CodeModeLimits | None = None) -> CodeModeResult:
         expanded = PREFIX + code + SUFFIX
         append_json(directory / "mechanical-programs.jsonl", {"model_code": code, "typed_code": expanded})
