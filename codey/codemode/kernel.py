@@ -120,6 +120,7 @@ class CodeModeKernelExecutor:
         runtime_contract: str | None = None,
         task_navigation_url: str | None = None,
         browser_references: BrowserReferences | None = None,
+        bound_edit: Callable[[int, JsonObject], JsonObject] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -143,6 +144,7 @@ class CodeModeKernelExecutor:
         self.runtime_contract = runtime_contract
         self.task_navigation_url = task_navigation_url
         self.browser_references = browser_references
+        self.bound_edit = bound_edit
 
     def execute(self, call: ToolCall) -> ToolResult:
         try:
@@ -174,6 +176,7 @@ class CodeModeKernelExecutor:
             task_navigation_url=self.task_navigation_url,
             browser_references=self.browser_references,
             replay_browser_ref=repair.resolve_browser_ref if repair is not None else None,
+            bound_edit=self.bound_edit,
         )
         trace: ExecutionTrace | None = None
 
@@ -297,11 +300,13 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             raise ValueError("durable CodeMode requires the original effect sink")
         if repair is not None:
             return DurableCodeModeReplay.for_repair(durable, run_id, repair, runtime_contract)
-        return DurableCodeModeReplay(durable, run_id, parent_id,
-            digest({"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
-                    "task_navigation_url": snapshot.task_navigation_url,
-                    "browser_references": snapshot.browser_references.payload() if snapshot.browser_references else None,
-                    "runtime": runtime_contract}),
+        fingerprint: dict[str, object] = {"args": call.args, "catalog": catalog.digest, "allow_writes": allow_writes,
+            "task_navigation_url": snapshot.task_navigation_url,
+            "browser_references": snapshot.browser_references.payload() if snapshot.browser_references else None,
+            "runtime": runtime_contract}
+        if snapshot.input_binding is not None and snapshot.input_binding.source_refs:
+            fingerprint["bound_sources"] = snapshot.input_binding.source_refs
+        return DurableCodeModeReplay(durable, run_id, parent_id, digest(fingerprint),
             parent_effect_id=child_sink.parent_effect_id, effect_scope=effect_scope, allow_writes=allow_mutations,
             runtime_contract=runtime_contract)
 
@@ -345,6 +350,54 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
                               canonical={"child_effect_ids": child_effect_ids()})
         if replay is not None and child_sink is not None:
             child_sink.admission_guard = replay.admission
+
+        def bound_edit(index: int, args: JsonObject) -> JsonObject:
+            from codey.agents.protocol import canonical_project_path
+            from codey.durable.session import DurableSession
+            from codey.operations.edit_base import edit_base_text
+            from codey.operations.file_field_binding import bound_receipt_content
+            from codey.types.json_value import decode_json_object, require_json_string
+
+            binding = snapshot.input_binding
+            if binding is None or project_path is None or snapshot.policy is None:
+                raise ValueError("bound edit has no frozen project contract")
+            path = require_json_string(args.get("path"), "path")
+            ref = require_json_string(args.get("base_result_ref"), "base_result_ref")
+            if (set(args) not in ({"path", "base_result_ref"}, {"path", "base_result_ref", "declared_fields"})
+                    or "declared_fields" in args and args["declared_fields"] is not True):
+                raise ValueError("bound edit accepts only its destination and complete read reference")
+            from codey.toolchain.tool_spec import validate_args_with_spec
+
+            if error := validate_args_with_spec(binding.model_spec, {"path": path}):
+                raise ValueError(error)
+            identity = turn_effect_id(f"{run_id}:{child_scope}:child:{index}", turn, index)
+            if repair_context is not None:
+                original = next((child.effect_id for child in repair_context.children if child.position == index), "")
+                receipt = repair_context.receipts.get(original)
+            else:
+                receipt = session._memory_results.get(identity)
+            if receipt is not None:
+                if (receipt.call.name != "edit" or receipt.call.args.get("path") != path
+                        or receipt.call.args.get("base_result_ref") != ref):
+                    raise ValueError("bound edit recovery changed its original destination or read reference")
+                return dict(receipt.call.args)
+            if isinstance(durable, DurableSession):
+                try:
+                    durable.effect(identity)
+                except KeyError:
+                    pass
+                else:
+                    raise ValueError("bound edit intent has no restorable receipt; refusing regeneration")
+            canonical = canonical_project_path(project_path, path)
+            baseline = edit_base_text(session, project_path, canonical, ref)
+            if any(source not in session.executed or source not in session._memory_results for source in binding.source_refs):
+                raise ValueError("bound edit source receipts are unavailable")
+            records = {source: session.executed[source] for source in binding.source_refs}
+            results = {source: session._memory_results[source] for source in binding.source_refs}
+            documents = [row.audit.get("browser_document") for row in results.values() if row.call.name == "browser_read"]
+            document = decode_json_object(documents[-1]) if documents else None
+            content = bound_receipt_content(snapshot.policy.required_checks, canonical, baseline, records, results, document)
+            return {"path": path, "content": content, "base_result_ref": ref}
 
         def execute_child(child: ToolCall) -> ToolResult:
             from codey.operations.kernel_events import _event_call
@@ -438,6 +491,8 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
             run_id=str(run_id or ""),
             task_navigation_url=snapshot.task_navigation_url,
             browser_references=snapshot.browser_references,
+            bound_edit=bound_edit if snapshot.input_binding is not None
+                and snapshot.input_binding.kind == "declared_fields" and snapshot.input_binding.source_refs else None,
         ).execute(call)
         if repair_context is not None:
             try:
@@ -459,20 +514,25 @@ def build_execute_turn_executor(  # noqa: C901, PLR0915
         # References only: child facts stay in their original committed receipts.
         ordered_child_effect_ids = child_effect_ids()
         result = replace(result, canonical={**result.canonical, "child_effect_ids": ordered_child_effect_ids})
-        if not result.ok and result.audit.get("error_code") in {"missing_return", "result_encoding", "execution_error"}:
+        if not result.ok and result.audit.get("error_code") in {"missing_return", "result_encoding", "execution_error", "result_contract"}:
             from codey.codemode.shape_repair import readonly_settled, shape_diagnostic
 
             source = call.args.get("code")
+            readonly = readonly_settled(parent_id, ordered_child_effect_ids, session._memory_results, catalog)
             if (isinstance(source, str) and result.audit.get("child_calls") == len(ordered_child_effect_ids)
-                    and readonly_settled(parent_id, ordered_child_effect_ids, session._memory_results, catalog)
-                    and (diagnostic := shape_diagnostic(source, catalog))):
-                result = replace(result, audit={**result.audit, "repair_category": "shape_mismatch"},
+                    and (diagnostic := shape_diagnostic(source, catalog, receipt_replay=readonly))):
+                result = replace(result, audit={**result.audit, **({"repair_category": "shape_mismatch"} if readonly else {})},
                                  model_text=result.model_text + "\n" + diagnostic)
         if not result.ok:
             from codey.toolchain.result_schema import schema_typescript
             from codey.toolchain.tool_prompt import tool_repair_text
 
             detail = result.model_text
+            if ordered_child_effect_ids:
+                detail += "\nSettled child receipts (the parent failure does not undo them): " + ", ".join(
+                    f"{ref} ({session.executed[ref]['name']}, ok={session.executed[ref]['ok']})"
+                    for ref in ordered_child_effect_ids)
+                detail += "\nContinue only the missing work. Do not resubmit the original program to repeat completed actions."
             if result.audit.get("error_code") == "syntax_error":
                 detail += (
                     "\nSyntax repair required: submit one new syntactically valid CodeMode program; "

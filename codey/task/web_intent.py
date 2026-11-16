@@ -41,17 +41,24 @@ def explicit_browser_checks(task: str) -> tuple[str, ...]:
     if len(explicit_web_intent(task).urls) > 1:
         return ()
     text = re.sub(r"```[\s\S]*?```|(?m:^[ \t]*>[^\n]*)", "", task)
-    text = _QUOTED.sub(lambda match: "" if re.search(r"\bbrowser_(?:wait|read)\b", match[0]) else match[0], text)
-    text = re.sub(r"`[^`\n]*`", lambda match: "" if re.search(r"\bbrowser_(?:wait|read)\b", match[0])
-                  and re.fullmatch(r"`browser_(?:wait|read)`", match[0]) is None else match[0], text)
+
+    def quoted_example(match: re.Match[str]) -> str:
+        return "" if re.search(r"\bbrowser_(?:wait|read)\b", match[0]) else match[0]
+
+    def inline_example(match: re.Match[str]) -> str:
+        return ("" if re.search(r"\bbrowser_(?:wait|read)\b", match[0])
+                and re.fullmatch(r"`browser_(?:wait|read)`", match[0]) is None else match[0])
+
+    text = _QUOTED.sub(quoted_example, text)
+    text = re.sub(r"`[^`\n]*`", inline_example, text)
     text = re.sub(r"`(browser_wait|browser_read)`", r"\1", text)
     checks: list[str] = []
     waiting = False
     pending: list[tuple[str, dict[str, object], int]] = []
     clicks = 0
-    for clause in re.split(r"[。；;\n]", text):
+    for clause in text.replace("。", "\n").replace("；", "\n").replace(";", "\n").split("\n"):
         clause_start = 0
-        for match in re.finditer(r"\bbrowser_(wait|read)\b", clause):
+        for match in re.finditer(r"\bbrowser_(?:wait|read)\b", clause):
             before, after = clause[:match.start()], clause[match.end():]
             clicks += _click_mentions(clause[clause_start:match.start()])
             clause_start = match.end()
@@ -61,7 +68,7 @@ def explicit_browser_checks(task: str) -> tuple[str, ...]:
             predicate = re.match(r"\s*等待(?:页面)?(?:出现|显示)\s*", after)
             if command is None and predicate is None:
                 continue
-            if match[1] == "wait":
+            if match[0] == "browser_wait":
                 value = _wait_literal(after[predicate.end():]) if predicate else ""
                 args: dict[str, object] = {"condition": "text", "value": value} if value else {}
                 pending.append(("browser_wait", args, clicks))
@@ -69,12 +76,10 @@ def explicit_browser_checks(task: str) -> tuple[str, ...]:
             elif waiting:
                 pending.append(("browser_read", {}, clicks))
         clicks += _click_mentions(clause[clause_start:])
-    stages = {stage for tool, _, stage in pending if tool == "browser_wait"}
-    staged = len(stages) > 1 and min(stages) > 0
     for tool, arguments, stage in pending:
         checks.append(require_tool_success(tool, arguments=arguments,
-            after="page_actions" if tool == "browser_wait" else "browser_wait", stage=stage if staged else 0))
-    return tuple(dict.fromkeys(checks))
+            after="page_actions" if tool == "browser_wait" else "browser_wait", stage=stage))
+    return tuple({check: None for check in checks})
 
 
 def _wait_literal(text: str) -> str:
@@ -83,7 +88,8 @@ def _wait_literal(text: str) -> str:
     if text[:1] in pairs:
         end = text.find(pairs[text[0]], 1)
         return text[1:end] if end > 1 else ""
-    value = re.split(r"(?:之后|以后|后)\s*(?=[，,。；;\n]|再|然后|调用|读取|$)|[，,。；;\n]|\b(?:then|before|after)\b", text, maxsplit=1)[0].strip()
+    boundary = re.search(r"(?:之后|以后|后)\s*(?=[，,。；;\n]|再|然后|调用|读取|$)|[，,。；;\n]|\b(?:then|before|after)\b", text)
+    value = (text[:boundary.start()] if boundary is not None else text).strip()
     # An unquoted tool call or unmatched delimiter cannot be a literal predicate.
     return "" if re.search(r"[\"“”‘’`]|\bbrowser_\w+\b", value) else value
 

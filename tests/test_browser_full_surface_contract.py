@@ -77,7 +77,8 @@ def test_hybrid_injects_only_at_validated_write_and_reports_real_recovery(
 
     install_http(monkeypatch, replies())
     result = run_case(directory, "hybrid", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10),
-                      stale_edit=True, preserve_external_field=True, max_turns=6)
+                      stale_edit=True, preserve_external_field=True, max_turns=6,
+                      task_transform=lambda task: task + " Write your own JavaScript for the file edit.")
     recovered = case in {"recover", "invalid_then_recover"}
     assert result["passed"] is recovered, result
     assert result["final_file_correct"] is recovered
@@ -85,3 +86,25 @@ def test_hybrid_injects_only_at_validated_write_and_reports_real_recovery(
     assert result["conflict_recovery_covered"] is recovered
     assert result["true_stale_conflicts"] == (1 if recovered else 0)
     assert result["conflict_coverage"] == ("recovered" if recovered else "not_reached")
+
+
+@pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
+def test_path_only_content_entry_reaches_the_original_conflict_injection_and_preserves_external_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    directory = tmp_path / "content-binding"
+
+    def replies() -> Iterator[JsonObject]:
+        yield browser.code_action(browser.ROUND)
+        yield {"tool": "codemode", "args": {"path": "result.json"}}
+        assert (directory / "injection.json").exists()
+        yield {"tool": "codemode", "args": {"path": "result.json"}}
+        yield {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}
+
+    install_http(monkeypatch, replies())
+    result = run_case(directory, "hybrid", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10),
+                      stale_edit=True, preserve_external_field=True, max_turns=5)
+    assert result["passed"] is True, result
+    assert result["conflict_recovery_covered"] is True and result["final_file_correct"] is True
+    assert result["true_stale_conflicts"] == 1
+    assert result["conflict_coverage"] == "recovered"

@@ -48,6 +48,7 @@ class WorkStatus:
     browser: tuple[RequirementEvaluation, ...]
     project: tuple[CompletionCheck, ...]
     other: tuple[CompletionCheck, ...]
+    before_edit: tuple[CompletionCheck, ...] = ()
 
     @property
     def ready(self) -> bool:
@@ -72,6 +73,14 @@ def work_status(session: TaskSession, context: CompletionContext, *,
             browser.append(outcome)
     collect_completion_workspace(session, context)
     other = source_requirement_checks(session, context)
+    before_edit = list(other)
     if (requested := requested_output_read_check(session, context.task or session.task_text)) is not None:
         other.append(requested)
-    return WorkStatus(tuple(tools), tuple(browser), tuple(project_evidence_checks(session, context)), tuple(other))
+        from codey.operations.explicit_execution_requirements import _output_read_requirement
+
+        requirement = _output_read_requirement(context.task or session.task_text)
+        selected = session.selected_verification
+        if selected is None or requirement is None or selected.command != requirement[0]:
+            before_edit.append(requested)
+    return WorkStatus(tuple(tools), tuple(browser), tuple(project_evidence_checks(session, context)),
+                      tuple(other), tuple(before_edit))

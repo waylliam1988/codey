@@ -5,6 +5,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from codey.codemode.json_edit import JsonNumber, replace_json_fields
 from codey.operations.browser_text_report import BrowserMetadata, MetadataPending, observe_metadata, report_scope
 from codey.operations.browser_upload import UploadEvidence, bound_upload_explanation, upload_evidence, upload_scope
 from codey.operations.completion_context import CompletionContext
@@ -51,6 +52,7 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
     records, results = tool_facts(session, context)
     observations: dict[str, ToolObservation] = {}
     fields: list[_Field] = []
+    file_values: dict[str, JsonValue | JsonNumber] = {}
     explanation = has_explanation(session.policy.required_checks)
     if explanation and session.policy.strict_research:
         raise OutputBindingError("json_explanation cannot replace the strict Research answer contract.")
@@ -74,6 +76,19 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
             raise OutputBindingError("A receipt binding overlaps the declared /explanation text destination.")
         binding_records = _upload_binding_records(requirement, records, bound_upload)
         observation = requirement.observe(binding_records, results=results, browser_document=context.browser_document)
+        if requirement.file_path and observation.evaluation.passed and requirement.answer_pointer:
+            from codey.operations.file_field_binding import selected_value
+
+            pointer = requirement.answer_pointer
+            path = tuple(part.replace("~1", "/").replace("~0", "~") for part in pointer[1:].split("/"))
+            selected_schema = _field_schema(schema, path)
+            if selected_schema is not None:
+                value = selected_value(requirement, observation)
+                fields.append(_Field(path, None))
+                key = path[0]
+                if key in file_values and file_values[key] != value:
+                    raise OutputBindingError("Conflicting declared file facts target the same final answer field.")
+                file_values[key] = value
         if requirement.answer_pointer is not None and not requirement.file_path and not requirement.answer_contains and observation.evaluation.passed:
             pointer = requirement.answer_pointer
             path = tuple(part.replace("~1", "/").replace("~0", "~") for part in pointer[1:].split("/")) if pointer else ()
@@ -106,8 +121,10 @@ def prepare_completion_output(session: TaskSession, text: str, context: Completi
         except (ValueError, TypeError):
             proposed = {}
     assembled = _assemble(proposed, schema, fields)
-    return CompletionOutput(json.dumps(assembled, ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-                                       allow_nan=False), observations)
+    rendered = json.dumps(assembled, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    if file_values:
+        rendered = replace_json_fields(rendered, file_values)
+    return CompletionOutput(rendered, observations)
 
 
 def explanation_text(text: str, checks: tuple[str, ...], observations: Mapping[str, ToolObservation]) -> str:

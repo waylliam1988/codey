@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from codey.codemode.json_edit import JSON_FIELD_EDIT_GUIDANCE, JSON_FIELD_EDIT_PROGRAM
 from codey.operations.browser_task_handoff import browser_task_handoff
 from codey.operations.completion_context import CompletionContext
 from codey.operations.kernel_context import KernelContext
@@ -18,20 +17,22 @@ from codey.policies.tool_requirement import require_tool_success
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject
 from tests.test_browser_failure_handoff import DOCUMENT, GRANTS, remember
+from tests.test_declared_work_continuation import record
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools.browser_prerequisite_ab import ROUND, SUMMARY, code_action
 from tools.browser_production_live_gate import run_case
 from tools.completion_artifact_audit import tool_receipts
 from tools.completion_explanation_ab import Target
 
+EDIT_HANDOFF = "The requested project modification still needs an actual edit receipt."
+BOUND_HANDOFF = "using only an allowed path"
+
 
 def project_session(*, declared: bool) -> TaskSession:
     session = TaskSession(TaskPolicy(GRANTS, required_checks=(require_tool_success("browser_read"),) if declared else ()),
         task_kind="hybrid", task_text="将网页净重和校验码更新到 result.json，保留其他字段。",
         project_changes_required=True)
-    remember(session, "body", ToolResult(ToolCall("browser_read", {}, "body"),
-        "净重173克，校验码QUARTZ_851。", ok=True, canonical={"value": "净重173克，校验码QUARTZ_851。"},
-        audit={"browser_document": DOCUMENT}))
+    record(session, "browser_read", {}, DOCUMENT, body="净重173克，校验码QUARTZ_851。")
     return session
 
 
@@ -39,8 +40,8 @@ def project_session(*, declared: bool) -> TaskSession:
 def test_project_continuation_does_not_depend_on_a_tool_checklist(declared: bool) -> None:
     session = project_session(declared=declared)
     _, hint = browser_task_handoff(session, build_turn_snapshot(session), CompletionContext(browser_document=DOCUMENT))
-    assert JSON_FIELD_EDIT_GUIDANCE in hint
-    assert "inputs.changes" in hint and "actual edit receipt" in hint
+    assert EDIT_HANDOFF in hint
+    assert "frozen edit contract" in hint and "outer read Result.result_ref" in hint
 
 
 @pytest.mark.parametrize("declared", [False, True])
@@ -57,9 +58,9 @@ def test_project_continuation_requires_authorized_unfinished_work(declared: bool
         session._memory_results.clear()
         session.executed.clear()
     elif state == "failed_read":
-        remember(session, "body", replace(session._memory_results["body"], ok=False))
+        remember(session, "receipt-0", replace(session._memory_results["receipt-0"], ok=False))
     elif state == "truncated":
-        remember(session, "body", replace(session._memory_results["body"], truncated=True))
+        remember(session, "receipt-0", replace(session._memory_results["receipt-0"], truncated=True))
     elif state == "uncommitted":
         session.executed.clear()
     elif state == "old_document":
@@ -73,7 +74,7 @@ def test_project_continuation_requires_authorized_unfinished_work(declared: bool
     elif state == "no_codemode":
         session.controller_denied = ("codemode",)
     _, hint = browser_task_handoff(session, build_turn_snapshot(session), CompletionContext(browser_document=document))
-    assert JSON_FIELD_EDIT_GUIDANCE not in hint
+    assert EDIT_HANDOFF not in hint
 
 
 @pytest.mark.parametrize("delivery", ["delivered", "uncertain"])
@@ -83,7 +84,7 @@ def test_pending_browser_action_precedes_project_continuation(delivery: str) -> 
         ok=delivery == "delivered", canonical={"value": {"delivery": delivery}},
         audit={"browser_document": DOCUMENT, "query_baseline": {"document": DOCUMENT}}))
     _, hint = browser_task_handoff(session, build_turn_snapshot(session), CompletionContext(browser_document=DOCUMENT))
-    assert JSON_FIELD_EDIT_GUIDANCE not in hint
+    assert EDIT_HANDOFF not in hint
     assert "browser_snapshot" in hint if delivery == "uncertain" else "browser_read" in hint
 
 
@@ -104,10 +105,9 @@ def test_ordinary_hybrid_executes_the_existing_continuation_with_restored_snapsh
 
     def replies() -> Iterator[JsonObject]:
         yield code_action(ROUND)
-        assert JSON_FIELD_EDIT_GUIDANCE in hints[-1]
-        yield {"tool": "codemode", "args": {"code": JSON_FIELD_EDIT_PROGRAM, "inputs": {
-            "path": "result.json", "changes": {"amount": 173, "code": "QUARTZ_851"}}}}
-        assert JSON_FIELD_EDIT_GUIDANCE not in hints[-1]
+        assert BOUND_HANDOFF in hints[-1]
+        yield {"tool": "codemode", "args": {"path": "result.json"}}
+        assert BOUND_HANDOFF not in hints[-1]
         yield {"tool": "done", "args": {"summary": SUMMARY}}
 
     install_http(monkeypatch, replies())

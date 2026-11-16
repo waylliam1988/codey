@@ -101,6 +101,7 @@ class ModelInputBinding:
 
     kind: Literal["upload", "browser_copy", "declared_fields"]
     model_spec: ToolSpec
+    source_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "model_spec", freeze_spec_parameters(self.model_spec))
@@ -1066,7 +1067,7 @@ def _lower_bound_inputs(
             elif binding.kind == "declared_fields":
                 from codey.operations.declared_field_input import lower
 
-                converted = lower(args)
+                converted = lower(args, next(spec for spec in snapshot.frozen_specs if spec.name == "edit"))
             else:
                 if snapshot.browser_copy is None:
                     raise ValueError("browser copy input has no captured observation")

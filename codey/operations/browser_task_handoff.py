@@ -271,6 +271,24 @@ def _compile_handoff(session: TaskSession, snapshot: TurnSnapshot, context: Comp
     return snapshot, "Compilation failed before any child action. Observe the bound task page next.\n" + action
 
 
+def _partial_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
+                     generation: int | None, delivered_results: Sequence[ToolResult]) -> str:
+    actions = {ref for ref, _ in _action_receipts(session, snapshot, context)}
+    failures = [row for row in delivered_results if row.call.name == "codemode" and not row.ok
+                and isinstance(refs := row.canonical.get("child_effect_ids"), list)
+                and any(ref in actions for ref in refs if isinstance(ref, str))]
+    if not failures:
+        return ""
+    lines = ["The failed CodeMode program already settled actions. Continue from their receipts; do not restart it."]
+    for row in failures:
+        lines.append(f"Parent error: {row.audit.get('error_code', 'execution_error')}: {row.model_text}")
+    if (current := _current_snapshot(session, context, generation, require_text=False)) is not None:
+        lines.append(f"Current controls from settled snapshot {current[0]}:\n" + json.dumps(current[1], ensure_ascii=False))
+    else:
+        lines.append("No complete current control snapshot is available. Observe the current page before choosing a control.")
+    return "\n".join(lines)
+
+
 def _navigation_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                         generation: int | None) -> tuple[TurnSnapshot, str]:
     if (snapshot.task_navigation_url is None or context.browser_document is None
@@ -370,7 +388,7 @@ def _project_edit_handoff(session: TaskSession, snapshot: TurnSnapshot, context:
     records, results = tool_facts(session, context)
     if status.ready:
         return snapshot, ""
-    if pending_other := [row for row in status.other if row.status not in {CHECK_PASS, CHECK_NOT_APPLICABLE}]:
+    if pending_other := [row for row in status.before_edit if row.status not in {CHECK_PASS, CHECK_NOT_APPLICABLE}]:
         return snapshot, "Required work remains before editing: " + "; ".join(
             f"{row.check_id}: {row.reason_code}" for row in pending_other)
     reads = committed_results(records, results, frozenset({"browser_read"}))
@@ -415,8 +433,9 @@ def browser_task_handoff(session: TaskSession, snapshot: TurnSnapshot, context: 
     recovery = ""
     if not download:
         snapshot, recovery = _compile_handoff(session, snapshot, context, generation, delivered_results)
+        recovery = recovery or _partial_handoff(session, snapshot, context, generation, delivered_results)
     query = ""
-    if not download and not recovery:
+    if not download:
         snapshot, query = query_result_handoff(session, snapshot, context, generation)
     interrupted = any(interrupted_query(row, context.browser_document) for _, row in unconfirmed_clicks(results))
     status = work_status(session, context)

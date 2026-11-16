@@ -1,6 +1,7 @@
 """One declared receipt selector governs exact file copies and validation."""
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 
 from codey.codemode.json_edit import JsonNumber, json_source_value, replace_json_fields
@@ -31,10 +32,11 @@ def selected_value(rule: ToolSuccessRequirement, observation: ToolObservation) -
     return number
 
 
-def validate_field(rule: ToolSuccessRequirement, observation: ToolObservation, content: str) -> RequirementEvaluation:
+def validate_field(rule: ToolSuccessRequirement, observation: ToolObservation, content: str, *,
+                   pointer: str | None = None) -> RequirementEvaluation:
     try:
         expected = selected_value(rule, observation)
-        actual = json_source_value(content, rule.answer_pointer or "")
+        actual = json_source_value(content, (rule.answer_pointer or "") if pointer is None else pointer)
         matches = (isinstance(actual, JsonNumber) and actual.numeric_key() == expected.numeric_key()
                    if isinstance(expected, JsonNumber) else type(actual) is type(expected) and actual == expected)
         if rule.value_type == "integer" and isinstance(actual, JsonNumber):
@@ -48,12 +50,19 @@ def validate_field(rule: ToolSuccessRequirement, observation: ToolObservation, c
 
 
 def bound_content(session: TaskSession, path: str, baseline: str, document: JsonObject | None) -> str:
-    rules = file_rules(session.policy.required_checks, path)
+    return bound_receipt_content(session.policy.required_checks, path, baseline, session.executed,
+                                 session._memory_results, document)
+
+
+def bound_receipt_content(checks: tuple[str, ...], path: str, baseline: str,
+                          records: Mapping[str, ExecutionRecord], results: Mapping[str, ToolResult],
+                          document: JsonObject | None) -> str:
+    rules = file_rules(checks, path)
     if not rules:
         raise ValueError("No receipt-bound file fields are declared for this path")
     changes: dict[str, JsonValue | JsonNumber] = {}
     for rule in rules:
-        observation = rule.observe(session.executed, results=session._memory_results, browser_document=document)
+        observation = rule.observe(records, results=results, browser_document=document)
         key = (rule.answer_pointer or "")[1:].replace("~1", "/").replace("~0", "~")
         value = selected_value(rule, observation)
         if key in changes and changes[key] != value:
@@ -71,3 +80,27 @@ def validate_content(checks: tuple[str, ...], path: str, content: str,
         if not outcome.passed:
             return outcome.feedback
     return ""
+
+
+def reported_field_outcome(rule: ToolSuccessRequirement, observation: ToolObservation,
+                           text: str, checks: tuple[str, ...]) -> RequirementEvaluation:
+    """Check the final explicit JSON object, with no prose or file-identity inference."""
+    blocks = [match[1] for match in re.finditer(r"```(?:json)?[ \t]*\r?\n([\s\S]*?)```", text, re.I)]
+    content = blocks[-1] if blocks else text
+    file_pointer = "/" + rule.file_path.replace("~", "~0").replace("/", "~1") + (rule.answer_pointer or "")
+    pointers = [file_pointer]
+    if not any(other.file_path != rule.file_path and other.answer_pointer == rule.answer_pointer
+               for other in file_rules(checks)):
+        pointers.append(rule.answer_pointer or "")
+    for pointer in pointers:
+        try:
+            json_source_value(content, pointer)
+        except (ValueError, KeyError, TypeError, IndexError):
+            continue
+        outcome = validate_field(rule, observation, content, pointer=pointer)
+        if not outcome.passed:
+            return RequirementEvaluation("file_answer_mismatch",
+                "The file work is settled, but the final JSON assertion disagrees with its declared source. "
+                "Repair the answer without repeating browser actions or file edits. " + outcome.feedback,
+                outcome.evidence_refs)
+    return RequirementEvaluation(evidence_refs=observation.evaluation.evidence_refs)

@@ -31,10 +31,22 @@ from tools.completion_explanation_ab import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-CASES = ("basic", "download", "wrong_url")
+CASES = ("basic", "download", "wrong_url", "partial")
 
 
 def saved_prefix(case: str) -> tuple[str, JsonObject]:
+    if case == "partial":
+        code = (
+            "const observed=unwrap(await tools.browser_snapshot({}));"
+            "const field=observed.elements.find(e=>e.role==='textbox'&&e.name==='Locality');"
+            "unwrap(await tools.browser_fill({ref:field.ref,value:'福州'}));"
+            "const current=await tools.browser_snapshot({});return current.elements;"
+        )
+        action: JsonObject = {"tool": "codemode", "args": {"code": code, "inputs": {}}}
+        raw = json.dumps(action, ensure_ascii=False)
+        provenance: JsonObject = {"source": "explicit partial-success Result<T> failure injection",
+                                  "reply_sha256": hashlib.sha256(raw.encode()).hexdigest()}
+        return raw, provenance
     path = ROOT / "tests" / "fixtures" / ("task_contract_failure_replies_20261113.json" if case == "wrong_url"
                                          else "browser_handoff_failure_replies_20261114.json")
     entry = decode_json_object(parse_json_object(path.read_text(encoding="utf-8"))["basic" if case == "wrong_url" else case])
@@ -96,7 +108,7 @@ def run_prefix(directory: Path, case: str, target: Target) -> JsonObject:
 
     with (patch("tools.browser_production_live_gate.ExperimentProvider", SavedPrefixProvider),
           patch.object(KernelContext, "request_snapshot", capture)):
-        row = run_case(directory, "chat", target, download_file=case == "download")
+        row = run_case(directory, "chat", target, download_file=case == "download", codemode_only=case == "partial")
     write_json(directory / "prefix-provenance.json", provenance)
     receipts = tool_receipts(directory / "state")
     prefix_index, prefix = next((index, receipt) for index, receipt in enumerate(receipts)
@@ -110,8 +122,11 @@ def run_prefix(directory: Path, case: str, target: Target) -> JsonObject:
                if line.startswith("Execute this next step: ")]
     calls = Counter(receipt.result.call.name for receipt in receipts)
     error_code = prefix.result.audit.get("error_code")
+    partial_recovered = (case != "partial" or error_code == "result_contract" and calls["browser_fill"] == 1
+                         and bool(after) and after[0].call.name != "browser_navigate"
+                         and "Current controls from settled snapshot" in handoff)
     summary: JsonObject = {
-        "case": case, "passed": row.get("passed") is True, "stop_reason": str(row.get("stop_reason")),
+        "case": case, "passed": row.get("passed") is True and partial_recovered, "stop_reason": str(row.get("stop_reason")),
         "model": target.model, "live_generations": len(actions), "prefix_ok": prefix.result.ok,
         "prefix_error_code": error_code if isinstance(error_code, str) else None, "prefix_handoff": handoff,
         "first_live_action": actions[0] if actions else None,
@@ -121,6 +136,8 @@ def run_prefix(directory: Path, case: str, target: Target) -> JsonObject:
         "download_uses_prefix_snapshot": bool(after and after[0].call.name == "browser_download"
             and isinstance(ref := after[0].call.args.get("ref"), str) and ref in handoff) if case == "download" else None,
         "tool_calls": dict(calls), "provenance": provenance,
+        "partial_success_recovered_without_repeating_fill": (
+            row.get("passed") is True and partial_recovered if case == "partial" else None),
         "scope": "saved_failure_prefix_then_unmodified_local_model_continuation",
     }
     write_json(directory / "continuation-summary.json", summary)
@@ -147,15 +164,18 @@ def main() -> int:
     before = production_source_digest()
     rows: list[JsonObject] = []
     for case in CASES if args.case == "all" else (args.case,):
-        print(json.dumps({"starting": case}), flush=True)
+        starting: JsonObject = {"starting": case}
+        print(json.dumps(starting), flush=True)
         result = run_prefix(root / case, case, target)
         rows.append(result)
-        print(json.dumps({"case": case, "passed": result["passed"],
-                          "submitted_offered_call": result["submitted_offered_call"],
-                          "download_uses_prefix_snapshot": result["download_uses_prefix_snapshot"]}), flush=True)
-    write_json(root / "summary.json", {"results": rows, "passed": sum(row["passed"] is True for row in rows),
+        progress: JsonObject = {"case": case, "passed": result["passed"],
+                               "submitted_offered_call": result["submitted_offered_call"],
+                               "download_uses_prefix_snapshot": result["download_uses_prefix_snapshot"]}
+        print(json.dumps(progress), flush=True)
+    summary: JsonObject = {"results": list(rows), "passed": sum(row["passed"] is True for row in rows),
         "runs": len(rows), "source_before": before, "source_after": production_source_digest(),
-        "limits": "A saved failure prefix is scripted; these small continuation samples do not measure first-attempt success rates."})
+        "limits": "A saved failure prefix is scripted; these small continuation samples do not measure first-attempt success rates."}
+    write_json(root / "summary.json", summary)
     return 0 if all(row["passed"] is True for row in rows) else 1
 
 

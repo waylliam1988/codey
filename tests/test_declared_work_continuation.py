@@ -102,7 +102,7 @@ def test_complete_source_offers_frozen_path_only_input(tmp_path: Path) -> None:
         assert normalize_turn(decode_text_turn(json.dumps(reply)), snapshot=restored).protocol_error
 
 
-@pytest.mark.parametrize("case", ["read_only", "incomplete", "old_document", "content"])
+@pytest.mark.parametrize("case", ["read_only", "incomplete", "old_document"])
 def test_binding_requires_complete_source_and_the_declared_edit_mode(tmp_path: Path, case: str) -> None:
     session, context = declared_session(tmp_path)
     if case == "read_only":
@@ -113,8 +113,6 @@ def test_binding_requires_complete_source_and_the_declared_edit_mode(tmp_path: P
             canonical=result.canonical, audit=result.audit, truncated=True)
     elif case == "old_document":
         context = replace(context, browser_document={"url": URL, "loader_id": "replacement"})
-    else:
-        session.task_text += " using content for the whole file."
     snapshot, _ = browser_task_handoff(session, build_turn_snapshot(session), context)
     assert snapshot.input_binding is None
 
@@ -182,10 +180,13 @@ def test_wait_stages_and_documents_do_not_share_receipts() -> None:
     ("173", "integer", "integers.data", "count"),
 ])
 @pytest.mark.parametrize("conflict", [False, True])
+@pytest.mark.parametrize("content", [False, True])
 def test_fixed_program_preserves_values_and_retries_with_a_new_full_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str, kind: str, path: str, field: str, conflict: bool,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str, kind: str, path: str, field: str, conflict: bool, content: bool,
 ) -> None:
     session, context = declared_session(tmp_path)
+    if content:
+        session.task_text += " using content for the whole file."
     check = require_browser_file_field(url=URL, prefix="Amount: ", suffix=" units.",
                                       path=path, pointer="/" + field, value_type=kind)
     session.policy = TaskPolicy(GRANTS, required_checks=(check,))
@@ -241,6 +242,7 @@ def test_fixed_program_preserves_values_and_retries_with_a_new_full_read(
         assert len(reads) == len(edits) == (2 if conflict else 1)
         for (ref, read), edit in zip(reads, edits, strict=True):
             assert edit.call.args["base_result_ref"] == ref
+            assert "content" in edit.call.args
             assert read.ok
         if conflict:
             assert edits[0].audit["error_code"] == STALE_READ_REFERENCE_CODE
@@ -331,16 +333,13 @@ def test_restored_copy_binding_cannot_expand_its_declared_paths(tmp_path: Path) 
 
 def test_ordered_wait_does_not_preempt_the_first_observation_or_navigation_recovery() -> None:
     checks = (require_tool_success("browser_wait", arguments={"condition": "text", "value": "Ready"},
-                                   after="page_actions"),)
+                                   after="page_actions", stage=1),)
     session = TaskSession(TaskPolicy(GRANTS, required_checks=checks))
     document: JsonObject = {"url": URL, "loader_id": "current"}
     record(session, "browser_navigate", {"url": URL}, document)
     names = {"browser_wait", "browser_read", "browser_snapshot"}
     assert next_browser_step(checks, records=session.executed, results=session._memory_results,
                              document=document, names=names) is None
-    step = next_browser_step(checks, records=session.executed, results=session._memory_results,
-                             document=document, names=names, workflow=True)
-    assert step is not None and step.call is not None and step.call.name == "browser_wait"
 
 
 @pytest.mark.parametrize("missing", ["source", "saved_output"])

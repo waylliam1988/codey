@@ -207,8 +207,11 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
             raise ValueError("captured structured input has no input binding")
         return None, True
     raw = decode_json_object(payload)
-    if set(raw) != {"kind", "model_spec"}:
+    if set(raw) not in ({"kind", "model_spec"}, {"kind", "model_spec", "source_refs"}):
         raise ValueError("invalid captured input binding")
+    source_refs = tuple(require_json_strings(raw.get("source_refs", []), "bound source receipts"))
+    if source_refs and raw["kind"] != "declared_fields":
+        raise ValueError("source receipts require a declared-field binding")
     if raw["kind"] == "actions":
         raise ValueError("captured codemode.action input is no longer supported; start a new request")
     model = _restore_spec(raw["model_spec"])
@@ -217,7 +220,7 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
     elif raw["kind"] == "browser_copy":
         binding = ModelInputBinding("browser_copy", model)
     elif raw["kind"] == "declared_fields":
-        binding = ModelInputBinding("declared_fields", model)
+        binding = ModelInputBinding("declared_fields", model, source_refs)
     else:
         raise ValueError("unknown captured input binding")
     execution = next((spec for spec in specs if spec.name == model.name), None)
@@ -233,7 +236,7 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
         # the current lowering implementation to match that contract.
         return binding, copy.spec(execution) == model
     elif binding.kind == "declared_fields":
-        from codey.operations.declared_field_input import model_spec
+        from codey.operations.declared_field_input import model_spec, write_form
         from codey.operations.file_field_binding import file_rules
         from codey.toolchain.tool_spec import thaw_schema_value
 
@@ -243,7 +246,8 @@ def _restore_input_binding(payload: object, names: list[str], specs: list[ToolSp
         edit = next((spec for spec in specs if spec.name == "edit"), None)
         if (copy is not None or not paths or not set(paths) <= {rule.file_path for rule in file_rules(policy.required_checks)}
                 or not {"read_file", "edit"} <= {spec.name for spec in specs} or edit is None
-                or "declared_fields" not in dict(edit.parameters) or model_spec(execution, paths) != model):
+                or write_form(edit) is None or model_spec(execution, paths) != model
+                or write_form(edit) == "content" and not source_refs):
             raise ValueError("invalid captured declared-field input binding")
     elif copy is not None or set(dict(model.parameters)) != {"upload"} or model.required != ("upload",):
         raise ValueError("invalid captured upload input binding")

@@ -29,7 +29,7 @@ def readonly_settled(parent_id: str, refs: Sequence[str], results: Mapping[str, 
         for index, ref in enumerate(refs))
 
 
-def shape_diagnostic(code: str, catalog: ToolCatalogSnapshot) -> str:
+def shape_diagnostic(code: str, catalog: ToolCatalogSnapshot, *, receipt_replay: bool = True) -> str:
     source = code.encode("utf-8")
     root = Parser(Language(tree_sitter_javascript.language())).parse(source).root_node
     if root.has_error:
@@ -87,5 +87,6 @@ def shape_diagnostic(code: str, catalog: ToolCatalogSnapshot) -> str:
             if shape is not None and name is not None and shape.get("type") == "string" and text(name) not in _STRING_PROPERTIES:
                 return (f"{text(owner) if owner is not None else 'value'} is a string according to the invoked tool's "
                         f"output schema; property {text(name)!r} is not its data. Use the string directly, "
-                        "or its standard string methods. Keep all original tool calls and arguments unchanged.")
+                        "or its standard string methods. " + ("Keep all original tool calls and arguments unchanged."
+                        if receipt_replay else "Continue from the settled child receipts; do not repeat completed actions."))
     return ""

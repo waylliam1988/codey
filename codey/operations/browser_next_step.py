@@ -11,6 +11,7 @@ from codey.operations.browser_completion import (
     browser_click_stage,
     committed_results,
     complete_page_passages,
+    ordered_browser_progress,
     post_wait_passages,
     wait_matched_on_page,
 )
@@ -62,12 +63,27 @@ def next_browser_step(checks: tuple[str, ...], *, records: Mapping[str, Executio
                         and same_document(row.audit.get("browser_document"), document)
                         for key in keys[keys.index(ref) + 1:] if (row := results.get(key)) is not None)
         return BrowserNextStep(None if inspected else ToolCall("browser_snapshot", {}), UNCERTAIN)
-    if not (query or pages or workflow or any(rule.tool in {"browser_wait", "browser_read"} for rule in rules)):
-        return None
-    if not (query or clicks or pages or workflow):
+    if not (query or clicks or pages or workflow or any(rule.after for rule in rules)):
         return None
     applicable = tuple(check for check in active if (rule := parse_tool_success_check(check)) is None
                        or not rule.stage or rule.stage == stage)
+    current_rules = tuple(rule for check in applicable if (rule := parse_tool_success_check(check)) is not None)
+    if not (query or clicks or pages or workflow or any(rule.after for rule in current_rules)):
+        return None
+    for rule in current_rules:
+        if rule.tool != "browser_wait" or not rule.after:
+            continue
+        progress = ordered_browser_progress(rule.tool, rule.after, records=records, results=results,
+                                             document=document, stage=rule.stage)
+        if progress.uncertain:
+            keys = tuple(records)
+            after = keys[keys.index(actions[-1][0]) + 1:] if actions else keys
+            inspected = any(row.ok and row.call.name == "browser_snapshot"
+                            and same_document(row.audit.get("browser_document"), document)
+                            for key in after if (row := results.get(key)) is not None)
+            return BrowserNextStep(None if inspected else ToolCall("browser_snapshot", {}), UNCERTAIN)
+        if not progress.ready:
+            return None
     plan = click_followup_plan(applicable, names, stage=stage)
     if plan.unavailable:
         return BrowserNextStep(None, "Query follow-up unavailable: " + ", ".join(plan.unavailable) + ".")

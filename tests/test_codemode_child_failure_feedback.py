@@ -11,6 +11,7 @@ from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.models import ToolCall
+from codey.toolchain.constants import FULL_READ_REFERENCE_HINT
 from codey.workspace.revision import WorkspaceRevisionStore
 
 
@@ -38,7 +39,7 @@ def test_child_failure_remains_visible_without_overriding_program_outcome(tmp_pa
     assert result.ok, result.model_text
     rendered = _result_context(result, session)
     assert "Child failure receipts" in rendered
-    assert "readResult.result_ref" in rendered
+    assert FULL_READ_REFERENCE_HINT in rendered
     failures = [child for child in session._memory_results.values() if child.call.name == "edit" and not child.ok]
     assert len(failures) == 1
     reference = next(key for key, value in session._memory_results.items() if value is failures[0])

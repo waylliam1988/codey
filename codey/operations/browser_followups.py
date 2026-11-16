@@ -102,6 +102,9 @@ query_click: ContextVar[bool] = ContextVar("query_click", default=False)
 def _click_wait_plan(checks: tuple[str, ...], stage: int = 0) -> BrowserWaitPlan:
     waits: list[JsonObject] = []
     pages: set[str] = set()
+    stages = {tool_rule.stage for check in checks
+              if (tool_rule := parse_tool_success_check(check)) is not None and tool_rule.stage}
+    selected_stage = stage or (1 if stages == {1} else 0)
     for check in checks:
         rule = parse_browser_requirement(check)
         if isinstance(rule, (BrowserPageRounds, BrowserResearchSequence)):
@@ -109,9 +112,8 @@ def _click_wait_plan(checks: tuple[str, ...], stage: int = 0) -> BrowserWaitPlan
             args: JsonObject = {"condition": rule.condition, "value": rule.value, "timeout_ms": 5000}
             if args not in waits:
                 waits.append(args)
-    plan = wait_plan(checks, tuple(waits), stage=stage)
-    if len(pages) > 1 or not stage and any(
-            (tool_rule := parse_tool_success_check(check)) is not None and tool_rule.stage for check in checks):
+    plan = wait_plan(checks, tuple(waits), stage=selected_stage)
+    if len(pages) > 1 or not selected_stage and stages:
         # A frozen CodeMode program may click more than once. Do not attach
         # another stage's waits to each click; the receipt handoff supplies them.
         return BrowserWaitPlan(plan.waits, (*plan.missing, {}))

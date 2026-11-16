@@ -1,8 +1,9 @@
 """Lower a frozen destination choice to the existing versioned read/edit leaves."""
 from __future__ import annotations
 
+import re
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from codey.completion.contract import CHECK_NOT_APPLICABLE, CHECK_PASS
 from codey.operations.browser_copy import write_unconfirmed
@@ -21,6 +22,20 @@ PROGRAM = (
     "const base=await tools.read_file({path:inputs.path});unwrap(base);"
     "return unwrap(await tools.edit({path:inputs.path,base_result_ref:base.result_ref,declared_fields:true}));"
 )
+CONTENT_PROGRAM = (
+    "const base=await tools.read_file({path:inputs.path});unwrap(base);"
+    "return unwrap(await tools.edit({path:inputs.path,base_result_ref:base.result_ref}));"
+)
+
+
+def write_form(edit: ToolSpec) -> Literal["declared_fields", "content"] | None:
+    if "content" in edit.required:
+        return "content"
+    return "declared_fields" if "declared_fields" in dict(edit.parameters) else None
+
+
+def free_program_required(task: str) -> bool:
+    return re.search(r"\buse free javascript\b|\bwrite your own javascript\b|必须手写\s*(?:JavaScript|JS)", task, re.I) is not None
 
 
 def model_spec(original: ToolSpec, paths: tuple[str, ...]) -> ToolSpec:
@@ -32,8 +47,11 @@ def model_spec(original: ToolSpec, paths: tuple[str, ...]) -> ToolSpec:
         "After an explicit file version rejection, the next attempt reads the current file again."))
 
 
-def lower(args: JsonObject) -> JsonObject:
-    return {"code": PROGRAM, "inputs": dict(args)}
+def lower(args: JsonObject, edit: ToolSpec) -> JsonObject:
+    form = write_form(edit)
+    if form is None:
+        raise ValueError("The frozen edit contract does not support a declared field copy")
+    return {"code": CONTENT_PROGRAM if form == "content" else PROGRAM, "inputs": dict(args)}
 
 
 def offer(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
@@ -43,14 +61,16 @@ def offer(session: TaskSession, snapshot: TurnSnapshot, context: CompletionConte
     fields = tuple(row for row in status.tools if row.rule.file_path)
     names = {"codemode", "read_file", "edit"}
     edit = next((spec for spec in snapshot.frozen_specs if spec.name == "edit"), None)
-    if (not fields or snapshot.input_binding is not None or snapshot.browser_copy is not None
+    if (not fields or free_program_required(session.task_text)
+            or snapshot.input_binding is not None or snapshot.browser_copy is not None
             or "codemode" not in snapshot.tool_names or not names <= set(snapshot.inventory_names)
             or names & set(session.controller_denied) or edit is None
-            or "declared_fields" not in dict(edit.parameters)
+            or write_form(edit) is None
             or not all(row.observation.evaluation.passed for row in fields)
-            or any(not row.outcome.passed and not row.rule.file_path and row.rule.tool not in {"read_file", "edit"}
-                   for row in status.tools) or any(not row.passed for row in status.browser)
-            or any(row.status not in {CHECK_PASS, CHECK_NOT_APPLICABLE} for row in status.other)):
+            or any(not row.observation.evaluation.passed and not row.rule.file_path
+                   and row.rule.tool.startswith("browser_") for row in status.tools)
+            or any(not row.passed for row in status.browser)
+            or any(row.status not in {CHECK_PASS, CHECK_NOT_APPLICABLE} for row in status.before_edit)):
         return snapshot, ""
     records, results = tool_facts(session, context)
     if any(write_unconfirmed(row) for row in results.values()):
@@ -73,10 +93,13 @@ def offer(session: TaskSession, snapshot: TurnSnapshot, context: CompletionConte
     if not retryable:
         return snapshot, "Repeated file version conflicts exhausted the fixed copy retry limit. Inspect the concurrent changes."
     original = next(spec for spec in snapshot.frozen_specs if spec.name == "codemode")
-    browser_names = {spec.name for spec in snapshot.frozen_specs if spec.executor == "browser"}
-    offered = replace(snapshot, input_binding=ModelInputBinding("declared_fields", model_spec(original, tuple(retryable))),
-                      tool_names=tuple(name for name in snapshot.tool_names if name not in browser_names),
+    sources = tuple({ref: None for row in fields for ref in row.observation.evaluation.evidence_refs})
+    offered = replace(snapshot, input_binding=ModelInputBinding("declared_fields", model_spec(original, tuple(retryable)), sources),
+                      tool_names=tuple(name for name in snapshot.tool_names if name in {"codemode", "ask_user"}),
                       browser_followups=False, browser_references=None, browser_fill_text=None, task_navigation_url=None)
+    inventory = set(offered.inventory_names)
+    offered = replace(offered, frozen_specs=tuple(spec for spec in offered.frozen_specs if spec.name in inventory),
+                      custom_executors=tuple(row for row in offered.custom_executors if row[0] in inventory))
     return refresh_snapshot_contract(offered), (
         "The declared source evidence is complete. Copy the pending fields with codemode using only an allowed path: "
         + ", ".join(retryable) + ". The application supplies the read/edit program, values and outer receipt reference."

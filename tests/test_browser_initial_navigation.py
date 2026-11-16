@@ -12,10 +12,10 @@ from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
 from codey.operations.task_session import TaskSession
 from codey.policies.task_policy import TaskPolicy
-from codey.policies.tool_requirement import require_tool_success
+from codey.policies.tool_requirement import parse_tool_success_check, require_tool_success
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.task.web_intent import explicit_web_intent
-from codey.types.json_value import decode_json_object, parse_json_object, require_json_string
+from codey.types.json_value import decode_json_object, parse_json_object, require_json_string, require_json_strings
 from tests.test_task_contract_fixed_replies import install_original_http
 from tools.browser_production_live_gate import URL, run_case
 from tools.completion_artifact_audit import tool_receipts
@@ -86,7 +86,7 @@ def test_ordinary_navigation_does_not_override_authorization_or_existing_work(st
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
 @pytest.mark.parametrize("explicit_open", [False, True])
-def test_original_hybrid_replies_complete_with_navigation_before_the_first_request(
+def test_original_hybrid_replies_keep_navigation_but_cannot_bypass_the_bound_file_menu(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, explicit_open: bool,
 ) -> None:
     fixture = parse_json_object(FIXTURE.read_text(encoding="utf-8"))
@@ -99,7 +99,7 @@ def test_original_hybrid_replies_complete_with_navigation_before_the_first_reque
     row = run_case(directory, "hybrid", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10),
         declare_required_tools=False, restore_snapshots=True, max_turns=len(replies),
         additional_required_tools=(require_tool_success("open_url"),) if explicit_open else ())
-    assert row["passed"] is True, row
+    assert row["passed"] is False and row["stop_reason"] == "max_turns", row
     restored = row["restored_snapshots"]
     assert isinstance(restored, int) and restored > 0
     receipts = tool_receipts(directory / "state")
@@ -107,12 +107,17 @@ def test_original_hybrid_replies_complete_with_navigation_before_the_first_reque
     assert navigation.result.call.call_id == "required-source:navigation" and navigation.result.ok
     assert row["navigations"] == ([URL, URL] if explicit_open else [URL])
     assert len([receipt for receipt in receipts if receipt.result.call.name == "open_url"]) == int(explicit_open)
-    for name in ("browser_click", "browser_read", "read_file", "edit"):
+    for name in ("browser_click", "browser_read"):
         selected = [receipt for receipt in receipts if receipt.result.call.name == name]
         assert len(selected) == 1 and selected[0].result.ok, name
+    assert not any(receipt.result.call.name in {"read_file", "edit"} for receipt in receipts)
+    assert row["first_rejection"] is not None
     events = [parse_json_object(line) for line in (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines()]
     first = next(decode_json_object(event["payload"]) for event in events
                  if event.get("type") == "wire_attempt" and event.get("phase") == "request")
     assert navigation.identity in str(first)
     request = parse_json_object((directory / "request.json").read_text(encoding="utf-8"))
-    assert request["required_tools"] == ([require_tool_success("open_url")] if explicit_open else [])
+    checks = require_json_strings(request["required_tools"], "required tools")
+    assert [check for check in checks if (rule := parse_tool_success_check(check)) is None or not rule.file_path
+            ] == ([require_tool_success("open_url")] if explicit_open else [])
+    assert len([rule for check in checks if (rule := parse_tool_success_check(check)) is not None and rule.file_path]) == 2

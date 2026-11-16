@@ -54,6 +54,7 @@ class CodeModeHost:
         task_navigation_url: str | None = None,
         browser_references: BrowserReferences | None = None,
         replay_browser_ref: Callable[[int, str, JsonValue], str] | None = None,
+        bound_edit: Callable[[int, JsonObject], JsonObject] | None = None,
     ) -> None:
         self.execution_id = str(execution_id or "").strip()
         if not self.execution_id:
@@ -72,6 +73,7 @@ class CodeModeHost:
         self._task_navigation_url = task_navigation_url
         self._browser_references = browser_references
         self._replay_browser_ref = replay_browser_ref
+        self._bound_edit = bound_edit
         self._next_child = 0
         self._complete_reads: dict[str, ToolResult] = {}
 
@@ -143,6 +145,11 @@ class CodeModeHost:
         if tool_name not in self._catalog:
             raise ValueError(f"tool is not in the frozen catalog: {tool_name}")
         decoded_args = self._reference_args(index, tool_name, args)
+        if tool_name == "edit" and self._bound_edit is not None:
+            ref = decoded_args.get("base_result_ref")
+            if not isinstance(ref, str) or ref not in self._complete_reads:
+                raise ValueError("bound edit requires this program's original complete read receipt")
+            decoded_args = self._bound_edit(index, decoded_args)
         if tool_name == "open_result":
             decoded_args = _normalize_open_result_args(decoded_args)
         if tool_name == "browser_navigate" and "target" in decoded_args:

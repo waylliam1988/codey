@@ -433,6 +433,10 @@ def _required_tool_checks(
                 from codey.operations.work_status import tool_work_outcome
 
                 outcome = tool_work_outcome(session, requirement, observation, context)
+                if outcome.passed:
+                    from codey.operations.file_field_binding import reported_field_outcome
+
+                    outcome = reported_field_outcome(requirement, observation, final_text, session.policy.required_checks)
             else:
                 outcome = requirement.evaluate_observation(observation, final_text)
         else:

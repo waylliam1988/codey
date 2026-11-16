@@ -8,9 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from codey.codemode import replay as replay_module
+from codey.codemode import kernel as kernel_module
 from codey.codemode.catalog import build_codemode_catalog, render_declarations
 from codey.codemode.kernel import build_execute_turn_executor
+from codey.codemode.replay import digest
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import TurnSnapshot, build_turn_snapshot
 from codey.operations.provider_receipts import restore_snapshot, snapshot_description
@@ -46,7 +47,8 @@ def test_removed_action_contract_requires_new_request(kind: str) -> None:
 
     snapshot = build_turn_snapshot(session_for(f"Open <{ORIGINAL}>.", kind=kind))
     payload = snapshot_description(snapshot)
-    payload["input_binding"] = {"kind": "actions", "model_spec": {}}
+    empty_spec: JsonObject = {}
+    payload["input_binding"] = {"kind": "actions", "model_spec": empty_spec}
     payload["task_navigation_url"] = None
     with pytest.raises(ValueError, match=r"codemode\.action input is no longer supported"):
         restore_snapshot(payload)
@@ -279,16 +281,14 @@ def test_original_basic_failure_through_production_binding_without_an_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, bound: bool,
 ) -> None:
     fingerprints: list[JsonObject] = []
-    original_digest = replay_module.digest
-
     def record_digest(value: object) -> str:
         if isinstance(value, dict):
             row = decode_json_object(value)
-            if {"args", "catalog", "runtime", "limits"} <= row.keys():
+            if {"args", "catalog", "runtime", "task_navigation_url"} <= row.keys():
                 fingerprints.append(row)
-        return original_digest(value)
+        return digest(value)
 
-    monkeypatch.setattr(replay_module, "digest", record_digest)
+    monkeypatch.setattr(kernel_module, "digest", record_digest)
     replies: list[str] = []
     for raw in saved_replies("basic")[:2]:
         reply = parse_json_object(raw)
