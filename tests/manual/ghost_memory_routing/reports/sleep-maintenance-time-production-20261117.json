@@ -1,0 +1,689 @@
+{
+  "experiment": "sleep-maintenance-time-production-20261117",
+  "status": "PRODUCTION_MERGED",
+  "baseline_revision": "fff79f94d9e27aaf056d4a710c26a4ed1ad27492",
+  "model": null,
+  "model_calls": 0,
+  "production_default_enabled": true,
+  "original_matrix": {
+    "valid_cells": 15,
+    "baseline_passed": 0,
+    "baseline_failed": 15,
+    "production_passed": 15,
+    "constant_repeats_equal": 15,
+    "forward_equal": 15,
+    "backward_equal": 15,
+    "clock_fixture_passed": 1,
+    "cells": [
+      {
+        "scope": "user",
+        "domain": "hebbian_decay",
+        "profile_digest": {
+          "backward": "de1b31f8ab0fcac5f1ac56c778a611aaac3acb5160d94a431ab61b39cc9506b3",
+          "fixed": "de1b31f8ab0fcac5f1ac56c778a611aaac3acb5160d94a431ab61b39cc9506b3",
+          "forward": "de1b31f8ab0fcac5f1ac56c778a611aaac3acb5160d94a431ab61b39cc9506b3",
+          "repeat": "de1b31f8ab0fcac5f1ac56c778a611aaac3acb5160d94a431ab61b39cc9506b3"
+        },
+        "counts": {
+          "decayed_edges": 0,
+          "decayed_nodes": 1,
+          "removed_edges": 0,
+          "removed_nodes": 0
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "project",
+        "domain": "hebbian_decay",
+        "profile_digest": {
+          "backward": "cc275c5024a634e0f7a481a48d864604fdfa6c7a314e734a87aea698407139b3",
+          "fixed": "cc275c5024a634e0f7a481a48d864604fdfa6c7a314e734a87aea698407139b3",
+          "forward": "cc275c5024a634e0f7a481a48d864604fdfa6c7a314e734a87aea698407139b3",
+          "repeat": "cc275c5024a634e0f7a481a48d864604fdfa6c7a314e734a87aea698407139b3"
+        },
+        "counts": {
+          "decayed_edges": 0,
+          "decayed_nodes": 1,
+          "removed_edges": 0,
+          "removed_nodes": 0
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "session",
+        "domain": "hebbian_decay",
+        "profile_digest": {
+          "backward": "1429f7e5ee3425cc4668aa6b53eb40e381a9a26d7d055646c59430ff244cc661",
+          "fixed": "1429f7e5ee3425cc4668aa6b53eb40e381a9a26d7d055646c59430ff244cc661",
+          "forward": "1429f7e5ee3425cc4668aa6b53eb40e381a9a26d7d055646c59430ff244cc661",
+          "repeat": "1429f7e5ee3425cc4668aa6b53eb40e381a9a26d7d055646c59430ff244cc661"
+        },
+        "counts": {
+          "decayed_edges": 0,
+          "decayed_nodes": 1,
+          "removed_edges": 0,
+          "removed_nodes": 0
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "user",
+        "domain": "affinity_decay",
+        "profile_digest": {
+          "backward": "d6115bee965c39fc4eab53d193c64edac6767d358feca0a925ba049ab74d7bc7",
+          "fixed": "d6115bee965c39fc4eab53d193c64edac6767d358feca0a925ba049ab74d7bc7",
+          "forward": "d6115bee965c39fc4eab53d193c64edac6767d358feca0a925ba049ab74d7bc7",
+          "repeat": "d6115bee965c39fc4eab53d193c64edac6767d358feca0a925ba049ab74d7bc7"
+        },
+        "counts": {
+          "decayed_edges": 1,
+          "decayed_nodes": 2,
+          "removed_edges": 0,
+          "removed_nodes": 0
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "project",
+        "domain": "affinity_decay",
+        "profile_digest": {
+          "backward": "baa47ac2c8f2ef1c1afb85abcc2f9aaba0d6c8dccd5ba3e21dfb191ebd75d715",
+          "fixed": "baa47ac2c8f2ef1c1afb85abcc2f9aaba0d6c8dccd5ba3e21dfb191ebd75d715",
+          "forward": "baa47ac2c8f2ef1c1afb85abcc2f9aaba0d6c8dccd5ba3e21dfb191ebd75d715",
+          "repeat": "baa47ac2c8f2ef1c1afb85abcc2f9aaba0d6c8dccd5ba3e21dfb191ebd75d715"
+        },
+        "counts": {
+          "decayed_edges": 1,
+          "decayed_nodes": 2,
+          "removed_edges": 0,
+          "removed_nodes": 0
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "session",
+        "domain": "affinity_decay",
+        "profile_digest": {
+          "backward": "b8a54895704fa44007966075f353ece034b1ab2b0d2b38ec6cd0b609d706cfd8",
+          "fixed": "b8a54895704fa44007966075f353ece034b1ab2b0d2b38ec6cd0b609d706cfd8",
+          "forward": "b8a54895704fa44007966075f353ece034b1ab2b0d2b38ec6cd0b609d706cfd8",
+          "repeat": "b8a54895704fa44007966075f353ece034b1ab2b0d2b38ec6cd0b609d706cfd8"
+        },
+        "counts": {
+          "decayed_edges": 1,
+          "decayed_nodes": 2,
+          "removed_edges": 0,
+          "removed_nodes": 0
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "user",
+        "domain": "continuity_refresh",
+        "profile_digest": {
+          "backward": "e8e93086474a4ef4ac2c680c93ac9769eaf53bcb71583ecbfb708da8feac4a6f",
+          "fixed": "e8e93086474a4ef4ac2c680c93ac9769eaf53bcb71583ecbfb708da8feac4a6f",
+          "forward": "e8e93086474a4ef4ac2c680c93ac9769eaf53bcb71583ecbfb708da8feac4a6f",
+          "repeat": "e8e93086474a4ef4ac2c680c93ac9769eaf53bcb71583ecbfb708da8feac4a6f"
+        },
+        "counts": {
+          "external_sources_allowed": 1,
+          "items_changed": 1,
+          "total_items": 1
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "project",
+        "domain": "continuity_refresh",
+        "profile_digest": {
+          "backward": "dd62d8e6c9f79d53f5af053ba838a4e7c4ff7187e73f0ed1a0aaa29ffc3b6524",
+          "fixed": "dd62d8e6c9f79d53f5af053ba838a4e7c4ff7187e73f0ed1a0aaa29ffc3b6524",
+          "forward": "dd62d8e6c9f79d53f5af053ba838a4e7c4ff7187e73f0ed1a0aaa29ffc3b6524",
+          "repeat": "dd62d8e6c9f79d53f5af053ba838a4e7c4ff7187e73f0ed1a0aaa29ffc3b6524"
+        },
+        "counts": {
+          "external_sources_allowed": 1,
+          "items_changed": 1,
+          "total_items": 1
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "session",
+        "domain": "continuity_refresh",
+        "profile_digest": {
+          "backward": "bfc44bf717fc5d2fbe111ab36df5eacf2da9c8f91c644e858e9ba9bd293cbc97",
+          "fixed": "bfc44bf717fc5d2fbe111ab36df5eacf2da9c8f91c644e858e9ba9bd293cbc97",
+          "forward": "bfc44bf717fc5d2fbe111ab36df5eacf2da9c8f91c644e858e9ba9bd293cbc97",
+          "repeat": "bfc44bf717fc5d2fbe111ab36df5eacf2da9c8f91c644e858e9ba9bd293cbc97"
+        },
+        "counts": {
+          "external_sources_allowed": 1,
+          "items_changed": 1,
+          "total_items": 1
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "user",
+        "domain": "queue_reconcile",
+        "profile_digest": {
+          "backward": "a29b509c9ab6692c4ae6574ca5c9082ba9873f0787a4affae2adfab6cd794cb2",
+          "fixed": "a29b509c9ab6692c4ae6574ca5c9082ba9873f0787a4affae2adfab6cd794cb2",
+          "forward": "a29b509c9ab6692c4ae6574ca5c9082ba9873f0787a4affae2adfab6cd794cb2",
+          "repeat": "a29b509c9ab6692c4ae6574ca5c9082ba9873f0787a4affae2adfab6cd794cb2"
+        },
+        "counts": {
+          "stale_work_claims": 1,
+          "stores_checked": 1,
+          "stores_compacted": 0,
+          "stores_failed": 0
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "project",
+        "domain": "queue_reconcile",
+        "profile_digest": {
+          "backward": "c46411c49f0df9344487232823d79ea299313be52e16f24a804a1676a07446af",
+          "fixed": "c46411c49f0df9344487232823d79ea299313be52e16f24a804a1676a07446af",
+          "forward": "c46411c49f0df9344487232823d79ea299313be52e16f24a804a1676a07446af",
+          "repeat": "c46411c49f0df9344487232823d79ea299313be52e16f24a804a1676a07446af"
+        },
+        "counts": {
+          "stale_work_claims": 1,
+          "stores_checked": 1,
+          "stores_compacted": 0,
+          "stores_failed": 0
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "session",
+        "domain": "queue_reconcile",
+        "profile_digest": {
+          "backward": "0852ce61b8d67f13cad1f47be15a2ccdeba5afbee6c23ec265facd710d866d3f",
+          "fixed": "0852ce61b8d67f13cad1f47be15a2ccdeba5afbee6c23ec265facd710d866d3f",
+          "forward": "0852ce61b8d67f13cad1f47be15a2ccdeba5afbee6c23ec265facd710d866d3f",
+          "repeat": "0852ce61b8d67f13cad1f47be15a2ccdeba5afbee6c23ec265facd710d866d3f"
+        },
+        "counts": {
+          "stale_work_claims": 1,
+          "stores_checked": 1,
+          "stores_compacted": 0,
+          "stores_failed": 0
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "user",
+        "domain": "affinity_sync",
+        "profile_digest": {
+          "backward": "913db1001acc64c24378a747f5b8f6a0c9eeb66fa788efaa3ac43f3051336d9c",
+          "fixed": "913db1001acc64c24378a747f5b8f6a0c9eeb66fa788efaa3ac43f3051336d9c",
+          "forward": "913db1001acc64c24378a747f5b8f6a0c9eeb66fa788efaa3ac43f3051336d9c",
+          "repeat": "913db1001acc64c24378a747f5b8f6a0c9eeb66fa788efaa3ac43f3051336d9c"
+        },
+        "counts": {
+          "edges_changed": 0,
+          "external_sources_allowed": 1,
+          "nodes_changed": 2,
+          "total_edges": 0,
+          "total_nodes": 1
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "project",
+        "domain": "affinity_sync",
+        "profile_digest": {
+          "backward": "0187eaf4702001936c503a8e6f79c590d902f75ddd291bc671d938f21a15fbdb",
+          "fixed": "0187eaf4702001936c503a8e6f79c590d902f75ddd291bc671d938f21a15fbdb",
+          "forward": "0187eaf4702001936c503a8e6f79c590d902f75ddd291bc671d938f21a15fbdb",
+          "repeat": "0187eaf4702001936c503a8e6f79c590d902f75ddd291bc671d938f21a15fbdb"
+        },
+        "counts": {
+          "edges_changed": 2,
+          "external_sources_allowed": 1,
+          "nodes_changed": 4,
+          "total_edges": 1,
+          "total_nodes": 2
+        },
+        "skipped_reason": ""
+      },
+      {
+        "scope": "session",
+        "domain": "affinity_sync",
+        "profile_digest": {
+          "backward": "eec101c672c5e45660bd1965fe04ee59de7bc8dcdd7b9966e4560e3b25603363",
+          "fixed": "eec101c672c5e45660bd1965fe04ee59de7bc8dcdd7b9966e4560e3b25603363",
+          "forward": "eec101c672c5e45660bd1965fe04ee59de7bc8dcdd7b9966e4560e3b25603363",
+          "repeat": "eec101c672c5e45660bd1965fe04ee59de7bc8dcdd7b9966e4560e3b25603363"
+        },
+        "counts": {
+          "edges_changed": 0,
+          "external_sources_allowed": 1,
+          "nodes_changed": 2,
+          "total_edges": 0,
+          "total_nodes": 1
+        },
+        "skipped_reason": ""
+      }
+    ]
+  },
+  "new_acceptance_cases": 63,
+  "candidate": {
+    "passed": 158,
+    "subtests_passed": 2,
+    "junit": "candidate.xml"
+  },
+  "acceptance": {
+    "passed": 85,
+    "subtests_passed": 0,
+    "junit": "acceptance.xml"
+  },
+  "expanded": {
+    "passed": 1047,
+    "subtests_passed": 36,
+    "junit": "production.xml",
+    "files": 42,
+    "stage": "before counting-clock assertions and removing three redundant str conversions",
+    "checks": [
+      {
+        "check": "related",
+        "exit": 0,
+        "command": [
+          "C:\\Program Files\\Python312\\python.exe",
+          "-m",
+          "pytest",
+          "tests/test_ghost_replay_clock_boundary.py",
+          "tests/test_ghost_replay_timestamp_validation.py",
+          "tests/test_ghost_graph_primitives.py",
+          "tests/test_ghost_affinity.py",
+          "tests/test_affinity_replay_single_transition.py",
+          "tests/test_affinity_apply_validates_envelope.py",
+          "tests/test_affinity_schema_version_exact_int.py",
+          "tests/test_ghost_graph_sqlite.py",
+          "tests/test_ghost_corruption_contract.py",
+          "tests/test_ghost_sleep.py",
+          "tests/test_ghost_hebbian.py",
+          "tests/test_ghost_directive.py",
+          "tests/test_ghost_continuity.py",
+          "tests/test_ghost_work_queue.py",
+          "tests/test_ghost_graph_exact_replacement.py",
+          "tests/test_ghost_legacy_projection_admission.py",
+          "tests/test_experience_memory.py",
+          "tests/test_ghost_language_production.py",
+          "tests/test_ghost_provider_send_boundary.py",
+          "tests/test_ghost_post_turn_affinity.py",
+          "tests/test_ghost_post_turn_work_queue.py",
+          "tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py",
+          "tests/test_ghost_control_surface.py",
+          "tests/test_ghost_manifest_production_wiring.py",
+          "tests/test_ghost_sleep_clock_boundary.py",
+          "tests/test_ghost_maintenance_as_of.py",
+          "tests/test_affinity_sources_ownership.py",
+          "tests/test_affinity_events_ownership.py",
+          "tests/test_affinity_model_ownership.py",
+          "tests/test_affinity_coldstart_has_single_source_entry.py",
+          "tests/test_ghost_sleep_source_controls.py",
+          "tests/test_ghost_controls.py",
+          "tests/test_ghost_control_contract.py",
+          "tests/test_ghost_control_mutation_failures.py",
+          "tests/test_ghost_reset_boundaries.py",
+          "tests/test_ghost_capacity_history_retention.py",
+          "tests/test_ghost_reset_history_retention.py",
+          "tests/test_ghost_scope_history_retention.py",
+          "tests/test_ghost_projection_delete_fence.py",
+          "tests/test_ghost_projection_exception_boundaries.py",
+          "tests/test_ghost_post_turn.py",
+          "tests/test_hardening_batch2.py",
+          "-q",
+          "--tb=short",
+          "-o",
+          "junit_logging=all",
+          "--junitxml=D:\\codey\\.e2e-artifacts\\ghost-sleep-clock-20261117\\production.xml"
+        ]
+      },
+      {
+        "check": "ruff",
+        "exit": 0,
+        "command": [
+          "C:\\Program Files\\Python312\\python.exe",
+          "-m",
+          "ruff",
+          "check",
+          "."
+        ]
+      },
+      {
+        "check": "mypy",
+        "exit": 0,
+        "command": [
+          "C:\\Program Files\\Python312\\python.exe",
+          "-m",
+          "mypy",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "pyrefly",
+        "exit": 0,
+        "command": [
+          "pyrefly",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "ty",
+        "exit": 0,
+        "command": [
+          "ty",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "precision",
+        "exit": 0,
+        "command": [
+          "C:\\Program Files\\Python312\\python.exe",
+          "-m",
+          "tools.kernel_type_precision_gate"
+        ]
+      },
+      {
+        "check": "owned-mypy",
+        "exit": 0,
+        "command": [
+          "C:\\Program Files\\Python312\\python.exe",
+          "-m",
+          "mypy",
+          "codey/ghost/sleep.py",
+          "codey/ghost/hebbian.py",
+          "codey/ghost/affinity.py",
+          "codey/ghost/affinity_sources.py",
+          "codey/ghost/continuity.py",
+          "codey/ghost/work_queue.py",
+          "tests/test_affinity_sources_ownership.py",
+          "tests/test_ghost_maintenance_as_of.py",
+          "tests/test_ghost_sleep_clock_boundary.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "owned-pyrefly",
+        "exit": 0,
+        "command": [
+          "pyrefly",
+          "check",
+          "codey/ghost/sleep.py",
+          "codey/ghost/hebbian.py",
+          "codey/ghost/affinity.py",
+          "codey/ghost/affinity_sources.py",
+          "codey/ghost/continuity.py",
+          "codey/ghost/work_queue.py",
+          "tests/test_affinity_sources_ownership.py",
+          "tests/test_ghost_maintenance_as_of.py",
+          "tests/test_ghost_sleep_clock_boundary.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "owned-ty",
+        "exit": 0,
+        "command": [
+          "ty",
+          "check",
+          "codey/ghost/sleep.py",
+          "codey/ghost/hebbian.py",
+          "codey/ghost/affinity.py",
+          "codey/ghost/affinity_sources.py",
+          "codey/ghost/continuity.py",
+          "codey/ghost/work_queue.py",
+          "tests/test_affinity_sources_ownership.py",
+          "tests/test_ghost_maintenance_as_of.py",
+          "tests/test_ghost_sleep_clock_boundary.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "owned-any",
+        "exit": 1,
+        "command": [
+          "C:\\Program Files\\Python312\\python.exe",
+          "-m",
+          "mypy",
+          "codey/ghost/sleep.py",
+          "codey/ghost/hebbian.py",
+          "codey/ghost/affinity.py",
+          "codey/ghost/affinity_sources.py",
+          "codey/ghost/continuity.py",
+          "codey/ghost/work_queue.py",
+          "tests/test_affinity_sources_ownership.py",
+          "tests/test_ghost_maintenance_as_of.py",
+          "tests/test_ghost_sleep_clock_boundary.py",
+          "--python-version",
+          "3.11",
+          "--disallow-any-expr"
+        ]
+      }
+    ]
+  },
+  "final": {
+    "passed": 281,
+    "subtests_passed": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "files": 12,
+    "junit": "production-final.xml",
+    "frozen_production_python_files": 702
+  },
+  "owned_python_files": [
+    "codey/ghost/sleep.py",
+    "codey/ghost/hebbian.py",
+    "codey/ghost/affinity.py",
+    "codey/ghost/affinity_sources.py",
+    "codey/ghost/continuity.py",
+    "codey/ghost/work_queue.py",
+    "tests/test_affinity_sources_ownership.py",
+    "tests/test_ghost_maintenance_as_of.py",
+    "tests/test_ghost_sleep_clock_boundary.py"
+  ],
+  "owned_lf_source_sha256": {
+    "codey/ghost/sleep.py": "67cdddf9e5dd88f998fdde6b730753e18e8dd8418bfa355773fd5f7dec142614",
+    "codey/ghost/hebbian.py": "10a5a94dd2e4515e018ce2529ec1dbd0fd7b303c396fac69350231b5c3ca184a",
+    "codey/ghost/affinity.py": "7c42bec331494083db4351a57b92184e92f7072220afb60f809fe38d475eda3b",
+    "codey/ghost/affinity_sources.py": "e613a61cfb4db8b69d43d373aa404706514639cf7bb2910b5dafa66cf7db0bce",
+    "codey/ghost/continuity.py": "0899f16125906d7cb63602e5717540516561ccb0f690b3f7a86243eccc3033b4",
+    "codey/ghost/work_queue.py": "be67c2cc72ee8018f13718af2333cdb57d1bd1734d7ae43f865ce4a0c36eb982",
+    "tests/test_affinity_sources_ownership.py": "d2a132afc3e50a7e3dd83e90ec686a25dcba1eea46dc11df39f3a9ae9061a7bc",
+    "tests/test_ghost_maintenance_as_of.py": "eabcdcc261d5ef7957856915a9f164d8ff46dae89dbfeddf765ea77ccfce6f6a",
+    "tests/test_ghost_sleep_clock_boundary.py": "214077427f1d7013f36669f64c4935a36864d34cad66649aacfa7ea3f85199d4"
+  },
+  "owned_any_diagnostics": 0,
+  "extra_any_exit": 1,
+  "extra_any_dependency_summary": "Found 3930 errors in 182 files (checked 9 source files)",
+  "production_pyrefly_summary": "INFO 0 errors (35 suppressed, 158 warnings not shown)",
+  "owned_pyrefly_summary": "INFO 0 errors",
+  "checks": [
+    {
+      "check": "related",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "pytest",
+        "tests/test_ghost_maintenance_as_of.py",
+        "tests/test_ghost_sleep_clock_boundary.py",
+        "tests/test_affinity_sources_ownership.py",
+        "tests/test_ghost_sleep.py",
+        "tests/test_ghost_hebbian.py",
+        "tests/test_ghost_affinity.py",
+        "tests/test_ghost_continuity.py",
+        "tests/test_ghost_work_queue.py",
+        "tests/test_hardening_batch2.py",
+        "tests/test_ghost_post_turn_affinity.py",
+        "tests/test_ghost_post_turn_work_queue.py",
+        "tests/test_ghost_sleep_source_controls.py",
+        "-q",
+        "--tb=short",
+        "-o",
+        "junit_logging=all",
+        "--junitxml=D:\\codey\\.e2e-artifacts\\ghost-sleep-clock-20261117\\production-final.xml"
+      ]
+    },
+    {
+      "check": "ruff",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ]
+    },
+    {
+      "check": "mypy",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "precision",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ]
+    },
+    {
+      "check": "owned-mypy",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey/ghost/sleep.py",
+        "codey/ghost/hebbian.py",
+        "codey/ghost/affinity.py",
+        "codey/ghost/affinity_sources.py",
+        "codey/ghost/continuity.py",
+        "codey/ghost/work_queue.py",
+        "tests/test_affinity_sources_ownership.py",
+        "tests/test_ghost_maintenance_as_of.py",
+        "tests/test_ghost_sleep_clock_boundary.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey/ghost/sleep.py",
+        "codey/ghost/hebbian.py",
+        "codey/ghost/affinity.py",
+        "codey/ghost/affinity_sources.py",
+        "codey/ghost/continuity.py",
+        "codey/ghost/work_queue.py",
+        "tests/test_affinity_sources_ownership.py",
+        "tests/test_ghost_maintenance_as_of.py",
+        "tests/test_ghost_sleep_clock_boundary.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey/ghost/sleep.py",
+        "codey/ghost/hebbian.py",
+        "codey/ghost/affinity.py",
+        "codey/ghost/affinity_sources.py",
+        "codey/ghost/continuity.py",
+        "codey/ghost/work_queue.py",
+        "tests/test_affinity_sources_ownership.py",
+        "tests/test_ghost_maintenance_as_of.py",
+        "tests/test_ghost_sleep_clock_boundary.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-any",
+      "exit": 1,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey/ghost/sleep.py",
+        "codey/ghost/hebbian.py",
+        "codey/ghost/affinity.py",
+        "codey/ghost/affinity_sources.py",
+        "codey/ghost/continuity.py",
+        "codey/ghost/work_queue.py",
+        "tests/test_affinity_sources_ownership.py",
+        "tests/test_ghost_maintenance_as_of.py",
+        "tests/test_ghost_sleep_clock_boundary.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ]
+    }
+  ],
+  "limitations": [
+    "No new model behavior claim or stopped live language batch",
+    "Fixed initial facts and logical horizon; source changes during the cycle are outside the matrix",
+    "Compaction audit clocks and random IDs are excluded from behavioral digest",
+    "Continuity expiry-only persistence/rebuild still needs independent validation",
+    "Not complete 0.6.1-0.6.4 or World Model"
+  ]
+}

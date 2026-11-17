@@ -33,6 +33,7 @@ from codey.ghost.graph_primitives import (
 from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
 )
+from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.graph_store import GhostGraph
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
@@ -515,10 +516,11 @@ class GhostHebbianStore:
         except Exception:
             return False
 
-    def decay(self, *, min_interval_seconds: int = 0) -> dict[str, object]:
+    def decay(self, *, min_interval_seconds: int = 0, maintenance_as_of: str | None = None) -> dict[str, object]:
+        time_input = _common.now_iso_z() if maintenance_as_of is None else maintenance_as_of
+        now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
         with self.graph.transaction():
             nodes, edges = self._load_state_unlocked()
-            now = _common.now_iso_z()
             interval = max(0, coerce_int(min_interval_seconds or 0))
             if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
                 return {
@@ -553,6 +555,7 @@ class GhostHebbianStore:
             self._rewrite_events_from_state(
                 bounded_nodes,
                 bounded_edges,
+                ts=now,
                 control_event=_ghost_control_event(
                     schema_version=HEBBIAN_SCHEMA_VERSION,
                     event_name="ghost_hebbian_state_decayed",
@@ -562,7 +565,7 @@ class GhostHebbianStore:
                         "decayed_nodes": decayed_node_count,
                         "decayed_edges": decayed_edge_count,
                     },
-                    now=_common.now_iso_z(),
+                    now=now,
                 ),
             )
             self._write_state(bounded_nodes, bounded_edges)
@@ -664,11 +667,12 @@ class GhostHebbianStore:
         edges: Iterable[GhostEdge],
         *,
         control_event: dict[str, object] | None = None,
+        ts: str | None = None,
     ) -> None:
         node_rows = _bounded_nodes(nodes)
-        events = [_node_event(node, action="compacted") for node in node_rows]
+        events = [_node_event(node, action="compacted", ts=ts) for node in node_rows]
         node_ids = {node.id for node in node_rows}
-        events.extend(_edge_event(edge, action="compacted") for edge in _bounded_edges(edges, node_ids=node_ids))
+        events.extend(_edge_event(edge, action="compacted", ts=ts) for edge in _bounded_edges(edges, node_ids=node_ids))
         if control_event is not None:
             events.append(control_event)
         self._write_events_atomic(events)
@@ -882,22 +886,22 @@ def _bounded_edges(edges: Iterable[GhostEdge], *, node_ids: set[str]) -> list[Gh
     )
 
 
-def _node_event(node: GhostNode, *, action: str) -> dict[str, object]:
+def _node_event(node: GhostNode, *, action: str, ts: str | None = None) -> dict[str, object]:
     event_type = "ghost_hebbian_node_superseded" if node.status == "superseded" else "ghost_hebbian_node_upsert"
     return {
         "schema_version": HEBBIAN_SCHEMA_VERSION,
         "type": event_type,
-        "ts": _common.now_iso_z(),
+        "ts": _common.now_iso_z() if ts is None else ts,
         "action": action,
         "node": node.to_payload(),
     }
 
 
-def _edge_event(edge: GhostEdge, *, action: str) -> dict[str, object]:
+def _edge_event(edge: GhostEdge, *, action: str, ts: str | None = None) -> dict[str, object]:
     return {
         "schema_version": HEBBIAN_SCHEMA_VERSION,
         "type": "ghost_hebbian_edge_upsert",
-        "ts": _common.now_iso_z(),
+        "ts": _common.now_iso_z() if ts is None else ts,
         "action": action,
         "edge": edge.to_payload(),
     }

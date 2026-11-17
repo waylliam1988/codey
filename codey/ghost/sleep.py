@@ -21,6 +21,7 @@ from codey.ghost.continuity import GhostContinuityStore, KnowledgeReader
 from codey.ghost.events import (
     control_event as _ghost_control_event,
 )
+from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.payload_types import object_fields
@@ -107,6 +108,7 @@ class GhostSleepReport:
     steps: tuple[GhostSleepStepResult, ...]
     pending_steps: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    maintenance_as_of: str = ""
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -118,6 +120,7 @@ class GhostSleepReport:
             "project": self.project,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
+            "maintenance_as_of": self.maintenance_as_of,
             "cancelled": self.cancelled,
             "steps": [step.to_payload() for step in self.steps],
             "pending_steps": list(self.pending_steps),
@@ -149,6 +152,7 @@ class GhostSleepReport:
             steps=steps,
             pending_steps=tuple(clip_signal_text(item, 80) for item in _list(payload.get("pending_steps"))),
             warnings=_bounded_warnings(_list(payload.get("warnings"))),
+            maintenance_as_of=clip_signal_text(payload.get("maintenance_as_of"), 80),
         )
 
 
@@ -175,7 +179,12 @@ class GhostSleepStore:
         project: str = "",
         should_cancel: Callable[[], bool] | None = None,
         budget: GhostSleepBudget | None = None,
+        maintenance_as_of: str | None = None,
     ) -> GhostSleepReport:
+        """Use one logical horizon; report timestamps remain actual audit time."""
+        started_at = _common.now_iso_z()
+        time_input = started_at if maintenance_as_of is None else maintenance_as_of
+        as_of = parse_ts(time_input).isoformat().replace("+00:00", "Z")
         cursor = GhostSleepCursor(
             trigger=clip_signal_text(trigger or "post_turn", 80),
             run_id=clip_signal_text(run_id, 120),
@@ -185,7 +194,6 @@ class GhostSleepStore:
         )
         budget = budget or GhostSleepBudget()
         cycle_id = "gsc_" + uuid.uuid4().hex[:24]
-        started_at = _common.now_iso_z()
         steps: list[GhostSleepStepResult] = []
         pending_steps: tuple[str, ...] = ()
         cancelled = False
@@ -205,14 +213,17 @@ class GhostSleepStore:
                 run_projection=cursor.run_projection,
                 session_id=cursor.session_id,
                 project=cursor.project,
+                maintenance_as_of=as_of,
             ),
             "hebbian_decay": lambda: self._hebbian_decay_step(
                 hebbian_store,
                 min_interval_seconds=budget.hebbian_decay_min_interval_seconds,
+                maintenance_as_of=as_of,
             ),
             "affinity_decay": lambda: self._affinity_decay_step(
                 affinity_store,
                 min_interval_seconds=budget.affinity_decay_min_interval_seconds,
+                maintenance_as_of=as_of,
             ),
             "continuity_refresh": lambda: self._continuity_refresh_step(
                 inbox_store=inbox_store,
@@ -223,6 +234,7 @@ class GhostSleepStore:
                 run_id=cursor.run_id,
                 session_id=cursor.session_id,
                 project=cursor.project,
+                maintenance_as_of=as_of,
             ),
             "event_compaction": lambda: self._event_compaction_step(
                 inbox_store=inbox_store,
@@ -230,6 +242,7 @@ class GhostSleepStore:
                 continuity_store=continuity_store,
                 work_queue_store=work_queue_store,
                 affinity_store=affinity_store,
+                maintenance_as_of=as_of,
             ),
         }
         for index, name in enumerate(_STEP_NAMES[:-1]):
@@ -254,6 +267,7 @@ class GhostSleepStore:
             steps=(*tuple(steps), report_step),
             pending_steps=pending_steps,
             warnings=final_warnings,
+            maintenance_as_of=as_of,
         )
         if report_step.ok:
             try:
@@ -424,6 +438,7 @@ class GhostSleepStore:
         run_projection: RunLedgerProjection | None,
         session_id: str,
         project: str,
+        maintenance_as_of: str,
     ) -> GhostSleepStepResult:
         if affinity_store is None:
             return GhostSleepStepResult("affinity_sync", True, skipped_reason="store_unavailable")
@@ -437,6 +452,7 @@ class GhostSleepStore:
             run_projection=run_projection if allowed else None,
             session_id=session_id,
             project=project,
+            maintenance_as_of=maintenance_as_of,
         )
         return GhostSleepStepResult(
             "affinity_sync",
@@ -457,10 +473,11 @@ class GhostSleepStore:
         hebbian_store: GhostHebbianStore | None,
         *,
         min_interval_seconds: int,
+        maintenance_as_of: str,
     ) -> GhostSleepStepResult:
         if hebbian_store is None:
             return GhostSleepStepResult("hebbian_decay", True, skipped_reason="store_unavailable")
-        result = hebbian_store.decay(min_interval_seconds=min_interval_seconds)
+        result = hebbian_store.decay(min_interval_seconds=min_interval_seconds, maintenance_as_of=maintenance_as_of)
         counts = {
             "removed_nodes": _int(result.get("removed_nodes")),
             "removed_edges": _int(result.get("removed_edges")),
@@ -480,10 +497,11 @@ class GhostSleepStore:
         affinity_store: GhostAffinityStore | None,
         *,
         min_interval_seconds: int,
+        maintenance_as_of: str,
     ) -> GhostSleepStepResult:
         if affinity_store is None:
             return GhostSleepStepResult("affinity_decay", True, skipped_reason="store_unavailable")
-        result = affinity_store.decay(min_interval_seconds=min_interval_seconds)
+        result = affinity_store.decay(min_interval_seconds=min_interval_seconds, maintenance_as_of=maintenance_as_of)
         return GhostSleepStepResult(
             "affinity_decay",
             True,
@@ -508,6 +526,7 @@ class GhostSleepStore:
         run_id: str,
         session_id: str,
         project: str,
+        maintenance_as_of: str,
     ) -> GhostSleepStepResult:
         if continuity_store is None:
             return GhostSleepStepResult("continuity_refresh", True, skipped_reason="store_unavailable")
@@ -524,6 +543,7 @@ class GhostSleepStore:
             run_id=run_id,
             project=project,
             mode="sleep",
+            maintenance_as_of=maintenance_as_of,
         )
         return GhostSleepStepResult(
             "continuity_refresh",
@@ -545,6 +565,7 @@ class GhostSleepStore:
         continuity_store: GhostContinuityStore | None,
         work_queue_store: GhostWorkQueueStore | None,
         affinity_store: GhostAffinityStore | None,
+        maintenance_as_of: str,
     ) -> GhostSleepStepResult:
         warnings: list[str] = []
         counts = {"stores_checked": 0, "stores_compacted": 0, "stores_failed": 0, "stale_work_claims": 0}
@@ -561,7 +582,7 @@ class GhostSleepStore:
             counts["stores_checked"] += 1
             if name == "work_queue" and work_queue_store is not None:
                 try:
-                    reconcile_result = work_queue_store.reconcile_stale_claims()
+                    reconcile_result = work_queue_store.reconcile_stale_claims(maintenance_as_of=maintenance_as_of)
                 except Exception as exc:
                     counts["stores_failed"] += 1
                     warnings.append(f"{name}_reconcile_error:{type(exc).__name__}")

@@ -18,6 +18,7 @@ from codey.ghost import _common
 from codey.ghost.affinity import apply_affinity_work_boost
 from codey.ghost.affinity_model import AffinityHint
 from codey.ghost.continuity import GhostContinuityStore
+from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.payload_types import mapping_fields
 from codey.ghost.projection_fence import fence_projection
 from codey.ghost.record_store import GhostRecords
@@ -264,6 +265,7 @@ class GhostWorkQueueStore:
         scope: str = "",
         project: str = "",
         session_id: str = "",
+        maintenance_as_of: str | None = None,
     ) -> tuple[GhostWorkItem, ...]:
         with self.records.transaction(write=False):
             return self._list_items_unlocked(
@@ -272,6 +274,7 @@ class GhostWorkQueueStore:
                 scope=scope,
                 project=project,
                 session_id=session_id,
+                maintenance_as_of=maintenance_as_of,
             )
 
     def _list_items_unlocked(
@@ -282,13 +285,15 @@ class GhostWorkQueueStore:
         scope: str = "",
         project: str = "",
         session_id: str = "",
+        maintenance_as_of: str | None = None,
     ) -> tuple[GhostWorkItem, ...]:
         statuses = _common.filter_values(status, WORK_ITEM_STATUSES)
         kinds = _common.filter_values(kind, WORK_ITEM_KINDS)
         project_ref = _project_ref(project)
         session_ref = _session_ref(session_id)
         rows = []
-        now = _common.now_iso_z()
+        time_input = _common.now_iso_z() if maintenance_as_of is None else maintenance_as_of
+        now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
         for item in self._load_items_unlocked(live_only=True):
             if _is_expired(item, now):
                 continue
@@ -593,11 +598,12 @@ class GhostWorkQueueStore:
         result = self._mutate(decide)
         return result if isinstance(result, GhostWorkItem) else None
 
-    def reconcile_stale_claims(self) -> GhostWorkSyncResult:
+    def reconcile_stale_claims(self, *, maintenance_as_of: str | None = None) -> GhostWorkSyncResult:
         try:
+            time_input = _common.now_iso_z() if maintenance_as_of is None else maintenance_as_of
+            now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
-                now = _common.now_iso_z()
                 items = _bounded_items(items_from_events(events))
                 append_events: list[dict[str, object]] = []
                 for item in items:

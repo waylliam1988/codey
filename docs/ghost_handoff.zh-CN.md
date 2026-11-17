@@ -12,11 +12,13 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新实验：[Sleep维护周期取时](ghost_progress/sleep-maintenance-clock-baseline-20261117.md)。
-三scope×五消费者15 cell全有效，恒定复验15相同，前跳/后跳各15实际差异；
-权重、TTL、租约及Affinity来源过期筛选均受影响。原15失败/1时钟夹具通过，相关136/2子测试
-及完整静态门通过，新脚本owned Any零诊断。尚未修生产；统一显式maintenance_as_of
-必须覆盖来源读取，不能只修改图衰减。完整0.6.4及World Model仍未完成。
+2026-11-17 最新完成：[Sleep显式维护时间](ghost_progress/sleep-maintenance-time-production-20261117.md)。
+普通Sleep默认一次捕获maintenance_as_of并传至衰减、continuity刷新、租约回收和Affinity
+来源过期筛选，报告保留逻辑时间，独立维护入口同样支持显式时间。原15项0→15通过；
+63项新增，扩大1047/36子测试、最后计数断言/冗余转换修订后281/2子测试及完整静态门通过；
+九受检文件额外Any零诊断。无新增默认关闭开关或模型调用；原负结果`fff79f94`保留。
+继续过期持久投影/重建、其他维护入口、稳定排序/digest与其余领域replay，再推进真实World Model。
+不能据此宣布完整0.6.4、0.6.1–0.6.3或World Model完成，不重跑已停止语言实机批次。
 
 此前完成：[重放历史时间校验](ghost_progress/replay-timestamp-validation-production-20261117.md)。
 原12项3→12通过，九项坏时间默认拒绝并原子保留原日志/事务前有效投影；71项新验收、

@@ -10,7 +10,7 @@ from __future__ import annotations
 import ast
 import hashlib
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.ghost.affinity_model import (
     AffinityEdgeSpec,
@@ -19,14 +19,21 @@ from codey.ghost.affinity_model import (
     _clean_key,
     _clean_label,
     _clean_scope,
-    _field,
     _list,
     _node_id,
     _unit_float,
 )
+from codey.ghost.payload_types import mapping_fields
 from codey.ghost.schema import clip_signal_text
 from codey.runtime.core import cancellation
 from codey.storage.local_store import project_key, session_key
+
+if TYPE_CHECKING:
+    from codey.ghost.hebbian import GhostHebbianStore, GhostNode
+    from codey.ghost.work_queue import GhostWorkQueueStore
+    from codey.ghost.work_queue_model import GhostWorkItem
+    from codey.knowledge.research_interest import ResearchInterestCandidate
+    from codey.runs.ledger_projection import RunLedgerProjection
 
 _HEBBIAN_KIND_MAP = {
     "style_preference": "user_preference",
@@ -60,19 +67,22 @@ _PROVIDER_ERROR_KINDS = frozenset(
 
 def collect_source_specs(
     *,
-    hebbian_store: Any,
-    work_queue_store: Any,
-    research_interest_candidates: Iterable[Any],
-    run_projection: Any,
+    hebbian_store: GhostHebbianStore | None,
+    work_queue_store: GhostWorkQueueStore | None,
+    research_interest_candidates: Iterable[ResearchInterestCandidate],
+    run_projection: RunLedgerProjection | None,
     terminal_event: Mapping[str, object] | None,
     session_id: str,
     project: str,
+    maintenance_as_of: str | None = None,
 ) -> tuple[list[AffinityNodeSpec], list[AffinityEdgeSpec]]:
     """Collect node/edge specs from every source with explicit inputs."""
     node_specs: list[AffinityNodeSpec] = []
     edge_specs: list[AffinityEdgeSpec] = []
     node_specs.extend(_node_specs_from_hebbian(hebbian_store))
-    work_nodes, work_edges = _specs_from_work_queue(work_queue_store, session_id=session_id, project=project)
+    work_nodes, work_edges = _specs_from_work_queue(
+        work_queue_store, session_id=session_id, project=project, maintenance_as_of=maintenance_as_of,
+    )
     node_specs.extend(work_nodes)
     edge_specs.extend(work_edges)
     research_nodes, research_edges = _specs_from_research_candidates(
@@ -93,7 +103,7 @@ def collect_source_specs(
     return node_specs, edge_specs
 
 
-def _node_specs_from_hebbian(hebbian_store: Any) -> list[AffinityNodeSpec]:
+def _node_specs_from_hebbian(hebbian_store: GhostHebbianStore | None) -> list[AffinityNodeSpec]:
     if hebbian_store is None:
         return []
     try:
@@ -104,27 +114,27 @@ def _node_specs_from_hebbian(hebbian_store: Any) -> list[AffinityNodeSpec]:
         return []
     specs: list[AffinityNodeSpec] = []
     for node in rows:
-        if str(getattr(node, "status", "") or "") != "active" or str(getattr(node, "superseded_by", "") or ""):
+        if node.status != "active" or node.superseded_by:
             continue
-        affinity_kind = _HEBBIAN_KIND_MAP.get(str(getattr(node, "kind", "") or ""))
+        affinity_kind = _HEBBIAN_KIND_MAP.get(node.kind)
         if not affinity_kind:
             continue
         scope, scope_ref = _scope_from_source(node)
-        conflict_key = _clean_key(getattr(node, "conflict_key", ""), 120)
-        value_key = _clean_key(getattr(node, "value_key", ""), 120)
+        conflict_key = _clean_key(node.conflict_key, 120)
+        value_key = _clean_key(node.value_key, 120)
         if not conflict_key or not value_key:
             continue
-        key = _clean_key(f"{getattr(node, 'kind', '')}:{conflict_key}:{value_key}", 180)
-        label = _clean_label(f"{getattr(node, 'kind', '')}:{conflict_key}={value_key}", 180)
+        key = _clean_key(f"{node.kind}:{conflict_key}:{value_key}", 180)
+        label = _clean_label(f"{node.kind}:{conflict_key}={value_key}", 180)
         source_refs = _bounded_refs(
             (
-                f"hebbian_node:{clip_signal_text(getattr(node, 'id', ''), 120)}",
-                *(f"hebbian_evidence:{ref}" for ref in _list(getattr(node, "evidence_refs", ()))),
+                f"hebbian_node:{clip_signal_text(node.id, 120)}",
+                *(f"hebbian_evidence:{ref}" for ref in _list(node.evidence_refs)),
             )
         )
         if not key or not label or not source_refs:
             continue
-        evidence_refs = _bounded_refs(tuple(f"hebbian:{ref}" for ref in _list(getattr(node, "evidence_refs", ()))))
+        evidence_refs = _bounded_refs(tuple(f"hebbian:{ref}" for ref in _list(node.evidence_refs)))
         specs.append(
             AffinityNodeSpec(
                 kind=affinity_kind,
@@ -132,14 +142,14 @@ def _node_specs_from_hebbian(hebbian_store: Any) -> list[AffinityNodeSpec]:
                 label=label,
                 scope=scope,
                 scope_ref=scope_ref,
-                confidence=_unit_float(getattr(node, "confidence", 0.0)),
-                reward=max(0.2, _unit_float(getattr(node, "weight", 0.0))),
+                confidence=_unit_float(node.confidence),
+                reward=max(0.2, _unit_float(node.weight)),
                 source_refs=source_refs,
                 evidence_refs=evidence_refs,
                 metadata={
                     "source": "hebbian",
-                    "hebbian_node_id": clip_signal_text(getattr(node, "id", ""), 120),
-                    "hebbian_kind": clip_signal_text(getattr(node, "kind", ""), 80),
+                    "hebbian_node_id": clip_signal_text(node.id, 120),
+                    "hebbian_kind": clip_signal_text(node.kind, 80),
                     "conflict_key": conflict_key,
                     "value_key": value_key,
                 },
@@ -149,15 +159,16 @@ def _node_specs_from_hebbian(hebbian_store: Any) -> list[AffinityNodeSpec]:
 
 
 def _specs_from_work_queue(
-    work_queue_store: Any,
+    work_queue_store: GhostWorkQueueStore | None,
     *,
     session_id: str,
     project: str,
+    maintenance_as_of: str | None = None,
 ) -> tuple[list[AffinityNodeSpec], list[AffinityEdgeSpec]]:
     if work_queue_store is None:
         return [], []
     try:
-        rows = work_queue_store.list_items()
+        rows = work_queue_store.list_items(maintenance_as_of=maintenance_as_of)
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
@@ -165,23 +176,23 @@ def _specs_from_work_queue(
     node_specs: list[AffinityNodeSpec] = []
     edge_specs: list[AffinityEdgeSpec] = []
     for item in rows:
-        status = clip_signal_text(_field(item, "status"), 40)
+        status = clip_signal_text(item.status, 40)
         reward = _WORK_STATUS_REWARD.get(status)
         if reward is None:
             continue
         scope, scope_ref = _scope_from_source(item, fallback_session_id=session_id, fallback_project=project)
-        item_id = clip_signal_text(_field(item, "id"), 120)
-        task_kind = _clean_key(_field(item, "kind"), 80)
+        item_id = clip_signal_text(item.id, 120)
+        task_kind = _clean_key(item.kind, 80)
         if not item_id or not task_kind:
             continue
-        item_ref = _bounded_refs((f"work_item:{item_id}:{status}:{clip_signal_text(_field(item, 'updated_at'), 80)}",))
+        item_ref = _bounded_refs((f"work_item:{item_id}:{status}:{clip_signal_text(item.updated_at, 80)}",))
         task_node = AffinityNodeSpec(
             kind="task_type",
             key=task_kind,
             label=f"task_type:{task_kind}",
             scope=scope,
             scope_ref=scope_ref,
-            confidence=_unit_float(_field(item, "confidence")),
+            confidence=_unit_float(item.confidence),
             reward=reward,
             source_refs=item_ref,
             metadata={"source": "work_queue", "work_status": status},
@@ -196,7 +207,7 @@ def _specs_from_work_queue(
                 label=f"project:{project_key_value}",
                 scope=scope,
                 scope_ref=scope_ref,
-                confidence=_unit_float(_field(item, "confidence")),
+                confidence=_unit_float(item.confidence),
                 reward=reward,
                 source_refs=item_ref,
                 metadata={"source": "work_queue"},
@@ -210,10 +221,10 @@ def _specs_from_work_queue(
                     relation="used_in_task",
                     scope=scope,
                     scope_ref=scope_ref,
-                    confidence=_unit_float(_field(item, "confidence")),
+                    confidence=_unit_float(item.confidence),
                     reward=reward,
                     source_refs=item_ref,
-                    proof_refs=_bounded_refs(_field(item, "proof_refs")) if status == "done" else (),
+                    proof_refs=_bounded_refs(item.proof_refs) if status == "done" else (),
                 )
             )
         relation = "works_well_for" if status == "done" else "struggles_with" if status == "blocked" else ""
@@ -226,10 +237,10 @@ def _specs_from_work_queue(
                     relation=relation,
                     scope=scope,
                     scope_ref=scope_ref,
-                    confidence=_unit_float(_field(item, "confidence")),
+                    confidence=_unit_float(item.confidence),
                     reward=reward,
                     source_refs=item_ref,
-                    proof_refs=_bounded_refs(_field(item, "proof_refs")) if status == "done" else item_ref,
+                    proof_refs=_bounded_refs(item.proof_refs) if status == "done" else item_ref,
                 )
             )
         for concept in _concepts_from_work_item(item):
@@ -239,7 +250,7 @@ def _specs_from_work_queue(
                 label=f"concept:{concept}",
                 scope=scope,
                 scope_ref=scope_ref,
-                confidence=_unit_float(_field(item, "confidence")),
+                confidence=_unit_float(item.confidence),
                 reward=min(0.8, reward),
                 source_refs=item_ref,
                 metadata={"source": "work_queue", "not_evidence": True},
@@ -253,17 +264,17 @@ def _specs_from_work_queue(
                     relation="mentions_concept",
                     scope=scope,
                     scope_ref=scope_ref,
-                    confidence=_unit_float(_field(item, "confidence")),
+                    confidence=_unit_float(item.confidence),
                     reward=min(0.8, reward),
                     source_refs=item_ref,
-                    proof_refs=_bounded_refs(_field(item, "proof_refs")) if status == "done" else (),
+                    proof_refs=_bounded_refs(item.proof_refs) if status == "done" else (),
                 )
             )
     return node_specs, edge_specs
 
 
 def _specs_from_research_candidates(
-    candidates: Iterable[Any],
+    candidates: Iterable[ResearchInterestCandidate],
     *,
     session_id: str,
     project: str,
@@ -271,16 +282,16 @@ def _specs_from_research_candidates(
     node_specs: list[AffinityNodeSpec] = []
     edge_specs: list[AffinityEdgeSpec] = []
     for candidate in list(candidates or []):
-        candidate_id = clip_signal_text(_field(candidate, "id"), 120)
+        candidate_id = clip_signal_text(candidate.id, 120)
         if not candidate_id:
             continue
         scope, scope_ref = _scope_from_source(candidate, fallback_session_id=session_id, fallback_project=project)
-        confidence = _unit_float(_field(candidate, "confidence"))
-        reward = max(0.35, _unit_float(_field(candidate, "priority")))
+        confidence = _unit_float(candidate.confidence)
+        reward = max(0.35, _unit_float(candidate.priority))
         refs = _bounded_refs(
             (
                 f"research_interest:{candidate_id}",
-                *_list(_field(candidate, "source_refs")),
+                *_list(candidate.source_refs),
             )
         )
         concepts = _concepts_from_candidate(candidate)
@@ -297,7 +308,7 @@ def _specs_from_research_candidates(
                 source_refs=refs,
                 evidence_refs=(),
                 metadata={
-                    "source": clip_signal_text(_field(candidate, "source"), 80),
+                    "source": clip_signal_text(candidate.source, 80),
                     "not_evidence": True,
                 },
             )
@@ -324,7 +335,7 @@ def _specs_from_research_candidates(
 
 def _specs_from_provider_outcome(
     *,
-    run_projection: Any,
+    run_projection: RunLedgerProjection | None,
     terminal_event: Mapping[str, object] | None,
     session_id: str,
     project: str,
@@ -333,22 +344,27 @@ def _specs_from_provider_outcome(
         return [], []
     node_specs: list[AffinityNodeSpec] = []
     edge_specs: list[AffinityEdgeSpec] = []
-    failures = []
+    failures: list[Mapping[str, object]] = []
     if run_projection is not None:
-        failures.extend(list(getattr(run_projection, "provider_failures", ()) or ()))
-    if isinstance(terminal_event, Mapping) and isinstance(terminal_event.get("provider_failure"), Mapping):
-        failures.append(terminal_event.get("provider_failure"))
+        failures.extend({
+            "provider": failure.provider, "kind": failure.kind, "action": failure.action, "stage": failure.stage,
+        } for failure in run_projection.provider_failures)
+    if terminal_event is not None:
+        terminal_failure = terminal_event.get("provider_failure")
+        if mapping_fields(terminal_failure):
+            failures.append(terminal_failure)
     scope = "project" if project else "session" if session_id else "user"
     scope_ref = _scope_ref(scope, project or session_id)
     task_mode = _clean_key(
-        getattr(run_projection, "mode", "")
+        (run_projection.mode if run_projection is not None else "")
         or (terminal_event.get("mode") if isinstance(terminal_event, Mapping) else "")
         or "task",
         80,
     )
-    run_ref = _bounded_refs(
-        (f"run:{clip_signal_text(getattr(run_projection, 'run_id', '') or (terminal_event or {}).get('run_id'), 120)}",)
+    run_id = clip_signal_text(
+        (run_projection.run_id if run_projection is not None else "") or (terminal_event or {}).get("run_id"), 120,
     )
+    run_ref = _bounded_refs((f"run:{run_id}",))
     task_spec = AffinityNodeSpec(
         kind="task_type",
         key=task_mode,
@@ -364,11 +380,11 @@ def _specs_from_provider_outcome(
     task_id = _node_id(task_spec.kind, task_spec.scope, task_spec.scope_ref, task_spec.key) if task_mode else ""
     for failure in failures:
         provider = _clean_key(
-            _field(failure, "provider") or _field(failure, "model") or (terminal_event or {}).get("provider"), 80
+            failure.get("provider") or failure.get("model") or (terminal_event or {}).get("provider"), 80
         )
-        error_kind = _clean_provider_error_kind(_field(failure, "kind"))
-        action = _clean_key(_field(failure, "action"), 80)
-        stage = _clean_key(_field(failure, "stage"), 80)
+        error_kind = _clean_provider_error_kind(failure.get("kind"))
+        action = _clean_key(failure.get("action"), 80)
+        stage = _clean_key(failure.get("stage"), 80)
         if not provider or not error_kind:
             continue
         refs = _bounded_refs(
@@ -377,9 +393,7 @@ def _specs_from_provider_outcome(
                 + hashlib.sha256(
                     "|".join(
                         (
-                            clip_signal_text(
-                                getattr(run_projection, "run_id", "") or (terminal_event or {}).get("run_id"), 120
-                            ),
+                            run_id,
                             provider,
                             error_kind,
                             action,
@@ -428,20 +442,20 @@ def _specs_from_provider_outcome(
 
 
 def _scope_from_source(
-    value: Any,
+    value: GhostNode | GhostWorkItem | ResearchInterestCandidate,
     *,
     fallback_session_id: str = "",
     fallback_project: str = "",
 ) -> tuple[str, str]:
-    scope = _clean_scope(_field(value, "scope"))
-    raw_ref = clip_signal_text(_field(value, "scope_ref"), 240)
+    scope = _clean_scope(value.scope)
+    raw_ref = clip_signal_text(value.scope_ref, 240)
     if not scope:
         scope = "session" if fallback_session_id else "project" if fallback_project else "user"
         raw_ref = fallback_session_id or fallback_project
     if scope == "session":
-        raw_ref = raw_ref or clip_signal_text(_field(value, "session_id"), 120) or fallback_session_id
+        raw_ref = raw_ref or fallback_session_id
     elif scope == "project":
-        raw_ref = raw_ref or clip_signal_text(_field(value, "project"), 240) or fallback_project
+        raw_ref = raw_ref or fallback_project
     return scope, _scope_ref(scope, raw_ref)
 
 
@@ -469,10 +483,8 @@ def _looks_like_hash_ref(value: object) -> bool:
     return len(text) == 24 and all(ch in "0123456789abcdef" for ch in text)
 
 
-def _concepts_from_work_item(item: Any) -> tuple[str, ...]:
-    metadata = _field(item, "metadata")
-    if not isinstance(metadata, Mapping):
-        return ()
+def _concepts_from_work_item(item: GhostWorkItem) -> tuple[str, ...]:
+    metadata = item.metadata
     return _clean_concepts(
         (
             *_metadata_sequence(metadata.get("related_concepts")),
@@ -481,9 +493,9 @@ def _concepts_from_work_item(item: Any) -> tuple[str, ...]:
     )
 
 
-def _concepts_from_candidate(candidate: Any) -> tuple[str, ...]:
+def _concepts_from_candidate(candidate: ResearchInterestCandidate) -> tuple[str, ...]:
     return _clean_concepts(
-        (*_list(_field(candidate, "related_concepts")), *_list(_field(candidate, "shared_neighbors")))
+        (*_list(candidate.related_concepts), *_list(candidate.shared_neighbors))
     )
 
 
@@ -506,17 +518,19 @@ def _clean_provider_error_kind(value: object) -> str:
 
 def _metadata_sequence(value: object) -> tuple[object, ...]:
     if isinstance(value, (list, tuple, set)):
-        return tuple(value)
+        values: Iterable[object] = value
+        return tuple(values)
     text = str(value or "").strip()
     if not text:
         return ()
     if text.startswith("[") and text.endswith("]"):
         try:
-            parsed = ast.literal_eval(text)
+            parsed: object = ast.literal_eval(text)
         except (SyntaxError, ValueError):
             parsed = None
         if isinstance(parsed, (list, tuple, set)):
-            return tuple(parsed)
+            parsed_values: Iterable[object] = parsed
+            return tuple(parsed_values)
     return (text,)
 
 

@@ -2067,10 +2067,17 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
+2026-11-17：[Sleep显式维护时间](docs/ghost_progress/sleep-maintenance-time-production-20261117.md)
+已在普通入口默认接线，共用maintenance_as_of进行衰减、continuity刷新、租约回收及Affinity
+来源过期筛选，逻辑时间写入报告。原15项0→15通过，63项新增、扩大1047/36子测试、
+最终281/2子测试及完整静态门通过，九文件owned Any零诊断。过期持久投影、其他维护入口、
+稳定排序/digest及其余领域replay仍缺，不等于整个0.6.4或World Model完成。
+
 2026-11-17：[Sleep周期取时基线](docs/ghost_progress/sleep-maintenance-clock-baseline-20261117.md)
 三scope×五消费者15 cell全有效；恒定复验全部相同，入口后前跳/后跳各15项实际状态不同，
 涉及衰减权重、continuity TTL、租约回收及Affinity来源过期筛选。原15失败/1时钟夹具通过，
-相关136/2子测试、全静态门及新增脚本owned Any零诊断。尚未修生产，不代表本阶段完成。
+相关136/2子测试、全静态门及新增脚本owned Any零诊断。以上后续接线已限定闭合本矩阵，
+原始负结果保留，不代表本阶段完成。
 
 2026-11-17：[固定日志重建基线](docs/ghost_progress/replay-clock-boundary-baseline-20261117.md)
 已验证真实Affinity store跨两个时钟重建。12 cell全部有效，三个合法时间对照通过；

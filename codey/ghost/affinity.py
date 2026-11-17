@@ -73,6 +73,7 @@ from codey.ghost.events import (
 from codey.ghost.events import (
     over_compact_budget,
 )
+from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.graph_store import GhostGraph
 from codey.ghost.projection_fence import fence_projection
 from codey.ghost.schema import clip_signal_text
@@ -117,9 +118,12 @@ class GhostAffinityStore:
         terminal_event: Mapping[str, object] | None = None,
         session_id: str = "",
         project: str = "",
+        maintenance_as_of: str | None = None,
     ) -> GhostAffinitySyncResult:
         self.last_warnings = ()
         try:
+            time_input = _common.now_iso_z() if maintenance_as_of is None else maintenance_as_of
+            now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
             node_specs, edge_specs = collect_source_specs(
                 hebbian_store=hebbian_store,
                 work_queue_store=work_queue_store,
@@ -128,13 +132,13 @@ class GhostAffinityStore:
                 terminal_event=terminal_event,
                 session_id=session_id,
                 project=project,
+                maintenance_as_of=now,
             )
 
             def decide(events: list[dict[str, object]]) -> _AffinityMutation:
                 nodes, edges = replay_affinity_events(events)
                 node_by_id = {node.id: node for node in nodes}
                 edge_by_id = {edge.id: edge for edge in edges}
-                now = _common.now_iso_z()
                 append_events: list[dict[str, object]] = []
                 changed_nodes = 0
                 for node_spec in node_specs:
@@ -260,9 +264,10 @@ class GhostAffinityStore:
             ):
                 continue
             rows.append(node)
-        return tuple(
-            sorted(rows, key=lambda item: (item.status == "active", item.weight, item.updated_at), reverse=True)
-        )
+        def node_order(item: AffinityNode) -> tuple[bool, float, str]:
+            return item.status == "active", item.weight, item.updated_at
+
+        return tuple(sorted(rows, key=node_order, reverse=True))
 
     def list_edges(
         self,
@@ -315,9 +320,10 @@ class GhostAffinityStore:
             ):
                 continue
             rows.append(edge)
-        return tuple(
-            sorted(rows, key=lambda item: (item.status == "active", item.weight, item.updated_at), reverse=True)
-        )
+        def edge_order(item: AffinityEdge) -> tuple[bool, float, str]:
+            return item.status == "active", item.weight, item.updated_at
+
+        return tuple(sorted(rows, key=edge_order, reverse=True))
 
     def query_directive_order_hints(
         self,
@@ -564,12 +570,13 @@ class GhostAffinityStore:
             self._write_state(nodes, edges, warnings=())
         return True
 
-    def decay(self, *, min_interval_seconds: int = 0) -> dict[str, object]:
+    def decay(self, *, min_interval_seconds: int = 0, maintenance_as_of: str | None = None) -> dict[str, object]:
+        time_input = _common.now_iso_z() if maintenance_as_of is None else maintenance_as_of
+        now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
         interval = max(0, (min_interval_seconds or 0))
 
         def decide(events: list[dict[str, object]]) -> _AffinityMutation:
             nodes, edges = replay_affinity_events(events)
-            now = _common.now_iso_z()
             if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
                 return _AffinityMutation(
                     {

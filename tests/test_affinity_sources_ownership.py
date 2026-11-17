@@ -7,8 +7,15 @@ goes through that owner, and that sources import neither Store nor events.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
-from types import SimpleNamespace
+
+from codey.ghost.hebbian import GhostHebbianStore, GhostNode, _node_event
+from codey.ghost.work_queue import GhostWorkQueueStore
+from codey.ghost.work_queue_events import _observed_event
+from codey.ghost.work_queue_model import GhostWorkItem
+from codey.knowledge.research_interest import ResearchInterestCandidate
+from codey.runs.ledger_projection import ProviderFailureSummary, RunLedgerProjection
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -26,26 +33,19 @@ def _imports_of(path: Path) -> set[str]:
     return imports
 
 
-def test_hebbian_accepted_node_generates_real_spec() -> None:
+def test_hebbian_accepted_node_generates_real_spec(tmp_path: Path) -> None:
     from codey.ghost.affinity_sources import collect_source_specs
 
-    hebbian = SimpleNamespace(
-        list_nodes=lambda status="": [
-            SimpleNamespace(
-                id="h1",
-                kind="research_interest",
-                status="active",
-                superseded_by="",
-                scope="user",
-                scope_ref="",
-                conflict_key="c",
-                value_key="v",
-                confidence=0.8,
-                weight=0.6,
-                evidence_refs=("e1",),
-            )
-        ]
+    node = GhostNode(
+        id="h1", kind="research_interest", status="active", scope="user", scope_ref="",
+        label="Research preference", conflict_key="c", value_key="v", confidence=0.8,
+        weight=0.6, evidence_refs=("e1",), candidate_ids=(), created_at="2026-01-01T00:00:00Z",
+        updated_at="2026-01-01T00:00:00Z", last_reinforced_at="2026-01-01T00:00:00Z",
     )
+    hebbian = GhostHebbianStore(tmp_path)
+    with hebbian.graph.transaction():
+        hebbian.graph.append([_node_event(node, action="upsert")])
+        hebbian.graph.replace_rows([node.to_payload()], ())
     nodes, _edges = collect_source_specs(
         hebbian_store=hebbian,
         work_queue_store=None,
@@ -58,22 +58,29 @@ def test_hebbian_accepted_node_generates_real_spec() -> None:
     assert any(n.key for n in nodes)
 
 
-def test_work_item_status_maps_to_reward() -> None:
+def test_work_item_status_maps_to_reward(tmp_path: Path) -> None:
     from codey.ghost.affinity_sources import collect_source_specs
 
-    item = SimpleNamespace(
+    item = GhostWorkItem(
         id="w1",
         kind="coding",
         status="done",
         scope="user",
         scope_ref="",
         title="t",
+        why_now="Completed work",
+        priority=0.8,
+        source="user",
+        source_ref="user:work-1",
         confidence=0.9,
         updated_at="2999-01-01T00:00:00Z",
         proof_refs=("diff:run-1",),
-        metadata={},
+        completed_run_id="run-1",
     )
-    queue = SimpleNamespace(list_items=lambda: [item])
+    queue = GhostWorkQueueStore(tmp_path)
+    with queue.records.transaction():
+        queue.records.append([_observed_event(item, ts="2026-01-01T00:00:00Z")])
+        queue.records.replace_rows([item.to_payload()])
     nodes, edges = collect_source_specs(
         hebbian_store=None,
         work_queue_store=queue,
@@ -89,16 +96,19 @@ def test_work_item_status_maps_to_reward() -> None:
 def test_research_candidate_is_not_read_evidence() -> None:
     from codey.ghost.affinity_sources import collect_source_specs
 
-    candidate = SimpleNamespace(
+    candidate = ResearchInterestCandidate(
         id="ric-1",
         scope="user",
         scope_ref="",
         confidence=0.8,
         priority=0.7,
         source="concept_open_question",
-        related_concepts=["concept"],
-        shared_neighbors=[],
-        source_refs=[],
+        source_ref="concept:1",
+        question="What needs checking?",
+        why_now="An open question",
+        related_concepts=("concept",),
+        shared_neighbors=(),
+        source_refs=(),
     )
     nodes, _edges = collect_source_specs(
         hebbian_store=None,
@@ -110,19 +120,18 @@ def test_research_candidate_is_not_read_evidence() -> None:
         project="",
     )
     assert nodes
-    assert all("not_evidence" in dict(getattr(n, "metadata", {}) or {}) for n in nodes)
+    assert all("not_evidence" in n.metadata for n in nodes)
 
 
 def test_provider_outcome_hides_sensitive_text() -> None:
     from codey.ghost.affinity_sources import collect_source_specs
 
-    run = SimpleNamespace(
+    run = RunLedgerProjection(
         run_id="run-1",
         mode="coding",
-        provider_failures=[
-            {"provider": "p", "kind": "timeout", "action": "send", "stage": "s",
-             "detail": "sk-secret-abc"},
-        ],
+        provider_failures=(ProviderFailureSummary(
+            provider="p", kind="timeout", action="send", stage="s", message="sk-secret-abc",
+        ),),
     )
     nodes, _edges = collect_source_specs(
         hebbian_store=None,
@@ -134,7 +143,7 @@ def test_provider_outcome_hides_sensitive_text() -> None:
         project="",
     )
     blob = " ".join(
-        f"{n.key} {n.label} {n.source_refs} {dict(getattr(n, 'metadata', {}) or {})}"
+        f"{n.key} {n.label} {n.source_refs} {dict(n.metadata)}"
         for n in nodes
     )
     assert "sk-secret-abc" not in blob
@@ -146,7 +155,8 @@ def test_store_sync_goes_through_collect_source_specs() -> None:
     from codey.ghost import affinity as store_module
     from codey.ghost import affinity_sources as sources
 
-    assert store_module.collect_source_specs is sources.collect_source_specs
+    store_members: Mapping[str, object] = vars(store_module)
+    assert store_members["collect_source_specs"] is sources.collect_source_specs
     src = inspect.getsource(store_module.GhostAffinityStore.sync_from_sources)
     assert "collect_source_specs" in src
 

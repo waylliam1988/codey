@@ -236,10 +236,12 @@ class GhostContinuityStore:
         run_id: str = "",
         project: str = "",
         mode: str = "",
+        maintenance_as_of: str | None = None,
     ) -> GhostContinuityResult:
         warnings: list[str] = []
         try:
-            now = _common.now_iso_z()
+            time_input = _common.now_iso_z() if maintenance_as_of is None else maintenance_as_of
+            now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
             candidates: list[GhostContinuityItem] = []
             candidates.extend(_items_from_hebbian(hebbian_store, now=now, warnings=warnings))
             candidates.extend(
@@ -272,7 +274,6 @@ class GhostContinuityStore:
             )
 
             with self.records.transaction():
-                now = _common.now_iso_z()
                 existing = list(self._load_items_unlocked())
                 candidates = list(self.records.live_sources(candidates))
 
@@ -289,7 +290,7 @@ class GhostContinuityStore:
                         warnings=self.last_warnings,
                     )
                 if changed_items:
-                    events = [_item_event(item, action="upsert") for item in changed_items]
+                    events = [_item_event(item, action="upsert", ts=now) for item in changed_items]
                     events.append(
                         _ghost_control_event(
                             schema_version=CONTINUITY_SCHEMA_VERSION,
@@ -303,7 +304,7 @@ class GhostContinuityStore:
                                 "items_changed": len(changed_items),
                                 "items_total": len(merged),
                             },
-                            now=_common.now_iso_z(),
+                            now=now,
                             payload_cleaner=_clean_metadata,
                         )
                     )
@@ -1053,10 +1054,10 @@ def _projection_payload(
     }
 
 
-def _item_event(item: GhostContinuityItem, *, action: str) -> dict[str, object]:
+def _item_event(item: GhostContinuityItem, *, action: str, ts: str | None = None) -> dict[str, object]:
     return {
         "schema_version": CONTINUITY_SCHEMA_VERSION,
-        "ts": _common.now_iso_z(),
+        "ts": _common.now_iso_z() if ts is None else ts,
         "type": "ghost_continuity_item_upsert",
         "action": clip_signal_text(action, 40),
         "item": item.to_payload(),
