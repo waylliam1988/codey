@@ -1,7 +1,7 @@
 # World Model：验证结果的预测复盘消费者
 
 - 日期：2026-11-18
-- 状态：`INCOMPLETE`（本节先冻结，未执行收益实验）
+- 状态：`ABANDONED`（本候选接口的完整实机负结果；World Model 整体未完成）
 - 关联：0.6.12；基线 `bc9b977910937fef2566f17cba4bf67fa494493c`
 - 生产状态：未晋级；不新增 runtime 空壳或默认关闭的生产模块。
 
@@ -53,3 +53,87 @@ INCOMPLETE 与失败证据，不能计为模型阴性；完整矩阵无净收益
 排序/digest、记录型 control payload、完整硬退出/跨 run 发送恢复、混版本及磁盘策略仍需审查。
 本候选先做隔离只读实验，生产晋级只能按本消费者实际涉及的边界逐项证明，不能沿用
 “已有测试”把缺口写成通过。
+
+## 原型与可复现入口
+
+实验实现位于
+[world_model_verification_review.py](../../tests/manual/ghost_memory_routing/world_model_verification_review.py)，
+生产树不 import 本脚本。它在隔离目录实际执行已知的成功、缺依赖、断言失败 Python check，
+由现有 completion owner 生成 proof 后先提交本地 verification fixture，再由预测器只读消费。
+这些是实验 fixture，不是用户项目的实际运行记录，也不声称环境故障诊断本身是新能力。
+预测采用持久性假设：下一次同命令/同 workspace 类别与上次一致，confidence 固定 0.6，
+不视为校准后的概率或 truth confidence。
+
+review 只接受更晚且已发生、同命令/同 workspace/同 scope 的有效 verification，原始 proof
+ref 和 bounded digest 保留；没有有效来源则 unjudged。projection 在来源移除、关闭检索、
+scope 不符、过期、未复盘时为空；这些是纯投影源存活检查，不能冒充完整生产持久删除/
+reset/故障恢复验收。保留实验脚本供复查，未证明收益前不新增生产存储或后台服务。
+
+独立 ContextSource 的 key 为 world_model_verification_review，900 字符，拒绝截断；
+PromptEnvelope 后对同一待发送文本调用现有 admission，记录 digest/source ref/epoch。
+关闭准入或过期会在调用 provider 前拒绝。live 使用新的 ApiProvider 对象和单次尝试，
+不复用对话历史，不执行工具，保存完整 prompt/reply、reasoning、usage 和错误于本地。
+未完整响应或服务异常停止本批，不自动重试或补样本。
+
+```powershell
+python -m pytest tests/test_world_model_verification_review.py -q --tb=short
+python -m tests.manual.ghost_memory_routing.world_model_verification_review --output .e2e-artifacts/world-model-verification-review-20261118/offline
+python -m tests.manual.ghost_memory_routing.world_model_verification_review --output .e2e-artifacts/world-model-verification-review-20261118/live --live
+```
+
+live 输出目录已有 metrics/failure 时拒绝覆盖；复现须使用新的隔离目录，不删除旧证据。
+前置健康检查目标模型 ID 一致，未把健康检查计为 inference 样本。
+
+## 实际结果与判定
+
+冻结提交 `bd972fd9` 后实现原型，40 次实际模型请求全部完整返回，没有服务失败、截断、
+工具调用、空回复或补样本；前后 `/v1/models` 均为上述 Gemma 模型。on/off 各 20 次，
+严格 scorer 均为 **0/20**；40 条回复都带 Markdown JSON 代码围栏，因此是 invalid_json。
+这是受测接口的模型格式负结果，不是模型服务阴性；也不能由零有效 action 推导预测内容
+本身无效。没有剥围栏重判、修回复、替换 scorer、放宽门槛或把这些样本算作格式正确。
+
+| 指标 | off | on |
+|---|---:|---:|
+| 完整响应 | 20 | 20 |
+| 严格 action 通过 | 0 | 0 |
+| invalid_json | 20 | 20 |
+| provider 报告 input tokens 总数 | 5840 | 6792 |
+| provider 报告 output tokens 总数 | 280 | 280 |
+| 平均请求耗时（秒） | 0.64525 | 0.65170 |
+
+额外投递 4716 字符、952 个 reported input tokens（+16.3%），未增加冻结指标收益。
+耗时只作本机观察，不据 20 题声称显著延迟变化。三类已复盘任务共 12 个 on 请求有独立
+admission；两类 unjudged 的 8 个 on 请求提示为空，与对应 off prompt digest 完全相同。
+逐 case、逐题/arm 的脱敏指标及命令见
+[报告](../../tests/manual/ghost_memory_routing/reports/world-model-verification-review-20261118.json)。
+
+本候选未通过净增至少 3/20 的冻结晋级门，终止该文本复盘→严格 action 接口候选，
+**不接生产、不默认启用**。代码只留在 manual 实验目录供复查；没有在 codey 树新增
+无消费者模块、持久化 manager、默认关闭的功能或主任务额外模型调用。
+本地完整 prompt/reply/reasoning、proof fixture、usage、stdout/XML 和冻结哈希位于
+`.e2e-artifacts/world-model-verification-review-20261118`，仓库无原始回复或完整 state。
+
+## 检查与限制
+
+原型 24 项验证真实 check→proof→prediction→review→投影→admission 消费链及非法输入。
+最终相关 11 文件 192 passed / 31 subtests，零失败/错误/跳过。全仓 Ruff 与完整 702 文件
+生产树 mypy/Pyrefly/ty/precision gate、两个新文件定向三类型均通过。额外 Any 审计 owned
+零诊断，exit 1 来自未修改依赖的 4630 项/193 文件诊断；未新增豁免、cast、ignore 或改范围。
+Pyrefly 全树仍有既有 35 suppressed/158 warnings，不声称全仓没有 Any。
+live 与最终回归的两个新文件 SHA256 完全相同，702 个生产文件在检查期间冻结不变。
+全部命令和哈希见脱敏报告。
+不运行全量 pytest，无前端或静态资源变更。
+
+编写阶段先修正 argparse 的 Path 被送入 JSON decoder、datetime 子类返回注解、
+Pyrefly None 收窄/空容器及容器上下文产生的 6 项隐式 Any；均发生在 live 源码冻结前，
+没有修改原型的动作门槛或对照定义。初期检查输出保留于本地，不能计作生产负结果。
+
+本轮只证明隔离原型与该模型/协议/预算的格式负结果；不证明完整生产生命周期、硬退出、
+真实用户运行历史上的收益、可校准概率或跨模型能力。source 存活重算测试也不是持久
+delete/reset/混版本恢复证明，因此未标为 PRODUCTION_MERGED。现有生产默认均不变，
+无需生产回滚；停止执行此手动脚本即可隔离实验。
+
+下一步审查：如继续此方向，应另行冻结更贴近正常消费者的结构化传输或人工复盘界面，
+保持原 scorer 和本次负结果，先解决格式适配再评估语义收益，不能用重跑后最好结果替换
+本批。另需选择有新增预测信息的任务；重复当前 completion 事实很可能只增加 token。
+完整 G0 的排序/digest、跨 run 恢复与 World Model 真实生产闭环仍待推进。

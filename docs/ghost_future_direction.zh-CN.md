@@ -909,6 +909,12 @@ structured explanation facts
 
 目标：让 Codey 有一个 bounded、可审计、可校正的项目/研究/环境状态模型，但不把它当事实来源。
 
+2026-11-18 已有[首个验证预测复盘实验](ghost_progress/world-model-verification-review-20261118.md)：
+隔离真实 verification/proof、prediction/review、有界 ContextSource/admission 与单模型 40 次
+请求构成最小评估闭环。受测文本→严格 action 接口因格式无净收益而终止，未接生产。
+这不是完整 World Model 验收；后续应按记录调整真实消费者，不重复包装现有 completion
+识别能力。未验证时保持 shadow，单模型有收益且相关生产边界通过后正常接线并默认启用。
+
 可建模：
 
 ```text
@@ -1401,7 +1407,7 @@ effect intent / settlement 与 operation state 的职责分离
 ```text
 0.6.0–0.6.4  冻结实验、最小事件契约、真实 admission、控制、冲突/删除与 replay
 0.6.5–0.6.7  类型化语言、最小路由/逐节点遥测、生产 shadow、受测模型有条件启用
-0.6.8–0.6.12 命令/验证习惯 shadow、provider outcome、Explain；World Model 可选 shadow
+0.6.8–0.6.12 命令/验证习惯 shadow、provider outcome、Explain；World Model 真实消费者实验与条件晋级
 0.7.x        可选扩展模型与任务，各模型独立验收；每次只晋级一个已有净收益的 family
 0.8.x        有消费者和数据时再做协议适配；不恢复额外 Ghost 模型调用
 0.9.x+       可塑性研究，独立基准，不自动进入默认 prompt

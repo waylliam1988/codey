@@ -12,7 +12,15 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-18 最新完成：[Hebbian 内部记录时间](ghost_progress/hebbian-row-time-20261117.md)。
+2026-11-18 最新完成：[World Model 验证预测复盘首个候选](ghost_progress/world-model-verification-review-20261118.md)。
+真实 check/proof→prediction→review→有界 ContextSource/admission→Gemma 的隔离闭环已执行，
+40 次完整实机响应，严格 action on/off 各 0/20（回复全带 JSON 围栏），input tokens +16.3%。
+按冻结门终止本接口候选，不剥围栏重判、不算服务失败、不新增生产空壳；24 项原型与
+最终 11 文件 192 项/31 子测试及静态检查见记录。World Model 整体仍未完成；下一候选应
+独立冻结结构化接口和有新增预测信息的任务，不能覆盖本次负结果或冒充已生产晋级。
+本轮继续目标，保护用户既有工作区改动，不创建 worktree。
+
+2026-11-18 此前完成：[Hebbian 内部记录时间](ghost_progress/hebbian-row-time-20261117.md)。
 原 54 cell 18→54 通过，普通解码/rebuild/reader/Sleep/directive 默认拒绝坏时间并保留
 合法旧值/fallback；坏投影可从有效日志重建，App→HTTP 的省略/恢复与关闭控制已验。
 最终 27 文件 1031 项/34 子测试及全树静态门通过；原负结果 `0cc80548` 保留，

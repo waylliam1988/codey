@@ -1,0 +1,804 @@
+{
+  "experiment": "world-model-verification-review-20261118",
+  "status": "ABANDONED",
+  "verdict": "NEGATIVE_FORMAT_INTERFACE",
+  "freeze_commit": "bd972fd9",
+  "baseline_production_commit": "bc9b977910937fef2566f17cba4bf67fa494493c",
+  "config": {
+    "temperature": 0,
+    "cases": 5,
+    "scorer": "exact single-key JSON action; no Markdown fences or repair",
+    "context": 262144,
+    "native_tools": false,
+    "max_attempts": 1,
+    "endpoint": "http://127.0.0.1:5001/v1",
+    "reserve": 32768,
+    "output_tokens": 256,
+    "per_case_regressions_allowed": 0,
+    "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+    "timeout_seconds": 120,
+    "api_protocol": "openai-completions",
+    "phrasings": 4,
+    "promotion_minimum_additional_correct": 3,
+    "samples_per_arm": 20,
+    "keep_recent": 32000
+  },
+  "model_health": {
+    "after": "loaded_expected_id",
+    "before": "loaded_expected_id",
+    "health_requests_counted_as_samples": false
+  },
+  "production_default_enabled": false,
+  "production_source_files_added": 0,
+  "production_lifecycle_complete": false,
+  "tools_executed_by_model": 0,
+  "service_failures": 0,
+  "truncated_responses": 0,
+  "empty_responses": 0,
+  "fenced_replies": 40,
+  "offline_trajectories": {
+    "miss": 1,
+    "hit": 2,
+    "prediction_confidence": 0.6,
+    "count": 5,
+    "unjudged": 2,
+    "confidence_calibrated": false
+  },
+  "arms": [
+    {
+      "enabled": false,
+      "completed": 20,
+      "correct": 0,
+      "invalid_json": 20,
+      "reported_input_tokens": 5840.0,
+      "reported_output_tokens": 280.0,
+      "mean_latency_seconds": 0.6452500000003056,
+      "hint_chars_total": 0.0
+    },
+    {
+      "enabled": true,
+      "completed": 20,
+      "correct": 0,
+      "invalid_json": 20,
+      "reported_input_tokens": 6792.0,
+      "reported_output_tokens": 280.0,
+      "mean_latency_seconds": 0.651699999999255,
+      "hint_chars_total": 4716.0
+    }
+  ],
+  "cases": [
+    {
+      "on_correct": 0,
+      "case": "repeated_environment",
+      "per_arm": 4,
+      "off_correct": 0
+    },
+    {
+      "on_correct": 0,
+      "case": "recovered_environment",
+      "per_arm": 4,
+      "off_correct": 0
+    },
+    {
+      "on_correct": 0,
+      "case": "product_failure",
+      "per_arm": 4,
+      "off_correct": 0
+    },
+    {
+      "on_correct": 0,
+      "case": "missing_verification",
+      "per_arm": 4,
+      "off_correct": 0
+    },
+    {
+      "on_correct": 0,
+      "case": "changed_workspace",
+      "per_arm": 4,
+      "off_correct": 0
+    }
+  ],
+  "metrics": [
+    {
+      "cell": "repeated_environment-0-off",
+      "case": "repeated_environment",
+      "enabled": false,
+      "question": 0,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 630,
+      "hint_chars": 0,
+      "seconds": 1.1719999999986612,
+      "prompt_digest": "sha256:e9d0b3e63dd46f7965c12df1bb28c34fa34b5e1d2920d9ffe180a2bec0b9875f"
+    },
+    {
+      "cell": "repeated_environment-0-on",
+      "case": "repeated_environment",
+      "enabled": true,
+      "question": 0,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 1031,
+      "hint_chars": 399,
+      "seconds": 0.6719999999986612,
+      "prompt_digest": "sha256:39a25cddcaf1c9471ec198a6e0ce5026e5af370c491295401b0833b4105ca369"
+    },
+    {
+      "cell": "repeated_environment-1-on",
+      "case": "repeated_environment",
+      "enabled": true,
+      "question": 1,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 1033,
+      "hint_chars": 399,
+      "seconds": 0.7030000000013388,
+      "prompt_digest": "sha256:76700285a9e49a7361587c3896cfe3dc1e7a4f997c3160d9e9c4f55d9aa0607e"
+    },
+    {
+      "cell": "repeated_environment-1-off",
+      "case": "repeated_environment",
+      "enabled": false,
+      "question": 1,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 632,
+      "hint_chars": 0,
+      "seconds": 0.625,
+      "prompt_digest": "sha256:d840c1e3933efc90e052c359b486ed36dba1afcaa8aad99752ae523aabc3ba50"
+    },
+    {
+      "cell": "repeated_environment-2-off",
+      "case": "repeated_environment",
+      "enabled": false,
+      "question": 2,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 649,
+      "hint_chars": 0,
+      "seconds": 0.6410000000032596,
+      "prompt_digest": "sha256:07e08668fa5bb382f9388914d4b6cd7da9b62bac9ee9f0419a1d5fd117734c10"
+    },
+    {
+      "cell": "repeated_environment-2-on",
+      "case": "repeated_environment",
+      "enabled": true,
+      "question": 2,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 1050,
+      "hint_chars": 399,
+      "seconds": 0.6719999999986612,
+      "prompt_digest": "sha256:11a70ec78be193cad7adbdec29ab9df9a90d01675729a6a5bedd02b25b2aaff8"
+    },
+    {
+      "cell": "repeated_environment-3-on",
+      "case": "repeated_environment",
+      "enabled": true,
+      "question": 3,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 1048,
+      "hint_chars": 399,
+      "seconds": 0.6869999999980791,
+      "prompt_digest": "sha256:4f3d88379796ad1cafc47de71f9d9541f3140095bb2f1c651dc96cf2178cab80"
+    },
+    {
+      "cell": "repeated_environment-3-off",
+      "case": "repeated_environment",
+      "enabled": false,
+      "question": 3,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 647,
+      "hint_chars": 0,
+      "seconds": 0.6100000000005821,
+      "prompt_digest": "sha256:4ebf9bf59e0bb4996f007a701bcd2d5498c751dfcf6326639c5a3a8763a50a9b"
+    },
+    {
+      "cell": "recovered_environment-0-off",
+      "case": "recovered_environment",
+      "enabled": false,
+      "question": 0,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "miss",
+      "prompt_chars": 621,
+      "hint_chars": 0,
+      "seconds": 0.6089999999967404,
+      "prompt_digest": "sha256:352cd92098dffd85325d6b95fcc9e186e743e90c073786b82e5e4b290897f407"
+    },
+    {
+      "cell": "recovered_environment-0-on",
+      "case": "recovered_environment",
+      "enabled": true,
+      "question": 0,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "miss",
+      "prompt_chars": 1012,
+      "hint_chars": 389,
+      "seconds": 0.6559999999954016,
+      "prompt_digest": "sha256:269a1e3639c7d3600b7b32dbdc80e67794a3e8ccb341cccd43b8e3b6e8f69600"
+    },
+    {
+      "cell": "recovered_environment-1-on",
+      "case": "recovered_environment",
+      "enabled": true,
+      "question": 1,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "miss",
+      "prompt_chars": 1014,
+      "hint_chars": 389,
+      "seconds": 0.6880000000019209,
+      "prompt_digest": "sha256:0c13c8eca986dfdf0fd90686f8e25652968e2a62d53c2d87940e0010d884b511"
+    },
+    {
+      "cell": "recovered_environment-1-off",
+      "case": "recovered_environment",
+      "enabled": false,
+      "question": 1,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "miss",
+      "prompt_chars": 623,
+      "hint_chars": 0,
+      "seconds": 0.625,
+      "prompt_digest": "sha256:ee22425b4afcca4baff496ac60d469a26031427ce3fb86f3cd145d8b90a2d2f4"
+    },
+    {
+      "cell": "recovered_environment-2-off",
+      "case": "recovered_environment",
+      "enabled": false,
+      "question": 2,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "miss",
+      "prompt_chars": 640,
+      "hint_chars": 0,
+      "seconds": 0.6399999999994179,
+      "prompt_digest": "sha256:3fe3251eef265e73ebea5f203c5ad5acdef5b4a306c90922269cd51e631cea25"
+    },
+    {
+      "cell": "recovered_environment-2-on",
+      "case": "recovered_environment",
+      "enabled": true,
+      "question": 2,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "miss",
+      "prompt_chars": 1031,
+      "hint_chars": 389,
+      "seconds": 0.6719999999986612,
+      "prompt_digest": "sha256:e8c8f403dd5328b4c9a5122926749d3e932085b24ca5f3375264357c0de401e5"
+    },
+    {
+      "cell": "recovered_environment-3-on",
+      "case": "recovered_environment",
+      "enabled": true,
+      "question": 3,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "miss",
+      "prompt_chars": 1029,
+      "hint_chars": 389,
+      "seconds": 0.6880000000019209,
+      "prompt_digest": "sha256:baa42c2eb8824405036e20de24365c224e8354f5cd11e148fc2bc3ab8eb138f8"
+    },
+    {
+      "cell": "recovered_environment-3-off",
+      "case": "recovered_environment",
+      "enabled": false,
+      "question": 3,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "miss",
+      "prompt_chars": 638,
+      "hint_chars": 0,
+      "seconds": 0.6399999999994179,
+      "prompt_digest": "sha256:a7dffec45a8e1447427359115f9af65d516093d8f5ae3babc40169d077f594ad"
+    },
+    {
+      "cell": "product_failure-0-off",
+      "case": "product_failure",
+      "enabled": false,
+      "question": 0,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 622,
+      "hint_chars": 0,
+      "seconds": 0.6399999999994179,
+      "prompt_digest": "sha256:bf7cda4f0104fecda045314155768c09815e257e1b04f3dda1540ff69c2c901a"
+    },
+    {
+      "cell": "product_failure-0-on",
+      "case": "product_failure",
+      "enabled": true,
+      "question": 0,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 1015,
+      "hint_chars": 391,
+      "seconds": 0.6569999999992433,
+      "prompt_digest": "sha256:3259303690ab3c9a7e888debf8c0c99ea9c609bf7f8481deed861562e9bd4ff6"
+    },
+    {
+      "cell": "product_failure-1-on",
+      "case": "product_failure",
+      "enabled": true,
+      "question": 1,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 1017,
+      "hint_chars": 391,
+      "seconds": 0.6719999999986612,
+      "prompt_digest": "sha256:32c1fd7dcd074ff1e76b781f9a7902651a7c4cb69925e6c1c0aefde964e4ff7e"
+    },
+    {
+      "cell": "product_failure-1-off",
+      "case": "product_failure",
+      "enabled": false,
+      "question": 1,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 624,
+      "hint_chars": 0,
+      "seconds": 0.6410000000032596,
+      "prompt_digest": "sha256:7663ecfad5e097b7ba4117fadb7b6b27abf782f0884f4bc345d84554252a3e1c"
+    },
+    {
+      "cell": "product_failure-2-off",
+      "case": "product_failure",
+      "enabled": false,
+      "question": 2,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 641,
+      "hint_chars": 0,
+      "seconds": 0.625,
+      "prompt_digest": "sha256:bf8891ad9f518f43173fe82f0d2bab139022c50ca281b76d7393d7bbf923038b"
+    },
+    {
+      "cell": "product_failure-2-on",
+      "case": "product_failure",
+      "enabled": true,
+      "question": 2,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 1034,
+      "hint_chars": 391,
+      "seconds": 0.6559999999954016,
+      "prompt_digest": "sha256:225371cc771288ce91aceaa788cade52086451ce69014d7ee74854866e0c3619"
+    },
+    {
+      "cell": "product_failure-3-on",
+      "case": "product_failure",
+      "enabled": true,
+      "question": 3,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 1032,
+      "hint_chars": 391,
+      "seconds": 0.6880000000019209,
+      "prompt_digest": "sha256:6bea1932c4608d854e1bff72814c8483f6695848b23923ab8c7284428067afe9"
+    },
+    {
+      "cell": "product_failure-3-off",
+      "case": "product_failure",
+      "enabled": false,
+      "question": 3,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "hit",
+      "prompt_chars": 639,
+      "hint_chars": 0,
+      "seconds": 0.625,
+      "prompt_digest": "sha256:8dfc9861fa660049f8f1569f1ecc6e3ba5b70d627175af705580111a445ee2c9"
+    },
+    {
+      "cell": "missing_verification-0-off",
+      "case": "missing_verification",
+      "enabled": false,
+      "question": 0,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 625,
+      "hint_chars": 0,
+      "seconds": 0.625,
+      "prompt_digest": "sha256:7016480e888c658695624551297479b59aaf5f57296b8913bf72a14a9d99dfa9"
+    },
+    {
+      "cell": "missing_verification-0-on",
+      "case": "missing_verification",
+      "enabled": true,
+      "question": 0,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 625,
+      "hint_chars": 0,
+      "seconds": 0.6090000000040163,
+      "prompt_digest": "sha256:7016480e888c658695624551297479b59aaf5f57296b8913bf72a14a9d99dfa9"
+    },
+    {
+      "cell": "missing_verification-1-on",
+      "case": "missing_verification",
+      "enabled": true,
+      "question": 1,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 627,
+      "hint_chars": 0,
+      "seconds": 0.6569999999992433,
+      "prompt_digest": "sha256:fbbe1e4937c4d91b28eb2ddc8b668bfd4a576cb20a880a350f3974ed3eb4abfc"
+    },
+    {
+      "cell": "missing_verification-1-off",
+      "case": "missing_verification",
+      "enabled": false,
+      "question": 1,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 627,
+      "hint_chars": 0,
+      "seconds": 0.6089999999967404,
+      "prompt_digest": "sha256:fbbe1e4937c4d91b28eb2ddc8b668bfd4a576cb20a880a350f3974ed3eb4abfc"
+    },
+    {
+      "cell": "missing_verification-2-off",
+      "case": "missing_verification",
+      "enabled": false,
+      "question": 2,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 644,
+      "hint_chars": 0,
+      "seconds": 0.6560000000026776,
+      "prompt_digest": "sha256:58a09b4f14fdd29bacaa947ca6d739566600b16f43b4185e6fe8ec087e0199c8"
+    },
+    {
+      "cell": "missing_verification-2-on",
+      "case": "missing_verification",
+      "enabled": true,
+      "question": 2,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 644,
+      "hint_chars": 0,
+      "seconds": 0.625,
+      "prompt_digest": "sha256:58a09b4f14fdd29bacaa947ca6d739566600b16f43b4185e6fe8ec087e0199c8"
+    },
+    {
+      "cell": "missing_verification-3-on",
+      "case": "missing_verification",
+      "enabled": true,
+      "question": 3,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 642,
+      "hint_chars": 0,
+      "seconds": 0.6409999999959837,
+      "prompt_digest": "sha256:67536d43b8d9d241e859625208b98be786091d149c909258cd021d0b98261711"
+    },
+    {
+      "cell": "missing_verification-3-off",
+      "case": "missing_verification",
+      "enabled": false,
+      "question": 3,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 642,
+      "hint_chars": 0,
+      "seconds": 0.5310000000026776,
+      "prompt_digest": "sha256:67536d43b8d9d241e859625208b98be786091d149c909258cd021d0b98261711"
+    },
+    {
+      "cell": "changed_workspace-0-off",
+      "case": "changed_workspace",
+      "enabled": false,
+      "question": 0,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 615,
+      "hint_chars": 0,
+      "seconds": 0.6559999999954016,
+      "prompt_digest": "sha256:59c969b785b2fa762a5cea745478bff68201a81e42bd1ffc6ce058ac9002b507"
+    },
+    {
+      "cell": "changed_workspace-0-on",
+      "case": "changed_workspace",
+      "enabled": true,
+      "question": 0,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 615,
+      "hint_chars": 0,
+      "seconds": 0.6090000000040163,
+      "prompt_digest": "sha256:59c969b785b2fa762a5cea745478bff68201a81e42bd1ffc6ce058ac9002b507"
+    },
+    {
+      "cell": "changed_workspace-1-on",
+      "case": "changed_workspace",
+      "enabled": true,
+      "question": 1,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 617,
+      "hint_chars": 0,
+      "seconds": 0.6409999999959837,
+      "prompt_digest": "sha256:bd055fa6e917971415d32b90b4b5debb8804460680fd2a9c30dad74b272a5f12"
+    },
+    {
+      "cell": "changed_workspace-1-off",
+      "case": "changed_workspace",
+      "enabled": false,
+      "question": 1,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 617,
+      "hint_chars": 0,
+      "seconds": 0.5940000000045984,
+      "prompt_digest": "sha256:bd055fa6e917971415d32b90b4b5debb8804460680fd2a9c30dad74b272a5f12"
+    },
+    {
+      "cell": "changed_workspace-2-off",
+      "case": "changed_workspace",
+      "enabled": false,
+      "question": 2,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 634,
+      "hint_chars": 0,
+      "seconds": 0.625,
+      "prompt_digest": "sha256:bc496eda398106ea27ae7f7f55438563e930b9c774f0f5e2fd9a77f0c6301055"
+    },
+    {
+      "cell": "changed_workspace-2-on",
+      "case": "changed_workspace",
+      "enabled": true,
+      "question": 2,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 634,
+      "hint_chars": 0,
+      "seconds": 0.5159999999959837,
+      "prompt_digest": "sha256:bc496eda398106ea27ae7f7f55438563e930b9c774f0f5e2fd9a77f0c6301055"
+    },
+    {
+      "cell": "changed_workspace-3-on",
+      "case": "changed_workspace",
+      "enabled": true,
+      "question": 3,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 632,
+      "hint_chars": 0,
+      "seconds": 0.625,
+      "prompt_digest": "sha256:719c838612c6d3358f7b21d3a1865ae460c255225910a456cfca8219ed8edf70"
+    },
+    {
+      "cell": "changed_workspace-3-off",
+      "case": "changed_workspace",
+      "enabled": false,
+      "question": 3,
+      "action": "invalid_json",
+      "correct": false,
+      "review": "unjudged",
+      "prompt_chars": 632,
+      "hint_chars": 0,
+      "seconds": 0.5160000000032596,
+      "prompt_digest": "sha256:719c838612c6d3358f7b21d3a1865ae460c255225910a456cfca8219ed8edf70"
+    }
+  ],
+  "admission": {
+    "unjudged_on_requests_without_source": 8,
+    "independent_source_key": "world_model_verification_review",
+    "admitted_on_requests": 12,
+    "budget_chars": 900,
+    "truncation_allowed": false,
+    "unjudged_on_off_prompt_digests_equal": true
+  },
+  "conclusion": {
+    "additional_reported_input_tokens": 952,
+    "candidate_terminated": true,
+    "additional_correct": 0,
+    "semantic_utility_inferred_from_invalid_actions": false,
+    "scorer_weakened": false,
+    "promote": false,
+    "input_token_increase_percent": 16.3,
+    "world_model_overall_complete": false
+  },
+  "regression": {
+    "failed": 0,
+    "source_freeze_verified": true,
+    "production_freeze_files": 702,
+    "test_files": 11,
+    "passed": 192,
+    "subtests_passed": 31,
+    "checks": [
+      {
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/test_world_model_verification_review.py",
+          "tests/test_context_source.py",
+          "tests/test_prompt_envelope.py",
+          "tests/test_context_epoch.py",
+          "tests/test_ghost_context_admission.py",
+          "tests/test_ghost_provider_send_boundary.py",
+          "tests/test_completion_verification.py",
+          "tests/test_completion_selected_verification_single_decision.py",
+          "tests/test_completion_verification_latest_result_wins.py",
+          "tests/test_verification_observation_contract.py",
+          "tests/test_completion_verification_identity_exact.py",
+          "-q",
+          "--tb=short",
+          "-o",
+          "junit_logging=all",
+          "--junitxml=.e2e-artifacts/world-model-verification-review-20261118/final.xml"
+        ],
+        "check": "related"
+      },
+      {
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "ruff",
+          "check",
+          "."
+        ],
+        "check": "ruff"
+      },
+      {
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "check": "mypy"
+      },
+      {
+        "exit": 0,
+        "command": [
+          "pyrefly",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "check": "pyrefly"
+      },
+      {
+        "exit": 0,
+        "command": [
+          "ty",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "check": "ty"
+      },
+      {
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "tools.kernel_type_precision_gate"
+        ],
+        "check": "precision"
+      },
+      {
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "tests/manual/ghost_memory_routing/world_model_verification_review.py",
+          "tests/test_world_model_verification_review.py",
+          "--python-version",
+          "3.11"
+        ],
+        "check": "owned-mypy"
+      },
+      {
+        "exit": 0,
+        "command": [
+          "pyrefly",
+          "check",
+          "tests/manual/ghost_memory_routing/world_model_verification_review.py",
+          "tests/test_world_model_verification_review.py",
+          "--python-version",
+          "3.11"
+        ],
+        "check": "owned-pyrefly"
+      },
+      {
+        "exit": 0,
+        "command": [
+          "ty",
+          "check",
+          "tests/manual/ghost_memory_routing/world_model_verification_review.py",
+          "tests/test_world_model_verification_review.py",
+          "--python-version",
+          "3.11"
+        ],
+        "check": "owned-ty"
+      },
+      {
+        "exit": 1,
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "tests/manual/ghost_memory_routing/world_model_verification_review.py",
+          "tests/test_world_model_verification_review.py",
+          "--python-version",
+          "3.11",
+          "--disallow-any-expr"
+        ],
+        "check": "owned-any"
+      }
+    ],
+    "skipped": 0,
+    "new_candidate_tests": 24,
+    "live_and_final_sources_equal": true,
+    "errors": 0
+  },
+  "owned_any_audit": {
+    "exit": 1,
+    "dependency_files": 193,
+    "dependency_diagnostics": 4630,
+    "owned_diagnostics": 0,
+    "scope_changed": false
+  },
+  "source_sha256": {
+    "tests/manual/ghost_memory_routing/world_model_verification_review.py": "90422573C9074E1AB6DE450FDDF87510B1C9E38ADB859E33E0BEB6B326A957BF",
+    "tests/test_world_model_verification_review.py": "BDFBA539C484DB601704AD9C2C5F4C302111FFD6A2003FC19DD3F7A1AE23A0B6"
+  },
+  "limitations": [
+    "Controlled real-check fixtures, not replay of user project runs",
+    "Protocol-negative result does not establish semantic prediction uselessness",
+    "No production consumer or durable World Model lifecycle acceptance",
+    "Single model/config; latency descriptive only",
+    "World Model overall and full G0 remain incomplete"
+  ],
+  "local_artifacts": ".e2e-artifacts/world-model-verification-review-20261118"
+}

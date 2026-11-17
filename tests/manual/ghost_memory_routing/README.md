@@ -9,7 +9,14 @@
 历史 `reports/` 保留当时测量与判定，后续晋级以当前[晋级协议](../../../docs/ghost_future_direction.zh-CN.md#06-晋级协议)为准；本次修订不自动将历史候选改为已启用。
 
 同日已根据既有结果完成 Gemma 12B 普通 Chat 中文子集的生产接线与默认启用，见
-[启用及遗漏核对](../../../docs/ghost_progress/language-production-enablement-20261117.md)。用户已要求停止新增实机 A/B；本次不继续补跑，新批次的不完整数据单独留档。
+[启用及遗漏核对](../../../docs/ghost_progress/language-production-enablement-20261117.md)。用户已要求停止该语言批次新增实机 A/B；不继续补跑，其不完整数据单独留档。
+
+2026-11-18 按当前 World Model 任务另行冻结并完成首个验证预测复盘消费者：
+[实验与负结果](../../../docs/ghost_progress/world-model-verification-review-20261118.md)。
+真实 check/proof→prediction→review→有界 ContextSource/admission→Gemma 共 40 次完整请求，
+严格 action on/off 均 0/20（回复带 JSON 围栏），input tokens +16.3%；按冻结门终止该接口
+候选，不放宽 scorer、不接生产。该批不重复语言实验；原始回复及 fixture 只留本地
+`.e2e-artifacts/world-model-verification-review-20261118`。
 
 ## 文件与数据位置
 
@@ -19,6 +26,7 @@
 | `round2.py`、`dump2.py` | 扩语言/命令等槽位，在条目上限下比较入选差异 |
 | `round3.py` | 分层收益排序与冲突替换消融；新近/生产/空白数据复用前一个实验 |
 | `round4.py` | 语言/命令 on/off、当前请求覆盖、预算压力及离线生命周期检查 |
+| `world_model_verification_review.py` | 首个 World Model 验证复盘候选；隔离真实 check/proof、纯预测/review、独立 admission 与冻结单模型 on/off；已保留格式负结果，不被生产 import |
 | `summarize.py` | 从本地原始数据导出无回复 metrics，或独立复算随目录保存的快照 |
 | `scope_authority_smoke.py`、`scope_authority_report.py` | 真实 planning builder/kernel/ApiProvider 的 on/off 结构 smoke、baseline/candidate payload 摘要与脱敏报告，不作 language 晋级 |
 | `history_expiry_probe.py` | 固定 text/native 响应及显式时间，复现后续 HTTP history 的过期 hint 重发；保留负结果，不接生产 guard |

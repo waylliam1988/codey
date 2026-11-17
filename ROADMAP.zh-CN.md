@@ -2242,13 +2242,21 @@ CompletionProof。repair 默认策略不变，确认净收益后才申请 0.7.2 
 
 #### 0.6.12 - World Model Review and Shadow Context v1
 
+2026-11-18：[首个验证预测复盘消费者](docs/ghost_progress/world-model-verification-review-20261118.md)
+已实现隔离真实 check/proof→prediction→review→有界 ContextSource/admission→Gemma
+复盘建议闭环；40 次请求完整完成，严格 action on/off 各 0/20（均为带围栏 JSON），
+输入 tokens +16.3%。按预先冻结门终止本候选接口，不放宽 scorer、不增加生产空壳；
+完整 World Model 仍未完成，下一候选须独立冻结格式接口及语义收益，不覆盖本次负结果。
+
 目标：记录 prediction、review、uncertainty 和 re-check hint，并让其进入 shadow ContextSource。
-这是有真实预测复盘任务时才启动的可选切口；不为语言偏好增加 World Model 依赖。
+本次交接明确要求推进真实消费者与效果评估；不为语言偏好增加 World Model 依赖。
 
 边界：没有 proof、verification 或 user correction 时只能是 `unjudged`；stale projection 只能提示复查。
 
-验收：shadow 不改变默认 prompt；可以统计命中率、未判断率、stale leakage 和 context collision；
-World Model 不产生 evidence_refs。
+验收：未验证阶段 shadow 不改变默认 prompt；可以统计命中率、未判断率、stale leakage 和
+context collision，World Model 不产生 evidence_refs。单一本地模型/config 证明净收益且本消费者
+相关生产边界通过后，应接正常入口、在受测范围默认启用，并保留关闭、隔离、回滚及未测模型
+基线回退；没有收益记录负结果并调整或终止候选，不将该阶段永久解释为只能 shadow。
 
 ### G3：选择性晋级（0.7.x）
 

@@ -10,8 +10,10 @@
 
 ## 当前状态
 
-World Model 首个验证复盘消费者已[冻结实验](world-model-verification-review-20261118.md)：
-只读 prediction→proof review→有界投影→模型建议的 20 题/arm，尚未执行收益矩阵，不改生产默认。
+World Model 首个[验证复盘消费者实验](world-model-verification-review-20261118.md)已完成真实
+check/proof→prediction→review→独立投影/admission→Gemma 的 40 次请求。严格 action
+scorer on/off 均 0/20（全为带围栏 JSON），输入 token +16.3%；按冻结门终止本候选接口，
+不放宽 scorer、不误记服务失败、不加生产空壳。World Model 整体仍未完成。
 
 2026-11-18 新完成：[Hebbian 内部记录时间与普通消费者](hebbian-row-time-20261117.md)。
 原 54 cell 18→54 通过；坏时间默认拒绝，合法旧时间/fallback 保留，普通 reader/Sleep/
@@ -81,6 +83,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| World Model 验证预测复盘 2026-11-18 | `ABANDONED`（受测文本→严格 action 接口） | 原型闭环与 40 次 Gemma 实机请求完成；on/off 各 0/20，40 个带围栏回复未过冻结 JSON scorer，额外 input tokens +16.3%；保留负结果，未生产晋级 | [冻结、原型与负结果](world-model-verification-review-20261118.md) |
 | Hebbian 内部记录时间 2026-11-17/18 | `PRODUCTION_MERGED`（解码及普通消费者） | 原 54 项 18→54；最终新增文件 140 项，扩大 1031/34 子测试与全树静态门通过；坏历史保留有效投影，坏投影省略提示且可重建恢复，关闭/删除/reset/冷恢复及实际 App→HTTP 已验 | [基线、生产与剩余审查](hebbian-row-time-20261117.md) |
 | Hebbian 损坏事件原子重建 2026-11-17 | `PRODUCTION_MERGED`（普通显式重建） | 原 54 项 12→54 通过；另 27 项 CLI/关闭控制下删除与 reset/冷恢复/写入失败/状态一致性验收；扩大 891/34 子测试、类型修订后最终 81 项与全静态门通过；原日志及有效投影保留，无新增默认关闭开关 | [基线、生产与剩余审查](hebbian-replay-integrity-20261117.md) |
 | 原生回执不完整HTTP响应修复 2026-11-17 | `PRODUCTION_MERGED`（普通JSON发送默认路径） | 原72项48→72通过，扩大417项、类型修订后最终155项与全静态门通过，两个文件owned Any零诊断；未收齐帧为MAYBE_SENT、不完成不重发；按用户要求本批后暂停 | [生产修复与暂停交接](native-uncertain-response-production-20261117.md) |
@@ -148,7 +151,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 | 0.6.9 provider outcome canonical event | `NOT STARTED` | 只接真实 send/repair/settlement 的 bounded outcome | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.10 correction/repair projection shadow | `NOT STARTED` | 未验证 outcome 只能是 hypothesis/unjudged | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.11 Ghost Explain | `NOT STARTED` | 解释选择过程，不重新计算、不产生 evidence | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
-| 0.6.12 World Model review/shadow context | `INCOMPLETE`（首个消费者实验已冻结） | 验证复盘消费者 20 题/arm 已冻结；未执行收益矩阵，尚未生产接线，不改默认 prompt | [冻结实验](world-model-verification-review-20261118.md) / [研究建议](world-model-shadow-proposal.md) |
+| 0.6.12 World Model review/shadow context | `INCOMPLETE`（首个实机消费者候选负结果） | 只读预测复盘原型与 40 次实机评估已完成；受测接口因格式无净收益而终止，尚无已验证生产消费者，不改默认 prompt | [实机负结果](world-model-verification-review-20261118.md) / [研究建议](world-model-shadow-proposal.md) |
 | 0.7 留出任务与可选模型扩展 | `NOT STARTED` | 逐模型独立验收；第二模型为可选扩展，不阻塞已通过单模型的生产启用 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.8 Protocol Adaptation | `NOT STARTED` | 独立下游轨道，不扩大 Ghost 权限 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.9+ 可塑性研究 | `NOT STARTED` | 独立 research benchmark，可随时终止 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
