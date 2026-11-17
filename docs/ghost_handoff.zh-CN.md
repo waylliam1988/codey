@@ -12,14 +12,21 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-18 最新实验：[节点容量与跨 scope 重建](ghost_progress/graph-capacity-scope-replay-20261118.md)。
-冻结 `50b58c39` 后 12 fixture 全有效、6 通过/6 失败；超容量组三 scope×warm/cold 在
-删除另一 scope 后，两次重建均把保留节点 499→500，已裁身份重现；删除 scope 不复活，
-原始历史保留。旧 tie/control 192 项通过，所有静态门与 owned Any 零诊断；新测试及
-基线报告可复现，尚无生产修改。下一步实现有界裁剪差量，补旧日志缺边界拒绝保护与
-相关生产回归，不能仅在 CLI 临时修补或复制每次全图快照。候选与边界已在记录冻结。
-本地 baseline DB 是旧重建后的状态，不是独立保存的实验前 499 快照；不要虚构恢复证明。
-保留原 12 项 scorer/源文件；目标继续，用户原改动不动，不复制 worktree。
+2026-11-18 最新完成：[节点容量与跨 scope 重建](ghost_progress/graph-capacity-scope-replay-20261118.md)，
+生产 `34852638` 已在 master 默认生效。原 12 项从 6→12，正常两条 reinforce 分支在
+同事务记录实际裁剪差量；强化/裁剪用独立身份，同秒反复重学追加回归从 0→3。普通
+writer/rebuild/CLI 直接消费，无新开关。44 项新增边界通过；扩大 34 文件批次为
+1474 passed/3 个旧 compact 夹具身份冲突/34 子测试。仅给夹具 padding 独立事件 ID，
+不改原断言，三文件 63 项复验及全树静态门通过；四个 owned 文件 Any 零诊断，未修改
+依赖 10864 项/334 文件诊断单独保留。生产两批 702 文件字节相同，勿称一次全部通过。
+旧缺裁剪日志仅对受测删除前歧义拒绝并保留投影；不保证任意旧历史或无缝降级。
+旧 reader 不认识新标记；保持兼容版本，用既有开关隔离，必要时显式 reset/受支持维护
+snapshot，不删原始历史。baseline DB 已被旧 replay 改过，不是最初独立 499 快照。
+下一步补正常 App×physical HTTP 硬退出/跨 run 组合。旧
+`tests/manual/completion_operation_resume_smoke.py` 静态发现仍按旧 positional JSONL
+构造 operation store，并重复提交同一 run_id；尚未执行，先冻结单项复现、按当前
+durable owner/恢复入口更新材料，不改变生产契约迁就旧脚本。完整 G0/World Model
+仍未完成；两个重复事实预测负结果不重跑。目标继续，用户原改动不动，不复制 worktree。
 
 2026-11-18 此前完成：[Hebbian control payload](ghost_progress/hebbian-control-replay-20261118.md)。
 冻结提交 `4c5feeb6` 后原 168 项全有效、36 通过/132 失败；原始负结果 `9b90e1e7`
@@ -29,8 +36,8 @@ rebuild-state 默认消费，无新开关、schema 迁移或模型调用。153 �
 32 文件 1421 项/34 子测试及全树静态门通过；三个 owned 文件 Any 零诊断，依赖既有
 3873 项/181 文件诊断单独保留。完整日志/XML/SQLite state 只留本地，不复制 worktree。
 后续优先核对容量中间裁剪与 scope 删除后的 live/replay 一致性，再补完整 App/硬退出/
-跨 run 恢复、混版本及 retention/purge。该容量组合目前只是代码审查疑点，须先独立冻结，
-不能宣称已复现。完整 G0/World Model 仍未完成；重复当前事实预测候选负结果不重跑。
+跨 run 恢复、混版本及 retention/purge。当时的容量审查疑点已由本页最新一轮独立冻结、
+复现并限定闭合，不重复旧矩阵。完整 G0/World Model 仍未完成；重复当前事实预测候选负结果不重跑。
 保护既有 tar.gz 删除和未跟踪 HTML；目标继续。
 
 2026-11-18 此前完成：[图同分裁剪与重建](ghost_progress/graph-tie-replay-20261118.md)。

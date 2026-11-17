@@ -27,6 +27,14 @@
 
 ## 文件与数据位置
 
+2026-11-18 G0 [节点容量裁剪与跨 scope 重建](../../../docs/ghost_progress/graph-capacity-scope-replay-20261118.md)：
+入口 `python -m pytest tests/test_ghost_graph_capacity_scope_replay.py -q -s --tb=short`，
+追加边界在 `tests/test_ghost_graph_pruning_boundaries.py`。原 12 项 6→12，生产
+`34852638` 默认写入/消费裁剪差量；基线与生产脱敏报告为
+`reports/graph-capacity-scope-replay-{baseline,production}-20261118.json`。完整日志、
+XML 和 SQLite 仅留本地 `.e2e-artifacts/ghost-graph-capacity-scope-replay-20261118`。
+无模型调用；旧缺边界/降级限制和压缩夹具失败归属见记录，不扩大到全部历史或 G0。
+
 2026-11-18 G0 [图同分裁剪与重建](../../../docs/ghost_progress/graph-tie-replay-20261118.md)：
 复现入口是 `python -m pytest tests/test_ghost_graph_tie_replay.py -q -s --tb=short`，生产
 验收另见 `tests/test_ghost_graph_tie_lifecycle.py`。原 24 项 9→24，原始基线与生产脱敏

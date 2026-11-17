@@ -1,6 +1,6 @@
 {
   "experiment": "ghost-graph-capacity-scope-replay-20261118",
-  "status": "PRODUCTION_VALIDATED_PENDING_COMMIT",
+  "status": "PRODUCTION_MERGED",
   "freeze_commit": "50b58c39",
   "baseline_commit": "7913329f",
   "repeated_transition_freeze_commit": "175f142f",
@@ -892,5 +892,6 @@
     "Does not restore old projections already overwritten by old replay",
     "Legacy fixture models old producer events in a fresh window, not an old App process",
     "No proof of full App hard-exit/cross-run physical-send recovery, disk retention/purge, full G0 or World Model production"
-  ]
+  ],
+  "production_commit": "34852638"
 }
