@@ -65,6 +65,22 @@ def begin_checkpoint(database: sqlite3.Connection, stream: EventStream) -> None:
     )
 
 
+def reset_window(database: sqlite3.Connection, stream: EventStream) -> None:
+    """Exclude all existing history in an explicit atomic projection reset.
+
+    The caller clears the projection and acknowledges its cursor in the same
+    transaction. Unlike ordinary checkpoints, reset can recover damaged window
+    metadata by deriving both positions from the original stream's actual tail.
+    """
+    boundary = _event_position(database, stream)
+    database.execute(
+        "INSERT INTO ghost_replay_windows(stream,after_sequence,applied_after_sequence) VALUES(?,?,?) "
+        "ON CONFLICT(stream) DO UPDATE SET after_sequence=excluded.after_sequence,"
+        "applied_after_sequence=excluded.applied_after_sequence",
+        (stream, boundary, boundary),
+    )
+
+
 def checkpoint_events(events: Iterable[Mapping[str, object]]) -> Iterator[Mapping[str, object]]:
     """A checkpoint copies state into fresh envelopes without reusing old IDs."""
     identity = uuid.uuid4().hex

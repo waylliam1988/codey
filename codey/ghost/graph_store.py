@@ -10,7 +10,13 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Literal
 
-from codey.ghost.event_windows import acknowledge_window, begin_checkpoint, checkpoint_events, event_window
+from codey.ghost.event_windows import (
+    acknowledge_window,
+    begin_checkpoint,
+    checkpoint_events,
+    event_window,
+    reset_window,
+)
 from codey.ghost.payload_types import decoded_object
 from codey.ghost.sqlite import GhostSQLite
 
@@ -210,12 +216,8 @@ class GhostGraph:
     def reset(self) -> None:
         with self.transaction(deleting=True):
             database = self._db()
-            database.execute("DELETE FROM graph_nodes WHERE graph=?", (self.name,))
-            database.execute("DELETE FROM graph_events WHERE graph=?", (self.name,))
-            database.execute("DELETE FROM graph_consumers WHERE graph=?", (self.name,))
-            database.execute(
-                "UPDATE ghost_replay_windows SET after_sequence=0,applied_after_sequence=0 WHERE stream=?", (self.name,),
-            )
+            reset_window(database, self.name)
+            self.replace_rows((), ())
 
     def event_stats(self) -> dict[str, int]:
         with self.transaction(write=False):

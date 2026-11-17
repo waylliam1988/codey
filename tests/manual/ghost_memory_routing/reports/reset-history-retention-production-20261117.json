@@ -1,0 +1,698 @@
+{
+  "experiment": "ordinary-reset-history-retention-production",
+  "date": "2026-11-17",
+  "status": "PRODUCTION_MERGED",
+  "scope": "normal_single_version_runtime",
+  "baseline_source_commit": "0cdb9137",
+  "baseline_experiment_commit": "b64ab6ef16f0bb0c881c3fd2a24c3c17e99856b4",
+  "baseline_matrix": {
+    "cells": 63,
+    "passed": 21,
+    "failed": 42,
+    "invalid": 0
+  },
+  "final_matrix": {
+    "cells": 63,
+    "passed": 63,
+    "failed": 0
+  },
+  "final_boundaries": {
+    "cells": 50,
+    "passed": 50,
+    "failed": 0
+  },
+  "model": null,
+  "endpoint": null,
+  "model_calls": 0,
+  "default_consumer": "existing_API_CLI_and_domain_reset_all",
+  "new_default_off_flags": [],
+  "production_files": [
+    "codey/ghost/event_windows.py",
+    "codey/ghost/record_store.py",
+    "codey/ghost/graph_store.py",
+    "codey/ghost/observations.py"
+  ],
+  "source_lf_sha256": {
+    "codey/ghost/event_windows.py": "a231853e54715812f96d1f358c1dbcd88134dcb3d30b20d07e2249b816de0f30",
+    "codey/ghost/record_store.py": "26a076863018242c46f3fa6e159b02b3d495c9dfeb84c36c485fd9ec7a948a9c",
+    "codey/ghost/graph_store.py": "fb0a16e2b9f298a21e60a6d6fba1e442b2cfe726ed8d4959b372800f6c0d4a9b",
+    "codey/ghost/observations.py": "1c3b8de2c9e769d89fd82014410cb42673a78b95924ed1d0f96dd2d75bcb9a80",
+    "tests/test_ghost_reset_history_retention.py": "2ab2e51bb8b0080ef32b79b165c12ebcec98aeee99f3e388e97de971d7d04d0a",
+    "tests/test_ghost_reset_boundaries.py": "96454f80441c6b9283e2219ebab783e2c9cfd665b8c8ba8511a90edd6970a579"
+  },
+  "batches_are_independent_do_not_sum": true,
+  "batches": [
+    {
+      "name": "candidate",
+      "regular_passed": 250,
+      "subtests_passed": 0,
+      "junit_cases": 250,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 53.032,
+      "source_note": "initial_candidate"
+    },
+    {
+      "name": "production-targeted",
+      "regular_passed": 180,
+      "subtests_passed": 0,
+      "junit_cases": 181,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 42.773,
+      "source_note": "one_invalid_control_fixture_then_corrected"
+    },
+    {
+      "name": "production-complete",
+      "regular_passed": 906,
+      "subtests_passed": 136,
+      "junit_cases": 1042,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 359.355,
+      "source_note": "before_import_formatting_only"
+    },
+    {
+      "name": "production-final",
+      "regular_passed": 125,
+      "subtests_passed": 0,
+      "junit_cases": 125,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 44.562,
+      "source_note": "final_source_after_import_formatting"
+    }
+  ],
+  "static_command_exit_codes": {
+    "ruff": 0,
+    "mypy": 0,
+    "pyrefly": 0,
+    "ty": 0,
+    "precision": 0,
+    "owned-mypy": 0,
+    "owned-pyrefly": 0,
+    "owned-ty": 0,
+    "owned-any": 1
+  },
+  "owned_any_audit": {
+    "files": 6,
+    "owned_diagnostics": 0,
+    "untouched_dependency_files": 187,
+    "untouched_dependency_diagnostics": 4065,
+    "expanded_command_exit_code": 1
+  },
+  "candidate_issue_ownership": [
+    {
+      "issue": "nonexistent_update_projections_control_in_new_fixture",
+      "owner": "test",
+      "fix": "use_existing_retrieve_projections_control_keep_behavior_assertions"
+    },
+    {
+      "issue": "three_import_format_diagnostics",
+      "owner": "owned_source_and_test_formatting",
+      "fix": "organize_imports_then_final_source_regressions_and_all_static_gates"
+    }
+  ],
+  "limitations": [
+    "no_mixed_version_warm_process_proof",
+    "raw_history_disk_growth_not_bounded",
+    "no_explicit_physical_purge_policy",
+    "remaining_identity_scope_and_full_lifecycle_not_closed",
+    "missing_metadata_cold_start_still_rejected",
+    "batch_timings_not_isolated_performance_evidence",
+    "full_0.6.3_and_World_Model_incomplete"
+  ],
+  "full_pytest_run": false,
+  "stopped_language_batches_resumed": false,
+  "results": [
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[user-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[user-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[user-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[user-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[user-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[user-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[user-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[project-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[project-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[project-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[project-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[project-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[project-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[project-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[session-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[session-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[session-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[session-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[session-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[session-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_read_only_reset_control_keeps_original_history[session-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-observations]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[missing-inbox]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[missing-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[missing-continuity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[missing-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[missing-affinity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[missing-sleep]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[missing-observations]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[anchor-inbox]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[anchor-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[anchor-continuity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[anchor-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[anchor-affinity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[anchor-sleep]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[anchor-observations]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[unacknowledged-inbox]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[unacknowledged-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[unacknowledged-continuity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[unacknowledged-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[unacknowledged-affinity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[unacknowledged-sleep]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_window_metadata_without_erasing_original_history[unacknowledged-observations]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_a_damaged_consumer_cursor_without_erasing_events[inbox]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_a_damaged_consumer_cursor_without_erasing_events[hebbian]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_a_damaged_consumer_cursor_without_erasing_events[continuity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_a_damaged_consumer_cursor_without_erasing_events[work_queue]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_a_damaged_consumer_cursor_without_erasing_events[affinity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_recovers_a_damaged_consumer_cursor_without_erasing_events[sleep]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_window_write_failure_rolls_back_reset_state_and_retirement_together[inbox]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_window_write_failure_rolls_back_reset_state_and_retirement_together[hebbian]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_window_write_failure_rolls_back_reset_state_and_retirement_together[continuity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_window_write_failure_rolls_back_reset_state_and_retirement_together[work_queue]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_window_write_failure_rolls_back_reset_state_and_retirement_together[affinity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_window_write_failure_rolls_back_reset_state_and_retirement_together[sleep]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_window_write_failure_rolls_back_reset_state_and_retirement_together[observations]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_reset_preserves_original_history_above_actual_capacity[inbox]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_reset_preserves_original_history_above_actual_capacity[hebbian]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_reset_preserves_original_history_above_actual_capacity[continuity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_reset_preserves_original_history_above_actual_capacity[work_queue]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_reset_preserves_original_history_above_actual_capacity[affinity]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_reset_preserves_original_history_above_actual_capacity[sleep]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_reset_preserves_original_history_above_actual_capacity[observations]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_completed_reset_retry_keeps_new_input_and_new_reset_retains_both_histories[user]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_completed_reset_retry_keeps_new_input_and_new_reset_retains_both_histories[project]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_completed_reset_retry_keeps_new_input_and_new_reset_retains_both_histories[session]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_still_runs_while_preserving_the_disabled_control[accept_events]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_still_runs_while_preserving_the_disabled_control[retrieve_projections]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_still_runs_while_preserving_the_disabled_control[admit_hints]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_explicit_reset_still_runs_while_preserving_the_disabled_control[run_maintenance]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_reset_during_embedding_keeps_raw_facts_without_returning_or_recaching_old_input[index]",
+      "passed": true
+    },
+    {
+      "group": "reset_boundaries",
+      "case": "test_reset_during_embedding_keeps_raw_facts_without_returning_or_recaching_old_input[query]",
+      "passed": true
+    }
+  ]
+}

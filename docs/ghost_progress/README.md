@@ -10,17 +10,19 @@
 
 ## 当前状态
 
-最新有效负结果：[普通reset历史保留基线](reset-history-retention-baseline-20261117.md)。
-63项中21项只读对照通过、42项reset在最后历史比较失败；操作和重建可见性先通过。
-下一步修复默认reset的历史保留，不能以清空投影成功代替tombstone合同。
+最新完成：[普通reset历史保留生产修复](reset-history-retention-production-20261117.md)。
+原63项由21→63通过，另50项reset恢复/容量/回滚/新输入/开关/向量交错通过；扩大906项/
+136子测试、import格式修正后的125项复验及完整静态门通过，六个owned文件额外Any审计零诊断。
+正常单版本runtime的普通reset默认生效；混版本旧进程、磁盘retention/purge等仍待验。
 
-最新完成：[容量检查点与历史保留](capacity-history-retention-production-20261117.md)。
+此前完成：[容量检查点与历史保留](capacity-history-retention-production-20261117.md)。
 原78项矩阵48→78通过，另55项窗口验收；扩大776项/136子测试、最后SQL复查后的366项复验及完整静态门通过。
-正常单版本runtime和冷启动升级默认生效；reset、混版本旧进程、磁盘retention/purge仍待验。
+正常单版本runtime和冷启动升级默认生效；普通reset随后修复见上，混版本旧进程和磁盘策略仍待验。
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
-| 普通reset历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（有效负结果） | 63项全部有效，21项只读重开通过、42项reset物理删除原始历史；未观察到本次重开/重建复活 | [冻结矩阵与结果](reset-history-retention-baseline-20261117.md) |
+| 普通reset历史保留 2026-11-17 | `PRODUCTION_MERGED`（正常单版本runtime） | 原63项21→63通过，另50项恢复/容量/回滚/新输入/开关/向量交错全部通过；扩大906项/136子测试、import格式修正后125项复验及完整静态门通过，六个owned文件额外Any审计零诊断 | [生产修复与失败归属](reset-history-retention-production-20261117.md) |
+| 普通reset历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 63项全部有效，原21项只读通过、42项reset物理删除原始历史；未观察到本次重开/重建复活；后续生产修复见上行 | [冻结矩阵与结果](reset-history-retention-baseline-20261117.md) |
 | 容量检查点与历史保留 2026-11-17 | `PRODUCTION_MERGED`（单版本runtime/冷启动升级） | 原78项48→78通过；原日志保留，schema8有界重放/检索窗口及独立确认，Sleep按count/bytes推进窗口不复制旧report；55项验收、扩大776项/136子测试、最后SQL复查后366项复验及完整静态门通过，13个owned文件额外Any审计零诊断 | [生产修复与失败归属](capacity-history-retention-production-20261117.md) |
 | 容量压力下的历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 真实阈值共78项有效，原48通过/30历史丢失；39个低压力对照全通过，保留原测量，后续生产修复见上行 | [冻结矩阵与负结果](capacity-history-retention-baseline-20261117.md) |
 | 普通 scope 删除的历史保留 2026-11-17 | `PRODUCTION_MERGED`（低于compaction阈值） | 原63项39→63通过；追加领域删除事件、保留observation事实并退役过滤、同事务清派生向量及写回/检索复查；86项验收，独立ID修改前853项扩大回归/141子测试、最终源码454项复验/133子测试及完整静态门通过；九个owned文件额外Any审计零诊断 | [生产修复与失败归属](scope-history-retention-production-20261117.md) / [原始负结果](scope-history-retention-baseline-20261117.md) |
@@ -62,7 +64,7 @@
 | 0.6.2 scope 与四个开关 | `INCOMPLETE`（控制及 Manifest 已生产接线） | 四开关默认接线，显式关闭仍生效；delete/reset 已默认持久调度；完整维护撤回、生命周期及 acceptance battery 仍缺 | [进度记录](independent-controls.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（历史候选，后续已接线） | 持久化、七 store 失败恢复与冷启动原始证据保留；后续原子性、混合矩阵和普通 API/CLI 默认调度已完成，完整 retention/升级输入仍缺 | [候选记录](deletion-manifest-candidate.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
-| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含容量检查点与历史保留） | 默认删除调度/恢复、来源退役与旧投影准入、普通删除历史保留及容量窗口已生效；reset/其他历史重写、混版本旧进程、磁盘retention/purge、其余身份/scope异常及完整生命周期仍缺 | [容量修复](capacity-history-retention-production-20261117.md) / [旧投影准入](legacy-projection-admission-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
+| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含普通reset历史保留） | 默认删除调度/恢复、来源退役与旧投影准入、普通删除/reset历史保留及容量窗口已生效；其他历史重写路径、混版本旧进程、磁盘retention/purge、其余身份/scope异常及完整生命周期仍缺 | [reset修复](reset-history-retention-production-20261117.md) / [容量修复](capacity-history-retention-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |

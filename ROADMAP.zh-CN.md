@@ -1877,6 +1877,15 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 最新普通reset生产修复：保留七领域原事件，将现有窗口推进至reset时事件尾部，
+清空派生状态并原子确认cursor；输入/来源永久退役与Manifest确认同事务，派生向量显式清空。
+普通入口默认生效，无新关闭开关。原63项21→63通过，另50项损坏恢复、实际容量、失败回滚、
+completed重试/新输入、四开关和embedding交错全部通过；扩大906项/136子测试、import格式
+修正后125项复验和完整静态门通过，六个owned文件额外Any审计零诊断。
+见[生产修复与失败归属](docs/ghost_progress/reset-history-retention-production-20261117.md)。
+范围为正常单版本runtime；混版本旧进程、其余历史重写、磁盘retention/purge和完整生命周期
+仍缺，完整0.6.3继续未完成。以下基线与早期记录保留当时限制，当前状态以上述结论及进度板为准。
+
 2026-11-17 普通reset基线：63项全部有效，21项只读重开通过、42项reset在最终原历史比较
 失败。普通Manifest为tombstone，操作/清空投影/重建不可见先通过，但七store仍物理删除
 原领域事件；下一步保留日志并原子推进空重放窗口。见[冻结矩阵与负结果](docs/ghost_progress/reset-history-retention-baseline-20261117.md)。

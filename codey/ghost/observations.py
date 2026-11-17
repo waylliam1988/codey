@@ -21,7 +21,7 @@ from pathlib import Path
 
 from codey.ghost import _common
 from codey.ghost.embeddings import Embeddings, configured_embeddings
-from codey.ghost.event_windows import advance_observation_window, event_window
+from codey.ghost.event_windows import advance_observation_window, event_window, reset_window
 from codey.ghost.schema import clip_signal_text
 from codey.ghost.sqlite import GhostSQLite
 from codey.ghost.vectors import GhostVectorMemory, observation_digest
@@ -334,10 +334,8 @@ class GhostObservationStore:
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
                 "SELECT 'observation',run_id FROM observation_events",
             )
-            database.execute("DELETE FROM observation_events")
-            database.execute(
-                "UPDATE ghost_replay_windows SET after_sequence=0,applied_after_sequence=0 WHERE stream='observations'",
-            )
+            reset_window(database, "observations")
+            database.execute("DELETE FROM memory_embeddings")
 
     def export_state(self) -> dict[str, object]:
         return {

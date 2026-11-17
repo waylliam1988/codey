@@ -10,7 +10,13 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Literal, Protocol, TypeVar
 
-from codey.ghost.event_windows import acknowledge_window, begin_checkpoint, checkpoint_events, event_window
+from codey.ghost.event_windows import (
+    acknowledge_window,
+    begin_checkpoint,
+    checkpoint_events,
+    event_window,
+    reset_window,
+)
 from codey.ghost.payload_types import decoded_object
 from codey.ghost.sqlite import GhostSQLite
 
@@ -297,12 +303,8 @@ class GhostRecords:
                     (self.collection,),
                 )
             database.execute("DELETE FROM memory_records WHERE collection=?", (self.collection,))
-            database.execute("DELETE FROM memory_events WHERE collection=?", (self.collection,))
-            database.execute("DELETE FROM memory_consumers WHERE collection=?", (self.collection,))
-            database.execute(
-                "UPDATE ghost_replay_windows SET after_sequence=0,applied_after_sequence=0 WHERE stream=?",
-                (self.collection,),
-            )
+            reset_window(database, self.collection)
+            self.mark_applied()
             if settings:
                 database.execute("DELETE FROM ghost_settings")
 

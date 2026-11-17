@@ -6,6 +6,10 @@
 - 范围：已有领域的自动容量compaction、普通超阈值scope删除、Sleep维护和observation追加。
 - 模型：不调用；不恢复停止的语言批次，不新增模型行为收益主张。
 
+后续：[普通reset历史保留](reset-history-retention-production-20261117.md)已独立生产修复并
+默认接线；本文关于reset待验为本批次当时限制，不表示当前仍缺该63项矩阵。混版本旧进程、
+物理purge/磁盘策略及完整0.6.3仍未闭合。
+
 ## 合同与取舍
 
 保留同一领域原表中的sequence、event_id和payload；compaction在相同事务追加有界状态
