@@ -10,6 +10,10 @@
 
 ## 当前状态
 
+[正常 App 硬退出与 HTTP 恢复](app-http-crash-recovery-20261118.md)接续审查：已冻结旧
+headless smoke 单次原样诊断，尚未执行；先核对 durable owner/重复 run 契约，再冻结
+完整 App×physical HTTP 组合。复用已有 kernel/SQLite/App 证据，不把组合未验写成通过。
+
 [节点容量裁剪与跨 scope 重建](graph-capacity-scope-replay-20261118.md)已默认生产修复，
 提交 `34852638`：原 12 项 6→12，实际裁剪差量与强化事务独立身份供普通 writer/rebuild/
 CLI 消费，无新开关。同秒反复重学追加回归 0→3；新增 44 项通过。扩大 34 文件
