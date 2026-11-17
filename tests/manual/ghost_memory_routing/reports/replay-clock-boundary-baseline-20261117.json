@@ -1,0 +1,779 @@
+{
+  "experiment": "replay-clock-boundary-baseline-20261117",
+  "production_revision": "d1a40185",
+  "model": null,
+  "scope": "persisted Affinity rebuild corruption boundary, not normal producer or model send",
+  "clocks": [
+    "2026-01-01T00:00:00Z",
+    "2027-01-01T00:00:00Z"
+  ],
+  "matrix": {
+    "valid_cells": 12,
+    "passed": 3,
+    "failed": 9
+  },
+  "fixture_check_passed": true,
+  "invalid_attempts": [
+    {
+      "artifact": "baseline.xml",
+      "reason": "raw scope references and net-zero reinforcement/decay control comparison",
+      "valid_for_matrix": false
+    },
+    {
+      "artifact": "baseline-v2.xml",
+      "reason": "raw scope refs still differed from production hashed scope refs",
+      "valid_for_matrix": false
+    }
+  ],
+  "cells": [
+    {
+      "first": {
+        "accepted": true,
+        "digest": "540e2cacf603052b0e7482f7522c90e4d25371991717fccf632a36e9846e3e06",
+        "edges": [
+          [
+            "gae_b3752db1a5fb74f12e0ff037",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_c5b76ff9b961e511ec9765d9",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_eeebbd6a7eb23d93a292ea67",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "scope": "user",
+      "second": {
+        "accepted": true,
+        "digest": "540e2cacf603052b0e7482f7522c90e4d25371991717fccf632a36e9846e3e06",
+        "edges": [
+          [
+            "gae_b3752db1a5fb74f12e0ff037",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_c5b76ff9b961e511ec9765d9",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_eeebbd6a7eb23d93a292ea67",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "variant": "valid",
+      "passed": true
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "14b7683147f046cf58fbf0f4edd55c2edf59b26c4f8b58a28ae7be3341725cea",
+        "edges": [
+          [
+            "gae_3db3d2f6005cfb714d1afb65",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_2446e9985847977ed5c5868b",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_dfb756e4b7eb62467a843f80",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "scope": "project",
+      "second": {
+        "accepted": true,
+        "digest": "14b7683147f046cf58fbf0f4edd55c2edf59b26c4f8b58a28ae7be3341725cea",
+        "edges": [
+          [
+            "gae_3db3d2f6005cfb714d1afb65",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_2446e9985847977ed5c5868b",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_dfb756e4b7eb62467a843f80",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "variant": "valid",
+      "passed": true
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "e924aa5be130bb5f979cc64cb92e569520fb9bac381b848b339076e4559bc3a8",
+        "edges": [
+          [
+            "gae_b28702bca2218abb9d6d0e6f",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_efeaeb9208408c372de7d44d",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_9f6d8f820c60b8bb5d363ac9",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "scope": "session",
+      "second": {
+        "accepted": true,
+        "digest": "e924aa5be130bb5f979cc64cb92e569520fb9bac381b848b339076e4559bc3a8",
+        "edges": [
+          [
+            "gae_b28702bca2218abb9d6d0e6f",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_efeaeb9208408c372de7d44d",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_9f6d8f820c60b8bb5d363ac9",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "variant": "valid",
+      "passed": true
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "326c9d38c557899d35288e6741c454e7a8d166bb48d0700a8ff10c39e60163bf",
+        "edges": [
+          [
+            "gae_b3752db1a5fb74f12e0ff037",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_c5b76ff9b961e511ec9765d9",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_eeebbd6a7eb23d93a292ea67",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "scope": "user",
+      "second": {
+        "accepted": true,
+        "digest": "6c82f23628b96b0720bd368b6df5a21859eabb8c5fc3d13b9a4ac1dd76ce55e4",
+        "edges": [
+          [
+            "gae_b3752db1a5fb74f12e0ff037",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_c5b76ff9b961e511ec9765d9",
+            0.186584,
+            "active"
+          ],
+          [
+            "gan_eeebbd6a7eb23d93a292ea67",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "variant": "reinforcement",
+      "passed": false
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "003fcdd76f81cf886bc8dc14c427f4c71e912db29dc9c58199d57c6fd42eb8f0",
+        "edges": [
+          [
+            "gae_1500d3da3b8c216c365d2611",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_ccda86c50e9fcb10cacbb028",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_3da85941e5db05733877814f",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "scope": "project",
+      "second": {
+        "accepted": true,
+        "digest": "8de1c335c2a8611f866853d5f5b87f592e4b59337c8150c62290f83eaca5f2b1",
+        "edges": [
+          [
+            "gae_1500d3da3b8c216c365d2611",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_ccda86c50e9fcb10cacbb028",
+            0.186584,
+            "active"
+          ],
+          [
+            "gan_3da85941e5db05733877814f",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "variant": "reinforcement",
+      "passed": false
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "4dc999ff411ab730ba51644c5791f9a30814bdfda8c1f1fec433fd259bf7e619",
+        "edges": [
+          [
+            "gae_b28702bca2218abb9d6d0e6f",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_efeaeb9208408c372de7d44d",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_9f6d8f820c60b8bb5d363ac9",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "scope": "session",
+      "second": {
+        "accepted": true,
+        "digest": "a4ae22dc67f7eccc9135d60741d58784461347f5c71007dafeead91d8c4853b6",
+        "edges": [
+          [
+            "gae_b28702bca2218abb9d6d0e6f",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_efeaeb9208408c372de7d44d",
+            0.186584,
+            "active"
+          ],
+          [
+            "gan_9f6d8f820c60b8bb5d363ac9",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "variant": "reinforcement",
+      "passed": false
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "b93a1dba0132b9cfdde79da97fc31ff820db09c46d4e7bbaa27a23303fbbce38",
+        "edges": [
+          [
+            "gae_b3752db1a5fb74f12e0ff037",
+            0.128,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_c5b76ff9b961e511ec9765d9",
+            0.352,
+            "active"
+          ],
+          [
+            "gan_eeebbd6a7eb23d93a292ea67",
+            0.176,
+            "active"
+          ]
+        ]
+      },
+      "scope": "user",
+      "second": {
+        "accepted": true,
+        "digest": "6c0f692f5e2208239844bb167ff389078fe77dfb8d3b32275bdab756b3556fe5",
+        "edges": [
+          [
+            "gae_b3752db1a5fb74f12e0ff037",
+            0.015545,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_c5b76ff9b961e511ec9765d9",
+            0.021169,
+            "expired"
+          ],
+          [
+            "gan_eeebbd6a7eb23d93a292ea67",
+            0.010584,
+            "expired"
+          ]
+        ]
+      },
+      "variant": "decay",
+      "passed": false
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "8c67dd5a14f7679a64434103fcd45b4ada934e5ce390b363c661cf78a8569fb7",
+        "edges": [
+          [
+            "gae_05847b18af4ac8c55fabf81d",
+            0.128,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_7482e2dffc98d34f03dba70a",
+            0.352,
+            "active"
+          ],
+          [
+            "gan_6f9652bd180c67652514eef2",
+            0.176,
+            "active"
+          ]
+        ]
+      },
+      "scope": "project",
+      "second": {
+        "accepted": true,
+        "digest": "c4b87853fe0c8648c02748b2e9be9e5fda14128c0a4e1aa4e742f07cec4cb553",
+        "edges": [
+          [
+            "gae_05847b18af4ac8c55fabf81d",
+            0.015545,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_7482e2dffc98d34f03dba70a",
+            0.021169,
+            "expired"
+          ],
+          [
+            "gan_6f9652bd180c67652514eef2",
+            0.010584,
+            "expired"
+          ]
+        ]
+      },
+      "variant": "decay",
+      "passed": false
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "e058ca631f1aed7ab6573c545b7c7ae7c8b2513ec774b2aca60d2aa32264b973",
+        "edges": [
+          [
+            "gae_b28702bca2218abb9d6d0e6f",
+            0.128,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_efeaeb9208408c372de7d44d",
+            0.352,
+            "active"
+          ],
+          [
+            "gan_9f6d8f820c60b8bb5d363ac9",
+            0.176,
+            "active"
+          ]
+        ]
+      },
+      "scope": "session",
+      "second": {
+        "accepted": true,
+        "digest": "eedce764ea4a2593455877fc29001541b3dd950d97e2f96a15ad7b9c3f4d1d3c",
+        "edges": [
+          [
+            "gae_b28702bca2218abb9d6d0e6f",
+            0.015545,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_efeaeb9208408c372de7d44d",
+            0.021169,
+            "expired"
+          ],
+          [
+            "gan_9f6d8f820c60b8bb5d363ac9",
+            0.010584,
+            "expired"
+          ]
+        ]
+      },
+      "variant": "decay",
+      "passed": false
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "d6115bee965c39fc4eab53d193c64edac6767d358feca0a925ba049ab74d7bc7",
+        "edges": [
+          [
+            "gae_b3752db1a5fb74f12e0ff037",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_c5b76ff9b961e511ec9765d9",
+            0.088,
+            "active"
+          ],
+          [
+            "gan_eeebbd6a7eb23d93a292ea67",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "scope": "user",
+      "second": {
+        "accepted": true,
+        "digest": "51082795ba4ad64b693dbc0cf6a2b2fe2388a4685d3c20522adfb9412128c804",
+        "edges": [
+          [
+            "gae_b3752db1a5fb74f12e0ff037",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_c5b76ff9b961e511ec9765d9",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_eeebbd6a7eb23d93a292ea67",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "variant": "snapshot_basis",
+      "passed": false
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "0a65d20f958aafa2dc28294b01f331162301493b57d5a36d1d690e2b4335f5ee",
+        "edges": [
+          [
+            "gae_eaaf294c8fd95e6ef7f8b845",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_40abf59e9b4476468f6d1d1a",
+            0.088,
+            "active"
+          ],
+          [
+            "gan_7b252c6045bbd67e689a28e0",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "scope": "project",
+      "second": {
+        "accepted": true,
+        "digest": "75c94ae33d8e9cad51b8db3812cca3891b124ebb0a9740e146e90e27efd15794",
+        "edges": [
+          [
+            "gae_eaaf294c8fd95e6ef7f8b845",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_7b252c6045bbd67e689a28e0",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_40abf59e9b4476468f6d1d1a",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "variant": "snapshot_basis",
+      "passed": false
+    },
+    {
+      "first": {
+        "accepted": true,
+        "digest": "b8a54895704fa44007966075f353ece034b1ab2b0d2b38ec6cd0b609d706cfd8",
+        "edges": [
+          [
+            "gae_b28702bca2218abb9d6d0e6f",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_9f6d8f820c60b8bb5d363ac9",
+            0.088,
+            "active"
+          ],
+          [
+            "gan_efeaeb9208408c372de7d44d",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "scope": "session",
+      "second": {
+        "accepted": true,
+        "digest": "8046e6a444c1c44642c5794012c980f8c05d5cef5bf4c061a5cfe539b9a75af7",
+        "edges": [
+          [
+            "gae_b28702bca2218abb9d6d0e6f",
+            0.076109,
+            "active"
+          ]
+        ],
+        "nodes": [
+          [
+            "gan_efeaeb9208408c372de7d44d",
+            0.176,
+            "active"
+          ],
+          [
+            "gan_9f6d8f820c60b8bb5d363ac9",
+            0.088,
+            "active"
+          ]
+        ]
+      },
+      "variant": "snapshot_basis",
+      "passed": false
+    }
+  ],
+  "production_files_frozen": 702,
+  "checks": [
+    {
+      "check": "matrix",
+      "exit": 1,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "pytest",
+        "tests/test_ghost_replay_clock_boundary.py",
+        "-q",
+        "--tb=short",
+        "-o",
+        "junit_logging=all",
+        "--junitxml=D:\\codey\\.e2e-artifacts\\ghost-replay-clock-20261117\\baseline-verified.xml"
+      ]
+    },
+    {
+      "check": "ruff",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ]
+    },
+    {
+      "check": "mypy",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "precision",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ]
+    },
+    {
+      "check": "owned-mypy",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "tests/test_ghost_replay_clock_boundary.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "tests/test_ghost_replay_clock_boundary.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "tests/test_ghost_replay_clock_boundary.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-any",
+      "exit": 1,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "tests/test_ghost_replay_clock_boundary.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ]
+    }
+  ],
+  "limitations": [
+    "No evidence that an ordinary producer emitted the malformed fixture",
+    "No complete Sleep explicit-time acceptance",
+    "No actual provider send, other domains or World Model acceptance"
+  ],
+  "verification_artifact": "baseline-verified.xml",
+  "extra_any_audit": {
+    "owned_diagnostics": 0,
+    "untouched_dependency_diagnostics": 4064,
+    "untouched_dependency_files": 186,
+    "exit": 1,
+    "not_global_any_pass": true
+  },
+  "related": {
+    "passed": 113,
+    "junit": "baseline-related.xml"
+  },
+  "owned_source_lf_sha256": "156023b08b63cc363c3413b170af5a4f2f07863ec5285cfb301150146c7f106a"
+}

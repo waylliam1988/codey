@@ -10,6 +10,10 @@
 
 ## 当前状态
 
+最新实验：[固定日志重建的隐含时间基线](replay-clock-boundary-baseline-20261117.md)。
+12 cell 全有效，合法时间三个scope全通过，强化ts/衰减ts/快照基点损坏的九项均产生
+时钟相关权重或状态；真实store重建、重开与reader已验证。需独立生产修复，完整0.6.4未完成。
+
 最新完成：[observation 原始历史与兼容消费视图](observation-consumption-view-production-20261117.md)。
 schema9 默认原地保留 observation_history，旧名为窗口约束的原生只读视图；原 reader
 15项13→15通过，旧writer42项继续通过，另19项真实schema7/8迁移/回滚/序号/向量外键/
@@ -34,6 +38,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 固定日志重建的隐含时间基线 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | 12 cell全有效，3通过/9时钟相关失败；另一个时钟夹具通过；前两轮夹具scope/控制断言错误保留且不计分；未改生产 | [冻结矩阵与失败归属](replay-clock-boundary-baseline-20261117.md) |
 | observation 兼容消费视图 2026-11-17 | `PRODUCTION_MERGED`（迁移后重新执行的查询） | schema9 默认保留原始历史，旧名原生只读且受窗口约束；原reader15项13→15通过、旧writer42通过，另19项验收；候选273、扩大1122/136子测试、全静态门及16个owned Any审计通过 | [生产修复与失败归属](observation-consumption-view-production-20261117.md) |
 | 旧 observation reader 容量窗口基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 真实 schema7 reader 跨当前升级；15 cell 全有效，原13通过、2个capacity项目/会话读取并渲染旧记录；后续兼容视图闭合本矩阵；原始测量保留，不证明实际模型发送 | [冻结矩阵、归属及结果](legacy-observation-reader-baseline-20261117.md) |
 | 原始事件物理删除防护 2026-11-17 | `PRODUCTION_MERGED`（限定破坏性旧写口） | 默认构造安装三表DELETE约束；原42项14→42通过，另13项验收、扩大1088项/136子测试、测试类型修正后13项复验及完整静态门通过，四个owned文件额外Any审计零诊断；不隔离旧reader | [生产修复与边界](history-delete-guards-production-20261117.md) |
@@ -82,7 +87,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（历史候选，后续已接线） | 持久化、七 store 失败恢复与冷启动原始证据保留；后续原子性、混合矩阵和普通 API/CLI 默认调度已完成，完整 retention/升级输入仍缺 | [候选记录](deletion-manifest-candidate.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含 observation 兼容消费隔离） | 默认删除调度/恢复、来源退役与旧投影准入、删除/reset历史保留、容量窗口、原历史DELETE约束和schema9 observation只读消费视图已生效；其他领域旧reader/旧快照及内存、其他事务、磁盘retention/purge、其余身份/scope异常及完整生命周期仍缺 | [兼容消费视图](observation-consumption-view-production-20261117.md) / [物理删除防护](history-delete-guards-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
-| 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
+| 0.6.4 确定性 replay 与显式时间 | `INCOMPLETE`（已取得重建负结果） | 固定日志损坏时间边界12 cell中9项产生时钟相关投影；需修复并继续完整显式维护时间 | [基线](replay-clock-boundary-baseline-20261117.md) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.7 language 有条件启用与回滚 | `INCOMPLETE`（受测中文子集已默认启用） | Gemma 12B/受测预算的普通 Chat 已启用并可关闭、删除和回退；不代表完整规划项完成 | [生产启用](language-production-enablement-20261117.md) |

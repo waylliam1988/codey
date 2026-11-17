@@ -2067,6 +2067,11 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
+2026-11-17：[固定日志重建基线](docs/ghost_progress/replay-clock-boundary-baseline-20261117.md)
+已验证真实Affinity store跨两个时钟重建。12 cell全部有效，三个合法时间对照通过；
+强化ts、衰减ts和快照衰减基点损坏的九项均出现实际权重/状态差异。当前坏时间回退
+wall clock的生产路径需修复；完整显式维护时间与本阶段仍未完成。
+
 目标：定义可比较的 replay determinism，要求状态、筛选、排位、hint 和健康结论相同，
 不要求 SQLite 文件或导出日志字节相同。
 

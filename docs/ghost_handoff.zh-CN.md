@@ -12,6 +12,11 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
+2026-11-17 最新实验：[固定日志重建的隐含时间](ghost_progress/replay-clock-boundary-baseline-20261117.md)。
+真实Affinity store固定日志跨两个时钟重建，12 cell全有效：合法时间3通过，损坏强化ts/
+衰减ts/快照基点9项均改变实际权重或状态；前两轮夹具scope/对照断言错误保留并排除。
+生产未修改，下一步独立修复坏时间回退当前时间的边界，再推进显式维护时间和World Model。
+
 2026-11-17 最新完成：[observation 兼容消费视图](ghost_progress/observation-consumption-view-production-20261117.md)。
 schema9正常owner构造原地保留历史，旧名改为有界原生只读视图；原reader15项13→15通过，
 旧writer42项继续通过，另19项真实7/8迁移、回滚、向量外键、序号、缓存SELECT、损坏和
