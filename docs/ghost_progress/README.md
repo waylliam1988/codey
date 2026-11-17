@@ -10,9 +10,11 @@
 
 ## 当前状态
 
-World Model [结构化复盘传输对照](world-model-structured-review-20261118.md)已冻结：
-保持原 scorer/任务，在两臂共同加同一 wire JSON schema，单独评估预测复盘是否有额外收益。
-新矩阵尚未执行，前序负结果不重判，不改变生产默认。
+World Model [结构化复盘传输对照](world-model-structured-review-20261118.md)已完成：
+同一 Gemma 配置新 40 请求两臂各 20/20 格式有效、正确数均 8/20，输入 tokens +16.3%。
+按冻结门终止重复当前验证事实的候选，不只换提示词补跑；格式改善不归因于 World Model，
+前序负结果不重判，无生产晋级。相关 206 项/31 子测试及全树静态门通过，owned Any 零诊断。
+后续先继续 G0 实际缺口；World Model 新候选须提供新增预测信息，整体仍未完成。
 
 World Model 首个[验证复盘消费者实验](world-model-verification-review-20261118.md)已完成真实
 check/proof→prediction→review→独立投影/admission→Gemma 的 40 次请求。严格 action
@@ -87,6 +89,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| World Model 结构化复盘对照 2026-11-18 | `ABANDONED`（受测持久性预测消费者） | 新 40 请求格式全有效；on/off 各 8/20，input tokens +16.3%；无增益，终止重复事实候选；206/31 子测试及全树静态门通过，无生产新增 | [冻结、wire 与无增益结果](world-model-structured-review-20261118.md) |
 | World Model 验证预测复盘 2026-11-18 | `ABANDONED`（受测文本→严格 action 接口） | 原型闭环与 40 次 Gemma 实机请求完成；on/off 各 0/20，40 个带围栏回复未过冻结 JSON scorer，额外 input tokens +16.3%；保留负结果，未生产晋级 | [冻结、原型与负结果](world-model-verification-review-20261118.md) |
 | Hebbian 内部记录时间 2026-11-17/18 | `PRODUCTION_MERGED`（解码及普通消费者） | 原 54 项 18→54；最终新增文件 140 项，扩大 1031/34 子测试与全树静态门通过；坏历史保留有效投影，坏投影省略提示且可重建恢复，关闭/删除/reset/冷恢复及实际 App→HTTP 已验 | [基线、生产与剩余审查](hebbian-row-time-20261117.md) |
 | Hebbian 损坏事件原子重建 2026-11-17 | `PRODUCTION_MERGED`（普通显式重建） | 原 54 项 12→54 通过；另 27 项 CLI/关闭控制下删除与 reset/冷恢复/写入失败/状态一致性验收；扩大 891/34 子测试、类型修订后最终 81 项与全静态门通过；原日志及有效投影保留，无新增默认关闭开关 | [基线、生产与剩余审查](hebbian-replay-integrity-20261117.md) |

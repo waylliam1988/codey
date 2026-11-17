@@ -18,6 +18,13 @@
 候选，不放宽 scorer、不接生产。该批不重复语言实验；原始回复及 fixture 只留本地
 `.e2e-artifacts/world-model-verification-review-20261118`。
 
+同日完成[结构化传输对照](../../../docs/ghost_progress/world-model-structured-review-20261118.md)：
+新入口 `world_model_structured_review.py` 在两臂共同设置冻结 JSON schema，原 scorer 和
+任务不变；40 请求格式全有效，严格正确数 on/off 均 8/20，input tokens +16.3%。按冻结
+条件终止重复当前事实的预测候选，不仅换提示词补跑、不接生产，前序结果不重判。
+脱敏报告在 `reports/world-model-structured-review-20261118.json`，完整日志/wire/state
+仅留本地 `.e2e-artifacts/world-model-structured-review-20261118`。
+
 ## 文件与数据位置
 
 | 文件 | 作用 |

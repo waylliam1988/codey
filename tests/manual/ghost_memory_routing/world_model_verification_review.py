@@ -352,13 +352,58 @@ class SingleAttemptPolicy(LocalRequestPolicy):
     max_attempts = 1
 
 
-def run_live(home: Path) -> None:
+class ReviewInterfaceError(ValueError):
+    """The requested response interface has not demonstrated valid output."""
+
+
+def save_failure(home: Path, cell: str, error: Exception, completed: int) -> None:
+    failure: dict[str, object] = {
+        "cell": cell, "exception_type": type(error).__name__,
+        "message": str(error), "completed_cells": completed,
+        "status": "INCOMPLETE_INTERFACE" if isinstance(error, ReviewInterfaceError) else "INCOMPLETE",
+    }
+    (home / "failure.json").write_text(json.dumps(failure, indent=2), encoding="utf-8")
+
+
+class CapturedReviewProvider(ApiProvider):
+    def __init__(self, home: Path, name: str, response_format: dict[str, object] | None) -> None:
+        self.wire_request = b""
+        self.wire_request_count = 0
+        self.wire_path = home / (name + "-wire-request.json")
+
+        def configure(payload: dict[str, object]) -> None:
+            if response_format is not None:
+                payload["response_format"] = response_format
+
+        super().__init__(
+            ENDPOINT, MODEL, temperature=0, timeout=120, native_tools=False,
+            context_window_tokens=262144, context_reserve_tokens=32768,
+            context_keep_recent_tokens=32000, output_tokens=256, usage_parser=parse_usage,
+            request_policy=SingleAttemptPolicy(), configure_request=configure,
+        )
+
+    def _observe_http_attempt(
+        self, *, attempt: int, data: bytes, phase: str, response_bytes: int, seconds: float,
+    ) -> None:
+        if phase == "request":
+            self.wire_request = data
+            self.wire_request_count += 1
+            self.wire_path.write_bytes(data)
+
+
+def run_live(
+    home: Path, *, response_format: dict[str, object] | None = None, require_first_valid: bool = False,
+) -> None:
     home.mkdir(parents=True, exist_ok=True)
     if (home / "metrics.json").exists() or (home / "failure.json").exists():
         raise ValueError("refusing to overwrite earlier live evidence")
     rows: list[dict[str, object]] = []
     for case in CASES:
-        baseline, hint, result = fixture(home / "fixtures" / case.name, case)
+        try:
+            baseline, hint, result = fixture(home / "fixtures" / case.name, case)
+        except Exception as error:
+            save_failure(home, case.name + "-fixture", error, len(rows))
+            raise
         for question_index, question in enumerate(QUESTIONS):
             arms = (False, True) if question_index % 2 == 0 else (True, False)
             for enabled in arms:
@@ -367,12 +412,7 @@ def run_live(home: Path) -> None:
                 prompt = render_request(baseline + "\n" + question, hint if enabled else "",
                                         scope="user", as_of=THIRD, audit=admission_audit)
                 (home / (name + "-prompt.txt")).write_text(prompt, encoding="utf-8")
-                provider = ApiProvider(
-                    ENDPOINT, MODEL, temperature=0, timeout=120, native_tools=False,
-                    context_window_tokens=262144, context_reserve_tokens=32768,
-                    context_keep_recent_tokens=32000, output_tokens=256, usage_parser=parse_usage,
-                    request_policy=SingleAttemptPolicy(),
-                )
+                provider = CapturedReviewProvider(home, name, response_format)
                 usage_rows: list[dict[str, object]] = []
 
                 def retain_usage(
@@ -390,16 +430,18 @@ def run_live(home: Path) -> None:
                         "raw": dict(turn.raw), "provider_usage": usage_rows,
                     }
                     (home / (name + "-response.json")).write_text(json.dumps(response, indent=2), encoding="utf-8")
+                    wire: object = json.loads(provider.wire_request)
+                    if (provider.wire_request_count != 1 or not provider.wire_path.is_file()
+                            or not object_fields(wire) or wire.get("response_format") != response_format):
+                        raise ReviewInterfaceError("actual wire response format did not match frozen configuration")
                     if turn.finish != TurnFinish.COMPLETE or turn.tool_calls:
                         raise ValueError("non-complete or unexpected tool response")
                     if not reply.strip():
                         raise ValueError("empty model response")
+                    if require_first_valid and not rows and action(reply) not in ACTIONS:
+                        raise ReviewInterfaceError("first structured response failed the original JSON interface")
                 except Exception as error:
-                    failure: dict[str, object] = {
-                        "cell": name, "exception_type": type(error).__name__,
-                        "message": str(error), "completed_cells": len(rows), "status": "INCOMPLETE",
-                    }
-                    (home / "failure.json").write_text(json.dumps(failure, indent=2), encoding="utf-8")
+                    save_failure(home, name, error, len(rows))
                     raise
                 finally:
                     provider.close()
@@ -410,6 +452,7 @@ def run_live(home: Path) -> None:
                     "review": result.outcome, "prompt_chars": len(prompt),
                     "hint_chars": len(hint) if enabled else 0, "seconds": time.monotonic() - started,
                     "prompt_digest": digest(prompt),
+                    "wire_sha256": hashlib.sha256(provider.wire_request).hexdigest(),
                 }
                 rows.append(row)
                 sample: dict[str, object] = {

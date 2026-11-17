@@ -2242,6 +2242,13 @@ CompletionProof。repair 默认策略不变，确认净收益后才申请 0.7.2 
 
 #### 0.6.12 - World Model Review and Shadow Context v1
 
+2026-11-18 后续[结构化传输对照](docs/ghost_progress/world-model-structured-review-20261118.md)
+已完成新 40 请求：两臂结构均 20/20 有效、严格正确数均 8/20，input tokens +16.3%。
+按冻结门终止重复当前 verification 事实的持久性预测候选，不再只换提示词补跑；格式
+改善不归属 World Model 收益，未接生产。相关 206 项/31 子测试及全树静态门通过，
+本轮文件 Any 零诊断；先继续 G0 实际缺口，后续 World Model 须选择有新增预测信息的
+真实消费者。完整 0.6.12 仍未完成，前序格式负结果不覆盖。
+
 2026-11-18：[首个验证预测复盘消费者](docs/ghost_progress/world-model-verification-review-20261118.md)
 已实现隔离真实 check/proof→prediction→review→有界 ContextSource/admission→Gemma
 复盘建议闭环；40 次请求完整完成，严格 action on/off 各 0/20（均为带围栏 JSON），

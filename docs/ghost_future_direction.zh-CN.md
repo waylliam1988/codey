@@ -915,6 +915,11 @@ structured explanation facts
 这不是完整 World Model 验收；后续应按记录调整真实消费者，不重复包装现有 completion
 识别能力。未验证时保持 shadow，单模型有收益且相关生产边界通过后正常接线并默认启用。
 
+后续[结构化传输对照](ghost_progress/world-model-structured-review-20261118.md)也已完成：
+两臂新 20/20 格式有效、正确数各 8/20，输入 tokens +16.3%。按冻结门终止重复当前
+verification 事实的持久性预测候选；不再仅调提示词，不将接口改善归因于预测收益。
+先继续 G0 实际缺口，下一 World Model 候选须提供新增预测信息和真实消费者。
+
 可建模：
 
 ```text

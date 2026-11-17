@@ -12,7 +12,16 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-18 最新完成：[World Model 验证预测复盘首个候选](ghost_progress/world-model-verification-review-20261118.md)。
+2026-11-18 最新完成：[World Model 结构化复盘传输对照](ghost_progress/world-model-structured-review-20261118.md)。
+冻结提交 `7487bfbf` 后新 40 请求两臂各 20/20 结构有效，严格正确数均 8/20，input tokens
++16.3%；按冻结门终止重复当前 verification 事实的持久性预测候选，不再只换提示词补跑。
+原 scorer 和前序围栏负结果保留，没有生产晋级或新 runtime 开关。14 项新 HTTP 验收，
+最终 12 文件 206 项/31 子测试及全树静态门通过，三个 owned 文件 Any 零诊断。
+原始 wire/reply/state 留本地；实际 provider 时钟每请求变化的限制见记录。继续 G0 排序/
+digest 等实际缺口，World Model 新候选须提供新增预测信息与真实消费者；整体目标未完成。
+保护既有用户改动，不创建或复制 worktree。
+
+2026-11-18 此前完成：[World Model 验证预测复盘首个候选](ghost_progress/world-model-verification-review-20261118.md)。
 真实 check/proof→prediction→review→有界 ContextSource/admission→Gemma 的隔离闭环已执行，
 40 次完整实机响应，严格 action on/off 各 0/20（回复全带 JSON 围栏），input tokens +16.3%。
 按冻结门终止本接口候选，不剥围栏重判、不算服务失败、不新增生产空壳；24 项原型与
