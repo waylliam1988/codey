@@ -174,3 +174,22 @@ Pyrefly / ty 和 kernel precision gate 均通过（Pyrefly 158 warnings / 35 sup
 为既有事实，不称零警告）。两个 owned 文件三类型检查通过；额外
 `mypy --disallow-any-expr` owned 零诊断，未修改导入依赖 10988 项/336 文件单独留档。
 全树及 owned hash 在基线和检查前后保持不变，无模型调用或前端改动。
+
+## 冻结修复 C：保存响应的原工具传输契约
+
+基线提交 `c0fa5117`，唯一生产变量为 cold API 窗口恢复原响应对应的 declared tools。
+从已有 hash/owner 校验的 response→request→snapshot 取原工具定义，不能从当前 registry
+或新任务猜测；同 window 的纯 durable 投影才可填充空契约。已有 live 契约不可替换，
+跨 window、非 canonical 历史或并发发送须拒绝，锁与原 provider 的 send/state owner 共用。
+此恢复只影响本地协议校验，不给工具/完成授予权限，也不绕过 physical Attempt Gate。
+
+目标：原 24 格原脚本原 scorer 全通过，尤其保存响应 enabled/revoked 原 run 完成且
+新增 HTTP=0；其他 18 格无回归。模型/任务/参数/样本沿用 B，不新增模型调用。新增
+两 API 协议的冷 native 回执、幂等恢复、跨 window、live 契约、非 canonical 历史、
+并发锁和 wrapper 边界检查；补跑 B 的 16 文件生产回归与相关 API context 回归。
+所有修改源文件（包括拥有 helper 的既有模块）清理到额外 Any 零诊断，运行全仓 Ruff、
+完整 codey 三类型/precision 与 owned 三类型检查。不更改检查范围或 scorer。
+
+停止：任何 valid 原格不通过、原 refs/hash 丢失或产生重发，先保留候选失败再定位；
+不得将未完成实验写成通过。不新增默认关闭开关，修复若通过即由现有正常 App/kernel
+默认消费；生产 commit 与基线分开，之后同步进度板/roadmap/回滚限制。
