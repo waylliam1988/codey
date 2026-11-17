@@ -5,7 +5,7 @@
 - 默认检索不发起额外模型调用。明确配置 embedding endpoint 后，语义检索会
   对待索引原话和当前查询调用该端点；向量与原话仍归独立 ghost.sqlite3 所有。
 - 这里只保存已发生的回合事实（用户原话、最终回答、任务结果），读取是
-  同步有界扫描（最近 200 条内检索，全文件至多 5000 条），没有后台索引
+  同步有界扫描（最近 200 条内检索，可检索窗口至多 5000 条），没有后台索引
   线程；下一次正常模型调用前检索少量相关原话并判断。语义判断发生在
   本来就要回答的那次调用里。
 - 观察记录以 ``run_id`` 幂等：同 ``run_id`` 重放覆盖，不产生第二条经历；
@@ -21,6 +21,7 @@ from pathlib import Path
 
 from codey.ghost import _common
 from codey.ghost.embeddings import Embeddings, configured_embeddings
+from codey.ghost.event_windows import advance_observation_window, event_window
 from codey.ghost.schema import clip_signal_text
 from codey.ghost.sqlite import GhostSQLite
 from codey.ghost.vectors import GhostVectorMemory, observation_digest
@@ -166,15 +167,10 @@ class GhostObservationStore:
                     "DELETE FROM memory_embeddings WHERE run_id=? AND content_digest<>?",
                     (row["run_id"], observation_digest(row)),
                 )
+                boundary = advance_observation_window(database, limit=MAX_OBSERVATIONS)
                 database.execute(
-                    """
-                    DELETE FROM observation_events
-                    WHERE sequence IN (
-                        SELECT sequence FROM observation_events
-                        ORDER BY sequence DESC LIMIT -1 OFFSET ?
-                    )
-                    """,
-                    (MAX_OBSERVATIONS,),
+                    "DELETE FROM memory_embeddings WHERE run_id NOT IN "
+                    "(SELECT run_id FROM observation_events WHERE sequence>?)", (boundary,),
                 )
             return True
         except (OSError, sqlite3.Error, TypeError, ValueError):
@@ -182,15 +178,18 @@ class GhostObservationStore:
 
     def read_all(self) -> tuple[dict[str, object], ...]:
         with self.database.connection() as database:
+            if not database.in_transaction:
+                database.execute("BEGIN")
+            boundary = event_window(database, "observations")
             rows: list[sqlite3.Row] = database.execute(
                 """
                 SELECT run_id, session_id, project, mode, user_text,
                        assistant_text, stop_reason, committed, provider_id, ts
                 FROM observation_events
-                WHERE NOT EXISTS (SELECT 1 FROM ghost_retired_inputs
+                WHERE sequence>? AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs
                                   WHERE kind='observation' AND identity=observation_events.run_id)
                 ORDER BY sequence
-                """
+                """, (boundary,),
             ).fetchall()
         return tuple(_row_payload(row) for row in rows)
 
@@ -219,6 +218,7 @@ class GhostObservationStore:
             raise ValueError("project is required for project scope retrieval")
         clauses = [
             "committed = 1",
+            "sequence > ?",
             "NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
             "WHERE kind='observation' AND identity=observation_events.run_id)",
             "codey_input_receipt_ok((SELECT database_name FROM ghost_input_authority WHERE singleton=1),run_id)",
@@ -236,12 +236,15 @@ class GhostObservationStore:
                 values.append(wanted_project)
         values.append(max(1, (limit or 1)))
         with self.database.connection() as database:
+            if not database.in_transaction:
+                database.execute("BEGIN")
+            boundary = event_window(database, "observations")
             rows: list[sqlite3.Row] = database.execute(
                 "SELECT run_id, session_id, project, mode, user_text, assistant_text, "
                 "stop_reason, committed, provider_id, ts FROM observation_events WHERE "
                 + " AND ".join(clauses)
                 + " ORDER BY sequence DESC LIMIT ?",
-                tuple(values),
+                (boundary, *values),
             ).fetchall()
         return tuple(_row_payload(row) for row in rows)
 
@@ -273,10 +276,12 @@ class GhostObservationStore:
             values.append(normalized_session)
         with self.database.write_transaction() as database:
             self.database.advance_deletion(database)
+            boundary = event_window(database, "observations")
             row: sqlite3.Row | None = database.execute(
                 "SELECT count(*) FROM observation_events WHERE (" + " AND ".join(clauses) + ") "
                 "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
-                "WHERE kind='observation' AND identity=observation_events.run_id)", tuple(values),
+                "WHERE kind='observation' AND identity=observation_events.run_id) AND sequence>?",
+                (*values, boundary),
             ).fetchone()
             removed: object = None
             if row is not None:
@@ -330,6 +335,9 @@ class GhostObservationStore:
                 "SELECT 'observation',run_id FROM observation_events",
             )
             database.execute("DELETE FROM observation_events")
+            database.execute(
+                "UPDATE ghost_replay_windows SET after_sequence=0,applied_after_sequence=0 WHERE stream='observations'",
+            )
 
     def export_state(self) -> dict[str, object]:
         return {

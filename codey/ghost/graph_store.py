@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Literal
 
+from codey.ghost.event_windows import acknowledge_window, begin_checkpoint, checkpoint_events, event_window
 from codey.ghost.payload_types import decoded_object
 from codey.ghost.sqlite import GhostSQLite
 
@@ -80,8 +81,10 @@ class GhostGraph:
 
     def events(self) -> list[dict[str, object]]:
         with self.transaction(write=False):
+            boundary = event_window(self._db(), self.name)
             rows: Iterable[sqlite3.Row] = self._db().execute(
-                "SELECT payload FROM graph_events WHERE graph=? ORDER BY sequence", (self.name,),
+                "SELECT payload FROM graph_events WHERE graph=? AND sequence>? ORDER BY sequence",
+                (self.name, boundary),
             )
             return [
                 _decoded_row(row)
@@ -104,6 +107,7 @@ class GhostGraph:
 
     def _check_cursor(self) -> None:
         database = self._db()
+        event_window(database, self.name)
         tail_row: sqlite3.Row | None = database.execute(
             "SELECT coalesce(max(sequence),0) FROM graph_events WHERE graph=?", (self.name,)
         ).fetchone()
@@ -123,8 +127,8 @@ class GhostGraph:
         with self.transaction():
             database = self._db()
             if replace:
-                database.execute("DELETE FROM graph_events WHERE graph=?", (self.name,))
-            for event in events:
+                begin_checkpoint(database, self.name)
+            for event in checkpoint_events(events) if replace else events:
                 payload = _encode(event)
                 identity = str(event.get("event_id") or hashlib.sha256(payload.encode()).hexdigest())
                 existing: sqlite3.Row | None = database.execute(
@@ -201,6 +205,7 @@ class GhostGraph:
                 "FROM graph_events WHERE graph=? ON CONFLICT(graph) DO UPDATE SET applied_sequence=excluded.applied_sequence",
                 (self.name, self.name),
             )
+            acknowledge_window(database, self.name)
 
     def reset(self) -> None:
         with self.transaction(deleting=True):
@@ -208,14 +213,19 @@ class GhostGraph:
             database.execute("DELETE FROM graph_nodes WHERE graph=?", (self.name,))
             database.execute("DELETE FROM graph_events WHERE graph=?", (self.name,))
             database.execute("DELETE FROM graph_consumers WHERE graph=?", (self.name,))
+            database.execute(
+                "UPDATE ghost_replay_windows SET after_sequence=0,applied_after_sequence=0 WHERE stream=?", (self.name,),
+            )
 
     def event_stats(self) -> dict[str, int]:
         with self.transaction(write=False):
+            boundary = event_window(self._db(), self.name)
             row: sqlite3.Row | None = (
                 self._db()
                 .execute(
-                    "SELECT count(*),coalesce(sum(length(cast(payload AS BLOB))),0) FROM graph_events WHERE graph=?",
-                    (self.name,),
+                    "SELECT count(*),coalesce(sum(length(cast(payload AS BLOB))),0) "
+                    "FROM graph_events WHERE graph=? AND sequence>?",
+                    (self.name, boundary),
                 )
                 .fetchone()
             )

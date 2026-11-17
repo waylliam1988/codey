@@ -63,6 +63,7 @@ def _legacy_projection(home: Path) -> GhostControlSurface:
         ):
             connection.execute(f"DROP TRIGGER {name}")
         connection.execute("DROP TABLE ghost_input_authority")
+        connection.execute("DROP TABLE ghost_replay_windows")
         connection.execute("PRAGMA user_version=6")
     return surface
 
@@ -138,10 +139,13 @@ def test_reading_and_refusing_claim_preserve_original_rows_events_and_receipt(tm
 def test_observation_receipt_filter_precedes_recent_limit(tmp_path: Path) -> None:
     surface = _legacy_projection(tmp_path)
     assert surface.observations is not None
-    assert surface.observations.append_completed(
-        run_id="unaccepted-newer", session_id="session", mode="chat", user_text=MARKER,
-        assistant_text="Unknown old source.", stop_reason="done",
-    )
+    # This is a schema-6 producer, before the new build installs replay metadata.
+    with surface.observations.database.connection() as connection:
+        connection.execute(
+            "INSERT INTO observation_events(run_id,session_id,project,mode,user_text,assistant_text,"
+            "stop_reason,committed,provider_id,ts) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            ("unaccepted-newer", "session", "", "chat", MARKER, "Unknown old source.", "done", 1, "fixture", NOW),
+        )
     _canonical(tmp_path, True)
     GhostSQLite(tmp_path)
     rows = surface.observations.read_committed(session_id="session", limit=1)

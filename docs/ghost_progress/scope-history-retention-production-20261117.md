@@ -97,8 +97,8 @@ observation普通读取/向量检索默认消费相应删除或退役状态，�
 
 ## 下一步与限制
 
-低容量普通scope删除缺口已闭合。容量compaction、自动observation裁剪、reset_all及单个
-candidate移除仍有物理重写路径；其他三store在超预算删除时也可能触发compaction。
-下一实验需要独立冻结阈值、保留历史和投影有界性的对照，不据此宣布完整retention、0.6.3、
-确定性replay或World Model完成。之后继续其余升级/异常身份scope与生命周期、显式时间，
-再推进真实World Model消费者闭环。
+低容量普通scope删除缺口已闭合。后续[容量检查点修复](capacity-history-retention-production-20261117.md)
+又闭合了本记录当时未覆盖的自动compaction、超阈值删除与observation自动裁剪历史缺口；
+原78项容量矩阵48→78通过。reset_all、单个candidate移除、混版本进程及物理purge/磁盘
+retention仍需独立验证，不据此宣布完整0.6.3、确定性replay或World Model完成。之后继续
+其余升级/异常身份scope与生命周期、显式时间，再推进真实World Model消费者闭环。

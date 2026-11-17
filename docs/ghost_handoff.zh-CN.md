@@ -12,11 +12,14 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新未闭合：[容量压力历史保留](ghost_progress/capacity-history-retention-baseline-20261117.md)
-真实阈值下78项全部有效，48通过/30失败：超阈值普通删除9项、Sleep维护18项和observation
-追加3项丢原始历史；低压力39项对照全部通过。操作、可见性和重建先通过，不声称来源复活。
-相关245项/2子测试及全树静态门通过。下一步保持原领域事件并建立有界checkpoint重放窗口，
-不关闭维护，不新建中央权威日志；验证升级、原子性、删除和恢复后再默认接入。
+2026-11-17 最新完成：[容量检查点与历史保留](ghost_progress/capacity-history-retention-production-20261117.md)
+原78项有效矩阵48→78通过，另55项窗口验收；扩大776项回归/136子测试、最后SQL窗口复查后
+366项复验及全树静态门通过，两批不相加、不把较早批次当成最终源码全范围验收。
+schema8保留原领域事件，以独立确认的有界窗口重放/检索；Sleep同时满足count/bytes且不
+复制旧report，observation保留事实并清过期向量。普通消费者默认使用，无待开启开关，13个
+owned文件额外Any审计零诊断。范围为正常单版本runtime/冷启动升级；下一步验证reset与其他
+历史重写、旧进程跨版本并发、磁盘retention/purge及完整生命周期，随后显式时间/replay与
+真实World Model。原负结果、候选空checkpoint及Sleep bytes失败均保留，不能宣布完整0.6.3。
 
 此前：[普通删除历史保留](ghost_progress/scope-history-retention-production-20261117.md)
 原63项矩阵39→63通过，inbox/Hebbian/Sleep追加删除事件、observation保留事实并退役过滤；

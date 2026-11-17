@@ -2,6 +2,8 @@
 
 - 日期：2026-11-17；冻结生产基线：`7244c1e3`。
 - 状态：`EXPERIMENT_COMPLETE`（有效基础设施负结果）。
+- 后续：[容量检查点生产修复](capacity-history-retention-production-20261117.md)已将原78项
+  修复为全通过并默认接线；本文件保留原始48/30结果，不表示完整retention或跨版本生命周期已完成。
 - 模型、endpoint：不使用；不恢复已停止的语言批次。
 - 前置：[低容量普通删除已默认修复](scope-history-retention-production-20261117.md)。
 

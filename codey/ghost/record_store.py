@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Literal, Protocol, TypeVar
 
+from codey.ghost.event_windows import acknowledge_window, begin_checkpoint, checkpoint_events, event_window
 from codey.ghost.payload_types import decoded_object
 from codey.ghost.sqlite import GhostSQLite
 
@@ -93,8 +94,10 @@ class GhostRecords:
 
     def events(self) -> list[dict[str, object]]:
         with self.transaction(write=False):
+            boundary = event_window(self._db(), self.collection)
             rows: Iterable[sqlite3.Row] = self._db().execute(
-                "SELECT payload FROM memory_events WHERE collection=? ORDER BY sequence", (self.collection,),
+                "SELECT payload FROM memory_events WHERE collection=? AND sequence>? ORDER BY sequence",
+                (self.collection, boundary),
             )
             return [_decoded_row(row) for row in rows]
 
@@ -110,8 +113,8 @@ class GhostRecords:
         with self.transaction():
             database = self._db()
             if replace:
-                database.execute("DELETE FROM memory_events WHERE collection=?", (self.collection,))
-            for event in events:
+                begin_checkpoint(database, self.collection)
+            for event in checkpoint_events(events) if replace else events:
                 payload = _encode(event)
                 identity = str(event.get("event_id") or hashlib.sha256(payload.encode()).hexdigest())
                 old: sqlite3.Row | None = database.execute(
@@ -129,6 +132,7 @@ class GhostRecords:
 
     def _check_cursor(self) -> None:
         database = self._db()
+        event_window(database, self.collection)
         tail_row: sqlite3.Row | None = database.execute(
             "SELECT coalesce(max(sequence),0) FROM memory_events WHERE collection=?", (self.collection,)
         ).fetchone()
@@ -151,6 +155,39 @@ class GhostRecords:
             "FROM memory_events WHERE collection=? ON CONFLICT(collection) DO UPDATE SET applied_sequence=excluded.applied_sequence",
             (self.collection, self.collection),
         )
+        acknowledge_window(self._db(), self.collection)
+
+    def retain_recent_events(self, *, max_events: int, max_bytes: int) -> None:
+        """Advance Sleep's report tail without copying durable source events."""
+        if self.collection != "sleep":
+            raise ValueError("only Sleep projections can retain a report tail")
+        if max_events <= 0 or max_bytes <= 0:
+            raise ValueError("event retention requires positive capacities")
+        with self.transaction():
+            database = self._db()
+            previous = event_window(database, self.collection)
+            row: sqlite3.Row | None = database.execute(
+                "SELECT coalesce(max(CASE WHEN position>? OR size>? THEN sequence END),0),"
+                "coalesce(max(CASE WHEN position=1 THEN size END),0) FROM ("
+                "SELECT sequence,row_number() OVER (ORDER BY sequence DESC) AS position,"
+                "sum(length(cast(payload AS BLOB))) OVER (ORDER BY sequence DESC) AS size "
+                "FROM memory_events WHERE collection=? AND sequence>?)",
+                (max_events, max_bytes, self.collection, previous),
+            ).fetchone()
+            boundary: object = None
+            latest_size: object = None
+            if row is not None:
+                boundary = row[0]
+                latest_size = row[1]
+            if type(boundary) is not int or boundary < 0 or type(latest_size) is not int or latest_size < 0:
+                raise ValueError("invalid Ghost retained event boundary")
+            if latest_size > max_bytes:
+                raise ValueError("latest Sleep report exceeds its byte capacity")
+            database.execute(
+                "UPDATE ghost_replay_windows SET after_sequence=? WHERE stream=?",
+                (max(previous, boundary), self.collection),
+            )
+            self.mark_applied()
 
     def replace_rows(self, rows: Iterable[Mapping[str, object]]) -> None:
         with self.transaction():
@@ -262,17 +299,22 @@ class GhostRecords:
             database.execute("DELETE FROM memory_records WHERE collection=?", (self.collection,))
             database.execute("DELETE FROM memory_events WHERE collection=?", (self.collection,))
             database.execute("DELETE FROM memory_consumers WHERE collection=?", (self.collection,))
+            database.execute(
+                "UPDATE ghost_replay_windows SET after_sequence=0,applied_after_sequence=0 WHERE stream=?",
+                (self.collection,),
+            )
             if settings:
                 database.execute("DELETE FROM ghost_settings")
 
     def event_stats(self) -> dict[str, int]:
         with self.transaction(write=False):
+            boundary = event_window(self._db(), self.collection)
             row: sqlite3.Row | None = (
                 self._db()
                 .execute(
                     "SELECT count(*),coalesce(sum(length(cast(payload AS BLOB))),0) "
-                    "FROM memory_events WHERE collection=?",
-                    (self.collection,),
+                    "FROM memory_events WHERE collection=? AND sequence>?",
+                    (self.collection, boundary),
                 )
                 .fetchone()
             )

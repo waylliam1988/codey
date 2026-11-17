@@ -118,6 +118,7 @@ def test_v2_upgrade_installs_fences_and_reset_never_forgets_retired_run_ids(tmp_
         connection.execute("DROP TRIGGER ghost_reject_retired_source_insert")
         connection.execute("DROP TRIGGER ghost_reject_retired_source_update")
         connection.execute("DROP TABLE ghost_retired_sources")
+        connection.execute("DROP TABLE ghost_replay_windows")
         connection.execute("PRAGMA user_version=2")
     surface = GhostControlSurface.from_state_home(tmp_path)
     _seed(surface, str(tmp_path / "project"))
@@ -129,9 +130,14 @@ def test_v2_upgrade_installs_fences_and_reset_never_forgets_retired_run_ids(tmp_
         run_id="old-run", session_id="other", project="different", mode="chat",
         user_text="stale", assistant_text="stale", stop_reason="done",
     )
-    with sqlite3.connect(database.path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone() == (GHOST_SCHEMA_VERSION,)
-        assert connection.execute("SELECT count(*) FROM ghost_retired_inputs").fetchone() == (1,)
+    with database.connection() as connection:
+        version_row: sqlite3.Row | None = connection.execute("PRAGMA user_version").fetchone()
+        retired_row: sqlite3.Row | None = connection.execute("SELECT count(*) FROM ghost_retired_inputs").fetchone()
+        assert version_row is not None and retired_row is not None
+        version: object = version_row[0]
+        retired: object = retired_row[0]
+        assert type(version) is int and version == GHOST_SCHEMA_VERSION
+        assert type(retired) is int and retired == 1
 
 
 def test_existing_schema_does_not_silently_recreate_lost_deletion_fences(tmp_path: Path) -> None:

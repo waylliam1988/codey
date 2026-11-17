@@ -9,6 +9,7 @@ from collections.abc import Iterable, Mapping
 from typing import Protocol, runtime_checkable
 
 from codey.ghost.embeddings import Embeddings, pack_embedding
+from codey.ghost.event_windows import event_window
 from codey.ghost.sqlite import GhostSQLite
 
 
@@ -42,12 +43,14 @@ class GhostVectorMemory:
         placeholders = ",".join("?" for _run in run_ids)
         with self.database.connection() as connection:
             self._load_extension(connection)
+            event_window(connection, "observations")
             found: list[sqlite3.Row] = connection.execute(
                 "SELECT o.run_id, e.content_digest, vec_distance_cosine(e.vector, ?) AS distance "
                 "FROM memory_embeddings e JOIN observation_events o ON o.run_id=e.run_id "
                 f"WHERE e.model_id=? AND e.dimensions=? AND o.committed=1 AND o.run_id IN ({placeholders}) "
                 "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs WHERE kind='observation' AND identity=o.run_id) "
                 "AND codey_input_receipt_ok((SELECT database_name FROM ghost_input_authority WHERE singleton=1),o.run_id) "
+                "AND o.sequence>(SELECT after_sequence FROM ghost_replay_windows WHERE stream='observations') "
                 "ORDER BY distance, o.sequence DESC LIMIT ?",
                 (vector, self.embeddings.model_id, self.embeddings.dimensions, *run_ids, min(200, limit)),
             ).fetchall()
@@ -100,6 +103,7 @@ class GhostVectorMemory:
             packed = tuple(pack_embedding(vector, self.embeddings.dimensions) for vector in encoded)
             # Provider I/O and validation finish before the SQLite write lock.
             with self.database.connection() as connection:
+                event_window(connection, "observations")
                 for row, vector in zip(batch, packed, strict=True):
                     connection.execute(
                         "INSERT INTO memory_embeddings(run_id, model_id, dimensions, content_digest, vector) "
@@ -108,6 +112,7 @@ class GhostVectorMemory:
                         "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
                         "WHERE kind='observation' AND identity=observation_events.run_id) "
                         "AND codey_input_receipt_ok((SELECT database_name FROM ghost_input_authority WHERE singleton=1),run_id) "
+                        "AND sequence>(SELECT after_sequence FROM ghost_replay_windows WHERE stream='observations') "
                         "ON CONFLICT(run_id) DO UPDATE SET model_id=excluded.model_id, dimensions=excluded.dimensions, "
                         "content_digest=excluded.content_digest, vector=excluded.vector",
                         (self.embeddings.model_id, self.embeddings.dimensions, observation_digest(row), vector,

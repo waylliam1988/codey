@@ -136,7 +136,8 @@ def test_sql_writers_cannot_reuse_retired_run_sources(
                 (collection, "fresh-record", "session", "old-session", "active", "{}"),
             )
     with pytest.raises(sqlite3.IntegrityError, match="deleted Ghost run source"), database.connection() as connection:
-        payload = json.dumps({"source": source, "source_ref": "old-run"})
+        fields: dict[str, str] = {"source": source, "source_ref": "old-run"}
+        payload = json.dumps(fields)
         if mutation == "insert":
             connection.execute(
                 "INSERT INTO memory_records(collection,id,scope,scope_ref,status,payload) VALUES(?,?,?,?,?,?)",
@@ -279,6 +280,7 @@ def test_schema_five_upgrade_preserves_existing_deletion_fences(tmp_path: Path) 
     store.delete_scope("session", session_id="old-session")
     with store.database.connection() as connection:
         connection.execute("DROP TABLE ghost_input_origins")
+        connection.execute("DROP TABLE ghost_replay_windows")
         connection.execute("PRAGMA user_version=5")
         before = _integer(connection, "SELECT generation FROM ghost_projection_epoch")
     upgraded = GhostObservationStore(tmp_path)

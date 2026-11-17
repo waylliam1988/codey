@@ -206,6 +206,7 @@
     "codey/ghost/deletion_manifest_store.py",
     "codey/ghost/directive.py",
     "codey/ghost/embeddings.py",
+    "codey/ghost/event_windows.py",
     "codey/ghost/events.py",
     "codey/ghost/gate.py",
     "codey/ghost/graph_primitives.py",

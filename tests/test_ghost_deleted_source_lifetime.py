@@ -159,6 +159,7 @@ def test_v4_upgrade_preserves_prior_generation_and_can_retire_new_deletions(tmp_
         connection.execute("DROP TRIGGER ghost_reject_retired_source_update")
         connection.execute("DROP TABLE ghost_retired_sources")
         connection.execute("UPDATE ghost_projection_epoch SET generation=17")
+        connection.execute("DROP TABLE ghost_replay_windows")
         connection.execute("PRAGMA user_version=4")
     surface = GhostControlSurface.from_state_home(tmp_path)
     with database.connection() as connection:

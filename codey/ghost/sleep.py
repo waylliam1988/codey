@@ -626,14 +626,10 @@ class GhostSleepStore:
     def _append_events(self, events: Iterable[dict[str, object]]) -> None:
         self.records.append(events)
 
-    def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
-        self.records.append(events, replace=True)
-
     def _compact_if_needed(self) -> None:
         stats = self.records.event_stats()
         if stats["events"] > MAX_SLEEP_EVENTS or stats["bytes"] > MAX_SLEEP_EVENTS_BYTES:
-            self._write_events_atomic(self.records.events()[-MAX_SLEEP_EVENTS:])
-            self.records.mark_applied()
+            self.records.retain_recent_events(max_events=MAX_SLEEP_EVENTS, max_bytes=MAX_SLEEP_EVENTS_BYTES)
 
 
 def _external_source_permission(

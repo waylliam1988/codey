@@ -1877,6 +1877,13 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 容量检查点已生产接线：原78项矩阵48→78通过，另55项窗口验收；扩大776项回归/
+136子测试、最后SQL窗口复查后的366项复验及完整静态门通过；13个owned文件额外Any审计零诊断。schema8保留原领域事件并以
+有界窗口重放/检索，空checkpoint也必须独立确认；Sleep按count/bytes推进窗口不复制旧report，
+observation保留事实并清理过期向量，默认消费者无新增关闭开关。见[生产修复与失败归属](docs/ghost_progress/capacity-history-retention-production-20261117.md)。
+范围为正常单版本runtime与冷启动升级；reset/其他历史重写、已运行旧进程的混版本并发、
+磁盘retention/purge、其余异常身份scope和完整生命周期仍缺；下文48/30保留原始负结果。
+
 2026-11-17 容量历史保留负结果：沿用真实阈值的78项矩阵全部有效，48通过/30失败，低压力39项
 对照全部通过。超阈值普通删除触发continuity/work queue/affinity的9项历史丢失，默认Sleep维护
 六领域18项、observation新回合追加3项丢历史；操作和本次可见性/rebuild先通过，不表示来源复活。

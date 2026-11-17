@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-GHOST_SCHEMA_VERSION = 7
+GHOST_SCHEMA_VERSION = 8
 _PROJECTION_INPUTS: ContextVar[Mapping[Path, int] | None] = ContextVar("ghost_projection_inputs", default=None)
 _WRITE_CONNECTIONS: ContextVar[Mapping[Path, sqlite3.Connection] | None] = ContextVar(
     "ghost_atomic_write_connections", default=None,
@@ -205,10 +205,24 @@ class GhostSQLite:
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_input_authority'",
             ):
                 raise GhostSchemaVersionError("Ghost input authority is missing from an existing schema")
+            if version >= 8 and (not _has_row(database,
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_replay_windows'",
+            ) or not _has_row(database,
+                "SELECT count(*) FROM ghost_replay_windows WHERE stream IN "
+                "('inbox','continuity','work_queue','sleep','hebbian','affinity','observations') "
+                "HAVING count(*)=7",
+            )):
+                raise GhostSchemaVersionError("Ghost replay windows are missing from an existing schema")
             self._enable_wal(database)
             database.executescript(
                 """
                 BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS ghost_replay_windows (
+                    stream TEXT PRIMARY KEY CHECK(stream IN
+                        ('inbox','continuity','work_queue','sleep','hebbian','affinity','observations')),
+                    after_sequence INTEGER NOT NULL CHECK(after_sequence>=0),
+                    applied_after_sequence INTEGER NOT NULL CHECK(applied_after_sequence>=0)
+                ) STRICT;
                 CREATE TABLE IF NOT EXISTS ghost_input_authority (
                     singleton INTEGER PRIMARY KEY CHECK(singleton=1),
                     database_name TEXT NOT NULL
@@ -442,6 +456,13 @@ class GhostSQLite:
             if version < GHOST_SCHEMA_VERSION:
                 if version < 4:
                     database.execute("INSERT INTO ghost_projection_epoch(singleton,generation) VALUES(1,0)")
+                if version < 8:
+                    database.executemany(
+                        "INSERT INTO ghost_replay_windows(stream,after_sequence,applied_after_sequence) VALUES(?,0,0)",
+                        ((stream,) for stream in (
+                            "inbox", "continuity", "work_queue", "sleep", "hebbian", "affinity", "observations",
+                        )),
+                    )
                 database.execute(f"PRAGMA user_version={GHOST_SCHEMA_VERSION}")
             # Recovery may be the first successful Ghost write after intake.
             # Bind even when the failed intake could not create Ghost metadata.

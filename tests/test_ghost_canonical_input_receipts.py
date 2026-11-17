@@ -311,6 +311,7 @@ def test_old_connection_cannot_write_after_authority_schema_upgrade(tmp_path: Pa
                          "ghost_reject_unaccepted_run_source_insert", "ghost_reject_unaccepted_run_source_update"):
                 connection.execute(f"DROP TRIGGER {name}")
             connection.execute("DROP TABLE ghost_input_authority")
+            connection.execute("DROP TABLE ghost_replay_windows")
             connection.execute("PRAGMA user_version=6")
         # Keep a schema-6-era connection open while a new build upgrades.
         # It has no receipt function and cannot silently skip the new check.
@@ -327,7 +328,7 @@ def test_old_connection_cannot_write_after_authority_schema_upgrade(tmp_path: Pa
             number: object = None
             if version is not None:
                 number = version[0]
-            assert number == GHOST_SCHEMA_VERSION == 7
+            assert number == GHOST_SCHEMA_VERSION == 8
 
 
 def test_custom_canonical_database_name_uses_the_actual_app_binding(tmp_path: Path) -> None:
