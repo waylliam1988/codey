@@ -59,3 +59,19 @@ precision gate 均通过；Pyrefly 158 warnings/35 suppressed 与既有结果相
 334 文件 10864 项诊断导致该额外审计 exit 1，不能声称整个项目 Any 清零。
 命令/退出码、18 项 digest 和实际变化见
 [脱敏基线](../../tests/manual/ghost_memory_routing/reports/maintenance-control-baseline-20261118.json)。
+
+## 生产修复冻结（基线 `b260673a` 之后）
+
+复用原 18 项，保留原 scorer。只在 Sleep owner 复查 scoped maintenance control：
+每个写步骤的控制读取与领域写入使用现有同路径 `BEGIN IMMEDIATE`/savepoint；
+compaction 按真实 store 分别准入，queue lease reconciliation 与该 store compaction
+同事务，不持有整个周期的写锁。只读 health 不包在写事务内，避免其显式 BEGIN 嵌套。
+不传 inbox 的独立 Sleep 仍读取自己 state_home 的真实设置，不能缺 authority 就放行；
+错路径 authority 或控制读取异常 fail closed。disabled/失败/任务取消均终止后续步骤，
+保留有界报告及未执行步骤。原 App/默认 daemon 直接消费，无新开关。
+
+补充回归目标：三 scope 初始禁用、冷开仍禁用、重新开启可恢复；三个其他开关独立性；
+损坏设置/错 authority/控制读取失败；mutating step 写失败回滚与恢复；删除/reset 后
+重建、重新打开的控制语义；真实 writer 在已准入维护事务期间竞争不出现死锁或越界写。
+这些是确定性控制安全修复，不需要重跑已完成的模型收益对照。完整其他 scope 触发的
+全局维护过滤仍单独列缺口，本修复不扩大其声明。
