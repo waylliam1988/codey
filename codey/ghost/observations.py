@@ -135,7 +135,7 @@ class GhostObservationStore:
 
     def read_all(self) -> tuple[dict[str, object], ...]:
         with self.database.connection() as database:
-            rows = database.execute(
+            rows: list[sqlite3.Row] = database.execute(
                 """
                 SELECT run_id, session_id, project, mode, user_text,
                        assistant_text, stop_reason, committed, provider_id, ts
@@ -181,7 +181,7 @@ class GhostObservationStore:
                 values.append(wanted_project)
         values.append(max(1, (limit or 1)))
         with self.database.connection() as database:
-            rows = database.execute(
+            rows: list[sqlite3.Row] = database.execute(
                 "SELECT run_id, session_id, project, mode, user_text, assistant_text, "
                 "stop_reason, committed, provider_id, ts FROM observation_events WHERE "
                 + " AND ".join(clauses)
@@ -218,6 +218,7 @@ class GhostObservationStore:
             values.append(normalized_session)
         with self.database.connection() as database:
             database.execute("BEGIN IMMEDIATE")
+            self.database.advance_deletion(database)
             database.execute(
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
                 "SELECT 'observation',run_id FROM observation_events WHERE " + " AND ".join(clauses),
@@ -244,6 +245,7 @@ class GhostObservationStore:
     def reset_all(self) -> None:
         with self.database.connection() as database:
             database.execute("BEGIN IMMEDIATE")
+            self.database.advance_deletion(database)
             database.execute(
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
                 "SELECT 'observation',run_id FROM observation_events",

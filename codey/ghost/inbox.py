@@ -459,7 +459,7 @@ class GhostInboxStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not normalized_session:
             raise ValueError("session_id is required for session scope deletion")
-        with self.records.transaction():
+        with self.records.transaction(deleting=True):
             controls_removed = self._delete_control_scope_unlocked(
                 normalized_scope,
                 project=normalized_project,
@@ -547,8 +547,10 @@ class GhostInboxStore:
         try:
             with self.records.transaction(write=False):
                 existing = self.records.setting("learning", {})
-            if isinstance(existing, dict) and isinstance(existing.get("control_scopes"), dict):
-                scoped.update({key: value for key, value in existing["control_scopes"].items() if key in {"project", "session"}})
+            if _object_fields(existing):
+                existing_scopes = existing.get("control_scopes")
+                if _object_fields(existing_scopes):
+                    scoped.update({key: value for key, value in existing_scopes.items() if key in {"project", "session"}})
         except Exception:
             pass
         payload = {
@@ -961,8 +963,8 @@ class GhostInboxStore:
             "type": "ghost_memory_candidate_rejected",
             "ts": _common.now_iso_z(),
             "signal_schema_version": SIGNAL_SCHEMA_VERSION,
-            "signal_kind": clip_signal_text(getattr(signal, "kind", ""), 80),
-            "scope": clip_signal_text(getattr(signal, "scope", ""), 40),
+            "signal_kind": clip_signal_text(signal.kind, 80),
+            "scope": clip_signal_text(signal.scope, 40),
             "gate": decision.to_payload(),
             "stored_candidate": False,
         }
@@ -978,7 +980,7 @@ class GhostInboxStore:
 
 def conflict_key_for_signal(signal: GhostSignal) -> str:
     kind = (signal.kind or "").strip().lower()
-    metadata_key = _metadata_conflict_key(getattr(signal, "metadata", {}) or {})
+    metadata_key = _metadata_conflict_key(signal.metadata)
     if metadata_key:
         return f"{kind}:{metadata_key}"
     text = f"{signal.summary} {signal.evidence_quote}".casefold()
@@ -986,7 +988,7 @@ def conflict_key_for_signal(signal: GhostSignal) -> str:
 
 
 def value_key_for_signal(signal: GhostSignal) -> str:
-    metadata_key = _metadata_value_key(getattr(signal, "metadata", {}) or {})
+    metadata_key = _metadata_value_key(signal.metadata)
     if metadata_key:
         return metadata_key
     return _derived_value_key(signal.summary, signal.evidence_quote)

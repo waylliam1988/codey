@@ -12,7 +12,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol
 
 from codey.ghost import _common
 from codey.ghost._warnings import bounded_warnings
@@ -22,6 +22,8 @@ from codey.ghost.events import (
 from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.numbers import coerce_unit_float
+from codey.ghost.payload_types import object_fields
+from codey.ghost.projection_fence import fence_projection
 from codey.ghost.record_store import GhostRecords
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.sqlite import GhostSQLite
@@ -88,6 +90,17 @@ SCOPE_PRIORITY = {
     "project": 1,
     "user": 2,
 }
+
+
+class KnowledgeIndexReader(Protocol):
+    def recent(
+        self, limit: int = 20, *, session_id: str = "", types: tuple[str, ...] = (), project: str = "",
+    ) -> Iterable[object]: ...
+
+
+class KnowledgeReader(Protocol):
+    @property
+    def index(self) -> KnowledgeIndexReader | None: ...
 KIND_TTL_DAYS = {
     "recent_focus": 14,
     "open_question": 45,
@@ -134,7 +147,7 @@ class GhostContinuityItem:
 
     @classmethod
     def from_payload(cls, payload: object) -> GhostContinuityItem | None:
-        if not isinstance(payload, dict):
+        if not object_fields(payload):
             return None
         kind = str(payload.get("kind") or "").strip().lower()
         scope = str(payload.get("scope") or "").strip().lower()
@@ -211,12 +224,13 @@ class GhostContinuityStore:
         self.records = GhostRecords(self.database, "continuity")
         self.last_warnings: tuple[str, ...] = ()
 
+    @fence_projection
     def sync_from_sources(
         self,
         *,
         hebbian_store: GhostHebbianStore | None = None,
         run_projection: RunLedgerProjection | None = None,
-        knowledge_store: Any = None,
+        knowledge_store: KnowledgeReader | None = None,
         user_focus_excerpt: str = "",
         session_id: str = "",
         run_id: str = "",
@@ -374,7 +388,7 @@ class GhostContinuityStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
-        with self.records.transaction():
+        with self.records.transaction(deleting=True):
             items = list(self._load_items_unlocked())
             kept = [
                 item
@@ -399,7 +413,6 @@ class GhostContinuityStore:
                     "removed_count": removed,
                 },
                 now=_common.now_iso_z(),
-                payload_cleaner=_clean_metadata,
             )
             self._append_events([event])
             self._write_state(kept, now=_common.now_iso_z(), warnings=[])
@@ -686,14 +699,14 @@ def _items_from_run_projection(
 
 
 def _items_from_knowledge(
-    store: Any,
+    store: KnowledgeReader | None,
     *,
     now: str,
     session_id: str,
     project: str,
     warnings: list[str],
 ) -> list[GhostContinuityItem]:
-    if store is None or getattr(store, "index", None) is None:
+    if store is None or store.index is None:
         return []
     rows: list[object] = []
     try:
@@ -714,7 +727,7 @@ def _items_from_knowledge(
     requested_session = clip_signal_text(session_id, 120)
     out: list[GhostContinuityItem] = []
     for row in rows:
-        if not isinstance(row, dict):
+        if not object_fields(row):
             continue
         raw_project = row.get("project")
         raw_session = row.get("session_id")
@@ -992,9 +1005,27 @@ def _scope_filter_matches(
 def _items_from_events(events: Iterable[object]) -> list[GhostContinuityItem]:
     by_id: dict[str, GhostContinuityItem] = {}
     for event in events:
-        if not isinstance(event, dict):
+        if not object_fields(event):
             continue
         event_type = str(event.get("type") or "")
+        if event_type == "ghost_continuity_scope_deleted":
+            payload = event.get("payload")
+            if not object_fields(payload):
+                raise ValueError("invalid continuity deletion event")
+            scope = payload.get("scope")
+            project = payload.get("project", "")
+            session = payload.get("session_id", "")
+            if scope not in {"user", "project", "session"} or not isinstance(scope, str):
+                raise ValueError("invalid continuity deletion scope")
+            if not isinstance(project, str) or not isinstance(session, str):
+                raise ValueError("invalid continuity deletion reference")
+            if (scope == "project" and not project) or (scope == "session" and not session):
+                raise ValueError("missing continuity deletion reference")
+            by_id = {
+                identity: item for identity, item in by_id.items()
+                if not _scope_filter_matches(item, scope=scope, project_ref=project, session_ref=session)
+            }
+            continue
         if event_type != "ghost_continuity_item_upsert":
             continue
         item = GhostContinuityItem.from_payload(event.get("item"))
@@ -1036,7 +1067,7 @@ def _clean_context_text(value: object) -> str:
 
 
 def _structured_open_questions(value: object, *, limit: int = 3) -> tuple[str, ...]:
-    raw = value
+    raw: object = value
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -1045,7 +1076,8 @@ def _structured_open_questions(value: object, *, limit: int = 3) -> tuple[str, .
     if not isinstance(raw, (list, tuple)):
         return ()
     out: list[str] = []
-    for item in raw:
+    items: Iterable[object] = raw
+    for item in items:
         cleaned = _clean_context_text(item)
         if cleaned and cleaned not in out:
             out.append(cleaned)
@@ -1058,7 +1090,8 @@ def _clean_metadata(value: object) -> dict[str, object]:
     if not isinstance(value, Mapping):
         return {}
     out: dict[str, object] = {}
-    for key, item in value.items():
+    fields: Mapping[object, object] = value
+    for key, item in fields.items():
         clean_key = clip_signal_text(key, 80)
         if not clean_key:
             continue

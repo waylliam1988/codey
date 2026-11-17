@@ -12,7 +12,7 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
-| 派生投影与删除交错 2026-11-17 | `EXPERIMENT_COMPLETE`（生产提交待完成） | 修正 scope 读取后的 32 cell 基线复活 18、候选 0；357 项相关回归与完整静态检查通过；Git 对象复现不复制 worktree | [矩阵、scorer 修正与验收](projection-delete-interleaving-20261117.md) |
+| 派生投影与删除交错 2026-11-17 | `PRODUCTION_MERGED`（限定投影 fence） | 修正 scope 读取后的 32 cell 基线复活 18、生产修复 0；四个派生 writer 与 continuity replay 默认生效；357 项相关回归与完整静态检查通过；Git 对象复现不复制 worktree | [矩阵、scorer 修正与验收](projection-delete-interleaving-20261117.md) |
 | 删除与旧 writer 交错 2026-11-17 | `PRODUCTION_MERGED`（限定输入 fence） | 基线 16 cell 中 8 次删除后复活；生产候选/run 身份作废 gate 后复活 0；284 项相关回归通过，完整 manifest 调度和混合生命周期仍待完成 | [冻结矩阵、负结果及修复](deletion-runtime-acceptance-20261117.md) |
 | 已验证中文偏好生产启用 2026-11-17 | `PRODUCTION_MERGED`（受测模型与普通 Chat） | 中文 typed field、UI、语言优先与真实发送前复查已接线并默认启用；沿用既有单模型正结果，新增实机批次按用户要求停止；已逐项核对其他实验消费者 | [启用与遗漏核对](language-production-enablement-20261117.md) |
 | 历史 memory-routing 归档 | `EXPERIMENT_COMPLETE` | 脚本、脱敏测量、报告和来源摘要已提交；这是实验基线，不是生产晋级 | [实验目录](../../tests/manual/ghost_memory_routing/README.md) |
@@ -34,7 +34,7 @@
 | 0.6.2 scope 与四个开关 | `INCOMPLETE`（控制已生产接线） | 四开关已默认接线，显式关闭仍生效；scoped 故障关闭及首轮后撤回已验证；完整 reset manifest、runtime 并发和 acceptance battery 仍缺 | [进度记录](independent-controls.md) |
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（未接入生产 store 调度） | 已验证 GhostSQLite 持久化、七 store 方法绑定、重启、幂等、delete/reset 七 store 失败恢复和 7-process 冷启动；真实 runtime 混合并发与完整 tombstone/rebuild 仍未完成 | [候选记录](deletion-manifest-candidate.md) / [delete 失败恢复](deletion-manifest-failure-recovery.md) / [reset 失败恢复](deletion-manifest-reset-recovery.md) / [并发冷启动](deletion-manifest-multiprocess.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
-| 0.6.3 冲突生命周期与持久删除 | `NOT STARTED` | supersede、tombstone、删除/rebuild 零复活 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
+| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（输入与派生 writer fence 已生产接线） | 候选/run 身份失效、派生投影 generation 与 continuity 删除 replay 已默认生效；完整 manifest 调度、混合并发及在途来源生命周期仍待完成 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |

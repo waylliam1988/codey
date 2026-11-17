@@ -4,7 +4,9 @@
 - 基线：`17eb2e3e`
 - 状态：`EXPERIMENT_COMPLETE`（限定矩阵与候选验收完成）
 - 模型 / endpoint：无；不恢复已停止的语言实机批次。
-- 生产结论：`EXPERIMENT_ONLY`
+- 实验提交：`eea2a4d9`
+- 生产结论：`PRODUCTION_MERGED`（本地 master，限定四个派生 writer 与 continuity replay）
+- 生产提交：见 `git log --grep="reject projection writes invalidated by deletion"`。
 
 ## 冻结矩阵
 
@@ -64,7 +66,7 @@ cell 起始断言四个 writer 的种子真实可见后，23 项新增回归通�
 也复活旧投影。嵌套 sleep 操作沿用最早 generation，新的来源读取仍允许继续工作。
 
 以上是限定矩阵证据，不代表完整 manifest 生产调度、多进程混合生命周期或 World Model
-已完成。本记录提交时生产候选已通过下述验收，生产提交另行记录；实验完成不等于生产合并。
+已完成。下述修复已通过验收并单独进入生产提交；这不扩大上述完整生命周期的完成范围。
 
 ## 验收与类型
 

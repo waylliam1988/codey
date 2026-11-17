@@ -12,17 +12,19 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from time import perf_counter
-from typing import Any, SupportsIndex, SupportsInt, TypeAlias, cast
+from typing import TYPE_CHECKING, Protocol, SupportsIndex, SupportsInt
 
 from codey.ghost import _common
 from codey.ghost._warnings import bounded_warnings
 from codey.ghost.affinity import GhostAffinityStore
-from codey.ghost.continuity import GhostContinuityStore
+from codey.ghost.continuity import GhostContinuityStore, KnowledgeReader
 from codey.ghost.events import (
     control_event as _ghost_control_event,
 )
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
+from codey.ghost.payload_types import object_fields
+from codey.ghost.projection_fence import fence_projection
 from codey.ghost.record_store import GhostRecords
 from codey.ghost.schema import clip_signal_text
 from codey.ghost.sqlite import GhostSQLite
@@ -31,7 +33,12 @@ from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
 )
 
-_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
+if TYPE_CHECKING:
+    from codey.runs.ledger_projection import RunLedgerProjection
+
+
+class CompactionStore(Protocol):
+    def compact_if_needed(self) -> dict[str, object]: ...
 
 SLEEP_SCHEMA_VERSION = 1
 MAX_SLEEP_EVENTS = 1_000
@@ -63,7 +70,7 @@ class GhostSleepCursor:
     run_id: str = ""
     session_id: str = ""
     project: str = ""
-    run_projection: Any = None
+    run_projection: RunLedgerProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -119,7 +126,7 @@ class GhostSleepReport:
 
     @classmethod
     def from_payload(cls, payload: object) -> GhostSleepReport | None:
-        if not isinstance(payload, dict):
+        if not object_fields(payload):
             return None
         if type(payload.get("schema_version")) is not int or payload.get("schema_version") != SLEEP_SCHEMA_VERSION:
             return None
@@ -151,6 +158,7 @@ class GhostSleepStore:
         self.records = GhostRecords(self.database, "sleep")
         self.last_warnings: tuple[str, ...] = ()
 
+    @fence_projection
     def run_once(
         self,
         *,
@@ -159,8 +167,8 @@ class GhostSleepStore:
         continuity_store: GhostContinuityStore | None = None,
         work_queue_store: GhostWorkQueueStore | None = None,
         affinity_store: GhostAffinityStore | None = None,
-        knowledge_store: Any = None,
-        run_projection: Any = None,
+        knowledge_store: KnowledgeReader | None = None,
+        run_projection: RunLedgerProjection | None = None,
         trigger: str = "post_turn",
         run_id: str = "",
         session_id: str = "",
@@ -300,7 +308,7 @@ class GhostSleepStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
-        with self.records.transaction():
+        with self.records.transaction(deleting=True):
             events = self._read_events_unlocked()
             kept: list[dict[str, object]] = []
             removed = 0
@@ -357,20 +365,25 @@ class GhostSleepStore:
     ) -> GhostSleepStepResult:
         with self.database.connection() as database:
             database.execute("BEGIN")
-            checks = [str(row[0]) for row in database.execute("PRAGMA quick_check")]
-            foreign_keys = list(database.execute("PRAGMA foreign_key_check"))
-            cursors = database.execute(
+            check_rows: Iterable[sqlite3.Row] = database.execute("PRAGMA quick_check")
+            checks = [str(row[0]) for row in check_rows]
+            foreign_keys: list[sqlite3.Row] = database.execute("PRAGMA foreign_key_check").fetchall()
+            cursor_row: sqlite3.Row | None = database.execute(
                 "WITH owners AS (SELECT collection FROM memory_consumers UNION SELECT collection FROM memory_events) "
                 "SELECT count(*) FROM owners o LEFT JOIN memory_consumers c USING(collection) "
                 "WHERE coalesce(c.applied_sequence,0) != "
                 "(SELECT coalesce(max(sequence),0) FROM memory_events e WHERE e.collection=o.collection)"
-            ).fetchone()[0]
-            graph_cursors = database.execute(
+            ).fetchone()
+            cursors: object = cursor_row[0] if cursor_row is not None else None
+            graph_row: sqlite3.Row | None = database.execute(
                 "WITH owners AS (SELECT graph FROM graph_consumers UNION SELECT graph FROM graph_events) "
                 "SELECT count(*) FROM owners o LEFT JOIN graph_consumers c USING(graph) "
                 "WHERE coalesce(c.applied_sequence,0) != "
                 "(SELECT coalesce(max(sequence),0) FROM graph_events e WHERE e.graph=o.graph)"
-            ).fetchone()[0]
+            ).fetchone()
+            graph_cursors: object = graph_row[0] if graph_row is not None else None
+            if type(cursors) is not int or type(graph_cursors) is not int:
+                raise ValueError("invalid Ghost projection health counts")
         warnings = []
         if checks != ["ok"]:
             warnings.append("ghost_integrity_failed")
@@ -395,7 +408,7 @@ class GhostSleepStore:
         affinity_store: GhostAffinityStore | None,
         hebbian_store: GhostHebbianStore | None,
         work_queue_store: GhostWorkQueueStore | None,
-        run_projection: Any,
+        run_projection: RunLedgerProjection | None,
         session_id: str,
         project: str,
     ) -> GhostSleepStepResult:
@@ -471,8 +484,8 @@ class GhostSleepStore:
         *,
         continuity_store: GhostContinuityStore | None,
         hebbian_store: GhostHebbianStore | None,
-        knowledge_store: Any,
-        run_projection: Any,
+        knowledge_store: KnowledgeReader | None,
+        run_projection: RunLedgerProjection | None,
         run_id: str,
         session_id: str,
         project: str,
@@ -511,31 +524,30 @@ class GhostSleepStore:
     ) -> GhostSleepStepResult:
         warnings: list[str] = []
         counts = {"stores_checked": 0, "stores_compacted": 0, "stores_failed": 0, "stale_work_claims": 0}
-        for name, store in (
+        targets: tuple[tuple[str, CompactionStore | None], ...] = (
             ("inbox", inbox_store),
             ("hebbian", hebbian_store),
             ("continuity", continuity_store),
             ("work_queue", work_queue_store),
             ("affinity", affinity_store),
-        ):
-            compact = getattr(store, "compact_if_needed", None)
-            if compact is None:
+        )
+        for name, store in targets:
+            if store is None:
                 continue
             counts["stores_checked"] += 1
-            reconcile = getattr(store, "reconcile_stale_claims", None)
-            if callable(reconcile):
+            if name == "work_queue" and work_queue_store is not None:
                 try:
-                    reconcile_result = reconcile()
+                    reconcile_result = work_queue_store.reconcile_stale_claims()
                 except Exception as exc:
                     counts["stores_failed"] += 1
                     warnings.append(f"{name}_reconcile_error:{type(exc).__name__}")
                     continue
-                if not bool(getattr(reconcile_result, "ok", True)):
+                if not reconcile_result.ok:
                     counts["stores_failed"] += 1
-                counts["stale_work_claims"] += int(getattr(reconcile_result, "items_changed", 0) or 0)
-                warnings.extend(str(item) for item in getattr(reconcile_result, "warnings", ()) if item)
+                counts["stale_work_claims"] += reconcile_result.items_changed
+                warnings.extend(reconcile_result.warnings)
             try:
-                result = compact()
+                result = store.compact_if_needed()
             except Exception as exc:
                 counts["stores_failed"] += 1
                 warnings.append(f"{name}_compact_error:{type(exc).__name__}")
@@ -544,7 +556,7 @@ class GhostSleepStore:
                 counts["stores_failed"] += 1
             if bool(result.get("compacted")):
                 counts["stores_compacted"] += 1
-            warnings.extend(str(item) for item in result.get("warnings", ()) if item)
+            warnings.extend(_bounded_warnings(result.get("warnings", ())))
         return GhostSleepStepResult(
             "event_compaction",
             counts["stores_failed"] == 0,
@@ -623,13 +635,13 @@ def _timed_step(name: str, fn: Callable[[], GhostSleepStepResult]) -> GhostSleep
 
 
 def _step_from_payload(payload: object) -> GhostSleepStepResult | None:
-    if not isinstance(payload, dict):
+    if not object_fields(payload):
         return None
     name = clip_signal_text(payload.get("name"), 80)
     if not name:
         return None
     raw_counts = payload.get("counts")
-    counts_source = raw_counts if isinstance(raw_counts, dict) else dict[str, object]()
+    counts_source = raw_counts if object_fields(raw_counts) else dict[str, object]()
     counts = {clip_signal_text(key, 80): _int(value) for key, value in counts_source.items()}
     return GhostSleepStepResult(
         name=name,
@@ -682,14 +694,19 @@ def _bounded_warnings(warnings: object) -> tuple[str, ...]:
 
 
 def _list(value: object) -> list[object]:
-    return value if isinstance(value, list) else []
+    if not isinstance(value, list):
+        return []
+    items: Iterable[object] = value
+    return list(items)
 
 
 def _int(value: object) -> int:
     if isinstance(value, bool):
         return 0
     try:
-        return int(cast(_INT_INPUT, value or 0))
+        if not isinstance(value, (str, bytes, bytearray, SupportsInt, SupportsIndex)):
+            return 0
+        return int(value)
     except (TypeError, ValueError, OverflowError):
         return 0
 

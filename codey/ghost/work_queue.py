@@ -9,14 +9,17 @@ queue from terminal task facts.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, is_dataclass, replace
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.ghost import _common
 from codey.ghost.affinity import apply_affinity_work_boost
+from codey.ghost.affinity_model import AffinityHint
 from codey.ghost.continuity import GhostContinuityStore
+from codey.ghost.payload_types import mapping_fields
+from codey.ghost.projection_fence import fence_projection
 from codey.ghost.record_store import GhostRecords
 from codey.ghost.schema import clip_signal_text
 from codey.ghost.sqlite import GhostSQLite
@@ -78,6 +81,11 @@ from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
 )
 
+if TYPE_CHECKING:
+    from codey.knowledge.research_interest import ResearchInterestCandidate
+    from codey.runs.ledger_projection import RunLedgerProjection
+    from codey.runs.work_checkpoint import WorkCheckpointStore
+
 _STRICT_CONTINUATION_CN = frozenset(
     {
         "继续",
@@ -109,7 +117,7 @@ _STRICT_CONTINUATION_EN = frozenset(
 
 @dataclass(frozen=True)
 class _WorkMutation:
-    result: object
+    result: GhostWorkSyncResult | GhostWorkClaimResult | GhostWorkItem | dict[str, object] | None
     append_events: tuple[dict[str, object], ...] = ()
     replace_events: tuple[dict[str, object], ...] | None = None
     items: tuple[GhostWorkItem, ...] = ()
@@ -123,14 +131,15 @@ class GhostWorkQueueStore:
         self.records = GhostRecords(self.database, "work_queue")
         self.last_warnings: tuple[str, ...] = ()
 
+    @fence_projection
     def sync_from_sources(
         self,
         *,
         continuity_store: GhostContinuityStore | None = None,
-        work_checkpoint_store: Any = None,
-        run_projection: Any = None,
+        work_checkpoint_store: WorkCheckpointStore | None = None,
+        run_projection: RunLedgerProjection | None = None,
         terminal_event: Mapping[str, object] | None = None,
-        research_interest_candidates: Iterable[Any] = (),
+        research_interest_candidates: Iterable[ResearchInterestCandidate] = (),
         session_id: str = "",
         run_id: str = "",
         project: str = "",
@@ -299,7 +308,7 @@ class GhostWorkQueueStore:
         run_id: str,
         user_request: str = "",
         lease_seconds: int = DEFAULT_WORK_CLAIM_LEASE_SECONDS,
-        affinity_hints: Iterable[Any] = (),
+        affinity_hints: Iterable[AffinityHint | Mapping[str, object]] = (),
     ) -> GhostWorkClaimResult:
         if not clip_signal_text(run_id, 120):
             return GhostWorkClaimResult(False, skipped_reason="run_id_required")
@@ -695,7 +704,7 @@ class GhostWorkQueueStore:
                 {"removed": len(removed), "warnings": []}, append_events=(event,), items=tuple(new_items)
             )
 
-        result = self._mutate(decide)
+        result = self._mutate(decide, deleting=True)
         return result if isinstance(result, dict) else {"removed": 0, "warnings": ["work_queue_error"]}
 
     def rebuild_from_events(self) -> bool:
@@ -818,8 +827,10 @@ class GhostWorkQueueStore:
         self.records.rows()
         return self._read_events_unlocked()
 
-    def _mutate(self, decide: Any) -> object:
-        with self.records.transaction():
+    def _mutate(
+        self, decide: Callable[[list[dict[str, object]]], _WorkMutation], *, deleting: bool = False,
+    ) -> GhostWorkSyncResult | GhostWorkClaimResult | GhostWorkItem | dict[str, object] | None:
+        with self.records.transaction(deleting=deleting):
             events = self._events_for_mutation_locked()
             mutation = decide(events)
             if not isinstance(mutation, _WorkMutation):
@@ -837,7 +848,7 @@ class GhostWorkQueueStore:
             if mutation.compact:
                 self._compact_if_needed_locked(mutation.items)
             result = mutation.result
-            if is_dataclass(result) and not isinstance(result, type) and hasattr(result, "warnings"):
+            if isinstance(result, (GhostWorkSyncResult, GhostWorkClaimResult)):
                 return replace(result, warnings=self.last_warnings)
             if isinstance(result, dict):
                 return dict(result, warnings=list(self.last_warnings))
@@ -895,26 +906,26 @@ def proof_refs_from_task_event(
     item: GhostWorkItem | None,
     event: Mapping[str, object] | None,
     *,
-    run_projection: Any = None,
+    run_projection: RunLedgerProjection | None = None,
 ) -> tuple[str, ...]:
     if item is None or not isinstance(event, Mapping):
         return ()
-    run_id = clip_signal_text(event.get("run_id") or getattr(run_projection, "run_id", ""), 120)
+    run_id = clip_signal_text(event.get("run_id") or (run_projection.run_id if run_projection else ""), 120)
     proof_run_id = _proof_run_ref(run_id)
     refs: list[str] = []
     primary_refs: list[str] = []
     if proof_run_id:
         refs.append(f"ledger:{proof_run_id}")
     receipt = event.get("receipt")
-    if isinstance(receipt, Mapping) and receipt and proof_run_id:
+    if mapping_fields(receipt) and receipt and proof_run_id:
         refs.append(f"receipt:{proof_run_id}")
         if _receipt_proves_project_work(receipt):
             primary_refs.append(f"receipt:{proof_run_id}")
     changes = event.get("changes")
-    if isinstance(changes, Mapping) and _int(changes.get("changed_count")) > 0:
+    if mapping_fields(changes) and _int(changes.get("changed_count")) > 0:
         primary_refs.append(f"diff:{proof_run_id}")
     research = event.get("research")
-    if isinstance(research, Mapping):
+    if mapping_fields(research):
         synthesis = clip_signal_text(research.get("synthesis_id"), MAX_WORK_REF_CHARS)
         if synthesis:
             primary_refs.append(f"research:{synthesis}")
@@ -922,7 +933,7 @@ def proof_refs_from_task_event(
             primary_refs.append(f"research:{proof_run_id}")
     if str(event.get("mode") or "") == "review":
         primary_refs.append(f"review:{proof_run_id}")
-    if getattr(run_projection, "complete", False):
+    if run_projection is not None and run_projection.complete:
         refs.append(f"projection:{proof_run_id}")
     primary_refs = list(_bounded_refs(primary_refs))
     if not _primary_proof_matches_item_kind(item, primary_refs):
@@ -935,7 +946,7 @@ def _next_claimable_item(
     *,
     session_id: str,
     project: str,
-    affinity_hints: Iterable[Any] = (),
+    affinity_hints: Iterable[AffinityHint | Mapping[str, object]] = (),
 ) -> GhostWorkItem | None:
     project_ref = _project_ref(project)
     session_ref = _session_ref(session_id)
@@ -958,7 +969,7 @@ def _find_item(items: Iterable[GhostWorkItem], item_id: str) -> GhostWorkItem | 
 
 
 def _claim_sort_key(
-    item: GhostWorkItem, affinity_hints: Iterable[Any] = ()
+    item: GhostWorkItem, affinity_hints: Iterable[AffinityHint | Mapping[str, object]] = ()
 ) -> tuple[int, float, int, tuple[int, ...], str]:
     priority = apply_affinity_work_boost(item.priority, affinity_hints, item.id)
     return (

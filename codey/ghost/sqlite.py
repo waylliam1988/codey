@@ -10,15 +10,21 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
-GHOST_SCHEMA_VERSION = 3
+GHOST_SCHEMA_VERSION = 4
+_PROJECTION_INPUTS: ContextVar[Mapping[Path, int] | None] = ContextVar("ghost_projection_inputs", default=None)
 
 
 class GhostSchemaVersionError(RuntimeError):
     """The Ghost database is newer than this cold-start build."""
+
+
+class GhostProjectionInvalidatedError(OSError):
+    """A deletion invalidated inputs collected before the write transaction."""
 
 
 class GhostSQLite:
@@ -41,6 +47,47 @@ class GhostSQLite:
             raise
         return database
 
+    @contextmanager
+    def projection_inputs(self) -> Generator[None]:
+        identity = self.path.resolve()
+        inherited = _PROJECTION_INPUTS.get() or {}
+        if identity in inherited:
+            yield
+            return
+        with self.connection() as connection:
+            generation = self._deletion_generation(connection)
+        token = _PROJECTION_INPUTS.set({**inherited, identity: generation})
+        try:
+            yield
+        finally:
+            _PROJECTION_INPUTS.reset(token)
+
+    def check_projection_inputs(self, connection: sqlite3.Connection) -> None:
+        expected = (_PROJECTION_INPUTS.get() or {}).get(self.path.resolve())
+        current = self._deletion_generation(connection)
+        if expected is not None and current != expected:
+            raise GhostProjectionInvalidatedError("Ghost projection inputs were invalidated by deletion")
+
+    @staticmethod
+    def _deletion_generation(connection: sqlite3.Connection) -> int:
+        try:
+            row: sqlite3.Row | None = connection.execute(
+                "SELECT generation FROM ghost_projection_epoch WHERE singleton=1",
+            ).fetchone()
+        except sqlite3.Error as exc:
+            raise GhostProjectionInvalidatedError("Ghost deletion generation is unreadable") from exc
+        value: object = row[0] if row is not None else None
+        if type(value) is not int or value < 0:
+            raise GhostProjectionInvalidatedError("Ghost deletion generation is missing or invalid")
+        return value
+
+    @staticmethod
+    def advance_deletion(connection: sqlite3.Connection) -> None:
+        if connection.execute(
+            "UPDATE ghost_projection_epoch SET generation=generation+1 WHERE singleton=1",
+        ).rowcount != 1:
+            raise GhostProjectionInvalidatedError("Ghost deletion generation is missing")
+
     @staticmethod
     def _enable_wal(database: sqlite3.Connection) -> None:
         # journal_mode does not use SQLite's busy handler when two fresh
@@ -48,25 +95,38 @@ class GhostSQLite:
         deadline = time.monotonic() + 5.0
         while True:
             try:
-                mode = database.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+                row: sqlite3.Row | None = database.execute("PRAGMA journal_mode=WAL").fetchone()
+                mode: object = row[0] if row is not None else None
                 if mode != "wal":
                     raise RuntimeError("Ghost requires SQLite WAL journaling")
                 return
             except sqlite3.OperationalError as exc:
-                code = getattr(exc, "sqlite_errorcode", 0) & 0xFF
+                code = exc.sqlite_errorcode & 0xFF
                 if code not in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED} or time.monotonic() >= deadline:
                     raise
                 time.sleep(0.01)
 
+    @staticmethod
+    def _schema_version(database: sqlite3.Connection) -> int:
+        row: sqlite3.Row | None = database.execute("PRAGMA user_version").fetchone()
+        value: object = row[0] if row is not None else None
+        if type(value) is not int or value < 0:
+            raise GhostSchemaVersionError("Ghost schema version is missing or invalid")
+        return value
+
     def _initialize(self) -> None:
         with self.connection() as database:
-            version = int(database.execute("PRAGMA user_version").fetchone()[0])
+            version = self._schema_version(database)
             if version > GHOST_SCHEMA_VERSION:
                 raise GhostSchemaVersionError("ghost database uses a newer schema")
             if version >= 3 and database.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_retired_inputs'",
             ).fetchone() is None:
                 raise GhostSchemaVersionError("Ghost deletion fences are missing from an existing schema")
+            if version >= 4 and database.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_projection_epoch'",
+            ).fetchone() is None:
+                raise GhostSchemaVersionError("Ghost projection generation is missing from an existing schema")
             self._enable_wal(database)
             database.executescript(
                 """
@@ -178,6 +238,10 @@ class GhostSQLite:
                     identity TEXT NOT NULL,
                     PRIMARY KEY(kind,identity)
                 ) STRICT;
+                CREATE TABLE IF NOT EXISTS ghost_projection_epoch (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    generation INTEGER NOT NULL CHECK(generation>=0)
+                ) STRICT;
                 CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_candidate
                 BEFORE INSERT ON memory_records WHEN NEW.collection='inbox'
                   AND EXISTS(SELECT 1 FROM ghost_retired_inputs
@@ -198,10 +262,12 @@ class GhostSQLite:
                 BEGIN SELECT RAISE(ABORT,'deleted Ghost observation'); END;
                 """
             )
-            version = int(database.execute("PRAGMA user_version").fetchone()[0])
+            version = self._schema_version(database)
             if version > GHOST_SCHEMA_VERSION:
                 raise GhostSchemaVersionError("ghost database uses a newer schema")
             if version < GHOST_SCHEMA_VERSION:
+                if version < 4:
+                    database.execute("INSERT INTO ghost_projection_epoch(singleton,generation) VALUES(1,0)")
                 database.execute(f"PRAGMA user_version={GHOST_SCHEMA_VERSION}")
 
     @contextmanager

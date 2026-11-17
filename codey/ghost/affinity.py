@@ -14,10 +14,10 @@ transactions, queries, and hints, and delegates to those owners.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, is_dataclass, replace
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.ghost import _common
 from codey.ghost.affinity_events import (
@@ -57,7 +57,6 @@ from codey.ghost.affinity_model import (
     _clean_key,
     _clean_scope,
     _edge_id,
-    _field,
     _node_id,
     _unit_float,
 )
@@ -75,6 +74,7 @@ from codey.ghost.events import (
     over_compact_budget,
 )
 from codey.ghost.graph_store import GhostGraph
+from codey.ghost.projection_fence import fence_projection
 from codey.ghost.schema import clip_signal_text
 from codey.ghost.sqlite import GhostSQLite
 from codey.runtime.core import cancellation
@@ -82,10 +82,16 @@ from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
 )
 
+if TYPE_CHECKING:
+    from codey.ghost.hebbian import GhostHebbianStore, GhostNode
+    from codey.ghost.work_queue import GhostWorkItem, GhostWorkQueueStore
+    from codey.knowledge.research_interest import ResearchInterestCandidate
+    from codey.runs.ledger_projection import RunLedgerProjection
+
 
 @dataclass(frozen=True)
 class _AffinityMutation:
-    result: object
+    result: GhostAffinitySyncResult | dict[str, object] | bool
     append_events: tuple[dict[str, object], ...] = ()
     replace_events: tuple[dict[str, object], ...] | None = None
     nodes: tuple[AffinityNode, ...] = ()
@@ -100,13 +106,14 @@ class GhostAffinityStore:
         self.graph = GhostGraph(self.database, "affinity")
         self.last_warnings: tuple[str, ...] = ()
 
+    @fence_projection
     def sync_from_sources(
         self,
         *,
-        hebbian_store: Any = None,
-        work_queue_store: Any = None,
-        research_interest_candidates: Iterable[Any] = (),
-        run_projection: Any = None,
+        hebbian_store: GhostHebbianStore | None = None,
+        work_queue_store: GhostWorkQueueStore | None = None,
+        research_interest_candidates: Iterable[ResearchInterestCandidate] = (),
+        run_projection: RunLedgerProjection | None = None,
         terminal_event: Mapping[str, object] | None = None,
         session_id: str = "",
         project: str = "",
@@ -314,7 +321,7 @@ class GhostAffinityStore:
 
     def query_directive_order_hints(
         self,
-        nodes: Iterable[Any],
+        nodes: Iterable[GhostNode],
         *,
         project: str = "",
         session_id: str = "",
@@ -324,15 +331,15 @@ class GhostAffinityStore:
 
     def _query_directive_order_hints_unlocked(
         self,
-        nodes: Iterable[Any],
+        nodes: Iterable[GhostNode],
         *,
         project: str = "",
         session_id: str = "",
     ) -> tuple[AffinityHint, ...]:
         wanted = {
-            clip_signal_text(getattr(node, "id", ""), 120)
+            clip_signal_text(node.id, 120)
             for node in nodes
-            if clip_signal_text(getattr(node, "id", ""), 120)
+            if clip_signal_text(node.id, 120)
         }
         if not wanted:
             return ()
@@ -365,7 +372,7 @@ class GhostAffinityStore:
 
     def query_work_priority_hints(
         self,
-        items: Iterable[Any],
+        items: Iterable[GhostWorkItem],
         *,
         project: str = "",
         session_id: str = "",
@@ -375,7 +382,7 @@ class GhostAffinityStore:
 
     def _query_work_priority_hints_unlocked(
         self,
-        items: Iterable[Any],
+        items: Iterable[GhostWorkItem],
         *,
         project: str = "",
         session_id: str = "",
@@ -391,11 +398,11 @@ class GhostAffinityStore:
             active_edges_by_target.setdefault(edge.target, []).append(edge)
         hints: list[AffinityHint] = []
         for item in list(items or []):
-            item_id = clip_signal_text(_field(item, "id"), 120)
+            item_id = clip_signal_text(item.id, 120)
             if not item_id:
                 continue
             scope, scope_ref = _scope_from_source(item, fallback_session_id=session_id, fallback_project=project)
-            task_key = _clean_key(_field(item, "kind"), 180)
+            task_key = _clean_key(item.kind, 180)
             task_id = _node_id("task_type", scope, scope_ref, task_key) if task_key else ""
             weight = 0.0
             confidence = 0.0
@@ -440,7 +447,7 @@ class GhostAffinityStore:
 
     def query_research_priority_hints(
         self,
-        candidates: Iterable[Any],
+        candidates: Iterable[ResearchInterestCandidate],
         *,
         project: str = "",
         session_id: str = "",
@@ -450,7 +457,7 @@ class GhostAffinityStore:
 
     def _query_research_priority_hints_unlocked(
         self,
-        candidates: Iterable[Any],
+        candidates: Iterable[ResearchInterestCandidate],
         *,
         project: str = "",
         session_id: str = "",
@@ -459,7 +466,7 @@ class GhostAffinityStore:
         active_nodes = {node.id: node for node in nodes if node.status == "active"}
         hints: list[AffinityHint] = []
         for candidate in list(candidates or []):
-            candidate_id = clip_signal_text(_field(candidate, "id"), 120)
+            candidate_id = clip_signal_text(candidate.id, 120)
             if not candidate_id:
                 continue
             scope, scope_ref = _scope_from_source(candidate, fallback_session_id=session_id, fallback_project=project)
@@ -548,7 +555,7 @@ class GhostAffinityStore:
                 edges=tuple(new_edges),
             )
 
-        result = self._mutate(decide)
+        result = self._mutate(decide, deleting=True)
         return result if isinstance(result, dict) else {"nodes": 0, "edges": 0, "warnings": ["affinity_error"]}
 
     def rebuild_from_events(self) -> bool:
@@ -657,8 +664,10 @@ class GhostAffinityStore:
             raise OSError("invalid Ghost affinity graph row")
         return [node for node in nodes if node is not None], [edge for edge in edges if edge is not None]
 
-    def _mutate(self, decide: Any) -> object:
-        with self.graph.transaction():
+    def _mutate(
+        self, decide: Callable[[list[dict[str, object]]], _AffinityMutation], *, deleting: bool = False,
+    ) -> GhostAffinitySyncResult | dict[str, object] | bool:
+        with self.graph.transaction(deleting=deleting):
             self.graph.rows()
             self.last_warnings = ()
             mutation = decide(self.graph.events())
@@ -673,7 +682,7 @@ class GhostAffinityStore:
             if mutation.compact:
                 self.compact_if_needed()
             result = mutation.result
-            if is_dataclass(result) and not isinstance(result, type) and hasattr(result, "warnings"):
+            if isinstance(result, GhostAffinitySyncResult):
                 return replace(result, warnings=self.last_warnings)
             if isinstance(result, dict):
                 return dict(result, warnings=list(self.last_warnings))
@@ -690,20 +699,25 @@ class GhostAffinityStore:
         return GhostAffinitySyncResult(False, skipped_reason=reason, warnings=self.last_warnings)
 
 
-def apply_affinity_work_boost(priority: float, hints: Iterable[Any], target: str) -> float:
+def apply_affinity_work_boost(
+    priority: float, hints: Iterable[AffinityHint | Mapping[str, object]], target: str,
+) -> float:
     base = _unit_float(priority)
     boost = _hint_boost(hints, target, maximum=0.12)
     return _unit_float(base + boost)
 
 
-def _hint_boost(hints: Iterable[Any], target: str, *, maximum: float) -> float:
+def _hint_boost(
+    hints: Iterable[AffinityHint | Mapping[str, object]], target: str, *, maximum: float,
+) -> float:
     clean_target = clip_signal_text(target, 120)
     boost = 0.0
     for hint in list(hints or []):
-        if clip_signal_text(_field(hint, "target"), 120) != clean_target:
+        target_value = hint.target if isinstance(hint, AffinityHint) else hint.get("target")
+        if clip_signal_text(target_value, 120) != clean_target:
             continue
-        weight = _unit_float(_field(hint, "weight"))
-        confidence = _unit_float(_field(hint, "confidence"))
+        weight = _unit_float(hint.weight if isinstance(hint, AffinityHint) else hint.get("weight"))
+        confidence = _unit_float(hint.confidence if isinstance(hint, AffinityHint) else hint.get("confidence"))
         boost = max(boost, weight * confidence * maximum)
     return min(maximum, boost)
 

@@ -36,6 +36,7 @@ from codey.ghost.graph_primitives import (
 from codey.ghost.graph_store import GhostGraph
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
+from codey.ghost.payload_types import object_fields
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
 from codey.ghost.sqlite import GhostSQLite
 from codey.runtime.core import cancellation
@@ -120,7 +121,7 @@ class GhostNode:
 
     @classmethod
     def from_payload(cls, payload: object) -> GhostNode | None:
-        if not isinstance(payload, dict):
+        if not object_fields(payload):
             return None
         kind = str(payload.get("kind") or "").strip().lower()
         status = str(payload.get("status") or "").strip().lower()
@@ -187,7 +188,7 @@ class GhostEdge:
 
     @classmethod
     def from_payload(cls, payload: object) -> GhostEdge | None:
-        if not isinstance(payload, dict):
+        if not object_fields(payload):
             return None
         source = clip_signal_text(payload.get("source"), 120)
         target = clip_signal_text(payload.get("target"), 120)
@@ -462,7 +463,7 @@ class GhostHebbianStore:
         scope_ref = _scope_ref_for_filter(normalized_scope, project=project, session_id=session_id)
         if normalized_scope in {"project", "session"} and not scope_ref:
             raise ValueError(f"{normalized_scope} reference is required")
-        with self.graph.transaction():
+        with self.graph.transaction(deleting=True):
             nodes, edges = self._load_state_unlocked()
             removed_ids = {
                 node.id
@@ -947,7 +948,8 @@ def _merge_refs(
 def _clean_refs(value: object, *, limit: int) -> tuple[str, ...]:
     if not isinstance(value, (list, tuple)):
         return ()
-    return _merge_refs((), (str(item) for item in value), limit=limit)
+    items: Iterable[object] = value
+    return _merge_refs((), (str(item) for item in items), limit=limit)
 
 
 def _status_filter(value: str | Iterable[str] | None, *, allowed: tuple[str, ...]) -> set[str]:

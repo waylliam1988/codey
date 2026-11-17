@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Literal
 
+from codey.ghost.payload_types import decoded_object
 from codey.ghost.sqlite import GhostSQLite
 
 
@@ -31,12 +32,22 @@ class GhostGraph:
         self._connection: ContextVar[sqlite3.Connection | None] = ContextVar("ghost_graph_transaction", default=None)
 
     @contextmanager
-    def transaction(self, *, write: bool = True) -> Generator[None]:
+    def transaction(self, *, write: bool = True, deleting: bool = False) -> Generator[None]:
+        if deleting and not write:
+            raise ValueError("deletion requires a write transaction")
         if self._connection.get() is not None:
+            if write:
+                self.database.check_projection_inputs(self._db())
+            if deleting:
+                self.database.advance_deletion(self._db())
             yield
             return
         with self.database.connection() as connection:
             connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
+            if write:
+                self.database.check_projection_inputs(connection)
+            if deleting:
+                self.database.advance_deletion(connection)
             token = self._connection.set(connection)
             try:
                 yield
@@ -55,41 +66,39 @@ class GhostGraph:
 
     def events(self) -> list[dict[str, object]]:
         with self.transaction(write=False):
+            rows: Iterable[sqlite3.Row] = self._db().execute(
+                "SELECT payload FROM graph_events WHERE graph=? ORDER BY sequence", (self.name,),
+            )
             return [
-                json.loads(row[0])
-                for row in self._db().execute(
-                    "SELECT payload FROM graph_events WHERE graph=? ORDER BY sequence",
-                    (self.name,),
-                )
+                decoded_object(row[0])
+                for row in rows
             ]
 
     def rows(self) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
         with self.transaction(write=False):
             database = self._db()
             self._check_cursor()
-            nodes = [
-                json.loads(row[0])
-                for row in database.execute(
-                    "SELECT payload FROM graph_nodes WHERE graph=? ORDER BY id",
-                    (self.name,),
-                )
-            ]
-            edges = [
-                json.loads(row[0])
-                for row in database.execute(
-                    "SELECT payload FROM graph_edges WHERE graph=? ORDER BY source,target,relation",
-                    (self.name,),
-                )
-            ]
+            node_rows: Iterable[sqlite3.Row] = database.execute(
+                "SELECT payload FROM graph_nodes WHERE graph=? ORDER BY id", (self.name,),
+            )
+            nodes = [decoded_object(row[0]) for row in node_rows]
+            edge_rows: Iterable[sqlite3.Row] = database.execute(
+                "SELECT payload FROM graph_edges WHERE graph=? ORDER BY source,target,relation", (self.name,),
+            )
+            edges = [decoded_object(row[0]) for row in edge_rows]
             return nodes, edges
 
     def _check_cursor(self) -> None:
         database = self._db()
-        tail = database.execute(
+        tail_row: sqlite3.Row | None = database.execute(
             "SELECT coalesce(max(sequence),0) FROM graph_events WHERE graph=?", (self.name,)
-        ).fetchone()[0]
-        cursor = database.execute("SELECT applied_sequence FROM graph_consumers WHERE graph=?", (self.name,)).fetchone()
-        if tail != (cursor[0] if cursor is not None else 0):
+        ).fetchone()
+        tail: object = tail_row[0] if tail_row is not None else None
+        cursor: sqlite3.Row | None = database.execute(
+            "SELECT applied_sequence FROM graph_consumers WHERE graph=?", (self.name,),
+        ).fetchone()
+        position: object = cursor[0] if cursor is not None else 0
+        if type(tail) is not int or type(position) is not int or tail != position:
             raise OSError("Ghost graph consumer position disagrees with committed events")
 
     def append(self, events: Iterable[Mapping[str, object]], *, replace: bool = False) -> None:
@@ -100,7 +109,7 @@ class GhostGraph:
             for event in events:
                 payload = _encode(event)
                 identity = str(event.get("event_id") or hashlib.sha256(payload.encode()).hexdigest())
-                existing = database.execute(
+                existing: sqlite3.Row | None = database.execute(
                     "SELECT payload FROM graph_events WHERE graph=? AND event_id=?", (self.name, identity)
                 ).fetchone()
                 if existing is not None:
@@ -141,7 +150,7 @@ class GhostGraph:
             )
 
     def reset(self) -> None:
-        with self.transaction():
+        with self.transaction(deleting=True):
             database = self._db()
             database.execute("DELETE FROM graph_nodes WHERE graph=?", (self.name,))
             database.execute("DELETE FROM graph_events WHERE graph=?", (self.name,))
@@ -149,7 +158,7 @@ class GhostGraph:
 
     def event_stats(self) -> dict[str, int]:
         with self.transaction(write=False):
-            row = (
+            row: sqlite3.Row | None = (
                 self._db()
                 .execute(
                     "SELECT count(*),coalesce(sum(length(cast(payload AS BLOB))),0) FROM graph_events WHERE graph=?",
@@ -157,4 +166,8 @@ class GhostGraph:
                 )
                 .fetchone()
             )
-            return {"events": int(row[0]), "bytes": int(row[1])}
+            events: object = row[0] if row is not None else None
+            size: object = row[1] if row is not None else None
+            if type(events) is not int or type(size) is not int:
+                raise OSError("invalid Ghost graph event statistics")
+            return {"events": events, "bytes": size}

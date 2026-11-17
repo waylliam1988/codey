@@ -1874,6 +1874,11 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 七 store 混合并发和生命周期仍未完成。见
 [运行时删除交错验证](docs/ghost_progress/deletion-runtime-acceptance-20261117.md)。
 
+同日进一步修复四个派生 writer 的来源读取/删除/提交交错，并闭合 continuity 删除事件 replay；
+修正 scope scorer 后的 32 cell 从 18 次复活降到 0，357 项相关回归与完整静态检查通过。
+同库 generation 默认在生产写事务复查，缺失时 fail closed；完整 manifest 调度及在途来源
+生命周期仍未完成。见[派生投影删除交错](docs/ghost_progress/projection-delete-interleaving-20261117.md)。
+
 目标：同槽偏好替换和删除是存储级语义，不能靠 renderer 偶然去重。
 
 先核对当前行为：`hebbian.py` 已在新证据和重复证据路径对人工接受做 supersede，

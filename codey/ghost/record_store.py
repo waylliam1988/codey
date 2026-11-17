@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Literal
 
+from codey.ghost.payload_types import decoded_object
 from codey.ghost.sqlite import GhostSQLite
 
 
@@ -38,12 +39,22 @@ class GhostRecords:
         self._connection: ContextVar[sqlite3.Connection | None] = ContextVar("ghost_record_transaction", default=None)
 
     @contextmanager
-    def transaction(self, *, write: bool = True) -> Generator[None]:
+    def transaction(self, *, write: bool = True, deleting: bool = False) -> Generator[None]:
+        if deleting and not write:
+            raise ValueError("deletion requires a write transaction")
         if self._connection.get() is not None:
+            if write:
+                self.database.check_projection_inputs(self._db())
+            if deleting:
+                self.database.advance_deletion(self._db())
             yield
             return
         with self.database.connection() as connection:
             connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
+            if write:
+                self.database.check_projection_inputs(connection)
+            if deleting:
+                self.database.advance_deletion(connection)
             token = self._connection.set(connection)
             try:
                 yield
@@ -60,24 +71,18 @@ class GhostRecords:
 
     def events(self) -> list[dict[str, object]]:
         with self.transaction(write=False):
-            return [
-                _payload(json.loads(row[0]))
-                for row in self._db().execute(
-                    "SELECT payload FROM memory_events WHERE collection=? ORDER BY sequence",
-                    (self.collection,),
-                )
-            ]
+            rows: Iterable[sqlite3.Row] = self._db().execute(
+                "SELECT payload FROM memory_events WHERE collection=? ORDER BY sequence", (self.collection,),
+            )
+            return [decoded_object(row[0]) for row in rows]
 
     def rows(self) -> list[dict[str, object]]:
         with self.transaction(write=False):
             self._check_cursor()
-            return [
-                _payload(json.loads(row[0]))
-                for row in self._db().execute(
-                    "SELECT payload FROM memory_records WHERE collection=? ORDER BY id",
-                    (self.collection,),
-                )
-            ]
+            rows: Iterable[sqlite3.Row] = self._db().execute(
+                "SELECT payload FROM memory_records WHERE collection=? ORDER BY id", (self.collection,),
+            )
+            return [decoded_object(row[0]) for row in rows]
 
     def append(self, events: Iterable[Mapping[str, object]], *, replace: bool = False) -> None:
         with self.transaction():
@@ -87,7 +92,7 @@ class GhostRecords:
             for event in events:
                 payload = _encode(event)
                 identity = str(event.get("event_id") or hashlib.sha256(payload.encode()).hexdigest())
-                old = database.execute(
+                old: sqlite3.Row | None = database.execute(
                     "SELECT payload FROM memory_events WHERE collection=? AND event_id=?", (self.collection, identity)
                 ).fetchone()
                 if old is not None:
@@ -101,13 +106,15 @@ class GhostRecords:
 
     def _check_cursor(self) -> None:
         database = self._db()
-        tail = database.execute(
+        tail_row: sqlite3.Row | None = database.execute(
             "SELECT coalesce(max(sequence),0) FROM memory_events WHERE collection=?", (self.collection,)
-        ).fetchone()[0]
-        cursor = database.execute(
+        ).fetchone()
+        tail: object = tail_row[0] if tail_row is not None else None
+        cursor: sqlite3.Row | None = database.execute(
             "SELECT applied_sequence FROM memory_consumers WHERE collection=?", (self.collection,)
         ).fetchone()
-        if tail != (cursor[0] if cursor is not None else 0):
+        position: object = cursor[0] if cursor is not None else 0
+        if type(tail) is not int or type(position) is not int or tail != position:
             raise ValueError(f"Ghost {self.collection} consumer cursor does not match its events")
 
     def mark_applied(self) -> None:
@@ -147,8 +154,16 @@ class GhostRecords:
 
     def setting(self, key: str, default: object) -> object:
         with self.transaction(write=False):
-            row = self._db().execute("SELECT value FROM ghost_settings WHERE key=?", (key,)).fetchone()
-            return json.loads(row[0]) if row is not None else default
+            row: sqlite3.Row | None = self._db().execute(
+                "SELECT value FROM ghost_settings WHERE key=?", (key,),
+            ).fetchone()
+            if row is None:
+                return default
+            encoded: object = row[0]
+            if not isinstance(encoded, str):
+                raise ValueError("Ghost setting must be encoded text")
+            value: object = json.loads(encoded)
+            return value
 
     def set_setting(self, key: str, value: object) -> None:
         with self.transaction():
@@ -158,7 +173,7 @@ class GhostRecords:
             )
 
     def reset(self, *, settings: bool = False) -> None:
-        with self.transaction():
+        with self.transaction(deleting=True):
             database = self._db()
             if self.collection == "inbox":
                 database.execute(
@@ -173,7 +188,7 @@ class GhostRecords:
 
     def event_stats(self) -> dict[str, int]:
         with self.transaction(write=False):
-            row = (
+            row: sqlite3.Row | None = (
                 self._db()
                 .execute(
                     "SELECT count(*),coalesce(sum(length(cast(payload AS BLOB))),0) "
@@ -182,7 +197,11 @@ class GhostRecords:
                 )
                 .fetchone()
             )
-            return {"events": int(row[0]), "bytes": int(row[1])}
+            events: object = row[0] if row is not None else None
+            size: object = row[1] if row is not None else None
+            if type(events) is not int or type(size) is not int:
+                raise ValueError("invalid Ghost record event statistics")
+            return {"events": events, "bytes": size}
 
     def payload(self) -> dict[str, object] | None:
         rows = self.rows()
