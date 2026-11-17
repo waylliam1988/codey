@@ -5,6 +5,10 @@
 - 实验结论：`EXPERIMENT_COMPLETE`（负结果）；接收端修复仍 `INCOMPLETE`。
 - 模型 / endpoint：有效矩阵使用确定性 transport，不调用真实模型或 HTTP，不恢复语言实机批次。
 
+后续：[接收登记与删除接线](received-input-admission-wiring-20261117.md)已在新输入的 canonical
+commit 前默认登记，相同 8 cell 中开启状态旧输入 4→0；原负结果和无效 fixture 不重写。
+下面的“修复仍 INCOMPLETE”和下一步描述对应本次负结果提交时；当前状态以进度板和后续记录为准。
+
 ## 固定矩阵与有效性
 
 假设：普通 InputQueue 已接收的输入，即使尚未进入 `_ensure_durable_task`，删除后也不应

@@ -66,9 +66,11 @@ class SessionKernel:
         store: DurableStore,
         *,
         on_commit: Callable[[CommitResult, DurableMutation], None] | None = None,
+        before_admit: Callable[[TaskCheckpoint], None] | None = None,
     ) -> None:
         self.store = store
         self._on_commit = on_commit
+        self._before_admit = before_admit
         self._write_lock = threading.RLock()
         self._sealed = False
         self._closed = False
@@ -100,13 +102,19 @@ class SessionKernel:
         self._ensure_writable()
         try:
             mutation = self._materialize_approval(mutation)
-            if mutation.task is not None and mutation.expected_attempt_token is None:
+            if mutation.task is not None:
                 task_id = mutation.task.task_id
                 try:
                     current = self.store.task(task_id)
                 except KeyError:
                     current = None
-                if current is not None:
+                if current is None:
+                    # Application-owned input receipts precede canonical
+                    # visibility and scheduler publication. They may survive
+                    # a rejected commit, but never own task/runtime facts.
+                    if self._before_admit is not None:
+                        self._before_admit(mutation.task)
+                elif mutation.expected_attempt_token is None:
                     bound = self._execution.get()
                     # A cancellation barrier may have terminalized the task
                     # and released its attempt token while the worker is

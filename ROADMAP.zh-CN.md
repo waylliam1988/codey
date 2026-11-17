@@ -1848,7 +1848,8 @@ rendered envelope 才能交给 provider。trace 只记录准入结果，不能�
 4 cell 泄漏从 4 降到 0；开启控制的 4 cell 在途旧输入仍会重学，不代表删除寿命已完成。
 见[在途删除与来源控制](docs/ghost_progress/inflight-deletion-source-controls-20261117.md)。
 后续[输入身份实验](docs/ghost_progress/inflight-input-origins-20261117.md)已闭合上述已进入执行入口的
-开启场景；排队 intake、完整恢复与维护控制撤回边界仍需继续。
+开启场景；后续[接收登记](docs/ghost_progress/received-input-admission-wiring-20261117.md)已覆盖
+可登记的新 intake（含 busy queue）；升级前无 receipt、完整恢复与维护控制撤回边界仍需继续。
 
 目标：把“禁用 Ghost”拆成四个独立控制：
 
@@ -1876,6 +1877,13 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 后续：新 task 的 canonical commit 前由应用层默认登记输入身份，普通 InputQueue、
+busy queue、submit_task 与 headless 共用接收边界，durable 核心不 import Ghost。原接收后删除
+8 cell 中开启的旧输入复活 4→0；27 项验收覆盖编辑/放置、重复输入、重开、receipt 后 commit 前
+并发删除、实际崩溃与单故障 quarantine。全树静态门通过，扩大回归的既有懒加载/架构失败单列，
+发布清单已同步并修复相关启动回归。升级前无 receipt、双重故障、身份/scope 异常和完整 manifest
+仍未完成；不据此宣布 0.6.3 全部通过。见[接收登记与删除接线](docs/ghost_progress/received-input-admission-wiring-20261117.md)。
+
 2026-11-17：schema 6 在执行生命周期入口默认登记无正文的输入身份，普通删除/reset 即使
 尚无投影也会持久退役；实际 Sleep、新消费者与 SQL 写口遵守该身份。相同 8 cell 中开启的
 旧输入复活 4→0，48 项新增验收、最终 162 项相关回归与全树静态门通过。排队 intake、
@@ -1883,8 +1891,8 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 见[输入身份、命名空间负结果与验收](docs/ghost_progress/inflight-input-origins-20261117.md)。
 
 后续已用真实 InputQueue 的 placed/pending 输入复现更早的缺口：intake 后、执行入口前
-删除的 8 cell 全有效，开启的 4 cell 仍重学。已保留负结果，身份登记需继续前移到真实
-接收端；这不是 busy-queue 或完整 HTTP 调度验收。见
+删除的 8 cell 全有效，开启的 4 cell 仍重学。已保留负结果，当时身份登记需前移到真实
+接收端；后续限定接线见上文。这份原始负结果不是 busy-queue 或完整 HTTP 调度验收。见
 [已接收未执行输入](docs/ghost_progress/received-input-deletion-20261117.md)。
 
 2026-11-17：普通 control surface 已修复 store 返回 False 时误报成功、SQLite 错误逸出的问题，

@@ -12,8 +12,9 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
-| 已接收未执行输入的删除 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | InputQueue placed/pending intake 后删除的 8 cell 全有效，开启的 4 cell 仍重学旧输入、关闭为 0；执行入口登记不足，需前移到真实 intake producer | [有效矩阵与无效 fixture](received-input-deletion-20261117.md) |
-| 首次投影前输入身份 2026-11-17 | `PRODUCTION_MERGED`（限定执行入口） | 相同 8 cell 中开启状态旧输入 4→0，48 项新验收与最终 162 项相关回归通过；schema 6 输入登记、持久退役与实际 Sleep 默认接线，全树静态门通过；排队 intake 仍未覆盖 | [输入身份与边界](inflight-input-origins-20261117.md) |
+| 输入接收登记与删除接线 2026-11-17 | `PRODUCTION_MERGED`（限定新接收输入） | canonical task commit 前默认登记；原 8 cell 开启状态旧输入 4→0，27 项验收覆盖 busy queue、重启、崩溃、普通提交与 headless；全树静态门通过；升级前无 receipt、双重故障与完整 manifest 仍缺 | [生产接线与回归归属](received-input-admission-wiring-20261117.md) |
+| 已接收未执行输入的删除 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果，后续限定闭合） | InputQueue placed/pending intake 后删除的原 8 cell 全有效，开启的 4 cell 重学；基线保留，后续接收登记关闭本次可登记新输入的缺口 | [有效矩阵与无效 fixture](received-input-deletion-20261117.md) |
+| 首次投影前输入身份 2026-11-17 | `PRODUCTION_MERGED`（限定执行入口） | 相同 8 cell 中开启状态旧输入 4→0，48 项新验收与最终 162 项相关回归通过；schema 6 输入登记、持久退役与实际 Sleep 默认接线，全树静态门通过；当时未覆盖的 intake 见后续接收登记 | [输入身份与边界](inflight-input-origins-20261117.md) |
 | 首次投影前在途删除与 Sleep 来源控制 2026-11-17 | `PRODUCTION_MERGED`（仅 Sleep 来源控制） | 本轮关闭的 4 个真实任务 cell 旧输入泄漏 4→0，139 项相关回归与全树静态门通过；当时开启的 4 cell 负结果由后续执行入口身份实验闭合，排队 intake 等边界仍缺 | [复现、修复与限制](inflight-deletion-source-controls-20261117.md) |
 | 删除后重新读取来源 2026-11-17 | `PRODUCTION_MERGED`（限定来源退役） | 初始 12 项旧来源复活已闭合；continuity/work queue 来源身份默认持久退役；新 run、新手工确认和其他 scope 可用；本轮 425 项相关回归与完整静态检查通过；无投影输入见后续限定执行入口实验 | [来源生命周期与候选负结果](deleted-source-lifetime-20261117.md) |
 | 控制面删除与重置失败汇总 2026-11-17 | `PRODUCTION_MERGED`（限定结果表达） | 七 store × delete/reset 的 False 与 SQLite 失败已闭合；合法 0/None 与用户关闭保留；231 项相关回归和完整静态检查通过，durable manifest 调度仍未完成 | [负结果与修复](control-mutation-failure-20261117.md) |
@@ -39,7 +40,7 @@
 | 0.6.2 scope 与四个开关 | `INCOMPLETE`（控制已生产接线） | 四开关已默认接线，显式关闭仍生效；scoped 故障关闭及首轮后撤回已验证；完整 reset manifest、runtime 并发和 acceptance battery 仍缺 | [进度记录](independent-controls.md) |
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（未接入生产 store 调度） | 已验证 GhostSQLite 持久化、七 store 方法绑定、重启、幂等、delete/reset 七 store 失败恢复和 7-process 冷启动；真实 runtime 混合并发与完整 tombstone/rebuild 仍未完成 | [候选记录](deletion-manifest-candidate.md) / [delete 失败恢复](deletion-manifest-failure-recovery.md) / [reset 失败恢复](deletion-manifest-reset-recovery.md) / [并发冷启动](deletion-manifest-multiprocess.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
-| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含首次投影前执行输入） | 候选/run 身份失效、执行入口 input origin、派生 generation 与 continuity replay 默认生效；完整 manifest 调度、混合恢复、排队 intake 和升级前无 receipt 输入仍待完成 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
+| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含新输入接收登记） | 候选/run 身份失效、接收与执行入口 input origin、派生 generation 与 continuity replay 默认生效；完整 manifest 调度、混合恢复、升级前无 receipt、双重故障与身份/scope 异常仍待完成 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |

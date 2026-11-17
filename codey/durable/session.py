@@ -50,8 +50,9 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
         store: DurableStore,
         *,
         on_commit: Callable[[CommitResult, DurableMutation], None] | None = None,
+        before_admit: Callable[[TaskCheckpoint], None] | None = None,
     ) -> None:
-        super().__init__(store, on_commit=on_commit)
+        super().__init__(store, on_commit=on_commit, before_admit=before_admit)
         self.conversation_queries = ConversationQueryFacade(self, self._query_line)
         self.task_queries = TaskQueryFacade(self.store, self._query_line)
         self.conversation_operations = ConversationOperations(self)

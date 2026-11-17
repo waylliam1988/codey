@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "baseline": "78c907de",
+  "transport": "deterministic fixture; real input queue and task runtime; scheduler disabled; no model or HTTP",
+  "admission": "placed, pending dispatch; explicit canonical claim/start; not busy-queue placement",
+  "cells": [
+    {
+      "action": "delete_scope",
+      "scope": "user",
+      "accept_events": true,
+      "admitted_before_entry": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "delete_scope",
+      "scope": "user",
+      "accept_events": false,
+      "admitted_before_entry": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "delete_scope",
+      "scope": "project",
+      "accept_events": true,
+      "admitted_before_entry": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "delete_scope",
+      "scope": "project",
+      "accept_events": false,
+      "admitted_before_entry": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "delete_scope",
+      "scope": "session",
+      "accept_events": true,
+      "admitted_before_entry": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "delete_scope",
+      "scope": "session",
+      "accept_events": false,
+      "admitted_before_entry": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "reset_all",
+      "scope": "user",
+      "accept_events": true,
+      "admitted_before_entry": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "reset_all",
+      "scope": "user",
+      "accept_events": false,
+      "admitted_before_entry": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    }
+  ],
+  "invalid_cells": 0,
+  "enabled_cells_with_old_input": 0,
+  "disabled_cells_with_old_input": 0
+}
