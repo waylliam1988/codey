@@ -1843,6 +1843,11 @@ rendered envelope 才能交给 provider。trace 只记录准入结果，不能�
 
 #### 0.6.2 - Scope Control and Four Learning Switches
 
+2026-11-17：后台 Sleep 消费外部 run/knowledge 来源前默认复查 scoped accept_events，
+缺控制或读取失败时不消费；139 项相关回归与全树静态门通过。真实任务删除中关闭控制的
+4 cell 泄漏从 4 降到 0；开启控制的 4 cell 在途旧输入仍会重学，不代表删除寿命已完成。
+见[在途删除与来源控制](docs/ghost_progress/inflight-deletion-source-controls-20261117.md)。
+
 目标：把“禁用 Ghost”拆成四个独立控制：
 
 ```text

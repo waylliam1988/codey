@@ -33,13 +33,16 @@ source-size inventory 已完成，位于本地
 | 来源读取/删除/派生提交交错与 continuity 删除 replay | generation fence 与 replay 默认生效；修正 scorer 后 32 cell 复活 18→0 | `5e291b4f`；[投影删除实验](ghost_progress/projection-delete-interleaving-20261117.md) |
 | 普通控制面将 store False 汇总为成功，SQLite 错误逸出 | 逐 store 结构化失败、继续其余 store；合法 0/None 和关闭保留 | `7eded52e`；[失败汇总实验](ghost_progress/control-mutation-failure-20261117.md) |
 | 删除后重新读取旧来源生成投影 | continuity/work queue 的持久 source retirement 已验证，生产提交另见记录 | [来源生命周期实验](ghost_progress/deleted-source-lifetime-20261117.md) |
+| Sleep 绕过 accept_events 消费外部来源 | 正常后台来源步骤默认复查当前 scoped 控制；关闭的真实任务 cell 泄漏 4→0，139 项回归通过 | [在途删除与来源控制](ghost_progress/inflight-deletion-source-controls-20261117.md) |
 | 方向文档仍把已上线中文偏好称为当前候选 | 区分历史测量与当前生产状态；旧测量不重写 | `7eded52e` |
 
 ## 有证据的未完成项
 
-1. **在途输入寿命**：当前 generation 从 projection 方法开始捕获；若一次运行还没有
-   生成过 Ghost 投影，删除无法从现有来源行知道该输入身份。应先用真实任务起始→删除→结算
-   复现，再确定由哪个既有 runtime owner 捕获/持久化来源寿命，不能另建无消费者日志。
+1. **在途输入寿命**：真实 task entry→删除→结算的 8 cell 已复现；Sleep 控制修复后，
+   开启 accept_events 的 4 cell 仍重建旧 observation/continuity。当前 generation 从
+   projection 方法开始捕获，删除时无行可供退役。需由既有 runtime owner 捕获/持久化
+   来源寿命并跨后台队列传递，不能另建无消费者日志。已排队维护启动时的 run_maintenance
+   复查、source step 控制撤回并发和 knowledge 独立来源矩阵仍待验证。
 2. **Deletion Manifest 默认调度**：候选代码和离线恢复有效，但普通控制面仍直接遍历 store。
    当前 partial mutation 无跨 store 回滚或 durable pending 恢复；需完成真实混合并发、
    crash/restart 和 tombstone 生命周期后接入，不能把已存在模块当作上线。

@@ -198,6 +198,7 @@ class GhostSleepStore:
                 affinity_store=affinity_store,
             ),
             "affinity_sync": lambda: self._affinity_sync_step(
+                inbox_store=inbox_store,
                 affinity_store=affinity_store,
                 hebbian_store=hebbian_store,
                 work_queue_store=work_queue_store,
@@ -214,6 +215,7 @@ class GhostSleepStore:
                 min_interval_seconds=budget.affinity_decay_min_interval_seconds,
             ),
             "continuity_refresh": lambda: self._continuity_refresh_step(
+                inbox_store=inbox_store,
                 continuity_store=continuity_store,
                 hebbian_store=hebbian_store,
                 knowledge_store=knowledge_store,
@@ -405,6 +407,7 @@ class GhostSleepStore:
     def _affinity_sync_step(
         self,
         *,
+        inbox_store: GhostInboxStore | None,
         affinity_store: GhostAffinityStore | None,
         hebbian_store: GhostHebbianStore | None,
         work_queue_store: GhostWorkQueueStore | None,
@@ -414,10 +417,14 @@ class GhostSleepStore:
     ) -> GhostSleepStepResult:
         if affinity_store is None:
             return GhostSleepStepResult("affinity_sync", True, skipped_reason="store_unavailable")
+        allowed, control_warnings = (
+            _external_source_permission(inbox_store, session_id=session_id, project=project)
+            if run_projection is not None else (True, ())
+        )
         result = affinity_store.sync_from_sources(
             hebbian_store=hebbian_store,
             work_queue_store=work_queue_store,
-            run_projection=run_projection,
+            run_projection=run_projection if allowed else None,
             session_id=session_id,
             project=project,
         )
@@ -430,8 +437,9 @@ class GhostSleepStore:
                 "edges_changed": result.edges_changed,
                 "total_nodes": result.total_nodes,
                 "total_edges": result.total_edges,
+                "external_sources_allowed": int(allowed),
             },
-            warnings=_bounded_warnings(result.warnings),
+            warnings=_bounded_warnings((*control_warnings, *result.warnings)),
         )
 
     def _hebbian_decay_step(
@@ -482,6 +490,7 @@ class GhostSleepStore:
     def _continuity_refresh_step(
         self,
         *,
+        inbox_store: GhostInboxStore | None,
         continuity_store: GhostContinuityStore | None,
         hebbian_store: GhostHebbianStore | None,
         knowledge_store: KnowledgeReader | None,
@@ -492,10 +501,14 @@ class GhostSleepStore:
     ) -> GhostSleepStepResult:
         if continuity_store is None:
             return GhostSleepStepResult("continuity_refresh", True, skipped_reason="store_unavailable")
+        allowed, control_warnings = (
+            _external_source_permission(inbox_store, session_id=session_id, project=project)
+            if run_projection is not None or knowledge_store is not None else (True, ())
+        )
         result = continuity_store.sync_from_sources(
             hebbian_store=hebbian_store,
-            run_projection=run_projection,
-            knowledge_store=knowledge_store,
+            run_projection=run_projection if allowed else None,
+            knowledge_store=knowledge_store if allowed else None,
             user_focus_excerpt="",
             session_id=session_id,
             run_id=run_id,
@@ -509,8 +522,9 @@ class GhostSleepStore:
             counts={
                 "items_changed": result.items_changed,
                 "total_items": result.total_items,
+                "external_sources_allowed": int(allowed),
             },
-            warnings=_bounded_warnings(result.warnings),
+            warnings=_bounded_warnings((*control_warnings, *result.warnings)),
         )
 
     def _event_compaction_step(
@@ -610,6 +624,17 @@ class GhostSleepStore:
         if stats["events"] > MAX_SLEEP_EVENTS or stats["bytes"] > MAX_SLEEP_EVENTS_BYTES:
             self._write_events_atomic(self.records.events()[-MAX_SLEEP_EVENTS:])
             self.records.mark_applied()
+
+
+def _external_source_permission(
+    inbox: GhostInboxStore | None, *, session_id: str, project: str,
+) -> tuple[bool, tuple[str, ...]]:
+    if inbox is None:
+        return False, ("sleep_source_control_unavailable",)
+    try:
+        return inbox.control_enabled("accept_events", session_id=session_id, project=project), ()
+    except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+        return False, (f"sleep_source_control_failed:{type(exc).__name__}",)
 
 
 def _timed_step(name: str, fn: Callable[[], GhostSleepStepResult]) -> GhostSleepStepResult:
