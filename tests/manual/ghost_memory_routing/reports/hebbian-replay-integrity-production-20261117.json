@@ -2,6 +2,7 @@
   "experiment": "hebbian-replay-integrity-20261117",
   "status": "PRODUCTION_MERGED",
   "baseline_commit": "ab68edb7248b4aa34ac221df81b7218a1baa1363",
+  "production_commit": "da850a5b36df9811cbc11690854bc7f6f2cc29d9",
   "production_commit_subject": "fix(ghost): reject corrupt Hebbian replay atomically",
   "external_model_calls": 0,
   "production_consumer": "python -m codey ghost rebuild-state --yes",
