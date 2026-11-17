@@ -190,6 +190,7 @@ class GhostWorkQueueStore:
             )
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
+                live_candidates = self.records.live_sources(candidates)
                 items = _bounded_items(items_from_events(events))
                 expired = tuple(item for item in items if _is_expired(item, now))
                 append_events: list[dict[str, object]] = []
@@ -203,7 +204,7 @@ class GhostWorkQueueStore:
                     )
                     expired_ids = {item.id for item in expired}
                     items = _bounded_items(item for item in items if item.id not in expired_ids)
-                if not candidates:
+                if not live_candidates:
                     if not append_events:
                         self.last_warnings = ()
                         return _WorkMutation(
@@ -222,7 +223,7 @@ class GhostWorkQueueStore:
                     )
                 observed_count = 0
                 current = items
-                for candidate in candidates:
+                for candidate in live_candidates:
                     before = _item_payloads(current)
                     current, changed = _merge_items(current, (candidate,), now=now)
                     current = _bounded_items(item for item in current if not _is_expired(item, now))
@@ -692,6 +693,7 @@ class GhostWorkQueueStore:
                 return _WorkMutation(
                     {"removed": 0, "warnings": []}, items=tuple(items), write_state=False, compact=False
                 )
+            self.records.retire_sources(removed)
             event = _items_deleted_event(
                 reason="scope_deleted",
                 scope=normalized_scope,
@@ -855,7 +857,7 @@ class GhostWorkQueueStore:
             return result
 
     def _write_state(self, items: Iterable[GhostWorkItem], *, warnings: Iterable[str]) -> None:
-        self.records.replace_rows(item.to_payload() for item in _bounded_items(items))
+        self.records.replace_rows(item.to_payload() for item in _bounded_items(self.records.live_sources(items)))
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
         self.records.append(events, replace=True)

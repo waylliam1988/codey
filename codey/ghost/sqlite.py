@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-GHOST_SCHEMA_VERSION = 4
+GHOST_SCHEMA_VERSION = 5
 _PROJECTION_INPUTS: ContextVar[Mapping[Path, int] | None] = ContextVar("ghost_projection_inputs", default=None)
 
 
@@ -127,6 +127,10 @@ class GhostSQLite:
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_projection_epoch'",
             ).fetchone() is None:
                 raise GhostSchemaVersionError("Ghost projection generation is missing from an existing schema")
+            if version >= 5 and database.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_retired_sources'",
+            ).fetchone() is None:
+                raise GhostSchemaVersionError("Ghost source retirement is missing from an existing schema")
             self._enable_wal(database)
             database.executescript(
                 """
@@ -242,6 +246,34 @@ class GhostSQLite:
                     singleton INTEGER PRIMARY KEY CHECK(singleton=1),
                     generation INTEGER NOT NULL CHECK(generation>=0)
                 ) STRICT;
+                CREATE TABLE IF NOT EXISTS ghost_retired_sources (
+                    collection TEXT NOT NULL CHECK(collection IN ('continuity','work_queue')),
+                    source TEXT NOT NULL CHECK(source<>'hebbian'),
+                    source_ref TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    scope_ref TEXT NOT NULL,
+                    PRIMARY KEY(collection,source,source_ref,scope,scope_ref)
+                ) STRICT;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_source_insert
+                BEFORE INSERT ON memory_records
+                WHEN EXISTS(
+                    SELECT 1 FROM ghost_retired_sources AS retired
+                    WHERE retired.collection=NEW.collection AND retired.scope=NEW.scope
+                      AND retired.scope_ref=NEW.scope_ref
+                      AND retired.source=json_extract(NEW.payload,'$.source')
+                      AND retired.source_ref=json_extract(NEW.payload,'$.source_ref')
+                )
+                BEGIN SELECT RAISE(ABORT,'deleted Ghost source'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_source_update
+                BEFORE UPDATE ON memory_records
+                WHEN EXISTS(
+                    SELECT 1 FROM ghost_retired_sources AS retired
+                    WHERE retired.collection=NEW.collection AND retired.scope=NEW.scope
+                      AND retired.scope_ref=NEW.scope_ref
+                      AND retired.source=json_extract(NEW.payload,'$.source')
+                      AND retired.source_ref=json_extract(NEW.payload,'$.source_ref')
+                )
+                BEGIN SELECT RAISE(ABORT,'deleted Ghost source'); END;
                 CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_candidate
                 BEFORE INSERT ON memory_records WHEN NEW.collection='inbox'
                   AND EXISTS(SELECT 1 FROM ghost_retired_inputs

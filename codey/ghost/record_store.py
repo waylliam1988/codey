@@ -8,10 +8,24 @@ import sqlite3
 from collections.abc import Generator, Iterable, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Literal
+from typing import Literal, Protocol, TypeVar
 
 from codey.ghost.payload_types import decoded_object
 from codey.ghost.sqlite import GhostSQLite
+
+
+class _SourceProjection(Protocol):
+    @property
+    def source(self) -> str: ...
+    @property
+    def source_ref(self) -> str: ...
+    @property
+    def scope(self) -> str: ...
+    @property
+    def scope_ref(self) -> str: ...
+
+
+_SourceItem = TypeVar("_SourceItem", bound=_SourceProjection)
 
 
 def _encode(value: object) -> str:
@@ -152,6 +166,36 @@ class GhostRecords:
             ((identity,) for identity in identities),
         )
 
+    def retire_sources(self, items: Iterable[_SourceProjection]) -> None:
+        """Retire explicitly removed sources without changing their runtime owner."""
+        if self.collection not in {"continuity", "work_queue"}:
+            raise ValueError("this collection does not own derived source retirement")
+        self._db().executemany(
+            "INSERT OR IGNORE INTO ghost_retired_sources(collection,source,source_ref,scope,scope_ref) "
+            "VALUES(?,?,?,?,?)",
+            (
+                (self.collection, item.source, item.source_ref, item.scope, item.scope_ref)
+                # A Hebbian node id names a reusable preference slot. Its
+                # candidate identities already have their own retirement gate.
+                for item in items if item.source and item.source != "hebbian" and item.source_ref
+            ),
+        )
+
+    def live_sources(self, items: Iterable[_SourceItem]) -> tuple[_SourceItem, ...]:
+        """Filter a freshly read source set inside the caller's store transaction."""
+        live: list[_SourceItem] = []
+        for item in items:
+            # Use the primary key rather than scanning a permanent retirement
+            # history whose size is independent of the bounded source set.
+            row: sqlite3.Row | None = self._db().execute(
+                "SELECT 1 FROM ghost_retired_sources "
+                "WHERE collection=? AND source=? AND source_ref=? AND scope=? AND scope_ref=?",
+                (self.collection, item.source, item.source_ref, item.scope, item.scope_ref),
+            ).fetchone()
+            if row is None:
+                live.append(item)
+        return tuple(live)
+
     def setting(self, key: str, default: object) -> object:
         with self.transaction(write=False):
             row: sqlite3.Row | None = self._db().execute(
@@ -179,6 +223,19 @@ class GhostRecords:
                 database.execute(
                     "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
                     "SELECT 'candidate',id FROM memory_records WHERE collection='inbox'",
+                )
+            if self.collection in {"continuity", "work_queue"}:
+                # Reset must still work when a projection cursor is damaged.
+                # Extract only actual source identities; malformed records do
+                # not provide an identity that can safely be invented.
+                database.execute(
+                    "INSERT OR IGNORE INTO ghost_retired_sources(collection,source,source_ref,scope,scope_ref) "
+                    "SELECT collection,json_extract(payload,'$.source'),json_extract(payload,'$.source_ref'),scope,scope_ref "
+                    "FROM memory_records WHERE collection=? "
+                    "AND json_type(payload,'$.source')='text' AND length(json_extract(payload,'$.source'))>0 "
+                    "AND json_extract(payload,'$.source')<>'hebbian' "
+                    "AND json_type(payload,'$.source_ref')='text' AND length(json_extract(payload,'$.source_ref'))>0",
+                    (self.collection,),
                 )
             database.execute("DELETE FROM memory_records WHERE collection=?", (self.collection,))
             database.execute("DELETE FROM memory_events WHERE collection=?", (self.collection,))

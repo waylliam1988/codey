@@ -274,6 +274,7 @@ class GhostContinuityStore:
             with self.records.transaction():
                 now = _common.now_iso_z()
                 existing = list(self._load_items_unlocked())
+                candidates = list(self.records.live_sources(candidates))
 
                 active_existing = _bounded_items(item for item in existing if not _is_expired(item, now))
                 merged, changed_items = _merge_items(active_existing, candidates, now=now)
@@ -403,6 +404,8 @@ class GhostContinuityStore:
             removed = len(items) - len(kept)
             if removed <= 0:
                 return 0
+            kept_ids = {item.id for item in kept}
+            self.records.retire_sources(item for item in items if item.id not in kept_ids)
             event = _ghost_control_event(
                 schema_version=CONTINUITY_SCHEMA_VERSION,
                 event_name="ghost_continuity_scope_deleted",
@@ -455,7 +458,7 @@ class GhostContinuityStore:
             }
 
     def _write_state(self, items: Iterable[GhostContinuityItem], *, now: str, warnings: Iterable[str]) -> None:
-        self.records.replace_rows(item.to_payload() for item in _bounded_items(items))
+        self.records.replace_rows(item.to_payload() for item in _bounded_items(self.records.live_sources(items)))
 
     def _append_events(self, events: Iterable[dict[str, object]]) -> None:
         self.records.append(events)

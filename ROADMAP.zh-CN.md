@@ -1874,6 +1874,11 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 这不等于跨 store 原子删除或 durable manifest 调度已完成。见
 [控制面失败汇总](docs/ghost_progress/control-mutation-failure-20261117.md)。
 
+同日闭合已删除 continuity/work queue 来源被重新读取后重学的问题，schema 5 持久退役来源身份，
+正常 sync/rebuild 和 SQLite 写口默认生效；425 项相关回归通过，新 run 与新手工确认仍可用。
+尚无任何 Ghost 投影的在途来源、完整 manifest 调度和混合恢复仍未完成。见
+[来源生命周期](docs/ghost_progress/deleted-source-lifetime-20261117.md)。
+
 2026-11-17：已修复 inbox candidate 与 observation run 的删除后旧 writer 复活，
 相同 16 cell 从 8 次复活降到 0，限定生产 fence 默认生效；完整 manifest 调度、
 七 store 混合并发和生命周期仍未完成。见
@@ -1980,7 +1985,8 @@ shadow admission 不代表默认 prompt admission。不新增全局 promotion co
 ### G2：其他族 shadow 与解释（0.6.8–0.6.12）
 
 G2 的独立 family 失败不撤销已通过的语言闭环；没有数据和消费者的投影不建空壳。
-World Model 是可选后续研究，既不是语言晋级条件，也不因版本号自动启动实现。
+World Model 不是语言晋级条件；当前交接任务明确要求在前置边界通过后推进真实消费者闭环。
+shadow 表示未验证阶段，单模型有收益且生产边界通过后，在受测范围正式启用。
 
 #### 0.6.8 - Verification Habit and Command Intent Shadow
 
