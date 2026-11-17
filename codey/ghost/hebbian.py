@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import math
-from collections.abc import Iterable
+import uuid
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -80,6 +81,7 @@ _STATE_KIND = "ghost_hebbian_state_projection"
 _REPLAY_EVENT_TYPES = frozenset({
     "ghost_hebbian_node_upsert", "ghost_hebbian_node_superseded", "ghost_hebbian_edge_upsert",
     "ghost_hebbian_scope_deleted", "ghost_hebbian_candidate_removed", "ghost_hebbian_state_decayed",
+    "ghost_hebbian_projection_pruned",
 })
 
 
@@ -273,13 +275,9 @@ class GhostHebbianStore:
                     )
                     if not changed_nodes and not changed_edges:
                         return GhostReinforceResult(False, "duplicate_evidence")
-                    nodes = _bounded_nodes(node_by_id.values())
-                    edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
                     events = [_node_event(node, action="superseded") for node in changed_nodes]
                     events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
-                    self._append_events(events)
-                    self._write_state(nodes, edges)
-                    self.compact_if_needed()
+                    self._commit_reinforcement(node_by_id, edge_by_key, events, now=now)
                     reason = "backfilled_edges" if changed_edges else "superseded_conflicts"
                     return GhostReinforceResult(
                         True,
@@ -309,8 +307,6 @@ class GhostHebbianStore:
                     reward=reward,
                     now=now,
                 )
-                nodes = _bounded_nodes(node_by_id.values())
-                edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
                 events = [
                     _node_event(
                         changed_node, action="superseded" if changed_node.status == "superseded" else "reinforced"
@@ -318,14 +314,43 @@ class GhostHebbianStore:
                     for changed_node in changed_nodes
                 ]
                 events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
-                self._append_events(events)
-                self._write_state(nodes, edges)
-                self.compact_if_needed()
+                self._commit_reinforcement(node_by_id, edge_by_key, events, now=now)
                 return GhostReinforceResult(True, "reinforced", node=node, edges=tuple(changed_edges))
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
             return GhostReinforceResult(False, "store_error")
+
+    def _commit_reinforcement(
+        self,
+        node_by_id: Mapping[str, GhostNode],
+        edge_by_key: Mapping[tuple[str, str, str], GhostEdge],
+        events: Iterable[dict[str, object]],
+        *,
+        now: str,
+    ) -> None:
+        nodes = _bounded_nodes(node_by_id.values())
+        edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
+        removed_nodes = sorted(set(node_by_id) - {node.id for node in nodes})
+        removed_edges = sorted(set(edge_by_key) - {_edge_key(edge) for edge in edges})
+        transition_id = uuid.uuid4().hex
+        self._append_events(
+            dict(event, event_id=f"ghr_{transition_id}_{index}") for index, event in enumerate(events)
+        )
+        if removed_nodes or removed_edges:
+            payload: dict[str, object] = {
+                "node_ids": removed_nodes,
+                "edge_keys": [list(key) for key in removed_edges],
+            }
+            self._append_events([_ghost_control_event(
+                schema_version=HEBBIAN_SCHEMA_VERSION,
+                event_name="ghost_hebbian_projection_pruned",
+                event_id_prefix="ghp_",
+                payload=payload,
+                now=now,
+            )])
+        self._write_state(nodes, edges)
+        self.compact_if_needed()
 
     def sync_from_inbox(self, inbox_store: GhostInboxStore) -> tuple[GhostReinforceResult, ...]:
         rows = inbox_store.list_candidates()
@@ -606,6 +631,11 @@ class GhostHebbianStore:
             event_type = _replay_event_type(event)
             if event_type == "ghost_hebbian_scope_deleted":
                 payload = _replay_control_payload(event_type, event.get("payload"))
+                bounded_nodes = _bounded_nodes(nodes.values())
+                bounded_edges = _bounded_edges(edges.values(), node_ids={node.id for node in bounded_nodes})
+                if ({node.id for node in bounded_nodes} != set(nodes)
+                        or {_edge_key(edge) for edge in bounded_edges} != set(edges)):
+                    raise ValueError("Ghost Hebbian deletion follows an unrecorded pruning boundary")
                 scope, scope_ref = payload["scope"], payload["scope_ref"]
                 removed = {
                     node.id for node in nodes.values()
@@ -615,6 +645,15 @@ class GhostHebbianStore:
                 edges = {
                     identity: edge for identity, edge in edges.items()
                     if edge.source not in removed and edge.target not in removed
+                }
+            elif event_type == "ghost_hebbian_projection_pruned":
+                removed_nodes, removed_edges = _replay_pruned_payload(event.get("payload"))
+                if not removed_nodes.issubset(nodes) or not removed_edges.issubset(edges):
+                    raise ValueError("Ghost Hebbian pruning references absent rows")
+                nodes = {identity: node for identity, node in nodes.items() if identity not in removed_nodes}
+                edges = {
+                    identity: edge for identity, edge in edges.items()
+                    if identity not in removed_edges and edge.source not in removed_nodes and edge.target not in removed_nodes
                 }
             elif event_type in {"ghost_hebbian_candidate_removed", "ghost_hebbian_state_decayed"}:
                 # Their preceding snapshot already contains the mutation.
@@ -699,6 +738,37 @@ def _valid_recorded_times(payload: dict[str, object]) -> bool:
         times.append(value)
     # Legacy rows may omit optional times, but never the entire decay anchor.
     return any(times[1:])
+
+
+def _replay_pruned_payload(payload: object) -> tuple[set[str], set[tuple[str, str, str]]]:
+    if not object_fields(payload) or set(payload) != {"node_ids", "edge_keys"}:
+        raise ValueError("invalid Ghost Hebbian pruning payload")
+    raw_nodes, raw_edges = payload["node_ids"], payload["edge_keys"]
+    if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
+        raise ValueError("invalid Ghost Hebbian pruning arrays")
+    node_values: Sequence[object] = raw_nodes
+    edge_values: Sequence[object] = raw_edges
+    nodes: set[str] = set()
+    edges: set[tuple[str, str, str]] = set()
+    for identity in node_values:
+        if not isinstance(identity, str) or not identity.strip() or identity in nodes:
+            raise ValueError("invalid Ghost Hebbian pruned node identity")
+        nodes.add(identity)
+    for value in edge_values:
+        if not isinstance(value, list) or len(value) != 3:
+            raise ValueError("invalid Ghost Hebbian pruned edge key")
+        parts: Sequence[object] = value
+        source, target, relation = parts
+        if (not isinstance(source, str) or not source.strip() or not isinstance(target, str) or not target.strip()
+                or not isinstance(relation, str) or relation not in EDGE_RELATIONS):
+            raise ValueError("invalid Ghost Hebbian pruned edge identity")
+        key = (source, target, relation)
+        if key in edges:
+            raise ValueError("duplicate Ghost Hebbian pruned edge")
+        edges.add(key)
+    if not nodes and not edges:
+        raise ValueError("empty Ghost Hebbian pruning transition")
+    return nodes, edges
 
 
 def _replay_control_payload(event_type: str, payload: object) -> dict[str, object]:

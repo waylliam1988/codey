@@ -1,0 +1,896 @@
+{
+  "experiment": "ghost-graph-capacity-scope-replay-20261118",
+  "status": "PRODUCTION_VALIDATED_PENDING_COMMIT",
+  "freeze_commit": "50b58c39",
+  "baseline_commit": "7913329f",
+  "repeated_transition_freeze_commit": "175f142f",
+  "model_called": false,
+  "production_changed": true,
+  "production_consumer": "GhostHebbianStore.reinforce_candidate / rebuild_from_events and ordinary ghost rebuild-state --yes",
+  "default_enabled": true,
+  "scope": "Recorded node/degree pruning, repeated same-clock reinforcement, and tested scope lifecycle under this compatible writer/reader",
+  "baseline_primary_passed": 6,
+  "baseline_primary_failed": 6,
+  "candidate_primary_passed": 12,
+  "candidate_primary_failed": 0,
+  "real_node_cap": 500,
+  "cells": [
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "user",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "3348e9d8be1d19a2eb1a65bb65ac02df972bfcce2430ac141d32d596b1534e1e",
+        "3348e9d8be1d19a2eb1a65bb65ac02df972bfcce2430ac141d32d596b1534e1e",
+        "3348e9d8be1d19a2eb1a65bb65ac02df972bfcce2430ac141d32d596b1534e1e"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "warm",
+      "retained_scope": "project"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "project",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "9ac17b0257f2706807787d98d0ecac5b8ecd92176d29252553e66ad99571d330",
+        "9ac17b0257f2706807787d98d0ecac5b8ecd92176d29252553e66ad99571d330",
+        "9ac17b0257f2706807787d98d0ecac5b8ecd92176d29252553e66ad99571d330"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "warm",
+      "retained_scope": "session"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "session",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "b87e8fcad134728249c1289122d61653e07c17efc37a5245b921d0a4d5731a35",
+        "b87e8fcad134728249c1289122d61653e07c17efc37a5245b921d0a4d5731a35",
+        "b87e8fcad134728249c1289122d61653e07c17efc37a5245b921d0a4d5731a35"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "warm",
+      "retained_scope": "user"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "user",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "042a0892997174a5e42daa35a145c67445825678f5a8ae4cc2b552467537827f",
+        "042a0892997174a5e42daa35a145c67445825678f5a8ae4cc2b552467537827f",
+        "042a0892997174a5e42daa35a145c67445825678f5a8ae4cc2b552467537827f"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "cold",
+      "retained_scope": "project"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "project",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "ec1aa4f06e9f1324e8bcc8714ee1523c112f0171cae129d0925bfd82356c1e92",
+        "ec1aa4f06e9f1324e8bcc8714ee1523c112f0171cae129d0925bfd82356c1e92",
+        "ec1aa4f06e9f1324e8bcc8714ee1523c112f0171cae129d0925bfd82356c1e92"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "cold",
+      "retained_scope": "session"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "session",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "f5f10055af54c7233568f3a6ca6f08f02e939108c076f6d8e584bb0f057442c5",
+        "f5f10055af54c7233568f3a6ca6f08f02e939108c076f6d8e584bb0f057442c5",
+        "f5f10055af54c7233568f3a6ca6f08f02e939108c076f6d8e584bb0f057442c5"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "cold",
+      "retained_scope": "user"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "user",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "32bd26ab30d04c0dec1fc2d05efa4fe8e6949a44e1fc322ddbf13ac17f1e46de",
+        "32bd26ab30d04c0dec1fc2d05efa4fe8e6949a44e1fc322ddbf13ac17f1e46de",
+        "32bd26ab30d04c0dec1fc2d05efa4fe8e6949a44e1fc322ddbf13ac17f1e46de"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "warm",
+      "retained_scope": "project"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "project",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "a9139a6cb0d73ddd3bebf48688f79e13cb0723c27fcfa8da47ba0b080291a715",
+        "a9139a6cb0d73ddd3bebf48688f79e13cb0723c27fcfa8da47ba0b080291a715",
+        "a9139a6cb0d73ddd3bebf48688f79e13cb0723c27fcfa8da47ba0b080291a715"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "warm",
+      "retained_scope": "session"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "session",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "9ccb4301366a1217a8223b35f52bf38ca0ef706b147891137fc19f1d26138459",
+        "9ccb4301366a1217a8223b35f52bf38ca0ef706b147891137fc19f1d26138459",
+        "9ccb4301366a1217a8223b35f52bf38ca0ef706b147891137fc19f1d26138459"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "warm",
+      "retained_scope": "user"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "user",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "085cfda77b1f4d7f2a160778e7ca8fa24cff2b3e7522005808e92618765768b9",
+        "085cfda77b1f4d7f2a160778e7ca8fa24cff2b3e7522005808e92618765768b9",
+        "085cfda77b1f4d7f2a160778e7ca8fa24cff2b3e7522005808e92618765768b9"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "cold",
+      "retained_scope": "project"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "project",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "058e927a6b2bc8bb1576da58276358098cf058874e84798445b3f12636dc614a",
+        "058e927a6b2bc8bb1576da58276358098cf058874e84798445b3f12636dc614a",
+        "058e927a6b2bc8bb1576da58276358098cf058874e84798445b3f12636dc614a"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "cold",
+      "retained_scope": "session"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "session",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "6961cb7c2a8ca0ff8dbca4f6b17458db49e0ed25a4ce7d52b3a456cb0942843a",
+        "6961cb7c2a8ca0ff8dbca4f6b17458db49e0ed25a4ce7d52b3a456cb0942843a",
+        "6961cb7c2a8ca0ff8dbca4f6b17458db49e0ed25a4ce7d52b3a456cb0942843a"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "cold",
+      "retained_scope": "user"
+    }
+  ],
+  "new_boundary_tests": 44,
+  "repeated_pruning_before": [
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "deleted_scope": "user",
+      "edge_count": 8,
+      "node_count": 10,
+      "pruning_events": 8
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "deleted_scope": "project",
+      "edge_count": 8,
+      "node_count": 10,
+      "pruning_events": 8
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "deleted_scope": "session",
+      "edge_count": 8,
+      "node_count": 10,
+      "pruning_events": 8
+    }
+  ],
+  "repeated_pruning_after": [
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "deleted_scope": "user",
+      "edge_count": 8,
+      "node_count": 10,
+      "pruning_events": 10
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "deleted_scope": "project",
+      "edge_count": 8,
+      "node_count": 10,
+      "pruning_events": 10
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "deleted_scope": "session",
+      "edge_count": 8,
+      "node_count": 10,
+      "pruning_events": 10
+    }
+  ],
+  "expanded_regression": {
+    "passed": 1474,
+    "subtests_passed": 34,
+    "skipped": 0,
+    "failed": 3,
+    "failure_owner": "Three old compact fixtures copied an explicit event_id while changing action; graph correctly rejected conflicting identities",
+    "errors": 0,
+    "seconds": 1371.13,
+    "checks": [
+      {
+        "check": "related",
+        "exit": 1,
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/test_ghost_graph_capacity_scope_replay.py",
+          "tests/test_ghost_graph_pruning_boundaries.py",
+          "tests/test_ghost_hebbian_row_time.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "tests/test_ghost_hebbian.py",
+          "tests/test_ghost_directive.py",
+          "tests/test_ghost_graph_primitives.py",
+          "tests/test_ghost_graph_sqlite.py",
+          "tests/test_ghost_graph_exact_replacement.py",
+          "tests/test_ghost_scope_history_retention.py",
+          "tests/test_ghost_reset_history_retention.py",
+          "tests/test_ghost_capacity_history_retention.py",
+          "tests/test_ghost_history_delete_guards.py",
+          "tests/test_ghost_projection_delete_fence.py",
+          "tests/test_ghost_deleted_input_fence.py",
+          "tests/test_ghost_deleted_source_lifetime.py",
+          "tests/test_ghost_manifest_atomic_mutation.py",
+          "tests/test_ghost_manifest_production_wiring.py",
+          "tests/test_ghost_manifest_discovery.py",
+          "tests/test_ghost_deletion_manifest_recovery.py",
+          "tests/test_ghost_corruption_contract.py",
+          "tests/test_ghost_controls.py",
+          "tests/test_ghost_control_contract.py",
+          "tests/test_ghost_language_production.py",
+          "tests/test_ghost_sleep.py",
+          "tests/test_ghost_maintenance_as_of.py",
+          "tests/test_ghost_context_admission.py",
+          "tests/test_ghost_provider_send_boundary.py",
+          "tests/test_ghost_replay_timestamp_validation.py",
+          "tests/test_ghost_graph_tie_replay.py",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "tests/test_ghost_sleep_source_controls.py",
+          "tests/test_ghost_hebbian_control_replay.py",
+          "tests/test_ghost_hebbian_control_boundaries.py",
+          "-q",
+          "-s",
+          "--basetemp=.e2e-artifacts/ghost-graph-capacity-scope-replay-20261118/production-2-state",
+          "--tb=short",
+          "-o",
+          "junit_logging=all",
+          "--junitxml=.e2e-artifacts/ghost-graph-capacity-scope-replay-20261118/production-2.xml"
+        ]
+      },
+      {
+        "check": "ruff",
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "ruff",
+          "check",
+          "."
+        ]
+      },
+      {
+        "check": "mypy",
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "pyrefly",
+        "exit": 0,
+        "command": [
+          "pyrefly",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "ty",
+        "exit": 0,
+        "command": [
+          "ty",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "precision",
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "tools.kernel_type_precision_gate"
+        ]
+      },
+      {
+        "check": "owned-mypy",
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_graph_capacity_scope_replay.py",
+          "tests/test_ghost_graph_pruning_boundaries.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "owned-pyrefly",
+        "exit": 0,
+        "command": [
+          "pyrefly",
+          "check",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_graph_capacity_scope_replay.py",
+          "tests/test_ghost_graph_pruning_boundaries.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "owned-ty",
+        "exit": 0,
+        "command": [
+          "ty",
+          "check",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_graph_capacity_scope_replay.py",
+          "tests/test_ghost_graph_pruning_boundaries.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "owned-any",
+        "exit": 1,
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_graph_capacity_scope_replay.py",
+          "tests/test_ghost_graph_pruning_boundaries.py",
+          "--python-version",
+          "3.11",
+          "--disallow-any-expr"
+        ]
+      }
+    ],
+    "files": 34
+  },
+  "final_fixture_regression": {
+    "checks": [
+      {
+        "check": "related",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "tests/test_ghost_graph_sqlite.py",
+          "tests/test_ghost_graph_primitives.py",
+          "-q",
+          "-s",
+          "--basetemp=.e2e-artifacts/ghost-graph-capacity-scope-replay-20261118/production-3-state",
+          "--tb=short",
+          "-o",
+          "junit_logging=all",
+          "--junitxml=.e2e-artifacts/ghost-graph-capacity-scope-replay-20261118/production-3.xml"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "ruff",
+        "command": [
+          "python",
+          "-m",
+          "ruff",
+          "check",
+          "."
+        ],
+        "exit": 0
+      },
+      {
+        "check": "mypy",
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "pyrefly",
+        "command": [
+          "pyrefly",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "ty",
+        "command": [
+          "ty",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "precision",
+        "command": [
+          "python",
+          "-m",
+          "tools.kernel_type_precision_gate"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "owned-mypy",
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_graph_capacity_scope_replay.py",
+          "tests/test_ghost_graph_pruning_boundaries.py",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "owned-pyrefly",
+        "command": [
+          "pyrefly",
+          "check",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_graph_capacity_scope_replay.py",
+          "tests/test_ghost_graph_pruning_boundaries.py",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "owned-ty",
+        "command": [
+          "ty",
+          "check",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_graph_capacity_scope_replay.py",
+          "tests/test_ghost_graph_pruning_boundaries.py",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "owned-any",
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_graph_capacity_scope_replay.py",
+          "tests/test_ghost_graph_pruning_boundaries.py",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "--python-version",
+          "3.11",
+          "--disallow-any-expr"
+        ],
+        "exit": 1
+      }
+    ],
+    "change": "Assign independent IDs to capacity padding events; all compaction/history/replay assertions retained",
+    "seconds": 20.26,
+    "passed": 63,
+    "skipped": 0,
+    "errors": 0,
+    "files": 3,
+    "failed": 0
+  },
+  "coverage": {
+    "production_source_identical_between_batches": true,
+    "single_all_pass_batch": false,
+    "original_test_cases": 1477,
+    "original_subtests": 34,
+    "all_original_failures_rechecked": true
+  },
+  "production_files_frozen": 702,
+  "owned_working_tree_hashes": {
+    "tests/test_ghost_graph_capacity_scope_replay.py": "24A4B87F436C6E080AF3E1684A8A635B91DA9B227C2572BE84FBFAA2B6DB2A43",
+    "tests/test_ghost_graph_pruning_boundaries.py": "2AEEC5865C81DEA4BE173D741C8026AEFF61E6004DDEC84F48F65870D5466261",
+    "codey/ghost/hebbian.py": "83BBDD71307E65E2CC0B24ECCF1A392A1435427CDF77E6904500628D926ADCC8",
+    "tests/test_ghost_graph_tie_lifecycle.py": "3FD7DC0C16D535461236A0E66F9124DE5F1B55CA154117FEB32A12B628471AFE"
+  },
+  "primary_scorer_hash_matches_baseline": true,
+  "owned_any_diagnostics": 0,
+  "dependency_any_diagnostics": 10864,
+  "dependency_any_files": 334,
+  "prior_three_owned_dependency_any_diagnostics": 3873,
+  "prior_three_owned_dependency_any_files": 181,
+  "interrupted_candidate": "First full candidate batch intentionally stopped before completion after discovering content-hash deduplication of repeated transitions; retained as INCOMPLETE, not a completed negative or pass",
+  "rollback": "Keep compatible reader/writer; existing controls isolate maintenance/retrieval/admission. Older readers reject unknown pruning markers and retain current projection; explicit reset or supported maintenance snapshot is available. Downgrade is not seamless; never delete unknown raw events",
+  "raw_artifacts": ".e2e-artifacts/ghost-graph-capacity-scope-replay-20261118",
+  "limitations": [
+    "No model inference, model benefit or service health claim",
+    "Legacy guard covers unrecorded bounds before scope deletion; arbitrary old and mixed-version history is not proven",
+    "Does not restore old projections already overwritten by old replay",
+    "Legacy fixture models old producer events in a fresh window, not an old App process",
+    "No proof of full App hard-exit/cross-run physical-send recovery, disk retention/purge, full G0 or World Model production"
+  ]
+}

@@ -78,7 +78,10 @@ def test_public_tied_graph_lifecycle_keeps_replay_and_original_history(
             # Use the real event budget. Repeating the same valid node payload
             # with distinct audit actions changes neither weight nor sources.
             event = next(event for event in store.graph.events() if event["type"] == "ghost_hebbian_node_upsert")
-            padding = ({**event, "action": f"tie-capacity-{index}"} for index in range(MAX_HEBBIAN_EVENTS + 1))
+            padding = (
+                {**event, "event_id": f"tie-capacity-{scope}-{index}", "action": f"tie-capacity-{index}"}
+                for index in range(MAX_HEBBIAN_EVENTS + 1)
+            )
             with store.graph.transaction():
                 store.graph.append(padding)
                 store.graph.replace_rows(*before)
