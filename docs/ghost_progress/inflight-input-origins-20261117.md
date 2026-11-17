@@ -43,6 +43,11 @@ observation append 同一写事务复查 generation，INSERT/UPDATE 均有退役
 修复为单次登记存储故障时持久隔离该 run 并推进 generation，然后仍上报登记异常；
 canonical task 不因这个已隔离的 Ghost 输入而取消。未将登记故障当作任务失败或模型阴性。
 
+继续检查来源命名空间时新增两项负结果：continuity 的 source_ref 也可能沿用独立 Hebbian
+或 research-note 身份。只比较字符串 run ID 会误拒绝这两类输入，新增对照 **2 failed**。
+修复必须依据 metadata.continuity_source 保留明确的非 run 来源，不能为通过删除矩阵误伤
+独立身份；未知来源仍不能借同名旧 run 绕过退役 gate。原 46 项通过不包含这两个新断言。
+
 46 项新增验收在候选通过，包括两个 spawn 子进程与 canonical task 重入；旧 checkpoint
 仍归 runtime 保留，但首次 Ghost 消费被拒绝。新任务与其他 scope 的合法输入仍可写。
 

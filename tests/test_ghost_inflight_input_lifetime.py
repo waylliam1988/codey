@@ -16,6 +16,7 @@ from codey.app.context import AppContext
 from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.observations import GhostObservationStore
 from codey.ghost.sqlite import GHOST_SCHEMA_VERSION, GhostSchemaVersionError, GhostSQLite
+from codey.ghost.work_queue_sources import new_item
 from codey.runs.ledger_projection import ProviderFailureSummary, RunLedgerProjection
 from codey.runs.work_checkpoint import WorkCheckpointStore
 from codey.task.model import TaskSubmission
@@ -163,6 +164,25 @@ def test_failed_origin_write_quarantines_the_input_instead_of_learning_without_a
     with pytest.raises(sqlite3.IntegrityError, match="origin write fixture"):
         store.register_input(run_id="old-run", session_id="old-session")
     assert not _append(store, "old-run")
+
+
+@pytest.mark.parametrize("original_source", ["hebbian", "research_note"])
+def test_run_retirement_does_not_alias_independent_continuity_source_ids(
+    tmp_path: Path, original_source: str,
+) -> None:
+    surface = GhostControlSurface.from_state_home(tmp_path)
+    _register(surface, "")
+    _delete(surface, "delete_scope", "session", "")
+    assert surface.work_queue is not None
+    item = new_item(
+        kind="open_question", status="candidate", scope="session", scope_ref="new-session",
+        title="An independent source", why_now="Source namespace fixture", priority=0.4, confidence=0.7,
+        source="continuity", source_ref="old-run", evidence_refs=(), run_refs=(),
+        now="2026-11-17T00:00:00Z", metadata={"continuity_source": original_source},
+    )
+    with surface.work_queue.records.transaction():
+        assert surface.work_queue.records.live_sources((item,)) == (item,)
+    surface.work_queue.records.replace_rows((item.to_payload(),))
 
 
 def test_checkpoint_not_yet_projected_before_delete_cannot_be_consumed_later(tmp_path: Path) -> None:
