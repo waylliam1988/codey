@@ -12,6 +12,7 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 首次投影前在途删除与 Sleep 来源控制 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | 8 个真实任务 cell 全有效，开/关各 4 cell 均消费旧输入；来源控制回归基线 9 failed / 6 passed；在途寿命与维护控制分开闭合 | [复现与归属](inflight-deletion-source-controls-20261117.md) |
 | 删除后重新读取来源 2026-11-17 | `PRODUCTION_MERGED`（限定来源退役） | 初始 12 项旧来源复活已闭合；continuity/work queue 来源身份默认持久退役；新 run、新手工确认和其他 scope 可用；425 项相关回归与完整静态检查通过；无投影的在途输入仍待闭合 | [来源生命周期与候选负结果](deleted-source-lifetime-20261117.md) |
 | 控制面删除与重置失败汇总 2026-11-17 | `PRODUCTION_MERGED`（限定结果表达） | 七 store × delete/reset 的 False 与 SQLite 失败已闭合；合法 0/None 与用户关闭保留；231 项相关回归和完整静态检查通过，durable manifest 调度仍未完成 | [负结果与修复](control-mutation-failure-20261117.md) |
 | 派生投影与删除交错 2026-11-17 | `PRODUCTION_MERGED`（限定投影 fence） | 修正 scope 读取后的 32 cell 基线复活 18、生产修复 0；四个派生 writer 与 continuity replay 默认生效；357 项相关回归与完整静态检查通过；Git 对象复现不复制 worktree | [矩阵、scorer 修正与验收](projection-delete-interleaving-20261117.md) |
