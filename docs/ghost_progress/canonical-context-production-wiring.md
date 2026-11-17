@@ -74,6 +74,11 @@ ApiProvider 和临时 loopback HTTP；没有调用 KoboldCpp，也没有模型�
 
 ## 未完成或阻塞
 
+2026-11-17后续：[native回执拒绝/恢复组合验收](native-refusal-recovery-20261117.md)
+已在当前共享生产kernel上完成两协议/三scope/成功错误回执的36项真实HTTP/SQLite验收，
+两次NOT_SENT拒绝后原回执、原窗口保留且工具不重复执行，包含暖/冷恢复。
+下列早期receipt/resume缺口仅在该限定范围闭合；完整App、硬退出、跨run与其他边界仍缺。
+
 - 远端 `origin/master` 尚未与当前本地 `master` 同步；本记录只声明本地 master 已包含 `3d025cce`。
 - 仍缺 repair、receipt、resume、compaction、并发 scope、完整 live/off 和成本/延迟证据。
 - World Model 仍为 `SHADOW`，没有第二套历史、默认 prompt 或生产消费者。

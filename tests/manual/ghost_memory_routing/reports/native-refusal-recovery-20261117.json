@@ -1,0 +1,346 @@
+{
+  "experiment": "native-refusal-recovery-20261117",
+  "status": "EXPERIMENT_COMPLETE",
+  "production_baseline": "36a1f6c5ec41527b5ded295976aabe6e76ad4334",
+  "production_source_changes": 0,
+  "existing_production_consumer": "shared task kernel -> sole ApiProvider Attempt Gate -> durable NOT_SENT continuation",
+  "existing_behavior_default_enabled": true,
+  "new_default_off_flags": 0,
+  "model": "deterministic-native-receipt-fixture",
+  "external_model_calls": 0,
+  "transport": "real loopback HTTP",
+  "matrix": {
+    "passed": 36,
+    "cases": [
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-ok-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-ok-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-ok-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-ok-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-ok-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-ok-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-error-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-error-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-error-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-error-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-error-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[enabled-error-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-ok-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-ok-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-ok-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-ok-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-ok-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-ok-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-error-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-error-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-error-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-error-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-error-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_warm-error-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-ok-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-ok-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-ok-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-ok-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-ok-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-ok-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-error-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-error-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-error-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-error-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-error-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_native_receipt_refusal_preserves_settlement_and_resumes_without_reexecution[revoked_cold-error-session-openai-responses]",
+        "status": "passed"
+      }
+    ],
+    "valid_cells": 36,
+    "modes": [
+      "enabled",
+      "revoked_warm",
+      "revoked_cold"
+    ],
+    "scopes": [
+      "user",
+      "project",
+      "session"
+    ],
+    "protocols": [
+      "openai-completions",
+      "openai-responses"
+    ],
+    "receipts": [
+      "ok",
+      "error"
+    ],
+    "repetitions": 1
+  },
+  "asserted_contracts": [
+    "control cells complete with two physical HTTP calls and one tool execution",
+    "revoked cells refuse twice before HTTP with RequestPrepError/error/not_sent",
+    "still-disabled warm/cold resume sends no request and never reexecutes the settled tool",
+    "explicit reenable resumes original call id, receipt and protocol window",
+    "two refused attempts superseded only after proven not_sent; original batch delivered"
+  ],
+  "fixture_correction": {
+    "initial_failures": 36,
+    "initial_tests": 36,
+    "reason": "test queried model read_file name instead of persisted canonical read name; all cells reached final receipt audit",
+    "production_fault": false
+  },
+  "expanded": {
+    "files": 12,
+    "skipped": 0,
+    "tests": 187,
+    "failures": 0,
+    "before_thread_callback_type_correction": true,
+    "errors": 0
+  },
+  "final": {
+    "failures": 0,
+    "tests": 36,
+    "skipped": 0,
+    "files": 1,
+    "errors": 0
+  },
+  "frozen_production_python_files": 702,
+  "owned_files": [
+    "tests/test_ghost_native_refusal_recovery.py"
+  ],
+  "owned_any_diagnostics": 0,
+  "dependency_any_diagnostics": 5895,
+  "dependency_any_files": 230,
+  "source_lf_sha256": {
+    "tests/test_ghost_native_refusal_recovery.py": "081dec58a0a961c1e45382d89eb24b9cf99d879b7f832df92cd0e639d7eaf2f7"
+  },
+  "checks": [
+    {
+      "check": "related",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_ghost_native_refusal_recovery.py",
+        "-q",
+        "--tb=short",
+        "-o",
+        "junit_logging=all",
+        "--junitxml=.e2e-artifacts/ghost-native-refusal-recovery-20261117/final.xml"
+      ],
+      "exit": 0
+    },
+    {
+      "check": "ruff",
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "exit": 0
+    },
+    {
+      "check": "mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0
+    },
+    {
+      "check": "pyrefly",
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0
+    },
+    {
+      "check": "ty",
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0
+    },
+    {
+      "check": "precision",
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "exit": 0
+    },
+    {
+      "check": "owned-mypy",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_native_refusal_recovery.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0
+    },
+    {
+      "check": "owned-pyrefly",
+      "command": [
+        "pyrefly",
+        "check",
+        "tests/test_ghost_native_refusal_recovery.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0
+    },
+    {
+      "check": "owned-ty",
+      "command": [
+        "ty",
+        "check",
+        "tests/test_ghost_native_refusal_recovery.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0
+    },
+    {
+      "check": "owned-any",
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_native_refusal_recovery.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ],
+      "exit": 1
+    }
+  ],
+  "owned_type_correction": "Thread kwargs literal inferred dict[str, Any]; replaced with fully typed serve closure",
+  "production_pyrefly": "INFO 0 errors (35 suppressed, 158 warnings not shown)",
+  "limits": [
+    "shared production kernel, not full /api/run restart or hard process exit",
+    "no model behavioral gain, cost or latency claim",
+    "repair/compaction/concurrent scopes/full 0.6.1 and 0.6.2 remain incomplete",
+    "World Model consumer not yet implemented"
+  ],
+  "local_artifacts": ".e2e-artifacts/ghost-native-refusal-recovery-20261117"
+}

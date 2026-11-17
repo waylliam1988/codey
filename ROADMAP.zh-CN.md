@@ -1818,6 +1818,13 @@ runtime 写 observation、Ghost 做 projection 的所有权可追溯；本版本
 
 #### 0.6.1 - Context Epoch Admission Wiring
 
+2026-11-17：[原生回执拒绝与恢复组合验收](docs/ghost_progress/native-refusal-recovery-20261117.md)
+在现有生产唯一gate上通过两协议×三scope×成功/错误回执×enabled/暖恢复/冷恢复36项，
+相关12文件187项通过。真实HTTP拒绝两次均NOT_SENT，SQLite重开后原回执/窗口保留、
+工具不重复执行；Thread类型修订后36项复验与全静态门通过，新增测试owned Any零诊断。
+无需新增生产gate或续传机制。完整App、硬退出、跨run、repair/compaction
+及其余发送验收仍缺，本次不代表完整0.6.1完成，也不重跑已停止的实机批次。
+
 目标：让所有 Ghost directive、continuity 和 experiences 统一经过真正的模型上下文准入路径：
 
 ```text

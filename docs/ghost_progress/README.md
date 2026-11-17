@@ -10,7 +10,14 @@
 
 ## 当前状态
 
-最新完成：[continuity过期持久事实与消费者](continuity-expiry-production-20261117.md)。
+最新完成：[原生回执准入拒绝与恢复组合验收](native-refusal-recovery-20261117.md)。
+两协议×三控制scope×成功/错误回执×enabled/暖恢复/冷恢复36项全部通过；
+真实共享kernel/SQLite/HTTP验证两次拒绝均NOT_SENT、原回执保留、重开后不重复执行工具。
+相关12文件187项通过；本轮未改生产，现有唯一gate及续传已默认接线，无新增默认关闭开关。
+Thread回调类型修订后36项复验与全静态门通过，新增测试owned Any零诊断，两批不相加。
+首轮夹具误用工具审计名的36失败保留，不算生产负结果；完整0.6.1/0.6.2及World Model仍缺。
+
+此前完成：[continuity过期持久事实与消费者](continuity-expiry-production-20261117.md)。
 普通Sleep/post-turn维护记录可重放过期事实，reader/builder/真实队列共用逻辑时间筛选；
 同来源可重新出现，原始历史保留。原18项3→18通过，旧日志9项3→9通过；75项新增，
 最终44文件1064/4子测试及全静态门通过，五受检文件额外Any零诊断。无新增默认关闭开关。
@@ -51,6 +58,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 原生回执准入拒绝与恢复 2026-11-17 | `EXPERIMENT_COMPLETE`（现有默认生产链路） | 两协议/三scope/成功错误回执/enabled暖冷36项与相关187项通过；回调类型修订后36项复验、全静态门与owned Any零诊断；真实HTTP/SQLite证明NOT_SENT续传不重复工具；生产无需重复修复 | [组合验收与限制](native-refusal-recovery-20261117.md) |
 | continuity过期持久事实与消费者 2026-11-17 | `PRODUCTION_MERGED`（普通维护/读取/队列消费） | 原18项3→18通过，旧同步日志9项3→9通过；75项新增，最终44文件1064/4子测试及全静态门通过，五文件owned Any零诊断；历史/来源可更新性保留，无新增默认关闭开关 | [生产接线与边界](continuity-expiry-production-20261117.md) |
 | continuity过期持久投影基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 三scope×六场景18项有效，原3通过/15失败；renderer控制正确，相关135/2子测试及静态门通过；后续生产接线闭合本矩阵，原测量保留 | [冻结矩阵与结果](continuity-expiry-baseline-20261117.md) |
 | Sleep显式维护时间 2026-11-17 | `PRODUCTION_MERGED`（普通Sleep及实际消费者） | 同一逻辑时间贯通衰减/刷新/租约/来源筛选；原15项0→15通过；63项新增，扩大1047/36子测试、最终281/2子测试及全静态门通过，九文件owned Any零诊断 | [生产接线与边界](sleep-maintenance-time-production-20261117.md) |
@@ -93,7 +101,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 | Scoped Control Failure Closure | `PRODUCTION_MERGED` | `34e201dc` 移除 unscoped/learning fallback；缺 authority 不学不写，settlement 尊重项目/会话 deny；实际 entry→HTTP on/off/error 与扩展回归已验证 | [修复与验证](scoped-control-failure-closure.md) |
 | Provider Control Revocation | `EXPERIMENT_COMPLETE`（负结果已由当前 Attempt Gate 闭合） | `c39f0897` 的旧实现负结果保留；当前 commit 上 text/native × 开启/初始关闭/首轮后关闭 6 cell 均验证，撤回后第二次请求在 HTTP 前拒绝 | [负结果与闭合记录](provider-control-revocation.md) |
 | Final Payload Admission Placement | `EXPERIMENT_ONLY` / `INCOMPLETE` | 60 项定位 lease/retry/辅助发送时隙；`3b04b8a6` 的独立 66 项证明显式 JSON 表示可修复编码误拒，但 history-only 摘要仍缺来源继承，暂不合并 | [宿主实验](final-payload-admission-placement.md) |
-| Admission Refusal Settlement | `EXPERIMENT_ONLY` / `INCOMPLETE` | `b1a78723`：8 项真实 durable 对照，0 HTTP 的 GhostError 被记为 MAYBE_SENT；已有 prep 契约为 NOT_SENT，尚未证明完整 native 恢复 | [拒绝与恢复边界](admission-refusal-settlement.md) |
+| Admission Refusal Settlement | `EXPERIMENT_ONLY`（历史负结果；同run native恢复后续限定闭合） | `b1a78723`原8项保留；现有生产gate已采用RequestPrepError，后续36项真实HTTP/SQLite组合验收证明成功/错误回执暖冷恢复；跨run/完整App等仍缺 | [历史拒绝](admission-refusal-settlement.md) / [当前恢复验收](native-refusal-recovery-20261117.md) |
 | Protocol Source Lifetime | `EXPERIMENT_ONLY` / `INCOMPLETE` | `603f01f` / `36566995`：真实 task/restart 证明 hint 不在 durable context；去掉重复 export 的消融将 reopen 撤回泄漏 2/2→0/2，warm 仍 2/2；checkpoint 语义待验，不加第二套 journal | [归属、消融与复现](protocol-source-lifetime.md) |
 | Canonical Checkpoint Unification | `EXPERIMENT_ONLY` / `INCOMPLETE` | `ec89d516` / `0760ed08`：48 cell 证明仅删 export 在窄预算会丢事实；canonical-only 摘要→既有 context_edit 保留事实且无撤回泄漏，生产事务/消费者待接 | [统一实验与生产边界](canonical-checkpoint-unification.md) |
 | Canonical Context Source Commit | `EXPERIMENT_ONLY` / `INCOMPLETE` | 隔离候选补齐 head + revision 来源事务与顺序折叠；42 cell 否定仅 revision 的删除重建安全，扩大回归 648 passed / 5 既有 skip；默认 compaction / warm / attempt gate 仍待接 | [候选源码、负结果与复现](canonical-context-source-commit.md) |

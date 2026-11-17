@@ -9,6 +9,11 @@
 - 实验 commit：`b887fc90` (`test(ghost): cover attempt gate lifecycle paths`)
 - 生产合并结论：`EXPERIMENT_ONLY`
 
+2026-11-17后续：[真实native回执拒绝与恢复](native-refusal-recovery-20261117.md)
+补充共享生产kernel/SQLite/真实HTTP的36项组合验收，包含两协议、三scope、成功/错误回执及
+两次拒绝后的暖冷恢复；相关187项通过。以下7项是历史provider fixture证据，仍原样保留。
+本次闭合同run回执恢复，不外推完整App、硬退出、repair/compaction或模型收益。
+
 ## 本次目标和假设
 
 验证同一个生产 `ApiProvider` Attempt Gate 是否覆盖 0.6.1 尚未形成统一证据的发送生命周期：

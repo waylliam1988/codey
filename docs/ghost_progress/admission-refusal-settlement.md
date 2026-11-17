@@ -8,6 +8,12 @@
 - 关联 Roadmap 验收门：0.6.1 / provider-send 拒绝与恢复
 - 生产合并结论：EXPERIMENT_ONLY
 
+2026-11-17后续：以下保留2026-10-21原始实验。当前生产唯一Attempt Gate已在HTTP前把准入
+拒绝包装为RequestPrepError；[36项真实native组合验收](native-refusal-recovery-20261117.md)
+进一步证明两协议/三scope/成功错误回执的同run暖冷恢复：两次拒绝均NOT_SENT，
+显式重开后原回执和窗口保留、工具只执行一次。不要依据本历史记录重复实现prep包装。
+完整App、硬退出、跨run、repair/compaction等仍未由该矩阵证明。
+
 ## 目标和假设
 
 Final Payload Admission Placement 将 gate 放在 provider 内，实际拒绝已晚于 durable provider intent。
