@@ -27,6 +27,14 @@
 
 ## 文件与数据位置
 
+2026-11-18 G0 [正常 App 硬退出与 HTTP 恢复](../../../docs/ghost_progress/app-http-crash-recovery-20261118.md)：
+入口 `python -B tests/manual/completion_operation_resume_smoke.py --self-test --state-root <isolated-dir>`；
+pytest 等价入口 `tests/test_ghost_app_http_crash_recovery.py`。三 scope×四窗口×enabled/revoked
+24 格基线 18 通过/6 个保存响应恢复失败；报告 `reports/app-http-crash-baseline-20261118.json`。
+真实 SQLite/硬退出/默认 App scheduler/loopback HTTP，无模型调用；完整日志/请求/state
+仅留本地 `.e2e-artifacts/ghost-app-http-crash-recovery-20261118`。旧脚本接口及夹具失败
+单独保留；历史 release smoke 的通过不代表当前版本已通过此矩阵。
+
 2026-11-18 G0 [节点容量裁剪与跨 scope 重建](../../../docs/ghost_progress/graph-capacity-scope-replay-20261118.md)：
 入口 `python -m pytest tests/test_ghost_graph_capacity_scope_replay.py -q -s --tb=short`，
 追加边界在 `tests/test_ghost_graph_pruning_boundaries.py`。原 12 项 6→12，生产

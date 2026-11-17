@@ -858,7 +858,7 @@ compileall + ruff 全过
 runtime/effects/session-log/details/operation-state focused tests 通过
 task_entry / project_completion / edit-integrity / completion-enforcement / analysis-run focused tests 通过
 server / run-registry / approval-registry / research / Ghost 相邻测试通过
-manual completion_operation_resume_smoke.py --self-test 通过
+manual completion_operation_resume_smoke.py --self-test 通过（历史；现行 App/HTTP 基线见 0.6.1）
 Ghost router/work-queue/affinity/research-interest/continuity deterministic self-tests 通过
 新增 architecture tests 包级扫描通过：runtime 不 import operations/agents/Ghost，
 agents 不 import operations，completion 不 import app/providers/operations，agents.loop
@@ -1817,6 +1817,12 @@ producer/source 与 provenance；涉及 action/outcome 时绑定 refs 和幂等�
 runtime 写 observation、Ghost 做 projection 的所有权可追溯；本版本不改变默认 prompt。
 
 #### 0.6.1 - Context Epoch Admission Wiring
+
+2026-11-18：[正常 App 硬退出与 HTTP 恢复基线](docs/ghost_progress/app-http-crash-recovery-20261118.md)
+24 格（三 scope×四崩溃窗口×enabled/revoked）18 通过、6 个保存响应组失败。
+实际 headless/SQLite/硬退出→正常 App scheduler/HTTP，非 fake provider；无重发、
+独立后续 run 均完成。冷 provider 缺原声明工具，保存响应的本地 native 回执被拒绝。
+保留基线后修复，不据此宣称完整 App/恢复或 0.6.1 已通过；无模型收益/服务健康主张。
 
 2026-11-17：[不完整HTTP响应生产修复与暂停交接](docs/ghost_progress/native-uncertain-response-production-20261117.md)
 已在普通JSON发送默认核对帧长度。原72项48→72通过，合法JSON但声明字节未收齐不再误判完成，

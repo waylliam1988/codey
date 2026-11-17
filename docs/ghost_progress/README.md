@@ -10,10 +10,12 @@
 
 ## 当前状态
 
-[正常 App 硬退出与 HTTP 恢复](app-http-crash-recovery-20261118.md)接续审查：旧
-headless smoke 原样一次因过时 constructor 的 TypeError 失败，未进入恢复断言；
-全树静态门通过，非生产丢状态证据。继续按 durable owner/正常恢复入口修正材料并
-冻结完整 App×physical HTTP 组合，复用已有 kernel/SQLite/App 证据。
+[正常 App 硬退出与 HTTP 恢复](app-http-crash-recovery-20261118.md)基线 24 格完成：
+18 通过、6 失败，三 scope 的 enabled/revoked 保存响应组均无法完成原 run。真实
+headless/SQLite/os._exit→正常 App scheduler→loopback HTTP，所有 fixture 有效，原请求/
+响应身份保留、没有重复 HTTP、独立新 run 均完成。根因为冷 provider 缺原工具声明，
+本地 native terminal acknowledgement 被拒绝；先留基线再修，尚不标完整生产闭合。
+旧过时 smoke 与三次预检失败保留，各自归属见记录；未调用模型。
 
 [节点容量裁剪与跨 scope 重建](graph-capacity-scope-replay-20261118.md)已默认生产修复，
 提交 `34852638`：原 12 项 6→12，实际裁剪差量与强化事务独立身份供普通 writer/rebuild/

@@ -22,11 +22,13 @@ writer/rebuild/CLI 直接消费，无新开关。44 项新增边界通过；扩�
 旧缺裁剪日志仅对受测删除前歧义拒绝并保留投影；不保证任意旧历史或无缝降级。
 旧 reader 不认识新标记；保持兼容版本，用既有开关隔离，必要时显式 reset/受支持维护
 snapshot，不删原始历史。baseline DB 已被旧 replay 改过，不是最初独立 499 快照。
-下一步补正常 App×physical HTTP 硬退出/跨 run 组合。旧
-`tests/manual/completion_operation_resume_smoke.py` 静态发现仍按旧 positional JSONL
-构造 operation store，并重复提交同一 run_id；尚未执行，先冻结单项复现、按当前
-durable owner/恢复入口更新材料，不改变生产契约迁就旧脚本。完整 G0/World Model
-仍未完成；两个重复事实预测负结果不重跑。目标继续，用户原改动不动，不复制 worktree。
+正常 App×physical HTTP 硬退出/跨 run [基线现已完成](ghost_progress/app-http-crash-recovery-20261118.md)：
+24 格均有效，18 通过/6 个保存响应组失败；原响应保留、无重复 HTTP，独立新任务均完成。
+冷 provider 未恢复原工具声明，拒绝本地 native terminal 回执。旧 smoke 的 positional
+JSONL constructor 已原样复现 TypeError，未进入恢复；typed harness 已改走普通 headless
+初始化、正常 App 默认 scheduler 恢复，不重复提交旧 run。三次预检失败归属单独保留，
+先提交基线再修生产。完整 G0/World Model 仍未完成；两个重复事实预测负结果不重跑。
+目标继续，用户原改动不动，不复制 worktree。
 
 2026-11-18 此前完成：[Hebbian control payload](ghost_progress/hebbian-control-replay-20261118.md)。
 冻结提交 `4c5feeb6` 后原 168 项全有效、36 通过/132 失败；原始负结果 `9b90e1e7`

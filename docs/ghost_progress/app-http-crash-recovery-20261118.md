@@ -1,7 +1,7 @@
 # 正常 App 硬退出与真实 HTTP 恢复审查
 
 - 日期：2026-11-18；关联 0.6.1–0.6.4。
-- 状态：旧 smoke 单项诊断完成；真实 HTTP 矩阵已冻结，夹具预检后运行基线。
+- 状态：旧 smoke 诊断及真实 HTTP 基线完成；保存响应组生产缺口待修。
 - 代码基线：`6d844752`；上一轮裁剪修复 `34852638` 保留，不重复其矩阵。
 - 模型：本阶段不调用模型；旧 smoke 使用离线 scripted writer/provider。
 
@@ -144,3 +144,33 @@ display_ref。两次断言失败保留；按实际 display_ref 与 owner_effect_
 第四版预检两格：user/request_ready/enabled 通过；user/response_saved/revoked 为
 有效 fixture，原响应存在且没有新增 HTTP，但原 run 未完成。先保留该现象，不在
 完整基线前修生产，也不把它算模型负结果。正式矩阵使用独立 state，继续全部 24 格。
+
+### 实验 B 基线结果
+
+`python -m pytest tests/test_ghost_app_http_crash_recovery.py -q -s --tb=short`
+（完整 basetemp/JUnit 参数见脱敏报告）完成 24/24 有效 fixture，18 passed / 6 failed，
+336.52 秒，exit 1。三 scope 的 `response_saved` 在 enabled 和 revoked 下均失败，
+其他 18 格通过。每格原始 request/ref/hash、submission/input/operation 身份保留；
+没有重复物理 HTTP，第二次冷开和后续独立任务不改变原结论，24 个新任务均成功且
+hint 符合控制。冻结的 702 个生产文件及两个 owned 文件 hash 全部保持不变。
+
+保存响应组不是 Ghost 撤回专属故障：普通冷启动已从 response artifact 还原 native
+tool call，但未还原原请求的 declared tools。`ApiProvider` 的本地
+`acknowledge_tool_results_bound` 因 `terminal tools must belong to the previously declared set`
+失败，任务变为 failed/unanswered，原成功 response 与 sent receipt 保留；ack effect
+诚实保留 error/maybe_sent，不能重发来伪造闭环。此处真实 HTTP=1 且恢复增量=0，
+失败属于生产原工具契约投影缺失，不是夹具、模型阴性或 endpoint 故障。
+
+[脱敏基线报告](../../tests/manual/ghost_memory_routing/reports/app-http-crash-baseline-20261118.json)
+保留每格 counts/refs/hash/结论与 frozen owned hashes；完整 wire/回复/state/trace 只留
+本地 `baseline-state`。baseline 没有新增生产消费者、开关或默认 prompt；结论为
+`EXPERIMENT_ONLY`，不标 `PRODUCTION_MERGED`。下一步只从校验过的原响应/原请求恢复
+同 window 的传输工具声明，保持 Completion/Permission、撤回与真实发送 gate 不变。
+
+基线后相关 16 文件回归：328 passed / 1 既有 skipped，209.28 秒；文件清单与命令
+见报告。跳过是已有 execution-fencing 替代的 legacy shared-owner fixture，本轮未新增
+skip、未删断言，亦未运行全量 pytest。全仓 Ruff、完整 702 文件 codey 的 mypy /
+Pyrefly / ty 和 kernel precision gate 均通过（Pyrefly 158 warnings / 35 suppressed
+为既有事实，不称零警告）。两个 owned 文件三类型检查通过；额外
+`mypy --disallow-any-expr` owned 零诊断，未修改导入依赖 10988 项/336 文件单独留档。
+全树及 owned hash 在基线和检查前后保持不变，无模型调用或前端改动。
