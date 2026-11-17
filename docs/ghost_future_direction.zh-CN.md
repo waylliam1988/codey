@@ -5,6 +5,9 @@
 > [Runtime 架构](runtime_architecture.zh-CN.md)为准。
 > 2026-10-19 修订：偏好投递与预算路由实验只支持按 hint family、模型和投递配置有条件晋级；
 > 0.6 的具体交付顺序以 [Roadmap](../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量)为准。
+> 当前状态更新（2026-11-17）：普通 Chat 的受测中文偏好已单模型验收、生产接线并默认启用，
+> 见[启用记录](ghost_progress/language-production-enablement-20261117.md)。下述 2026-10-19
+> 测量保留当时结论，不应读作当前仍缺中文生产接线。
 
 ## 定位
 
@@ -66,7 +69,7 @@ cap 指 directive 的最大条目数。实验材料中生产排序标为 B/B2 �
 
 | Family | 当前决策 | 生产条件 |
 |---|---|---|
-| language | 有条件晋级候选 | 先扩类型化语言槽位；优先排位是待验收的策略；真实发送链路复测后仅为通过的模型/配置开启 |
+| language | 受测中文子集已 `PRODUCTION_MERGED` | 2026-11-17 已完成类型化中文字段、优先排位、普通 Chat 接线和发送前复查；仅受测模型/配置默认启用，其他范围独立验收 |
 | test command / verification habit | SHADOW，0.6 不默认投 directive | 把任务意图与工具可用性作为下一次实验变量；intent 层是候选宿主，尚未证明迁移有效 |
 | format / length / answer-first | WEAK-HINT-ONLY | 没有稳定的精确服从增益；列表对照本来就通过，不能计为记忆收益；不能承诺三句以内或永远结论先行 |
 | code notes / stable facts | 未晋级 | 需要代码结果质量或任务正确性指标，不能用语言/格式分数替代 |

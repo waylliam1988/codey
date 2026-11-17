@@ -1869,6 +1869,11 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17：普通 control surface 已修复 store 返回 False 时误报成功、SQLite 错误逸出的问题，
+默认报告逐 store 失败并继续其余 store；231 项相关回归与完整静态检查通过。
+这不等于跨 store 原子删除或 durable manifest 调度已完成。见
+[控制面失败汇总](docs/ghost_progress/control-mutation-failure-20261117.md)。
+
 2026-11-17：已修复 inbox candidate 与 observation run 的删除后旧 writer 复活，
 相同 16 cell 从 8 次复活降到 0，限定生产 fence 默认生效；完整 manifest 调度、
 七 store 混合并发和生命周期仍未完成。见

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterable, Mapping
+import sqlite3
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import TypeAlias, TypeVar
 
 from codey.ghost import _common
 from codey.ghost.affinity import GhostAffinityStore
@@ -14,6 +15,7 @@ from codey.ghost.continuity import GhostContinuityItem, GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode, node_id_for_candidate
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.observations import MAX_OBSERVATIONS, GhostObservationStore
+from codey.ghost.payload_types import mapping_fields
 from codey.ghost.schema import (
     MAX_SIGNAL_QUOTE_CHARS,
     GhostSignal,
@@ -33,9 +35,11 @@ MAX_UI_TEXT_CHARS = 140
 MAX_EVIDENCE_PREVIEW_CHARS = 120
 
 
-class _ResettableStore(Protocol):
-    def delete_scope(self, scope: str, *, project: str = "", session_id: str = "") -> object: ...
-    def reset_all(self, **kwargs: object) -> object: ...
+_ControlStore: TypeAlias = (
+    GhostInboxStore | GhostHebbianStore | GhostContinuityStore | GhostSleepStore
+    | GhostWorkQueueStore | GhostAffinityStore | GhostObservationStore
+)
+_Row = TypeVar("_Row")
 
 _ACTIONS = frozenset({
     "propose_preference",
@@ -163,8 +167,11 @@ class GhostControlSurface:
             "observation_read_failed",
         )
         affinity_warnings = affinity_health.get("warnings")
+        affinity_warning_rows: Sequence[object] = (
+            affinity_warnings if isinstance(affinity_warnings, (list, tuple)) else ()
+        )
         warning_rows = _ui_warnings(
-            (*warnings, *(affinity_warnings if isinstance(affinity_warnings, (list, tuple)) else ()))
+            (*warnings, *affinity_warning_rows)
         )
         return {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
@@ -204,7 +211,7 @@ class GhostControlSurface:
         }
 
     def dispatch_action(self, body: object) -> tuple[int, dict[str, object]]:
-        if not isinstance(body, Mapping):
+        if not mapping_fields(body):
             return 400, _error_payload("invalid request")
         if not self.available:
             return 200, _unavailable_payload()
@@ -234,7 +241,7 @@ class GhostControlSurface:
                 return self._reset_all(body)
         except ValueError as exc:
             return 400, _error_payload(exc)
-        except (OSError, TypeError) as exc:
+        except (OSError, TypeError, sqlite3.Error) as exc:
             return 500, _error_payload(exc)
         return 400, _error_payload("unsupported action")
 
@@ -249,14 +256,14 @@ class GhostControlSurface:
         }
         errors: list[str] = []
 
-        def _export(name: str, load: Any) -> object:
+        def _export(name: str, load: Callable[[], dict[str, object]]) -> object:
             try:
                 return load()
             except Exception as exc:  # noqa: BLE001 - export must report, not raise
                 errors.append(f"{name}_export_failed: {type(exc).__name__}")
                 return {"error": f"{name}_export_failed"}
 
-        def export_store(name: str, store: Any) -> object:
+        def export_store(name: str, store: _ControlStore | None) -> object:
             empty: dict[str, object] = {}
             return empty if store is None else _export(name, store.export_state)
         payload["inbox"] = export_store("inbox", self.inbox)
@@ -457,7 +464,7 @@ class GhostControlSurface:
             return 400, _error_payload("session_id required")
         results, errors = self._mutate_all_stores(
             "delete_scope",
-            lambda _name, store: store.delete_scope(scope, project=project, session_id=session_id),
+            lambda store: store.delete_scope(scope, project=project, session_id=session_id),
         )
         return (200 if not errors else 500), {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
@@ -473,8 +480,8 @@ class GhostControlSurface:
             return 400, _error_payload("confirm required")
         results, errors = self._mutate_all_stores(
             "reset_all",
-            lambda name, store: store.reset_all(preserve_settings=True)
-            if name == "inbox"
+            lambda store: store.reset_all(preserve_settings=True)
+            if isinstance(store, GhostInboxStore)
             else store.reset_all(),
         )
         return (200 if not errors else 500), {
@@ -488,9 +495,9 @@ class GhostControlSurface:
     def _mutate_all_stores(
         self,
         action_name: str,
-        mutate: Callable[[str, _ResettableStore], object],
+        mutate: Callable[[_ControlStore], object],
     ) -> tuple[dict[str, object], list[str]]:
-        stores: list[tuple[str, object | None]] = [
+        stores: list[tuple[str, _ControlStore | None]] = [
             ("inbox", self.inbox),
             ("hebbian", self.hebbian),
             ("continuity", self.continuity),
@@ -506,9 +513,10 @@ class GhostControlSurface:
                 results[name] = "unavailable"
                 continue
             try:
-                results[name] = mutate(name, cast(_ResettableStore, store))
-            except (OSError, TypeError, ValueError):
+                results[name] = mutate(store)
+            except (OSError, TypeError, ValueError, sqlite3.Error):
                 results[name] = False
+            if results[name] is False:
                 errors.append(f"{name}_{action_name}_failed")
         return results, errors
 
@@ -549,7 +557,7 @@ def _safe_affinity_health(
     except Exception:
         warnings.append("association_read_failed")
         return {"status": "warning", "nodes": 0, "edges": 0, "warnings": ["association_read_failed"]}
-    store_warnings = _ui_warnings(getattr(store, "last_warnings", ()) or ())
+    store_warnings = _ui_warnings(store.last_warnings)
     return {
         "status": "warning" if store_warnings else "available",
         "nodes": len(nodes),
@@ -684,7 +692,7 @@ def _work_item_payload(item: GhostWorkItem) -> dict[str, object]:
 
 
 def _observation_payload(row: object) -> dict[str, object]:
-    item = row if isinstance(row, dict) else {}
+    item: Mapping[str, object] = row if mapping_fields(row) else {}
     user_text = _safe_text(item.get("user_text"), MAX_EVIDENCE_PREVIEW_CHARS)
     return {
         "id": _safe_text(item.get("run_id"), 120),
@@ -699,10 +707,10 @@ def _observation_payload(row: object) -> dict[str, object]:
 
 
 def _safe_rows(
-    load: Callable[[], Iterable[object]],
+    load: Callable[[], Iterable[_Row]],
     warnings: list[str],
     warning: str,
-) -> tuple[Any, ...]:
+) -> tuple[_Row, ...]:
     try:
         return tuple(load())
     except Exception:
@@ -734,7 +742,7 @@ def _safe_mapping(
     except Exception:
         warnings.append(warning)
         return {}
-    return dict(value) if isinstance(value, Mapping) else {}
+    return dict(value) if mapping_fields(value) else {}
 
 
 def _safe_text(value: object, limit: int = MAX_UI_TEXT_CHARS) -> str:

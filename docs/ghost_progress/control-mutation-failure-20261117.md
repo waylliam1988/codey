@@ -3,7 +3,8 @@
 - 日期：2026-11-17
 - 基线：`5e291b4f`
 - 实验状态：`EXPERIMENT_COMPLETE`（限定控制面失败矩阵）
-- 生产结论：`EXPERIMENT_ONLY`（本次记录只提交基线证据；修复另行提交）
+- 实验提交：`5cc5e31c`
+- 生产结论：`PRODUCTION_MERGED`（限定普通控制面失败汇总；生产提交见下）
 - 模型 / endpoint：无；这是生产控制面正确性实验，不恢复语言实机批次。
 
 ## 假设、矩阵和停止条件
@@ -41,9 +42,32 @@ python -m pytest tests/test_ghost_control_mutation_failures.py -q --tb=short
 失败归属为生产汇总逻辑：现有实现仅在 except 中追加错误，没有检查返回 False，
 且捕获集合缺 sqlite3.Error。不是旧测试接口或 scope scorer 问题。
 
-## 下一步
+## 生产修复与验收
 
-修复正常控制面，默认生效；继续尝试其他 store 并准确汇总，不引入实验开关。
-清理本轮修改控制面文件的 Any / cast 和未收窄动态输入；扩大相关生产回归并执行全仓
-Ruff、完整生产树三个类型检查、kernel precision 和新测试文件的单独类型检查。
-生产修复、最终结果和索引更新另行提交。
+`GhostControlSurface` 默认汇总显式 False 与 sqlite3.Error；错误 store 的结果为 False，
+追加对应错误码，继续尝试其余 store，最终返回 HTTP 500、ok=false。dispatcher 的其他
+控制动作也将 SQLite 错误转为结构化失败。没有增加实验开关或另一个删除入口。
+
+合法 0 / None、partial surface 的 unavailable、reset 保留明确关闭的行为保持有效。
+新增多 store 同时失败、非删除控制 SQLite 错误和非法 key 请求回归，最终新增 **42 项**。
+首轮相关回归 76 passed；扩展到 13 个受影响文件为 **231 passed、6 subtests passed**，
+包括控制面、删除 fence、manifest 恢复、多进程冷启动、corruption、语言和真实发送边界。
+没有运行全量 pytest，没有恢复已停止的语言批次。
+
+完整 `codey` mypy（699 个模块）、Pyrefly、ty、kernel precision 通过；全仓 Ruff 通过。
+新测试另经三个 checker 检查通过。Pyrefly 全树为 0 errors、35 个既有 suppression、
+158 个 warning；目标测试为 0 errors、1 warning。未修改配置或新增豁免。
+类型清理中 Pyrefly 发现一个空字典的隐式 Any，已补明确的 Mapping[str, object]，重验通过。
+
+本轮控制面移除 Any、cast 和不准确的 reset Protocol，以具体 store union 表达实际方法；
+泛型读取保留领域行类型，export callback 和动态 mapping 边界明确。没有放宽生产边界来迁就测试。
+
+生产提交：`git log --grep="report Ghost control mutation failures"`。
+回滚可回退本轮控制面提交，保留现有 schema、generation 和 retirement 数据；回退会重新暴露
+上述失败误报，不应通过清库或删除 fence 降级。
+
+## 限制与下一步
+
+本轮仅闭合普通控制面的结果表达；失败前已完成的其他 store mutation 不会自动回滚。
+durable manifest 默认调度、pending recovery、混合 runtime 并发、在途来源及完整 tombstone
+生命周期仍需后续验证和接线，不能由结构化 HTTP 错误推断这些已完成。

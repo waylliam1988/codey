@@ -5,7 +5,7 @@
 - 关联：0.6.2 / 0.6.3；Deletion Manifest Candidate
 - 基线：`6f0ddf7e`
 - 模型 / endpoint：无；这是存储和恢复边界实验，不调用模型。
-- 生产合并结论：`EXPERIMENT_ONLY`
+- 生产合并结论：`PRODUCTION_MERGED`（限定输入 fence，`17eb2e3e`；完整 manifest 调度未完成）
 
 ## 冻结假设和矩阵
 
@@ -86,7 +86,9 @@ warning；本轮目标 0 errors、4 warnings，没有修改配置或新增 suppr
 命令和输出归档于本地 `.e2e-artifacts/ghost-deletion-fence-20261117/checks/`。
 
 上述输入 fence 是 `PRODUCTION_MERGED` 的限定修复；manifest 默认调度仍未晋级。
-尚缺：未落盘的在途输入、continuity/work_queue/affinity/sleep 的旧来源缓存、完整七 store
+本节原有的 continuity/work_queue/affinity/sleep 旧来源快照缺口已由后续
+[派生投影 fence](projection-delete-interleaving-20261117.md)限定闭合，不重复当作未修复项。
+尚缺：未落盘的在途输入、完整七 store
 混合并发与恢复、retirement 存储增长/维护度量。不能将 16 cell 推广为完整删除生命周期通过。
 retirement 是永久失效边界，不通过删除表回滚；回滚程序时保留数据库，旧 schema 程序会拒绝
 新数据库，不允许以丢弃 tombstone 的方式强行降级。
