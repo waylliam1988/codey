@@ -2079,6 +2079,11 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
+2026-11-18：[Hebbian control payload](docs/ghost_progress/hebbian-control-replay-20261118.md)
+冻结 168 项真实 producer 对照全有效，36 通过/132 失败；坏计数/缺字段/额外字段等
+132 项两次重建均误报成功，原日志与有效投影未变。最早 v1 两字段 decay 正常保留，
+生产校验修复待完成；不以本轮结果宣称数据丢失、模型收益或完整 G0 闭合。
+
 2026-11-18：[图同分裁剪与重建基线](docs/ghost_progress/graph-tie-replay-20261118.md)
 原 24 cell 全有效，9 通过/15 失败；真实 Hebbian degree cap 的同分主组 6/6 在
 warm/cold rebuild 改变弱边集合，唯一权重 6/6 正常，节点/边排列另 9 项失败。

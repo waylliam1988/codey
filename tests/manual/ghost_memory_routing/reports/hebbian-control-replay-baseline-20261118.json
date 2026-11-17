@@ -1,0 +1,3513 @@
+{
+  "experiment": "ghost-hebbian-control-replay-20261118",
+  "status": "EXPERIMENT_COMPLETE",
+  "verdict": "MALFORMED_CONTROL_FALSE_SUCCESS",
+  "freeze_commit": "4c5feeb6",
+  "model_called": false,
+  "production_changed": false,
+  "cells_valid": 168,
+  "passed": 36,
+  "failed": 132,
+  "valid_current_and_legacy": 24,
+  "malformed_rejected": 12,
+  "malformed_accepted": 132,
+  "projection_preserved": 168,
+  "history_preserved": 168,
+  "cells": [
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "missing_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "scalar_payload"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "missing_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "boolean_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "negative_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "string_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "float_count"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "candidate_removed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "scope_deleted",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "extra_key"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "user",
+      "variant": "legacy"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "project",
+      "variant": "legacy"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "warm",
+      "scope": "session",
+      "variant": "legacy"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "user",
+      "variant": "legacy"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "project",
+      "variant": "legacy"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "event_count_unchanged": true,
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "kind": "state_decayed",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "restart": "cold",
+      "scope": "session",
+      "variant": "legacy"
+    }
+  ],
+  "checks": [
+    {
+      "check": "related",
+      "exit": 1,
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_ghost_hebbian_control_replay.py",
+        "tests/test_ghost_hebbian.py",
+        "tests/test_ghost_hebbian_replay_integrity.py",
+        "-q",
+        "-s",
+        "--basetemp=.e2e-artifacts/ghost-hebbian-control-replay-20261118/baseline-state",
+        "--tb=short",
+        "-o",
+        "junit_logging=all",
+        "--junitxml=.e2e-artifacts/ghost-hebbian-control-replay-20261118/baseline.xml"
+      ]
+    },
+    {
+      "check": "ruff",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ]
+    },
+    {
+      "check": "mypy",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "precision",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ]
+    },
+    {
+      "check": "owned-mypy",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_hebbian_control_replay.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "tests/test_ghost_hebbian_control_replay.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "tests/test_ghost_hebbian_control_replay.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-any",
+      "exit": 1,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_hebbian_control_replay.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ]
+    }
+  ],
+  "owned_hashes": {
+    "tests/test_ghost_hebbian_control_replay.py": "6E3C28FBEC6D9C98B0716119B084D730E375369B170BFF7D5EFD43B6DC75F066"
+  },
+  "owned_any_diagnostics": 0,
+  "dependency_any_diagnostics": 3873,
+  "dependency_any_files": 181,
+  "regression": {
+    "failed": 132,
+    "passed": 136,
+    "files": 3
+  },
+  "production_file_count": 702,
+  "raw_artifacts": ".e2e-artifacts/ghost-hebbian-control-replay-20261118"
+}

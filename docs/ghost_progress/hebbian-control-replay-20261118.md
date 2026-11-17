@@ -1,7 +1,7 @@
 # Hebbian control payload 重放验证
 
 - 日期：2026-11-18；关联 0.6.3 / 0.6.4。
-- 状态：`INCOMPLETE`（冻结，尚未执行新矩阵）。
+- 状态：`EXPERIMENT_COMPLETE`（基线漏检确认；生产修复待完成）。
 - 基线：`cced47da`；不重复已闭合的 envelope、内部时间和同分裁剪实验。
 - 模型/endpoint：不适用，不调用模型；本轮不产生模型收益或阴性结论。
 
@@ -55,3 +55,26 @@ rebuild-state 入口，不新增开关或无人调用模块。补全部字段计
 pytest 本轮矩阵使用该目录下独立 basetemp 以保留数据库；不复制 worktree。仓库只保留
 复现测试、脱敏指标及文档。生产默认接线且检查通过后才标 PRODUCTION_MERGED，记录
 兼容边界、回滚及剩余缺口；本轮不证明整个 G0、混版本生命周期或 World Model 完成。
+
+## 基线结果
+
+冻结提交 `4c5feeb6` 后，168/168 fixture 均证明真实两节点/一条边和预期 producer。
+**36 passed / 132 failed**：24 个合法当前/历史格式均成功；scope_deleted 缺 payload
+或 scalar payload 的 12 个坏记录已拒绝；其余 132 个坏控制记录两次 replay 都误报成功。
+168 项的两次投影与原日志均不变；这是校验漏检，不是观测到状态丢失。
+三 scope、warm/cold 一致。另两个旧 Hebbian 文件 100 项通过，合批 136 passed /132 failed。
+
+初次预检因 basetemp 父目录不存在产生 1 个 setup error，建好专用 artifact 目录后，
+预检证明 18 个当前格式正常，并在首个坏 candidate_removed 处观测预期生产失败。
+这些预检不计入冻结 168 项结果；未更改 scorer。完整基线使用 `baseline-state`，保留
+通过与失败的全部 SQLite fixture、XML 和 stdout；原始数据不入库。
+
+```powershell
+python -m pytest tests/test_ghost_hebbian_control_replay.py tests/test_ghost_hebbian.py tests/test_ghost_hebbian_replay_integrity.py -q -s --tb=short --basetemp=.e2e-artifacts/ghost-hebbian-control-replay-20261118/baseline-state
+```
+
+基线全仓 Ruff、完整 702 文件生产树 mypy/Pyrefly/ty/precision gate 和新测试定向三类型
+全部通过。owned Any 零诊断，额外审计 exit 1 来自未修改依赖 3873 项/181 文件，
+不增加豁免或改检查范围；Pyrefly 保留既有 35 suppressed /158 warnings。
+检查期间生产树与测试 SHA256 冻结验证通过。逐 cell 与精确检查命令见
+[基线报告](../../tests/manual/ghost_memory_routing/reports/hebbian-control-replay-baseline-20261118.json)。

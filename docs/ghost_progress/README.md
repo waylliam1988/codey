@@ -10,9 +10,9 @@
 
 ## 当前状态
 
-[Hebbian control payload](hebbian-control-replay-20261118.md)已冻结：核对三个正常
-producer，保留最早 v1 的两字段 decay 与当前四字段格式，计划 168 项真实重建对照。
-尚未执行，不预判损坏记录的拒绝情况；不调用模型、不重跑已闭合矩阵。
+[Hebbian control payload](hebbian-control-replay-20261118.md)基线已确认漏检：冻结
+168 项 fixture 均有效，36 通过/132 失败；132 个坏控制记录两次均误报成功，但投影与
+原日志保持不变。保留最早 v1 两字段 decay 正对照，不调用模型；生产修复待完成。
 
 [图同分裁剪与重建一致性](graph-tie-replay-20261118.md)已默认生产修复：原 24 项
 9→24 通过；共享节点 id/边语义身份稳定 tie，普通 writer/rebuild/维护/快照沿用同一
