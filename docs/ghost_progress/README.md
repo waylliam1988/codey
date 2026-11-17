@@ -10,6 +10,10 @@
 
 ## 当前状态
 
+[节点容量裁剪与跨 scope 重建](graph-capacity-scope-replay-20261118.md)已冻结：
+12 项真实 500 node cap 对照，核对删除另一 scope 后，已裁保留节点会否因 replay 末尾
+才 bounds 而重新出现。尚未执行，不预判结果；不重复 event 数量压缩与同分实验。
+
 [Hebbian control payload](hebbian-control-replay-20261118.md)已默认生产修复：原
 168 项 36→168 通过，严格 counts/identity/keys 校验保留最早 v1 两字段 decay，
 record-only 标记不重复执行，生产 `24c79933`。基线 `9b90e1e7` 保留；新增 153 项边界，32 文件
