@@ -98,3 +98,10 @@ user `accept_events=false` 同时改写 legacy learning_enabled，使其他未�
 保留旧数据的真实有效设置，不猜测历史上哪些关是无意造成。无模型、无采样变量。
 任一非目标控制改变即失败；先记录基线，再在同一写事务中 materialize 原四个值后
 更新单项。该修复是本轮独立性生产验收的必要依赖，不能删断言或改成全开夹具。
+
+冻结 `5ec65d2c` 后原 inbox 96 项 **92 passed / 4 failed**：user accept_events
+从 legacy-off 开启，以及 missing/legacy-on/partial-current 关闭，均改变非目标控制。
+[脱敏原始指标](../../tests/manual/ghost_memory_routing/reports/control-materialization-baseline-20261118.json)
+保留每项前后值与冷开值。该批尚未修改 inbox；Sleep 候选在同一工作区，未混入 setter 测量。
+中间全树检查发现 Sleep compaction closure 的可空默认参数 mypy 错误，已用明确的非空
+局部协议变量修正，未放宽类型。其余四个全树门通过；以修复后最终全树复验为准。

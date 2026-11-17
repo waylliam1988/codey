@@ -1,0 +1,2988 @@
+{
+  "experiment": "independent control legacy fallback",
+  "status": "EXPERIMENT_COMPLETE",
+  "freeze_commit": "5ec65d2c",
+  "owner_source": "unchanged codey/ghost/inbox.py at b9b189c6",
+  "model_called": false,
+  "samples": 96,
+  "passed": 92,
+  "failed": 4,
+  "cells": [
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": false,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": false,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": false,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": false,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "user"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "project"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": true,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "accept_events",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "retrieve_projections",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "run_maintenance",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "missing",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_on",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": true
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "legacy_off",
+      "restarted": {
+        "accept_events": false,
+        "admit_hints": false,
+        "retrieve_projections": false,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    },
+    {
+      "after": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "before": {
+        "accept_events": true,
+        "admit_hints": true,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "enabled": false,
+      "expected": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "name": "admit_hints",
+      "pass": true,
+      "profile": "partial_current",
+      "restarted": {
+        "accept_events": true,
+        "admit_hints": false,
+        "retrieve_projections": true,
+        "run_maintenance": false
+      },
+      "scope": "session"
+    }
+  ]
+}
