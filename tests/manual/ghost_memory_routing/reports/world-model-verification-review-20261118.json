@@ -800,5 +800,6 @@
     "Single model/config; latency descriptive only",
     "World Model overall and full G0 remain incomplete"
   ],
-  "local_artifacts": ".e2e-artifacts/world-model-verification-review-20261118"
+  "local_artifacts": ".e2e-artifacts/world-model-verification-review-20261118",
+  "experiment_commit": "7e924580f7a49010ca4fd84bc052cba2a75192d1"
 }
