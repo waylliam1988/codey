@@ -10,6 +10,10 @@
 
 ## 当前状态
 
+当前收尾批次：[原生回执不确定HTTP响应基线](native-uncertain-response-baseline-20261117.md)。
+72项48通过/24失败，合法JSON但Content-Length未收齐时错误接受任务完成；
+EOF/畸形JSON的MAYBE_SENT与不重发对照正常。生产修复与检查收尾后暂停，不启动下一批。
+
 最新完成：[原生回执准入拒绝与恢复组合验收](native-refusal-recovery-20261117.md)。
 两协议×三控制scope×成功/错误回执×enabled/暖恢复/冷恢复36项全部通过；
 真实共享kernel/SQLite/HTTP验证两次拒绝均NOT_SENT、原回执保留、重开后不重复执行工具。
