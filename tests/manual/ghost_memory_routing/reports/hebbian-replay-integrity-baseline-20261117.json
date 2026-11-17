@@ -1,0 +1,768 @@
+{
+  "experiment": "hebbian-replay-integrity-20261117",
+  "status": "EXPERIMENT_COMPLETE",
+  "baseline_revision": "6762f1ea",
+  "external_model_calls": 0,
+  "valid_cells": 54,
+  "passed": 12,
+  "failed": 42,
+  "failure_owner": "production replay silently accepts corrupt or unknown Hebbian events",
+  "cells": [
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "user",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "project",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "session",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "user",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "project",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "session",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed",
+        "concise"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "user",
+      "variant": "superseded_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed",
+        "concise"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "project",
+      "variant": "superseded_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "concise",
+        "detailed"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "session",
+      "variant": "superseded_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed",
+        "concise"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "user",
+      "variant": "superseded_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "concise",
+        "detailed"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "project",
+      "variant": "superseded_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "concise",
+        "detailed"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "session",
+      "variant": "superseded_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "user",
+      "variant": "upsert_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "project",
+      "variant": "upsert_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "session",
+      "variant": "upsert_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "user",
+      "variant": "upsert_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "project",
+      "variant": "upsert_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "session",
+      "variant": "upsert_node"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "user",
+      "variant": "edge"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "project",
+      "variant": "edge"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "session",
+      "variant": "edge"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "user",
+      "variant": "edge"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "project",
+      "variant": "edge"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "session",
+      "variant": "edge"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed",
+        "concise"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "user",
+      "variant": "unknown_type"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "concise",
+        "detailed"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "project",
+      "variant": "unknown_type"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "concise",
+        "detailed"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "warm",
+      "scope": "session",
+      "variant": "unknown_type"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed",
+        "concise"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "user",
+      "variant": "unknown_type"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "concise",
+        "detailed"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "project",
+      "variant": "unknown_type"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "concise",
+        "detailed"
+      ],
+      "directive_unchanged": false,
+      "projection_unchanged": false,
+      "restart": "cold",
+      "scope": "session",
+      "variant": "unknown_type"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "user",
+      "variant": "schema_version"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "project",
+      "variant": "schema_version"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "session",
+      "variant": "schema_version"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "user",
+      "variant": "schema_version"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "project",
+      "variant": "schema_version"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "session",
+      "variant": "schema_version"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "user",
+      "variant": "boolean_schema"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "project",
+      "variant": "boolean_schema"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "session",
+      "variant": "boolean_schema"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "user",
+      "variant": "boolean_schema"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "project",
+      "variant": "boolean_schema"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "session",
+      "variant": "boolean_schema"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "user",
+      "variant": "timestamp"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "project",
+      "variant": "timestamp"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "session",
+      "variant": "timestamp"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "user",
+      "variant": "timestamp"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "project",
+      "variant": "timestamp"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "session",
+      "variant": "timestamp"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "user",
+      "variant": "deletion_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "project",
+      "variant": "deletion_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "warm",
+      "scope": "session",
+      "variant": "deletion_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "user",
+      "variant": "deletion_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "project",
+      "variant": "deletion_payload"
+    },
+    {
+      "accepted": [
+        false,
+        false
+      ],
+      "active": [
+        "detailed"
+      ],
+      "directive_unchanged": true,
+      "projection_unchanged": true,
+      "restart": "cold",
+      "scope": "session",
+      "variant": "deletion_payload"
+    }
+  ]
+}

@@ -10,6 +10,12 @@
 
 ## 当前状态
 
+2026-11-17 用户已恢复持续推进。新发现并完成基线：
+[Hebbian 损坏事件原子重建](hebbian-replay-integrity-20261117.md)，54 cell 全有效，
+12 通过/42 生产失败；损坏 supersede/未知事件会复活旧 active 并改变普通 directive，
+坏 upsert/edge 会丢状态。生产修复接下来单独提交，不重做已闭合的 HTTP/continuity 矩阵。
+以下暂停说明为此前批次历史，不再阻止本次已授权工作。
+
 按用户要求，本批完成后暂停，不自动启动下一批。最新完成：
 [原生回执不完整HTTP响应生产修复与暂停交接](native-uncertain-response-production-20261117.md)。
 JSON响应默认先核对Content-Length，未收齐为MAYBE_SENT并禁止重发，不再错误接受任务完成。
