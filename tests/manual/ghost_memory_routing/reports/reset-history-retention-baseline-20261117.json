@@ -1,0 +1,391 @@
+{
+  "experiment": "ordinary-reset-history-retention-baseline",
+  "baseline_commit": "0cdb9137",
+  "date": "2026-11-17",
+  "model": null,
+  "endpoint": null,
+  "cells": 63,
+  "passed": 21,
+  "failed": 42,
+  "invalid": 0,
+  "results": [
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[user-inbox]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[user-hebbian]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[user-continuity]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[user-work_queue]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[user-affinity]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[user-sleep]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[user-observations]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[project-inbox]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[project-hebbian]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[project-continuity]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[project-work_queue]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[project-affinity]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[project-sleep]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[project-observations]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[session-inbox]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[session-hebbian]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[session-continuity]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[session-work_queue]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[session-affinity]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[session-sleep]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_read_only_reset_control_keeps_original_history[session-observations]",
+      "passed": true,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-inbox]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-hebbian]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-continuity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-work_queue]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-affinity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-sleep]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-user-observations]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-inbox]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-hebbian]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-continuity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-work_queue]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-affinity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-sleep]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-project-observations]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-inbox]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-hebbian]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-continuity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-work_queue]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-affinity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-sleep]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[False-session-observations]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-inbox]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-hebbian]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-continuity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-work_queue]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-affinity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-sleep]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-user-observations]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-inbox]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-hebbian]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-continuity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-work_queue]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-affinity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-sleep]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-project-observations]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-inbox]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-hebbian]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-continuity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-work_queue]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-affinity]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-sleep]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    },
+    {
+      "case": "test_ordinary_reset_preserves_original_domain_history[True-session-observations]",
+      "passed": false,
+      "valid_history_comparison": true,
+      "error": false
+    }
+  ]
+}

@@ -10,12 +10,17 @@
 
 ## 当前状态
 
+最新有效负结果：[普通reset历史保留基线](reset-history-retention-baseline-20261117.md)。
+63项中21项只读对照通过、42项reset在最后历史比较失败；操作和重建可见性先通过。
+下一步修复默认reset的历史保留，不能以清空投影成功代替tombstone合同。
+
 最新完成：[容量检查点与历史保留](capacity-history-retention-production-20261117.md)。
 原78项矩阵48→78通过，另55项窗口验收；扩大776项/136子测试、最后SQL复查后的366项复验及完整静态门通过。
 正常单版本runtime和冷启动升级默认生效；reset、混版本旧进程、磁盘retention/purge仍待验。
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 普通reset历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（有效负结果） | 63项全部有效，21项只读重开通过、42项reset物理删除原始历史；未观察到本次重开/重建复活 | [冻结矩阵与结果](reset-history-retention-baseline-20261117.md) |
 | 容量检查点与历史保留 2026-11-17 | `PRODUCTION_MERGED`（单版本runtime/冷启动升级） | 原78项48→78通过；原日志保留，schema8有界重放/检索窗口及独立确认，Sleep按count/bytes推进窗口不复制旧report；55项验收、扩大776项/136子测试、最后SQL复查后366项复验及完整静态门通过，13个owned文件额外Any审计零诊断 | [生产修复与失败归属](capacity-history-retention-production-20261117.md) |
 | 容量压力下的历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 真实阈值共78项有效，原48通过/30历史丢失；39个低压力对照全通过，保留原测量，后续生产修复见上行 | [冻结矩阵与负结果](capacity-history-retention-baseline-20261117.md) |
 | 普通 scope 删除的历史保留 2026-11-17 | `PRODUCTION_MERGED`（低于compaction阈值） | 原63项39→63通过；追加领域删除事件、保留observation事实并退役过滤、同事务清派生向量及写回/检索复查；86项验收，独立ID修改前853项扩大回归/141子测试、最终源码454项复验/133子测试及完整静态门通过；九个owned文件额外Any审计零诊断 | [生产修复与失败归属](scope-history-retention-production-20261117.md) / [原始负结果](scope-history-retention-baseline-20261117.md) |

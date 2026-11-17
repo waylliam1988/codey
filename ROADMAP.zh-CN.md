@@ -1877,6 +1877,10 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 普通reset基线：63项全部有效，21项只读重开通过、42项reset在最终原历史比较
+失败。普通Manifest为tombstone，操作/清空投影/重建不可见先通过，但七store仍物理删除
+原领域事件；下一步保留日志并原子推进空重放窗口。见[冻结矩阵与负结果](docs/ghost_progress/reset-history-retention-baseline-20261117.md)。
+
 2026-11-17 容量检查点已生产接线：原78项矩阵48→78通过，另55项窗口验收；扩大776项回归/
 136子测试、最后SQL窗口复查后的366项复验及完整静态门通过；13个owned文件额外Any审计零诊断。schema8保留原领域事件并以
 有界窗口重放/检索，空checkpoint也必须独立确认；Sleep按count/bytes推进窗口不复制旧report，
