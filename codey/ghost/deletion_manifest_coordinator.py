@@ -1,8 +1,8 @@
-"""Candidate coordinator for resumable Ghost delete/reset operations.
+"""Coordinator for resumable Ghost delete/reset operations.
 
 This module owns only the ordering between the durable manifest and already
-existing store mutation methods.  It is not wired into the control surface
-until the seven-store replay and failure matrix is complete.
+existing store mutation methods. The ordinary control surface drains pending
+stores after failures while preserving blocked transitions as terminal facts.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from codey.ghost.deletion_manifest import STORE_PENDING, DeletionManifest, store_event
+from codey.ghost.deletion_manifest import MAX_STORE_DETAIL_CHARS, STORE_PENDING, DeletionManifest, store_event
 from codey.ghost.deletion_manifest_store import DeletionManifestStore
 
 GHOST_STORE_NAMES = (
@@ -97,9 +97,12 @@ def _result_detail(value: object) -> str:
     if value is None:
         return ""
     try:
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))[:240]
+        detail = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError):
-        return str(value)[:240]
+        detail = json.dumps(str(value), ensure_ascii=False)
+    if len(detail) > MAX_STORE_DETAIL_CHARS:
+        raise ValueError("Ghost deletion result exceeds its durable bound")
+    return detail
 
 
 __all__ = ["DeletionManifestCoordinator", "DeletionTarget", "GHOST_STORE_NAMES"]

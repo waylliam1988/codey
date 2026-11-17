@@ -1,0 +1,4346 @@
+{
+  "schema_version": 1,
+  "comparison_baseline": "e8131422",
+  "model": null,
+  "entrypoints": [
+    "POST /api/ghost/action",
+    "codey ghost delete-scope",
+    "codey ghost reset"
+  ],
+  "passed": 741,
+  "subtests_passed": 141,
+  "junit_tests_including_subtests": 882,
+  "failed": 0,
+  "skipped": 0,
+  "separate_ghost_cli_passed": 5,
+  "new_default_wiring_cases": 34,
+  "cases": [
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_actual_application_surface_defaults_to_manifest_and_retry_keeps_fresh_input[delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_actual_application_surface_defaults_to_manifest_and_retry_keeps_fresh_input[delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_actual_application_surface_defaults_to_manifest_and_retry_keeps_fresh_input[delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_actual_application_surface_defaults_to_manifest_and_retry_keeps_fresh_input[reset_all-all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_partial_surface_records_only_available_stores_and_preserves_disable",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_pending_operation_reopens_without_repeating_committed_store",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[observations]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_operation_cannot_be_reused_for_a_different_effective_scope_or_action[project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_operation_cannot_be_reused_for_a_different_effective_scope_or_action[scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_operation_cannot_be_reused_for_a_different_effective_scope_or_action[action]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_irrelevant_request_context_does_not_change_effective_user_scope",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_invalid_operation_identity_is_rejected_before_mutation[None]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_invalid_operation_identity_is_rejected_before_mutation[True]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_invalid_operation_identity_is_rejected_before_mutation[identity2]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_invalid_operation_identity_is_rejected_before_mutation[]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_invalid_operation_identity_is_rejected_before_mutation[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_corrupt_existing_operation_fails_closed_without_new_delete",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_mixed_database_surface_is_rejected_before_any_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_durable_result_longer_than_240_characters_is_exact_on_retry",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_oversize_result_rolls_back_actual_store_mutation_and_ack",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_concurrent_same_operation_only_invokes_observation_delete_once",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_boolean_schema_is_not_an_integer_manifest_version",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_find_distinguishes_absence_from_corruption",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_invalid_completed_result_is_rejected_before_any_pending_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_real_cli_uses_default_manifest_without_an_enable_flag[delete-scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_real_cli_uses_default_manifest_without_an_enable_flag[reset]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_real_authenticated_http_route_defaults_to_manifest_and_unauthenticated_is_denied[delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_production_wiring",
+      "name": "test_real_authenticated_http_route_defaults_to_manifest_and_unauthenticated_is_denied[reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_exact_retained_rows_survive_other_scope_removal_and_reopen[hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_exact_retained_rows_survive_other_scope_removal_and_reopen[affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_retained_retired_node_does_not_allow_new_learning_and_rolls_back_event[payload-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_retained_retired_node_does_not_allow_new_learning_and_rolls_back_event[payload-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_retained_retired_node_does_not_allow_new_learning_and_rolls_back_event[alias-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_retained_retired_node_does_not_allow_new_learning_and_rolls_back_event[alias-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_retained_retired_node_does_not_allow_new_learning_and_rolls_back_event[edge_weight-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_retained_retired_node_does_not_allow_new_learning_and_rolls_back_event[edge_weight-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_retained_retired_node_does_not_allow_new_learning_and_rolls_back_event[edge_relation-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_retained_retired_node_does_not_allow_new_learning_and_rolls_back_event[edge_relation-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_replacement_repairs_indexed_columns_even_when_payload_is_unchanged[scope_ref-corrupt-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_replacement_repairs_indexed_columns_even_when_payload_is_unchanged[scope_ref-corrupt-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_replacement_repairs_indexed_columns_even_when_payload_is_unchanged[status-inactive-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_replacement_repairs_indexed_columns_even_when_payload_is_unchanged[status-inactive-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_replacement_repairs_indexed_columns_even_when_payload_is_unchanged[weight-0.1-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_replacement_repairs_indexed_columns_even_when_payload_is_unchanged[weight-0.1-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_failed_exact_replacement_restores_entire_graph_and_cursor[duplicate-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_failed_exact_replacement_restores_entire_graph_and_cursor[duplicate-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_failed_exact_replacement_restores_entire_graph_and_cursor[dangling_edge-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_failed_exact_replacement_restores_entire_graph_and_cursor[dangling_edge-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_failed_exact_replacement_restores_entire_graph_and_cursor[retired_column_repair-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_failed_exact_replacement_restores_entire_graph_and_cursor[retired_column_repair-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_exact_replacement",
+      "name": "test_real_disjoint_project_deletes_preserve_unrelated_scope_and_can_rebuild",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[before_ack-delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[before_ack-delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[before_ack-delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[before_ack-reset_all-all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[after_completion-delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[after_completion-delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[after_completion-delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[after_completion-reset_all-all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-observations]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-observations]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-observations]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-observations]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-observations]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-observations]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[mutation-delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[mutation-delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[mutation-delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[mutation-reset_all-all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[ack-delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[ack-delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[ack-delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[ack-reset_all-all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[commit-delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[commit-delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[commit-delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_process_death_cannot_separate_delete_and_ack[commit-reset_all-all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_two_processes_resume_same_pending_operation_once[delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_two_processes_resume_same_pending_operation_once[delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_two_processes_resume_same_pending_operation_once[delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_two_processes_resume_same_pending_operation_once[reset_all-all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_nested_write_failure_rolls_back_only_its_savepoint",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_manifest_atomic_mutation",
+      "name": "test_different_ghost_paths_never_join_a_transaction",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_manifest_digest_is_deterministic_and_excludes_operation_id",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_replay_is_idempotent_and_completes_only_after_all_stores",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_blocked_store_is_terminal_and_replayable",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_corrupt_or_out_of_order_events_fail_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_completed_manifest_cannot_contain_pending_store",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_manifest_store_survives_restart_and_idempotent_retry",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_manifest_store_rejects_operation_reuse_and_corrupts_closed_state",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_coordinator_retries_only_pending_stores_after_a_blocked_store",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_coordinator_requires_exactly_the_existing_seven_store_targets",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_coordinator_uses_persisted_manifest_scope_as_the_only_scope_source",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest",
+      "name": "test_coordinator_binds_the_existing_seven_store_reset_methods",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_failure_restart_and_new_operation_recovery[inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_failure_restart_and_new_operation_recovery[hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_failure_restart_and_new_operation_recovery[continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_failure_restart_and_new_operation_recovery[sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_failure_restart_and_new_operation_recovery[work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_failure_restart_and_new_operation_recovery[affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_failure_restart_and_new_operation_recovery[observations]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_reset_failure_restart_and_new_operation_recovery[inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_reset_failure_restart_and_new_operation_recovery[hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_reset_failure_restart_and_new_operation_recovery[continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_reset_failure_restart_and_new_operation_recovery[sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_reset_failure_restart_and_new_operation_recovery[work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_reset_failure_restart_and_new_operation_recovery[affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_recovery",
+      "name": "test_real_store_reset_failure_restart_and_new_operation_recovery[observations]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deletion_manifest_multiprocess",
+      "name": "test_manifest_cold_start_and_events_converge_across_processes",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sqlite_store",
+      "name": "test_connection_configuration_failure_closes_the_handle",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sqlite_store",
+      "name": "test_concurrent_first_open_preserves_all_writes",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sqlite_store",
+      "name": "test_observations_use_the_independent_ghost_sqlite_database",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sqlite_store",
+      "name": "test_observation_scope_mutations_are_sqlite_transactions",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sqlite_store",
+      "name": "test_schema_v1_database_is_upgraded_with_deletion_manifest_tables",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_learning_graphs_are_relational_and_reopen_without_json_projections",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_graph_event_and_memory_update_roll_back_together",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_graph_transactions_do_not_lock_the_task_database[hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_graph_transactions_do_not_lock_the_task_database[affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_all_ghost_stores_share_the_independent_sqlite_owner",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_record_event_state_and_cursor_roll_back_together[inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_record_event_state_and_cursor_roll_back_together[continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_record_event_state_and_cursor_roll_back_together[work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_record_event_state_and_cursor_roll_back_together[sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_record_compaction_preserves_state_and_advances_cursor",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_continuity_builder_reads_sqlite_after_reopen",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_unpaired_event_write_is_rejected_without_poisoning_store[graph]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_unpaired_event_write_is_rejected_without_poisoning_store[records]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_affinity_reports_post_mutation_warnings",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_hebbian_failed_event_write_is_reported_without_partial_state",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_process_exit_between_event_and_state_rolls_back[inbox]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_process_exit_between_event_and_state_rolls_back[continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_process_exit_between_event_and_state_rolls_back[work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_process_exit_between_event_and_state_rolls_back[sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_process_exit_between_event_and_state_rolls_back[hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_process_exit_between_event_and_state_rolls_back[affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_sleep_detects_a_missing_consumer_cursor",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_learning_switch_failure_rolls_back_both_setting_and_event",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_sleep_does_not_report_success_when_affinity_cannot_decay",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_graph_sqlite",
+      "name": "test_affinity_dictionary_result_propagates_warnings",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[inbox-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[inbox-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[hebbian-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[hebbian-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[continuity-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[continuity-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[sleep-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[sleep-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[work_queue-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[work_queue-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[affinity-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[affinity-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[observations-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_explicit_store_failure_is_not_reported_as_success[observations-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[inbox-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[inbox-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[hebbian-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[hebbian-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[continuity-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[continuity-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[sleep-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[sleep-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[work_queue-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[work_queue-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[affinity-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[affinity-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[observations-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[observations-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_existing_store_exception_contract_remains_structured[OSError-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_existing_store_exception_contract_remains_structured[OSError-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_existing_store_exception_contract_remains_structured[TypeError-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_existing_store_exception_contract_remains_structured[TypeError-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_existing_store_exception_contract_remains_structured[ValueError-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_existing_store_exception_contract_remains_structured[ValueError-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_normal_empty_store_results_and_observation_none_are_successful[delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_normal_empty_store_results_and_observation_none_are_successful[reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_partial_surface_retains_explicit_unavailable_results",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_reset_keeps_explicit_user_disable",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_failure_does_not_prevent_other_real_stores_from_deleting",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_multiple_failures_are_reported_without_hiding_later_stores",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_sqlite_control_update_error_is_a_structured_dispatch_failure",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_mutation_failures",
+      "name": "test_action_body_requires_string_keys_before_dispatch",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_accept_and_reject_candidate_update_inbox_and_hebbian_state",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_candidate_action_rejects_stale_project_scope",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_enable_disable_updates_and_confirmed_delete_scope",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_export_and_reset_cover_current_ghost_stores",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_observation_read_failure_appears_in_summary_health",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_reset_all_requires_confirm_and_preserves_update_setting",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_running_work_item_cannot_be_rejected_from_control_surface",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_state_home_none_is_unavailable_and_actions_do_not_write",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_summary_association_health_is_scoped_to_current_project",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_summary_is_bounded_and_does_not_return_raw_candidate_fields",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_summary_maps_internal_store_warnings_to_neutral_ui_text",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_summary_without_chat_does_not_show_other_chats_experiences",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_work_item_action_rejects_stale_session_scope",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+      "name": "test_work_item_queue_and_reject_actions_use_store_transitions",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_scoped_type_error_never_retries_without_scope[accept_events]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_scoped_type_error_never_retries_without_scope[retrieve_projections]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_scoped_type_error_never_retries_without_scope[run_maintenance]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_scoped_type_error_never_retries_without_scope[admit_hints]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_name_only_control_reader_is_not_a_supported_contract[accept_events]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_name_only_control_reader_is_not_a_supported_contract[retrieve_projections]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_name_only_control_reader_is_not_a_supported_contract[run_maintenance]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_name_only_control_reader_is_not_a_supported_contract[admit_hints]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_legacy_learning_reader_cannot_authorize_independent_control[accept_events]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_legacy_learning_reader_cannot_authorize_independent_control[retrieve_projections]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_legacy_learning_reader_cannot_authorize_independent_control[run_maintenance]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_legacy_learning_reader_cannot_authorize_independent_control[admit_hints]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_production_scoped_contract_preserves_independent_bool[False-accept_events]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_production_scoped_contract_preserves_independent_bool[False-retrieve_projections]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_production_scoped_contract_preserves_independent_bool[False-run_maintenance]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_production_scoped_contract_preserves_independent_bool[False-admit_hints]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_production_scoped_contract_preserves_independent_bool[True-accept_events]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_production_scoped_contract_preserves_independent_bool[True-retrieve_projections]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_production_scoped_contract_preserves_independent_bool[True-run_maintenance]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_production_scoped_contract_preserves_independent_bool[True-admit_hints]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_observation_settlement_uses_scoped_accept_events[project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_observation_settlement_uses_scoped_accept_events[session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_post_turn_requires_control_authority",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_observation_settlement_requires_control_authority",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_control_contract",
+      "name": "test_observation_settlement_does_not_use_legacy_learning_reader",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_missing_ghost_inbox_fails_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_independent_controls_are_persisted_without_cross_toggle",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_legacy_disable_updates_fails_closed_all_four_controls",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_control_scope_inheritance_only_allows_narrower_deny",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_scoped_controls_survive_restart_and_concurrent_writes",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_invalid_scope_reference_fails_closed_without_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_scope_delete_removes_control_override_and_survives_restart",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_user_scope_delete_restores_all_controls",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_retrieval_and_maintenance_controls_have_separate_boundaries",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_admit_hints_control_rejects_before_provider_payload_is_recorded",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_control_surface_exposes_and_changes_one_control",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_controls",
+      "name": "test_control_surface_scoped_action_and_export_are_replayable",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_accepted_candidate_is_not_downgraded_by_lower_status_ingest",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_applicable_candidates_keep_newest_first_within_same_scope",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_applicable_candidates_order_session_project_user",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_bare_state_disables_ghost_inbox",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_conflict_key_can_use_structured_metadata_without_local_language_rules",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_correction_is_candidate_even_when_confident",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_delete_scope_only_removes_target_and_compacts_event_text",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_disable_blocks_future_ingest_but_list_and_export_still_work",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_duplicate_conflict_key_updates_existing_candidate",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_events_compact_when_byte_limit_is_exceeded",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_export_and_reset_work",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_high_confidence_style_with_disallowed_typed_pair_requires_review",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_high_confidence_style_without_renderable_typed_field_requires_review",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_interest_goal_and_action_tendency_remain_candidates",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_learning_setting_reports_audit_event_failure",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_low_confidence_safe_signal_is_stored_as_rejected",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_project_scope_does_not_leak_to_other_project",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_review_candidate_accept_supersedes_conflicting_accepted_value",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_review_metadata_is_not_overwritten_by_ordinary_ingest",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_same_conflict_different_value_is_not_merged",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_sensitive_signal_writes_sanitized_rejection_event_but_not_inbox",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_signal_maps_to_candidate_and_high_confidence_style_is_accepted",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_superseded_candidate_is_not_revived_by_ordinary_ingest",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_ungrounded_quote_is_rejected_without_projection_candidate",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxStoreTests",
+      "name": "test_untyped_signal_derives_value_key_but_payload_requires_it",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostCliTests",
+      "name": "test_ghost_accept_cli_creates_coactivation_edges_for_same_run_siblings",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostCliTests",
+      "name": "test_ghost_accept_reject_state_and_rebuild_state_cli",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostCliTests",
+      "name": "test_ghost_delete_scope_reports_storage_errors_as_json",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostCliTests",
+      "name": "test_ghost_export_and_reset_cover_inbox_state",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostCliTests",
+      "name": "test_ghost_help_mentions_signals_for_export_and_reset",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostCliTests",
+      "name": "test_ghost_list_cli_outputs_json_without_provider_stack",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxArchitectureTests",
+      "name": "test_ghost_modules_do_not_import_tool_runtime_or_provider_stack",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inbox.GhostInboxArchitectureTests",
+      "name": "test_tool_runtime_and_research_do_not_import_ghost",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_accepted_candidate_creates_weighted_node",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_candidate_and_rejected_rows_are_not_reinforced",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_coactivation_edges_only_use_same_run_accepted_candidates",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_decay_is_deterministic_and_preserves_last_reinforced_at",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_decay_min_interval_noop_does_not_write_event",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_decay_uses_continuous_half_life_curve",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_duplicate_evidence_can_backfill_missing_coactivation_edge",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_duplicate_evidence_ref_is_noop",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_edge_fanout_is_bounded",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_manual_accept_new_value_supersedes_old_active_node",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_new_evidence_refs_raise_weight_without_exceeding_one",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_persisted_decay_is_idempotent_at_same_timestamp",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_project_scope_isolated_for_queries_and_delete_scope",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_rebuild_reset_and_export_work",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_remove_candidate_deletes_node_and_connected_edges_from_active_log",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_same_conflict_different_values_are_competing_nodes_until_manual_accept",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_sync_from_inbox_backfills_each_coactivation_pair_once",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_sync_from_inbox_removes_rejected_candidate_state",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_hebbian.GhostHebbianStoreTests",
+      "name": "test_unknown_node_kinds_are_not_loaded",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_empty_projection_renders_empty_context",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_expired_same_source_and_text_is_revived",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_looks_prompt_visible_secret_blocks_continuity_creation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_markdown_research_open_questions_section_does_not_enter_continuity",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_non_finite_weight_and_confidence_are_rejected",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_recent_focus_and_open_question_use_short_user_excerpt_only",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_repeated_sync_is_idempotent_for_same_source_and_text",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_research_note_source_uses_title_and_bounded_open_questions_without_raw_body",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_run_projection_contributes_project_name_not_full_source",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_scope_filtering_delete_reset_and_export",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_sensitive_dangerous_and_internal_text_are_not_rendered",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_continuity.GhostContinuityTests",
+      "name": "test_sync_from_accepted_typed_hebbian_nodes",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_sync_from_research_open_question_creates_queued_item_without_raw_body",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_repeated_sync_is_idempotent_and_done_is_not_resurrected",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_claim_requires_strict_continuation_and_creates_bounded_prompt",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_complete_requires_proof_and_blocks_without_it",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_release_requeues_until_retry_limit_then_blocks",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_release_item_does_not_reopen_done_item_or_keep_stale_completion",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_complete_item_enforces_kind_specific_proof_at_store_layer",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_research_item_requires_generated_research_proof_ref_shape",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_checkpoint_creates_project_followup",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_run_projection_failure_creates_project_followup",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_expired_running_claim_is_reclaimed_on_next_claim",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_reconcile_stale_claims_requeues_without_claiming",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_malformed_running_lease_is_reconciled_as_stale",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_delete_scope_and_reset_cover_work_queue",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_queue_item_does_not_reopen_done_or_running_and_clears_old_completion_fields",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_manual_requeue_resets_retry_count_so_blocked_items_can_be_claimed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_sensitive_or_dangerous_titles_are_not_created",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_normal_engineering_titles_are_created",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_strict_continuation_detector_is_narrow[\\u7ee7\\u7eed-True]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_strict_continuation_detector_is_narrow[\\u4e0b\\u4e00\\u4e2a-True]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_strict_continuation_detector_is_narrow[continue please-True]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_strict_continuation_detector_is_narrow[next item-True]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_strict_continuation_detector_is_narrow[\\u7ee7\\u7eed\\u67e5 pytest \\u53d8\\u5316-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_strict_continuation_detector_is_narrow[continue researching pytest-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_strict_continuation_detector_is_narrow[\\u7ee7\\u7eed\\u4fee\\u590d parser-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_legacy_research_event_ref_does_not_complete_queue_proof",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_proof_refs_require_kind_specific_primary_proof",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_concurrent_claim_allows_only_one_runner",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_stale_transition_does_not_overwrite_newer_terminal_state",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_concurrent_source_sync_merges_refs_and_priority",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_old_work_upsert_event_is_unsupported_for_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_snapshot_with_invalid_item_is_unsupported_for_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_transition_missing_precondition_is_unsupported_for_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_transition_malformed_running_missing_started_run_id_is_fail_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_transition_malformed_done_missing_proof_refs_is_fail_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_queue_claim_missing_retry_or_lease_is_invalid_event",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_queue_complete_with_mismatched_proof_fails_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_queue_release_to_queued_retaining_lease_is_invalid",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_complete_item_requires_run_id_without_corrupting_events",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_transition_malformed_queue_missing_retry_count_fails_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_transition_complete_mismatched_run_id_fails_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_snapshot_with_invalid_state_invariants_fails_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_snapshot_done_item_missing_completed_run_id_fails_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_observed_event_with_extra_item_field_fails_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_observed_event_with_noncanonical_numeric_field_fails_closed[priority-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_observed_event_with_noncanonical_numeric_field_fails_closed[priority-1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_observed_event_with_noncanonical_numeric_field_fails_closed[confidence-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_observed_event_with_noncanonical_numeric_field_fails_closed[confidence-1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_observed_event_with_noncanonical_numeric_field_fails_closed[retry_count-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_observed_event_with_noncanonical_numeric_field_fails_closed[retry_count-0.0]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_expired_delete_event_with_noncanonical_empty_fields_fails_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_scope_deleted_event_with_wrong_ref_shape_fails_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_queue_schema_version_stays_cold_start_v1",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_work_queue",
+      "name": "test_work_queue_transition_matrix_is_single_authority",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_hebbian_accepted_node_syncs_to_affinity_node_without_raw_text",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_inactive_hebbian_nodes_do_not_enter_affinity",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_source_ref_replay_is_noop",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_reference_count_does_not_scale_reinforcement",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_work_queue_done_and_blocked_generate_bounded_edges",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_work_priority_hints_use_relevant_target_edge_among_irrelevant_edges",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_research_concept_is_not_evidence",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_scope_isolation_and_project_hints_do_not_leak",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_provider_failure_does_not_store_raw_secret_message",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_reinforcement_weight_uses_only_new_refs",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_ref_cap_does_not_break_replay_idempotency",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_projection_can_be_rebuilt_from_events",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_delete_scope_reset_and_export_cover_affinity",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_decay_preserves_last_reinforced_and_fanout_cap_prunes_edges",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_export_contains_valid_json_and_no_research_body",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_concurrent_reinforce_accumulates_both_events",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_snapshot_then_reinforce_continues_accumulating",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_old_affinity_upsert_event_is_unsupported_for_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_snapshot_with_invalid_row_is_unsupported_for_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_event_with_extra_top_level_field_is_unsupported_for_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_node_spec_with_noncanonical_numeric_field_fails_closed[confidence-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_node_spec_with_noncanonical_numeric_field_fails_closed[confidence-1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_node_spec_with_noncanonical_numeric_field_fails_closed[reward-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_node_spec_with_noncanonical_numeric_field_fails_closed[reward-1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_edge_reinforcement_without_source_nodes_fails_closed",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_edge_spec_with_noncanonical_numeric_field_fails_closed[confidence-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_edge_spec_with_noncanonical_numeric_field_fails_closed[confidence-1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_edge_spec_with_noncanonical_numeric_field_fails_closed[reward-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_edge_spec_with_noncanonical_numeric_field_fails_closed[reward-1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_snapshot_numeric_type_mismatch_fails_closed[node-weight-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_snapshot_numeric_type_mismatch_fails_closed[node-weight-1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_snapshot_numeric_type_mismatch_fails_closed[node-confidence-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_snapshot_numeric_type_mismatch_fails_closed[node-confidence-1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_snapshot_numeric_type_mismatch_fails_closed[edge-weight-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_snapshot_numeric_type_mismatch_fails_closed[edge-weight-1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_snapshot_numeric_type_mismatch_fails_closed[edge-confidence-False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_snapshot_numeric_type_mismatch_fails_closed[edge-confidence-1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_scope_deleted_payload_with_missing_count_fields_is_unsupported_for_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_scope_deleted_payload_with_noncanonical_count_is_unsupported_for_mutation[0]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_scope_deleted_payload_with_noncanonical_count_is_unsupported_for_mutation[False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_decay_payload_with_extra_field_is_unsupported_for_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_decay_payload_with_missing_field_is_unsupported_for_mutation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_decay_payload_with_noncanonical_count_is_unsupported_for_mutation[0]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_decay_payload_with_noncanonical_count_is_unsupported_for_mutation[True]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_affinity",
+      "name": "test_affinity_schema_version_stays_cold_start_v1",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep.GhostSleepTests",
+      "name": "test_cancel_between_steps_persists_pending_steps",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep.GhostSleepTests",
+      "name": "test_continuity_refresh_passes_no_user_focus_excerpt",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep.GhostSleepTests",
+      "name": "test_hebbian_decay_min_interval_noop_does_not_write_decay_event",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep.GhostSleepTests",
+      "name": "test_run_once_writes_bounded_report_without_transcript_text",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep.GhostSleepTests",
+      "name": "test_sleep_reconciles_stale_work_queue_claim_without_executing",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep.GhostSleepTests",
+      "name": "test_sleep_syncs_affinity_from_hebbian_without_model_call",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case0]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case2]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case3]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case4]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case5]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case6]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case7]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case8]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case9]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case10]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case11]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case12]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case13]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case14]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case15]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case16]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case17]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case18]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case19]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case20]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case21]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case22]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case23]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case24]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case25]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case26]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case27]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case28]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case29]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_double_fault_does_not_revive_failed_input[case30]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_receipt_is_original_commit_metadata_not_mutable_submission_content[True]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_receipt_is_original_commit_metadata_not_mutable_submission_content[False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_receipt_is_original_commit_metadata_not_mutable_submission_content[None]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_caller_cannot_supply_its_own_receipt[True]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_caller_cannot_supply_its_own_receipt[False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_caller_cannot_supply_its_own_receipt[None]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_rejected_canonical_commit_has_no_receipt_and_retry_can_admit",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_bound_authority_failure_does_not_fall_back_to_learning[absent]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_bound_authority_failure_does_not_fall_back_to_learning[invalid]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_bound_authority_failure_does_not_fall_back_to_learning[missing_task]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_bound_authority_failure_does_not_fall_back_to_learning[missing_receipt]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_bound_authority_failure_does_not_fall_back_to_learning[new_schema]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_fresh_run_source_filter_obeys_failed_receipt[task_done]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_fresh_run_source_filter_obeys_failed_receipt[run_ledger]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_fresh_run_source_filter_obeys_failed_receipt[work_checkpoint]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_fresh_run_source_filter_obeys_failed_receipt[review]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_fresh_run_source_filter_obeys_failed_receipt[continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_independent_knowledge_namespace_remains_available[hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_independent_knowledge_namespace_remains_available[research_note]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_public_refresh_keeps_independent_knowledge_with_failed_run_audit_id",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_direct_run_source_sql_cannot_bypass_failed_receipt[insert-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_direct_run_source_sql_cannot_bypass_failed_receipt[insert-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_direct_run_source_sql_cannot_bypass_failed_receipt[update-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_direct_run_source_sql_cannot_bypass_failed_receipt[update-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_direct_observation_sql_cannot_bypass_failed_receipt[insert]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_direct_observation_sql_cannot_bypass_failed_receipt[update]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_malformed_original_receipt_cannot_grant_learning[1]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_malformed_original_receipt_cannot_grant_learning[true]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_malformed_original_receipt_cannot_grant_learning[None]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_malformed_original_receipt_cannot_grant_learning[value3]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_old_connection_cannot_write_after_authority_schema_upgrade",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_custom_canonical_database_name_uses_the_actual_app_binding",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_failed_input_receipt_survives_process_crash_and_new_input_still_learns",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_canonical_input_receipts",
+      "name": "test_unavailable_ghost_database_does_not_erase_failed_input_receipt",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_received_input_is_not_relearned_after_deletion[True-delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_received_input_is_not_relearned_after_deletion[True-delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_received_input_is_not_relearned_after_deletion[True-delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_received_input_is_not_relearned_after_deletion[True-reset_all-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_received_input_is_not_relearned_after_deletion[False-delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_received_input_is_not_relearned_after_deletion[False-delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_received_input_is_not_relearned_after_deletion[False-delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_received_input_is_not_relearned_after_deletion[False-reset_all-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_busy_queue_edit_and_placement_preserve_deleted_input_lifetime[False-delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_busy_queue_edit_and_placement_preserve_deleted_input_lifetime[False-delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_busy_queue_edit_and_placement_preserve_deleted_input_lifetime[False-delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_busy_queue_edit_and_placement_preserve_deleted_input_lifetime[False-reset_all-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_busy_queue_edit_and_placement_preserve_deleted_input_lifetime[True-delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_busy_queue_edit_and_placement_preserve_deleted_input_lifetime[True-delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_busy_queue_edit_and_placement_preserve_deleted_input_lifetime[True-delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_busy_queue_edit_and_placement_preserve_deleted_input_lifetime[True-reset_all-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_intake_receipt_precedes_canonical_commit_and_publication",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_intake_single_storage_failure_quarantines_ghost_without_cancelling_task",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_delete_preserves_new_input_learning[False]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_delete_preserves_new_input_learning[True]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_core_admission_hook_runs_only_for_new_tasks_and_before_publication",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_ephemeral_app_keeps_receipts_out_of_user_memory",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_intake_scope_registration_preserves_unrelated_inputs[session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_intake_scope_registration_preserves_unrelated_inputs[project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_normal_run_submission_registers_before_worker_dispatch",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_headless_admission_registers_before_operation_entry",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_received_input_lifetime",
+      "name": "test_crash_after_receipt_before_canonical_commit_does_not_resurrect_input",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_runtime_deletion_before_first_projection_does_not_reconsume_input[True-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_runtime_deletion_before_first_projection_does_not_reconsume_input[True-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_runtime_deletion_before_first_projection_does_not_reconsume_input[False-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_runtime_deletion_before_first_projection_does_not_reconsume_input[False-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_unprojected_identity_retirement_survives_reopen_and_repeated_delete[delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_unprojected_identity_retirement_survives_reopen_and_repeated_delete[delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_unprojected_identity_retirement_survives_reopen_and_repeated_delete[delete_scope-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_unprojected_identity_retirement_survives_reopen_and_repeated_delete[reset_all-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_input_delete_preserves_other_scope_identities[session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_input_delete_preserves_other_scope_identities[project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_fresh_consumers_reject_deleted_unprojected_run[continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_fresh_consumers_reject_deleted_unprojected_run[affinity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_fresh_consumers_reject_deleted_unprojected_run[work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_fresh_consumers_reject_deleted_unprojected_run[sleep]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[insert-task_done-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[insert-task_done-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[insert-run_ledger-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[insert-run_ledger-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[insert-work_checkpoint-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[insert-work_checkpoint-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[insert-review-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[insert-review-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[insert-continuity-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[insert-continuity-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[update-task_done-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[update-task_done-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[update-run_ledger-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[update-run_ledger-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[update-work_checkpoint-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[update-work_checkpoint-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[update-review-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[update-review-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[update-continuity-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_sql_writers_cannot_reuse_retired_run_sources[update-continuity-work_queue]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_origin_identity_is_idempotent_but_cannot_change_ownership",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_failed_origin_write_quarantines_the_input_instead_of_learning_without_a_receipt",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_run_retirement_does_not_alias_independent_continuity_source_ids[hebbian]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_run_retirement_does_not_alias_independent_continuity_source_ids[research_note]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_checkpoint_not_yet_projected_before_delete_cannot_be_consumed_later",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_reentering_canonical_task_does_not_refresh_a_deleted_origin",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_live_other_process_cannot_materialize_retired_unprojected_input[delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_live_other_process_cannot_materialize_retired_unprojected_input[reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_origin_identity_cannot_be_truncated_into_an_alias[-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_origin_identity_cannot_be_truncated_into_an_alias[run-]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_origin_identity_cannot_be_truncated_into_an_alias[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_origin_identity_cannot_be_truncated_into_an_alias[run-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_schema_six_missing_origins_rejects_cold_start",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_inflight_input_lifetime",
+      "name": "test_schema_five_upgrade_preserves_existing_deletion_fences",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_real_writer_delete_interleaving_cannot_revive_input[writer_first-hebbian-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_real_writer_delete_interleaving_cannot_revive_input[writer_first-hebbian-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_real_writer_delete_interleaving_cannot_revive_input[writer_first-observations-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_real_writer_delete_interleaving_cannot_revive_input[writer_first-observations-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_real_writer_delete_interleaving_cannot_revive_input[delete_first-hebbian-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_real_writer_delete_interleaving_cannot_revive_input[delete_first-hebbian-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_real_writer_delete_interleaving_cannot_revive_input[delete_first-observations-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_real_writer_delete_interleaving_cannot_revive_input[delete_first-observations-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_default_control_delete_fences_old_candidate_but_accepts_new_identity[user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_default_control_delete_fences_old_candidate_but_accepts_new_identity[project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_default_control_delete_fences_old_candidate_but_accepts_new_identity[session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_default_control_delete_fences_old_candidate_but_accepts_new_identity[all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_other_scope_survives_and_idempotent_existing_observation_remains_writable",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_coordinator_does_not_mark_explicit_failure_as_completed[False-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_coordinator_does_not_mark_explicit_failure_as_completed[False-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_coordinator_does_not_mark_explicit_failure_as_completed[0-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_coordinator_does_not_mark_explicit_failure_as_completed[0-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_coordinator_does_not_mark_explicit_failure_as_completed[None-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_coordinator_does_not_mark_explicit_failure_as_completed[None-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_v2_upgrade_installs_fences_and_reset_never_forgets_retired_run_ids",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_input_fence",
+      "name": "test_existing_schema_does_not_silently_recreate_lost_deletion_fences",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_source_read_after_delete_does_not_recreate_old_projection[False-delete_scope-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_source_read_after_delete_does_not_recreate_old_projection[False-delete_scope-work_checkpoint]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_source_read_after_delete_does_not_recreate_old_projection[False-reset_all-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_source_read_after_delete_does_not_recreate_old_projection[False-reset_all-work_checkpoint]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_source_read_after_delete_does_not_recreate_old_projection[True-delete_scope-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_source_read_after_delete_does_not_recreate_old_projection[True-delete_scope-work_checkpoint]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_source_read_after_delete_does_not_recreate_old_projection[True-reset_all-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_source_read_after_delete_does_not_recreate_old_projection[True-reset_all-work_checkpoint]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_continuity_source_retirement_covers_other_scopes[delete_scope-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_continuity_source_retirement_covers_other_scopes[delete_scope-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_continuity_source_retirement_covers_other_scopes[reset_all-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_continuity_source_retirement_covers_other_scopes[reset_all-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_retiring_one_scope_preserves_same_source_in_another_scope",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_source_retirement_survives_event_compaction_and_another_reset[continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_source_retirement_survives_event_compaction_and_another_reset[work_checkpoint]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_storage_write_cannot_reintroduce_retired_source_under_new_record_id[insert]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_storage_write_cannot_reintroduce_retired_source_under_new_record_id[update]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_missing_source_retirement_is_not_silently_recreated",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_v4_upgrade_preserves_prior_generation_and_can_retire_new_deletions",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_another_live_process_respects_committed_source_retirement[delete_scope-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_another_live_process_respects_committed_source_retirement[delete_scope-work_checkpoint]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_another_live_process_respects_committed_source_retirement[reset_all-continuity]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_another_live_process_respects_committed_source_retirement[reset_all-work_checkpoint]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_new_manual_confirmation_can_reuse_preference_slot_after_deletion[delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_deleted_source_lifetime",
+      "name": "test_new_manual_confirmation_can_reuse_preference_slot_after_deletion[reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[writer_first-continuity-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[writer_first-continuity-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[writer_first-work_queue-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[writer_first-work_queue-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[writer_first-affinity-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[writer_first-affinity-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[writer_first-sleep-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[writer_first-sleep-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[delete_first-continuity-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[delete_first-continuity-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[delete_first-work_queue-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[delete_first-work_queue-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[delete_first-affinity-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[delete_first-affinity-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[delete_first-sleep-delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_real_projection_writer_cannot_restore_deleted_inputs[delete_first-sleep-reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_fresh_sources_after_deletion_can_rebuild_all_derived_consumers",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_noop_delete_invalidates_snapshot_and_nested_context_keeps_original_generation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_deletion_in_another_state_home_does_not_invalidate_projection",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_lost_deletion_generation_never_silently_resets_snapshot[missing_table]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_lost_deletion_generation_never_silently_resets_snapshot[missing_row]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_long_project_deletion_replay_preserves_exact_scope",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_delete_fence",
+      "name": "test_missing_projection_epoch_table_rejects_cold_start",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_exception_boundaries",
+      "name": "test_ghost_directive_does_not_hide_unexpected_projection_errors",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_exception_boundaries",
+      "name": "test_ghost_continuity_does_not_hide_unexpected_projection_errors",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_projection_exception_boundaries",
+      "name": "test_ghost_experiences_still_fails_closed_for_corrupt_observation_storage",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[on-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[on-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[on-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[off-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[off-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[off-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[missing-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[missing-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[missing-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[error-user]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[error-project]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_external_sources_require_current_scoped_accept_events[error-session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_event_ingestion_is_independent_of_retrieval_and_hint_admission[retrieve_projections]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_sleep_event_ingestion_is_independent_of_retrieval_and_hint_admission[admit_hints]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_sleep_source_controls",
+      "name": "test_disabling_new_sources_keeps_maintenance_of_existing_accepted_state",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn.GhostPostTurnTests",
+      "name": "test_continuity_failure_records_sanitized_warning",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_affinity",
+      "name": "test_task_entry_uses_affinity_to_order_strict_continue_work_items",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_affinity",
+      "name": "test_ghost_post_turn_syncs_affinity_after_turn_from_local_sources",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_affinity",
+      "name": "test_ghost_disable_prevents_affinity_hint_consumption",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_affinity",
+      "name": "test_provider_failure_exception_path_syncs_affinity_behavior",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_work_queue",
+      "name": "test_strict_continue_consumes_research_item_before_router",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_work_queue",
+      "name": "test_strict_continue_blocks_research_item_without_research_record",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_work_queue",
+      "name": "test_strict_continue_blocks_partial_research_item_without_duplicate_proof_trace",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_work_queue",
+      "name": "test_non_strict_continue_does_not_consume_queue_and_answers_directly",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_work_queue",
+      "name": "test_post_turn_sync_harvests_research_interest_candidates",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_work_queue",
+      "name": "test_project_followup_item_consumes_into_project_mode",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_work_queue",
+      "name": "test_project_followup_without_proof_blocks_item",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_work_queue",
+      "name": "test_review_item_consumes_into_review_without_writer",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_work_queue",
+      "name": "test_no_queued_item_answers_with_one_normal_call",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_post_turn_work_queue",
+      "name": "test_claimed_item_is_released_on_stop",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference[enabled]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference[pending]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference[retrieve_off]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference[admit_off]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference[other_session]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_falls_back_for_unverified_model_or_configuration[model]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_falls_back_for_unverified_model_or_configuration[native_tools]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_falls_back_for_unverified_model_or_configuration[api_protocol]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_falls_back_for_unverified_model_or_configuration[context_window_tokens]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_falls_back_for_unverified_model_or_configuration[context_reserve_tokens]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_falls_back_for_unverified_model_or_configuration[context_keep_recent_tokens]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_falls_back_for_unverified_model_or_configuration[base_url]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_removal_survives_rebuild_restart_and_real_send[reject_candidate]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_removal_survives_rebuild_restart_and_real_send[delete_scope]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_removal_survives_rebuild_restart_and_real_send[reset_all]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_reviewed_language_survives_restart_without_extra_configuration",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_precedes_other_memory_under_prompt_budget_pressure",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_allowlist_does_not_enable_unvalidated_values_or_command",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_is_rechecked_after_request_preparation_before_physical_http[delete]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_is_rechecked_after_request_preparation_before_physical_http[retrieve_off]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_is_rechecked_after_request_preparation_before_physical_http[admit_off]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_language_production",
+      "name": "test_language_is_rechecked_after_request_preparation_before_physical_http[model]",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_cli_split.GhostDispatchParityTests",
+      "name": "test_list_export_work_list_dispatch",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_cli_split.GhostDispatchParityTests",
+      "name": "test_rebuild_reset_delete_require_yes",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_cli_split.GhostDispatchParityTests",
+      "name": "test_unavailable_returns_1",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_cli_split.GhostDispatchParityTests",
+      "name": "test_unknown_action_returns_2",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_cli_split.GhostDispatchParityTests",
+      "name": "test_work_queue_reject_not_found_returns_1",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_cli_split.HeadlessPayloadParityTests",
+      "name": "test_all_event_types_bounded",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_cli_split.HeadlessPayloadParityTests",
+      "name": "test_task_done_nestsbounded_receipt",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_cli_split.HeadlessPayloadParityTests",
+      "name": "test_unknown_returns_none",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_cli_split.BoundedReceiptParityTests",
+      "name": "test_all_sections",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_ghost_cli_split.BoundedReceiptParityTests",
+      "name": "test_empty_receipt",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_events.RunEventUiPayloadTests",
+      "name": "test_research_tools_use_existing_ui_display_mapping",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_events.RunEventUiPayloadTests",
+      "name": "test_run_event_ui_payload_keeps_tool_shape",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_events.RunEventUiPayloadTests",
+      "name": "test_task_run_no_longer_owns_ui_event_projection",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_append_failure_disables_writer_without_raising",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_finish_is_preserved_after_byte_budget_truncation",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_ledger_truncates_once_when_byte_budget_is_exceeded",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_model_reply_records_size_not_reply_text",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_path_for_keeps_session_and_run_inside_state_home",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_reopened_truncated_writer_only_preserves_finish",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_reopened_writer_continues_sequence",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_run_event_empties_invalid_managed_output_sha256",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_run_event_ignores_invalid_managed_output_handle",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_run_event_projects_file_change_and_verified_command",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerStoreTests",
+      "name": "test_write_line_failure_records_observable_reason",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerTaskEntryIntegrationTests",
+      "name": "test_ledger_append_failure_does_not_break_task",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerTaskEntryIntegrationTests",
+      "name": "test_project_task_writes_bounded_run_ledger",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerTaskEntryIntegrationTests",
+      "name": "test_state_without_state_home_does_not_enable_run_ledger_store",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger.RunLedgerTaskEntryIntegrationTests",
+      "name": "test_terminal_error_records_provider_failure_in_run_ledger",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger_projection.RunLedgerProjectionTests",
+      "name": "test_ignores_unknown_future_and_malformed_records",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger_projection.RunLedgerProjectionTests",
+      "name": "test_last_changes_win_and_verified_commands_are_deduplicated",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger_projection.RunLedgerProjectionTests",
+      "name": "test_load_run_projection_returns_none_for_empty_or_unreadable_ledgers",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger_projection.RunLedgerProjectionTests",
+      "name": "test_malformed_stored_receipt_projects_to_none",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger_projection.RunLedgerProjectionTests",
+      "name": "test_projects_core_run_facts_and_round_trips_schema_v1_receipt",
+      "status": "passed"
+    },
+    {
+      "module": "tests.test_run_ledger_projection.RunLedgerProjectionTests",
+      "name": "test_receipt_projection_is_none_without_change_collection",
+      "status": "passed"
+    }
+  ],
+  "type_cleanup_followup": {
+    "reason": "explicit JSON boundaries and fixture typing; same behavior assertions",
+    "passed": 123,
+    "failed": 0,
+    "cases": [
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_actual_application_surface_defaults_to_manifest_and_retry_keeps_fresh_input[delete_scope-user]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_actual_application_surface_defaults_to_manifest_and_retry_keeps_fresh_input[delete_scope-project]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_actual_application_surface_defaults_to_manifest_and_retry_keeps_fresh_input[delete_scope-session]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_actual_application_surface_defaults_to_manifest_and_retry_keeps_fresh_input[reset_all-all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_partial_surface_records_only_available_stores_and_preserves_disable",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_pending_operation_reopens_without_repeating_committed_store",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[inbox]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[hebbian]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[continuity]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[sleep]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[work_queue]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[affinity]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_blocked_store_is_terminal_but_other_stores_finish_and_new_operation_recovers[observations]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_operation_cannot_be_reused_for_a_different_effective_scope_or_action[project]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_operation_cannot_be_reused_for_a_different_effective_scope_or_action[scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_operation_cannot_be_reused_for_a_different_effective_scope_or_action[action]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_irrelevant_request_context_does_not_change_effective_user_scope",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_invalid_operation_identity_is_rejected_before_mutation[None]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_invalid_operation_identity_is_rejected_before_mutation[True]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_invalid_operation_identity_is_rejected_before_mutation[identity2]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_invalid_operation_identity_is_rejected_before_mutation[]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_invalid_operation_identity_is_rejected_before_mutation[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_corrupt_existing_operation_fails_closed_without_new_delete",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_mixed_database_surface_is_rejected_before_any_mutation",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_durable_result_longer_than_240_characters_is_exact_on_retry",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_oversize_result_rolls_back_actual_store_mutation_and_ack",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_concurrent_same_operation_only_invokes_observation_delete_once",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_boolean_schema_is_not_an_integer_manifest_version",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_find_distinguishes_absence_from_corruption",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_invalid_completed_result_is_rejected_before_any_pending_mutation",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_real_cli_uses_default_manifest_without_an_enable_flag[delete-scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_real_cli_uses_default_manifest_without_an_enable_flag[reset]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_real_authenticated_http_route_defaults_to_manifest_and_unauthenticated_is_denied[delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_manifest_production_wiring",
+        "name": "test_real_authenticated_http_route_defaults_to_manifest_and_unauthenticated_is_denied[reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference[enabled]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference[pending]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference[retrieve_off]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference[admit_off]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference[other_session]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_falls_back_for_unverified_model_or_configuration[model]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_falls_back_for_unverified_model_or_configuration[native_tools]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_falls_back_for_unverified_model_or_configuration[api_protocol]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_falls_back_for_unverified_model_or_configuration[context_window_tokens]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_falls_back_for_unverified_model_or_configuration[context_reserve_tokens]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_falls_back_for_unverified_model_or_configuration[context_keep_recent_tokens]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_falls_back_for_unverified_model_or_configuration[base_url]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_removal_survives_rebuild_restart_and_real_send[reject_candidate]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_removal_survives_rebuild_restart_and_real_send[delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_removal_survives_rebuild_restart_and_real_send[reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_reviewed_language_survives_restart_without_extra_configuration",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_precedes_other_memory_under_prompt_budget_pressure",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_allowlist_does_not_enable_unvalidated_values_or_command",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_is_rechecked_after_request_preparation_before_physical_http[delete]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_is_rechecked_after_request_preparation_before_physical_http[retrieve_off]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_is_rechecked_after_request_preparation_before_physical_http[admit_off]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_language_production",
+        "name": "test_language_is_rechecked_after_request_preparation_before_physical_http[model]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[inbox-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[inbox-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[hebbian-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[hebbian-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[continuity-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[continuity-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[sleep-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[sleep-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[work_queue-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[work_queue-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[affinity-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[affinity-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[observations-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_explicit_store_failure_is_not_reported_as_success[observations-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[inbox-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[inbox-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[hebbian-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[hebbian-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[continuity-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[continuity-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[sleep-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[sleep-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[work_queue-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[work_queue-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[affinity-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[affinity-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[observations-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_store_failure_is_structured_and_other_stores_are_attempted[observations-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_existing_store_exception_contract_remains_structured[OSError-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_existing_store_exception_contract_remains_structured[OSError-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_existing_store_exception_contract_remains_structured[TypeError-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_existing_store_exception_contract_remains_structured[TypeError-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_existing_store_exception_contract_remains_structured[ValueError-delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_existing_store_exception_contract_remains_structured[ValueError-reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_normal_empty_store_results_and_observation_none_are_successful[delete_scope]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_normal_empty_store_results_and_observation_none_are_successful[reset_all]",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_partial_surface_retains_explicit_unavailable_results",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_reset_keeps_explicit_user_disable",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_failure_does_not_prevent_other_real_stores_from_deleting",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_multiple_failures_are_reported_without_hiding_later_stores",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_sqlite_control_update_error_is_a_structured_dispatch_failure",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_mutation_failures",
+        "name": "test_action_body_requires_string_keys_before_dispatch",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_accept_and_reject_candidate_update_inbox_and_hebbian_state",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_candidate_action_rejects_stale_project_scope",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_enable_disable_updates_and_confirmed_delete_scope",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_export_and_reset_cover_current_ghost_stores",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_observation_read_failure_appears_in_summary_health",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_reset_all_requires_confirm_and_preserves_update_setting",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_running_work_item_cannot_be_rejected_from_control_surface",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_state_home_none_is_unavailable_and_actions_do_not_write",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_summary_association_health_is_scoped_to_current_project",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_summary_is_bounded_and_does_not_return_raw_candidate_fields",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_summary_maps_internal_store_warnings_to_neutral_ui_text",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_summary_without_chat_does_not_show_other_chats_experiences",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_work_item_action_rejects_stale_session_scope",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_control_surface.GhostControlSurfaceTests",
+        "name": "test_work_item_queue_and_reject_actions_use_store_transitions",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_manifest_digest_is_deterministic_and_excludes_operation_id",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_replay_is_idempotent_and_completes_only_after_all_stores",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_blocked_store_is_terminal_and_replayable",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_corrupt_or_out_of_order_events_fail_closed",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_completed_manifest_cannot_contain_pending_store",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_manifest_store_survives_restart_and_idempotent_retry",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_manifest_store_rejects_operation_reuse_and_corrupts_closed_state",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_coordinator_retries_only_pending_stores_after_a_blocked_store",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_coordinator_requires_exactly_the_existing_seven_store_targets",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_coordinator_uses_persisted_manifest_scope_as_the_only_scope_source",
+        "status": "passed"
+      },
+      {
+        "module": "tests.test_ghost_deletion_manifest",
+        "name": "test_coordinator_binds_the_existing_seven_store_reset_methods",
+        "status": "passed"
+      }
+    ]
+  }
+}

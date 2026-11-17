@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import json
 import math
 import sqlite3
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias, TypeVar
+from uuid import uuid4
 
 from codey.ghost import _common
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityItem, GhostContinuityStore
+from codey.ghost.deletion_manifest import DeletionManifest, DeletionManifestError, new_manifest
+from codey.ghost.deletion_manifest_coordinator import DeletionManifestCoordinator, DeletionTarget
+from codey.ghost.deletion_manifest_store import DeletionManifestStore
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode, node_id_for_candidate
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.observations import MAX_OBSERVATIONS, GhostObservationStore
@@ -24,6 +29,7 @@ from codey.ghost.schema import (
     quote_is_grounded,
 )
 from codey.ghost.sleep import GhostSleepStore
+from codey.ghost.sqlite import GhostSQLite
 from codey.ghost.typed_fields import render_typed_field
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.ghost.work_queue_model import GhostWorkItem
@@ -462,9 +468,10 @@ class GhostControlSurface:
             return 400, _error_payload("project required")
         if scope == "session" and not session_id:
             return 400, _error_payload("session_id required")
-        results, errors = self._mutate_all_stores(
-            "delete_scope",
-            lambda store: store.delete_scope(scope, project=project, session_id=session_id),
+        results, errors, manifest = self._mutate_all_stores(
+            "delete_scope", body, scope=scope,
+            project=project if scope == "project" else "",
+            session_id=session_id if scope == "session" else "",
         )
         return (200 if not errors else 500), {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
@@ -473,30 +480,33 @@ class GhostControlSurface:
             "scope": scope,
             "results": results,
             "errors": errors,
+            "delete_operation_id": manifest.operation_id,
+            "deletion_manifest": manifest.to_payload(),
         }
 
     def _reset_all(self, body: Mapping[str, object]) -> tuple[int, dict[str, object]]:
         if body.get("confirm") is not True:
             return 400, _error_payload("confirm required")
-        results, errors = self._mutate_all_stores(
-            "reset_all",
-            lambda store: store.reset_all(preserve_settings=True)
-            if isinstance(store, GhostInboxStore)
-            else store.reset_all(),
-        )
+        results, errors, manifest = self._mutate_all_stores("reset_all", body, scope="all")
         return (200 if not errors else 500), {
             "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
             "ok": not errors,
             "action": "reset_all",
             "results": results,
             "errors": errors,
+            "delete_operation_id": manifest.operation_id,
+            "deletion_manifest": manifest.to_payload(),
         }
 
     def _mutate_all_stores(
         self,
         action_name: str,
-        mutate: Callable[[_ControlStore], object],
-    ) -> tuple[dict[str, object], list[str]]:
+        body: Mapping[str, object],
+        *,
+        scope: str,
+        project: str = "",
+        session_id: str = "",
+    ) -> tuple[dict[str, object], list[str], DeletionManifest]:
         stores: list[tuple[str, _ControlStore | None]] = [
             ("inbox", self.inbox),
             ("hebbian", self.hebbian),
@@ -506,19 +516,89 @@ class GhostControlSurface:
             ("affinity", self.affinity),
             ("observations", self.observations),
         ]
-        results: dict[str, object] = {}
-        errors: list[str] = []
+        assert self.inbox is not None
+        database = self.inbox.records.database
+        path = database.path.resolve()
         for name, store in stores:
-            if store is None:
-                results[name] = "unavailable"
-                continue
+            if store is not None and _store_database(store).path.resolve() != path:
+                raise OSError(f"{name} uses a different Ghost database")
+        operation_id = body.get("delete_operation_id", uuid4().hex)
+        if not isinstance(operation_id, str) or not operation_id.strip() or len(operation_id) > 120:
+            raise ValueError("delete_operation_id must be a non-empty string of at most 120 characters")
+        operation_id = operation_id.strip()
+        manifests = DeletionManifestStore(database)
+        with manifests.transaction():
             try:
-                results[name] = mutate(store)
-            except (OSError, TypeError, ValueError, sqlite3.Error):
-                results[name] = False
-            if results[name] is False:
+                current = manifests.find(operation_id)
+            except DeletionManifestError as exc:
+                raise OSError("Ghost deletion manifest cannot be trusted") from exc
+            if current is not None:
+                if (current.action, current.scope, current.project, current.session_id) != (
+                    action_name, scope, project, session_id,
+                ):
+                    raise ValueError("delete_operation_id already names a different action or scope")
+                if any(item.store not in dict(stores) for item in current.stores):
+                    raise OSError("Ghost deletion manifest names an unknown store")
+                for item in current.stores:
+                    if item.status == "completed":
+                        _stored_deletion_result(item.detail)
+                manifest = current
+            else:
+                manifest = manifests.start(new_manifest(
+                    operation_id=operation_id, action=action_name, scope=scope,
+                    project=project, session_id=session_id, requested_at=_common.now_iso_z(),
+                    retention_class="tombstone", stores=tuple(name for name, store in stores if store is not None),
+                ))
+        coordinator = DeletionManifestCoordinator(
+            manifests, {name: _deletion_target(store) for name, store in stores},
+        )
+        while manifest.pending_stores:
+            previous_pending = len(manifest.pending_stores)
+            manifest = coordinator.run(manifest)
+            if len(manifest.pending_stores) >= previous_pending:
+                raise OSError("Ghost deletion manifest made no progress")
+        results: dict[str, object] = {name: "unavailable" for name, _store in stores}
+        errors: list[str] = []
+        for item in manifest.stores:
+            if item.status != "completed":
+                results[item.store] = False
+                name = item.store
                 errors.append(f"{name}_{action_name}_failed")
-        return results, errors
+            else:
+                results[item.store] = _stored_deletion_result(item.detail)
+        return results, errors, manifest
+
+
+def _store_database(store: _ControlStore) -> GhostSQLite:
+    if isinstance(store, GhostObservationStore):
+        return store.database
+    if isinstance(store, (GhostHebbianStore, GhostAffinityStore)):
+        return store.graph.database
+    return store.records.database
+
+
+def _stored_deletion_result(detail: str) -> object:
+    if not detail:
+        return None
+    try:
+        result: object = json.loads(detail)
+    except (TypeError, ValueError) as exc:
+        raise OSError("Ghost deletion manifest has an invalid stored result") from exc
+    return result
+
+
+def _deletion_target(store: _ControlStore | None) -> DeletionTarget:
+    def delete_scope(scope: str, *, project: str = "", session_id: str = "") -> object:
+        if store is None:
+            raise OSError("Ghost deletion store is unavailable")
+        return store.delete_scope(scope, project=project, session_id=session_id)
+
+    def reset_all() -> object:
+        if store is None:
+            raise OSError("Ghost deletion store is unavailable")
+        return store.reset_all(preserve_settings=True) if isinstance(store, GhostInboxStore) else store.reset_all()
+
+    return DeletionTarget(delete_scope, reset_all)
 
 
 def _applicable_nodes(

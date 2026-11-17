@@ -12,9 +12,15 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
+2026-11-17 最新：[Manifest 默认调度](ghost_progress/deletion-manifest-production-wiring-20261117.md)
+已在普通 API/CLI 生效，无待开启的候选开关；同 ID 的 API 重试仅处理 pending，blocked
+保留，需要新操作显式恢复。相关回归 741 passed / 141 subtests，类型收窄后 123 项复验
+及全树静态门通过。后文关于“Manifest 待接线”描述历史阶段，下一步补 retention、响应前
+崩溃的 pending 发现、升级输入与完整生命周期，再继续显式时间/replay 和真实 World Model 消费者。
+
 2026-11-17 最新混合删除修复：[graph 精确替换](ghost_progress/graph-exact-replacement-20261117.md)
 已在正常 Hebbian/Affinity owner 默认生效，同一不同操作矩阵由 28/36 提升为 36/36，
-相关回归 675 passed / 141 subtests 及全树静态门通过；Manifest 默认控制面调度仍须继续接线，
+相关回归 675 passed / 141 subtests 及全树静态门通过；Manifest 默认控制面调度随后已接线见上文，
 不要重跑已停止的语言批次或把本次 graph 修复等同完整 0.6.3 / World Model。
 
 2026-11-17 最新接收生命周期进展：[输入接收登记](ghost_progress/received-input-admission-wiring-20261117.md)
@@ -26,8 +32,8 @@
 
 后续 [Manifest 原子 mutation/ack 候选](ghost_progress/deletion-manifest-atomic-mutation-20261117.md)
 通过 68 项新增验收、652 项相关回归和另批 48 项恢复/启动复验，包含同操作两进程与三窗口硬退出。
-旧 coordinator 的重复删除负结果另存 `e9fb6500`；候选尚未接默认控制面调度，下一步继续不同
-operation、失败恢复与 writer/rebuild/Sleep 混合生命周期，再完成正常入口接线，不重复旧探针时序。
+旧 coordinator 的重复删除负结果另存 `e9fb6500`；当时尚未接默认调度。后续不同 operation
+混合矩阵已由 graph 修复闭合，正常入口接线见上文，不重复旧探针时序。
 
 ## 先读这段：不要把路线图当成无条件功能清单
 

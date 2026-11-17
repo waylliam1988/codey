@@ -12,10 +12,11 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
-| 图精确替换与混合删除 2026-11-17 | `PRODUCTION_MERGED`（限定 graph owner） | 同一 36-cell 矩阵 28→36 通过；保留完全未变节点，变化节点及边继续拒绝退役来源；新增 23 项，相关回归 675 passed / 141 subtests；完整静态门通过；Manifest 默认调度仍待接线 | [实现、复验与限制](graph-exact-replacement-20261117.md) |
-| 不同 Manifest 操作混合生命周期 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | 36 cell 全有效，28 通过、8 个不同项目交错失败；图整体重写重新插入已退役的保留节点，删除及 rebuild blocked；默认调度暂不可晋级 | [冻结矩阵、探针修订与结果](deletion-manifest-mixed-lifecycle-20261117.md) |
-| Manifest 原子删除/确认 2026-11-17 | `EXPERIMENT_COMPLETE`（控制候选） | 同库 pending 复查、mutation/ack 同事务；68 项新增验收含七 store 故障、同操作两进程和三窗口硬退出；最终 652 项相关回归及全树静态门通过；默认 Manifest 调度仍未接入 | [实现、失败归属与限制](deletion-manifest-atomic-mutation-20261117.md) |
-| 同一 Manifest 操作并发恢复 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | 24 cell 全有效；8 个顺序重试通过，16 个并发失败；8 个误删 completed 后新输入，6 个事件冲突；候选不得直接晋级默认调度 | [冻结矩阵与结果](deletion-manifest-same-operation-20261117.md) |
+| Manifest 默认生产调度 2026-11-17 | `PRODUCTION_MERGED`（普通 API/CLI） | delete/reset 默认持久调度；同 ID 重试跳过 completed、blocked 保留；新增 34 项含真实 CLI/认证 HTTP；扩大回归 741 passed / 141 subtests，类型收窄后 123 项复验，完整静态门与 owned Any 审计通过；完整 retention/升级输入仍缺 | [接线、失败归属、恢复及限制](deletion-manifest-production-wiring-20261117.md) |
+| 图精确替换与混合删除 2026-11-17 | `PRODUCTION_MERGED`（限定 graph owner） | 同一 36-cell 矩阵 28→36 通过；保留完全未变节点，变化节点及边继续拒绝退役来源；新增 23 项，相关回归 675 passed / 141 subtests；完整静态门通过；默认调度随后接线见上行 | [实现、复验与限制](graph-exact-replacement-20261117.md) |
+| 不同 Manifest 操作混合生命周期 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果） | 36 cell 全有效，28 通过、8 个不同项目交错失败；图整体重插退役保留节点导致 blocked；原始证据保留，后续 graph 修复闭合本矩阵 | [冻结矩阵、探针修订与结果](deletion-manifest-mixed-lifecycle-20261117.md) |
+| Manifest 原子删除/确认 2026-11-17 | `EXPERIMENT_COMPLETE`（历史控制候选） | 同库 pending 复查、mutation/ack 同事务；68 项新增验收含七 store 故障、同操作两进程和三窗口硬退出；652 项相关回归及全树静态门通过；后续普通控制面已接线 | [实现、失败归属与限制](deletion-manifest-atomic-mutation-20261117.md) |
+| 同一 Manifest 操作并发恢复 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果） | 24 cell 全有效；8 个顺序重试通过，16 个并发失败；8 个误删 completed 后新输入，6 个事件冲突；原始证据保留，后续原子性与默认调度另有验收 | [冻结矩阵与结果](deletion-manifest-same-operation-20261117.md) |
 | canonical 输入接收结果 2026-11-17 | `PRODUCTION_MERGED`（限定正常应用 runtime） | 原始 canonical commit 保存应用 receipt；实际 observation/run-source 写口与新消费者默认检查；31 cell 全有效，双故障开启删除旧输入 12→0；最终 296 项 Ghost 与 48 项恢复/启动复验通过，全树静态门通过；完整 0.6.3 仍缺 | [生产接线与失败归属](canonical-input-receipt-20261117.md) |
 | 接收登记与隔离双故障 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果，后续限定闭合） | 31 cell 全有效；基线双故障开启并删除的 12 cell 全部重学旧输入；原始负结果保留，后续 canonical receipt 修复正常应用 runtime 的本次矩阵 | [矩阵、报告与限制](intake-double-fault-20261117.md) |
 | 输入接收登记与删除接线 2026-11-17 | `PRODUCTION_MERGED`（限定新接收输入） | canonical task commit 前默认登记；原 8 cell 开启状态旧输入 4→0，27 项验收覆盖 busy queue、重启、崩溃、普通提交与 headless；全树静态门通过；升级前无 receipt、双重故障与完整 manifest 仍缺 | [生产接线与回归归属](received-input-admission-wiring-20261117.md) |
@@ -43,10 +44,10 @@
 | Attempt Gate history / revocation closure | `EXPERIMENT_COMPLETE`（限定边界） | 当前 Attempt Gate 在 4 项 expiry 与 6 项撤回 loopback 对照中均于 HTTP 前闭合；完整 0.6.1/0.6.2 仍未完成 | [实验记录](attempt-gate-history-revocation-closure.md) |
 | Attempt Gate lifecycle acceptance | `EXPERIMENT_COMPLETE` | 生产 ApiProvider 的 native follow-up、错误 receipt、恢复上下文、compaction auxiliary 和 terminal receipt 均验证统一 gate 边界；仍是 fixture 离线证据 | [实验记录](attempt-gate-lifecycle-acceptance.md) |
 | Language Live Evaluation 2026-10-21 | `EXPERIMENT_COMPLETE`（受测中文子集已生产启用） | modelA/config 的 language on/off 为 20/20 对 0/20；2026-11-17 接入普通 Chat 并默认启用，无需第二模型 | [实验记录](language-live-evaluation-20261021.md) / [生产启用](language-production-enablement-20261117.md) |
-| 0.6.2 scope 与四个开关 | `INCOMPLETE`（控制已生产接线） | 四开关已默认接线，显式关闭仍生效；scoped 故障关闭及首轮后撤回已验证；完整 reset manifest、runtime 并发和 acceptance battery 仍缺 | [进度记录](independent-controls.md) |
-| Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（未接入生产 store 调度） | 已验证 GhostSQLite 持久化、七 store 方法绑定、重启、幂等、delete/reset 七 store 失败恢复和 7-process 冷启动；真实 runtime 混合并发与完整 tombstone/rebuild 仍未完成 | [候选记录](deletion-manifest-candidate.md) / [delete 失败恢复](deletion-manifest-failure-recovery.md) / [reset 失败恢复](deletion-manifest-reset-recovery.md) / [并发冷启动](deletion-manifest-multiprocess.md) |
+| 0.6.2 scope 与四个开关 | `INCOMPLETE`（控制及 Manifest 已生产接线） | 四开关默认接线，显式关闭仍生效；delete/reset 已默认持久调度；完整维护撤回、生命周期及 acceptance battery 仍缺 | [进度记录](independent-controls.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
+| Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（历史候选，后续已接线） | 持久化、七 store 失败恢复与冷启动原始证据保留；后续原子性、混合矩阵和普通 API/CLI 默认调度已完成，完整 retention/升级输入仍缺 | [候选记录](deletion-manifest-candidate.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
-| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含新输入接收登记） | 候选/run 身份失效、接收与执行入口 input origin、派生 generation 与 continuity replay 默认生效；完整 manifest 调度、混合恢复、升级前无 receipt、双重故障与身份/scope 异常仍待完成 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
+| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含默认 Manifest 调度） | 输入登记、canonical receipt、来源退役、派生 fence、graph 精确替换及普通 delete/reset Manifest 已默认生效；retention、响应前崩溃的 pending 发现、升级前无 receipt、身份/scope 异常及完整生命周期验收仍缺 | [默认调度](deletion-manifest-production-wiring-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |

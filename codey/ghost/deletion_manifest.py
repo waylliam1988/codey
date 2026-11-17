@@ -1,8 +1,8 @@
-"""Deterministic deletion manifest candidate for Ghost control operations.
+"""Deterministic deletion manifests for Ghost control operations.
 
 This module is deliberately pure.  It models the control-plane record needed
-to make a multi-store delete or reset resumable before wiring it into the
-existing stores.  It never performs I/O and never treats a projection as the
+to make a multi-store delete or reset resumable through the existing stores.
+It never performs I/O and never treats a projection as the
 authoritative deletion record.
 """
 
@@ -12,6 +12,8 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+
+from codey.ghost.payload_types import mapping_fields
 
 MANIFEST_SCHEMA_VERSION = 1
 STORE_PENDING = "pending"
@@ -24,6 +26,7 @@ _STORE_STATES = frozenset({STORE_PENDING, STORE_COMPLETED, STORE_BLOCKED})
 _ACTIONS = frozenset({"delete_scope", "reset_all"})
 _SCOPES = frozenset({"user", "project", "session", "all"})
 _MAX_TEXT = 240
+MAX_STORE_DETAIL_CHARS = 8192
 
 
 class DeletionManifestError(ValueError):
@@ -43,7 +46,7 @@ class StoreDeletionStatus:
             raise DeletionManifestError(f"unsupported store status: {status}")
         object.__setattr__(self, "store", store)
         object.__setattr__(self, "status", status)
-        object.__setattr__(self, "detail", _bounded(self.detail))
+        object.__setattr__(self, "detail", _detail(self.detail))
 
     def to_payload(self) -> dict[str, str]:
         payload = {"store": self.store, "status": self.status}
@@ -126,14 +129,15 @@ class DeletionManifest:
 
     @classmethod
     def from_payload(cls, payload: object) -> DeletionManifest:
-        if not isinstance(payload, Mapping):
+        if not mapping_fields(payload):
             raise DeletionManifestError("manifest payload must be an object")
-        if payload.get("schema_version") != MANIFEST_SCHEMA_VERSION:
+        if not _valid_schema(payload):
             raise DeletionManifestError("unsupported manifest schema")
         raw_stores = payload.get("stores")
         if not isinstance(raw_stores, list):
             raise DeletionManifestError("manifest stores must be a list")
-        stores = tuple(_status_from_payload(item) for item in raw_stores)
+        store_payloads: Sequence[object] = raw_stores
+        stores = tuple(_status_from_payload(item) for item in store_payloads)
         return cls(
             operation_id=_required(payload, "operation_id"),
             action=_required(payload, "action"),
@@ -189,7 +193,7 @@ def new_manifest(
 def store_event(manifest: DeletionManifest, store: str, status: str, *, detail: str = "") -> dict[str, object]:
     """Return a deterministic event for one store transition."""
     current = manifest.store(store)
-    if current.status != STORE_PENDING and (current.status != status or _bounded(current.detail) != _bounded(detail)):
+    if current.status != STORE_PENDING and (current.status != status or current.detail != _detail(detail)):
         raise DeletionManifestError(f"conflicting transition for completed store: {store}")
     if status not in _STORE_STATES or status == STORE_PENDING:
         raise DeletionManifestError("store event must complete or block a pending store")
@@ -200,7 +204,7 @@ def store_event(manifest: DeletionManifest, store: str, status: str, *, detail: 
         "operation_id": manifest.operation_id,
         "store": store,
         "status": status,
-        "detail": _bounded(detail),
+        "detail": _detail(detail),
     }
 
 
@@ -216,16 +220,16 @@ def started_event(manifest: DeletionManifest) -> dict[str, object]:
 
 def apply_store_event(manifest: DeletionManifest, event: Mapping[str, object]) -> DeletionManifest:
     """Apply one validated store event; duplicate transitions are idempotent."""
-    if event.get("schema_version") != MANIFEST_SCHEMA_VERSION or event.get("kind") != "store_transition":
+    if not _valid_schema(event) or event.get("kind") != "store_transition":
         raise DeletionManifestError("invalid store transition event")
     if event.get("operation_id") != manifest.operation_id:
         raise DeletionManifestError("event operation does not match manifest")
     store = _required(event, "store")
     status = _required(event, "status")
-    detail = _optional(event, "detail")
+    detail = _detail(event.get("detail", ""))
     current = manifest.store(store)
     if current.status != STORE_PENDING:
-        if current.status == status and current.detail == _bounded(detail):
+        if current.status == status and current.detail == detail:
             return manifest
         raise DeletionManifestError(f"conflicting transition for store: {store}")
     if status not in {STORE_COMPLETED, STORE_BLOCKED}:
@@ -250,7 +254,7 @@ def replay(events: Sequence[Mapping[str, object]]) -> DeletionManifest:
     if not events:
         raise DeletionManifestError("deletion manifest event log is empty")
     first = events[0]
-    if first.get("schema_version") != MANIFEST_SCHEMA_VERSION:
+    if not _valid_schema(first):
         raise DeletionManifestError("unsupported manifest schema")
     if first.get("kind") != "started":
         raise DeletionManifestError("deletion manifest must start with a started event")
@@ -277,12 +281,12 @@ def replay(events: Sequence[Mapping[str, object]]) -> DeletionManifest:
 
 
 def _status_from_payload(payload: object) -> StoreDeletionStatus:
-    if not isinstance(payload, Mapping):
+    if not mapping_fields(payload):
         raise DeletionManifestError("store status must be an object")
     return StoreDeletionStatus(
         store=_required(payload, "store"),
         status=_required(payload, "status"),
-        detail=_optional(payload, "detail"),
+        detail=_detail(payload.get("detail", "")),
     )
 
 
@@ -321,6 +325,17 @@ def _bounded(value: object) -> str:
     return str(value or "").strip()[:_MAX_TEXT]
 
 
+def _detail(value: object) -> str:
+    if not isinstance(value, str) or len(value) > MAX_STORE_DETAIL_CHARS:
+        raise DeletionManifestError("store detail must be bounded text")
+    return value
+
+
+def _valid_schema(payload: Mapping[str, object]) -> bool:
+    schema = payload.get("schema_version")
+    return type(schema) is int and schema == MANIFEST_SCHEMA_VERSION
+
+
 __all__ = [
     "DeletionManifest",
     "DeletionManifestError",
@@ -328,6 +343,7 @@ __all__ = [
     "MANIFEST_COMPLETED",
     "MANIFEST_PENDING",
     "MANIFEST_SCHEMA_VERSION",
+    "MAX_STORE_DETAIL_CHARS",
     "STORE_BLOCKED",
     "STORE_COMPLETED",
     "STORE_PENDING",

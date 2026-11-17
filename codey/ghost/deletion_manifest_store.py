@@ -113,6 +113,21 @@ class DeletionManifestStore:
         with self.transaction():
             return self._replay_unlocked(operation_id)
 
+    def find(self, operation_id: str) -> DeletionManifest | None:
+        """Distinguish an absent operation from an existing corrupt stream."""
+        with self.transaction():
+            row: sqlite3.Row | None = self._db().execute(
+                "SELECT 1 FROM ghost_deletion_manifests WHERE operation_id=?", (operation_id,),
+            ).fetchone()
+            if row is None:
+                orphan: sqlite3.Row | None = self._db().execute(
+                    "SELECT 1 FROM ghost_deletion_manifest_events WHERE operation_id=? LIMIT 1", (operation_id,),
+                ).fetchone()
+                if orphan is not None:
+                    raise DeletionManifestError("deletion manifest has events without an operation")
+                return None
+            return self._replay_unlocked(operation_id)
+
     def events(self, operation_id: str) -> tuple[dict[str, object], ...]:
         with self.transaction():
             return tuple(self._events_unlocked(operation_id))

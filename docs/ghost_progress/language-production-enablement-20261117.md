@@ -6,6 +6,12 @@
 - 依据：[历史 language on/off](language-live-evaluation-20261021.md) 为 20/20 对 0/20；更早的冻结评估为 19/20 对 0/20。
 - 用户决策：采用已有单模型结果接入生产并默认启用；停止新增实机 A/B，不以补跑完整矩阵为本次启用前置。
 
+2026-11-17 后续回归维护：canonical receipt 落地后，旧测试直接写 observation 的 fixture
+已过时；[Manifest 默认调度接线](deletion-manifest-production-wiring-20261117.md)改为真实
+InputQueue/任务执行后再人工确认语言偏好，并清理本测试文件的隐式 Any。22 个原有语言
+行为用例保留发送、禁用、模型回退、删除/重启与发送前撤回断言，纳入最终 741 项相关回归
+及类型收窄后的 123 项复验。仅为 loopback/确定性测试，没有恢复停止的实机批次或新增模型收益主张。
+
 ## 默认行为
 
 普通 Chat 的中文偏好已接入现有 `task_entry → ghost_directive → ContextSource → Attempt Gate → ApiProvider`。

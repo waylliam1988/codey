@@ -1877,6 +1877,13 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 最新默认接线：普通 API/CLI 的 scope delete/reset 默认使用持久 Manifest，
+每 store mutation/ack 同 commit，同 ID 重试跳过 completed，blocked 保留且继续其他
+pending。新增 34 项含真实 CLI/认证 HTTP；相关回归 741 passed / 141 subtests，Any
+收窄后 123 项复验，完整静态门与六个 owned 文件的额外 Any 审计通过。完整 retention、
+响应前崩溃的 pending 发现、升级 receiptless 输入及完整生命周期仍缺，不能据此宣布
+0.6.3 / World Model 完成。见[默认调度与限制](docs/ghost_progress/deletion-manifest-production-wiring-20261117.md)。
+
 2026-11-17 后续生产修复：graph 精确保留所有索引列及 payload 均未变的行，新建/变化
 节点与变化边仍拒绝退役来源。同一混合矩阵 36/36 全有效且通过，相关回归 675 passed /
 141 subtests 及全树静态门通过。正常 Hebbian/Affinity 默认使用此修复，Manifest 默认
