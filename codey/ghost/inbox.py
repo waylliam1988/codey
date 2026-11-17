@@ -341,8 +341,14 @@ class GhostInboxStore:
         except Exception:
             return ()
         priority = {"session": 0, "project": 1, "user": 2}
-        rows.sort(key=lambda item: item.updated_at, reverse=True)
-        rows.sort(key=lambda item: priority[item.scope])
+        def updated_at(item: GhostMemoryCandidate) -> str:
+            return item.updated_at
+
+        def scope_priority(item: GhostMemoryCandidate) -> int:
+            return priority[item.scope]
+
+        rows.sort(key=updated_at, reverse=True)
+        rows.sort(key=scope_priority)
         return tuple(rows)
 
     def export_state(self) -> dict[str, object]:
@@ -628,6 +634,10 @@ class GhostInboxStore:
         try:
             with self.records.transaction():
                 current = self._read_settings_unlocked()
+                # Freeze legacy/default values before accept_events changes its
+                # learning_enabled alias; the other controls must not follow it.
+                for control_name in GHOST_CONTROL_NAMES:
+                    current.setdefault(control_name, current["learning_enabled"])
                 scoped = current.setdefault("control_scopes", {})
                 if not _object_fields(scoped):
                     raise GhostSettingsError(self.database.path, "control_scopes must be object")
@@ -995,7 +1005,10 @@ class GhostInboxStore:
         candidates: Iterable[GhostMemoryCandidate],
     ) -> list[GhostMemoryCandidate]:
         rows = list(candidates)
-        rows.sort(key=lambda item: item.updated_at or item.created_at, reverse=True)
+        def recency(item: GhostMemoryCandidate) -> str:
+            return item.updated_at or item.created_at
+
+        rows.sort(key=recency, reverse=True)
         return rows[:MAX_INBOX_ITEMS]
 
 
