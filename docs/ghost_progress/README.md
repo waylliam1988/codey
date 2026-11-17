@@ -10,6 +10,10 @@
 
 ## 当前状态
 
+[Hebbian control payload](hebbian-control-replay-20261118.md)已冻结：核对三个正常
+producer，保留最早 v1 的两字段 decay 与当前四字段格式，计划 168 项真实重建对照。
+尚未执行，不预判损坏记录的拒绝情况；不调用模型、不重跑已闭合矩阵。
+
 [图同分裁剪与重建一致性](graph-tie-replay-20261118.md)已默认生产修复：原 24 项
 9→24 通过；共享节点 id/边语义身份稳定 tie，普通 writer/rebuild/维护/快照沿用同一
 helper，无新开关。新增 30 项生命周期/Affinity 验收，相关 32 文件 1153 项/34 子测试、
