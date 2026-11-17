@@ -1863,6 +1863,14 @@ rendered envelope 才能交给 provider。trace 只记录准入结果，不能�
 
 #### 0.6.2 - Scope Control and Four Learning Switches
 
+2026-11-18：[Sleep 维护撤回与控制 fallback](docs/ghost_progress/maintenance-control-revocation-20261118.md)
+已默认生产：Sleep `06c8cfc4` 同事务读取 scoped maintenance 与执行写步骤/逐 store compaction，
+18 格 9→18 通过；setter `5407430f` materialize 原四控制值，96 格 92→96，不再因单独切换
+accept_events 意外改变其他控制。44 项追加边界、最终 29 文件 733 passed/2 子测试及全树
+静态门通过，五 owned 文件额外 Any 零诊断。普通 App/默认 daemon/控制面直接消费，无
+新 flag 或模型调用；原始失败保留。另一 scope 触发的全局维护过滤、pending/硬退出与
+完整生命周期仍待独立验证，不将本轮触发 scope 结论外推为整个 0.6.2/G0 完成。
+
 2026-11-17：后台 Sleep 消费外部 run/knowledge 来源前默认复查 scoped accept_events，
 缺控制或读取失败时不消费；139 项相关回归与全树静态门通过。真实任务删除中关闭控制的
 4 cell 泄漏从 4 降到 0；开启控制的 4 cell 在途旧输入仍会重学，不代表删除寿命已完成。
@@ -2086,6 +2094,12 @@ store 执行顺序必须可回放；manifest 损坏时 fail closed，不能恢�
 manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线 fixture 通过不等于全 scope 验收。
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
+
+2026-11-18：[维护控制撤回](docs/ghost_progress/maintenance-control-revocation-20261118.md)
+已补齐同事务步骤准入、逐 store compaction 取消、queue lease/compaction 原子失败回滚及
+四领域重建后控制不复活。生产 `06c8cfc4`/`5407430f` 默认消费；18+96格、44项追加及
+最终733/2子测试与全树静态门通过。本轮不证明另一scope全局维护过滤、pending/硬退出、
+全部混版本或retention/purge，完整0.6.4/G0仍未完成。
 
 2026-11-18：[节点容量裁剪与跨 scope 重建](docs/ghost_progress/graph-capacity-scope-replay-20261118.md)
 真实 500 节点 cap 原 12 项 6→12；生产 `34852638` 默认记录 node/degree 裁剪差量，

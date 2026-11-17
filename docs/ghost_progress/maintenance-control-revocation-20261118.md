@@ -1,7 +1,9 @@
 # Sleep 维护控制撤回
 
 - 日期：2026-11-18；关联验收：0.6.2、0.6.4。
-- 状态：`EXPERIMENT_COMPLETE`（有效生产失败，待修复）；基线生产提交：`b9b189c6`。
+- 状态：`PRODUCTION_MERGED`（触发 scope 撤回及单项控制兼容）；基线生产提交：`b9b189c6`。
+- 生产提交：Sleep `06c8cfc4`；独立控制 setter `5407430f`，均已进入本地 master 默认路径。
+- 原始负结果：撤回 `b260673a`；控制 fallback `00b1663f`，保留原测量与失败归属。
 - 无模型/endpoint/采样参数：本实验验证真实 App 默认 Sleep 与 SQLite 控制边界，不作模型收益主张。
 
 ## 冻结矩阵与判定
@@ -105,3 +107,72 @@ user `accept_events=false` 同时改写 legacy learning_enabled，使其他未�
 保留每项前后值与冷开值。该批尚未修改 inbox；Sleep 候选在同一工作区，未混入 setter 测量。
 中间全树检查发现 Sleep compaction closure 的可空默认参数 mypy 错误，已用明确的非空
 局部协议变量修正，未放宽类型。其余四个全树门通过；以修复后最终全树复验为准。
+
+## 最终实现与运行验收
+
+Sleep 默认 owner 逐步骤重新读取真实 scoped maintenance 设置，并把可写步骤的读取与
+写入放在现有同路径 SQLite 写事务。复合 compaction 逐 store 准入；queue 的过期 claim
+回收与 compaction 同事务，后者抛错时前者也回滚。compaction 还逐 store 检查原任务取消
+回调。只读 health 不持写锁；关闭、authority 错库和读取失败终止后续步骤并保留 pending
+与有界取消/错误报告。独立调用未传 inbox 时也读本 state_home 的真实设置。
+
+单项控制 setter 在改动 legacy learning_enabled 别名前，把四个当前有效基值明确存储。
+保留 scoped deny 继承、用户已关闭状态与旧单开关全开/全关语义，不推测历史意图或恢复
+曾受旧 bug 影响的配置。inbox 三个排序回调补全参数/返回类型，排序键与顺序不变。
+
+调度补强后原 18 项 **18 passed**；96 项纯控制矩阵 **96 passed**；新增边界最终
+**44 passed**。三文件合批 **158 passed**，不是把重复批次数相加。新增覆盖：
+
+- 三 scope，初始禁用、独立缺 inbox 调用、两次冷开拒绝、重新开启后的正常 App 真实维护。
+- 其余三控制独立关闭时继续维护既有 accepted state，不新增外部来源授权。
+- 设置损坏、控制读错误、错库 authority 均 fail closed，有界报告持久化，修复后可恢复。
+- 禁用时显式 scope delete/reset，settings 保留/清除语义及重开；四领域真实事件重建后
+  不能恢复旧 allow。没有删除原始历史来获得通过。
+- queue compaction 写失败后真实 lease transition/事件/投影完整回滚、可重试；实际控制
+  writer 在已准入 queue 写期间竞争，必须等事务完成再提交，提交后无领域变化。
+- report 写失败保留上一报告及事件、冷重试；控制关闭时仍保持取消语义。
+
+首批扩大 29 文件 **733 passed / 2 subtests passed**。复查本轮 compaction refactor
+发现失败目标未计入 stores_checked，已恢复原来的尝试计数，并给真实回滚测试补精确断言。
+随后同一 29 文件最终复验仍 **733 passed / 2 subtests passed**，118.52 秒；无失败或 skip。
+最终批前冻结 702 个生产 Python 文件及五个 owned 文件哈希，最终检查和提交后复核一致。
+测试范围含正常 post-turn/App、全部实际 Ghost stores、四控制、scope、删除 Manifest
+及多进程恢复、projection/delete fence、历史保留、逻辑维护时间、取消与故障隔离；未跑全量 pytest。
+
+复现主矩阵与边界：
+
+```powershell
+python -m pytest tests/test_ghost_maintenance_revocation.py tests/test_ghost_control_materialization.py tests/test_ghost_maintenance_control_boundary.py -q -s --tb=short
+```
+
+最终扩大批的 XML/日志见本地 `final-expanded.*`；完整受检文件与命令、生产身份、结果、
+源文件哈希及明细见[脱敏生产报告](../../tests/manual/ghost_memory_routing/reports/maintenance-control-production-20261118.json)。
+详细 digest 来自计数修正前的 158 项批次；最终 733 项在计数修正后的固定源码再次执行
+同一 scorer 并通过，不把前一批源码称为逐字节相同。
+barrier/竞争等待导致矩阵耗时变化，不能用本批 wall time 宣称生产延迟收益或开销。
+
+最终相关回归完成后，串行全仓 Ruff、完整 `codey` mypy/Pyrefly/ty 和 precision gate 均通过。
+五个 owned 文件另行通过三类型检查，额外 mypy `--disallow-any-expr` owned 零诊断；
+未修改依赖 334 文件 10864 项诊断使额外审计 exit 1，未修改检查范围或加入豁免。
+生产 Pyrefly 158 warnings/35 suppressed 与基线相同。展开 owned 警告后，三项均为
+inbox 未改动的 `str()` 兼容转换（control reader/setter 与 scope 编码入口），单列审查，
+不称 owned 零警告；没有新增 Any/cast/ignore。未改前端。
+
+## 默认消费者、回滚与剩余审查
+
+普通 AppContext 的 post-turn kick → 默认 GhostSleepDaemon → Sleep owner 直接调用本次逻辑，
+控制 CLI/UI 的原单项 setter 直接消费原值 materialization。无需启用新 flag，不新增模型
+可见 source 或模型调用；这是模型无关的控制安全修复，不宣称新 family/模型行为收益。
+用户关闭仍生效；已获准且持锁的事务可在 deny 提交前完成，不撤销其已提交事实。报告仅是
+审计记录，不授予权限、证据或完成状态。故障通过原报告/daemon 路径隔离。
+
+可分别 revert Sleep `06c8cfc4` 与 setter `5407430f` 后正常重启；保留 SQLite 和日志，不 reset 数据
+或自动全开控制。setter 已写入的显式值保持其现有意义。回滚 Sleep 会恢复本次已复现的
+在途撤回缺陷，需要用既有 run_maintenance 关闭并在任务空闲后重启隔离。
+
+下一步优先独立验证：另一 scope 触发的全局 decay/refresh/compaction，是否修改已 deny
+scope 的记录；真实 daemon pending payload 交接与硬退出；不同 store_home 的维护输入。
+本轮没有证明这些边界，不把触发 scope 的 18 项外推为整个 scoped maintenance 通过。
+其余混版本/retention/purge、完整 G0、语言遥测/family/provider outcome/repair/Explain 仍待验。
+World Model 两个重复当前事实候选保持负结果/终止；下一候选必须增加预测信息，再做真实
+消费者与单模型收益闭环，不能借本轮静态门或控制安全修复标记生产启用。

@@ -27,6 +27,15 @@
 
 ## 文件与数据位置
 
+2026-11-18 G0 [Sleep 维护撤回与独立控制兼容](../../../docs/ghost_progress/maintenance-control-revocation-20261118.md)：
+入口 `python -m pytest tests/test_ghost_maintenance_revocation.py tests/test_ghost_control_materialization.py tests/test_ghost_maintenance_control_boundary.py -q -s --tb=short`。
+撤回18格9→18、纯控制96格92→96，44项追加边界；生产 `06c8cfc4`/`5407430f` 在普通
+App/默认daemon及原控制面直接生效。报告 `reports/maintenance-control-{baseline,production}-20261118.json`
+与 `reports/control-materialization-baseline-20261118.json`。最终29文件733/2子测试与全树
+静态门通过，五owned Any零诊断；原始夹具/调度/类型失败保留，不把跨scope全局维护及
+pending/硬退出称为通过。无模型调用；完整SQLite/日志/XML只留
+`.e2e-artifacts/ghost-maintenance-revocation-20261118`。
+
 2026-11-18 G0 [正常 App 硬退出与 HTTP 恢复](../../../docs/ghost_progress/app-http-crash-recovery-20261118.md)：
 入口 `python -B tests/manual/completion_operation_resume_smoke.py --self-test --state-root <isolated-dir>`；
 pytest 等价入口 `tests/test_ghost_app_http_crash_recovery.py`。三 scope×四窗口×enabled/revoked

@@ -12,7 +12,19 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-18 最新完成：[正常 App 硬退出与 HTTP 恢复](ghost_progress/app-http-crash-recovery-20261118.md)。
+2026-11-18 最新完成：[Sleep 维护撤回及单项控制兼容](ghost_progress/maintenance-control-revocation-20261118.md)。
+Sleep `06c8cfc4` 同事务复查触发 scope 的 run_maintenance，逐步骤/逐 store compaction
+准入，queue lease/compaction 故障一起回滚；原18格9→18。setter `5407430f` 固定旧
+learning_enabled fallback 原值，96格92→96，避免单项切换意外开关其他控制。
+44项新增边界、最终29文件733 passed/2子测试及指定全树门通过，五owned Any零诊断；
+依赖334文件10864项额外审计诊断与三个既有owned Pyrefly转换警告单列，不称全树Any清零。
+普通App/默认daemon和控制CLI/UI直接消费，无新flag/模型调用。原负结果/首轮session
+夹具/调度歧义/检查失败均保留。回滚分别revert两提交并空闲重启，保留SQLite和显式控制值。
+下一步优先另一scope触发全局维护的逐记录保护、真实pending交接/硬退出，再补其余混版本、
+retention及G0；World Model新候选必须提供新增预测信息，两个重复事实负结果不重跑。
+用户原两项改动保留，不复制worktree，不跑全量pytest，长期目标继续，未标记完成。
+
+2026-11-18 此前完成：[正常 App 硬退出与 HTTP 恢复](ghost_progress/app-http-crash-recovery-20261118.md)。
 基线 `c0fa5117` 原 24 格 18 通过/6 个保存响应组失败；生产 `86ad9a83` 恢复原声明工具，
 原矩阵 24/24 通过。普通 shared kernel 冷窗口直接消费，不需要新开关；六组保存响应
 完成原 run 且新增 HTTP=0，未知发送保持诚实中止、不重发，24 个后续新任务成功。

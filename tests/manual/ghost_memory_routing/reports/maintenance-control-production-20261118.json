@@ -1,0 +1,658 @@
+{
+  "experiment": "Sleep maintenance admission and independent control materialization",
+  "status": "PRODUCTION_MERGED",
+  "maintenance_commit": "06c8cfc4",
+  "setter_commit": "5407430f",
+  "baselines": [
+    "b260673a",
+    "00b1663f"
+  ],
+  "model_called": false,
+  "new_flag": false,
+  "production_consumer": "normal AppContext kick -> default GhostSleepDaemon -> GhostSleepStore; existing control CLI/UI setter",
+  "revocation": {
+    "baseline_passed": 9,
+    "baseline_failed": 9,
+    "production_passed": 18,
+    "production_failed": 0,
+    "cells": [
+      {
+        "at_control_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "cancelled": false,
+        "committed_while_paused": true,
+        "final_digest": "0c4299596e6156d97af097f7029de6ba9848893e8186669d021eed434f25299d",
+        "fixture_valid": true,
+        "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "pass": true,
+        "pending_steps": [],
+        "post_commit_changes": [
+          "affinity_events",
+          "affinity_rows",
+          "continuity_events",
+          "continuity_rows",
+          "hebbian_events",
+          "hebbian_rows",
+          "queue_events",
+          "queue_rows"
+        ],
+        "queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "scope": "user",
+        "window": "before_worker"
+      },
+      {
+        "at_control_digest": "900546185fa05c098760c477955a8128d2706abc8aa5c7301b6979cad6a39989",
+        "cancelled": false,
+        "committed_while_paused": true,
+        "final_digest": "e27f331269082d9d9b7d248f6eb8d36344109c9688dcb72279c914233a8ee874",
+        "fixture_valid": true,
+        "initial_digest": "900546185fa05c098760c477955a8128d2706abc8aa5c7301b6979cad6a39989",
+        "pass": true,
+        "pending_steps": [],
+        "post_commit_changes": [
+          "affinity_events",
+          "affinity_rows",
+          "continuity_events",
+          "continuity_rows",
+          "hebbian_events",
+          "hebbian_rows",
+          "queue_events",
+          "queue_rows"
+        ],
+        "queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "scope": "project",
+        "window": "before_worker"
+      },
+      {
+        "at_control_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "cancelled": false,
+        "committed_while_paused": true,
+        "final_digest": "6713ca513d76a3b1ac249b4795566b5472da61f9b2586faef78c0d268dd5637c",
+        "fixture_valid": true,
+        "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "pass": true,
+        "pending_steps": [],
+        "post_commit_changes": [
+          "affinity_events",
+          "affinity_rows",
+          "continuity_events",
+          "continuity_rows",
+          "hebbian_events",
+          "hebbian_rows",
+          "queue_events",
+          "queue_rows"
+        ],
+        "queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "scope": "session",
+        "window": "before_worker"
+      },
+      {
+        "at_control_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "cancelled": false,
+        "committed_while_paused": true,
+        "final_digest": "1fe4b70355e11742aa521296f95d23206a0e1a8aa9b80364d93de88210778a15",
+        "fixture_valid": true,
+        "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "pass": true,
+        "pending_steps": [],
+        "post_commit_changes": [
+          "affinity_events",
+          "affinity_rows",
+          "continuity_events",
+          "continuity_rows",
+          "hebbian_events",
+          "hebbian_rows",
+          "queue_events",
+          "queue_rows"
+        ],
+        "queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "scope": "user",
+        "window": "after_health"
+      },
+      {
+        "at_control_digest": "a9794d9d6c7f56f3b8ef9393c6862a55c89451da5c23a84c5162f8e6a73be7e9",
+        "cancelled": false,
+        "committed_while_paused": true,
+        "final_digest": "285564bb11099a85227d084f1fe70cfc8994546a9c70a997f187f6bc18d93c7c",
+        "fixture_valid": true,
+        "initial_digest": "a9794d9d6c7f56f3b8ef9393c6862a55c89451da5c23a84c5162f8e6a73be7e9",
+        "pass": true,
+        "pending_steps": [],
+        "post_commit_changes": [
+          "affinity_events",
+          "affinity_rows",
+          "continuity_events",
+          "continuity_rows",
+          "hebbian_events",
+          "hebbian_rows",
+          "queue_events",
+          "queue_rows"
+        ],
+        "queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "scope": "project",
+        "window": "after_health"
+      },
+      {
+        "at_control_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "cancelled": false,
+        "committed_while_paused": true,
+        "final_digest": "0c098db10398142c862f847492bbffa8a116870e4cbe4b36ce4fc785de8cdea8",
+        "fixture_valid": true,
+        "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "pass": true,
+        "pending_steps": [],
+        "post_commit_changes": [
+          "affinity_events",
+          "affinity_rows",
+          "continuity_events",
+          "continuity_rows",
+          "hebbian_events",
+          "hebbian_rows",
+          "queue_events",
+          "queue_rows"
+        ],
+        "queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "scope": "session",
+        "window": "after_health"
+      },
+      {
+        "at_control_digest": "81decbff86c1db074c35e7b2943919f9d8dcdf54500fcfd3e84d89d49beb7c3d",
+        "cancelled": false,
+        "committed_while_paused": false,
+        "final_digest": "93cef3a8e42a00d3e935359a7d88c4ca56c18299660db6078234dcd4aad10522",
+        "fixture_valid": true,
+        "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "pass": true,
+        "pending_steps": [],
+        "post_commit_changes": [
+          "queue_events",
+          "queue_rows"
+        ],
+        "queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "scope": "user",
+        "window": "after_inbox_compaction"
+      },
+      {
+        "at_control_digest": "61b7a9f78f64e268e348b6b74e4a915ab4fc4a92d0a38d8191e19261967f7de5",
+        "cancelled": false,
+        "committed_while_paused": false,
+        "final_digest": "9b603213161f6aa328176bdb945e7320edde7e5253528175d81cf540537b7626",
+        "fixture_valid": true,
+        "initial_digest": "04a4f53ff6763560ed0c33b3a5a732d4088d55c99c43efdcf3c14dac6e5ee649",
+        "pass": true,
+        "pending_steps": [],
+        "post_commit_changes": [
+          "queue_events",
+          "queue_rows"
+        ],
+        "queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "scope": "project",
+        "window": "after_inbox_compaction"
+      },
+      {
+        "at_control_digest": "5c7d71bc30d526fc5a303d3e37021b4c100cb0670040ab08f33f511f3e7b70d8",
+        "cancelled": false,
+        "committed_while_paused": false,
+        "final_digest": "5f608dbb6decbd5d4f83183b8ec7d87c5c5a3eb71c2d8d34b810e2ad77022300",
+        "fixture_valid": true,
+        "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "pass": true,
+        "pending_steps": [],
+        "post_commit_changes": [
+          "queue_events",
+          "queue_rows"
+        ],
+        "queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "scope": "session",
+        "window": "after_inbox_compaction"
+      },
+      {
+        "at_control_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "cancelled": true,
+        "committed_while_paused": true,
+        "final_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "fixture_valid": true,
+        "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "pass": true,
+        "pending_steps": [
+          "projection_health",
+          "affinity_sync",
+          "hebbian_decay",
+          "affinity_decay",
+          "continuity_refresh",
+          "event_compaction"
+        ],
+        "post_commit_changes": [],
+        "queue_statuses": [
+          "running",
+          "running"
+        ],
+        "revoked": true,
+        "scope": "user",
+        "window": "before_worker"
+      },
+      {
+        "at_control_digest": "18e78b54b10e98bcaad932dde483fdcf9800795627dad4df3474007c2ac39c4a",
+        "cancelled": true,
+        "committed_while_paused": true,
+        "final_digest": "18e78b54b10e98bcaad932dde483fdcf9800795627dad4df3474007c2ac39c4a",
+        "fixture_valid": true,
+        "initial_digest": "18e78b54b10e98bcaad932dde483fdcf9800795627dad4df3474007c2ac39c4a",
+        "pass": true,
+        "pending_steps": [
+          "projection_health",
+          "affinity_sync",
+          "hebbian_decay",
+          "affinity_decay",
+          "continuity_refresh",
+          "event_compaction"
+        ],
+        "post_commit_changes": [],
+        "queue_statuses": [
+          "running",
+          "running"
+        ],
+        "revoked": true,
+        "scope": "project",
+        "window": "before_worker"
+      },
+      {
+        "at_control_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "cancelled": true,
+        "committed_while_paused": true,
+        "final_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "fixture_valid": true,
+        "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "pass": true,
+        "pending_steps": [
+          "projection_health",
+          "affinity_sync",
+          "hebbian_decay",
+          "affinity_decay",
+          "continuity_refresh",
+          "event_compaction"
+        ],
+        "post_commit_changes": [],
+        "queue_statuses": [
+          "running",
+          "running"
+        ],
+        "revoked": true,
+        "scope": "session",
+        "window": "before_worker"
+      },
+      {
+        "at_control_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "cancelled": true,
+        "committed_while_paused": true,
+        "final_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "fixture_valid": true,
+        "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "pass": true,
+        "pending_steps": [
+          "affinity_sync",
+          "hebbian_decay",
+          "affinity_decay",
+          "continuity_refresh",
+          "event_compaction"
+        ],
+        "post_commit_changes": [],
+        "queue_statuses": [
+          "running",
+          "running"
+        ],
+        "revoked": true,
+        "scope": "user",
+        "window": "after_health"
+      },
+      {
+        "at_control_digest": "9bed756ce55899496eba3ebef40165a1c3decb11b900ce364a29b699551b2175",
+        "cancelled": true,
+        "committed_while_paused": true,
+        "final_digest": "9bed756ce55899496eba3ebef40165a1c3decb11b900ce364a29b699551b2175",
+        "fixture_valid": true,
+        "initial_digest": "9bed756ce55899496eba3ebef40165a1c3decb11b900ce364a29b699551b2175",
+        "pass": true,
+        "pending_steps": [
+          "affinity_sync",
+          "hebbian_decay",
+          "affinity_decay",
+          "continuity_refresh",
+          "event_compaction"
+        ],
+        "post_commit_changes": [],
+        "queue_statuses": [
+          "running",
+          "running"
+        ],
+        "revoked": true,
+        "scope": "project",
+        "window": "after_health"
+      },
+      {
+        "at_control_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "cancelled": true,
+        "committed_while_paused": true,
+        "final_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "fixture_valid": true,
+        "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "pass": true,
+        "pending_steps": [
+          "affinity_sync",
+          "hebbian_decay",
+          "affinity_decay",
+          "continuity_refresh",
+          "event_compaction"
+        ],
+        "post_commit_changes": [],
+        "queue_statuses": [
+          "running",
+          "running"
+        ],
+        "revoked": true,
+        "scope": "session",
+        "window": "after_health"
+      },
+      {
+        "at_control_digest": "54a4a2fa9981f1f40c7739afbd9bc5f659e75b115f3416bc8761aef215c6d5d1",
+        "cancelled": true,
+        "committed_while_paused": false,
+        "final_digest": "54a4a2fa9981f1f40c7739afbd9bc5f659e75b115f3416bc8761aef215c6d5d1",
+        "fixture_valid": true,
+        "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+        "pass": true,
+        "pending_steps": [
+          "event_compaction"
+        ],
+        "post_commit_changes": [],
+        "queue_statuses": [
+          "running",
+          "running"
+        ],
+        "revoked": true,
+        "scope": "user",
+        "window": "after_inbox_compaction"
+      },
+      {
+        "at_control_digest": "2ec6b6f0c37f3eba4707226979c3e4c78a0438e5b55e698377195f529ad71bce",
+        "cancelled": true,
+        "committed_while_paused": false,
+        "final_digest": "2ec6b6f0c37f3eba4707226979c3e4c78a0438e5b55e698377195f529ad71bce",
+        "fixture_valid": true,
+        "initial_digest": "fd2b43c8e5183bd4ddcd9034faaa3e43579701dcc085336804c56c9702e65209",
+        "pass": true,
+        "pending_steps": [
+          "event_compaction"
+        ],
+        "post_commit_changes": [],
+        "queue_statuses": [
+          "running",
+          "running"
+        ],
+        "revoked": true,
+        "scope": "project",
+        "window": "after_inbox_compaction"
+      },
+      {
+        "at_control_digest": "3692164ca42aff073da77e6b409b975354001a3cf892fdafa5a745cbcf418101",
+        "cancelled": true,
+        "committed_while_paused": false,
+        "final_digest": "3692164ca42aff073da77e6b409b975354001a3cf892fdafa5a745cbcf418101",
+        "fixture_valid": true,
+        "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+        "pass": true,
+        "pending_steps": [
+          "event_compaction"
+        ],
+        "post_commit_changes": [],
+        "queue_statuses": [
+          "running",
+          "running"
+        ],
+        "revoked": true,
+        "scope": "session",
+        "window": "after_inbox_compaction"
+      }
+    ]
+  },
+  "control_materialization": {
+    "baseline_passed": 92,
+    "baseline_failed": 4,
+    "production_passed": 96,
+    "production_failed": 0,
+    "groups": [
+      {
+        "group": "project, legacy_off",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "project, legacy_on",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "project, missing",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "project, partial_current",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "session, legacy_off",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "session, legacy_on",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "session, missing",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "session, partial_current",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "user, legacy_off",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "user, legacy_on",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "user, missing",
+        "cells": 8,
+        "passed": 8
+      },
+      {
+        "group": "user, partial_current",
+        "cells": 8,
+        "passed": 8
+      }
+    ]
+  },
+  "extra_boundaries": 44,
+  "focused": {
+    "passed": 158,
+    "failed": 0,
+    "source": "final-matrix.log, before failure-target stores_checked counter correction",
+    "note": "Detailed normal-path digest cells above preceded the failed-target counter correction. The identical scorer then passed in final-expanded on the final sources; no claim that earlier source bytes were identical."
+  },
+  "final_regression": {
+    "files": 29,
+    "passed": 733,
+    "failed": 0,
+    "subtests_passed": 2,
+    "skipped": 0,
+    "seconds": 118.52,
+    "xml": "final-expanded.xml",
+    "log": "final-expanded.log",
+    "command": "python -m pytest tests/test_ghost_maintenance_revocation.py tests/test_ghost_control_materialization.py tests/test_ghost_maintenance_control_boundary.py tests/test_ghost_sleep.py tests/test_ghost_sleep_source_controls.py tests/test_ghost_sleep_clock_boundary.py tests/test_ghost_maintenance_as_of.py tests/test_ghost_controls.py tests/test_learning_switch_fail_closed.py tests/test_ghost_control_surface.py tests/test_ghost_control_contract.py tests/test_ghost_control_mutation_failures.py tests/test_ghost_deletion_manifest.py tests/test_ghost_deletion_manifest_recovery.py tests/test_ghost_deletion_manifest_multiprocess.py tests/test_ghost_post_turn.py tests/test_ghost_post_turn_work_queue.py tests/test_ghost_post_turn_affinity.py tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py tests/test_ghost_sqlite_store.py tests/test_ghost_projection_delete_fence.py tests/test_ghost_projection_exception_boundaries.py tests/test_ghost_scope_history_retention.py tests/test_ghost_hebbian.py tests/test_ghost_affinity.py tests/test_ghost_continuity.py tests/test_ghost_work_queue.py tests/test_ghost_canonical_source_fence_report.py tests/test_ghost_canonical_input_receipts.py -q --tb=short --junitxml=.e2e-artifacts/ghost-maintenance-revocation-20261118/final-expanded.xml",
+    "test_files": [
+      "tests/test_ghost_maintenance_revocation.py",
+      "tests/test_ghost_control_materialization.py",
+      "tests/test_ghost_maintenance_control_boundary.py",
+      "tests/test_ghost_sleep.py",
+      "tests/test_ghost_sleep_source_controls.py",
+      "tests/test_ghost_sleep_clock_boundary.py",
+      "tests/test_ghost_maintenance_as_of.py",
+      "tests/test_ghost_controls.py",
+      "tests/test_learning_switch_fail_closed.py",
+      "tests/test_ghost_control_surface.py",
+      "tests/test_ghost_control_contract.py",
+      "tests/test_ghost_control_mutation_failures.py",
+      "tests/test_ghost_deletion_manifest.py",
+      "tests/test_ghost_deletion_manifest_recovery.py",
+      "tests/test_ghost_deletion_manifest_multiprocess.py",
+      "tests/test_ghost_post_turn.py",
+      "tests/test_ghost_post_turn_work_queue.py",
+      "tests/test_ghost_post_turn_affinity.py",
+      "tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py",
+      "tests/test_ghost_sqlite_store.py",
+      "tests/test_ghost_projection_delete_fence.py",
+      "tests/test_ghost_projection_exception_boundaries.py",
+      "tests/test_ghost_scope_history_retention.py",
+      "tests/test_ghost_hebbian.py",
+      "tests/test_ghost_affinity.py",
+      "tests/test_ghost_continuity.py",
+      "tests/test_ghost_work_queue.py",
+      "tests/test_ghost_canonical_source_fence_report.py",
+      "tests/test_ghost_canonical_input_receipts.py"
+    ]
+  },
+  "production_files": 702,
+  "production_hashes_unchanged_from_final_freeze": true,
+  "owned_hashes": {
+    "codey/ghost/inbox.py": "05cd3d77a0a4e8a0cdbac7b5707718f9b61e1003dcdc8ede4ab670bbb5c5f57f",
+    "codey/ghost/sleep.py": "1ba8123906af51c50b12025277a102bb0f0c9ce73e0232c63b9e75ff44f47d0f",
+    "tests/test_ghost_control_materialization.py": "078a6e0e658305f5c8de6f4c75c2e14d626f379546d40fd42f560315e4fdd0d2",
+    "tests/test_ghost_maintenance_control_boundary.py": "b23b11809dd0c1369a6d1c44103fb676d104cae3ce7e389add78147edf5abdb7",
+    "tests/test_ghost_maintenance_revocation.py": "ef71ddda600de46e7105fa7cab3cee8751d7a7103486e8a71546fe7486fe71f2"
+  },
+  "checks": [
+    {
+      "command": "python -m ruff check .",
+      "exit_code": 0,
+      "seconds": 0.3371821,
+      "log": "final-check-0.log"
+    },
+    {
+      "command": "python -m mypy codey --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 32.315749,
+      "log": "final-check-1.log"
+    },
+    {
+      "command": "pyrefly check codey --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 1.8836482,
+      "log": "final-check-2.log"
+    },
+    {
+      "command": "ty check codey --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 0.5455944,
+      "log": "final-check-3.log"
+    },
+    {
+      "command": "python -m tools.kernel_type_precision_gate",
+      "exit_code": 0,
+      "seconds": 1.8452984,
+      "log": "final-check-4.log"
+    },
+    {
+      "command": "python -m mypy codey/ghost/inbox.py codey/ghost/sleep.py tests/test_ghost_maintenance_revocation.py tests/test_ghost_maintenance_control_boundary.py tests/test_ghost_control_materialization.py --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 9.8401203,
+      "log": "final-check-5.log"
+    },
+    {
+      "command": "pyrefly check codey/ghost/inbox.py codey/ghost/sleep.py tests/test_ghost_maintenance_revocation.py tests/test_ghost_maintenance_control_boundary.py tests/test_ghost_control_materialization.py --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 0.4452789,
+      "log": "final-check-6.log"
+    },
+    {
+      "command": "ty check codey/ghost/inbox.py codey/ghost/sleep.py tests/test_ghost_maintenance_revocation.py tests/test_ghost_maintenance_control_boundary.py tests/test_ghost_control_materialization.py --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 0.2107643,
+      "log": "final-check-7.log"
+    },
+    {
+      "command": "python -m mypy codey/ghost/inbox.py codey/ghost/sleep.py tests/test_ghost_maintenance_revocation.py tests/test_ghost_maintenance_control_boundary.py tests/test_ghost_control_materialization.py --python-version 3.11 --disallow-any-expr",
+      "exit_code": 1,
+      "seconds": 32.2328998,
+      "log": "final-check-8.log"
+    }
+  ],
+  "any_audit": {
+    "owned_files": 5,
+    "owned_diagnostics": 0,
+    "imported_diagnostics": 10864,
+    "imported_files": 334,
+    "exit_code": 1
+  },
+  "pyrefly": {
+    "production_errors": 0,
+    "existing_suppressed": 35,
+    "existing_warnings": 158,
+    "owned_errors": 0,
+    "owned_existing_warnings": 3,
+    "warning_detail": "Three unchanged str() compatibility coercions in inbox.py; separately inspected with --min-severity warn. No Any diagnostics or new suppressions."
+  },
+  "limits": [
+    "Only triggering scope revocation, not cross-scope record filtering for global decay/refresh/compaction",
+    "No actual daemon pending-payload/crash proof in this matrix",
+    "No model behavior claim",
+    "Previously cross-toggled settings are preserved, never automatically re-enabled",
+    "Other mixed-version, retention/purge, full G0 and new World Model candidate remain incomplete"
+  ],
+  "artifacts": ".e2e-artifacts/ghost-maintenance-revocation-20261118"
+}

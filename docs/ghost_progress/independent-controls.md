@@ -4,12 +4,18 @@
 - 状态：`INCOMPLETE`
 - 负责人：Codex
 - 开始日期：2026-10-21
-- 最后更新：2026-11-17（核对生产状态；历史测量不变）
+- 最后更新：2026-11-18（维护撤回与 setter 兼容；历史测量不变）
 - 关联 Roadmap 验收门：0.6.2 scope 与四个开关
 - 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); scoped projection/send gate `89622a8c`; lifecycle/expiry fixture `c3701ab4`; expiry trace `e8127019`; scoped export fixture `44fb29cf`; scoped health fix `91fe542f`; admit gate propagation `85efe9fb`; architecture audits `a7797877`, `84473e15`; follow-up boundary fix `6f18485e`
 - 生产合并结论：`PRODUCTION_MERGED`（四开关的现有生产接线；完整 0.6.2 仍为 `INCOMPLETE`）
 
 ## 本次目标
+
+2026-11-18：[维护撤回与单项控制兼容](maintenance-control-revocation-20261118.md)已生产默认修复。
+Sleep `06c8cfc4` 同事务复查触发 scope 控制，18 格9→18；setter `5407430f` 固定旧
+fallback，96格92→96，单项 accept_events 不再意外切换其他控制。44项追加、29文件
+733 passed/2子测试及全部指定静态门通过，五owned Any零诊断。完整另一scope触发的
+全局维护过滤、pending/硬退出和其余生命周期未由此证明，0.6.2仍INCOMPLETE。
 
 2026-11-17 核对：四开关已分别用于生产事件接收、检索、维护和发送准入；缺省设置开启，显式关闭继续
 生效。本次修正文档中遗留的 shadow 描述，不重新开启用户已经关闭的控制，也不宣称整个 0.6.2 验收完成。
@@ -105,8 +111,8 @@ control 缺失拒绝。不得恢复该 fallback。
 
 - `learning_enabled` 仍是旧 API 名称；后续可以在完成迁移矩阵后拆分 UI 文案，
   但暂不删除兼容入口。
-- 只需回滚实验 commit `496247fc` 即可恢复上一版单一 learning switch；不需要
-  删除本地 state。实验 state 不提交仓库。
+- `496247fc` 的早期回滚说明不适用于当前多次接线后的生产树；本轮可分别 revert
+  `06c8cfc4`、`5407430f` 后空闲重启，保留 SQLite、显式控制值与原始历史。
 
 ## 下一步
 
@@ -116,5 +122,6 @@ control 缺失拒绝。不得恢复该 fallback。
    Attempt Gate 已拒绝历史重发。下一步覆盖正常发送、native results/repair/receipt/resume/
    compaction，保留拒绝后的恢复语义，再测成本/延迟。
 3. 保持完整 0.6.2 `INCOMPLETE`，现有生产控制继续生效；后续扩展单独验收。
-4. World Model 继续保持 shadow：只研究 bounded event/prediction review 和
-   projection admission，不进入默认 prompt。
+4. World Model 未验证候选保持 shadow；两个重复当前事实的实机候选已终止。新候选必须
+   增加预测信息，经独立 ContextSource/admission、单模型收益与生产边界验收后默认接线；
+   不将 shadow 理解为永久不晋级，也不重跑已完成的重复事实候选。

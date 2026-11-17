@@ -10,6 +10,14 @@
 
 ## 当前状态
 
+[Sleep 维护撤回及单项控制兼容](maintenance-control-revocation-20261118.md)已在本地 master 默认修复：
+Sleep `06c8cfc4` 将 scoped 控制读取与写步骤/逐 store compaction 放在同事务，原 18 格
+9→18 通过；setter `5407430f` 固定 legacy fallback 原值，96 格 92→96 通过。
+44 项新增边界、最终 29 文件 733 passed/2 子测试与全树静态门通过，五个 owned 文件
+额外 Any 零诊断。普通 App/默认 daemon 与控制 CLI/UI 直接消费，无新 flag/模型调用；
+原负结果、夹具/调度问题与检查诊断保留。另一 scope 触发的全局维护过滤、真实 pending
+交接/硬退出、混版本/retention 等仍缺，完整 G0 与新 World Model 候选未完成。
+
 [正常 App 硬退出与 HTTP 恢复](app-http-crash-recovery-20261118.md)已默认生产修复，
 提交 `86ad9a83`：原 24 格从 18→24 通过，六个保存响应组恢复原工具声明后完成原 run，
 新增 HTTP=0；请求冻结/撤回/未知发送/二次冷开/独立新任务不回归。普通 shared kernel
@@ -117,6 +125,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| Sleep 维护撤回与独立控制兼容 2026-11-18 | `PRODUCTION_MERGED`（触发 scope 及 setter） | `06c8cfc4`/`5407430f`：18格9→18、96格92→96，44项追加；最终733/2子测试及全树门通过，五owned Any零诊断；另一scope全局维护/pending/硬退出仍缺 | [基线、生产与剩余审查](maintenance-control-revocation-20261118.md) |
 | 节点容量裁剪与跨 scope 重建 2026-11-18 | `PRODUCTION_MERGED`（受测 writer/replay/生命周期） | 生产 `34852638`；原 12 项 6→12，同秒重学 0→3，44 项边界；1474/3 旧夹具身份冲突/34 子测试，修正后 63 项复验及全静态门通过；差量事件默认消费，旧缺边界/降级有明确限制 | [基线、生产、失败归属与剩余审查](graph-capacity-scope-replay-20261118.md) |
 | 图同分裁剪与重建 2026-11-18 | `PRODUCTION_MERGED`（共享 bounds 与受测生命周期） | 原 24 项 9→24；真实 degree cap 三 scope/warm/cold 一致，新增 30 项维护/删除/恢复/Affinity 验收；1153/34 子测试及全树静态门通过，无新开关 | [基线、生产与剩余审查](graph-tie-replay-20261118.md) |
 | World Model 结构化复盘对照 2026-11-18 | `ABANDONED`（受测持久性预测消费者） | 新 40 请求格式全有效；on/off 各 8/20，input tokens +16.3%；无增益，终止重复事实候选；206/31 子测试及全树静态门通过，无生产新增 | [冻结、wire 与无增益结果](world-model-structured-review-20261118.md) |
@@ -176,7 +185,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 | Attempt Gate history / revocation closure | `EXPERIMENT_COMPLETE`（限定边界） | 当前 Attempt Gate 在 4 项 expiry 与 6 项撤回 loopback 对照中均于 HTTP 前闭合；完整 0.6.1/0.6.2 仍未完成 | [实验记录](attempt-gate-history-revocation-closure.md) |
 | Attempt Gate lifecycle acceptance | `EXPERIMENT_COMPLETE` | 生产 ApiProvider 的 native follow-up、错误 receipt、恢复上下文、compaction auxiliary 和 terminal receipt 均验证统一 gate 边界；仍是 fixture 离线证据 | [实验记录](attempt-gate-lifecycle-acceptance.md) |
 | Language Live Evaluation 2026-10-21 | `EXPERIMENT_COMPLETE`（受测中文子集已生产启用） | modelA/config 的 language on/off 为 20/20 对 0/20；2026-11-17 接入普通 Chat 并默认启用，无需第二模型 | [实验记录](language-live-evaluation-20261021.md) / [生产启用](language-production-enablement-20261117.md) |
-| 0.6.2 scope 与四个开关 | `INCOMPLETE`（控制及 Manifest 已生产接线） | 四开关默认接线，显式关闭仍生效；delete/reset 已默认持久调度；完整维护撤回、生命周期及 acceptance battery 仍缺 | [进度记录](independent-controls.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
+| 0.6.2 scope 与四个开关 | `INCOMPLETE`（控制及 Manifest 已生产接线） | 四开关默认接线，触发 scope 的在途撤回与旧设置单项切换已验；delete/reset 默认持久调度；跨 scope 全局维护、pending/硬退出、完整生命周期仍缺 | [进度记录](independent-controls.md) / [维护撤回](maintenance-control-revocation-20261118.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（历史候选，后续已接线） | 持久化、七 store 失败恢复与冷启动原始证据保留；后续原子性、混合矩阵和普通 API/CLI 默认调度已完成，完整 retention/升级输入仍缺 | [候选记录](deletion-manifest-candidate.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含 observation 兼容消费隔离） | 默认删除调度/恢复、来源退役与旧投影准入、删除/reset历史保留、容量窗口、原历史DELETE约束和schema9 observation只读消费视图已生效；其他领域旧reader/旧快照及内存、其他事务、磁盘retention/purge、其余身份/scope异常及完整生命周期仍缺 | [兼容消费视图](observation-consumption-view-production-20261117.md) / [物理删除防护](history-delete-guards-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
