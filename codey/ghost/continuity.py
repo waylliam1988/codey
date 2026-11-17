@@ -21,6 +21,7 @@ from codey.ghost.events import (
 )
 from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
+from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.payload_types import object_fields
 from codey.ghost.projection_fence import fence_projection
@@ -222,6 +223,7 @@ class GhostContinuityStore:
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
         self.database = GhostSQLite(state_home)
         self.records = GhostRecords(self.database, "continuity")
+        self._maintenance_controls = GhostInboxStore(state_home)
         self.last_warnings: tuple[str, ...] = ()
 
     @fence_projection
@@ -237,6 +239,7 @@ class GhostContinuityStore:
         project: str = "",
         mode: str = "",
         maintenance_as_of: str | None = None,
+        maintenance: bool = False,
     ) -> GhostContinuityResult:
         warnings: list[str] = []
         try:
@@ -275,12 +278,20 @@ class GhostContinuityStore:
 
             with self.records.transaction():
                 existing = list(self._load_items_unlocked())
+                policy = self._maintenance_controls.maintenance_policy() if maintenance else None
                 candidates = list(self.records.live_sources(candidates))
-
-                expired_ids = {item.id for item in existing if _is_expired(item, now)}
+                protected = {item.id: item for item in existing
+                             if policy is not None and not policy.allows_record(item.scope, item.scope_ref)}
+                candidates = [item for item in candidates if item.id not in protected
+                              and (policy is None or policy.allows_record(item.scope, item.scope_ref))]
+                expired_ids = {item.id for item in existing if item.id not in protected and _is_expired(item, now)}
                 active_existing = _bounded_items(item for item in existing if item.id not in expired_ids)
                 merged, changed_items = _merge_items(active_existing, candidates, now=now)
-                merged = _bounded_items(item for item in merged if not _is_expired(item, now))
+                allowed = _bounded_items(item for item in merged if item.id not in protected and not _is_expired(item, now))
+                merged = _bounded_items((*protected.values(), *allowed[:MAX_CONTINUITY_ITEMS - len(protected)]))
+                kept_ids = {item.id for item in merged}
+                if maintenance:
+                    changed_items = [item for item in changed_items if item.id in kept_ids]
                 projection_changed = _item_payloads(existing) != _item_payloads(merged)
                 changed_ids = expired_ids | {item.id for item in changed_items}
                 if not changed_ids and not projection_changed:
@@ -301,26 +312,32 @@ class GhostContinuityStore:
                             now=now,
                         ))
                     events.extend(_item_event(item, action="upsert", ts=now) for item in changed_items)
-                    events.append(
-                        _ghost_control_event(
-                            schema_version=CONTINUITY_SCHEMA_VERSION,
-                            event_name="ghost_continuity_synced",
-                            payload={
-                                "run_id": clip_signal_text(run_id, 120),
-                                "session_id": clip_signal_text(session_id, 120),
-                                "project": _common.normalize_project(project),
-                                "mode": clip_signal_text(mode, 40),
-                                "items_seen": len(candidates),
-                                "items_changed": len(changed_ids),
-                                "items_total": len(merged),
-                            },
-                            now=now,
-                            payload_cleaner=_clean_metadata,
+                    if maintenance:
+                        events.append(_maintenance_membership_event(kept_ids, ts=now))
+                    else:
+                        events.append(
+                            _ghost_control_event(
+                                schema_version=CONTINUITY_SCHEMA_VERSION,
+                                event_name="ghost_continuity_synced",
+                                payload={
+                                    "run_id": clip_signal_text(run_id, 120),
+                                    "session_id": clip_signal_text(session_id, 120),
+                                    "project": _common.normalize_project(project),
+                                    "mode": clip_signal_text(mode, 40),
+                                    "items_seen": len(candidates),
+                                    "items_changed": len(changed_ids),
+                                    "items_total": len(merged),
+                                },
+                                now=now,
+                                payload_cleaner=_clean_metadata,
+                            )
                         )
-                    )
                     self._append_events(events)
                 elif projection_changed:
-                    self._rewrite_events_from_items(merged, ts=now)
+                    if maintenance:
+                        self._append_events([_maintenance_membership_event(kept_ids, ts=now)])
+                    else:
+                        self._rewrite_events_from_items(merged, ts=now)
                 self._write_state(merged, now=now, warnings=warnings)
                 self._compact_if_needed(merged, ts=now)
                 self.last_warnings = _bounded_warnings(warnings)
@@ -499,6 +516,8 @@ class GhostContinuityStore:
     def _compact_if_needed(self, items: Iterable[GhostContinuityItem], *, ts: str | None = None) -> None:
         stats = self.records.event_stats()
         if stats["events"] > MAX_CONTINUITY_EVENTS or stats["bytes"] > MAX_CONTINUITY_EVENTS_BYTES:
+            if not self._maintenance_controls.maintenance_policy().allows_global_checkpoint:
+                return
             self._rewrite_events_from_items(items, ts=ts)
             self.records.mark_applied()
 
@@ -1034,6 +1053,9 @@ def _items_from_events(events: Iterable[object]) -> list[GhostContinuityItem]:
         if not object_fields(event):
             continue
         event_type = str(event.get("type") or "")
+        if event_type == "ghost_continuity_maintenance_applied":
+            by_id = _apply_maintenance_membership(by_id, event)
+            continue
         if event_type in {"ghost_continuity_items_expired", "ghost_continuity_synced"}:
             schema = event.get("schema_version")
             timestamp = event.get("ts")
@@ -1088,6 +1110,48 @@ def _items_from_events(events: Iterable[object]) -> list[GhostContinuityItem]:
         if item is not None:
             by_id[item.id] = item
     return list(by_id.values())
+
+
+def _maintenance_membership_event(identities: Iterable[str], *, ts: str) -> dict[str, object]:
+    return _ghost_control_event(
+        schema_version=CONTINUITY_SCHEMA_VERSION, event_name="ghost_continuity_maintenance_applied",
+        event_id_prefix="gcm_", payload={"item_ids": sorted(set(identities))}, now=ts,
+    )
+
+
+def _apply_maintenance_membership(
+    items: Mapping[str, GhostContinuityItem], event: Mapping[str, object],
+) -> dict[str, GhostContinuityItem]:
+    kept_ids = _maintenance_membership_ids(event)
+    if not kept_ids.issubset(items):
+        raise ValueError("continuity maintenance references absent rows")
+    return {identity: item for identity, item in items.items() if identity in kept_ids}
+
+
+def _maintenance_membership_ids(event: Mapping[str, object]) -> set[str]:
+    if set(event) != {"schema_version", "type", "event_id", "ts", "payload"}:
+        raise ValueError("invalid continuity maintenance envelope")
+    if type(event.get("schema_version")) is not int or event.get("schema_version") != CONTINUITY_SCHEMA_VERSION:
+        raise ValueError("invalid continuity maintenance schema")
+    identity = event.get("event_id")
+    if not isinstance(identity, str) or not identity or clip_signal_text(identity, 120) != identity:
+        raise ValueError("invalid continuity maintenance event identity")
+    parse_ts(event.get("ts"))
+    payload = event.get("payload")
+    if not object_fields(payload) or set(payload) != {"item_ids"}:
+        raise ValueError("invalid continuity maintenance payload")
+    values = payload.get("item_ids")
+    if not isinstance(values, list):
+        raise ValueError("invalid continuity maintenance identities")
+    rows: list[object] = values
+    if len(rows) > MAX_CONTINUITY_ITEMS:
+        raise ValueError("too many continuity maintenance identities")
+    identities: set[str] = set()
+    for value in rows:
+        if not isinstance(value, str) or not value or clip_signal_text(value, 120) != value or value in identities:
+            raise ValueError("invalid continuity maintenance identity")
+        identities.add(value)
+    return identities
 
 
 def _projection_payload(

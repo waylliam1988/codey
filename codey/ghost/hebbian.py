@@ -231,6 +231,7 @@ class GhostHebbianStore:
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
         self.database = GhostSQLite(state_home)
         self.graph = GhostGraph(self.database, "hebbian")
+        self._maintenance_controls = GhostInboxStore(state_home)
         self.last_warnings: tuple[str, ...] = ()
 
     def reinforce_candidate(
@@ -328,6 +329,7 @@ class GhostHebbianStore:
         events: Iterable[dict[str, object]],
         *,
         now: str,
+        compact: bool = True,
     ) -> None:
         nodes = _bounded_nodes(node_by_id.values())
         edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
@@ -350,7 +352,8 @@ class GhostHebbianStore:
                 now=now,
             )])
         self._write_state(nodes, edges)
-        self.compact_if_needed()
+        if compact:
+            self.compact_if_needed()
 
     def sync_from_inbox(self, inbox_store: GhostInboxStore) -> tuple[GhostReinforceResult, ...]:
         rows = inbox_store.list_candidates()
@@ -548,8 +551,16 @@ class GhostHebbianStore:
         now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
         with self.graph.transaction():
             nodes, edges = self._load_state_unlocked()
+            policy = self._maintenance_controls.maintenance_policy()
+            denied_nodes = {node.id for node in nodes if not policy.allows_record(node.scope, node.scope_ref)}
+            protected_edges = {_edge_key(edge) for edge in edges
+                               if edge.source in denied_nodes or edge.target in denied_nodes}
+            pinned_nodes = denied_nodes | {endpoint for edge in edges if _edge_key(edge) in protected_edges
+                                           for endpoint in (edge.source, edge.target)}
+            eligible_nodes = [node for node in nodes if node.id not in pinned_nodes]
+            eligible_edges = [edge for edge in edges if _edge_key(edge) not in protected_edges]
             interval = max(0, coerce_int(min_interval_seconds or 0))
-            if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
+            if interval and not _any_decay_due((*eligible_nodes, *eligible_edges), now=now, min_interval_seconds=interval):
                 return {
                     "removed_nodes": 0,
                     "removed_edges": 0,
@@ -557,8 +568,8 @@ class GhostHebbianStore:
                     "decayed_edges": 0,
                     "skipped_reason": "min_interval",
                 }
-            decayed_nodes = [_decay_node(node, now=now) for node in nodes]
-            decayed_edges = [_decay_edge(edge, now=now) for edge in edges]
+            decayed_nodes = [node if node.id in pinned_nodes else _decay_node(node, now=now) for node in nodes]
+            decayed_edges = [edge if _edge_key(edge) in protected_edges else _decay_edge(edge, now=now) for edge in edges]
             bounded_nodes = _bounded_nodes(decayed_nodes)
             bounded_edges = _bounded_edges(decayed_edges, node_ids={node.id for node in bounded_nodes})
             removed_nodes = len(nodes) - len(bounded_nodes)
@@ -579,11 +590,11 @@ class GhostHebbianStore:
                     "decayed_edges": 0,
                     "skipped_reason": "no_change",
                 }
-            self._rewrite_events_from_state(
-                bounded_nodes,
-                bounded_edges,
-                ts=now,
-                control_event=_ghost_control_event(
+            events = [_node_event(after, action="decayed", ts=now)
+                      for before, after in zip(nodes, decayed_nodes, strict=True) if before != after]
+            events.extend(_edge_event(after, action="decayed", ts=now)
+                          for before, after in zip(edges, decayed_edges, strict=True) if before != after)
+            events.append(_ghost_control_event(
                     schema_version=HEBBIAN_SCHEMA_VERSION,
                     event_name="ghost_hebbian_state_decayed",
                     payload={
@@ -593,9 +604,11 @@ class GhostHebbianStore:
                         "decayed_edges": decayed_edge_count,
                     },
                     now=now,
-                ),
+                ))
+            self._commit_reinforcement(
+                {node.id: node for node in decayed_nodes}, {_edge_key(edge): edge for edge in decayed_edges},
+                events, now=now, compact=False,
             )
-            self._write_state(bounded_nodes, bounded_edges)
             return {
                 "removed_nodes": removed_nodes,
                 "removed_edges": removed_edges,
@@ -608,6 +621,8 @@ class GhostHebbianStore:
         with self.graph.transaction():
             before = self.graph.event_stats()
             if not over_compact_budget(before, max_events=MAX_HEBBIAN_EVENTS, max_bytes=MAX_HEBBIAN_EVENTS_BYTES):
+                return _shared_compact_payload(True, False, before, before, ())
+            if not self._maintenance_controls.maintenance_policy().allows_global_checkpoint:
                 return _shared_compact_payload(True, False, before, before, ())
             nodes, edges = self._load_state_unlocked()
             self._rewrite_events_from_state(nodes, edges)
@@ -656,7 +671,7 @@ class GhostHebbianStore:
                     if identity not in removed_edges and edge.source not in removed_nodes and edge.target not in removed_nodes
                 }
             elif event_type in {"ghost_hebbian_candidate_removed", "ghost_hebbian_state_decayed"}:
-                # Their preceding snapshot already contains the mutation.
+                # Their preceding snapshot or precise row events contain the mutation.
                 # Validate the audit marker without applying it a second time.
                 _replay_control_payload(event_type, event.get("payload"))
             elif event_type in {"ghost_hebbian_node_upsert", "ghost_hebbian_node_superseded"}:

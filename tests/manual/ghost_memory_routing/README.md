@@ -27,6 +27,15 @@
 
 ## 文件与数据位置
 
+2026-11-18 G0 [图与continuity逐记录维护](../../../docs/ghost_progress/selective-maintenance-production-20261118.md)：
+入口 `python -m pytest tests/test_ghost_selective_maintenance.py tests/test_ghost_selective_maintenance_events.py tests/test_ghost_maintenance_record_scope.py -q --tb=short`。
+原12格scorer不改，四领域12/12；另135项新边界。普通App/default daemon默认消费；
+报告 `reports/selective-maintenance-production-20261118.json`，完整log/XML/state/hash仅留
+`.e2e-artifacts/ghost-selective-maintenance-20261118/`。最终扩大/静态门及中间失败归属见记录。
+checkpoint窗口有界化/未知父project/旧身份/混版本限制保留，无模型调用。用户要求本批
+commit后停止，[接手说明](../../../docs/ghost_progress/selective-maintenance-handoff-20261118.md)为恢复入口。
+
+此前独立批次的历史结果：
 2026-11-18 G0 [Queue逐记录维护](../../../docs/ghost_progress/queue-record-maintenance-production-20261118.md)：
 入口 `python -m pytest tests/test_ghost_queue_record_maintenance.py -q -s --tb=short`，46项通过；
 最终20文件495项与全静态门通过，三个owned Any零诊断。普通App/default daemon及直接

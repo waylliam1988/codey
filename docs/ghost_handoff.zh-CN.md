@@ -12,7 +12,17 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-18 最新完成：[Queue逐记录维护](ghost_progress/queue-record-maintenance-production-20261118.md)。
+2026-11-18 本批收尾后按用户要求停止；长期目标保持暂停，不代表目标完成。
+最新[图与continuity逐记录维护](ghost_progress/selective-maintenance-production-20261118.md)
+及[批次交接](ghost_progress/selective-maintenance-handoff-20261118.md)记录默认入口、验收、
+兼容回滚与恢复次序。原四领域12格已12/12，未改scorer；无模型请求或新增默认关闭flag。
+扩大1614/2子测试、类型整理后最终439/2子测试及全树静态门通过，八owned Any零诊断；
+依赖10864项/334文件额外诊断及Pyrefly警告分开保留，不称全树Any清零。
+受限全库checkpoint暂缓仍可能超预算，session父project未知时保守暂停；有界化/旧身份/
+pending/硬退出/混版本/retention及World Model仍待继续。恢复授权后先检查status和最新
+commit，保留原tar删除/未跟踪HTML，不复制worktree、不跑全量pytest。
+
+2026-11-18 此前完成：[Queue逐记录维护](ghost_progress/queue-record-maintenance-production-20261118.md)。
 普通App/default daemon及直接owner默认按实际控制保护另一scope的租约，原transition
 replay不读取当前权限。新增46项、最终20文件495项及全树静态门通过，三个owned Any零
 诊断；依赖334文件10864额外诊断单列。原四领域12格仍6通过/6失败，queue子比较12/12，

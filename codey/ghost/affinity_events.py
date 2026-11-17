@@ -79,6 +79,7 @@ _AFFINITY_EVENT_TYPES = frozenset(
         "ghost_affinity_edge_reinforced",
         "ghost_affinity_scope_deleted",
         "ghost_affinity_decay_applied",
+        "ghost_affinity_maintenance_applied",
         "ghost_affinity_snapshot",
     }
 )
@@ -91,6 +92,7 @@ _AFFINITY_EVENT_KEYS = {
     "ghost_affinity_edge_reinforced": frozenset({"schema_version", "type", "event_id", "ts", "spec"}),
     "ghost_affinity_scope_deleted": frozenset({"schema_version", "type", "event_id", "ts", "payload"}),
     "ghost_affinity_decay_applied": frozenset({"schema_version", "type", "event_id", "ts", "payload"}),
+    "ghost_affinity_maintenance_applied": frozenset({"schema_version", "type", "event_id", "ts", "node_ids", "edge_ids"}),
     "ghost_affinity_snapshot": frozenset({"schema_version", "type", "event_id", "ts", "reason", "nodes", "edges"}),
 }
 
@@ -114,6 +116,26 @@ def apply_affinity_event(state: AffinityReplayState, event: Mapping[str, object]
         snapshot_nodes, snapshot_edges = _snapshot_rows(event)
         state["nodes"] = {node.id: node for node in snapshot_nodes}
         state["edges"] = {edge.id: edge for edge in snapshot_edges}
+        return
+    if event_type == "ghost_affinity_maintenance_applied":
+        # Reinforcement logs may contain rows outside the last bounded view.
+        # This event fixes that projection boundary before applying the recorded
+        # selection; replay never consults current maintenance permissions.
+        live_nodes = _bounded_nodes(nodes.values())
+        live_edges = _bounded_edges(edges.values(), node_ids={node.id for node in live_nodes})
+        node_ids = set(_maintenance_ids(event.get("node_ids"), limit=MAX_AFFINITY_NODES))
+        edge_ids = set(_maintenance_ids(event.get("edge_ids"), limit=MAX_AFFINITY_EDGES))
+        live_node_ids = {node.id for node in live_nodes}
+        live_edge_ids = {edge.id for edge in live_edges}
+        if not node_ids.issubset(live_node_ids) or not edge_ids.issubset(live_edge_ids):
+            raise ValueError("affinity maintenance references absent rows")
+        kept_nodes = _bounded_nodes(_decay_node(node, now=now) if node.id in node_ids else node for node in live_nodes)
+        kept_edges = _bounded_edges(
+            (_decay_edge(edge, now=now) if edge.id in edge_ids else edge for edge in live_edges),
+            node_ids={node.id for node in kept_nodes},
+        )
+        state["nodes"] = {node.id: node for node in kept_nodes}
+        state["edges"] = {edge.id: edge for edge in kept_edges}
         return
     if event_type == "ghost_affinity_node_reinforced":
         node_spec = _node_spec_from_payload(event.get("spec"))
@@ -514,6 +536,31 @@ def _snapshot_event(
     }
 
 
+def _maintenance_applied_event(node_ids: Iterable[str], edge_ids: Iterable[str], *, ts: str) -> dict[str, object]:
+    return {
+        "schema_version": AFFINITY_SCHEMA_VERSION,
+        "type": "ghost_affinity_maintenance_applied",
+        "event_id": "gam_" + uuid.uuid4().hex[:24],
+        "ts": ts,
+        "node_ids": sorted(set(node_ids)),
+        "edge_ids": sorted(set(edge_ids)),
+    }
+
+
+def _maintenance_ids(value: object, *, limit: int) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        raise ValueError("affinity maintenance identities must be a list")
+    rows: list[object] = value
+    if len(rows) > limit:
+        raise ValueError("too many affinity maintenance identities")
+    identities: list[str] = []
+    for row in rows:
+        if not isinstance(row, str) or not row or clip_signal_text(row, 120) != row or row in identities:
+            raise ValueError("invalid affinity maintenance identity")
+        identities.append(row)
+    return tuple(identities)
+
+
 def _valid_affinity_event(event: Mapping[str, object]) -> bool:
     from codey.ghost.affinity_model import AFFINITY_SCHEMA_VERSION
 
@@ -532,6 +579,16 @@ def _valid_affinity_event(event: Mapping[str, object]) -> bool:
         return False
     if event_type == "ghost_affinity_snapshot":
         return _valid_affinity_snapshot(event)
+    if event_type == "ghost_affinity_maintenance_applied":
+        identity = event.get("event_id")
+        if not isinstance(identity, str) or clip_signal_text(identity, 120) != identity:
+            return False
+        try:
+            _maintenance_ids(event.get("node_ids"), limit=MAX_AFFINITY_NODES)
+            _maintenance_ids(event.get("edge_ids"), limit=MAX_AFFINITY_EDGES)
+        except ValueError:
+            return False
+        return True
     if event_type == "ghost_affinity_node_reinforced":
         return _valid_node_spec_payload(event.get("spec"))
     if event_type == "ghost_affinity_edge_reinforced":

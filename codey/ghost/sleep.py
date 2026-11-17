@@ -492,6 +492,7 @@ class GhostSleepStore:
             session_id=session_id,
             project=project,
             maintenance_as_of=maintenance_as_of,
+            maintenance=True,
         )
         return GhostSleepStepResult(
             "affinity_sync",
@@ -583,6 +584,7 @@ class GhostSleepStore:
             project=project,
             mode="sleep",
             maintenance_as_of=maintenance_as_of,
+            maintenance=True,
         )
         return GhostSleepStepResult(
             "continuity_refresh",

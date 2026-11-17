@@ -1,0 +1,253 @@
+{
+  "experiment": "Selective graph and continuity maintenance record protection",
+  "date": "2026-11-18",
+  "status": "PRODUCTION_MERGED",
+  "production_commit": "Same master commit as this report; see git log for the selective maintenance production repair.",
+  "freeze": "d293b938",
+  "production_baseline": "e5ca1bf7",
+  "original_negative_evidence": "maintenance-record-scope-baseline-20261118.json",
+  "model_called": false,
+  "model_configuration": null,
+  "validation_scope": "Deterministic production control/replay contract repair; no new model behavior benefit or cross-model promotion claim.",
+  "hypothesis": "Maintenance started in an allowed scope must preserve denied records and their protected graph endpoints while allowed peers actually advance; persisted actual selections must replay independently of current controls.",
+  "primary_variable": "Record eligibility under the owner write transaction, precise row/selection/membership events and protected capacity admission.",
+  "stop_condition": "Finish this frozen batch, required verification, handoff and commit, then stop at the user's request. Overall goal remains paused.",
+  "original_matrix": {
+    "cells": 12,
+    "baseline_passed": 6,
+    "baseline_failed": 6,
+    "queue_only_stage_passed": 6,
+    "queue_only_stage_failed": 6,
+    "final_passed": 12,
+    "final_failed": 0,
+    "scorer_unchanged": true,
+    "source_file": "tests/test_ghost_maintenance_record_scope.py",
+    "scopes": [
+      "project",
+      "session"
+    ],
+    "trigger_scopes": [
+      "user",
+      "project",
+      "session"
+    ],
+    "controls": [
+      "enabled",
+      "denied"
+    ],
+    "domains": [
+      "hebbian",
+      "affinity",
+      "continuity",
+      "work_queue"
+    ],
+    "allowed_peer_must_actually_change": true
+  },
+  "new_tests": {
+    "total": 135,
+    "owner_and_lifecycle": 96,
+    "strict_event_boundaries": 39
+  },
+  "regression": {
+    "expanded": {
+      "files": 33,
+      "passed": 1614,
+      "subtests_passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 1240.71,
+      "xml_seconds": 1240.599,
+      "log": "expanded.log",
+      "command": "python -m pytest tests/test_ghost_selective_maintenance.py tests/test_ghost_selective_maintenance_events.py tests/test_ghost_maintenance_record_scope.py tests/test_ghost_queue_record_maintenance.py tests/test_ghost_sleep.py tests/test_ghost_sleep_clock_boundary.py tests/test_ghost_sleep_source_controls.py tests/test_ghost_maintenance_as_of.py tests/test_ghost_maintenance_revocation.py tests/test_ghost_maintenance_control_boundary.py tests/test_ghost_control_materialization.py tests/test_ghost_controls.py tests/test_ghost_control_contract.py tests/test_ghost_control_mutation_failures.py tests/test_ghost_hebbian.py tests/test_ghost_hebbian_control_replay.py tests/test_ghost_hebbian_control_boundaries.py tests/test_ghost_hebbian_replay_integrity.py tests/test_ghost_hebbian_row_time.py tests/test_ghost_affinity.py tests/test_ghost_continuity.py tests/test_ghost_continuity_expiry.py tests/test_ghost_continuity_expiry_boundary.py tests/test_ghost_graph_tie_replay.py tests/test_ghost_graph_tie_lifecycle.py tests/test_ghost_graph_pruning_boundaries.py tests/test_ghost_graph_capacity_scope_replay.py tests/test_ghost_graph_primitives.py tests/test_ghost_capacity_history_retention.py tests/test_ghost_reset_history_retention.py tests/test_ghost_reset_boundaries.py tests/test_ghost_work_queue.py tests/test_ghost_post_turn_work_queue.py -q --tb=short --basetemp=.e2e-artifacts/ghost-selective-maintenance-20261118/expanded-state --junitxml=.e2e-artifacts/ghost-selective-maintenance-20261118/expanded.xml"
+    },
+    "intermediate_after_ruff_and_test_type_repair": {
+      "files": 11,
+      "passed": 370,
+      "subtests_passed": 2,
+      "failed": 0,
+      "seconds": 58.59,
+      "log": "final-regression-before-any-fix.log"
+    },
+    "final_after_all_source_changes": {
+      "files": 13,
+      "passed": 439,
+      "subtests_passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 65.87,
+      "xml_seconds": 65.808,
+      "log": "final-regression.log",
+      "command": "python -m pytest tests/test_ghost_selective_maintenance.py tests/test_ghost_selective_maintenance_events.py tests/test_ghost_maintenance_record_scope.py tests/test_ghost_continuity.py tests/test_ghost_continuity_expiry.py tests/test_ghost_continuity_expiry_boundary.py tests/test_ghost_sleep.py tests/test_ghost_sleep_clock_boundary.py tests/test_ghost_sleep_source_controls.py tests/test_ghost_maintenance_as_of.py tests/test_ghost_maintenance_revocation.py tests/test_ghost_affinity.py tests/test_ghost_graph_tie_replay.py -q --tb=short --basetemp=.e2e-artifacts/ghost-selective-maintenance-20261118/final-typed-state --junitxml=.e2e-artifacts/ghost-selective-maintenance-20261118/final-regression.xml"
+    },
+    "provenance": "Expanded1614 ran before the continuity membership helper extraction, test import/domain variable naming cleanup and Affinity ID-set precision repair. Final439 reran all135 new tests, unchanged original12 and affected continuity/Affinity/Sleep paths on final source bytes. These are separate runs, not one combined all-pass execution.",
+    "full_pytest_run": false
+  },
+  "checks": [
+    {
+      "exit_code": 0,
+      "log": "ruff.log",
+      "name": "ruff",
+      "command": "python -m ruff check ."
+    },
+    {
+      "exit_code": 0,
+      "log": "mypy.log",
+      "name": "mypy",
+      "command": "python -m mypy codey --python-version 3.11"
+    },
+    {
+      "exit_code": 0,
+      "log": "pyrefly.log",
+      "name": "pyrefly",
+      "command": "pyrefly check codey --python-version 3.11"
+    },
+    {
+      "exit_code": 0,
+      "log": "ty.log",
+      "name": "ty",
+      "command": "ty check codey --python-version 3.11"
+    },
+    {
+      "exit_code": 0,
+      "log": "precision.log",
+      "name": "precision",
+      "command": "python -m tools.kernel_type_precision_gate"
+    },
+    {
+      "exit_code": 0,
+      "log": "owned-mypy.log",
+      "name": "owned-mypy",
+      "command": "python -m mypy codey/ghost/affinity.py codey/ghost/affinity_events.py codey/ghost/continuity.py codey/ghost/hebbian.py codey/ghost/inbox.py codey/ghost/sleep.py tests/test_ghost_selective_maintenance.py tests/test_ghost_selective_maintenance_events.py --python-version 3.11"
+    },
+    {
+      "exit_code": 0,
+      "log": "owned-pyrefly.log",
+      "name": "owned-pyrefly",
+      "command": "pyrefly check codey/ghost/affinity.py codey/ghost/affinity_events.py codey/ghost/continuity.py codey/ghost/hebbian.py codey/ghost/inbox.py codey/ghost/sleep.py tests/test_ghost_selective_maintenance.py tests/test_ghost_selective_maintenance_events.py --python-version 3.11"
+    },
+    {
+      "exit_code": 0,
+      "log": "owned-ty.log",
+      "name": "owned-ty",
+      "command": "ty check codey/ghost/affinity.py codey/ghost/affinity_events.py codey/ghost/continuity.py codey/ghost/hebbian.py codey/ghost/inbox.py codey/ghost/sleep.py tests/test_ghost_selective_maintenance.py tests/test_ghost_selective_maintenance_events.py --python-version 3.11"
+    },
+    {
+      "exit_code": 1,
+      "log": "owned-any.log",
+      "name": "owned-any",
+      "command": "python -m mypy codey/ghost/affinity.py codey/ghost/affinity_events.py codey/ghost/continuity.py codey/ghost/hebbian.py codey/ghost/inbox.py codey/ghost/sleep.py tests/test_ghost_selective_maintenance.py tests/test_ghost_selective_maintenance_events.py --python-version 3.11 --disallow-any-expr --no-error-summary --no-pretty --no-color-output"
+    }
+  ],
+  "owned_source_files": [
+    "codey/ghost/affinity.py",
+    "codey/ghost/affinity_events.py",
+    "codey/ghost/continuity.py",
+    "codey/ghost/hebbian.py",
+    "codey/ghost/inbox.py",
+    "codey/ghost/sleep.py",
+    "tests/test_ghost_selective_maintenance.py",
+    "tests/test_ghost_selective_maintenance_events.py"
+  ],
+  "precision_audit": {
+    "owned_diagnostics": 0,
+    "owned_rows": [],
+    "dependency_diagnostics": 10864,
+    "dependency_files": 334,
+    "explicit_any_or_cast": [],
+    "source_hash_rows": 704,
+    "source_hash_mismatches": [],
+    "production_files": 702
+  },
+  "pyrefly": {
+    "production_errors": 0,
+    "production_warnings": 158,
+    "production_suppressed": 35,
+    "owned_errors": 0,
+    "owned_warnings": 3
+  },
+  "any_audit_interpretation": "Extra --disallow-any-expr command exits1 from10864 unchanged dependency diagnostics across334 files; all8 owned files have0 diagnostics. Required configured full production-tree error gates pass. No cast, ignore, scope narrowing or configuration exemptions added.",
+  "production": {
+    "consumers": [
+      "Normal App/default Sleep daemon",
+      "Hebbian owner decay and checkpoint",
+      "Affinity owner decay, maintenance source sync and checkpoint",
+      "Continuity maintenance refresh, membership replay and checkpoint"
+    ],
+    "default_enabled": true,
+    "new_default_off_flag": false,
+    "independent_normal_learning_preserved": true,
+    "replay_uses_current_controls": false,
+    "protected_capacity_and_edge_endpoints": true,
+    "global_checkpoint_deferred_during_restrictions": true,
+    "bounded_selective_compaction_proven": false,
+    "actual_event_names": [
+      "ghost_affinity_maintenance_applied",
+      "ghost_continuity_maintenance_applied"
+    ]
+  },
+  "failure_history": [
+    {
+      "artifact": "boundaries-first.log",
+      "passed": 69,
+      "failed": 27,
+      "ownership": "New fixtures: continuity21-day TTL had not expired at chosen horizon; invalid Hebbian edge relation; incomplete collector keywords. Corrected fixtures, unchanged original12 scorer."
+    },
+    {
+      "artifact": "acceptance.log",
+      "passed": 146,
+      "failed": 1,
+      "ownership": "New test compared semantic edge ordering with ID ordering. Compare both payload lists by typed row ID; retain exact payload and repeated replay equality."
+    },
+    {
+      "ownership": "Production candidate continuity membership event lacked its required event_id; repaired generator with gcm_ identity and exercised rebuild."
+    },
+    {
+      "artifact": "ruff-first.log",
+      "errors": 2,
+      "ownership": "Continuity replay complexity21 exceeded configured20; extract typed membership application helper. Organize test imports."
+    },
+    {
+      "artifact": "owned-mypy-first.log",
+      "errors": 4,
+      "ownership": "New test reused local names for different Hebbian/Affinity domain types; use domain-specific names."
+    },
+    {
+      "artifact": "owned-any-first.log",
+      "owned_diagnostics": 2,
+      "ownership": "issubset contextual typing produced Generator[Any]; construct typed concrete ID sets before subset comparisons."
+    }
+  ],
+  "boundaries": [
+    "Normal App and Sleep",
+    "deny/restore and independent controls",
+    "protected expired continuity rows stay hidden to readers",
+    "project/session/user and unknown parent protection",
+    "cross-scope edge endpoints",
+    "real500-node and16-degree Affinity capacity",
+    "120-row continuity capacity and eviction membership",
+    "cold owners and deterministic replay",
+    "deletion without resurrection",
+    "actual event/projection write rollback and cold retry",
+    "both concurrent deny/maintenance transaction commit orders",
+    "real over-budget checkpoint defer/restore",
+    "strict valid and malformed selection events"
+  ],
+  "limitations": [
+    "Restricted consumption windows can exceed original budgets; no bounded selective checkpoint or physical retention/purge proof.",
+    "Any project deny conservatively pauses session maintenance when canonical parent-project provenance is unavailable.",
+    "Arbitrary legacy/noncanonical/overlong/raw hash-shaped identity alias correctness is not proven.",
+    "Old Affinity validator rejects new events; old continuity reader may ignore new membership events. Seamless downgrade/mixed-version lifecycle is not proven.",
+    "Pending daemon payload handoff/hard exit and fullG0 remain incomplete.",
+    "World Model remains unfinished; do not rerun abandoned duplicate-current-verification-fact candidates merely with new prompts."
+  ],
+  "rollback": "Use existing global run_maintenance control for isolation and restart at an idle boundary. Preserve SQLite/raw history and compatible new-event readers. A code revert alone is not a proven downgrade; validate a migration or retain readers before rebuilding new logs with an older binary.",
+  "artifacts_local_only": ".e2e-artifacts/ghost-selective-maintenance-20261118/",
+  "handoff": "docs/ghost_progress/selective-maintenance-handoff-20261118.md",
+  "protected_user_changes": [
+    " D dist-sdist-check/codey-0.5.11.tar.gz",
+    "?? codey-uiux-interactive.html"
+  ],
+  "frontend_changed": false,
+  "worktree_copied": false,
+  "overall_goal_status": "paused"
+}

@@ -24,11 +24,11 @@ from codey.ghost.affinity_events import (
     _any_decay_due,
     _bounded_edges,
     _bounded_nodes,
-    _decay_applied_event,
     _decay_edge,
     _decay_node,
     _delete_scope_rows,
     _edge_reinforced_event,
+    _maintenance_applied_event,
     _node_reinforced_event,
     _projection_payload,
     _reinforce_edge,
@@ -75,6 +75,7 @@ from codey.ghost.events import (
 )
 from codey.ghost.graph_primitives import parse_ts
 from codey.ghost.graph_store import GhostGraph
+from codey.ghost.inbox import GhostInboxStore, GhostMaintenancePolicy
 from codey.ghost.projection_fence import fence_projection
 from codey.ghost.schema import clip_signal_text
 from codey.ghost.sqlite import GhostSQLite
@@ -105,6 +106,7 @@ class GhostAffinityStore:
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
         self.database = GhostSQLite(state_home)
         self.graph = GhostGraph(self.database, "affinity")
+        self._maintenance_controls = GhostInboxStore(state_home)
         self.last_warnings: tuple[str, ...] = ()
 
     @fence_projection
@@ -119,6 +121,7 @@ class GhostAffinityStore:
         session_id: str = "",
         project: str = "",
         maintenance_as_of: str | None = None,
+        maintenance: bool = False,
     ) -> GhostAffinitySyncResult:
         self.last_warnings = ()
         try:
@@ -137,24 +140,41 @@ class GhostAffinityStore:
 
             def decide(events: list[dict[str, object]]) -> _AffinityMutation:
                 nodes, edges = replay_affinity_events(events)
+                policy = self._maintenance_controls.maintenance_policy() if maintenance else None
+                protected_nodes, protected_edges = _protected_rows(nodes, edges, policy)
                 node_by_id = {node.id: node for node in nodes}
                 edge_by_id = {edge.id: edge for edge in edges}
                 append_events: list[dict[str, object]] = []
                 changed_nodes = 0
                 for node_spec in node_specs:
+                    if policy is not None and not policy.allows_record(node_spec.scope, node_spec.scope_ref, encoded=True):
+                        continue
                     node, changed = _reinforce_node(
                         node_by_id.get(_node_id(node_spec.kind, node_spec.scope, node_spec.scope_ref, node_spec.key)),
                         node_spec,
                         now=now,
                     )
-                    if not changed:
+                    if not changed or node.id in protected_nodes:
                         continue
+                    previous_node = node_by_id.get(node.id)
                     node_by_id[node.id] = node
+                    if not _preserves_protected(node_by_id.values(), edge_by_id.values(), protected_nodes, protected_edges):
+                        if previous_node is None:
+                            del node_by_id[node.id]
+                        else:
+                            node_by_id[node.id] = previous_node
+                        continue
                     append_events.append(_node_reinforced_event(node_spec, ts=now))
                     changed_nodes += 1
                 changed_edges = 0
                 for edge_spec in edge_specs:
                     if edge_spec.source not in node_by_id or edge_spec.target not in node_by_id:
+                        continue
+                    if policy is not None and (
+                        not policy.allows_record(edge_spec.scope, edge_spec.scope_ref, encoded=True)
+                        or not all(policy.allows_record(node_by_id[identity].scope, node_by_id[identity].scope_ref, encoded=True)
+                                   for identity in (edge_spec.source, edge_spec.target))
+                    ):
                         continue
                     edge, changed = _reinforce_edge(
                         edge_by_id.get(
@@ -169,9 +189,16 @@ class GhostAffinityStore:
                         edge_spec,
                         now=now,
                     )
-                    if not changed:
+                    if not changed or edge.id in protected_edges:
                         continue
+                    previous_edge = edge_by_id.get(edge.id)
                     edge_by_id[edge.id] = edge
+                    if not _preserves_protected(node_by_id.values(), edge_by_id.values(), protected_nodes, protected_edges):
+                        if previous_edge is None:
+                            del edge_by_id[edge.id]
+                        else:
+                            edge_by_id[edge.id] = previous_edge
+                        continue
                     append_events.append(_edge_reinforced_event(edge_spec, ts=now))
                     changed_edges += 1
                 bounded_nodes = _bounded_nodes(node_by_id.values())
@@ -190,6 +217,8 @@ class GhostAffinityStore:
                         write_state=False,
                         compact=False,
                     )
+                if maintenance:
+                    append_events.append(_maintenance_applied_event((), (), ts=now))
                 new_nodes, new_edges = replay_affinity_events((*events, *append_events))
                 return _AffinityMutation(
                     GhostAffinitySyncResult(
@@ -577,7 +606,11 @@ class GhostAffinityStore:
 
         def decide(events: list[dict[str, object]]) -> _AffinityMutation:
             nodes, edges = replay_affinity_events(events)
-            if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
+            policy = self._maintenance_controls.maintenance_policy()
+            protected_nodes, protected_edges = _protected_rows(nodes, edges, policy)
+            eligible_nodes = [node for node in nodes if node.id not in protected_nodes]
+            eligible_edges = [edge for edge in edges if edge.id not in protected_edges]
+            if interval and not _any_decay_due((*eligible_nodes, *eligible_edges), now=now, min_interval_seconds=interval):
                 return _AffinityMutation(
                     {
                         "removed_nodes": 0,
@@ -591,8 +624,8 @@ class GhostAffinityStore:
                     write_state=False,
                     compact=False,
                 )
-            decayed_nodes = [_decay_node(node, now=now) for node in nodes]
-            decayed_edges = [_decay_edge(edge, now=now) for edge in edges]
+            decayed_nodes = [node if node.id in protected_nodes else _decay_node(node, now=now) for node in nodes]
+            decayed_edges = [edge if edge.id in protected_edges else _decay_edge(edge, now=now) for edge in edges]
             bounded_nodes = _bounded_nodes(decayed_nodes)
             bounded_edges = _bounded_edges(decayed_edges, node_ids={node.id for node in bounded_nodes})
             decayed_node_count = sum(
@@ -622,12 +655,8 @@ class GhostAffinityStore:
                     write_state=False,
                     compact=False,
                 )
-            event = _decay_applied_event(
-                removed_nodes=removed_nodes,
-                removed_edges=removed_edges,
-                decayed_nodes=decayed_node_count,
-                decayed_edges=decayed_edge_count,
-                min_interval_seconds=interval,
+            event = _maintenance_applied_event(
+                (node.id for node in eligible_nodes), (edge.id for edge in eligible_edges),
                 ts=now,
             )
             new_nodes, new_edges = replay_affinity_events((*events, event))
@@ -654,6 +683,8 @@ class GhostAffinityStore:
         with self.graph.transaction():
             before = self.graph.event_stats()
             if not over_compact_budget(before, max_events=MAX_AFFINITY_EVENTS, max_bytes=MAX_AFFINITY_EVENTS_BYTES):
+                return _compact_payload(True, False, before, before, ())
+            if not self._maintenance_controls.maintenance_policy().allows_global_checkpoint:
                 return _compact_payload(True, False, before, before, ())
             nodes, edges = self._load_state_for_read_unlocked()
             self.graph.append(
@@ -706,6 +737,30 @@ class GhostAffinityStore:
         return GhostAffinitySyncResult(False, skipped_reason=reason, warnings=self.last_warnings)
 
 
+def _protected_rows(
+    nodes: Iterable[AffinityNode], edges: Iterable[AffinityEdge], policy: GhostMaintenancePolicy | None,
+) -> tuple[set[str], set[str]]:
+    if policy is None:
+        return set(), set()
+    denied_nodes = {node.id for node in nodes if not policy.allows_record(node.scope, node.scope_ref, encoded=True)}
+    protected_edges = [edge for edge in edges if edge.source in denied_nodes or edge.target in denied_nodes
+                       or not policy.allows_record(edge.scope, edge.scope_ref, encoded=True)]
+    pinned_nodes = denied_nodes | {endpoint for edge in protected_edges for endpoint in (edge.source, edge.target)}
+    return pinned_nodes, {edge.id for edge in protected_edges}
+
+
+def _preserves_protected(
+    nodes: Iterable[AffinityNode], edges: Iterable[AffinityEdge], node_ids: set[str], edge_ids: set[str],
+) -> bool:
+    if not node_ids and not edge_ids:
+        return True
+    kept_nodes = _bounded_nodes(nodes)
+    kept_node_ids = {node.id for node in kept_nodes}
+    kept_edges = _bounded_edges(edges, node_ids=kept_node_ids)
+    kept_edge_ids = {edge.id for edge in kept_edges}
+    return node_ids.issubset(kept_node_ids) and edge_ids.issubset(kept_edge_ids)
+
+
 def apply_affinity_work_boost(
     priority: float, hints: Iterable[AffinityHint | Mapping[str, object]], target: str,
 ) -> float:
@@ -751,7 +806,10 @@ def _hint(
 
 def _bounded_hints(hints: Iterable[AffinityHint]) -> tuple[AffinityHint, ...]:
     rows = [hint for hint in hints if hint.kind and hint.target and hint.weight > 0.0]
-    rows.sort(key=lambda item: (item.weight, item.confidence, item.target), reverse=True)
+    def rank(item: AffinityHint) -> tuple[float, float, str]:
+        return item.weight, item.confidence, item.target
+
+    rows.sort(key=rank, reverse=True)
     return tuple(rows[:MAX_HINTS])
 
 

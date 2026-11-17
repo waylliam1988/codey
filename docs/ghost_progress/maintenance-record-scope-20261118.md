@@ -1,7 +1,7 @@
 # 跨 scope 自动维护的记录保护
 
 - 日期：2026-11-18；关联：0.6.2、0.6.4。
-- 状态：`EXPERIMENT_COMPLETE`（有效负结果；queue随后独立修复，其余三个领域未修）；生产基线 `9ef0f712`。
+- 状态：`EXPERIMENT_COMPLETE`（有效原始负结果保留；queue及其余三个领域随后分轮修复，见末节）；生产基线 `9ef0f712`。
 - 无模型/endpoint/temperature：验证普通 App 的控制与持久记录边界，不宣称模型行为收益。
 - 依赖：触发 scope 在途撤回和控制 fallback 已由 `06c8cfc4`/`5407430f` 默认修复，不重复实现。
 
@@ -137,3 +137,12 @@ rebuild、事件与projection实际写后故障回滚、并发deny的两种提�
 脚本三检查器/额外Any审计通过，再在master默认消费者提交并更新板/roadmap。无新默认
 关闭flag。受限消费窗口有界化、旧非canonical身份、混版本及完整pending/retention仍
 单列，不能以本轮通过冒称完整G0；随后继续这些真实缺口和有新增预测信息的World Model。
+
+## 三个领域后续结果
+
+[图与continuity生产修复](selective-maintenance-production-20261118.md)已恢复原12格四领域
+scorer全部通过，原测试文件不改；新增96项owner/生命周期/容量/事务边界及39项严格事件
+验收。完整扩大批次和最终静态门以该记录为准，不覆盖本文原始6/6负结果。
+普通App/default daemon及直接owner默认消费，无新增flag或模型请求；scope限制下四owner
+全库checkpoint暂缓，窗口有界化/旧身份/pending/混版本/retention与完整G0仍未闭合。
+本批按用户要求交接并commit后停止，长期目标保持暂停；[恢复说明](selective-maintenance-handoff-20261118.md)。

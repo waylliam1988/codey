@@ -36,6 +36,7 @@ from codey.ghost.typed_fields import metadata_conflict_key, metadata_value_key
 from codey.runtime.core import cancellation
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
+    project_key,
     session_key,
 )
 
@@ -64,6 +65,8 @@ class GhostMaintenancePolicy:
 
     enabled: bool
     denied_projects: frozenset[str]
+    denied_project_keys: frozenset[str]
+    denied_sessions: frozenset[str]
     denied_session_keys: frozenset[str]
 
     @property
@@ -71,16 +74,23 @@ class GhostMaintenancePolicy:
         return self.enabled and not self.denied_projects and not self.denied_session_keys
 
     def allows_queue_record(self, scope: str, scope_ref: str) -> bool:
+        return self.allows_record(scope, scope_ref, encoded=scope == "session")
+
+    def allows_record(self, scope: str, scope_ref: str, *, encoded: bool = False) -> bool:
         if not self.enabled:
             return False
         if scope == "user":
             return not scope_ref
         if scope == "project":
-            return bool(scope_ref) and _common.normalize_project(scope_ref) not in self.denied_projects
+            return bool(scope_ref) and (
+                scope_ref not in self.denied_project_keys if encoded
+                else _common.normalize_project(scope_ref) not in self.denied_projects
+            )
         if scope == "session":
-            # Queue session refs cannot establish their parent project. A project
+            # Session refs cannot establish their parent project. A project
             # denial must not be bypassed by guessing an unrelated parent.
-            return bool(scope_ref) and not self.denied_projects and scope_ref not in self.denied_session_keys
+            denied = self.denied_session_keys if encoded else self.denied_sessions
+            return bool(scope_ref) and not self.denied_projects and scope_ref not in denied
         return False
 
 
@@ -662,8 +672,11 @@ class GhostInboxStore:
                             raise GhostSettingsError(self.database.path, f"{name} must be bool")
                     if entry.get("run_maintenance") is False:
                         identities.add(_common.normalize_project(scope_ref) if scope == "project"
-                                       else session_key(clip_signal_text(scope_ref, 120)))
-            return GhostMaintenancePolicy(enabled, frozenset(denied["project"]), frozenset(denied["session"]))
+                                       else clip_signal_text(scope_ref, 120))
+            return GhostMaintenancePolicy(
+                enabled, frozenset(denied["project"]), frozenset(project_key(ref) for ref in denied["project"]),
+                frozenset(denied["session"]), frozenset(session_key(ref) for ref in denied["session"]),
+            )
 
     def set_control(
         self,

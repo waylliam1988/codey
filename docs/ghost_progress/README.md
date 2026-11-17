@@ -10,6 +10,17 @@
 
 ## 当前状态
 
+用户要求本批收尾、交接并commit后停止；长期目标保持暂停。最新批次见
+[图与continuity逐记录维护](selective-maintenance-production-20261118.md)和
+[精确接手说明](selective-maintenance-handoff-20261118.md)。普通App/default daemon已接线
+逐记录维护与确定性事件，无新增默认关闭flag；原四领域12格scorer不改，已12/12。
+扩大1614/2子测试、类型整理后最终439/2子测试与全树静态门通过，八owned Any零诊断；
+依赖334文件10864项额外审计诊断及Pyrefly警告分列，完整记录保留中间失败。
+受限期间四owner全库checkpoint暂缓、窗口可能超预算，未知父project时session保守暂停；
+有界化、旧身份、pending/硬退出、混版本/retention及完整G0/World Model仍未完成。
+本批最终回归与类型门结果以生产记录为准；恢复授权后先读交接，不重复已闭合原矩阵。
+
+此前独立完成的历史结果：
 [Queue逐记录维护](queue-record-maintenance-production-20261118.md)已在master默认修复：
 普通App/default daemon和直接owner按写锁内实际scope控制选择租约，原transition确定性
 重放；新增46项、最终20文件495项与全静态门通过，三个owned文件额外Any零诊断。

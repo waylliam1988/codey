@@ -1863,6 +1863,14 @@ rendered envelope 才能交给 provider。trace 只记录准入结果，不能�
 
 #### 0.6.2 - Scope Control and Four Learning Switches
 
+2026-11-18 [三个领域逐记录维护](docs/ghost_progress/selective-maintenance-production-20261118.md)
+默认接入普通App/Sleep，恢复原四领域scorer 12/12；另135项新边界覆盖容量/端点/控制/
+并发/回滚/删除/rebuild与新事件校验。无模型请求或新默认关闭flag。
+扩大1614/2子测试、最终439/2子测试与完整静态门通过，八owned Any零诊断。四owner受限期间
+全库checkpoint暂缓，窗口可能超预算；未知父project时session保守暂停，有界化与完整
+生命周期仍缺。本批commit后按用户要求停止，长期目标暂停；[交接](docs/ghost_progress/selective-maintenance-handoff-20261118.md)。
+
+此前分轮历史结果：
 2026-11-18 [跨scope记录保护](docs/ghost_progress/maintenance-record-scope-20261118.md)：
 原普通App12格6通过/6失败，四领域均复现。[Queue随后默认修复](docs/ghost_progress/queue-record-maintenance-production-20261118.md)，
 新增46项/最终495项及全静态门通过，三个owned Any零诊断。原scorer重验仍6/6，queue
@@ -2101,6 +2109,13 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
+2026-11-18 [图与continuity维护事件](docs/ghost_progress/selective-maintenance-production-20261118.md)
+已默认记录真实允许行/选择ID/最终成员边界，重建不读取现时控制；原12格四领域12/12，
+新增135项边界。扩大1614/2子测试及类型整理后最终439/2子测试、完整静态门通过，八owned Any零诊断。
+受限窗口有界化、新事件混版本/降级、旧身份与完整pending/retention仍缺，
+不称整个0.6.4/G0完成。本批收尾提交后暂停，后续先读[交接](docs/ghost_progress/selective-maintenance-handoff-20261118.md)。
+
+此前分轮历史结果：
 2026-11-18：[Queue逐记录维护](docs/ghost_progress/queue-record-maintenance-production-20261118.md)
 已默认消费实际scope控制与原transition事件，重建不按当前权限重做历史维护；满容量、
 真实写回滚、并发撤回/重启/删除及checkpoint暂停/恢复验收通过。新增46项、最终495项
