@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -18,15 +20,11 @@ from tests.test_ghost_scope_history_retention import STORES, _history, _visible
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.mark.parametrize("store", STORES)
-@pytest.mark.parametrize("operation", ["compact", "reset"])
-@pytest.mark.parametrize("phase", ["schema7", "upgraded", "reset_after_upgrade"])
-def test_warm_legacy_mutation_preserves_upgraded_history(
-    tmp_path: Path, store: str, operation: str, phase: str,
-) -> None:
+@contextmanager
+def _legacy_worker(home: Path, store: str, operation: str) -> Generator[subprocess.Popen[str]]:
     process = subprocess.Popen(
         [sys.executable, "-m", "tests.manual.ghost_memory_routing.mixed_schema_worker",
-         "--home", str(tmp_path), "--store", store, "--operation", operation],
+         "--home", str(home), "--store", store, "--operation", operation],
         cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8",
     )
@@ -40,6 +38,29 @@ def test_warm_legacy_mutation_preserves_upgraded_history(
                 process.kill()
                 raise
         assert ready["ready"] is True and ready["schema"] == 7
+        yield process
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.communicate(timeout=10)
+
+
+def _finish_worker(process: subprocess.Popen[str]) -> str:
+    output, errors = process.communicate("go\n", timeout=30)
+    assert process.wait(timeout=10) == 0, errors
+    result = decoded_object(output.strip())
+    outcome = result.get("outcome")
+    assert isinstance(outcome, str) and outcome in {"completed", "rejected"}, result
+    return outcome
+
+
+@pytest.mark.parametrize("store", STORES)
+@pytest.mark.parametrize("operation", ["compact", "reset"])
+@pytest.mark.parametrize("phase", ["schema7", "upgraded", "reset_after_upgrade"])
+def test_warm_legacy_mutation_preserves_upgraded_history(
+    tmp_path: Path, store: str, operation: str, phase: str,
+) -> None:
+    with _legacy_worker(tmp_path, store, operation) as process:
         before: tuple[tuple[object, ...], ...] = ()
         surface: GhostControlSurface | None = None
         if phase != "schema7":
@@ -67,18 +88,11 @@ def test_warm_legacy_mutation_preserves_upgraded_history(
                         owner.replace_rows(rows)
             before = _history(surface, store)
             assert before and _visible(surface, store) == (phase == "upgraded")
-        output, errors = process.communicate("go\n", timeout=30)
-        assert process.wait(timeout=10) == 0, errors
-        result = decoded_object(output.strip())
-        outcome = result.get("outcome")
-        assert isinstance(outcome, str) and outcome in {"completed", "rejected"}, result
+        outcome = _finish_worker(process)
         if phase == "schema7":
-            assert result["outcome"] == "completed", result
+            assert outcome == "completed"
         else:
             assert surface is not None
             assert _history(surface, store)[:len(before)] == before, "legacy warm owner rewrote upgraded history"
+            assert outcome == "rejected", "destructive legacy operation did not report rejection"
             assert _visible(surface, store) == (phase == "upgraded")
-    finally:
-        if process.poll() is None:
-            process.kill()
-        process.communicate(timeout=10)

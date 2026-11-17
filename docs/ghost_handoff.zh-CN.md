@@ -12,10 +12,13 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新负结果：[混版本warm owner历史保留](ghost_progress/mixed-schema-history-baseline-20261117.md)。
-真实schema7子进程owner先启动，当前代码升级同库后再释放旧压缩/reset；42项全部有效，
-14项旧schema对照通过、28项升级处理在最后历史比较失败。下一步保护原始事件表物理删除，
-旧reader/跨升级在途SQL和完整混版本runtime仍需分别验证，不将存储负结果外推到完整App。
+2026-11-17 最新完成：[原事件物理删除防护](ghost_progress/history-delete-guards-production-20261117.md)。
+真实warm schema7旧写口原42项14→42通过，另13项回滚/缓存SQL/跨升级读快照/既有schema8补装
+验收通过；扩大1088项/136子测试、测试行工厂类型修正后13项复验及完整静态门通过，四个owned
+文件额外Any审计零诊断。普通owner构造默认在三原始事件表安装DELETE约束，无新关闭开关。
+原负结果commit为`7c9ad01f96a1693697cc68c0c6a7a9d3e99c186b`，原14/28结果保留。
+下一步核对旧reader/其他混版本事务、磁盘retention/purge与其余生命周期，补齐admission/
+controls边界并推进显式时间/replay及真实World Model；本次不等于完整0.6.3或旧App隔离。
 
 此前完成：[普通reset历史保留](ghost_progress/reset-history-retention-production-20261117.md)。
 原63项由21→63通过，另50项恢复/容量/回滚/新输入/开关/向量交错通过；扩大906项/136子测试，

@@ -296,6 +296,15 @@ class GhostSQLite:
                     UNIQUE(collection,event_id)
                 ) STRICT;
                 CREATE INDEX IF NOT EXISTS memory_event_order ON memory_events(collection,sequence);
+                CREATE TRIGGER IF NOT EXISTS ghost_preserve_memory_events
+                BEFORE DELETE ON memory_events
+                BEGIN SELECT RAISE(ABORT,'Ghost original history is retained'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_preserve_graph_events
+                BEFORE DELETE ON graph_events
+                BEGIN SELECT RAISE(ABORT,'Ghost original history is retained'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_preserve_observation_events
+                BEFORE DELETE ON observation_events
+                BEGIN SELECT RAISE(ABORT,'Ghost original history is retained'); END;
                 CREATE TABLE IF NOT EXISTS memory_consumers (
                     collection TEXT PRIMARY KEY,
                     applied_sequence INTEGER NOT NULL CHECK(applied_sequence>=0)

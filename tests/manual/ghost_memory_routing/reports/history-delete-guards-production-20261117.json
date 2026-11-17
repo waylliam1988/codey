@@ -1,0 +1,457 @@
+{
+  "experiment": "original-event-physical-delete-guards",
+  "date": "2026-11-17",
+  "status": "PRODUCTION_MERGED",
+  "current_baseline_commit": "da4cbfd85ea8a1e48f82c73431bf115e77dddc2d",
+  "negative_experiment_commit": "7c9ad01f96a1693697cc68c0c6a7a9d3e99c186b",
+  "legacy_producer_commit": "7244c1e3bd6c44c645f43209aa834cd0cd759c75",
+  "baseline_matrix": {
+    "cells": 42,
+    "passed": 14,
+    "failed": 28,
+    "invalid": 0
+  },
+  "final_matrix": {
+    "cells": 42,
+    "passed": 42,
+    "failed": 0,
+    "schema7_positive_controls": 14,
+    "upgraded_destructive_operations_explicitly_rejected": 28
+  },
+  "additional_acceptance": {
+    "cells": 13,
+    "passed": 13,
+    "failed": 0,
+    "cached_statement_denials_by_new_guard": 3,
+    "old_read_snapshot_denials_by_existing_sqlite_snapshot_rule": 3
+  },
+  "default_consumer": "existing_GhostSQLite_initialization_in_normal_API_CLI_and_domain_owners",
+  "protected_tables": [
+    "memory_events",
+    "graph_events",
+    "observation_events"
+  ],
+  "schema_version": 8,
+  "new_schema_tables": [],
+  "new_default_off_flags": [],
+  "model": null,
+  "endpoint": null,
+  "model_calls": 0,
+  "batches_are_independent_do_not_sum": true,
+  "batches": [
+    {
+      "name": "candidate",
+      "regular_passed": 225,
+      "subtests_passed": 0,
+      "junit_cases": 225,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 145.941,
+      "source_note": "before_stronger_legacy_rejection_assertion"
+    },
+    {
+      "name": "production-complete",
+      "regular_passed": 1088,
+      "subtests_passed": 136,
+      "junit_cases": 1224,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 512.302,
+      "source_note": "final_production_source_before_test_row_factory_typing_fix"
+    },
+    {
+      "name": "production-final",
+      "regular_passed": 13,
+      "subtests_passed": 0,
+      "junit_cases": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "junit_seconds": 14.772,
+      "source_note": "affected_test_cases_after_typed_row_factory_reuse"
+    }
+  ],
+  "final_production_source_unchanged_from_expanded_regression": true,
+  "source_lf_sha256": {
+    "codey/ghost/sqlite.py": "b58719efbe0e053b3278189278597f8a4215aa82f450434dafa77e94ae349e50",
+    "tests/test_ghost_mixed_schema_history.py": "d32ab6e443fcf05c4dffdb7322ad693a675867f1d05107dbbbcbbc941b42f165",
+    "tests/test_ghost_history_delete_guards.py": "998200d72f80f8ed9f67ad7fb68dd9232805e27cee9998527ea0a5528a92eff4",
+    "tests/manual/ghost_memory_routing/mixed_schema_worker.py": "b6f4d05ef876aeb583ff1e36bf7febc2edaf4adeb856f9b56e705a06280f132e"
+  },
+  "static_command_exit_codes": {
+    "ruff": 0,
+    "mypy": 0,
+    "pyrefly": 0,
+    "ty": 0,
+    "precision": 0,
+    "owned-mypy": 0,
+    "owned-pyrefly": 0,
+    "owned-ty": 0,
+    "owned-any": 1
+  },
+  "owned_any_audit": {
+    "files": 4,
+    "owned_diagnostics": 0,
+    "untouched_dependency_files": 188,
+    "untouched_dependency_diagnostics": 4066,
+    "expanded_command_exit": 1
+  },
+  "typing_fixes": [
+    {
+      "stage": "baseline",
+      "owned_diagnostics_fixed": 5,
+      "boundary": "typed_JSON_payload_and_process_exit_status"
+    },
+    {
+      "stage": "production_acceptance",
+      "owned_diagnostics_fixed": 1,
+      "boundary": "reuse_explicitly_typed_SQLite_row_factory"
+    }
+  ],
+  "limitations": [
+    "legacy_readers_not_isolated",
+    "full_legacy_App_and_provider_send_not_proven",
+    "other_mixed_version_transactions_not_closed",
+    "administrative_DROP_and_guard_changes_not_prevented",
+    "legitimate_same_run_observation_updates_still_allowed",
+    "raw_history_disk_growth_not_bounded",
+    "explicit_audited_physical_purge_not_implemented",
+    "complete_0.6.3_and_World_Model_incomplete",
+    "batch_timings_not_performance_evidence"
+  ],
+  "full_pytest_run": false,
+  "stopped_language_batches_resumed": false,
+  "results": [
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-observations]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-inbox]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-hebbian]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-continuity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-work_queue]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-affinity]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-sleep]",
+      "passed": true
+    },
+    {
+      "group": "original_matrix",
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-observations]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[False-memory_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[False-graph_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[False-observation_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[True-memory_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[True-graph_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[True-observation_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[cached_statement-memory_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[cached_statement-graph_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[cached_statement-observation_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[read_snapshot-memory_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[read_snapshot-graph_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[read_snapshot-observation_events]",
+      "passed": true
+    },
+    {
+      "group": "delete_guard_acceptance",
+      "case": "test_existing_schema_eight_installation_adds_guards_without_changing_history_or_windows",
+      "passed": true
+    }
+  ],
+  "final_acceptance_recheck": [
+    {
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[False-memory_events]",
+      "passed": true
+    },
+    {
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[False-graph_events]",
+      "passed": true
+    },
+    {
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[False-observation_events]",
+      "passed": true
+    },
+    {
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[True-memory_events]",
+      "passed": true
+    },
+    {
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[True-graph_events]",
+      "passed": true
+    },
+    {
+      "case": "test_physical_delete_is_rejected_and_prior_projection_mutations_roll_back[True-observation_events]",
+      "passed": true
+    },
+    {
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[cached_statement-memory_events]",
+      "passed": true
+    },
+    {
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[cached_statement-graph_events]",
+      "passed": true
+    },
+    {
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[cached_statement-observation_events]",
+      "passed": true
+    },
+    {
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[read_snapshot-memory_events]",
+      "passed": true
+    },
+    {
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[read_snapshot-graph_events]",
+      "passed": true
+    },
+    {
+      "case": "test_connection_opened_before_real_schema_upgrade_cannot_delete_history[read_snapshot-observation_events]",
+      "passed": true
+    },
+    {
+      "case": "test_existing_schema_eight_installation_adds_guards_without_changing_history_or_windows",
+      "passed": true
+    }
+  ]
+}

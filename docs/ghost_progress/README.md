@@ -10,11 +10,13 @@
 
 ## 当前状态
 
-最新负结果：[混版本warm owner历史保留](mixed-schema-history-baseline-20261117.md)。
-42项全部有效：14项真实schema7对照通过，28项升级后的旧压缩/reset物理删除当前保留历史。
-下一步保护原事件表的物理删除；旧reader与完整混版本runtime仍不由本矩阵证明。
+最新完成：[原始事件物理删除防护](history-delete-guards-production-20261117.md)。
+真实warm schema7旧压缩/reset原42项14→42通过，另13项旧缓存SQL/读快照/事务回滚/既有schema8
+补装验收通过；扩大1088项/136子测试、测试行工厂类型修正后13项复验及完整静态门通过，
+四个owned文件额外Any审计零诊断。默认owner构造即安装三表约束；旧reader/其他混版本事务、
+磁盘retention/purge及完整生命周期仍缺，不能称为完整0.6.3或World Model完成。
 
-最新完成：[普通reset历史保留生产修复](reset-history-retention-production-20261117.md)。
+此前完成：[普通reset历史保留生产修复](reset-history-retention-production-20261117.md)。
 原63项由21→63通过，另50项reset恢复/容量/回滚/新输入/开关/向量交错通过；扩大906项/
 136子测试、import格式修正后的125项复验及完整静态门通过，六个owned文件额外Any审计零诊断。
 正常单版本runtime的普通reset默认生效；混版本旧进程、磁盘retention/purge等仍待验。
@@ -25,7 +27,8 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
-| 混版本warm owner历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（有效负结果） | 真实Git schema7 owner先启动再升级同库；42项全部有效，14项旧schema正对照通过、28项升级处理在最后历史比较失败 | [冻结矩阵与结果](mixed-schema-history-baseline-20261117.md) |
+| 原始事件物理删除防护 2026-11-17 | `PRODUCTION_MERGED`（限定破坏性旧写口） | 默认构造安装三表DELETE约束；原42项14→42通过，另13项验收、扩大1088项/136子测试、测试类型修正后13项复验及完整静态门通过，四个owned文件额外Any审计零诊断；不隔离旧reader | [生产修复与边界](history-delete-guards-production-20261117.md) |
+| 混版本warm owner历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 真实Git schema7 owner先启动再升级同库；42项全部有效，原14项旧schema正对照通过、28项升级处理在最后历史比较失败；后续物理删除防护见上行 | [冻结矩阵与结果](mixed-schema-history-baseline-20261117.md) |
 | 普通reset历史保留 2026-11-17 | `PRODUCTION_MERGED`（正常单版本runtime） | 原63项21→63通过，另50项恢复/容量/回滚/新输入/开关/向量交错全部通过；扩大906项/136子测试、import格式修正后125项复验及完整静态门通过，六个owned文件额外Any审计零诊断 | [生产修复与失败归属](reset-history-retention-production-20261117.md) |
 | 普通reset历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 63项全部有效，原21项只读通过、42项reset物理删除原始历史；未观察到本次重开/重建复活；后续生产修复见上行 | [冻结矩阵与结果](reset-history-retention-baseline-20261117.md) |
 | 容量检查点与历史保留 2026-11-17 | `PRODUCTION_MERGED`（单版本runtime/冷启动升级） | 原78项48→78通过；原日志保留，schema8有界重放/检索窗口及独立确认，Sleep按count/bytes推进窗口不复制旧report；55项验收、扩大776项/136子测试、最后SQL复查后366项复验及完整静态门通过，13个owned文件额外Any审计零诊断 | [生产修复与失败归属](capacity-history-retention-production-20261117.md) |
@@ -69,7 +72,7 @@
 | 0.6.2 scope 与四个开关 | `INCOMPLETE`（控制及 Manifest 已生产接线） | 四开关默认接线，显式关闭仍生效；delete/reset 已默认持久调度；完整维护撤回、生命周期及 acceptance battery 仍缺 | [进度记录](independent-controls.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（历史候选，后续已接线） | 持久化、七 store 失败恢复与冷启动原始证据保留；后续原子性、混合矩阵和普通 API/CLI 默认调度已完成，完整 retention/升级输入仍缺 | [候选记录](deletion-manifest-candidate.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
-| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含普通reset历史保留） | 默认删除调度/恢复、来源退役与旧投影准入、普通删除/reset历史保留及容量窗口已生效；其他历史重写路径、混版本旧进程、磁盘retention/purge、其余身份/scope异常及完整生命周期仍缺 | [reset修复](reset-history-retention-production-20261117.md) / [容量修复](capacity-history-retention-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
+| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含原事件物理删除防护） | 默认删除调度/恢复、来源退役与旧投影准入、删除/reset历史保留、容量窗口及三表DELETE约束已生效；其他历史重写路径、混版本旧reader/其他事务、磁盘retention/purge、其余身份/scope异常及完整生命周期仍缺 | [物理删除防护](history-delete-guards-production-20261117.md) / [reset修复](reset-history-retention-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |

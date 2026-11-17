@@ -4,6 +4,8 @@
 - 历史producer：`7244c1e3`，真实schema7代码，通过Git对象导入，不复制worktree。
 - 状态：`EXPERIMENT_COMPLETE`（有效基础设施负结果）；关联0.6.3。
 - 模型/endpoint不使用，不恢复语言实机批次。
+- 后续：[原事件物理删除防护](history-delete-guards-production-20261117.md)已在默认owner构造
+  安装，将原42项全部修复为通过；本文件保留14/28原始结果，不代表旧reader或整个混版本runtime已隔离。
 
 ## 冻结目标、矩阵与停止条件
 

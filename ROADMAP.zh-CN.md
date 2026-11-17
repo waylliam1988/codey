@@ -1877,6 +1877,14 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 最新原事件物理删除防护：默认GhostSQLite构造为memory_events、graph_events和
+observation_events安装BEFORE DELETE约束；真实warm schema7破坏性写口原42项14→42通过，
+另13项回滚、缓存SQL、跨升级读快照及已有schema8补装验收通过。扩大1088项/136子测试，
+测试行工厂类型修正后13项复验及完整静态门通过，四个owned文件额外Any审计零诊断。
+见[生产防护与失败归属](docs/ghost_progress/history-delete-guards-production-20261117.md)。
+只闭合本次原日志物理删除，不隔离旧reader或管理SQL；磁盘retention/purge、其他混版本事务、
+其余异常身份scope和完整生命周期仍缺。以下14/28与早期记录保留当时结论，完整0.6.3未完成。
+
 2026-11-17 混版本warm owner基线：真实Git schema7 owner先启动，再由当前代码升级同库，
 42项全部有效；14项旧schema正对照通过、28项升级处理的旧压缩/reset在最后历史比较失败。
 构造期schema检查不能约束已实例化旧owner；下一步给原领域事件表加物理删除防护。
