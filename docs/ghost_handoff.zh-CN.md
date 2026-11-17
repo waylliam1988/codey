@@ -12,7 +12,19 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-18 最新完成：[图同分裁剪与重建](ghost_progress/graph-tie-replay-20261118.md)。
+2026-11-18 最新完成：[Hebbian control payload](ghost_progress/hebbian-control-replay-20261118.md)。
+冻结提交 `4c5feeb6` 后原 168 项全有效、36 通过/132 失败；原始负结果 `9b90e1e7`
+保留，修复后原 168 全通过。严格计数/身份/keys 校验保留最早 v1 两字段 decay，
+candidate_removed/state_decayed 仍为 snapshot 后的审计标记，不重复操作。普通 CLI
+rebuild-state 默认消费，无新开关、schema 迁移或模型调用。153 项新增边界和最终
+32 文件 1421 项/34 子测试及全树静态门通过；三个 owned 文件 Any 零诊断，依赖既有
+3873 项/181 文件诊断单独保留。完整日志/XML/SQLite state 只留本地，不复制 worktree。
+后续优先核对容量中间裁剪与 scope 删除后的 live/replay 一致性，再补完整 App/硬退出/
+跨 run 恢复、混版本及 retention/purge。该容量组合目前只是代码审查疑点，须先独立冻结，
+不能宣称已复现。完整 G0/World Model 仍未完成；重复当前事实预测候选负结果不重跑。
+保护既有 tar.gz 删除和未跟踪 HTML；目标继续。
+
+2026-11-18 此前完成：[图同分裁剪与重建](ghost_progress/graph-tie-replay-20261118.md)。
 原 24 项 9→24 通过；原始负结果 `596c2ee0` 保留，节点 id/边语义身份的稳定 tie 已在
 普通 Hebbian/Affinity bounds 默认生效，无新开关。新增 30 项维护/压缩/撤回/删除/reset/
 过期/App 禁用调度/故障回滚冷恢复及 Affinity 排列；扩大 32 文件 1153 项/34 子测试与

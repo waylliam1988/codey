@@ -605,14 +605,8 @@ class GhostHebbianStore:
         for event in events:
             event_type = _replay_event_type(event)
             if event_type == "ghost_hebbian_scope_deleted":
-                payload = event.get("payload")
-                if not object_fields(payload):
-                    raise ValueError("invalid Ghost Hebbian scope deletion")
-                scope = payload.get("scope")
-                scope_ref = payload.get("scope_ref", "")
-                if (not isinstance(scope, str) or scope not in SIGNAL_SCOPES or not isinstance(scope_ref, str)
-                        or (scope != "user" and not scope_ref)):
-                    raise ValueError("invalid Ghost Hebbian deletion scope")
+                payload = _replay_control_payload(event_type, event.get("payload"))
+                scope, scope_ref = payload["scope"], payload["scope_ref"]
                 removed = {
                     node.id for node in nodes.values()
                     if node.scope == scope and (scope == "user" or node.scope_ref == scope_ref)
@@ -622,6 +616,10 @@ class GhostHebbianStore:
                     identity: edge for identity, edge in edges.items()
                     if edge.source not in removed and edge.target not in removed
                 }
+            elif event_type in {"ghost_hebbian_candidate_removed", "ghost_hebbian_state_decayed"}:
+                # Their preceding snapshot already contains the mutation.
+                # Validate the audit marker without applying it a second time.
+                _replay_control_payload(event_type, event.get("payload"))
             elif event_type in {"ghost_hebbian_node_upsert", "ghost_hebbian_node_superseded"}:
                 node = GhostNode.from_payload(event.get("node"))
                 if node is None:
@@ -701,6 +699,36 @@ def _valid_recorded_times(payload: dict[str, object]) -> bool:
         times.append(value)
     # Legacy rows may omit optional times, but never the entire decay anchor.
     return any(times[1:])
+
+
+def _replay_control_payload(event_type: str, payload: object) -> dict[str, object]:
+    if not object_fields(payload):
+        raise ValueError("invalid Ghost Hebbian control payload")
+    count_keys = {"removed_nodes", "removed_edges"}
+    if event_type == "ghost_hebbian_candidate_removed":
+        expected_keys = count_keys | {"candidate_id"}
+        candidate_id = payload.get("candidate_id")
+        if not isinstance(candidate_id, str) or not candidate_id.strip():
+            raise ValueError("invalid Ghost Hebbian removed candidate identity")
+    elif event_type == "ghost_hebbian_scope_deleted":
+        expected_keys = count_keys | {"scope", "scope_ref"}
+        scope, scope_ref = payload.get("scope"), payload.get("scope_ref")
+        if (not isinstance(scope, str) or scope not in SIGNAL_SCOPES or not isinstance(scope_ref, str)
+                or (scope == "user" and scope_ref != "") or (scope != "user" and not scope_ref.strip())):
+            raise ValueError("invalid Ghost Hebbian deletion scope")
+    else:
+        if event_type != "ghost_hebbian_state_decayed":
+            raise ValueError("unknown Ghost Hebbian control event")
+        # Both exact shapes were emitted with schema 1. A partial newer pair
+        # is corruption, not the original two-counter historical format.
+        if set(payload) != count_keys:
+            count_keys |= {"decayed_nodes", "decayed_edges"}
+        expected_keys = count_keys
+    if set(payload) != expected_keys or not all(
+        _common.valid_nonnegative_int_payload(payload.get(key)) for key in count_keys
+    ):
+        raise ValueError("invalid Ghost Hebbian control fields or counts")
+    return payload
 
 
 def _replay_event_type(event: dict[str, object]) -> str:

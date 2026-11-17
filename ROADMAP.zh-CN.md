@@ -2081,8 +2081,10 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 2026-11-18：[Hebbian control payload](docs/ghost_progress/hebbian-control-replay-20261118.md)
 冻结 168 项真实 producer 对照全有效，36 通过/132 失败；坏计数/缺字段/额外字段等
-132 项两次重建均误报成功，原日志与有效投影未变。最早 v1 两字段 decay 正常保留，
-生产校验修复待完成；不以本轮结果宣称数据丢失、模型收益或完整 G0 闭合。
+132 项两次重建均误报成功，原日志与有效投影未变。原负结果 `9b90e1e7` 保留；
+生产严格校验后原 168/168 通过，最早 v1 两字段 decay 保留，record-only 标记不重复执行。
+普通 rebuild-state 默认生效，无新开关。新增 153 项边界、32 文件 1421 项/34 子测试与
+全树静态门通过，三个 owned 文件 Any 零诊断；不宣称数据丢失、模型收益或完整 G0 闭合。
 
 2026-11-18：[图同分裁剪与重建基线](docs/ghost_progress/graph-tie-replay-20261118.md)
 原 24 cell 全有效，9 通过/15 失败；真实 Hebbian degree cap 的同分主组 6/6 在

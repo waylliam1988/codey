@@ -1,7 +1,7 @@
 # Hebbian control payload 重放验证
 
 - 日期：2026-11-18；关联 0.6.3 / 0.6.4。
-- 状态：`EXPERIMENT_COMPLETE`（基线漏检确认；生产修复待完成）。
+- 状态：`PRODUCTION_MERGED`（限定三个 Hebbian 控制 payload；本地 master 默认接线）。
 - 基线：`cced47da`；不重复已闭合的 envelope、内部时间和同分裁剪实验。
 - 模型/endpoint：不适用，不调用模型；本轮不产生模型收益或阴性结论。
 
@@ -78,3 +78,56 @@ python -m pytest tests/test_ghost_hebbian_control_replay.py tests/test_ghost_heb
 不增加豁免或改检查范围；Pyrefly 保留既有 35 suppressed /158 warnings。
 检查期间生产树与测试 SHA256 冻结验证通过。逐 cell 与精确检查命令见
 [基线报告](../../tests/manual/ghost_memory_routing/reports/hebbian-control-replay-baseline-20261118.json)。
+
+## 最小修复与消费者
+
+基线实验独立提交 `9b90e1e7`。生产 owner `GhostHebbianStore` 的原 replay 增加一个
+严格控制 payload 解码边界：三种控制精确匹配已证明的 keys，所有 counts 排除 bool、
+float、字符串、null、缺失和负数；candidate_id 必须为非空白字符串；scope 必须合法，
+user ref 必须为空、project/session ref 必须非空白。schema1 decay 只允许原两字段
+或完整四字段，部分新增字段不能伪装成旧格式。无 count 历史总量证明或迁移扩展。
+
+candidate_removed/state_decayed 的前置 snapshot 已包含变化，所以只校验审计标记，
+不再执行删除或衰减。scope_deleted 保留原有重放删除语义。失败沿用现有事务返回 False，
+保留有效投影与原日志，不跳过、修造或物理删除损坏事件。现有普通 CLI
+`python -m codey ghost rebuild-state --state-home <目录> --yes` 直接消费，无新增开关、
+模型请求或无人调用模块；这是存储契约修复，不冒充模型收益。
+
+原 168 项未改 scorer，候选修复后全部通过。新增 153 项真实边界也通过：每个 recorded
+counter 的六类坏值 48 项、candidate identity 18 项、scope/ref 18 项、半缺新 decay
+pair 6 项、三 scope×三 control×合法/损坏×有/无 CLI 确认 36 项、四开关关闭后的
+delete/reset 与冷恢复 18 项、事务写入后失败及不读 clock 的恢复 9 项。
+每项保留真实 producer；拒绝与恢复检查原始 sequence/event_id/payload，graph rows
+同时核验 owner cursor。scope delete 保留坏历史，重建仍拒绝且无复活；reset 推进
+有效窗口，随后可成功重建空投影，原始历史前缀均保留。
+
+已有开关继续可关闭自动维护、检索和提示准入；显式 delete/reset/rebuild 仍允许。
+隔离时保留日志和最后有效投影，暂停显式 rebuild；回滚可 revert 此生产修复，
+无 schema 迁移，但会重新暴露原 132 项漏检。未验证模型行为不受此修复改变。
+
+## 最终验证
+
+原矩阵 **36/168 →168/168**，基线源码 SHA256 完全相同。24 个合法当前/历史格式
+两次均成功，144 个坏 payload 两次均拒绝，全部投影与历史不变。新增 153 项包含在
+最终 **32 文件 1421 passed /34 subtests** 中，零失败、错误、跳过；不与预检/候选试跑
+相加。扩大批覆盖普通 directive/App→HTTP、四开关、来源/候选撤回、过期、真实容量
+维护、Sleep、Manifest、删除/reset、重开和事务/进程故障回归。未运行全量 pytest。
+
+全仓 Ruff、完整 702 文件 codey 生产树 mypy/Pyrefly/ty/precision gate、三个本轮
+Python 文件定向三类型均通过。额外 Any 审计零 owned 诊断；exit 1 来自未修改依赖
+3873 项/181 文件，未改范围或增加豁免。生产 Pyrefly 保留既有 35 suppressed /
+158 warnings，定向 Pyrefly 零错误/警告。无 cast、ignore、新豁免或前端变动。
+生产树及三个 owned 文件检查期间 SHA256 冻结验证通过；报告中的 owned hashes
+是受检工作树字节哈希。命令、逐 cell 和限制见
+[生产报告](../../tests/manual/ghost_memory_routing/reports/hebbian-control-replay-production-20261118.json)。
+
+本地保留 baseline/production 两个独立 basetemp、原始 XML/stdout 和检查日志；只将
+复现测试、脱敏指标与记录入库，未复制 worktree。回滚及故障隔离见上一节。
+
+## 剩余审查
+
+本轮只闭合三个控制 payload 的结构与身份契约；不证明 counts 与任意历史总量语义相等，
+不证明 event identity/envelope 的所有扩展、未知旧事件迁移、全部容量/中间裁剪历史、
+所有领域 replay 或跨进程硬退出/混版本恢复。磁盘 retention/purge、其他 family、
+provider outcome、repair/Explain 与 World Model 后续真实预测消费者仍未完成。
+World Model 重复当前 verification 事实的两次负结果保留，不换提示词重跑或堆默认关闭空壳。

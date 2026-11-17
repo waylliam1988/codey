@@ -10,9 +10,11 @@
 
 ## 当前状态
 
-[Hebbian control payload](hebbian-control-replay-20261118.md)基线已确认漏检：冻结
-168 项 fixture 均有效，36 通过/132 失败；132 个坏控制记录两次均误报成功，但投影与
-原日志保持不变。保留最早 v1 两字段 decay 正对照，不调用模型；生产修复待完成。
+[Hebbian control payload](hebbian-control-replay-20261118.md)已默认生产修复：原
+168 项 36→168 通过，严格 counts/identity/keys 校验保留最早 v1 两字段 decay，
+record-only 标记不重复执行。基线 `9b90e1e7` 保留；新增 153 项边界，32 文件
+1421 项/34 子测试及全树静态门通过，三个 owned 文件 Any 零诊断。普通 CLI 直接消费，
+无新开关或模型调用；容量中间裁剪/其余恢复、完整 G0 与 World Model 仍未完成。
 
 [图同分裁剪与重建一致性](graph-tie-replay-20261118.md)已默认生产修复：原 24 项
 9→24 通过；共享节点 id/边语义身份稳定 tie，普通 writer/rebuild/维护/快照沿用同一
@@ -161,7 +163,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（历史候选，后续已接线） | 持久化、七 store 失败恢复与冷启动原始证据保留；后续原子性、混合矩阵和普通 API/CLI 默认调度已完成，完整 retention/升级输入仍缺 | [候选记录](deletion-manifest-candidate.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含 observation 兼容消费隔离） | 默认删除调度/恢复、来源退役与旧投影准入、删除/reset历史保留、容量窗口、原历史DELETE约束和schema9 observation只读消费视图已生效；其他领域旧reader/旧快照及内存、其他事务、磁盘retention/purge、其余身份/scope异常及完整生命周期仍缺 | [兼容消费视图](observation-consumption-view-production-20261117.md) / [物理删除防护](history-delete-guards-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
-| 0.6.4 确定性 replay 与显式时间 | `INCOMPLETE`（含 Hebbian 内部时间） | Affinity 坏时间拒绝、普通 Sleep 显式时间、continuity 过期/重建/队列及 Hebbian 坏事件/内部时间原子拒绝已接线；其他维护入口、记录型 control payload、稳定排序/digest与其余领域重放仍缺 | [内部时间](hebbian-row-time-20261117.md) / [Hebbian 重建](hebbian-replay-integrity-20261117.md) / [过期接线](continuity-expiry-production-20261117.md) / [显式时间](sleep-maintenance-time-production-20261117.md) / [历史时间校验](replay-timestamp-validation-production-20261117.md) |
+| 0.6.4 确定性 replay 与显式时间 | `INCOMPLETE`（含 Hebbian 控制 payload） | Affinity 坏时间拒绝、Sleep 显式时间、continuity 过期与 Hebbian 坏事件/内部时间/三个控制 payload 拒绝、图语义 tie 已接线；容量中间裁剪、其他维护入口/排序/digest及其余领域重放仍缺 | [控制 payload](hebbian-control-replay-20261118.md) / [图 tie](graph-tie-replay-20261118.md) / [内部时间](hebbian-row-time-20261117.md) / [Hebbian 重建](hebbian-replay-integrity-20261117.md) / [过期接线](continuity-expiry-production-20261117.md) / [显式时间](sleep-maintenance-time-production-20261117.md) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.7 language 有条件启用与回滚 | `INCOMPLETE`（受测中文子集已默认启用） | Gemma 12B/受测预算的普通 Chat 已启用并可关闭、删除和回退；不代表完整规划项完成 | [生产启用](language-production-enablement-20261117.md) |
