@@ -34,7 +34,11 @@ def fence_projection(
 def _run_identities(arguments: Mapping[str, object]) -> tuple[str, ...]:
     identities: set[str] = set()
     run_id = arguments.get("run_id")
-    if isinstance(run_id, str) and run_id:
+    focus = arguments.get("user_focus_excerpt")
+    # Some refresh callers use run_id only as audit metadata while reading
+    # independent knowledge. It is an input source only with task content;
+    # ledger and terminal sources carry their own identities below.
+    if isinstance(run_id, str) and run_id and isinstance(focus, str) and focus.strip():
         identities.add(run_id)
     projection = arguments.get("run_projection")
     if isinstance(projection, RunLedgerProjection) and projection.run_id:

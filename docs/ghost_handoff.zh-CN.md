@@ -14,7 +14,9 @@
 
 2026-11-17 最新接收生命周期进展：[输入接收登记](ghost_progress/received-input-admission-wiring-20261117.md)
 已在新 task commit 前默认接线，覆盖 busy queue、普通提交、headless、重启与限定崩溃边界。
-完整 0.6.1–0.6.4、升级前无 receipt、双重故障和 World Model 仍未完成。后文是推进顺序，
+后续 [canonical 接收结果](ghost_progress/canonical-input-receipt-20261117.md)把登记/隔离失败结果
+随原输入提交，实际写口与新消费者默认检查；31-cell 双故障矩阵旧输入 12→0，包含恢复及重启。
+完整 0.6.1–0.6.4、升级输入、完整 manifest 与混合恢复、身份/scope 异常和 World Model 仍未完成。后文是推进顺序，
 不要据此重做已经完成的 0.6.0 或语言实机批次；实际下一步以进度板和最新实验记录为准。
 
 ## 先读这段：不要把路线图当成无条件功能清单

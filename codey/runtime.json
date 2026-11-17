@@ -165,6 +165,7 @@
     "codey/durable/history_lifetime.py",
     "codey/durable/history_queries.py",
     "codey/durable/inbox.py",
+    "codey/durable/input_receipts.py",
     "codey/durable/memory.py",
     "codey/durable/model.py",
     "codey/durable/operations.py",

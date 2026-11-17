@@ -12,6 +12,7 @@ from codey.durable.inbox import (
     InboxDoc,
     InboxHistoryEvent,
 )
+from codey.durable.input_receipts import InputReceipt
 from codey.durable.model import (
     ApprovalRecord,
     ApprovalStatus,
@@ -50,7 +51,7 @@ class DurableSession(SessionKernel, TaskAdmissionPort, ApprovalPort, EffectPort,
         store: DurableStore,
         *,
         on_commit: Callable[[CommitResult, DurableMutation], None] | None = None,
-        before_admit: Callable[[TaskCheckpoint], None] | None = None,
+        before_admit: Callable[[TaskCheckpoint], InputReceipt | None] | None = None,
     ) -> None:
         super().__init__(store, on_commit=on_commit, before_admit=before_admit)
         self.conversation_queries = ConversationQueryFacade(self, self._query_line)

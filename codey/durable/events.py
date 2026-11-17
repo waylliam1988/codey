@@ -1,7 +1,8 @@
 """Pure, bounded public projections of durable mutations; no raw content."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
+from codey.durable.input_receipts import receipt_fields
 from codey.durable.model import CommitResult, DurableMutation, SubmissionStatus
 
 
@@ -12,9 +13,12 @@ def committed_task_version(result: CommitResult, task_id: str) -> dict[str, obje
     projections = result.record.payload.get("projections", ())
     if not isinstance(projections, (tuple, list)):
         raise ValueError("commit projections must be a sequence")
-    for row in projections:
-        if isinstance(row, Mapping) and row.get("type") == "task_progressed" and row.get("task_id") == task_id:
-            return {"task_revision": row["revision"], "task_status": str(row["status"])}
+    rows: Sequence[object] = projections
+    for row in rows:
+        if isinstance(row, Mapping):
+            fields: Mapping[object, object] = row
+            if fields.get("type") == "task_progressed" and fields.get("task_id") == task_id:
+                return {"task_revision": fields["revision"], "task_status": str(fields["status"])}
     return {}
 
 
@@ -52,6 +56,7 @@ def mutation_projection(mutation: DurableMutation) -> dict[str, object]:
             "status": submission.status,
             "placement": submission.placement,
             "mode": submission.mode,
+            "input_receipts": receipt_fields(submission.content),
         })
     task = mutation.task
     if task is not None:

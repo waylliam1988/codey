@@ -6,6 +6,9 @@
 - 实验提交：与本记录、脚本和脱敏报告同提交，可用 `git log --grep="expose intake receipt quarantine double failure"` 定位。
 - 模型 / endpoint：确定性 transport，不调用真实模型或 HTTP，不恢复已停止的语言批次。
 
+后续：[canonical 接收结果候选](canonical-input-receipt-20261117.md)在相同 31 cell 中使
+开启删除组旧输入 12→0；本页保留 `84c57aac` 的原始有效负结果，不覆盖成候选结果。
+
 ## 目标与固定变量
 
 假设：接收时 `ghost_input_origins` 登记失败，且 `ghost_retired_inputs` 隔离也失败的输入，

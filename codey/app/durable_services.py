@@ -51,7 +51,9 @@ class DurableAppServices:
             # because doing so would silently destroy durable task history.
             session = DurableSession(
                 SQLiteDurableStore(database_path),
-                before_admit=lambda task: register_ghost_input(database_path.parent, task),
+                before_admit=lambda task: register_ghost_input(
+                    database_path.parent, task, database_name=database_path.name,
+                ),
             )
         except BaseException:
             lease.release()

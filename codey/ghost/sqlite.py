@@ -15,8 +15,20 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-GHOST_SCHEMA_VERSION = 6
+from codey.durable.input_receipts import read_input_receipt
+
+GHOST_SCHEMA_VERSION = 7
 _PROJECTION_INPUTS: ContextVar[Mapping[Path, int] | None] = ContextVar("ghost_projection_inputs", default=None)
+
+
+def _row_factory(cursor: sqlite3.Cursor, values: tuple[object, ...]) -> sqlite3.Row:
+    row: sqlite3.Row = sqlite3.Row(cursor, values)
+    return row
+
+
+def _has_row(database: sqlite3.Connection, statement: str, parameters: tuple[object, ...] = ()) -> bool:
+    row: sqlite3.Row | None = database.execute(statement, parameters).fetchone()
+    return row is not None
 
 
 class GhostSchemaVersionError(RuntimeError):
@@ -38,14 +50,54 @@ class GhostSQLite:
     def _connect(self) -> sqlite3.Connection:
         database = sqlite3.connect(self.path, timeout=5.0)
         try:
-            database.row_factory = sqlite3.Row
+            database.row_factory = _row_factory
             database.execute("PRAGMA foreign_keys=ON")
             database.execute("PRAGMA busy_timeout=5000")
             database.execute("PRAGMA synchronous=FULL")
+            database.create_function("codey_input_receipt_ok", 2, self._input_receipt_ok)
         except BaseException:
             database.close()
             raise
         return database
+
+    def _input_receipt_ok(self, database_name: object, identity: object) -> int:
+        if database_name is None:
+            return 1  # Independent Ghost stores have no canonical input owner.
+        if (not isinstance(database_name, str) or Path(database_name).name != database_name
+                or not database_name or not isinstance(identity, str) or not identity):
+            return 0
+        try:
+            return int(read_input_receipt(self.path.with_name(database_name), identity, "ghost") is True)
+        except (OSError, sqlite3.Error, TypeError, ValueError):
+            return 0
+
+    def bind_input_authority(self, database_name: str) -> None:
+        """Bind run projections to the app's existing canonical input store."""
+        if not database_name or Path(database_name).name != database_name:
+            raise ValueError("canonical input authority must be in the same runtime directory")
+        with self.connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            previous: sqlite3.Row | None = connection.execute(
+                "SELECT database_name FROM ghost_input_authority WHERE singleton=1",
+            ).fetchone()
+            previous_name: object = None
+            if previous is not None:
+                previous_name = previous[0]
+            if previous is not None and previous_name != database_name:
+                raise ValueError("Ghost input authority is already bound to another store")
+            connection.execute(
+                "INSERT OR IGNORE INTO ghost_input_authority(singleton,database_name) VALUES(1,?)", (database_name,),
+            )
+
+    def input_is_accepted(self, connection: sqlite3.Connection, run_id: str) -> bool:
+        row: sqlite3.Row | None = connection.execute(
+            "SELECT codey_input_receipt_ok((SELECT database_name FROM ghost_input_authority WHERE singleton=1),?)",
+            (run_id,),
+        ).fetchone()
+        result: object = None
+        if row is not None:
+            result = row[0]
+        return result == 1
 
     @contextmanager
     def projection_inputs(self, *, run_ids: tuple[str, ...] = ()) -> Generator[None]:
@@ -56,9 +108,9 @@ class GhostSQLite:
             return
         with self.connection() as connection:
             generation = inherited.get(identity, self._deletion_generation(connection))
-            if any(connection.execute(
+            if any(not self.input_is_accepted(connection, run_id) or _has_row(connection,
                 "SELECT 1 FROM ghost_retired_inputs WHERE kind='observation' AND identity=?", (run_id,),
-            ).fetchone() is not None for run_id in run_ids):
+            ) for run_id in run_ids):
                 generation = -1
         token = _PROJECTION_INPUTS.set({**inherited, identity: generation})
         try:
@@ -80,16 +132,19 @@ class GhostSQLite:
             ).fetchone()
         except sqlite3.Error as exc:
             raise GhostProjectionInvalidatedError("Ghost deletion generation is unreadable") from exc
-        value: object = row[0] if row is not None else None
+        value: object = None
+        if row is not None:
+            value = row[0]
         if type(value) is not int or value < 0:
             raise GhostProjectionInvalidatedError("Ghost deletion generation is missing or invalid")
         return value
 
     @staticmethod
     def advance_deletion(connection: sqlite3.Connection) -> None:
-        if connection.execute(
+        changed: int = connection.execute(
             "UPDATE ghost_projection_epoch SET generation=generation+1 WHERE singleton=1",
-        ).rowcount != 1:
+        ).rowcount
+        if changed != 1:
             raise GhostProjectionInvalidatedError("Ghost deletion generation is missing")
 
     @staticmethod
@@ -100,7 +155,9 @@ class GhostSQLite:
         while True:
             try:
                 row: sqlite3.Row | None = database.execute("PRAGMA journal_mode=WAL").fetchone()
-                mode: object = row[0] if row is not None else None
+                mode: object = None
+                if row is not None:
+                    mode = row[0]
                 if mode != "wal":
                     raise RuntimeError("Ghost requires SQLite WAL journaling")
                 return
@@ -113,7 +170,9 @@ class GhostSQLite:
     @staticmethod
     def _schema_version(database: sqlite3.Connection) -> int:
         row: sqlite3.Row | None = database.execute("PRAGMA user_version").fetchone()
-        value: object = row[0] if row is not None else None
+        value: object = None
+        if row is not None:
+            value = row[0]
         if type(value) is not int or value < 0:
             raise GhostSchemaVersionError("Ghost schema version is missing or invalid")
         return value
@@ -123,26 +182,34 @@ class GhostSQLite:
             version = self._schema_version(database)
             if version > GHOST_SCHEMA_VERSION:
                 raise GhostSchemaVersionError("ghost database uses a newer schema")
-            if version >= 3 and database.execute(
+            if version >= 3 and not _has_row(database,
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_retired_inputs'",
-            ).fetchone() is None:
+            ):
                 raise GhostSchemaVersionError("Ghost deletion fences are missing from an existing schema")
-            if version >= 4 and database.execute(
+            if version >= 4 and not _has_row(database,
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_projection_epoch'",
-            ).fetchone() is None:
+            ):
                 raise GhostSchemaVersionError("Ghost projection generation is missing from an existing schema")
-            if version >= 5 and database.execute(
+            if version >= 5 and not _has_row(database,
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_retired_sources'",
-            ).fetchone() is None:
+            ):
                 raise GhostSchemaVersionError("Ghost source retirement is missing from an existing schema")
-            if version >= 6 and database.execute(
+            if version >= 6 and not _has_row(database,
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_input_origins'",
-            ).fetchone() is None:
+            ):
                 raise GhostSchemaVersionError("Ghost input origins are missing from an existing schema")
+            if version >= 7 and not _has_row(database,
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_input_authority'",
+            ):
+                raise GhostSchemaVersionError("Ghost input authority is missing from an existing schema")
             self._enable_wal(database)
             database.executescript(
                 """
                 BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS ghost_input_authority (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    database_name TEXT NOT NULL
+                ) STRICT;
                 CREATE TABLE IF NOT EXISTS observation_events (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     run_id TEXT NOT NULL UNIQUE,
@@ -332,6 +399,38 @@ class GhostSQLite:
                   AND EXISTS(SELECT 1 FROM ghost_retired_inputs
                              WHERE kind='observation' AND identity=json_extract(NEW.payload,'$.source_ref'))
                 BEGIN SELECT RAISE(ABORT,'deleted Ghost run source'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_unaccepted_observation_insert
+                BEFORE INSERT ON observation_events
+                WHEN NOT codey_input_receipt_ok(
+                    (SELECT database_name FROM ghost_input_authority WHERE singleton=1),NEW.run_id)
+                BEGIN SELECT RAISE(ABORT,'unaccepted Ghost input'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_unaccepted_observation_update
+                BEFORE UPDATE ON observation_events
+                WHEN NOT codey_input_receipt_ok(
+                    (SELECT database_name FROM ghost_input_authority WHERE singleton=1),NEW.run_id)
+                BEGIN SELECT RAISE(ABORT,'unaccepted Ghost input'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_unaccepted_run_source_insert
+                BEFORE INSERT ON memory_records
+                WHEN NEW.collection IN ('continuity','work_queue')
+                  AND (json_extract(NEW.payload,'$.source') IN ('task_done','run_ledger','work_checkpoint','review')
+                       OR (json_extract(NEW.payload,'$.source')='continuity'
+                           AND coalesce(json_extract(NEW.payload,'$.metadata.continuity_source'),'')
+                               NOT IN ('hebbian','research_note')))
+                  AND NOT codey_input_receipt_ok(
+                      (SELECT database_name FROM ghost_input_authority WHERE singleton=1),
+                      json_extract(NEW.payload,'$.source_ref'))
+                BEGIN SELECT RAISE(ABORT,'unaccepted Ghost run source'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_unaccepted_run_source_update
+                BEFORE UPDATE ON memory_records
+                WHEN NEW.collection IN ('continuity','work_queue')
+                  AND (json_extract(NEW.payload,'$.source') IN ('task_done','run_ledger','work_checkpoint','review')
+                       OR (json_extract(NEW.payload,'$.source')='continuity'
+                           AND coalesce(json_extract(NEW.payload,'$.metadata.continuity_source'),'')
+                               NOT IN ('hebbian','research_note')))
+                  AND NOT codey_input_receipt_ok(
+                      (SELECT database_name FROM ghost_input_authority WHERE singleton=1),
+                      json_extract(NEW.payload,'$.source_ref'))
+                BEGIN SELECT RAISE(ABORT,'unaccepted Ghost run source'); END;
                 """
             )
             version = self._schema_version(database)
@@ -341,6 +440,12 @@ class GhostSQLite:
                 if version < 4:
                     database.execute("INSERT INTO ghost_projection_epoch(singleton,generation) VALUES(1,0)")
                 database.execute(f"PRAGMA user_version={GHOST_SCHEMA_VERSION}")
+            # Recovery may be the first successful Ghost write after intake.
+            # Bind even when the failed intake could not create Ghost metadata.
+            if self.path.with_name("durable.sqlite3").exists():
+                database.execute(
+                    "INSERT OR IGNORE INTO ghost_input_authority(singleton,database_name) VALUES(1,'durable.sqlite3')",
+                )
 
     @contextmanager
     def connection(self) -> Generator[sqlite3.Connection, None, None]:

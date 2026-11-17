@@ -1877,6 +1877,13 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 canonical receipt 默认生产接线：应用接收结果随原输入 admission commit 保存，真实
+observation/run-source SQL 写口与新消费者通过只读接口检查原始结果，schema 7 记录
+canonical authority 绑定。相同 31 cell 全有效，开启并删除的双故障旧输入 12→0，健康仍能
+学习；最终 296 项 Ghost 与 48 项恢复/启动复验、全树静态门通过。具体范围与剩余架构失败见
+[canonical 接收结果](docs/ghost_progress/canonical-input-receipt-20261117.md)。
+本次不代表完整 0.6.3、升级输入、manifest 或 World Model 已完成。
+
 2026-11-17 双故障复验：接收登记与备用 quarantine 同时失败的 31 cell 矩阵全部有效，
 开启学习且删除的 12 cell 全部重新产生旧输入投影，含执行中恢复及应用重开。关闭组与
 单故障隔离组正常；这是确认的生产缺口，尚未修复，不撤销已闭合场景的限定结果。见

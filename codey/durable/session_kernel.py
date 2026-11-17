@@ -20,6 +20,7 @@ from typing import Concatenate, ParamSpec, TypeVar
 from codey.durable.approval_transition import materialize_approval
 from codey.durable.errors import CommitConflict, IdempotencyConflict, SessionFailedError, SessionSealedError
 from codey.durable.history import HistoryReader
+from codey.durable.input_receipts import InputReceipt
 from codey.durable.model import CommitRecord, CommitResult, DurableMutation, EffectRecord, TaskCheckpoint, TaskStatus
 from codey.durable.store import DurableStore
 
@@ -66,7 +67,7 @@ class SessionKernel:
         store: DurableStore,
         *,
         on_commit: Callable[[CommitResult, DurableMutation], None] | None = None,
-        before_admit: Callable[[TaskCheckpoint], None] | None = None,
+        before_admit: Callable[[TaskCheckpoint], InputReceipt | None] | None = None,
     ) -> None:
         self.store = store
         self._on_commit = on_commit
@@ -112,8 +113,18 @@ class SessionKernel:
                     # Application-owned input receipts precede canonical
                     # visibility and scheduler publication. They may survive
                     # a rejected commit, but never own task/runtime facts.
-                    if self._before_admit is not None:
-                        self._before_admit(mutation.task)
+                    receipt = self._before_admit(mutation.task) if self._before_admit is not None else None
+                    if mutation.submission is not None:
+                        content = dict(mutation.submission.content or {})
+                        # Caller-provided content cannot grant admission to an
+                        # application consumer. Only the application callback
+                        # owns the original input's receipt.
+                        content.pop("input_receipts", None)
+                        if receipt is not None:
+                            content["input_receipts"] = {receipt.component: receipt.accepted}
+                        mutation = replace(mutation, submission=replace(mutation.submission, content=content))
+                    elif receipt is not None:
+                        raise ValueError("input receipts require the original submission")
                 elif mutation.expected_attempt_token is None:
                     bound = self._execution.get()
                     # A cancellation barrier may have terminalized the task

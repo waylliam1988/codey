@@ -46,6 +46,11 @@ def _payload(value: object) -> dict[str, object]:
     return result
 
 
+def _decoded_row(row: sqlite3.Row) -> dict[str, object]:
+    encoded: object = row[0]
+    return decoded_object(encoded)
+
+
 class GhostRecords:
     def __init__(
         self, database: GhostSQLite, collection: Literal["inbox", "continuity", "work_queue", "sleep"]
@@ -90,7 +95,7 @@ class GhostRecords:
             rows: Iterable[sqlite3.Row] = self._db().execute(
                 "SELECT payload FROM memory_events WHERE collection=? ORDER BY sequence", (self.collection,),
             )
-            return [decoded_object(row[0]) for row in rows]
+            return [_decoded_row(row) for row in rows]
 
     def rows(self) -> list[dict[str, object]]:
         with self.transaction(write=False):
@@ -98,7 +103,7 @@ class GhostRecords:
             rows: Iterable[sqlite3.Row] = self._db().execute(
                 "SELECT payload FROM memory_records WHERE collection=? ORDER BY id", (self.collection,),
             )
-            return [decoded_object(row[0]) for row in rows]
+            return [_decoded_row(row) for row in rows]
 
     def append(self, events: Iterable[Mapping[str, object]], *, replace: bool = False) -> None:
         with self.transaction():
@@ -112,7 +117,8 @@ class GhostRecords:
                     "SELECT payload FROM memory_events WHERE collection=? AND event_id=?", (self.collection, identity)
                 ).fetchone()
                 if old is not None:
-                    if old[0] != payload:
+                    previous: object = old[0]
+                    if previous != payload:
                         raise ValueError("Ghost event identity conflict")
                     continue
                 database.execute(
@@ -125,11 +131,15 @@ class GhostRecords:
         tail_row: sqlite3.Row | None = database.execute(
             "SELECT coalesce(max(sequence),0) FROM memory_events WHERE collection=?", (self.collection,)
         ).fetchone()
-        tail: object = tail_row[0] if tail_row is not None else None
+        tail: object = None
+        if tail_row is not None:
+            tail = tail_row[0]
         cursor: sqlite3.Row | None = database.execute(
             "SELECT applied_sequence FROM memory_consumers WHERE collection=?", (self.collection,)
         ).fetchone()
-        position: object = cursor[0] if cursor is not None else 0
+        position: object = 0
+        if cursor is not None:
+            position = cursor[0]
         if type(tail) is not int or type(position) is not int or tail != position:
             raise ValueError(f"Ghost {self.collection} consumer cursor does not match its events")
 
@@ -198,6 +208,8 @@ class GhostRecords:
                 item.source == "continuity" and item.metadata.get("continuity_source") not in ("hebbian", "research_note")
             )
             if row is None and is_run_source:
+                if not self.database.input_is_accepted(self._db(), item.source_ref):
+                    continue
                 row = self._db().execute(
                     "SELECT 1 FROM ghost_retired_inputs WHERE kind='observation' AND identity=?", (item.source_ref,),
                 ).fetchone()
@@ -263,8 +275,11 @@ class GhostRecords:
                 )
                 .fetchone()
             )
-            events: object = row[0] if row is not None else None
-            size: object = row[1] if row is not None else None
+            events: object = None
+            size: object = None
+            if row is not None:
+                events = row[0]
+                size = row[1]
             if type(events) is not int or type(size) is not int:
                 raise ValueError("invalid Ghost record event statistics")
             return {"events": events, "bytes": size}

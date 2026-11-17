@@ -206,6 +206,12 @@ def test_intake_receipt_precedes_canonical_commit_and_publication(
         assert publications == [True]
         assert services.session.task("received-run").phase == "accepted"
         assert not _append(tmp_path, "received-run")
+        # A bound runtime requires the new input's canonical admission too;
+        # a bare projection write is no longer proof of a new accepted task.
+        services.session.admit_input(
+            conversation_id="received-session", request_id="new-input", task_id="new-run",
+            text="new input", provider_snapshot={},
+        )
         assert _append(tmp_path, "new-run")
     finally:
         assert services.close()
