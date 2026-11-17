@@ -17,6 +17,7 @@ from codey.providers.context_checkpoint import (
 )
 from codey.providers.context_ledger import digest
 from codey.providers.token_accounting import RequestContextCount
+from codey.runtime.core.protocol_window import ProtocolWindowRef
 
 if TYPE_CHECKING:
     from codey.durable.session import DurableSession
@@ -28,6 +29,37 @@ def _is_api_provider(value: object) -> TypeGuard[ApiProvider]:
 
     provider_type: type[object] = ApiProvider
     return isinstance(value, provider_type)
+
+
+def restore_declared_tools(provider: object, ref: ProtocolWindowRef,
+                           tools: list[ProviderToolDefinition]) -> None:
+    """Restore a saved response's transport contract over a cold durable view."""
+    from codey.providers.compat_transport import unwrap_provider
+
+    client = unwrap_provider(provider)
+    if not _is_api_provider(client) or not client.native_tools:
+        return
+    if not client._send_lock.acquire(blocking=False):
+        raise RuntimeError("API provider busy: cannot restore declared tools")
+    try:
+        with client._state_lock:
+            if client.window_ref != ref:
+                raise ValueError("restored tool contract window mismatch")
+            if client._declared_tools:
+                if client._declared_tools != tools:
+                    raise ValueError("cannot replace a live declared tool contract")
+                return
+            messages: list[dict[str, object]] = client._messages
+            ids = client._durable_source_entry_ids
+            prefix = 1 if client.system_prompt and messages else 0
+            response: object = client._active_response
+            control: object = client._active_control
+            if (response is not None or control is not None or len(ids) != len(messages)
+                    or any(identity is None for identity in ids[prefix:])):
+                raise ValueError("cannot restore declared tools over live protocol history")
+            client._declared_tools = list(tools)
+    finally:
+        client._send_lock.release()
 
 
 def bind_result_recovery(provider: object, refs: tuple[str, ...]) -> None:

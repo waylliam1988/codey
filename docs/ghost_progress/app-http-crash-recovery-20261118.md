@@ -1,9 +1,9 @@
 # 正常 App 硬退出与真实 HTTP 恢复审查
 
 - 日期：2026-11-18；关联 0.6.1–0.6.4。
-- 状态：旧 smoke 诊断及真实 HTTP 基线完成；保存响应组生产缺口待修。
-- 代码基线：`6d844752`；上一轮裁剪修复 `34852638` 保留，不重复其矩阵。
-- 模型：本阶段不调用模型；旧 smoke 使用离线 scripted writer/provider。
+- 状态：`PRODUCTION_MERGED`（本次 master 保存响应/本地 native 回执冷恢复修复）。
+- 诊断 A 基线：`6d844752`；B 负结果 `c0fa5117`，C 冻结 `f56e7d5b`。
+- 模型：A 旧 smoke 离线；B/C 使用固定 SSE 的真实 loopback HTTP，不调用模型。
 
 ## 已有证据与实际缺口
 
@@ -193,3 +193,64 @@ Pyrefly / ty 和 kernel precision gate 均通过（Pyrefly 158 warnings / 35 sup
 停止：任何 valid 原格不通过、原 refs/hash 丢失或产生重发，先保留候选失败再定位；
 不得将未完成实验写成通过。不新增默认关闭开关，修复若通过即由现有正常 App/kernel
 默认消费；生产 commit 与基线分开，之后同步进度板/roadmap/回滚限制。
+
+### C 预检（不替代正式矩阵）
+
+只修改 `kernel_driver` 的原响应契约恢复与 API context owner 的有限 helper；从
+response owner 对应的原 request artifact 解码 snapshot，在恢复原 window 后恢复
+空 declared tools。helper 共用 send/state 锁，拒绝不同 window、已有不同契约和非
+canonical 历史。模型请求、原响应、Permission、Completion、Attempt Gate 不改写。
+
+原先失败的 user/response_saved/enabled+revoked 两格预检现 2/2 通过，原 run 完成且
+新增 HTTP=0。追加 API 两协议边界 12/12 通过。首版单元夹具把未配对的 tool call
+交给 `load_durable_context`，12 项均在进入 helper 前被 codec 拒绝；日志与 JUnit
+保留在 `repair-contract.*`，不能计为生产失败。按正常 durable 消费视图补入已配对
+的 pending receipt 后 `repair-contract-v2.*` 通过，不放宽 codec 或删除边界断言。
+三个新增/修改文件的三类型预检通过；包括 B 两脚本的五个 owned 文件额外 Any
+零诊断，未修改依赖 10988 项/336 文件仍单独保留。生产正式 24 格另用独立 state
+与冻结 hash 运行，不用两格预检或单元样本替代。
+
+### C 正式矩阵结果
+
+原 24 格 / 原脚本 / 原 scorer 现 24 passed，338.19 秒；B 的 18/24→C 的 24/24。
+六个保存响应组均完成原 run，原模型 request/response refs+hash 不变、恢复新增 HTTP=0。
+请求冻结 enabled 3 格只发送一次后完成；revoked 3 格在 HTTP 前拒绝。intent / wire
+各 6 格保留 unknown、不重发、不伪造 done；这 12 格的“通过”指诚实中止，不是任务完成。
+24 个后续独立任务都成功，每次一个 HTTP，hint 与 scoped 控制一致。两批各 63 个
+物理 HTTP（含 24 来源任务与 24 新任务），没有为修复增加额外模型请求。
+
+正式矩阵与检查期冻结全部 702 个生产文件及五个 owned 文件；相对 B 只有上述两个
+生产模块变更，B 两脚本字节不变。原始 wire/state/JUnit/日志在本地
+`production*`，仓库 [脱敏结果](../../tests/manual/ghost_memory_routing/reports/app-http-crash-production-20261118.json)
+保留逐格结论和 source hashes。此处先记矩阵结果，扩大回归/全树门及生产 commit
+完成后再标正式合并，不能只据候选预检宣称接线完毕。
+
+受测正常入口是保存实际 Local 配置/模型允许列表→普通 headless→冷 App 默认 scheduler；
+修复消费者是现有 shared kernel 的窗口恢复，非 harness-only hook，无新增默认关闭开关。
+它不增加模型可见内容，也不扩大中文偏好的模型/任务配置白名单；API 两协议本地契约
+边界由独立 12 项覆盖，完整 App/HTTP 24 格仅证明本记录指定的 Completions 配置。
+
+回滚为 revert 本次生产提交并在正常重启时重新加载；保留原 SQLite 与 artifacts，
+不删原始历史或将 unknown 猜成 NOT_SENT。既有模型禁用/任务控制仍可隔离发送。
+此前已经 failed 的旧任务不会被自动重新打开或重试；本轮验证的是冷启动恢复尚未终态
+的 checkpoint，不保证旧失败状态迁移、混版本运行或完整 G0 验收。
+
+### C 最终验证与生产结论
+
+扩大 24 个相关文件：384 passed / 1 既有 skipped，210.67 秒；包括 B 的 16 文件、
+新增两协议 12 项，以及 API context budget/checkpoint/compaction/policy 与 durable
+provider context/generation/sink 回归。未新增跳过项，不运行全量 pytest；两批不同
+范围的数字不相加。完整命令、检查状态及逐格结论见生产脱敏报告。
+
+回归后全仓 Ruff、完整 codey 702 文件 mypy / Pyrefly / ty 及 kernel precision gate
+全通过，五个 owned 文件三类型检查通过；额外 Any 审计 owned 零诊断，未修改导入
+依赖 10988 项/336 文件单独保留，命令本身 exit 1 不伪称全依赖无 Any。
+Pyrefly 仍有既有 158 warnings / 35 suppressed，无新增豁免或检查范围变化。
+正式矩阵、扩大回归和静态门之间全部 702 生产文件/五 owned hashes 不变。
+
+修复随本次 master 生产 commit 默认进入现有 `restore_provider_window` 消费者，
+不需要用户打开实验开关；生产提交可用
+`git log --grep="restore native declarations before cold result delivery"` 定位。
+结论 `PRODUCTION_MERGED` 仅指上述恢复边界；没有新模型效果或服务健康主张，
+不扩展中文偏好白名单，也不宣称全 G0/World Model 完成。后续继续混版本/retention、
+其余真实发送消费者和有新增预测信息的 World Model，两个重复事实候选不重跑。

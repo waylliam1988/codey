@@ -94,15 +94,13 @@ def restore_provider_window(sink: KernelEffectSink, provider: ProviderTransport,
     """Rebuild the window projection from this operation's frozen request."""
     from codey.operations.provider_receipts import request_artifact_for_effect
 
+    response_context = (_restore_response_contract(sink, provider, state.response_ref)
+                        if state.response_ref else None)
     if state.request_ref:
         prepared = load_prepared_request(sink, state.request_ref)
         return _restore_window_context(provider, prepared.context)
     elif state.response_ref:
-        response = sink.durable.artifact(state.response_ref)
-        effect = next(row for row in RuntimeEffectStore(durable=sink.durable).load_effects(sink.session_id, sink.run_id)
-                      if row.intent.effect_id == response.owner_effect_id)
-        payload = read_provider_artifact(sink.managed_outputs, request_artifact_for_effect(sink.durable, effect),
-            kind=REQUEST_KIND, session_id=sink.session_id, run_id=sink.run_id, effect_id=effect.intent.effect_id)
+        return response_context
     elif state.leaf in {LEAF_CONTROL_READY, LEAF_TOOL_DELIVERY_PENDING}:
         task, effects = sink.durable.task_facts(sink.run_id)
         view = load_session_view(checkpoint_entries(task, effects, session_id=sink.session_id),
@@ -117,6 +115,27 @@ def restore_provider_window(sink: KernelEffectSink, provider: ProviderTransport,
     except ValueError as exc:
         raise RecoveryFailed(str(exc)) from exc
     return _restore_window_context(provider, context)
+
+
+def _restore_response_contract(sink: KernelEffectSink, provider: ProviderTransport,
+                               response_ref: str) -> ProviderRequestContext | None:
+    from codey.operations.provider_receipts import request_artifact_for_effect
+    from codey.providers.api_context import restore_declared_tools
+    from codey.providers.base import tools_from_specs
+
+    response = sink.durable.artifact(response_ref)
+    effect = next(row for row in RuntimeEffectStore(durable=sink.durable).load_effects(sink.session_id, sink.run_id)
+                  if row.intent.effect_id == response.owner_effect_id)
+    payload = read_provider_artifact(sink.managed_outputs, request_artifact_for_effect(sink.durable, effect),
+        kind=REQUEST_KIND, session_id=sink.session_id, run_id=sink.run_id, effect_id=effect.intent.effect_id)
+    try:
+        context = ProviderRequestContext.from_payload(payload) if "snapshot" in payload else None
+    except ValueError as exc:
+        raise RecoveryFailed(str(exc)) from exc
+    context = _restore_window_context(provider, context)
+    if context is not None and context.window_ref is not None:
+        restore_declared_tools(provider, context.window_ref, tools_from_specs(context.snapshot.model_specs))
+    return context
 
 
 def _restore_window_context(provider: ProviderTransport, context: ProviderRequestContext | None) -> ProviderRequestContext | None:
