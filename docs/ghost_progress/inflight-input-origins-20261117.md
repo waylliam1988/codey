@@ -3,7 +3,8 @@
 - 日期：2026-11-17
 - 基线：`91af3ec5`，沿用已提交的[在途删除复现](inflight-deletion-source-controls-20261117.md)。
 - 实验状态：`EXPERIMENT_COMPLETE`（限定已进入执行生命周期的输入）。
-- 生产结论：`INCOMPLETE`；当前候选接线及完整静态门待提交。
+- 实验提交：`b2812172`；来源命名空间负结果：`48e6f66f`。
+- 生产结论：`PRODUCTION_MERGED`（限定执行入口登记与退役；生产提交见下）。
 - 模型、endpoint：无。仍是确定性 transport、真实任务生命周期与 Ghost store；不恢复语言实机批次。
 
 ## 冻结的假设、变量与判定
@@ -57,13 +58,41 @@ python -m pytest tests/test_ghost_inflight_input_lifetime.py -q --tb=short
 ```
 
 同一 8 cell 候选复测全部有效：开启的旧输入 cell **4→0**，关闭维持 **0**。
-报告将随生产候选提交；历史基线不覆盖、不改写。
+[脱敏复测报告](../../tests/manual/ghost_memory_routing/reports/inflight-delete-input-origins-20261117.json)；
+历史基线不覆盖、不改写。来源类型修正后新增对照通过，最终新增 **48 项**验收全部通过。
+
+## 默认生产接线与验证
+
+执行入口、普通 delete/reset、派生消费者与实际后台 Sleep 使用同一持久输入身份，默认
+生效，没有新增默认关闭开关。该变化是存储/控制边界，适用于正常任务入口，不扩大任何
+模型的 language rollout。明确关闭仍禁止正文进入 Ghost projection；身份 receipt 只用于
+防止删除后重新消费输入，不保存正文、事实或模型结果。
+
+最终代码的五文件回归为 **162 passed / 2 subtests passed**：
+
+```powershell
+python -m pytest tests/test_ghost_inflight_input_lifetime.py tests/test_ghost_deleted_source_lifetime.py tests/test_ghost_projection_delete_fence.py tests/test_ghost_work_queue.py tests/test_ghost_continuity.py -q --tb=short
+python -m ruff check .
+python -m mypy codey --python-version 3.11
+pyrefly check codey --python-version 3.11
+ty check codey --python-version 3.11
+python -m tools.kernel_type_precision_gate
+python -m mypy tests/test_ghost_inflight_input_lifetime.py --python-version 3.11
+pyrefly check tests/test_ghost_inflight_input_lifetime.py --python-version 3.11
+ty check tests/test_ghost_inflight_input_lifetime.py --python-version 3.11
+```
+
+全部静态门串行通过，mypy 覆盖 699 个生产模块；Pyrefly 为 0 errors、35 个既有 suppression、
+159 个 warning，新增测试为 0 errors；kernel Any 与 typed contract gate 通过。测试文件不在
+生产树 gate 内，已分别检查。未运行全量 pytest，未创建或复制 worktree。
+
+生产提交：`git log --grep="retire Ghost inputs before first projection"`。
 
 ## 回归、类型与剩余边界
 
 生产 lifecycle 原文件的 Any/cast 已清理：具体资源的 LifecycleDeps、trace/store 返回值，
-TaskState 与 TaskSubmission 的明确字段，以及经验证的 proof mapping。没有修改检查配置。
-新增测试已分别通过 mypy、Pyrefly、ty；全树最终门待候选收尾后记录。
+TaskState 与 TaskSubmission 的明确字段，以及经验证的 proof mapping。没有修改检查配置、
+增加忽略或豁免，没有用宽泛对象继续未经验证地动态访问。
 
 首轮七文件扩展为 **170 passed / 2 failed / 6 subtests passed**。两个失败都在未改动的
 `tests/test_task_entry_cutover.py`：默认 search 测试传入 SimpleNamespace knowledge 和 object
@@ -75,6 +104,10 @@ ResearchTools 的字段，delegate 构造失败。这两条生产路径与测试
 
 随后针对输入寿命、删除 fence、独立开关、控制失败、Sleep、真实 task operation 与 headless
 生命周期的八文件回归为 **168 passed / 6 subtests passed**。两批有重叠，不相加当作独立样本。
+另外 experience/vector/manual-memory、已删除输入、corruption、学习关闭、effect sandwich、
+SQLite 和来源生命周期九文件回归 **115 passed / 6 subtests passed**。这两批发生在来源
+命名空间修正前；最后的 162 项回归在修正后的最终代码上重新覆盖来源相关部分，不声称
+所有批次都是互不重叠或最终代码上的独立测量。
 
 本轮不宣称完整 0.6.3 完成：
 

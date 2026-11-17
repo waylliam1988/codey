@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-GHOST_SCHEMA_VERSION = 5
+GHOST_SCHEMA_VERSION = 6
 _PROJECTION_INPUTS: ContextVar[Mapping[Path, int] | None] = ContextVar("ghost_projection_inputs", default=None)
 
 
@@ -48,14 +48,18 @@ class GhostSQLite:
         return database
 
     @contextmanager
-    def projection_inputs(self) -> Generator[None]:
+    def projection_inputs(self, *, run_ids: tuple[str, ...] = ()) -> Generator[None]:
         identity = self.path.resolve()
         inherited = _PROJECTION_INPUTS.get() or {}
-        if identity in inherited:
+        if identity in inherited and not run_ids:
             yield
             return
         with self.connection() as connection:
-            generation = self._deletion_generation(connection)
+            generation = inherited.get(identity, self._deletion_generation(connection))
+            if any(connection.execute(
+                "SELECT 1 FROM ghost_retired_inputs WHERE kind='observation' AND identity=?", (run_id,),
+            ).fetchone() is not None for run_id in run_ids):
+                generation = -1
         token = _PROJECTION_INPUTS.set({**inherited, identity: generation})
         try:
             yield
@@ -131,6 +135,10 @@ class GhostSQLite:
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_retired_sources'",
             ).fetchone() is None:
                 raise GhostSchemaVersionError("Ghost source retirement is missing from an existing schema")
+            if version >= 6 and database.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_input_origins'",
+            ).fetchone() is None:
+                raise GhostSchemaVersionError("Ghost input origins are missing from an existing schema")
             self._enable_wal(database)
             database.executescript(
                 """
@@ -246,6 +254,13 @@ class GhostSQLite:
                     singleton INTEGER PRIMARY KEY CHECK(singleton=1),
                     generation INTEGER NOT NULL CHECK(generation>=0)
                 ) STRICT;
+                CREATE TABLE IF NOT EXISTS ghost_input_origins (
+                    run_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    project TEXT NOT NULL
+                ) STRICT;
+                CREATE INDEX IF NOT EXISTS ghost_input_origin_session ON ghost_input_origins(session_id);
+                CREATE INDEX IF NOT EXISTS ghost_input_origin_project ON ghost_input_origins(project);
                 CREATE TABLE IF NOT EXISTS ghost_retired_sources (
                     collection TEXT NOT NULL CHECK(collection IN ('continuity','work_queue')),
                     source TEXT NOT NULL CHECK(source<>'hebbian'),
@@ -292,6 +307,31 @@ class GhostSQLite:
                 WHEN EXISTS(SELECT 1 FROM ghost_retired_inputs
                             WHERE kind='observation' AND identity=NEW.run_id)
                 BEGIN SELECT RAISE(ABORT,'deleted Ghost observation'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_observation_update
+                BEFORE UPDATE ON observation_events
+                WHEN EXISTS(SELECT 1 FROM ghost_retired_inputs
+                            WHERE kind='observation' AND identity=NEW.run_id)
+                BEGIN SELECT RAISE(ABORT,'deleted Ghost observation'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_run_source_insert
+                BEFORE INSERT ON memory_records
+                WHEN NEW.collection IN ('continuity','work_queue')
+                  AND (json_extract(NEW.payload,'$.source') IN ('task_done','run_ledger','work_checkpoint','review')
+                       OR (json_extract(NEW.payload,'$.source')='continuity'
+                           AND coalesce(json_extract(NEW.payload,'$.metadata.continuity_source'),'')
+                               NOT IN ('hebbian','research_note')))
+                  AND EXISTS(SELECT 1 FROM ghost_retired_inputs
+                             WHERE kind='observation' AND identity=json_extract(NEW.payload,'$.source_ref'))
+                BEGIN SELECT RAISE(ABORT,'deleted Ghost run source'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_run_source_update
+                BEFORE UPDATE ON memory_records
+                WHEN NEW.collection IN ('continuity','work_queue')
+                  AND (json_extract(NEW.payload,'$.source') IN ('task_done','run_ledger','work_checkpoint','review')
+                       OR (json_extract(NEW.payload,'$.source')='continuity'
+                           AND coalesce(json_extract(NEW.payload,'$.metadata.continuity_source'),'')
+                               NOT IN ('hebbian','research_note')))
+                  AND EXISTS(SELECT 1 FROM ghost_retired_inputs
+                             WHERE kind='observation' AND identity=json_extract(NEW.payload,'$.source_ref'))
+                BEGIN SELECT RAISE(ABORT,'deleted Ghost run source'); END;
                 """
             )
             version = self._schema_version(database)

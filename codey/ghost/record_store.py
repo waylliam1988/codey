@@ -23,6 +23,8 @@ class _SourceProjection(Protocol):
     def scope(self) -> str: ...
     @property
     def scope_ref(self) -> str: ...
+    @property
+    def metadata(self) -> Mapping[str, object]: ...
 
 
 _SourceItem = TypeVar("_SourceItem", bound=_SourceProjection)
@@ -192,6 +194,13 @@ class GhostRecords:
                 "WHERE collection=? AND source=? AND source_ref=? AND scope=? AND scope_ref=?",
                 (self.collection, item.source, item.source_ref, item.scope, item.scope_ref),
             ).fetchone()
+            is_run_source = item.source in {"task_done", "run_ledger", "work_checkpoint", "review"} or (
+                item.source == "continuity" and item.metadata.get("continuity_source") not in ("hebbian", "research_note")
+            )
+            if row is None and is_run_source:
+                row = self._db().execute(
+                    "SELECT 1 FROM ghost_retired_inputs WHERE kind='observation' AND identity=?", (item.source_ref,),
+                ).fetchone()
             if row is None:
                 live.append(item)
         return tuple(live)

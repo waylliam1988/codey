@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "transport": "deterministic fixture; no model or HTTP",
+  "cells": [
+    {
+      "action": "delete_scope",
+      "accept_events": true,
+      "repetition": 0,
+      "empty_before_delete": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "delete_scope",
+      "accept_events": true,
+      "repetition": 1,
+      "empty_before_delete": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "delete_scope",
+      "accept_events": false,
+      "repetition": 0,
+      "empty_before_delete": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "delete_scope",
+      "accept_events": false,
+      "repetition": 1,
+      "empty_before_delete": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "reset_all",
+      "accept_events": true,
+      "repetition": 0,
+      "empty_before_delete": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "reset_all",
+      "accept_events": true,
+      "repetition": 1,
+      "empty_before_delete": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "reset_all",
+      "accept_events": false,
+      "repetition": 0,
+      "empty_before_delete": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    },
+    {
+      "action": "reset_all",
+      "accept_events": false,
+      "repetition": 1,
+      "empty_before_delete": true,
+      "delete_ok": true,
+      "task_completed": true,
+      "observation_rows": 0,
+      "continuity_rows": 0
+    }
+  ],
+  "invalid_cells": 0,
+  "enabled_cells_with_old_input": 0,
+  "disabled_cells_with_old_input": 0
+}

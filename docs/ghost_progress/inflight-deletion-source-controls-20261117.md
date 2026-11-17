@@ -96,6 +96,10 @@ ty check tests/test_ghost_sleep_source_controls.py tests/manual/ghost_memory_rou
 
 ## 限制与下一步
 
+后续[首次投影前输入身份实验](inflight-input-origins-20261117.md)已将上述开启的 4 cell
+旧输入复活降至 0，并默认接入已进入执行生命周期的输入；本记录保留本轮修复范围和历史负结果。
+排队 intake、升级前无 receipt 的输入与完整恢复仍未闭合。
+
 在真实 task entry 与恢复 owner 上解决来源寿命，跨后台队列携带有效边界；不能仅依赖
 projection 方法进入时的 generation 或线程本地状态。不能把关闭后的零写入等同于删除
 在开启状态下已安全，也不能宣称 0.6.2/0.6.3 完成。

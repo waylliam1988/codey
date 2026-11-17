@@ -4,24 +4,44 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from typing import Any, cast
+from typing import Protocol
 
+from codey.ghost.payload_types import object_fields
 from codey.operations.context import RunWork
 from codey.operations.project_completion_context import MAX_COMPLETION_REPAIR_ROUNDS
 from codey.operations.task_state import TaskState
-from codey.runs.ledger import LedgerWriteFailed
+from codey.runs.ledger import LedgerWriteFailed, RunLedgerStore
+from codey.runs.trace import RunTraceRecorder, RunTraceStore
+from codey.runs.work_checkpoint import WorkCheckpointStore
 from codey.runtime.core.operation_payload import RuntimeOperationTransitionError
 from codey.runtime.core.outcome import OperationOutcome
 from codey.runtime.observe.execution_evidence import ExecutionEvidence
 from codey.runtime.observe.terminalizer import terminal_turns
+from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.task.kind import resolve_task_kind_values, trace_mode, ui_mode
 from codey.task.model import TaskSubmission
 from codey.utils.refs import coerce_int
-from codey.workspace.revision import INITIAL_WORKSPACE_REVISION, WorkspaceState
+from codey.workspace.revision import INITIAL_WORKSPACE_REVISION, WorkspaceRevisionStore, WorkspaceState
 
 logger = logging.getLogger(__name__)
+
+
+class LifecycleDeps(Protocol):
+    @property
+    def state(self) -> TaskState: ...
+    @property
+    def workspace_revisions(self) -> WorkspaceRevisionStore: ...
+    @property
+    def run_traces(self) -> RunTraceStore | None: ...
+    @property
+    def run_ledgers(self) -> RunLedgerStore | None: ...
+    @property
+    def runtime_mutations(self) -> RuntimeMutationLine | None: ...
+    @property
+    def work_checkpoints(self) -> WorkCheckpointStore | None: ...
 
 
 @dataclass(frozen=True)
@@ -51,7 +71,7 @@ def ensure_run_reserved_and_started(
     if not state.start_run(run_id):
         return None, OperationOutcome.aborted(reason="run_not_started")
     if admitted_durable:
-        durable = getattr(state, "durable", None)
+        durable = state.durable
         if durable is not None:
             checkpoint = durable.task(run_id)
             durable.start_task(run_id, state=dict(checkpoint.state))
@@ -67,9 +87,10 @@ def _ensure_durable_task(state: TaskState, request: TaskSubmission) -> bool:
     same durable input/task record before recovery or provider effects can
     observe the task.
     """
-    durable = getattr(state, "durable", None)
+    durable = state.durable
     if durable is None or not request.run_id:
         return False
+    _register_ghost_input(state, request)
     try:
         existing = durable.task(request.run_id)
         if existing.status == "pending":
@@ -79,7 +100,7 @@ def _ensure_durable_task(state: TaskState, request: TaskSubmission) -> bool:
         pass
     from codey.providers.snapshot import provider_snapshot
 
-    model_selection = getattr(request, "model_selection", None)
+    model_selection = request.model_selection
     selection = None
     if isinstance(model_selection, dict) and model_selection:
         from codey.runtime.core.api_selection import ApiRunSelection
@@ -121,8 +142,29 @@ def _ensure_durable_task(state: TaskState, request: TaskSubmission) -> bool:
     return True
 
 
+def _register_ghost_input(state: TaskState, request: TaskSubmission) -> None:
+    from codey.ghost.observations import GhostObservationStore
+
+    try:
+        store: object = getattr(state, "ghost_observations", None)
+        if isinstance(store, GhostObservationStore):
+            store.register_input(
+                run_id=request.run_id, session_id=request.session_id, project=request.project or "",
+            )
+    except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
+        # A Ghost storage failure does not cancel the canonical task. Existing
+        # Ghost stores still fail closed; expose the missing safety receipt.
+        logger.warning("Ghost input registration failed: %s", type(exc).__name__)
+        with suppress(Exception):
+            state.emit({
+                "type": "ghost_post_turn_warning", "stage": "input_origin",
+                "run_id": request.run_id, "session_id": request.session_id,
+                "error_type": type(exc).__name__, "error_ref": "ghost_input_origin_failed",
+            })
+
+
 def build_run_work(
-    deps: Any,
+    deps: LifecycleDeps,
     *,
     session_id: str,
     run_id: str,
@@ -131,7 +173,7 @@ def build_run_work(
     max_turns: int,
     task_kind: str,
     ignored_paths: tuple[str, ...],
-    trace: Any = None,
+    trace: RunTraceRecorder | None = None,
 ) -> tuple[RunWork | None, WorkspaceState]:
     """Build RunWork from the current workspace state and open the operation."""
     workspace_state = _current_workspace_state(deps, project, ignored_paths)
@@ -163,13 +205,13 @@ def build_run_work(
 
 
 def open_run_trace(
-    deps: Any,
+    deps: LifecycleDeps,
     session_id: str,
     run_id: str,
     project: str | None,
     task_kind: str,
     provider_id: str,
-) -> Any:
+) -> RunTraceRecorder | None:
     if deps.run_traces is None:
         return None
     try:
@@ -185,18 +227,18 @@ def open_run_trace(
 
 
 def _current_workspace_state(
-    deps: Any,
+    deps: LifecycleDeps,
     project: str | None,
     ignored_paths: tuple[str, ...],
 ) -> WorkspaceState:
     store = deps.workspace_revisions
     if not project:
         return WorkspaceState(INITIAL_WORKSPACE_REVISION, "")
-    return cast(WorkspaceState, store.current_state(project, ignored_paths=ignored_paths))
+    return store.current_state(project, ignored_paths=ignored_paths)
 
 
 def open_run_ledger(
-    deps: Any,
+    deps: LifecycleDeps,
     work: RunWork,
     request: TaskSubmission,
     *,
@@ -222,7 +264,7 @@ def open_run_ledger(
 
 
 def start_run_operation(
-    deps: Any,
+    deps: LifecycleDeps,
     work: RunWork,
     *,
     session_id: str,
@@ -234,7 +276,7 @@ def start_run_operation(
     task_kind: str,
 ) -> bool:
     try:
-        mutations = getattr(deps, "runtime_mutations", None)
+        mutations = deps.runtime_mutations
         if mutations is None:
             raise RuntimeOperationTransitionError("runtime mutation line is missing")
         work.operation = mutations.accept_operation(
@@ -252,18 +294,18 @@ def start_run_operation(
         return False
 
 
-def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> None:
+def finish_run_operation(deps: LifecycleDeps, work: RunWork, event: dict[str, object]) -> None:
     if work.operation is None:
         return
     if event.get("stop_reason") in {"approval", "question"}:
         return
     max_turns = coerce_int(event.get("max_turns") or 0)
-    mutations = getattr(deps, "runtime_mutations", None)
+    mutations = deps.runtime_mutations
     if mutations is None:
         raise RuntimeOperationTransitionError("runtime mutation line is missing")
     receipt = event.get("receipt")
-    proof = receipt.get("completion_proof") if isinstance(receipt, dict) else None
-    proof = proof if isinstance(proof, dict) else dict[str, object]()
+    proof_value = receipt.get("completion_proof") if object_fields(receipt) else None
+    proof = proof_value if object_fields(proof_value) else dict[str, object]()
     delivery = event.get("final_delivery")
     work.operation = mutations.mark_terminal(
         work.operation.session_id,
@@ -279,7 +321,7 @@ def finish_run_operation(deps: Any, work: RunWork, event: dict[str, object]) -> 
     )
 
 
-def _update_checkpoint_safely(deps: Any, work: RunWork, reason: str) -> None:
+def _update_checkpoint_safely(deps: LifecycleDeps, work: RunWork, reason: str) -> None:
     if deps.work_checkpoints is None or work.work_checkpoint is None:
         return
     with suppress(OSError, ValueError):

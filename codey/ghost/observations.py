@@ -57,6 +57,51 @@ class GhostObservationStore:
         selected = embeddings if embeddings is not None else configured_embeddings()
         self.vector_memory = GhostVectorMemory(self.database, selected) if selected is not None else None
 
+    def register_input(self, *, run_id: str, session_id: str, project: str = "") -> bool:
+        """Bind an executing input identity before its first Ghost projection.
+
+        This receipt owns no runtime facts or task text. Deletion retires the
+        identity even if settlement has not produced an observation yet.
+        """
+        if not run_id or run_id != clip_signal_text(run_id, 120):
+            raise ValueError("invalid Ghost input run identity")
+        if not session_id or session_id != clip_signal_text(session_id, 120):
+            raise ValueError("invalid Ghost input session identity")
+        normalized_project = _common.normalize_project(project)
+        try:
+            return self._bind_input(run_id, session_id, normalized_project)
+        except (OSError, sqlite3.Error):
+            # A failed safety receipt must not fall back to untracked learning.
+            # Keep the runtime task usable, but quarantine this Ghost identity.
+            with self.database.connection() as database:
+                database.execute("BEGIN IMMEDIATE")
+                self.database.advance_deletion(database)
+                database.execute(
+                    "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) VALUES('observation',?)", (run_id,),
+                )
+            raise
+
+    def _bind_input(self, run_id: str, session_id: str, project: str) -> bool:
+        with self.database.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            self.database.check_projection_inputs(database)
+            if database.execute(
+                "SELECT 1 FROM ghost_retired_inputs WHERE kind='observation' AND identity=?", (run_id,),
+            ).fetchone() is not None:
+                return False
+            previous: sqlite3.Row | None = database.execute(
+                "SELECT session_id,project FROM ghost_input_origins WHERE run_id=?", (run_id,),
+            ).fetchone()
+            if previous is not None:
+                if previous[0] != session_id or previous[1] != project:
+                    raise ValueError("Ghost input identity belongs to another scope")
+                return True
+            database.execute(
+                "INSERT INTO ghost_input_origins(run_id,session_id,project) VALUES(?,?,?)",
+                (run_id, session_id, project),
+            )
+            return True
+
     def append_completed(
         self,
         *,
@@ -91,6 +136,8 @@ class GhostObservationStore:
             return False
         try:
             with self.database.connection() as database:
+                database.execute("BEGIN IMMEDIATE")
+                self.database.check_projection_inputs(database)
                 database.execute(
                     """
                     INSERT INTO observation_events(
@@ -221,6 +268,14 @@ class GhostObservationStore:
             self.database.advance_deletion(database)
             database.execute(
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
+                "SELECT 'observation',run_id FROM ghost_input_origins WHERE " + " AND ".join(clauses),
+                tuple(values),
+            )
+            database.execute(
+                "DELETE FROM ghost_input_origins WHERE " + " AND ".join(clauses), tuple(values),
+            )
+            database.execute(
+                "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
                 "SELECT 'observation',run_id FROM observation_events WHERE " + " AND ".join(clauses),
                 tuple(values),
             )
@@ -246,6 +301,11 @@ class GhostObservationStore:
         with self.database.connection() as database:
             database.execute("BEGIN IMMEDIATE")
             self.database.advance_deletion(database)
+            database.execute(
+                "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
+                "SELECT 'observation',run_id FROM ghost_input_origins",
+            )
+            database.execute("DELETE FROM ghost_input_origins")
             database.execute(
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
                 "SELECT 'observation',run_id FROM observation_events",

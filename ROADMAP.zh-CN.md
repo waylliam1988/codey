@@ -1847,6 +1847,8 @@ rendered envelope 才能交给 provider。trace 只记录准入结果，不能�
 缺控制或读取失败时不消费；139 项相关回归与全树静态门通过。真实任务删除中关闭控制的
 4 cell 泄漏从 4 降到 0；开启控制的 4 cell 在途旧输入仍会重学，不代表删除寿命已完成。
 见[在途删除与来源控制](docs/ghost_progress/inflight-deletion-source-controls-20261117.md)。
+后续[输入身份实验](docs/ghost_progress/inflight-input-origins-20261117.md)已闭合上述已进入执行入口的
+开启场景；排队 intake、完整恢复与维护控制撤回边界仍需继续。
 
 目标：把“禁用 Ghost”拆成四个独立控制：
 
@@ -1874,6 +1876,12 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17：schema 6 在执行生命周期入口默认登记无正文的输入身份，普通删除/reset 即使
+尚无投影也会持久退役；实际 Sleep、新消费者与 SQL 写口遵守该身份。相同 8 cell 中开启的
+旧输入复活 4→0，48 项新增验收、最终 162 项相关回归与全树静态门通过。排队 intake、
+升级前无 receipt 输入、完整 manifest 调度和混合恢复未完成；不据此宣布 0.6.3 全部通过。
+见[输入身份、命名空间负结果与验收](docs/ghost_progress/inflight-input-origins-20261117.md)。
+
 2026-11-17：普通 control surface 已修复 store 返回 False 时误报成功、SQLite 错误逸出的问题，
 默认报告逐 store 失败并继续其余 store；231 项相关回归与完整静态检查通过。
 这不等于跨 store 原子删除或 durable manifest 调度已完成。见
@@ -1881,7 +1889,8 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 同日闭合已删除 continuity/work queue 来源被重新读取后重学的问题，schema 5 持久退役来源身份，
 正常 sync/rebuild 和 SQLite 写口默认生效；425 项相关回归通过，新 run 与新手工确认仍可用。
-尚无任何 Ghost 投影的在途来源、完整 manifest 调度和混合恢复仍未完成。见
+当时未覆盖的无投影在途来源，后续已按上方执行入口实验部分闭合；排队 intake、完整
+manifest 调度和混合恢复仍未完成。见
 [来源生命周期](docs/ghost_progress/deleted-source-lifetime-20261117.md)。
 
 2026-11-17：已修复 inbox candidate 与 observation run 的删除后旧 writer 复活，
