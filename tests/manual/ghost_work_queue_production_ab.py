@@ -13,27 +13,29 @@ import os
 import sys
 import tempfile
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import TypedDict
 from unittest import mock
-
-from tests.ghost_fixtures import decode_events, seed_events
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey.agents.request import AgentRequest
-from codey.app import server
-from codey.app import task_submit as task_submit
-from codey.ghost.work_queue_model import WORK_QUEUE_SCHEMA_VERSION, _session_ref
+from codey.app.context import AppContext
+from codey.app.event_bus import EventSubscriber
+from codey.app.task_services import build_task_deps
+from codey.durable.input_receipts import read_input_receipt
+from codey.ghost.payload_types import mapping_fields
+from codey.ghost.work_queue import GhostWorkQueueStore
+from codey.ghost.work_queue_model import WORK_QUEUE_SCHEMA_VERSION, GhostWorkItem, _session_ref
 from codey.ghost.work_queue_sources import new_item
 from codey.operations.task_entry import run_task_submission
-from codey.operations.task_run import TaskRunDeps
+from codey.providers.base import ChatProvider
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.ledger import ResearchLedger
-from codey.research.object_model import build_research_record
+from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.run_result import ResearchRunResult
@@ -47,6 +49,55 @@ RESEARCH_ITERATION = "codey.operations.research_iteration.run_research_iteration
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "queue")
+
+
+class ProbeRow(TypedDict):
+    provider: str
+    case: str
+    arm: str
+    task: str
+    seed_kind: str
+    expected_mode: str
+    observed_mode: str
+    exact: bool
+    error_cost: int
+    severe_error: bool
+    error: str
+    task_start_mode: str
+    task_done_mode: str
+    queue_statuses: list[str]
+    queue_consumed: bool
+    agent_permissions: list[str]
+    research_calls: int
+    review_calls: int
+    elapsed: float
+
+
+class ArmSummary(TypedDict):
+    total: int
+    exact: int
+    cost: int
+    severe_errors: int
+
+
+class DeltaSummary(TypedDict):
+    exact: int
+    cost: int
+    severe_errors: int
+
+
+class ProbeSummary(TypedDict):
+    baseline: ArmSummary
+    queue: ArmSummary
+    delta: DeltaSummary
+
+
+class ProbePayload(TypedDict):
+    provider: str
+    complete: bool
+    ok: bool
+    summary: ProbeSummary
+    rows: list[ProbeRow]
 
 
 @dataclass(frozen=True)
@@ -121,10 +172,10 @@ def run_cases(
     *,
     provider_id: str,
     cases: tuple[WorkQueueCase, ...] = DEFAULT_CASES,
-    provider_factory: Callable[[str], Any] | None = None,
+    provider_factory: Callable[[str], ChatProvider] | None = None,
     output: Path | None = None,
-) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = []
+) -> ProbePayload:
+    rows: list[ProbeRow] = []
     _write_progress(output, provider_id, rows, complete=False)
     for case in cases:
         rows.append(
@@ -155,17 +206,17 @@ def _run_case(
     *,
     provider_id: str,
     arm: str,
-    provider_factory: Callable[[str], Any] | None,
-) -> dict[str, Any]:
+    provider_factory: Callable[[str], ChatProvider] | None,
+) -> ProbeRow:
     started = time.time()
-    provider = None
+    provider: ChatProvider | None = None
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         project = root / "project"
         if case.project:
             project.mkdir()
             (project / "app.py").write_text("value = 1\n", encoding="utf-8")
-        state = server.AppContext(root / "state")
+        state = AppContext(root / "state")
         session_id = f"{arm}-{case.name}"
         if arm == "queue":
             _seed_case_item(state, case, project if case.project else None, session_id=session_id)
@@ -174,7 +225,7 @@ def _run_case(
         research_calls = 0
         review_calls = 0
 
-        def agent_run(request: AgentRequest):
+        def agent_run(request: AgentRequest) -> RunResult:
             permission = request.permission_profile
             agent_calls.append(permission)
             changed = permission == "coding_writer"
@@ -187,7 +238,7 @@ def _run_case(
                 checks_ran=changed,
             )
 
-        def collect_changes(*_args, **_kwargs) -> dict:
+        def collect_changes(*_args: object, **_kwargs: object) -> dict[str, object]:
             if case.has_reviewable_diff:
                 return {
                     "ok": True,
@@ -197,34 +248,21 @@ def _run_case(
                 }
             return {"ok": True, "changed_count": 0, "files": [], "diff": ""}
 
-        def run_review(**_kwargs):
+        def run_review(**_kwargs: object) -> tuple[str, ReviewResult]:
             nonlocal review_calls
             review_calls += 1
             return "reviewer", ReviewResult("approved", "Looks good", [])
 
-        runner = TaskRunDeps(state=state,
-            agent_run=agent_run,
-            collect_changes=collect_changes,
-            run_review=run_review,
-            capture_provider_failure=task_submit.capture_provider_failure,
-            project_facts=state.project_facts,
-            work_checkpoints=state.work_checkpoints,
-            workspace_revisions=state.workspace_revisions,
-            run_ledgers=state.run_ledgers,
-            run_traces=state.run_traces,
-            evidence_ledgers=state.evidence_ledgers,
-            managed_outputs=state.managed_outputs,
-            knowledge_store=state.knowledge_store,
-            is_git_repository=lambda _project: True,
-            runtime_mutations=state.runtime_mutations,
-            runtime_effects=state.runtime_effects,
-        )
-
-        def research_task(*_args, **_kwargs):
+        def research_task(*_args: object, **_kwargs: object) -> ResearchIterationRun:
             nonlocal research_calls
             research_calls += 1
-            question = _research_question_from_task(str(_kwargs.get("task") or ""))
-            record = _proof_record(question, run_id=str(_kwargs.get("run_id") or ""))
+            task = _kwargs.get("task", "")
+            run_id = _kwargs.get("run_id", "")
+            if not isinstance(task, str) or not isinstance(run_id, str):
+                raise TypeError("research task and run_id must be strings")
+            question = _research_question_from_task(task)
+            record = _proof_record(question, run_id=run_id)
+            citation_map: list[dict[str, object]] = [{"claim": "x"}]
             return ResearchIterationRun(
                 result=ResearchRunResult(
                     question,
@@ -232,17 +270,29 @@ def _run_case(
                     "done",
                     1,
                     synthesis_id="note-result",
-                    citation_map=[{"claim": "x"}],
+                    citation_map=citation_map,
                     research_record=record,
                 )
             )
 
         try:
             provider = provider_factory(provider_id) if provider_factory is not None else _MainProvider()
-            with (
-                _patched_provider(state, provider),
-                mock.patch(RESEARCH_ITERATION, side_effect=research_task),
-            ):
+
+            def connect_provider(_provider_id: str) -> ChatProvider:
+                assert provider is not None
+                return provider
+
+            def is_git_repository(_project: str | Path) -> bool:
+                return True
+
+            runner = replace(
+                build_task_deps(
+                    state, agent_run=agent_run, collect_changes=collect_changes,
+                    collect_review_changes=collect_changes, connect_provider=connect_provider,
+                ),
+                run_review=run_review, is_git_repository=is_git_repository,
+            )
+            with mock.patch(RESEARCH_ITERATION, new=research_task):
                 run_task_submission(runner,
                     TaskSubmission(
                         session_id=session_id,
@@ -292,8 +342,8 @@ def _run_case(
         "error_cost": 0 if exact else _mode_cost(expected, observed),
         "severe_error": _mode_cost(expected, observed) >= 5,
         "error": error,
-        "task_start_mode": str(start.get("mode") or ""),
-        "task_done_mode": str(done.get("mode") or ""),
+        "task_start_mode": _event_mode(start),
+        "task_done_mode": _event_mode(done),
         "queue_statuses": queue_statuses,
         "queue_consumed": consumed,
         "agent_permissions": agent_calls,
@@ -311,7 +361,7 @@ def _research_question_from_task(task: str) -> str:
     return "Research provider recovery"
 
 
-def _proof_record(question: str, *, run_id: str):
+def _proof_record(question: str, *, run_id: str) -> ResearchRecord:
     url = "https://example.com/work-queue-proof"
     claim = "The saved provider recovery question should be researched again with opened evidence."
     source_text = f"{claim} 2026 source note."
@@ -386,7 +436,7 @@ def _proof_record(question: str, *, run_id: str):
 
 
 def _seed_case_item(
-    state: server.AppContext,
+    state: AppContext,
     case: WorkQueueCase,
     project: Path | None,
     *,
@@ -409,14 +459,30 @@ def _seed_case_item(
             now="2999-01-01T00:00:00Z",
         )
     elif case.seed_kind == "project_followup" and project is not None:
+        run_id = f"old-{case.name}"
+        # An interrupted prior run must originate from real application intake.
+        # A checkpoint alone cannot authorize its own Ghost source eligibility.
+        with state.durable.control_line():
+            state.durable.admit_input(
+                conversation_id=session_id, request_id=f"input-{run_id}", task_id=run_id,
+                text="Finish the saved parser follow-up", provider_snapshot={},
+                task_state={"project": str(project)},
+            )
+            assert state.state_home is not None
+            assert read_input_receipt(state.state_home / "durable.sqlite3", run_id, "ghost") is True
+            state.durable.claim_task(run_id)
+            state.durable.start_task(run_id, state=dict(state.durable.task(run_id).state))
+            state.durable.cancel_task(run_id, reason="interrupted before follow-up")
         checkpoints = WorkCheckpointStore(state.state_home)
         checkpoint = checkpoints.start(
-            run_id=f"old-{case.name}",
+            run_id=run_id,
             session_id=session_id,
             project=project,
             task="Finish the saved parser follow-up",
         )
+        assert checkpoint is not None
         checkpoints.set_status(checkpoint, "interrupted", "error")
+        assert state.ghost_work_queue is not None
         state.ghost_work_queue.sync_from_sources(
             work_checkpoint_store=checkpoints,
             session_id=session_id,
@@ -445,8 +511,8 @@ def _seed_case_item(
     _write_work_snapshot(state.ghost_work_queue, [item])
 
 
-def _write_work_snapshot(store, items) -> None:
-    event = {
+def _write_work_snapshot(store: GhostWorkQueueStore, items: Sequence[GhostWorkItem]) -> None:
+    event: dict[str, object] = {
         "schema_version": WORK_QUEUE_SCHEMA_VERSION,
         "type": "ghost_work_snapshot",
         "event_id": "manual_work_snapshot",
@@ -454,38 +520,25 @@ def _write_work_snapshot(store, items) -> None:
         "reason": "manual_seed",
         "items": [item.to_payload() for item in items],
     }
-    seed_events(store, decode_events(json.dumps(event, ensure_ascii=False, separators=(',', ':'), sort_keys=True) + '\n'))
+    with store.records.transaction():
+        store.records.append((event,), replace=True)
+        store.records.replace_rows(item.to_payload() for item in items)
     assert store.rebuild_from_events()
 
 
-class _patched_provider:
-    def __init__(self, state: server.AppContext, provider: Any) -> None:
-        self.state = state
-        self.provider = provider
-        self.patch = None
-
-    def __enter__(self):
-        from unittest import mock
-
-        self.patch = mock.patch.object(self.state, "get_provider", return_value=self.provider)
-        return self.patch.__enter__()
-
-    def __exit__(self, exc_type, exc, tb):
-        if self.patch is None:
-            return False
-        return self.patch.__exit__(exc_type, exc, tb)
-
-
-def _last_start_event(queue) -> dict[str, object]:
+def _last_start_event(queue: EventSubscriber) -> dict[str, object]:
     rows: list[dict[str, object]] = []
     while not queue.empty():
-        rows.append(queue.get_nowait())
+        payload: object = queue.get_nowait()
+        if not mapping_fields(payload):
+            raise TypeError("event payload must be an object with string keys")
+        rows.append(dict(payload))
     return next((row for row in rows if row.get("type") == "task_start"), {})
 
 
 def _observed_mode(
-    start: dict,
-    done: dict,
+    start: Mapping[str, object],
+    done: Mapping[str, object],
     agent_calls: list[str],
     research_calls: int,
     review_calls: int,
@@ -500,12 +553,21 @@ def _observed_mode(
         return "project"
     if review_calls:
         return "review"
-    mode = str(done.get("mode") or start.get("mode") or "").strip()
+    mode = (_event_mode(done) or _event_mode(start)).strip()
     if mode == "agent":
         return "project"
     if mode == "planning":
         return "planning_readonly"
     return mode or "chat"
+
+
+def _event_mode(payload: Mapping[str, object]) -> str:
+    mode = payload.get("mode", "")
+    if mode is None:
+        return ""
+    if not isinstance(mode, str):
+        raise TypeError("event mode must be a string")
+    return mode
 
 
 def _mode_cost(expected: str, observed: str) -> int:
@@ -519,7 +581,7 @@ def _mode_cost(expected: str, observed: str) -> int:
     return 1
 
 
-def _payload(provider_id: str, rows: list[dict[str, Any]], *, complete: bool) -> dict[str, Any]:
+def _payload(provider_id: str, rows: list[ProbeRow], *, complete: bool) -> ProbePayload:
     summary = _summarize(rows)
     return {
         "provider": provider_id,
@@ -534,25 +596,28 @@ def _payload(provider_id: str, rows: list[dict[str, Any]], *, complete: bool) ->
     }
 
 
-def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    summary: dict[str, Any] = {}
-    for arm in ARMS:
+def _summarize(rows: list[ProbeRow]) -> ProbeSummary:
+    def arm_summary(arm: str) -> ArmSummary:
         arm_rows = [row for row in rows if row.get("arm") == arm]
-        summary[arm] = {
+        return {
             "total": len(arm_rows),
-            "exact": sum(1 for row in arm_rows if row.get("exact")),
-            "cost": sum(int(row.get("error_cost") or 0) for row in arm_rows),
-            "severe_errors": sum(1 for row in arm_rows if row.get("severe_error")),
+            "exact": sum(1 for row in arm_rows if row["exact"]),
+            "cost": sum(row["error_cost"] for row in arm_rows),
+            "severe_errors": sum(1 for row in arm_rows if row["severe_error"]),
         }
-    summary["delta"] = {
-        "exact": summary["queue"]["exact"] - summary["baseline"]["exact"],
-        "cost": summary["baseline"]["cost"] - summary["queue"]["cost"],
-        "severe_errors": summary["baseline"]["severe_errors"] - summary["queue"]["severe_errors"],
+    baseline, queue = arm_summary("baseline"), arm_summary("queue")
+    return {
+        "baseline": baseline,
+        "queue": queue,
+        "delta": {
+            "exact": queue["exact"] - baseline["exact"],
+            "cost": baseline["cost"] - queue["cost"],
+            "severe_errors": baseline["severe_errors"] - queue["severe_errors"],
+        },
     }
-    return summary
 
 
-def _write_report(path: Path, payload: dict[str, Any]) -> None:
+def _write_report(path: Path, payload: ProbePayload) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as handle:
@@ -566,7 +631,7 @@ def _write_report(path: Path, payload: dict[str, Any]) -> None:
 def _write_progress(
     path: Path | None,
     provider_id: str,
-    rows: list[dict[str, Any]],
+    rows: list[ProbeRow],
     *,
     complete: bool,
 ) -> None:
@@ -593,14 +658,24 @@ def _self_test() -> None:
     print("self-test ok")
 
 
+class _Options(argparse.Namespace):
+    provider: str
+    port: int
+    case: list[str]
+    output: Path | None
+    self_test: bool
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run production-spine Ghost Work Queue A/B")
     parser.add_argument("--provider", choices=provider_ids(), default="deepseek")
     parser.add_argument("--port", type=int, default=9222)
-    parser.add_argument("--case", action="append", default=[])
+    case_names: list[str] = []
+    parser.add_argument("--case", action="append", default=case_names)
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--self-test", action="store_true")
-    args = parser.parse_args(argv)
+    args = _Options()
+    parser.parse_args(argv, namespace=args)
 
     if args.self_test:
         _self_test()
@@ -615,7 +690,8 @@ def main(argv: list[str] | None = None) -> int:
         provider_factory=lambda provider: connect_fresh_provider_tab(provider, port=args.port),
         output=output,
     )
-    print(json.dumps({"ok": bool(payload.get("ok")), "output": str(output)}, ensure_ascii=False))
+    result: dict[str, object] = {"ok": payload["ok"], "output": str(output)}
+    print(json.dumps(result, ensure_ascii=False))
     return 0 if payload.get("ok") else 1
 
 

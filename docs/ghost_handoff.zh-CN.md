@@ -12,7 +12,15 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新：[删除操作发现与显式恢复](ghost_progress/deletion-manifest-discovery-production-20261117.md)
+2026-11-17 最新：[升级旧投影消费者准入](ghost_progress/legacy-projection-admission-production-20261117.md)
+已在普通经历检索、continuity和work queue默认reader/claim接线，原24项矩阵8→24通过。
+None/false不补true，原始审计数据保留，独立研究及人工偏好仍可用。47项新增验收、553项相关
+回归及8个subtest、最终50项复验和完整静态门通过；五个owned文件额外Any审计零诊断。
+扩大回归中的旧A/B夹具失败已在旧源码复现并通过真实输入admission修正，未改scorer。
+下一步补普通删除的历史事件保留、retention、其余升级/异常身份scope、显式时间/replay，
+随后继续真实World Model闭环；不重跑已停止语言批次，不将本次修复视为完整0.6.3通过。
+
+此前：[删除操作发现与显式恢复](ghost_progress/deletion-manifest-discovery-production-20261117.md)
 已在普通 summary/export/action 默认接线，CLI export 可打印第一页，认证 action可继续分页。
 12个响应前硬退出案例、329项相关回归、类型收窄后50项复验及完整静态门通过；四个owned
 文件额外Any审计零诊断。原ID恢复仍走现有API，completed不重做、blocked

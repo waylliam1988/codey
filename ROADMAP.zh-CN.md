@@ -1877,9 +1877,15 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
-2026-11-17 升级输入负结果：schema6→7后，四类默认消费者仍采用已有的receipt缺失/false
+2026-11-17 后续默认消费者修复：普通经历检索、continuity及work queue的list/claim在容量
+裁剪前复查原始receipt和来源退役；原24项矩阵8→24通过，47项验收、553项相关回归及8个
+subtest、最终50项复验与完整静态门通过。旧原始审计数据保留，不自动补true；独立研究及
+人工偏好命名空间保持有效。完整retention/历史事件保留、其余升级策略、异常身份/scope仍缺。
+见[生产修复与A/B夹具失败归属](docs/ghost_progress/legacy-projection-admission-production-20261117.md)。
+
+2026-11-17 升级输入原始负结果（后续已修复）：schema6→7后，四类默认消费者仍采用已有的receipt缺失/false
 run投影；24项有效矩阵8通过/16失败，true对照保持可用。见[旧投影准入实验](docs/ghost_progress/legacy-projection-admission-baseline-20261117.md)。
-已有写口保护不等于旧投影的读取/claim边界闭合，下一步修默认消费者，不改原始receipt。
+这证明当时已有写口保护不等于读取/claim边界闭合；上面的默认消费者修复不改原始receipt。
 
 2026-11-17 当前结论：普通 summary/export 默认列出有界删除操作，认证 action 支持分页；
 响应前崩溃无需手查数据库即可找回原 ID，显式同 ID 恢复，completed 不重复执行、blocked保留。

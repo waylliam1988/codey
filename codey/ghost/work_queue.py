@@ -289,7 +289,7 @@ class GhostWorkQueueStore:
         session_ref = _session_ref(session_id)
         rows = []
         now = _common.now_iso_z()
-        for item in self._load_items_unlocked():
+        for item in self._load_items_unlocked(live_only=True):
             if _is_expired(item, now):
                 continue
             if statuses and item.status not in statuses:
@@ -320,7 +320,7 @@ class GhostWorkQueueStore:
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 now = _common.now_iso_z()
                 append_events: list[dict[str, object]] = []
-                items = _bounded_items(items_from_events(events))
+                items = _bounded_items(self.records.live_sources(items_from_events(events)))
                 for item in items:
                     if not _is_stale_claim(item, now):
                         continue
@@ -340,7 +340,7 @@ class GhostWorkQueueStore:
                         )
                     )
                 if append_events:
-                    items = _bounded_items(items_from_events((*events, *append_events)))
+                    items = _bounded_items(self.records.live_sources(items_from_events((*events, *append_events))))
                 candidate = _next_claimable_item(
                     items,
                     session_id=session_id,
@@ -811,14 +811,14 @@ class GhostWorkQueueStore:
         self.last_warnings = _bounded_warnings(warnings)
         return GhostWorkSyncResult(False, skipped_reason=reason, warnings=self.last_warnings)
 
-    def _load_items_unlocked(self) -> tuple[GhostWorkItem, ...]:
-        rows = []
+    def _load_items_unlocked(self, *, live_only: bool = False) -> tuple[GhostWorkItem, ...]:
+        rows: list[GhostWorkItem] = []
         for payload in self.records.rows():
             item = GhostWorkItem.from_payload(payload)
             if item is None:
                 raise ValueError("invalid stored Ghost work item")
             rows.append(item)
-        return tuple(_bounded_items(rows))
+        return tuple(_bounded_items(self.records.live_sources(rows) if live_only else rows))
 
     def _read_events_unlocked(self) -> list[dict[str, object]]:
         events = self.records.events()
@@ -963,7 +963,11 @@ def _next_claimable_item(
     ]
     if not candidates:
         return None
-    return sorted(candidates, key=lambda item: _claim_sort_key(item, affinity_hints))[0]
+
+    def claim_key(item: GhostWorkItem) -> tuple[int, float, int, tuple[int, ...], str]:
+        return _claim_sort_key(item, affinity_hints)
+
+    return sorted(candidates, key=claim_key)[0]
 
 
 def _find_item(items: Iterable[GhostWorkItem], item_id: str) -> GhostWorkItem | None:

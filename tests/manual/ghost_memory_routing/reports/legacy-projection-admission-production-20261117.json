@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "experiment": "legacy-projection-original-receipt-production",
+  "baseline_commit": "9e318370",
+  "negative_experiment_commit": "286503dc",
+  "model": null,
+  "scope": "Bound application run projections; standalone, research and manual source namespaces retained",
+  "baseline": {
+    "valid_cells": 24,
+    "passed": 8,
+    "failed": 16
+  },
+  "production": {
+    "same_matrix_cells": 24,
+    "passed": 24,
+    "failed": 0,
+    "original_receipts_unchanged": true,
+    "consumers": ["observation.retrieve", "continuity.renderer", "work_queue.list_items", "work_queue.claim_next"],
+    "receipt_values": [null, false, true],
+    "owners": ["warm", "reopened"],
+    "supplemental_and_matrix_tests": 47,
+    "default_enabled": true,
+    "new_feature_flag": false
+  },
+  "regressions": {
+    "first_batch_passed": 552,
+    "first_batch_failed": 1,
+    "failure": "Stale project-followup A/B fixture omitted original application input admission; reproduced on baseline source",
+    "fixture_repair": "Real same-scope AppContext admission and original receipt check, then claim/start/cancel under control_line",
+    "scorer_or_threshold_changed": false,
+    "final_batch_passed": 553,
+    "final_batch_failed": 0,
+    "final_subtests_passed": 8,
+    "final_owned_recheck_passed": 50
+  },
+  "typing": {
+    "owned_files": 5,
+    "extra_any_owned_diagnostics": 0,
+    "extra_any_untouched_dependency_diagnostics": 11584,
+    "extra_any_untouched_dependency_files": 352,
+    "extra_any_command_exit_code": 1
+  },
+  "limitations": [
+    "Does not retroactively authorize receipt-less legacy inputs",
+    "Does not restore entries already removed by historic capacity bounds",
+    "Retention, history preservation, abnormal identity/scope and full lifecycle acceptance remain incomplete",
+    "Does not claim model benefit or a completed World Model"
+  ]
+}

@@ -342,7 +342,7 @@ class GhostContinuityStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[GhostContinuityItem, ...]:
-        items = self._load_items_unlocked()
+        items = self._load_items_unlocked(live_only=True)
         project_ref = _common.normalize_project(project)
         session_ref = clip_signal_text(session_id, 120)
         rows = [
@@ -432,14 +432,14 @@ class GhostContinuityStore:
             return False
         return True
 
-    def _load_items_unlocked(self) -> tuple[GhostContinuityItem, ...]:
-        rows = []
+    def _load_items_unlocked(self, *, live_only: bool = False) -> tuple[GhostContinuityItem, ...]:
+        rows: list[GhostContinuityItem] = []
         for payload in self.records.rows():
             item = GhostContinuityItem.from_payload(payload)
             if item is None:
                 raise ValueError("invalid stored Ghost continuity item")
             rows.append(item)
-        return tuple(_bounded_items(rows))
+        return tuple(_bounded_items(self.records.live_sources(rows) if live_only else rows))
 
     def compact_if_needed(self) -> dict[str, object]:
         with self.records.transaction():

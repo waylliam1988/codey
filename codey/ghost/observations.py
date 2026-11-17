@@ -214,7 +214,12 @@ class GhostObservationStore:
         wanted_project = _common.normalize_project(project)
         if normalized_scope == "project" and not wanted_project:
             raise ValueError("project is required for project scope retrieval")
-        clauses = ["committed = 1"]
+        clauses = [
+            "committed = 1",
+            "NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
+            "WHERE kind='observation' AND identity=observation_events.run_id)",
+            "codey_input_receipt_ok((SELECT database_name FROM ghost_input_authority WHERE singleton=1),run_id)",
+        ]
         values: list[object] = []
         if normalized_scope == "project":
             clauses.append("project = ?")

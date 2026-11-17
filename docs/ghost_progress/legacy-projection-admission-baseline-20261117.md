@@ -2,6 +2,8 @@
 
 - 日期：2026-11-17；比较基线：`9e318370`。
 - 状态：`EXPERIMENT_COMPLETE`（确定性基础设施负结果，无模型调用）。
+- 后续：[默认生产消费者修复](legacy-projection-admission-production-20261117.md)已闭合本矩阵，
+  原24项8→24通过；本记录保留原始负结果，不代表当前生产仍有同一缺口。
 - 假设：原始 canonical receipt 缺失或为 false 的 run，不能因升级前已有投影而重新
   获得 retrieval、模型可见 continuity 或待办执行资格。原始 true 的对照必须仍可用。
 
