@@ -1,7 +1,7 @@
 # 正常 App 硬退出与真实 HTTP 恢复审查
 
 - 日期：2026-11-18；关联 0.6.1–0.6.4。
-- 状态：冻结旧 smoke 单项诊断，尚未运行；真实 HTTP 矩阵待接口核对后单独冻结。
+- 状态：旧 smoke 单项诊断完成；真实 HTTP 矩阵待接口核对后单独冻结。
 - 代码基线：`6d844752`；上一轮裁剪修复 `34852638` 保留，不重复其矩阵。
 - 模型：本阶段不调用模型；旧 smoke 使用离线 scripted writer/provider。
 
@@ -38,6 +38,20 @@ checkpoint/effect 恢复，普通 headless 重复提交应拒绝；静态疑点�
 旧脚本使用临时目录，不能在失败后假称保留了独立的崩溃数据库。
 
 ## 后续交付与验收
+
+### 诊断 A 结果
+
+冻结提交 `15cefa66` 后原样一次执行，exit 1；首次失败正是 positional
+`RuntimeOperationStore(RuntimeSessionLog(...))` 的 TypeError。尚未进入 writer、持久恢复
+或续传断言，不能把该旧 release gate 计为当前生产恢复证据，也不证明生产丢状态。
+脚本 finally 已结束子进程，进程枚举未发现遗留 smoke；无模型调用。旧重复 ID 路径
+仍只经静态核对，未被这次早退覆盖。全仓 Ruff、完整 702 文件 codey 的三类型与
+precision gate 全部通过，生产树/旧脚本哈希冻结验证通过。
+
+[脱敏诊断报告](../../tests/manual/ghost_memory_routing/reports/app-http-crash-legacy-smoke-20261118.json)
+保留原命令、退出码和脚本哈希；完整 traceback/检查输出留本地。旧脚本临时 state 未
+保留，不声称已保存崩溃恢复数据库。下一步按真实 durable/正常 App 入口更新脚本，
+恢复原行为断言的现行等价验证，再补物理发送组合。
 
 诊断完成后及时提交原结果。若旧脚本失效，按现行 durable owner 和真实恢复入口修正
 验证材料，完整清理该文件参数/返回值/回调/容器及动态边界的显式和隐式 Any；不使用

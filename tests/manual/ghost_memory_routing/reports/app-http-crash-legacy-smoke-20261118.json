@@ -1,0 +1,90 @@
+{
+  "experiment": "app-http-crash-recovery-20261118",
+  "phase": "legacy-smoke",
+  "freeze_commit": "15cefa66",
+  "code_baseline": "6d844752",
+  "status": "EXPERIMENT_COMPLETE",
+  "verdict": "OUTDATED_SMOKE_CONSTRUCTOR_BEFORE_RECOVERY",
+  "samples": 1,
+  "exit": 1,
+  "model_called": false,
+  "writer_entered": false,
+  "recovery_assertions_reached": false,
+  "production_failure_proven": false,
+  "first_failure": "RuntimeOperationStore.__init__ takes 1 positional argument but 2 were given",
+  "script_hash": "FE32A0E818C5162086BD5444FE87E20D058E685F42CAB9FCA8583E7AE7448AB6",
+  "production_files_frozen": 702,
+  "source_freeze_verified": true,
+  "checks": [
+    {
+      "command": [
+        "python",
+        "-B",
+        "tests/manual/completion_operation_resume_smoke.py",
+        "--self-test"
+      ],
+      "exit": 1,
+      "check": "smoke"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "exit": 0,
+      "check": "ruff"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "mypy"
+    },
+    {
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "pyrefly"
+    },
+    {
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "ty"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "exit": 0,
+      "check": "precision"
+    }
+  ],
+  "raw_artifacts": ".e2e-artifacts/ghost-app-http-crash-recovery-20261118",
+  "limitations": [
+    "Old temporary state is not retained; failure precedes durable recovery validation",
+    "A valid current App/HTTP crash recovery matrix has not run yet",
+    "Duplicate headless run-id incompatibility is static evidence only, not separately executed"
+  ]
+}
