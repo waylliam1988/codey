@@ -1877,6 +1877,11 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 同一 Manifest 操作并发恢复新增有效负结果：24 cell 中顺序对照 8/8 通过，
+并发 16/16 失败；其中 8 个在操作 completed 后误删新请求 observation，6 个出现事件冲突。
+Manifest 持久化与不同 store 并发 append 不能替代同一 store mutation 的互斥/原子性。
+候选仍未进入默认调度，见[冻结矩阵及报告](docs/ghost_progress/deletion-manifest-same-operation-20261117.md)。
+
 2026-11-17 canonical receipt 默认生产接线：应用接收结果随原输入 admission commit 保存，真实
 observation/run-source SQL 写口与新消费者通过只读接口检查原始结果，schema 7 记录
 canonical authority 绑定。相同 31 cell 全有效，开启并删除的双故障旧输入 12→0，健康仍能

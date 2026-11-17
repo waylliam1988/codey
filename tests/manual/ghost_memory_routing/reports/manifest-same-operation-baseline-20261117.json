@@ -1,0 +1,548 @@
+{
+  "schema_version": 1,
+  "baseline": "47410ec6",
+  "model": null,
+  "cells": [
+    {
+      "action": "delete_scope",
+      "scope": "user",
+      "mode": "sequential",
+      "repetition": 0,
+      "valid": true,
+      "passed": true,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "user",
+      "mode": "sequential",
+      "repetition": 1,
+      "valid": true,
+      "passed": true,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "user",
+      "mode": "before_ack",
+      "repetition": 0,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "",
+      "second_error": "DeletionManifestError: conflicting transition for store: observations",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        0
+      ],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "user",
+      "mode": "before_ack",
+      "repetition": 1,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "",
+      "second_error": "DeletionManifestError: conflicting transition for store: observations",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        0
+      ],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "user",
+      "mode": "after_completion",
+      "repetition": 0,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        1
+      ],
+      "fresh_before": 1,
+      "fresh_after": 0,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "user",
+      "mode": "after_completion",
+      "repetition": 1,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        1
+      ],
+      "fresh_before": 1,
+      "fresh_after": 0,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "project",
+      "mode": "sequential",
+      "repetition": 0,
+      "valid": true,
+      "passed": true,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "project",
+      "mode": "sequential",
+      "repetition": 1,
+      "valid": true,
+      "passed": true,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "project",
+      "mode": "before_ack",
+      "repetition": 0,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "",
+      "second_error": "DeletionManifestError: conflicting transition for store: observations",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        0
+      ],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "project",
+      "mode": "before_ack",
+      "repetition": 1,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "",
+      "second_error": "DeletionManifestError: conflicting transition for store: observations",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        0
+      ],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "project",
+      "mode": "after_completion",
+      "repetition": 0,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        1
+      ],
+      "fresh_before": 1,
+      "fresh_after": 0,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "project",
+      "mode": "after_completion",
+      "repetition": 1,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        1
+      ],
+      "fresh_before": 1,
+      "fresh_after": 0,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "session",
+      "mode": "sequential",
+      "repetition": 0,
+      "valid": true,
+      "passed": true,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "session",
+      "mode": "sequential",
+      "repetition": 1,
+      "valid": true,
+      "passed": true,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "session",
+      "mode": "before_ack",
+      "repetition": 0,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "",
+      "second_error": "DeletionManifestError: conflicting transition for store: observations",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        0
+      ],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "session",
+      "mode": "before_ack",
+      "repetition": 1,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "",
+      "second_error": "DeletionManifestError: conflicting transition for store: observations",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        0
+      ],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "session",
+      "mode": "after_completion",
+      "repetition": 0,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        1
+      ],
+      "fresh_before": 1,
+      "fresh_after": 0,
+      "overlap_reached": true
+    },
+    {
+      "action": "delete_scope",
+      "scope": "session",
+      "mode": "after_completion",
+      "repetition": 1,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        1
+      ],
+      "second_calls": [
+        1
+      ],
+      "fresh_before": 1,
+      "fresh_after": 0,
+      "overlap_reached": true
+    },
+    {
+      "action": "reset_all",
+      "scope": "all",
+      "mode": "sequential",
+      "repetition": 0,
+      "valid": true,
+      "passed": true,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        null
+      ],
+      "second_calls": [],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "reset_all",
+      "scope": "all",
+      "mode": "sequential",
+      "repetition": 1,
+      "valid": true,
+      "passed": true,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        null
+      ],
+      "second_calls": [],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "reset_all",
+      "scope": "all",
+      "mode": "before_ack",
+      "repetition": 0,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        null
+      ],
+      "second_calls": [
+        null
+      ],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "reset_all",
+      "scope": "all",
+      "mode": "before_ack",
+      "repetition": 1,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        null
+      ],
+      "second_calls": [
+        null
+      ],
+      "fresh_before": 1,
+      "fresh_after": 1,
+      "overlap_reached": true
+    },
+    {
+      "action": "reset_all",
+      "scope": "all",
+      "mode": "after_completion",
+      "repetition": 0,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        null
+      ],
+      "second_calls": [
+        null
+      ],
+      "fresh_before": 1,
+      "fresh_after": 0,
+      "overlap_reached": true
+    },
+    {
+      "action": "reset_all",
+      "scope": "all",
+      "mode": "after_completion",
+      "repetition": 1,
+      "valid": true,
+      "passed": false,
+      "old_rows": 1,
+      "first_status": "completed",
+      "reader_status": "completed",
+      "second_status": "completed",
+      "second_error": "",
+      "events": 8,
+      "first_calls": [
+        null
+      ],
+      "second_calls": [
+        null
+      ],
+      "fresh_before": 1,
+      "fresh_after": 0,
+      "overlap_reached": true
+    }
+  ],
+  "cell_count": 24,
+  "valid": 24,
+  "passed": 8,
+  "fresh_losses": 8,
+  "second_errors": 6
+}

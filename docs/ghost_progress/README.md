@@ -12,6 +12,7 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 同一 Manifest 操作并发恢复 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | 24 cell 全有效；8 个顺序重试通过，16 个并发失败；8 个误删 completed 后新输入，6 个事件冲突；候选不得直接晋级默认调度 | [冻结矩阵与结果](deletion-manifest-same-operation-20261117.md) |
 | canonical 输入接收结果 2026-11-17 | `PRODUCTION_MERGED`（限定正常应用 runtime） | 原始 canonical commit 保存应用 receipt；实际 observation/run-source 写口与新消费者默认检查；31 cell 全有效，双故障开启删除旧输入 12→0；最终 296 项 Ghost 与 48 项恢复/启动复验通过，全树静态门通过；完整 0.6.3 仍缺 | [生产接线与失败归属](canonical-input-receipt-20261117.md) |
 | 接收登记与隔离双故障 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果，后续限定闭合） | 31 cell 全有效；基线双故障开启并删除的 12 cell 全部重学旧输入；原始负结果保留，后续 canonical receipt 修复正常应用 runtime 的本次矩阵 | [矩阵、报告与限制](intake-double-fault-20261117.md) |
 | 输入接收登记与删除接线 2026-11-17 | `PRODUCTION_MERGED`（限定新接收输入） | canonical task commit 前默认登记；原 8 cell 开启状态旧输入 4→0，27 项验收覆盖 busy queue、重启、崩溃、普通提交与 headless；全树静态门通过；升级前无 receipt、双重故障与完整 manifest 仍缺 | [生产接线与回归归属](received-input-admission-wiring-20261117.md) |
