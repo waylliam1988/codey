@@ -10,12 +10,13 @@
 
 ## 当前状态
 
-最新完成：[普通 scope 删除保留领域历史](scope-history-retention-production-20261117.md)。
-原63项矩阵39→63通过，默认删除和消费者已接线；当前剩余容量compaction/retention、
-reset及其他历史重写路径，不把低容量普通删除通过说成完整0.6.3通过。
+最新未闭合：[容量压力下的历史保留](capacity-history-retention-baseline-20261117.md)。
+78项全部有效，48通过/30失败；低压力39对照全通过，超阈值普通删除9项、Sleep维护18项、
+observation追加3项丢历史。低容量普通删除已修复，不把本次历史失败说成消费者复活。
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 容量压力下的历史保留 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果，待生产修复） | 真实阈值、六领域三scope的delete/Sleep及observation append共78项有效，48通过/30历史丢失；39个低压力对照全通过，相关245项/2子测试及完整静态门通过 | [冻结矩阵与负结果](capacity-history-retention-baseline-20261117.md) |
 | 普通 scope 删除的历史保留 2026-11-17 | `PRODUCTION_MERGED`（低于compaction阈值） | 原63项39→63通过；追加领域删除事件、保留observation事实并退役过滤、同事务清派生向量及写回/检索复查；86项验收，独立ID修改前853项扩大回归/141子测试、最终源码454项复验/133子测试及完整静态门通过；九个owned文件额外Any审计零诊断 | [生产修复与失败归属](scope-history-retention-production-20261117.md) / [原始负结果](scope-history-retention-baseline-20261117.md) |
 | 升级旧投影的消费者准入 2026-11-17 | `PRODUCTION_MERGED`（默认reader/claim） | 原24项8→24通过；未知/false/退役来源在排序与容量裁剪前过滤，原始审计记录保留；47项验收、553项相关回归及8个subtest、最终50项复验、完整静态门通过，五个owned文件额外Any审计零诊断 | [生产修复及夹具失败归属](legacy-projection-admission-production-20261117.md) / [原负结果](legacy-projection-admission-baseline-20261117.md) |
 | 删除操作发现与显式恢复 2026-11-17 | `PRODUCTION_MERGED`（普通 summary/export/action） | 默认有界分页，12个响应前硬退出案例可从普通入口找回原ID并恢复；completed不重复删、blocked不自动重试；329项相关回归、类型收窄后50项复验及完整静态门通过，四个owned文件Any审计零诊断 | [生产接线与限制](deletion-manifest-discovery-production-20261117.md) |

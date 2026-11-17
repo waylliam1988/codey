@@ -1,0 +1,729 @@
+{
+  "schema_version": 1,
+  "experiment": "capacity-history-retention-baseline",
+  "baseline_commit": "7244c1e3",
+  "model": null,
+  "cells": [
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "inbox",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "hebbian",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "continuity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "work_queue",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "affinity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "sleep",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "inbox",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "hebbian",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "continuity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "work_queue",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "affinity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "sleep",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "inbox",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "hebbian",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "continuity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "work_queue",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "affinity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "sleep",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "inbox",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "hebbian",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "continuity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "work_queue",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "affinity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "sleep",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "inbox",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "hebbian",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "continuity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "work_queue",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "affinity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "sleep",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "inbox",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "hebbian",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "continuity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "work_queue",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "affinity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "delete",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "sleep",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "inbox",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "hebbian",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "continuity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "work_queue",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "affinity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "sleep",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "inbox",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "hebbian",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "continuity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "work_queue",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "affinity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "sleep",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "inbox",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "hebbian",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "continuity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "work_queue",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "affinity",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "sleep",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "inbox",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "hebbian",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "continuity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "work_queue",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "affinity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "sleep",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "inbox",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "hebbian",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "continuity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "work_queue",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "affinity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "sleep",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "inbox",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "hebbian",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "continuity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "work_queue",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "affinity",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "sleep",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "sleep",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "append",
+      "over_capacity": false,
+      "scope": "user",
+      "store": "observations",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "append",
+      "over_capacity": false,
+      "scope": "project",
+      "store": "observations",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "append",
+      "over_capacity": false,
+      "scope": "session",
+      "store": "observations",
+      "valid": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "consumer": "append",
+      "over_capacity": true,
+      "scope": "user",
+      "store": "observations",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "append",
+      "over_capacity": true,
+      "scope": "project",
+      "store": "observations",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    },
+    {
+      "consumer": "append",
+      "over_capacity": true,
+      "scope": "session",
+      "store": "observations",
+      "valid": true,
+      "passed": false,
+      "outcome": "history_rewritten"
+    }
+  ],
+  "summary": {
+    "total": 78,
+    "valid": 78,
+    "passed": 48,
+    "failed": 30,
+    "below_capacity_controls_passed": 39,
+    "over_capacity_passed": 9,
+    "failed_by_consumer": {
+      "delete": 9,
+      "sleep": 18,
+      "append": 3
+    }
+  },
+  "limitations": [
+    "Synthetic idempotent envelopes use existing valid domain payloads and real unmodified count thresholds",
+    "Count pressure may also cross byte limits; these thresholds are not independently isolated",
+    "Not a model behavior experiment or proof of a complete reset/purge/concurrent lifecycle",
+    "History failures follow successful consumer eligibility and replay checks; no consumer resurrection is claimed"
+  ]
+}
