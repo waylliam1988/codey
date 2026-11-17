@@ -1877,6 +1877,12 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 混版本warm owner基线：真实Git schema7 owner先启动，再由当前代码升级同库，
+42项全部有效；14项旧schema正对照通过、28项升级处理的旧压缩/reset在最后历史比较失败。
+构造期schema检查不能约束已实例化旧owner；下一步给原领域事件表加物理删除防护。
+见[冻结矩阵与负结果](docs/ghost_progress/mixed-schema-history-baseline-20261117.md)；旧reader、
+跨升级在途SQL与完整混版本runtime仍待验，不据此声称整个0.6.3通过。
+
 2026-11-17 最新普通reset生产修复：保留七领域原事件，将现有窗口推进至reset时事件尾部，
 清空派生状态并原子确认cursor；输入/来源永久退役与Manifest确认同事务，派生向量显式清空。
 普通入口默认生效，无新关闭开关。原63项21→63通过，另50项损坏恢复、实际容量、失败回滚、

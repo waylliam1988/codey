@@ -10,6 +10,10 @@
 
 ## 当前状态
 
+最新负结果：[混版本warm owner历史保留](mixed-schema-history-baseline-20261117.md)。
+42项全部有效：14项真实schema7对照通过，28项升级后的旧压缩/reset物理删除当前保留历史。
+下一步保护原事件表的物理删除；旧reader与完整混版本runtime仍不由本矩阵证明。
+
 最新完成：[普通reset历史保留生产修复](reset-history-retention-production-20261117.md)。
 原63项由21→63通过，另50项reset恢复/容量/回滚/新输入/开关/向量交错通过；扩大906项/
 136子测试、import格式修正后的125项复验及完整静态门通过，六个owned文件额外Any审计零诊断。
@@ -21,6 +25,7 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 混版本warm owner历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（有效负结果） | 真实Git schema7 owner先启动再升级同库；42项全部有效，14项旧schema正对照通过、28项升级处理在最后历史比较失败 | [冻结矩阵与结果](mixed-schema-history-baseline-20261117.md) |
 | 普通reset历史保留 2026-11-17 | `PRODUCTION_MERGED`（正常单版本runtime） | 原63项21→63通过，另50项恢复/容量/回滚/新输入/开关/向量交错全部通过；扩大906项/136子测试、import格式修正后125项复验及完整静态门通过，六个owned文件额外Any审计零诊断 | [生产修复与失败归属](reset-history-retention-production-20261117.md) |
 | 普通reset历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 63项全部有效，原21项只读通过、42项reset物理删除原始历史；未观察到本次重开/重建复活；后续生产修复见上行 | [冻结矩阵与结果](reset-history-retention-baseline-20261117.md) |
 | 容量检查点与历史保留 2026-11-17 | `PRODUCTION_MERGED`（单版本runtime/冷启动升级） | 原78项48→78通过；原日志保留，schema8有界重放/检索窗口及独立确认，Sleep按count/bytes推进窗口不复制旧report；55项验收、扩大776项/136子测试、最后SQL复查后366项复验及完整静态门通过，13个owned文件额外Any审计零诊断 | [生产修复与失败归属](capacity-history-retention-production-20261117.md) |

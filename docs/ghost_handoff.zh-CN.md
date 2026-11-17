@@ -12,7 +12,12 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新完成：[普通reset历史保留](ghost_progress/reset-history-retention-production-20261117.md)。
+2026-11-17 最新负结果：[混版本warm owner历史保留](ghost_progress/mixed-schema-history-baseline-20261117.md)。
+真实schema7子进程owner先启动，当前代码升级同库后再释放旧压缩/reset；42项全部有效，
+14项旧schema对照通过、28项升级处理在最后历史比较失败。下一步保护原始事件表物理删除，
+旧reader/跨升级在途SQL和完整混版本runtime仍需分别验证，不将存储负结果外推到完整App。
+
+此前完成：[普通reset历史保留](ghost_progress/reset-history-retention-production-20261117.md)。
 原63项由21→63通过，另50项恢复/容量/回滚/新输入/开关/向量交错通过；扩大906项/136子测试，
 import格式修正后125项复验和完整静态门通过，六个owned文件额外Any审计零诊断。
 七领域普通reset默认保留原事件、推进空重放窗口并保留永久身份退役，清除派生向量。
