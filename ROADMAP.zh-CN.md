@@ -1818,6 +1818,11 @@ runtime 写 observation、Ghost 做 projection 的所有权可追溯；本版本
 
 #### 0.6.1 - Context Epoch Admission Wiring
 
+2026-11-17：[不完整HTTP响应生产修复与暂停交接](docs/ghost_progress/native-uncertain-response-production-20261117.md)
+已在普通JSON发送默认核对帧长度。原72项48→72通过，合法JSON但声明字节未收齐不再误判完成，
+保持MAYBE_SENT并禁止暖冷重发；扩大417项、类型修订后最终155项及全静态门通过，两个文件owned Any零诊断。
+按用户要求本批完成后暂停，恢复前先读交接。完整本阶段、其余G0和World Model仍未完成。
+
 2026-11-17：[原生回执拒绝与恢复组合验收](docs/ghost_progress/native-refusal-recovery-20261117.md)
 在现有生产唯一gate上通过两协议×三scope×成功/错误回执×enabled/暖恢复/冷恢复36项，
 相关12文件187项通过。真实HTTP拒绝两次均NOT_SENT，SQLite重开后原回执/窗口保留、

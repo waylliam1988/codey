@@ -10,11 +10,14 @@
 
 ## 当前状态
 
-当前收尾批次：[原生回执不确定HTTP响应基线](native-uncertain-response-baseline-20261117.md)。
-72项48通过/24失败，合法JSON但Content-Length未收齐时错误接受任务完成；
-EOF/畸形JSON的MAYBE_SENT与不重发对照正常。生产修复与检查收尾后暂停，不启动下一批。
+按用户要求，本批完成后暂停，不自动启动下一批。最新完成：
+[原生回执不完整HTTP响应生产修复与暂停交接](native-uncertain-response-production-20261117.md)。
+JSON响应默认先核对Content-Length，未收齐为MAYBE_SENT并禁止重发，不再错误接受任务完成。
+原72项48→72通过，扩大39文件417项通过，冗余类型转换修订后最终7文件155项通过；
+全静态门与两个修改文件owned Any零诊断。本批进程已退出，原始负结果`c9487a65`保留。
+完整G0与World Model仍未完成；恢复任务前先读上述交接，不重做已闭合矩阵。
 
-最新完成：[原生回执准入拒绝与恢复组合验收](native-refusal-recovery-20261117.md)。
+此前完成：[原生回执准入拒绝与恢复组合验收](native-refusal-recovery-20261117.md)。
 两协议×三控制scope×成功/错误回执×enabled/暖恢复/冷恢复36项全部通过；
 真实共享kernel/SQLite/HTTP验证两次拒绝均NOT_SENT、原回执保留、重开后不重复执行工具。
 相关12文件187项通过；本轮未改生产，现有唯一gate及续传已默认接线，无新增默认关闭开关。
@@ -62,6 +65,8 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 原生回执不完整HTTP响应修复 2026-11-17 | `PRODUCTION_MERGED`（普通JSON发送默认路径） | 原72项48→72通过，扩大417项、类型修订后最终155项与全静态门通过，两个文件owned Any零诊断；未收齐帧为MAYBE_SENT、不完成不重发；按用户要求本批后暂停 | [生产修复与暂停交接](native-uncertain-response-production-20261117.md) |
+| 原生回执不确定HTTP响应基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 原72项48通过/24失败；合法JSON但Content-Length未收齐误完成，EOF与坏JSON对照正确；后续修复闭合，原测量保留 | [冻结矩阵与负结果](native-uncertain-response-baseline-20261117.md) |
 | 原生回执准入拒绝与恢复 2026-11-17 | `EXPERIMENT_COMPLETE`（现有默认生产链路） | 两协议/三scope/成功错误回执/enabled暖冷36项与相关187项通过；回调类型修订后36项复验、全静态门与owned Any零诊断；真实HTTP/SQLite证明NOT_SENT续传不重复工具；生产无需重复修复 | [组合验收与限制](native-refusal-recovery-20261117.md) |
 | continuity过期持久事实与消费者 2026-11-17 | `PRODUCTION_MERGED`（普通维护/读取/队列消费） | 原18项3→18通过，旧同步日志9项3→9通过；75项新增，最终44文件1064/4子测试及全静态门通过，五文件owned Any零诊断；历史/来源可更新性保留，无新增默认关闭开关 | [生产接线与边界](continuity-expiry-production-20261117.md) |
 | continuity过期持久投影基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 三scope×六场景18项有效，原3通过/15失败；renderer控制正确，相关135/2子测试及静态门通过；后续生产接线闭合本矩阵，原测量保留 | [冻结矩阵与结果](continuity-expiry-baseline-20261117.md) |

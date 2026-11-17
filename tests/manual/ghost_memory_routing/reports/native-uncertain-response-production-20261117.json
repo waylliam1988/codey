@@ -1,0 +1,482 @@
+{
+  "experiment": "native-uncertain-response-production-20261117",
+  "status": "PRODUCTION_MERGED",
+  "baseline_revision": "c9487a65b88c25c34998122bfac5307a5ec70ec0",
+  "model": "deterministic-native-receipt-fixture",
+  "external_model_calls": 0,
+  "production_default_enabled": true,
+  "new_default_off_flags": 0,
+  "baseline": {
+    "passed": 48,
+    "failure_owner": "production JSON response accepted incomplete Content-Length framing as completion",
+    "valid_cells": 72,
+    "failed": 24
+  },
+  "final_matrix": {
+    "passed": 72,
+    "valid_cells": 72,
+    "cases": [
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-ok-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-ok-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-ok-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-ok-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-ok-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-ok-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-error-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-error-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-error-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-error-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-error-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-warm-error-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-ok-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-ok-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-ok-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-ok-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-ok-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-ok-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-error-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-error-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-error-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-error-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-error-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[eof_before_headers-cold-error-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-ok-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-ok-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-ok-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-ok-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-ok-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-ok-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-error-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-error-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-error-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-error-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-error-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-warm-error-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-ok-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-ok-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-ok-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-ok-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-ok-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-ok-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-error-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-error-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-error-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-error-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-error-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[invalid_json-cold-error-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-ok-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-ok-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-ok-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-ok-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-ok-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-ok-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-error-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-error-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-error-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-error-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-error-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-warm-error-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-ok-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-ok-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-ok-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-ok-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-ok-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-ok-session-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-error-user-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-error-user-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-error-project-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-error-project-openai-responses]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-error-session-openai-completions]",
+        "status": "passed"
+      },
+      {
+        "name": "test_received_receipt_with_uncertain_response_is_never_accepted_or_resent[short_frame_valid_json-cold-error-session-openai-responses]",
+        "status": "passed"
+      }
+    ]
+  },
+  "related": {
+    "errors": 0,
+    "files": 7,
+    "tests": 155,
+    "skipped": 0,
+    "failures": 0
+  },
+  "expanded_before_redundant_filter_conversion_removal": {
+    "errors": 0,
+    "files": 39,
+    "tests": 417,
+    "skipped": 0,
+    "failures": 0
+  },
+  "frozen_production_python_files": 702,
+  "source_lf_sha256": {
+    "codey/providers/api_generation.py": "99067a513ea139e312e789d740a4504da89a8630bbde1226cc77c5dd8c9fa611",
+    "tests/test_ghost_native_uncertain_response.py": "a08eda43d3570ac75bf5b4fe79690698beeb11a6c6f15d0abb6b433c934ca5e1"
+  },
+  "owned_audited_files": 2,
+  "owned_any_diagnostics": 0,
+  "dependency_any_diagnostics": 5871,
+  "dependency_any_files": 229,
+  "checks": [
+    {
+      "check": "related",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_ghost_native_uncertain_response.py",
+        "tests/test_ghost_native_refusal_recovery.py",
+        "tests/test_api_stream_terminal_and_cancelled_generation.py",
+        "tests/test_api_request_context_protocols.py",
+        "tests/test_api_rejection_messages_preserve_status_and_service_reason.py",
+        "tests/test_cline_runtime_protocol.py",
+        "tests/test_zen_rejection_classification_fields.py",
+        "-q",
+        "--tb=short",
+        "-o",
+        "junit_logging=all",
+        "--junitxml=.e2e-artifacts/ghost-native-uncertain-response-20261117/final.xml"
+      ]
+    },
+    {
+      "check": "ruff",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ]
+    },
+    {
+      "check": "mypy",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "precision",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ]
+    },
+    {
+      "check": "owned-mypy",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey/providers/api_generation.py",
+        "tests/test_ghost_native_uncertain_response.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey/providers/api_generation.py",
+        "tests/test_ghost_native_uncertain_response.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey/providers/api_generation.py",
+        "tests/test_ghost_native_uncertain_response.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-any",
+      "exit": 1,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey/providers/api_generation.py",
+        "tests/test_ghost_native_uncertain_response.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ]
+    }
+  ],
+  "production_pyrefly": "INFO 0 errors (35 suppressed, 158 warnings not shown)",
+  "consumers": [
+    "ordinary ApiProvider Completions/Responses JSON generation",
+    "shared kernel native receipt follow-up",
+    "existing API/CLI provider generation callers"
+  ],
+  "behavior": [
+    "JSON declared frame length checked before JSON decode and success on_event",
+    "incomplete JSON response remains error/maybe_sent",
+    "warm/cold resume blocked by external_outcome_unknown even after control disable/reenable",
+    "original tool receipt and unique unsuperseded batch retained"
+  ],
+  "limits": [
+    "SSE terminal event contract unchanged",
+    "no external model behavior/cost claim",
+    "full App/hard exit/cross-run/repair/compaction and G0 not fully accepted",
+    "World Model still lacks real closed loop"
+  ],
+  "user_requested_pause_after_this_batch": true,
+  "baseline_state_archive": ".e2e-artifacts/ghost-native-uncertain-response-20261117/baseline-state",
+  "type_corrections": ["separate success frame_length from rejection declared_length", "remove redundant str conversion after declaring typed error detail filter"],
+  "local_artifacts": ".e2e-artifacts/ghost-native-uncertain-response-20261117"
+}

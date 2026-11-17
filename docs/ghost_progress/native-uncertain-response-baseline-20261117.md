@@ -1,10 +1,11 @@
 # Ghost 原生回执不确定 HTTP 响应基线
 
-- 状态：`INCOMPLETE`（原负结果已复现，完整回归/静态检查随生产修复收尾）
+- 状态：`EXPERIMENT_COMPLETE`（原始负结果，后续生产修复限定闭合）
 - 日期：2026-11-17
 - 关联：0.6.1 / 0.6.2；后续 provider outcome / World Model 的事实边界
 - 生产基线：`365b5bfa`（生产源码仍为上一轮已核对的702文件）
 - 生产改动：无；先测已有真实HTTP接收与恢复。
+- 实验 commit：`c9487a65b88c25c34998122bfac5307a5ec70ec0`
 
 ## 冻结目标、对照与停止条件
 
@@ -46,3 +47,7 @@ short_frame_valid_json的24项全部错误接受为completed/done/delivery=succe
 多17，连接随后关闭；生产read1循环在EOF后直接解析JSON，没有核对声明长度。
 全部702个生产Python文件运行前后hash一致。原始失败日志/XML保留本地baseline产物。
 先提交原负结果，再单独修复生产JSON分支；本批结束后按用户要求暂停，留下交接入口。
+
+后续[生产修复与暂停交接](native-uncertain-response-production-20261117.md)已把原矩阵闭合为
+72/72；扩大417项及最终类型修订后155项通过，全树静态门及两个文件owned Any零诊断。
+原48/24测量与日志不改写；本批结束按用户要求暂停，不展开下一批。

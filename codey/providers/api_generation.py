@@ -10,22 +10,90 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
-from typing import Any, cast
+from types import TracebackType
+from typing import Protocol, runtime_checkable
 
 from codey.providers import api_transport as transport
 from codey.providers.api_request_policy import AttemptBudget
 from codey.providers.api_stream import ChatStreamAccumulator, DefaultChatAccumulator, read_sse
+from codey.types.json_value import JsonObject, decode_json_object
+
+
+class AttemptObserver(Protocol):
+    def __call__(self, *, attempt: int, data: bytes, phase: str, response_bytes: int, seconds: float) -> None: ...
+
+
+@runtime_checkable
+class _ResponseContext(Protocol):
+    def __enter__(self) -> object: ...
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None,
+                 traceback: TracebackType | None) -> bool | None: ...
+
+
+@runtime_checkable
+class _HeaderReader(Protocol):
+    def get(self, name: str) -> object: ...
+
+
+@runtime_checkable
+class _AccumulatorFactory(Protocol):
+    def __call__(self) -> ChatStreamAccumulator: ...
+
+
+@runtime_checkable
+class _ErrorDetailFilter(Protocol):
+    def __call__(self, status: int, detail: str) -> str: ...
+
+
+def _header(response: object, name: str) -> str | None:
+    headers: object = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    if not isinstance(headers, _HeaderReader):
+        raise transport.GenerationUnknownError("generation response has invalid headers; not resent")
+    value = headers.get(name)
+    if value is None or isinstance(value, str):
+        return value
+    raise transport.GenerationUnknownError("generation response has a non-text header; not resent")
+
+
+def _content_length(response: object) -> int | None:
+    # Chunk framing owns the body when Transfer-Encoding is present.
+    if _header(response, "Transfer-Encoding"):
+        return None
+    raw = _header(response, "Content-Length")
+    if raw is None:
+        return None
+    if not raw.strip().isascii() or not raw.strip().isdecimal():
+        raise transport.GenerationUnknownError("generation response has invalid Content-Length; not resent")
+    return int(raw)
+
+
+def _accumulator_factory(options: Mapping[str, object]) -> _AccumulatorFactory:
+    candidate = options.get("chat_accumulator_factory", DefaultChatAccumulator)
+    if not isinstance(candidate, _AccumulatorFactory):
+        raise TypeError("chat_accumulator_factory must declare a callable factory")
+    return candidate
+
+
+def _detail_filter(options: Mapping[str, object]) -> _ErrorDetailFilter | None:
+    candidate = options.get("error_detail_filter")
+    if candidate is None:
+        return None
+    if not isinstance(candidate, _ErrorDetailFilter):
+        raise TypeError("error_detail_filter must declare a callable filter")
+    return candidate
 
 
 def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str, str], *, timeout: float,  # noqa: C901, PLR0912, PLR0915
-             observe: Callable[..., None], cancelled: Callable[[], bool] = lambda: False,
-             opened: Callable[[Any], None] = lambda response: None,
-             on_event: Callable[[dict[str, Any]], None] = lambda event: None,
+             observe: AttemptObserver, cancelled: Callable[[], bool] = lambda: False,
+             opened: Callable[[object], None] = lambda response: None,
+             on_event: Callable[[JsonObject], None] = lambda event: None,
              on_control: Callable[[transport.AttemptControl], None] = lambda control: None,
              attempt_budget: AttemptBudget | None = None,
              idle_timeout: float | None = None,
-             http_session: Any = None,
-             transport_options: Mapping[str, object] | None = None) -> dict[str, Any]:
+             http_session: object = None,
+             transport_options: Mapping[str, object] | None = None) -> JsonObject:
     from codey.providers import error_classification as errors
 
     if cancelled():
@@ -56,19 +124,17 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
     deadline_guard = threading.Timer(max(0.001, started + timeout - time.monotonic()), control.cancel)
     deadline_guard.daemon = True
     deadline_guard.start()
+    options: Mapping[str, object] = transport_options if transport_options is not None else {}
+
+    def observe_event(event: object) -> None:
+        on_event(decode_json_object(event))
+
     try:
-        opener = transport.open_request
-        kwargs: dict[str, object] = {
-            "control": control,
-            "attempt_budget": attempt_budget,
-            "http_session": http_session,
-            "transport_options": {
-                **(dict(transport_options) if transport_options is not None else {}),
-                "body_idle_timeout": idle_timeout,
-            },
-        }
+        response_context: object
         try:
-            response_context = cast(Any, opener)(request, timeout, **kwargs)
+            response_context = transport.open_request(request, timeout, control=control,
+                attempt_budget=attempt_budget, http_session=http_session,
+                transport_options={**options, "body_idle_timeout": idle_timeout})
         except TypeError as exc:
             # A tiny compatibility seam for external deterministic transports
             # that still expose the original two-argument callable.  Only an
@@ -77,29 +143,33 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
             message = str(exc).lower()
             if "unexpected keyword argument" not in message:
                 raise
-            response_context = cast(Any, opener)(request, timeout)
+            response_context = transport.open_request(request, timeout)
+        if not isinstance(response_context, _ResponseContext):
+            raise TypeError("generation transport requires a response context manager")
         with response_context as response:
             control.register_response(response)
             control.enter_phase("response_headers")
             opened(response)
             # A slow partial JSON body or SSE line can continuously reset the
             # socket timeout. Close the socket at the total deadline as well.
-            if "text/event-stream" in str(getattr(response, "headers", {}).get("Content-Type", "")):
+            if "text/event-stream" in (_header(response, "Content-Type") or ""):
                 control.enter_phase("body")
                 control.reset_body_timer()
-                body = read_sse(response, deadline=started + timeout, cancelled=cancelled,
-                                on_event=on_event, control=control, idle_timeout=idle_timeout,
-                                chat_accumulator_factory=cast(Callable[[], ChatStreamAccumulator],
-                                    (transport_options or {}).get("chat_accumulator_factory", DefaultChatAccumulator)),
-                                error_detail_filter=cast(Callable[[int, str], str] | None,
-                                    (transport_options or {}).get("error_detail_filter")))
+                streamed: object = read_sse(response, deadline=started + timeout, cancelled=cancelled,
+                                on_event=observe_event, control=control, idle_timeout=idle_timeout,
+                                chat_accumulator_factory=_accumulator_factory(options),
+                                error_detail_filter=_detail_filter(options))
+                body = decode_json_object(streamed)
             else:
                 control.enter_phase("body")
                 control.reset_body_timer()
+                frame_length = _content_length(response)
+                if frame_length is not None and frame_length > transport.MAX_RESPONSE_BYTES:
+                    raise transport.GenerationUnknownError("generation response exceeded its byte limit")
                 # Only use incremental reads when the response type declares
                 # ``read1``. Dynamic test doubles and wrappers can synthesize
                 # arbitrary instance attributes that are not byte readers.
-                read1 = getattr(type(response), "read1", None)
+                read1: object = getattr(type(response), "read1", None)
                 has_streaming_read = callable(read1)
                 reader = transport.BoundedBodyReader(
                     response,
@@ -124,7 +194,10 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
                 count = len(raw)
                 if count > transport.MAX_RESPONSE_BYTES:
                     raise transport.GenerationUnknownError("generation response exceeded its byte limit")
-                body = transport._json_object(raw)
+                if frame_length is not None and count != frame_length:
+                    raise transport.GenerationUnknownError("generation response framing is incomplete; not resent")
+                decoded: object = transport._json_object(raw)
+                body = decode_json_object(decoded)
                 on_event(body)
         if cancelled():
             raise transport.GenerationUnknownError("generation cancelled; late response discarded")
@@ -145,7 +218,7 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
         control.reset_body_timer()
         with contextlib.closing(exc):
             declared_length: int | None = None
-            raw_length = exc.headers.get("Content-Length") if exc.headers is not None else None
+            raw_length = _header(exc, "Content-Length")
             if raw_length:
                 try:
                     declared_length = int(raw_length)
@@ -174,24 +247,25 @@ def generate(endpoint: str, payload: Mapping[str, object], headers: Mapping[str,
             if declared_length is not None and len(raw_detail) != declared_length:
                 raise transport.GenerationUnknownError("rejection body framing is incomplete; not resent") from exc
             detail = raw_detail.decode("utf8", "replace")
-        detail_filter = (transport_options or {}).get("error_detail_filter")
-        if callable(detail_filter):
-            detail = str(detail_filter(exc.code, detail))
+        detail_filter = _detail_filter(options)
+        if detail_filter is not None:
+            detail = detail_filter(exc.code, detail)
         if errors.classify_http_error(exc.code, detail) == errors.ProviderErrorKind.CONTEXT_OVERFLOW:
             raise errors.ContextOverflowError(detail[:400]) from exc
-        request_id = exc.headers.get("X-Request-Id")
-        extra_headers = (transport_options or {}).get("request_id_headers", ())
+        request_id = _header(exc, "X-Request-Id")
+        extra_headers = options.get("request_id_headers", ())
         if isinstance(extra_headers, (tuple, list)):
-            request_id = request_id or next((exc.headers.get(name) for name in extra_headers
-                                            if isinstance(name, str) and exc.headers.get(name)), None)
+            names: tuple[object, ...] | list[object] = extra_headers
+            request_id = request_id or next((value for name in names
+                if isinstance(name, str) and (value := _header(exc, name))), None)
         raise transport.GenerationRejectedError(
             exc.code,
             detail,
-            exc.headers.get("Retry-After"),
+            _header(exc, "Retry-After"),
             upstream_request_id=request_id,
         ) from exc
     except (http.client.IncompleteRead, urllib.error.URLError, TimeoutError, OSError) as exc:
-        reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+        reason: object = exc.reason if isinstance(exc, urllib.error.URLError) else exc
         if isinstance(reason, (ConnectionRefusedError, socket.gaierror)):
             phase = "not_sent"
             raise transport.GenerationNotSentError(f"generation request was not submitted: {reason}") from exc
