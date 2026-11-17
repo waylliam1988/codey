@@ -4,6 +4,7 @@
 - 日期：2026-11-17
 - 关联：0.6.1 / 0.6.2
 - 基线生产 commit：`36a1f6c5ec41527b5ded295976aabe6e76ad4334`
+- 实验 commit：`72c46ad327f527bd4bdd288c91c5b712e4694f5b`
 - 生产改动：无；先验证已有唯一 Attempt Gate 和 NOT_SENT 续传契约。
 - 生产合并结论：`EXPERIMENT_ONLY`（本次新增测试与记录；所验生产逻辑早已默认接线）
 

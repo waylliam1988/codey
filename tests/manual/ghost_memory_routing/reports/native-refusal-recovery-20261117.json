@@ -1,6 +1,7 @@
 {
   "experiment": "native-refusal-recovery-20261117",
   "status": "EXPERIMENT_COMPLETE",
+  "experiment_commit": "72c46ad327f527bd4bdd288c91c5b712e4694f5b",
   "production_baseline": "36a1f6c5ec41527b5ded295976aabe6e76ad4334",
   "production_source_changes": 0,
   "existing_production_consumer": "shared task kernel -> sole ApiProvider Attempt Gate -> durable NOT_SENT continuation",
