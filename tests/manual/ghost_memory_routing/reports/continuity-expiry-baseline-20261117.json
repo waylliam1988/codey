@@ -1,0 +1,696 @@
+{
+  "experiment": "continuity-expiry-baseline-20261117",
+  "status": "EXPERIMENT_COMPLETE",
+  "production_commit": "405410f5aab87f4e1beef722430f22de7fe9b505",
+  "model_calls": 0,
+  "valid_cells": 18,
+  "matrix_passed": 3,
+  "matrix_failed": 15,
+  "fixture_errors": 0,
+  "skipped": 0,
+  "frozen_production_python_files": 702,
+  "related": {
+    "passed": 135,
+    "subtests_passed": 2
+  },
+  "owned_any_diagnostics": 0,
+  "dependency_any_diagnostics": 3930,
+  "dependency_any_files": 182,
+  "owned_source_sha256": "7b9e45fd028f0cd5750bdfafaf28dbd7bc3fa52a1bc6bb00d68835c5a417359f",
+  "checks": [
+    {
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_ghost_continuity.py",
+        "tests/test_ghost_work_queue.py",
+        "tests/test_ghost_sleep.py",
+        "tests/test_ghost_maintenance_as_of.py",
+        "-q",
+        "--tb=short",
+        "--junitxml=.e2e-artifacts/ghost-continuity-expiry-20261117/baseline-related.xml"
+      ],
+      "check": "related"
+    },
+    {
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "check": "ruff"
+    },
+    {
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "mypy"
+    },
+    {
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "pyrefly"
+    },
+    {
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "ty"
+    },
+    {
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "check": "precision"
+    },
+    {
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_continuity_expiry_boundary.py",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "owned-mypy"
+    },
+    {
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "tests/test_ghost_continuity_expiry_boundary.py",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "owned-pyrefly"
+    },
+    {
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "tests/test_ghost_continuity_expiry_boundary.py",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "owned-ty"
+    },
+    {
+      "exit": 1,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_continuity_expiry_boundary.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ],
+      "check": "owned-any"
+    }
+  ],
+  "measurements": [
+    {
+      "expected_records": 1,
+      "expected_visible": 1,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+        "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": true,
+      "reported_total": 1,
+      "scope": "user",
+      "variant": "before",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 1,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "d178d5fa3d2a009ef8b996715e75e8a5fbcd9f0fcd01dda290b09d102462e5ec",
+        "d178d5fa3d2a009ef8b996715e75e8a5fbcd9f0fcd01dda290b09d102462e5ec"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "d178d5fa3d2a009ef8b996715e75e8a5fbcd9f0fcd01dda290b09d102462e5ec",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": true,
+      "reported_total": 1,
+      "scope": "project",
+      "variant": "before",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 1,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+        "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": true,
+      "reported_total": 1,
+      "scope": "session",
+      "variant": "before",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 0,
+      "expected_visible": 0,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+        "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": 0,
+      "scope": "user",
+      "variant": "at",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 0,
+      "expected_visible": 0,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "12abbd77882f6e239c44dfa14d46c15e50ccc5ca918b55c5a2259fcaa41f0487",
+        "12abbd77882f6e239c44dfa14d46c15e50ccc5ca918b55c5a2259fcaa41f0487"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "12abbd77882f6e239c44dfa14d46c15e50ccc5ca918b55c5a2259fcaa41f0487",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": 0,
+      "scope": "project",
+      "variant": "at",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 0,
+      "expected_visible": 0,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+        "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": 0,
+      "scope": "session",
+      "variant": "at",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 0,
+      "expected_visible": 0,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+        "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": 0,
+      "scope": "user",
+      "variant": "after",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 0,
+      "expected_visible": 0,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "2111788218a4f422ccd8df0de921071bbaeb519587af2306d9138c0c5a1a33f2",
+        "2111788218a4f422ccd8df0de921071bbaeb519587af2306d9138c0c5a1a33f2"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "2111788218a4f422ccd8df0de921071bbaeb519587af2306d9138c0c5a1a33f2",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": 0,
+      "scope": "project",
+      "variant": "after",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 0,
+      "expected_visible": 0,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+        "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": 0,
+      "scope": "session",
+      "variant": "after",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 1,
+      "reader_ids": [
+        "expired-context",
+        "live-context"
+      ],
+      "rebuilt_digests": [
+        "bdd921c98c4ee97cd9f1fd14e66bad2180602ba7931709b50720704cf45a4dd9",
+        "bdd921c98c4ee97cd9f1fd14e66bad2180602ba7931709b50720704cf45a4dd9"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context",
+          "live-context"
+        ],
+        [
+          "expired-context",
+          "live-context"
+        ]
+      ],
+      "record_digest": "bdd921c98c4ee97cd9f1fd14e66bad2180602ba7931709b50720704cf45a4dd9",
+      "record_ids": [
+        "expired-context",
+        "live-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": 1,
+      "scope": "user",
+      "variant": "mixed",
+      "work_source_refs": [
+        "note:live-context",
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 1,
+      "reader_ids": [
+        "expired-context",
+        "live-context"
+      ],
+      "rebuilt_digests": [
+        "593f138ed8168e067f4725ffa30b0a361828e85fe0fa1cc2ea594e3d9e4aa627",
+        "593f138ed8168e067f4725ffa30b0a361828e85fe0fa1cc2ea594e3d9e4aa627"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context",
+          "live-context"
+        ],
+        [
+          "expired-context",
+          "live-context"
+        ]
+      ],
+      "record_digest": "593f138ed8168e067f4725ffa30b0a361828e85fe0fa1cc2ea594e3d9e4aa627",
+      "record_ids": [
+        "expired-context",
+        "live-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": 1,
+      "scope": "project",
+      "variant": "mixed",
+      "work_source_refs": [
+        "note:expired-context",
+        "note:live-context"
+      ]
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 1,
+      "reader_ids": [
+        "expired-context",
+        "live-context"
+      ],
+      "rebuilt_digests": [
+        "f88cd602c4e5d03caa56596a89ff140b7011f4cf0c0a7d98d4cc2fd33ae027f1",
+        "f88cd602c4e5d03caa56596a89ff140b7011f4cf0c0a7d98d4cc2fd33ae027f1"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context",
+          "live-context"
+        ],
+        [
+          "expired-context",
+          "live-context"
+        ]
+      ],
+      "record_digest": "f88cd602c4e5d03caa56596a89ff140b7011f4cf0c0a7d98d4cc2fd33ae027f1",
+      "record_ids": [
+        "expired-context",
+        "live-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": 1,
+      "scope": "session",
+      "variant": "mixed",
+      "work_source_refs": [
+        "note:live-context",
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 1,
+      "reader_ids": [
+        "cont_72a95b5b5ff1d1a2117bf0b0"
+      ],
+      "rebuilt_digests": [
+        "6f8f3aa1e43fb4ae59c360a03690c8e681f5f42c51815f4a99f573d883c3aeab",
+        "6f8f3aa1e43fb4ae59c360a03690c8e681f5f42c51815f4a99f573d883c3aeab"
+      ],
+      "rebuilt_ids": [
+        [
+          "cont_72a95b5b5ff1d1a2117bf0b0",
+          "expired-context"
+        ],
+        [
+          "cont_72a95b5b5ff1d1a2117bf0b0",
+          "expired-context"
+        ]
+      ],
+      "record_digest": "72debabaf3586d446940d4ae524625a638bca7e77050d506c8ffe7df37b98d24",
+      "record_ids": [
+        "cont_72a95b5b5ff1d1a2117bf0b0"
+      ],
+      "rendered_expired": false,
+      "reported_total": 1,
+      "scope": "user",
+      "variant": "new_source",
+      "work_source_refs": []
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 1,
+      "reader_ids": [
+        "cont_8b2da6691a10e59fb1ccf5b3"
+      ],
+      "rebuilt_digests": [
+        "773f90d07ea6fba547c35aa770352913936550a84b836f3c81cb359ef799dbbc",
+        "773f90d07ea6fba547c35aa770352913936550a84b836f3c81cb359ef799dbbc"
+      ],
+      "rebuilt_ids": [
+        [
+          "cont_8b2da6691a10e59fb1ccf5b3",
+          "expired-context"
+        ],
+        [
+          "cont_8b2da6691a10e59fb1ccf5b3",
+          "expired-context"
+        ]
+      ],
+      "record_digest": "72ed87ed895fc3d1fbdd805d6336308d502973a3262013c103f83e718af34a9b",
+      "record_ids": [
+        "cont_8b2da6691a10e59fb1ccf5b3"
+      ],
+      "rendered_expired": false,
+      "reported_total": 1,
+      "scope": "project",
+      "variant": "new_source",
+      "work_source_refs": []
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 1,
+      "reader_ids": [
+        "cont_c8a92e954ccb3c19b9755b17"
+      ],
+      "rebuilt_digests": [
+        "eeb6c297def1e97a124550ea07178b3f94cca20ff340ae1ff88443e5a249d52f",
+        "eeb6c297def1e97a124550ea07178b3f94cca20ff340ae1ff88443e5a249d52f"
+      ],
+      "rebuilt_ids": [
+        [
+          "cont_c8a92e954ccb3c19b9755b17",
+          "expired-context"
+        ],
+        [
+          "cont_c8a92e954ccb3c19b9755b17",
+          "expired-context"
+        ]
+      ],
+      "record_digest": "d7394adfb297607a5ae40f02198ab342c83f345adcbabda62cb56d1f087f7c1e",
+      "record_ids": [
+        "cont_c8a92e954ccb3c19b9755b17"
+      ],
+      "rendered_expired": false,
+      "reported_total": 1,
+      "scope": "session",
+      "variant": "new_source",
+      "work_source_refs": []
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 0,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+        "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": null,
+      "scope": "user",
+      "variant": "reader_only",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 0,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "80fafe98a74eff389e37d260cfa0999a446d3db9e3c188abd79ae4c34cc58d18",
+        "80fafe98a74eff389e37d260cfa0999a446d3db9e3c188abd79ae4c34cc58d18"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "80fafe98a74eff389e37d260cfa0999a446d3db9e3c188abd79ae4c34cc58d18",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": null,
+      "scope": "project",
+      "variant": "reader_only",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    },
+    {
+      "expected_records": 1,
+      "expected_visible": 0,
+      "reader_ids": [
+        "expired-context"
+      ],
+      "rebuilt_digests": [
+        "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+        "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559"
+      ],
+      "rebuilt_ids": [
+        [
+          "expired-context"
+        ],
+        [
+          "expired-context"
+        ]
+      ],
+      "record_digest": "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+      "record_ids": [
+        "expired-context"
+      ],
+      "rendered_expired": false,
+      "reported_total": null,
+      "scope": "session",
+      "variant": "reader_only",
+      "work_source_refs": [
+        "note:expired-context"
+      ]
+    }
+  ]
+}

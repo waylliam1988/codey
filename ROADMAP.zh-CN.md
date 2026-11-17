@@ -2067,6 +2067,11 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
+2026-11-17：[continuity过期基线](docs/ghost_progress/continuity-expiry-baseline-20261117.md)
+18项有效，3过期前正对照通过、15项持久清理/混合新增重建/普通reader与实际队列失败；
+renderer过期控制正确，702生产文件冻结不变，相关135/2子测试及静态门通过。
+这是原始负结果，尚未修生产；下一步记录可重放过期事实并贯通消费者逻辑时间，保留历史和新事实。
+
 2026-11-17：[Sleep显式维护时间](docs/ghost_progress/sleep-maintenance-time-production-20261117.md)
 已在普通入口默认接线，共用maintenance_as_of进行衰减、continuity刷新、租约回收及Affinity
 来源过期筛选，逻辑时间写入报告。原15项0→15通过，63项新增、扩大1047/36子测试、

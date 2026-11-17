@@ -10,6 +10,10 @@
 
 ## 当前状态
 
+最新实验：[continuity过期持久投影与消费者基线](continuity-expiry-baseline-20261117.md)。
+18 cell全部有效，3过期前正对照通过、15项暴露持久清理/事件重建/实际队列消费缺口。
+本次不改生产；下一步修复默认维护与reader，保留原始历史和同来源新事实可用性。
+
 最新完成：[Sleep显式维护时间](sleep-maintenance-time-production-20261117.md)。
 普通Sleep默认捕获一次maintenance_as_of，衰减、continuity刷新、租约回收与Affinity来源过期
 筛选共用；原15-cell矩阵0→15通过。63项新增，扩大1047/36子测试、最终281/2子测试及
@@ -45,6 +49,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| continuity过期持久投影基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果） | 三scope×六场景18项有效，3通过/15失败；过期清理、混合新增重放及普通reader/实际队列存在缺口，renderer控制正确；相关135/2子测试及静态门通过 | [冻结矩阵与结果](continuity-expiry-baseline-20261117.md) |
 | Sleep显式维护时间 2026-11-17 | `PRODUCTION_MERGED`（普通Sleep及实际消费者） | 同一逻辑时间贯通衰减/刷新/租约/来源筛选；原15项0→15通过；63项新增，扩大1047/36子测试、最终281/2子测试及全静态门通过，九文件owned Any零诊断 | [生产接线与边界](sleep-maintenance-time-production-20261117.md) |
 | Sleep维护周期取时基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 15 cell全有效，恒定复验全部相同；原前跳/后跳各15差异，影响权重、TTL、租约及来源过期筛选；后续显式时间闭合本矩阵，原负结果保留 | [冻结矩阵与结果](sleep-maintenance-clock-baseline-20261117.md) |
 | 重放历史时间校验 2026-11-17 | `PRODUCTION_MERGED`（限定历史时间/原子重建） | 原12项3→12通过；坏时间默认拒绝，保留原日志及事务前投影；71项新增，候选211、最终523/36子测试及全静态门通过，六受检文件额外Any零诊断；原扩大1194/1夹具失败保留 | [生产修复与失败归属](replay-timestamp-validation-production-20261117.md) |

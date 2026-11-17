@@ -12,7 +12,12 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新完成：[Sleep显式维护时间](ghost_progress/sleep-maintenance-time-production-20261117.md)。
+2026-11-17 最新实验：[continuity过期基线](ghost_progress/continuity-expiry-baseline-20261117.md)。
+三scope×六场景18项有效，3正对照通过、15项暴露过期清理/重建/队列消费缺口；
+renderer正确过滤，原始历史保留。基线未改生产；继续持久过期事实与实际reader接线，
+不能把TTL当永久来源退役，也不能通过当前重建时间猜测删除。相关135/2子测试及全静态门通过。
+
+此前完成：[Sleep显式维护时间](ghost_progress/sleep-maintenance-time-production-20261117.md)。
 普通Sleep默认一次捕获maintenance_as_of并传至衰减、continuity刷新、租约回收和Affinity
 来源过期筛选，报告保留逻辑时间，独立维护入口同样支持显式时间。原15项0→15通过；
 63项新增，扩大1047/36子测试、最后计数断言/冗余转换修订后281/2子测试及完整静态门通过；
