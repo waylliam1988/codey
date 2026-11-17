@@ -27,6 +27,12 @@
 
 ## 文件与数据位置
 
+2026-11-18 G0 [图同分裁剪与重建](../../../docs/ghost_progress/graph-tie-replay-20261118.md)：
+复现入口是 `python -m pytest tests/test_ghost_graph_tie_replay.py -q -s --tb=short`，生产
+验收另见 `tests/test_ghost_graph_tie_lifecycle.py`。原 24 项 9→24，原始基线与生产脱敏
+报告在 `reports/graph-tie-replay-{baseline,production}-20261118.json`；真实测试 DB、
+完整日志和 XML 只留本地 `.e2e-artifacts/ghost-graph-tie-replay-20261118`，不调用模型。
+
 | 文件 | 作用 |
 |---|---|
 | `seed_arms.py`、`run_arm.py`、`build_report.py` | 相同 prompt 条件下比较生产排序、新近排序与空白对照 |

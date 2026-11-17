@@ -35,9 +35,14 @@ class GraphRow(Protocol):
 
 
 @runtime_checkable
-class GraphNode(GraphRow, Protocol):
+class _StatusRow(Protocol):
     @property
     def status(self) -> str: ...
+
+
+class GraphNode(GraphRow, _StatusRow, Protocol):
+    @property
+    def id(self) -> str: ...
 
 
 class GraphEdge(GraphRow, Protocol):
@@ -46,6 +51,10 @@ class GraphEdge(GraphRow, Protocol):
 
     @property
     def target(self) -> str: ...
+
+
+    @property
+    def relation(self) -> str: ...
 
 
 _NodeT = TypeVar("_NodeT", bound=GraphNode)
@@ -126,7 +135,19 @@ def _node_rank(row: GraphNode) -> tuple[bool, float, str]:
 
 
 def _active_row(row: GraphRow) -> bool:
-    return isinstance(row, GraphNode) and row.status == "active"
+    return isinstance(row, _StatusRow) and row.status == "active"
+
+
+def _node_identity(row: GraphNode) -> str:
+    return row.id
+
+
+def _edge_identity(row: GraphEdge) -> tuple[str, str, str]:
+    return row.source, row.target, row.relation
+
+
+def _edge_rank(row: GraphEdge) -> tuple[float, str]:
+    return float(row.weight or 0.0), row.updated_at
 
 
 def bound_graph_nodes(
@@ -138,7 +159,8 @@ def bound_graph_nodes(
     """Keep active rows above ``min_active_weight`` (inactive rows always
     survive the filter), active-first by weight, truncated to ``limit``.
 
-    Row protocol: ``.status`` / ``.weight`` / ``.updated_at``. Both the
+    Equal ranks use ascending semantic node ID, matching SQLite readers.
+    Row protocol: ``.id`` / ``.status`` / ``.weight`` / ``.updated_at``. Both the
     Hebbian memory graph and the affinity preference index satisfy it with
     different thresholds; the ranking is shared.
     """
@@ -148,6 +170,8 @@ def bound_graph_nodes(
         for row in rows
         if row.status != "active" or float(row.weight or 0.0) >= threshold
     ]
+    # Stable rank sorting preserves this semantic order for exact ties.
+    kept.sort(key=_node_identity)
     kept.sort(key=_node_rank, reverse=True)
     return kept[: max(0, (limit or 0))]
 
@@ -162,7 +186,10 @@ def bound_graph_edges(
     require_active: bool = False,
 ) -> list[_EdgeT]:
     """Keep edges between surviving nodes above ``min_weight`` (active-only
-    when ``require_active``), by weight, with per-endpoint degree caps."""
+    when ``require_active``), by weight, with per-endpoint degree caps.
+
+    Equal ranks use ascending (source, target, relation), matching SQLite.
+    """
     threshold = float(min_weight)
     cap = max(0, (limit or 0))
     degree_cap = max(0, (max_out_degree or 0))
@@ -174,13 +201,8 @@ def bound_graph_edges(
         and float(row.weight or 0.0) >= threshold
         and (not require_active or _active_row(row))
     ]
-    kept.sort(
-        key=lambda row: (
-            float(row.weight or 0.0),
-            row.updated_at,
-        ),
-        reverse=True,
-    )
+    kept.sort(key=_edge_identity)
+    kept.sort(key=_edge_rank, reverse=True)
     bounded: list[_EdgeT] = []
     degree: dict[str, int] = {}
     for row in kept:

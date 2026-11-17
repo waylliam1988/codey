@@ -1,0 +1,495 @@
+{
+  "experiment": "ghost-graph-tie-replay-20261118",
+  "status": "PRODUCTION_MERGED",
+  "baseline_revision": "0f36de60",
+  "freeze_commit": "ff990fb0",
+  "experiment_commit": "596c2ee0e8c9e281ddc0e98e0a05e8b73c6f3bab",
+  "production_commit_subject": "fix(ghost): break graph pruning ties by semantic identity",
+  "external_model_calls": 0,
+  "production_default_enabled": true,
+  "new_default_off_flags": 0,
+  "production_consumers": [
+    "GhostHebbianStore.reinforce_candidate/rebuild_from_events/decay/compact_if_needed",
+    "Affinity replay/sync/decay/snapshot via the existing shared bounds",
+    "Normal Sleep, scoped readers and default control/lifecycle owners"
+  ],
+  "ranking": {
+    "schema_changed": false,
+    "edge_tie": "ascending source,target,relation",
+    "primary_unchanged": true,
+    "node_tie": "ascending semantic node id",
+    "raw_history_physically_rewritten": false,
+    "same_as_sqlite_reader_order": true
+  },
+  "baseline": {
+    "source_unchanged": true,
+    "public_unique_passed": 6,
+    "failed": 15,
+    "passed": 9,
+    "valid": 24,
+    "public_tie_failures": 6
+  },
+  "final_matrix": {
+    "passed": 24,
+    "cells": [
+      {
+        "digests": [
+          "67349d9e11156d403ec72b5f278321bf708ac2e551ca7430f3b66b6849484ca8",
+          "67349d9e11156d403ec72b5f278321bf708ac2e551ca7430f3b66b6849484ca8",
+          "67349d9e11156d403ec72b5f278321bf708ac2e551ca7430f3b66b6849484ca8"
+        ],
+        "kind": "public_degree",
+        "restart": "warm",
+        "same_state": true,
+        "scope": "user",
+        "valid": true,
+        "weights": "tie"
+      },
+      {
+        "digests": [
+          "d7ef3e9d16106f0c01f49081d925518093d934ed6feadfe5ba8969900ec8a6ea",
+          "d7ef3e9d16106f0c01f49081d925518093d934ed6feadfe5ba8969900ec8a6ea",
+          "d7ef3e9d16106f0c01f49081d925518093d934ed6feadfe5ba8969900ec8a6ea"
+        ],
+        "kind": "public_degree",
+        "restart": "warm",
+        "same_state": true,
+        "scope": "project",
+        "valid": true,
+        "weights": "tie"
+      },
+      {
+        "digests": [
+          "027a5da1e063dc729c39e6a9b7bae8ea4b7646d31181b574beac5cfd9792bce3",
+          "027a5da1e063dc729c39e6a9b7bae8ea4b7646d31181b574beac5cfd9792bce3",
+          "027a5da1e063dc729c39e6a9b7bae8ea4b7646d31181b574beac5cfd9792bce3"
+        ],
+        "kind": "public_degree",
+        "restart": "warm",
+        "same_state": true,
+        "scope": "session",
+        "valid": true,
+        "weights": "tie"
+      },
+      {
+        "digests": [
+          "50f246c74ed6741e3f1ea4395b18647b076b4174fa864b88219e3804be004b31",
+          "50f246c74ed6741e3f1ea4395b18647b076b4174fa864b88219e3804be004b31",
+          "50f246c74ed6741e3f1ea4395b18647b076b4174fa864b88219e3804be004b31"
+        ],
+        "kind": "public_degree",
+        "restart": "cold",
+        "same_state": true,
+        "scope": "user",
+        "valid": true,
+        "weights": "tie"
+      },
+      {
+        "digests": [
+          "eadb824130362bc22c471131907f9b1b50eda659df09b714a00389131ebfd322",
+          "eadb824130362bc22c471131907f9b1b50eda659df09b714a00389131ebfd322",
+          "eadb824130362bc22c471131907f9b1b50eda659df09b714a00389131ebfd322"
+        ],
+        "kind": "public_degree",
+        "restart": "cold",
+        "same_state": true,
+        "scope": "project",
+        "valid": true,
+        "weights": "tie"
+      },
+      {
+        "digests": [
+          "ba0b181db37236d32f2e3a1123b9e930541d415df1eda5e04d22d0683eb6fa49",
+          "ba0b181db37236d32f2e3a1123b9e930541d415df1eda5e04d22d0683eb6fa49",
+          "ba0b181db37236d32f2e3a1123b9e930541d415df1eda5e04d22d0683eb6fa49"
+        ],
+        "kind": "public_degree",
+        "restart": "cold",
+        "same_state": true,
+        "scope": "session",
+        "valid": true,
+        "weights": "tie"
+      },
+      {
+        "digests": [
+          "05a0348a1d29a843e03fe222e6d0d167e838574eb3d7a4e3bd237af9d63e7d15",
+          "05a0348a1d29a843e03fe222e6d0d167e838574eb3d7a4e3bd237af9d63e7d15",
+          "05a0348a1d29a843e03fe222e6d0d167e838574eb3d7a4e3bd237af9d63e7d15"
+        ],
+        "kind": "public_degree",
+        "restart": "warm",
+        "same_state": true,
+        "scope": "user",
+        "valid": true,
+        "weights": "unique"
+      },
+      {
+        "digests": [
+          "bbc2242ec71a28033ca7dad2be30e681d662cddd901349257732470a1f08f55a",
+          "bbc2242ec71a28033ca7dad2be30e681d662cddd901349257732470a1f08f55a",
+          "bbc2242ec71a28033ca7dad2be30e681d662cddd901349257732470a1f08f55a"
+        ],
+        "kind": "public_degree",
+        "restart": "warm",
+        "same_state": true,
+        "scope": "project",
+        "valid": true,
+        "weights": "unique"
+      },
+      {
+        "digests": [
+          "f09dbec396ea68cc3f78558d531f5adbe15d177a8a219729eb3cfff2336e2a03",
+          "f09dbec396ea68cc3f78558d531f5adbe15d177a8a219729eb3cfff2336e2a03",
+          "f09dbec396ea68cc3f78558d531f5adbe15d177a8a219729eb3cfff2336e2a03"
+        ],
+        "kind": "public_degree",
+        "restart": "warm",
+        "same_state": true,
+        "scope": "session",
+        "valid": true,
+        "weights": "unique"
+      },
+      {
+        "digests": [
+          "7ff51432532d68ac2f7825f33d9dd15b31588dc7546d0d40b71dbd130181ddb5",
+          "7ff51432532d68ac2f7825f33d9dd15b31588dc7546d0d40b71dbd130181ddb5",
+          "7ff51432532d68ac2f7825f33d9dd15b31588dc7546d0d40b71dbd130181ddb5"
+        ],
+        "kind": "public_degree",
+        "restart": "cold",
+        "same_state": true,
+        "scope": "user",
+        "valid": true,
+        "weights": "unique"
+      },
+      {
+        "digests": [
+          "93af28fac8b2bd3aa2ca08fdea00ce7be8bbaf442feb2e46aa5d2ea374d87776",
+          "93af28fac8b2bd3aa2ca08fdea00ce7be8bbaf442feb2e46aa5d2ea374d87776",
+          "93af28fac8b2bd3aa2ca08fdea00ce7be8bbaf442feb2e46aa5d2ea374d87776"
+        ],
+        "kind": "public_degree",
+        "restart": "cold",
+        "same_state": true,
+        "scope": "project",
+        "valid": true,
+        "weights": "unique"
+      },
+      {
+        "digests": [
+          "6ae8ef80815fcb48e5828930006ce2c374cb8da42473487de79ea1dd527fb662",
+          "6ae8ef80815fcb48e5828930006ce2c374cb8da42473487de79ea1dd527fb662",
+          "6ae8ef80815fcb48e5828930006ce2c374cb8da42473487de79ea1dd527fb662"
+        ],
+        "kind": "public_degree",
+        "restart": "cold",
+        "same_state": true,
+        "scope": "session",
+        "valid": true,
+        "weights": "unique"
+      },
+      {
+        "digest": "22862917c6fa98621fbfe5360aadc3a13decf2cf4da05b7bfa7c4fe48ec2be04",
+        "kind": "node_tie",
+        "order": 0,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "22862917c6fa98621fbfe5360aadc3a13decf2cf4da05b7bfa7c4fe48ec2be04",
+        "kind": "node_tie",
+        "order": 1,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "22862917c6fa98621fbfe5360aadc3a13decf2cf4da05b7bfa7c4fe48ec2be04",
+        "kind": "node_tie",
+        "order": 2,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "22862917c6fa98621fbfe5360aadc3a13decf2cf4da05b7bfa7c4fe48ec2be04",
+        "kind": "node_tie",
+        "order": 3,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "22862917c6fa98621fbfe5360aadc3a13decf2cf4da05b7bfa7c4fe48ec2be04",
+        "kind": "node_tie",
+        "order": 4,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "22862917c6fa98621fbfe5360aadc3a13decf2cf4da05b7bfa7c4fe48ec2be04",
+        "kind": "node_tie",
+        "order": 5,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "6a93b6311e36a02dc3a0548202164dc04099b9a32e693aaf8cba8c8024633d10",
+        "kind": "edge_tie",
+        "order": 0,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "6a93b6311e36a02dc3a0548202164dc04099b9a32e693aaf8cba8c8024633d10",
+        "kind": "edge_tie",
+        "order": 1,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "6a93b6311e36a02dc3a0548202164dc04099b9a32e693aaf8cba8c8024633d10",
+        "kind": "edge_tie",
+        "order": 2,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "6a93b6311e36a02dc3a0548202164dc04099b9a32e693aaf8cba8c8024633d10",
+        "kind": "edge_tie",
+        "order": 3,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "6a93b6311e36a02dc3a0548202164dc04099b9a32e693aaf8cba8c8024633d10",
+        "kind": "edge_tie",
+        "order": 4,
+        "same_state": true,
+        "valid": true
+      },
+      {
+        "digest": "6a93b6311e36a02dc3a0548202164dc04099b9a32e693aaf8cba8c8024633d10",
+        "kind": "edge_tie",
+        "order": 5,
+        "same_state": true,
+        "valid": true
+      }
+    ],
+    "valid": 24,
+    "failed": 0
+  },
+  "final_regression": {
+    "checks": [
+      {
+        "check": "related",
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/test_ghost_hebbian_row_time.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "tests/test_ghost_hebbian.py",
+          "tests/test_ghost_directive.py",
+          "tests/test_ghost_graph_primitives.py",
+          "tests/test_ghost_graph_sqlite.py",
+          "tests/test_ghost_graph_exact_replacement.py",
+          "tests/test_ghost_scope_history_retention.py",
+          "tests/test_ghost_reset_history_retention.py",
+          "tests/test_ghost_capacity_history_retention.py",
+          "tests/test_ghost_history_delete_guards.py",
+          "tests/test_ghost_projection_delete_fence.py",
+          "tests/test_ghost_deleted_input_fence.py",
+          "tests/test_ghost_deleted_source_lifetime.py",
+          "tests/test_ghost_manifest_atomic_mutation.py",
+          "tests/test_ghost_manifest_production_wiring.py",
+          "tests/test_ghost_manifest_discovery.py",
+          "tests/test_ghost_deletion_manifest_recovery.py",
+          "tests/test_ghost_corruption_contract.py",
+          "tests/test_ghost_controls.py",
+          "tests/test_ghost_control_contract.py",
+          "tests/test_ghost_language_production.py",
+          "tests/test_ghost_sleep.py",
+          "tests/test_ghost_maintenance_as_of.py",
+          "tests/test_ghost_context_admission.py",
+          "tests/test_ghost_provider_send_boundary.py",
+          "tests/test_ghost_replay_timestamp_validation.py",
+          "tests/test_ghost_graph_tie_replay.py",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "tests/test_ghost_affinity.py",
+          "tests/test_affinity_replay_single_transition.py",
+          "tests/test_ghost_sleep_source_controls.py",
+          "-q",
+          "--tb=short",
+          "-o",
+          "junit_logging=all",
+          "--junitxml=.e2e-artifacts/ghost-graph-tie-replay-20261118/production.xml"
+        ]
+      },
+      {
+        "check": "ruff",
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "ruff",
+          "check",
+          "."
+        ]
+      },
+      {
+        "check": "mypy",
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "pyrefly",
+        "exit": 0,
+        "command": [
+          "pyrefly",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "ty",
+        "exit": 0,
+        "command": [
+          "ty",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "precision",
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "tools.kernel_type_precision_gate"
+        ]
+      },
+      {
+        "check": "owned-mypy",
+        "exit": 0,
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/graph_primitives.py",
+          "tests/test_ghost_graph_primitives.py",
+          "tests/test_ghost_graph_tie_replay.py",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "owned-pyrefly",
+        "exit": 0,
+        "command": [
+          "pyrefly",
+          "check",
+          "codey/ghost/graph_primitives.py",
+          "tests/test_ghost_graph_primitives.py",
+          "tests/test_ghost_graph_tie_replay.py",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "owned-ty",
+        "exit": 0,
+        "command": [
+          "ty",
+          "check",
+          "codey/ghost/graph_primitives.py",
+          "tests/test_ghost_graph_primitives.py",
+          "tests/test_ghost_graph_tie_replay.py",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "check": "owned-any",
+        "exit": 1,
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/graph_primitives.py",
+          "tests/test_ghost_graph_primitives.py",
+          "tests/test_ghost_graph_tie_replay.py",
+          "tests/test_ghost_graph_tie_lifecycle.py",
+          "--python-version",
+          "3.11",
+          "--disallow-any-expr"
+        ]
+      }
+    ],
+    "subtests_passed": 34,
+    "new_lifecycle_and_affinity_tests": 30,
+    "errors": 0,
+    "skipped": 0,
+    "failed": 0,
+    "test_files": 32,
+    "passed": 1153,
+    "original_matrix_tests": 24
+  },
+  "failed_candidate_fixture": {
+    "attribution": "test contract assumptions",
+    "raw_logs_retained": true,
+    "corrected_lifecycle_passed": 24,
+    "failed": 6,
+    "passed": 18,
+    "causes": [
+      "Affinity reads require the actual scope and the Hebbian source produces nodes only",
+      "Automatic maintenance control belongs to AppContext scheduling, not explicit store recovery"
+    ],
+    "production_changed_to_match_fixture": false
+  },
+  "owned_any_audit": {
+    "dependency_files": 334,
+    "dependency_diagnostics": 10864,
+    "imported_app_and_sleep_dependencies": true,
+    "owned_diagnostics": 0,
+    "exit": 1,
+    "summary": "Found 10864 errors in 334 files (checked 4 source files)",
+    "scope_changed": false
+  },
+  "source_sha256": {
+    "tests/test_ghost_graph_tie_lifecycle.py": "468710D14162AC556EA902D9EC6833DCAB50838BD29B6B5FFE89D2797DE234B5",
+    "codey/ghost/graph_primitives.py": "315C1B1914525657D18F15F8026440AD32F47A69CA31B739C379BC2120ECB8DB",
+    "tests/test_ghost_graph_primitives.py": "FF687BBAE78E3D5B86D8B61B181CE6DF7C4A7CFCCDEE558E6FCA29F5325E2B77",
+    "tests/test_ghost_graph_tie_replay.py": "CFEADA6B2FC431449FEE8CB362CA24ADC90C4DE4A2408E8B5FA41D4547223ED3"
+  },
+  "production_freeze_files": 702,
+  "frozen_hashes_verified": true,
+  "baseline_state_archive": {
+    "databases": 12,
+    "worktree_copied": false,
+    "bytes": 3424256,
+    "directory": ".e2e-artifacts/ghost-graph-tie-replay-20261118/baseline-state",
+    "hash_manifest": ".e2e-artifacts/ghost-graph-tie-replay-20261118/baseline-state-manifest.json"
+  },
+  "rollback": "Revert the production fix; no schema migration. Existing controls still isolate automatic maintenance and model hints. Revert reopens the frozen tie failures.",
+  "limitations": [
+    "Deterministic storage reliability fix; no model behavior gain claimed",
+    "Existing equal-rank projection membership may change on rebuild/maintenance to semantic identity order",
+    "Public Hebbian degree-cap matrix plus shared node/edge permutation contracts; not every graph capacity/history sequence",
+    "No cross-machine run, mixed-version upgrade or full lifecycle proof",
+    "Record-only control payloads, other ranking/digest rules, full G0 and World Model production remain incomplete"
+  ],
+  "local_artifacts": ".e2e-artifacts/ghost-graph-tie-replay-20261118"
+}

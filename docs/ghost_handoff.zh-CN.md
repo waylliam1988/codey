@@ -12,7 +12,17 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-18 最新完成：[World Model 结构化复盘传输对照](ghost_progress/world-model-structured-review-20261118.md)。
+2026-11-18 最新完成：[图同分裁剪与重建](ghost_progress/graph-tie-replay-20261118.md)。
+原 24 项 9→24 通过；原始负结果 `596c2ee0` 保留，节点 id/边语义身份的稳定 tie 已在
+普通 Hebbian/Affinity bounds 默认生效，无新开关。新增 30 项维护/压缩/撤回/删除/reset/
+过期/App 禁用调度/故障回滚冷恢复及 Affinity 排列；扩大 32 文件 1153 项/34 子测试与
+全树静态门通过，四 owned 文件 Any 零诊断。首轮 6 个错误夹具假设已按真实 owner 契约
+修正并保留行为断言/原始失败；12 个基线 DB 只归档本地（约 3.4 MB），未复制 worktree。
+后续继续记录型 control payload、其余排序/digest、完整恢复及混版本生命周期；完整 G0/
+World Model 尚未完成，重复当前事实预测候选不再仅换提示词补跑。
+保护既有 tar.gz 删除/未跟踪 HTML；继续目标，无需重做本轮已闭合矩阵。
+
+2026-11-18 此前完成：[World Model 结构化复盘传输对照](ghost_progress/world-model-structured-review-20261118.md)。
 冻结提交 `7487bfbf` 后新 40 请求两臂各 20/20 结构有效，严格正确数均 8/20，input tokens
 +16.3%；按冻结门终止重复当前 verification 事实的持久性预测候选，不再只换提示词补跑。
 原 scorer 和前序围栏负结果保留，没有生产晋级或新 runtime 开关。14 项新 HTTP 验收，

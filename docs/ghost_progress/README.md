@@ -10,9 +10,11 @@
 
 ## 当前状态
 
-[图同分裁剪与重建一致性](graph-tie-replay-20261118.md)原始 24 cell 全有效、9 通过/15 失败：
-真实 Hebbian degree cap 的三 scope/warm/cold 同分组 6/6 重建改变状态，唯一权重对照
-6/6 正常；节点/边排列辅助 9 项失败。原始负结果已保留，生产修复尚未接入。
+[图同分裁剪与重建一致性](graph-tie-replay-20261118.md)已默认生产修复：原 24 项
+9→24 通过；共享节点 id/边语义身份稳定 tie，普通 writer/rebuild/维护/快照沿用同一
+helper，无新开关。新增 30 项生命周期/Affinity 验收，相关 32 文件 1153 项/34 子测试、
+全树静态门及四个 owned 文件 Any 零诊断；原始负结果 `596c2ee0` 保留。其余 G0 与
+World Model 未完成，继续记录型 control payload 和其余排序/恢复边界。
 
 World Model [结构化复盘传输对照](world-model-structured-review-20261118.md)已完成：
 同一 Gemma 配置新 40 请求两臂各 20/20 格式有效、正确数均 8/20，输入 tokens +16.3%。
@@ -93,6 +95,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 图同分裁剪与重建 2026-11-18 | `PRODUCTION_MERGED`（共享 bounds 与受测生命周期） | 原 24 项 9→24；真实 degree cap 三 scope/warm/cold 一致，新增 30 项维护/删除/恢复/Affinity 验收；1153/34 子测试及全树静态门通过，无新开关 | [基线、生产与剩余审查](graph-tie-replay-20261118.md) |
 | World Model 结构化复盘对照 2026-11-18 | `ABANDONED`（受测持久性预测消费者） | 新 40 请求格式全有效；on/off 各 8/20，input tokens +16.3%；无增益，终止重复事实候选；206/31 子测试及全树静态门通过，无生产新增 | [冻结、wire 与无增益结果](world-model-structured-review-20261118.md) |
 | World Model 验证预测复盘 2026-11-18 | `ABANDONED`（受测文本→严格 action 接口） | 原型闭环与 40 次 Gemma 实机请求完成；on/off 各 0/20，40 个带围栏回复未过冻结 JSON scorer，额外 input tokens +16.3%；保留负结果，未生产晋级 | [冻结、原型与负结果](world-model-verification-review-20261118.md) |
 | Hebbian 内部记录时间 2026-11-17/18 | `PRODUCTION_MERGED`（解码及普通消费者） | 原 54 项 18→54；最终新增文件 140 项，扩大 1031/34 子测试与全树静态门通过；坏历史保留有效投影，坏投影省略提示且可重建恢复，关闭/删除/reset/冷恢复及实际 App→HTTP 已验 | [基线、生产与剩余审查](hebbian-row-time-20261117.md) |

@@ -386,5 +386,127 @@
     "No model behavioral gain claimed",
     "No full G0, capacity, mixed-version lifecycle or World Model completion"
   ],
-  "local_artifacts": ".e2e-artifacts/ghost-graph-tie-replay-20261118"
+  "local_artifacts": ".e2e-artifacts/ghost-graph-tie-replay-20261118",
+  "experiment_commit": "596c2ee0e8c9e281ddc0e98e0a05e8b73c6f3bab",
+  "preliminary_checks": [
+    {
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_ghost_graph_primitives.py",
+        "tests/test_ghost_hebbian.py",
+        "tests/test_ghost_affinity.py",
+        "-q",
+        "--tb=short",
+        "-o",
+        "junit_logging=all",
+        "--junitxml=.e2e-artifacts/ghost-graph-tie-replay-20261118/baseline.xml"
+      ],
+      "exit": 0,
+      "check": "related"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "exit": 0,
+      "check": "ruff"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "mypy"
+    },
+    {
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "pyrefly"
+    },
+    {
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "ty"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "exit": 0,
+      "check": "precision"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_graph_tie_replay.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "owned-mypy"
+    },
+    {
+      "command": [
+        "pyrefly",
+        "check",
+        "tests/test_ghost_graph_tie_replay.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "owned-pyrefly"
+    },
+    {
+      "command": [
+        "ty",
+        "check",
+        "tests/test_ghost_graph_tie_replay.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "owned-ty"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_graph_tie_replay.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ],
+      "exit": 1,
+      "check": "owned-any"
+    }
+  ],
+  "preliminary_owned_any_diagnostics": 1
 }

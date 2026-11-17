@@ -62,6 +62,7 @@ class GraphPrimitivesTests(unittest.TestCase):
             status: str = "active"
             weight: float = 0.0
             updated_at: str = ""
+            id: str = "node"
 
         rows = [
             _Node("active", 0.9, "2026-09-20T00:00:03Z"),
@@ -88,6 +89,7 @@ class GraphPrimitivesTests(unittest.TestCase):
             weight: float = 0.0
             updated_at: str = ""
             status: str = "active"
+            relation: str = "coactivated_with"
 
         rows = [
             _Edge("a", "b", 0.9, "2026-09-20T00:00:01Z"),
