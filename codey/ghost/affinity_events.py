@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import TypedDict
 
 from codey.ghost import _common
 from codey.ghost.affinity_model import (
+    AFFINITY_SCHEMA_VERSION,
     EDGE_HALF_LIFE_DAYS,
     EDGE_LEARNING_RATE,
     MAX_AFFINITY_EDGES,
@@ -41,7 +42,6 @@ from codey.ghost.affinity_model import (
     _edge_id,
     _edge_spec_from_payload,
     _edge_spec_payload,
-    _list,
     _merge_ref_hashes,
     _merge_refs,
     _node_id,
@@ -69,6 +69,8 @@ from codey.ghost.graph_primitives import (
 from codey.ghost.graph_primitives import (
     decayed_by_half_life as _shared_decayed_by_half_life,
 )
+from codey.ghost.graph_primitives import parse_ts
+from codey.ghost.payload_types import mapping_fields
 from codey.ghost.schema import clip_signal_text
 
 _AFFINITY_EVENT_TYPES = frozenset(
@@ -93,7 +95,12 @@ _AFFINITY_EVENT_KEYS = {
 }
 
 
-def apply_affinity_event(state: dict[str, dict[str, Any]], event: Mapping[str, object]) -> None:
+class AffinityReplayState(TypedDict, total=False):
+    nodes: dict[str, AffinityNode]
+    edges: dict[str, AffinityEdge]
+
+
+def apply_affinity_event(state: AffinityReplayState, event: Mapping[str, object]) -> None:
     """Validate and apply one event; illegal events raise explicitly."""
     if not isinstance(event, Mapping):
         raise ValueError("affinity event must be a mapping")
@@ -136,7 +143,7 @@ def apply_affinity_event(state: dict[str, dict[str, Any]], event: Mapping[str, o
         return
     if event_type == "ghost_affinity_scope_deleted":
         payload = event.get("payload")
-        if not isinstance(payload, Mapping):
+        if not mapping_fields(payload):
             raise ValueError("invalid scope-deleted payload")
         kept_nodes, kept_edges, _removed_nodes, _removed_edges = _delete_scope_rows(
             nodes.values(),
@@ -162,7 +169,7 @@ def replay_affinity_events(
     events: Iterable[dict[str, object]],
 ) -> tuple[list[AffinityNode], list[AffinityEdge]]:
     """Replay through the single apply function and return nodes and edges."""
-    state: dict[str, dict[str, Any]] = {"nodes": {}, "edges": {}}
+    state: AffinityReplayState = {"nodes": {}, "edges": {}}
     for event in events:
         apply_affinity_event(state, event)
     nodes = _bounded_nodes(state["nodes"].values())
@@ -346,11 +353,14 @@ def _bounded_edges(edges: Iterable[AffinityEdge], *, node_ids: set[str]) -> list
 
 
 def _snapshot_rows(event: Mapping[str, object]) -> tuple[list[AffinityNode], list[AffinityEdge]]:
-    nodes = [node for node in (AffinityNode.from_payload(row) for row in _list(event.get("nodes"))) if node is not None]
+    nodes = [
+        node for node in (AffinityNode.from_payload(row) for row in _payload_list(event.get("nodes")))
+        if node is not None
+    ]
     node_ids = {node.id for node in nodes}
     edges = [
         edge
-        for edge in (AffinityEdge.from_payload(row) for row in _list(event.get("edges")))
+        for edge in (AffinityEdge.from_payload(row) for row in _payload_list(event.get("edges")))
         if edge is not None and edge.source in node_ids and edge.target in node_ids
     ]
     return _bounded_nodes(nodes), _bounded_edges(edges, node_ids=node_ids)
@@ -397,7 +407,7 @@ def _projection_payload(
     node_rows = _bounded_nodes(nodes)
     edge_rows = _bounded_edges(edges, node_ids={node.id for node in node_rows})
     return {
-        "schema_version": __import__("codey.ghost.affinity_model", fromlist=["AFFINITY_SCHEMA_VERSION"]).AFFINITY_SCHEMA_VERSION,
+        "schema_version": AFFINITY_SCHEMA_VERSION,
         "kind": _STATE_KIND,
         "source": "ghost.sqlite3:affinity",
         "generated_at": generated_at,
@@ -509,7 +519,7 @@ def _valid_affinity_event(event: Mapping[str, object]) -> bool:
 
     if not clip_signal_text(event.get("event_id"), 120):
         return False
-    if not clip_signal_text(event.get("ts"), 80):
+    if not _valid_timestamp(event.get("ts")):
         return False
     event_type = str(event.get("type") or "")
     if event_type not in _AFFINITY_EVENT_TYPES:
@@ -540,24 +550,26 @@ def _valid_affinity_snapshot(event: Mapping[str, object]) -> bool:
     raw_edges = event.get("edges")
     if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
         return False
-    if len(raw_nodes) > MAX_AFFINITY_NODES or len(raw_edges) > MAX_AFFINITY_EDGES:
+    node_rows = _payload_list(raw_nodes)
+    edge_rows = _payload_list(raw_edges)
+    if len(node_rows) > MAX_AFFINITY_NODES or len(edge_rows) > MAX_AFFINITY_EDGES:
         return False
     nodes: list[AffinityNode] = []
     node_ids: set[str] = set()
-    for row in raw_nodes:
+    for row in node_rows:
         node = AffinityNode.from_payload(row)
         if node is None or node.id in node_ids:
             return False
-        if not _valid_affinity_node_payload(row):
+        if not _valid_affinity_node_payload(row) or not _valid_row_timestamps(node):
             return False
         nodes.append(node)
         node_ids.add(node.id)
     edge_ids: set[str] = set()
-    for row in raw_edges:
+    for row in edge_rows:
         edge = AffinityEdge.from_payload(row)
         if edge is None or edge.id in edge_ids:
             return False
-        if not _valid_affinity_edge_payload(row):
+        if not _valid_affinity_edge_payload(row) or not _valid_row_timestamps(edge):
             return False
         if edge.source not in node_ids or edge.target not in node_ids:
             return False
@@ -577,7 +589,7 @@ def _valid_scope_deleted_payload(payload: object) -> bool:
     from codey.ghost.affinity_model import _clean_scope as _clean_scope_value
     from codey.ghost.schema import contains_sensitive_signal_text
 
-    if not isinstance(payload, Mapping) or set(payload.keys()) != _SCOPE_DELETED_PAYLOAD_KEYS:
+    if not mapping_fields(payload) or set(payload.keys()) != _SCOPE_DELETED_PAYLOAD_KEYS:
         return False
     scope = payload.get("scope")
     scope_ref = payload.get("scope_ref")
@@ -597,11 +609,35 @@ def _valid_scope_deleted_payload(payload: object) -> bool:
 
 
 def _valid_decay_payload(payload: object) -> bool:
-    if not isinstance(payload, Mapping):
+    if not mapping_fields(payload):
         return False
     if set(payload.keys()) != _DECAY_PAYLOAD_KEYS:
         return False
     return all(_common.valid_nonnegative_int_payload(payload.get(key)) for key in _DECAY_PAYLOAD_KEYS)
+
+
+def _payload_list(value: object) -> list[object]:
+    if not isinstance(value, list):
+        return []
+    rows: Iterable[object] = value
+    return list(rows)
+
+
+def _valid_timestamp(value: object) -> bool:
+    try:
+        parse_ts(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _valid_row_timestamps(row: AffinityNode | AffinityEdge) -> bool:
+    # Empty optional anchors remain compatible with legacy snapshots, but the
+    # selected decay basis and every recorded nonempty timestamp must be real.
+    return _valid_timestamp(_decay_basis(row)) and all(
+        not value or _valid_timestamp(value)
+        for value in (row.created_at, row.updated_at, row.last_reinforced_at, row.last_decayed_at)
+    )
 
 
 __all__ = [

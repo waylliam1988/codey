@@ -8,7 +8,7 @@ from codey.ghost import graph_primitives as primitives
 
 
 class GraphPrimitivesTests(unittest.TestCase):
-    def test_parse_ts_roundtrip_and_fallback(self) -> None:
+    def test_parse_ts_roundtrip_and_rejects_corrupt_history(self) -> None:
         self.assertEqual(
             primitives.parse_ts("2026-09-20T00:00:00Z").isoformat(),
             "2026-09-20T00:00:00+00:00",
@@ -17,8 +17,8 @@ class GraphPrimitivesTests(unittest.TestCase):
             primitives.parse_ts("2026-09-20T00:00:00+00:00").isoformat(),
             "2026-09-20T00:00:00+00:00",
         )
-        # Unparseable input means "now", never an exception.
-        self.assertIsNotNone(primitives.parse_ts("not-a-date"))
+        with self.assertRaises(ValueError):
+            primitives.parse_ts("not-a-date")
 
     def test_half_life_curve(self) -> None:
         self.assertAlmostEqual(primitives.exp_decay_factor(0.0, 90.0), 1.0)
@@ -69,8 +69,10 @@ class GraphPrimitivesTests(unittest.TestCase):
             _Node("expired", 0.0, "2026-09-20T00:00:05Z"),
             _Node("active", 0.5, "2026-09-20T00:00:06Z"),
         ]
-        bounded = primitives.bound_graph_nodes(rows, min_active_weight=0.05, limit=2)
-        self.assertEqual([row.weight for row in bounded], [0.9, 0.5])
+        bounded: list[_Node] = primitives.bound_graph_nodes(rows, min_active_weight=0.05, limit=2)
+        weights: list[float] = [row.weight for row in bounded]
+        expected_weights: list[float] = [0.9, 0.5]
+        self.assertEqual(weights, expected_weights)
         # Inactive rows survive the weight filter.
         untruncated = primitives.bound_graph_nodes(rows, min_active_weight=0.05, limit=10)
         self.assertEqual(len(untruncated), 3)
@@ -94,7 +96,7 @@ class GraphPrimitivesTests(unittest.TestCase):
             _Edge("x", "y", 0.95, "2026-09-20T00:00:04Z"),
             _Edge("a", "b", 0.01, "2026-09-20T00:00:05Z"),
         ]
-        bounded = primitives.bound_graph_edges(
+        bounded: list[_Edge] = primitives.bound_graph_edges(
             rows,
             node_ids={"a", "b", "c", "d"},
             min_weight=0.05,
@@ -104,7 +106,9 @@ class GraphPrimitivesTests(unittest.TestCase):
         )
         # Degree cap (1 per endpoint) keeps only the strongest edge out of `a`;
         # the off-graph (x, y) edge and the under-weight duplicate drop out.
-        self.assertEqual([(row.source, row.target) for row in bounded], [("a", "b")])
+        endpoints: list[tuple[str, str]] = [(row.source, row.target) for row in bounded]
+        expected_endpoints: list[tuple[str, str]] = [("a", "b")]
+        self.assertEqual(endpoints, expected_endpoints)
 
     def test_stores_delegate_without_changing_clamps(self) -> None:
         from codey.ghost import affinity_events as affinity_events_owner

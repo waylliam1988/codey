@@ -1,20 +1,27 @@
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 from unittest import mock
 
-from codey.app import server
-from codey.app import task_submit as task_submit
+from codey.app.context import AppContext
+from codey.app.event_bus import EventSubscriber
+from codey.ghost.payload_types import mapping_fields
 from codey.operations.task_entry import run_task_submission
 from codey.operations.task_run import TaskRunDeps
 from codey.providers import controls as provider_controls
+from codey.providers.diagnostics import ProviderFailure, capture_provider_failure
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.run_result import ResearchRunResult
 from codey.reviews.core import ReviewFinding, ReviewResult
 from codey.runtime.core import cancellation
 from codey.runtime.core.run_result import RunResult
 from codey.task.model import TaskSubmission
+from codey.types.json_value import JsonObject
+from codey.workspace.changes import ChangeTracker
 from codey.workspace.changes import collect_changes as collect_project_changes
 
 RESEARCH_ITERATION = "codey.operations.research_iteration.run_research_iteration"
@@ -57,11 +64,17 @@ class _TeachCancelProvider(_Provider):
         raise provider_controls.ControlTeachCancelled("teach cancelled")
 
 
-def _empty_changes(*_args, **_kwargs) -> dict:
+class _ChangesCollector(Protocol):
+    def __call__(
+        self, project: str | Path | None, tracker: ChangeTracker | None = None,
+    ) -> dict[str, object]: ...
+
+
+def _empty_changes(project: str | Path | None, tracker: ChangeTracker | None = None) -> dict[str, object]:
     return {"ok": True, "changed_count": 0, "files": [], "diff": ""}
 
 
-def _reviewable_changes(*_args, **_kwargs) -> dict:
+def _reviewable_changes(project: str | Path | None, tracker: ChangeTracker | None = None) -> dict[str, object]:
     return {
         "ok": True,
         "changed_count": 1,
@@ -70,38 +83,75 @@ def _reviewable_changes(*_args, **_kwargs) -> dict:
     }
 
 
+def _project_changes(project: str | Path | None, tracker: ChangeTracker | None = None) -> dict[str, object]:
+    value: object = collect_project_changes(project, tracker)
+    assert mapping_fields(value)
+    return dict(value)
+
+
+def _capture_failure(
+    *, model: str, action: str, page: object, error: BaseException, now: datetime | None = None,
+) -> ProviderFailure:
+    return capture_provider_failure(model=model, action=action, page=page, error=error, now=now)
+
+
+def _git_project(project: str | Path) -> bool:
+    return True
+
+
 def _runner(
-    state: server.AppContext,
+    state: AppContext,
     *,
-    agent_run=None,
-    collect_changes=_empty_changes,
-    run_review=None,
-    is_git_repository=None,
+    agent_run: mock.Mock | None = None,
+    collect_changes: _ChangesCollector = _empty_changes,
+    run_review: mock.Mock | None = None,
+    is_git_repository: Callable[[str | Path], bool] | None = None,
 ) -> TaskRunDeps:
     return TaskRunDeps(state=state,
         agent_run=agent_run or mock.Mock(return_value=RunResult("done", "done", 1)),
         collect_changes=collect_changes,
         run_review=run_review or mock.Mock(return_value=None),
-        capture_provider_failure=task_submit.capture_provider_failure,
+        capture_provider_failure=_capture_failure,
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         workspace_revisions=state.workspace_revisions,
         run_ledgers=state.run_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
-        is_git_repository=is_git_repository or (lambda _project: True),
+        is_git_repository=is_git_repository or _git_project,
         runtime_mutations=state.runtime_mutations,
         runtime_effects=state.runtime_effects,
     )
 
 
-def _done_events(state: server.AppContext) -> list[dict]:
-    return list(state.run_registry.last_terminal_event() and [state.run_registry.last_terminal_event()] or [])
+def _terminal(state: AppContext) -> JsonObject:
+    event = state.run_registry.last_terminal_event()
+    assert event is not None
+    return event
+
+
+def _done_events(state: AppContext) -> list[JsonObject]:
+    return [_terminal(state)]
+
+
+def _drain(events: EventSubscriber) -> list[dict[str, object]]:
+    emitted: list[dict[str, object]] = []
+    while not events.empty():
+        value: object = events.get_nowait()
+        assert mapping_fields(value)
+        emitted.append(dict(value))
+    return emitted
+
+
+def _observations(state: AppContext) -> tuple[dict[str, object], ...]:
+    store = state.ghost_observations
+    assert store is not None
+    return store.read_committed(session_id="session-1")
 
 
 def _run_and_wait_for_local_maintenance(
     runner: TaskRunDeps,
-    state: server.AppContext,
+    state: AppContext,
     request: TaskSubmission,
 ) -> None:
     run_task_submission(runner, request)
@@ -114,30 +164,34 @@ class _FailingProvider(_Provider):
         raise RuntimeError("offline")
 
 
-def test_chat_research_tools_continue_shared_kernel_without_mode_redispatch(public_source_dns) -> None:
+def test_chat_research_tools_continue_shared_kernel_without_mode_redispatch(public_source_dns: None) -> None:
     import json
 
     from codey.research.ledger import ResearchLedger
     from codey.research.tools import ResearchTools
 
     with tempfile.TemporaryDirectory() as td:
-        state = server.AppContext(td)
+        state = AppContext(td)
         events = state.subscribe()
-        main_provider = _Provider()
-        replies = iter([
-            json.dumps({"tool": "web_search", "args": {"query": "version"}}),
-            json.dumps({"tool": "open_url", "args": {"url": "https://example.com/version"}}),
-            json.dumps({"tool": "done", "args": {"summary": "Observed version information."}}),
-        ])
-        def send(text):
-            main_provider.prompts.append(text)
-            return next(replies)
-        main_provider.send = send
+        payloads: list[JsonObject] = [
+            {"tool": "web_search", "args": {"query": "version"}},
+            {"tool": "open_url", "args": {"url": "https://example.com/version"}},
+            {"tool": "done", "args": {"summary": "Observed version information."}},
+        ]
+        replies = iter(json.dumps(payload) for payload in payloads)
+
+        class ResearchProvider(_Provider):
+            def send(self, text: str, timeout: float | None = None) -> str:
+                self.prompts.append(text)
+                return next(replies)
+
+        main_provider = ResearchProvider()
+
         class Search:
-            def search(self, query, limit=8):
+            def search(self, query: str, limit: int = 8) -> list[JsonObject]:
                 return [{"url": "https://example.com/version", "title": "Version"}]
 
-            def fetch(self, url):
+            def fetch(self, url: str) -> dict[str, object]:
                 return {"status": "ok", "url": url, "title": "Version",
                         "text": "VERSION_KERNEL_MARKER", "truncated": False}
 
@@ -152,11 +206,9 @@ def test_chat_research_tools_continue_shared_kernel_without_mode_redispatch(publ
             _run_and_wait_for_local_maintenance(_runner(state), state,
                 TaskSubmission("session-1", None, "查一下今天的版本变化", 8, False, "deepseek",
                                requested_capabilities=("web.read",)))
-            emitted = []
-            while not events.empty():
-                emitted.append(events.get_nowait())
+            emitted = _drain(events)
             done = _done_events(state)[0]
-            observations = state.ghost_observations.read_committed(session_id="session-1")
+            observations = _observations(state)
     assert done["stop_reason"] == "done"
     assert done["turns"] == 3
     assert len(main_provider.prompts) == 3
@@ -175,7 +227,7 @@ def test_chat_preserves_user_no_edit_constraint() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.AppContext(Path(td, "state"))
+        state = AppContext(Path(td, "state"))
         main_provider = _Provider("方案如下：只读不改。")
         agent_run = mock.Mock(return_value=RunResult("plan", "done", 1))
         runner = _runner(
@@ -199,16 +251,16 @@ def test_chat_preserves_user_no_edit_constraint() -> None:
 
     agent_run.assert_not_called()
     assert len(main_provider.prompts) == 1
-    assert state.run_registry.last_terminal_event()["mode"] == "chat"
-    assert state.run_registry.last_terminal_event()["summary"] == "方案如下：只读不改。"
-    assert getattr(state, "_project_writer_leases", {}) == {}
+    assert _terminal(state)["mode"] == "chat"
+    assert _terminal(state)["summary"] == "方案如下：只读不改。"
+    assert state.workspace_leases.leases == {}
 
 
 def test_chat_preserves_user_no_file_access_constraint() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.AppContext(Path(td, "state"))
+        state = AppContext(Path(td, "state"))
         main_provider = _Provider("plain chat")
         agent_run = mock.Mock(return_value=RunResult("should not run", "done", 1))
         runner = _runner(
@@ -230,13 +282,13 @@ def test_chat_preserves_user_no_file_access_constraint() -> None:
                 ),
             )
 
-            observations = state.ghost_observations.read_committed(session_id="session-1")
+            observations = _observations(state)
 
     agent_run.assert_not_called()
     assert main_provider.prompts
     assert len(main_provider.prompts) == 1
-    assert state.run_registry.last_terminal_event()["mode"] == "chat"
-    assert state.run_registry.last_terminal_event()["summary"] == "plain chat"
+    assert _terminal(state)["mode"] == "chat"
+    assert _terminal(state)["summary"] == "plain chat"
     assert len(observations) == 1
 
 
@@ -245,7 +297,7 @@ def test_attached_workspace_keeps_chat_start_and_terminal_mode() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.AppContext(Path(td, "state"))
+        state = AppContext(Path(td, "state"))
         main_provider = _Provider("chat reply")
         agent_run = mock.Mock(return_value=RunResult("should not run", "done", 1))
         runner = _runner(
@@ -268,22 +320,20 @@ def test_attached_workspace_keeps_chat_start_and_terminal_mode() -> None:
                 ),
             )
 
-        emitted = []
-        while not events.empty():
-            emitted.append(events.get_nowait())
+        emitted = _drain(events)
 
     start = next(event for event in emitted if event["type"] == "task_start")
     agent_run.assert_not_called()
     assert main_provider.prompts
     assert len(main_provider.prompts) == 1
-    assert state.run_registry.last_terminal_event()["summary"] == "chat reply"
+    assert _terminal(state)["summary"] == "chat reply"
     assert start["mode"] == "chat"
-    assert state.run_registry.last_terminal_event()["mode"] == "chat"
+    assert _terminal(state)["mode"] == "chat"
 
 
 def test_explicit_research_uses_research_workflow() -> None:
     with tempfile.TemporaryDirectory() as td:
-        state = server.AppContext(td)
+        state = AppContext(td)
         runner = _runner(state)
         research_iteration = mock.Mock(
             return_value=ResearchIterationRun(
@@ -309,7 +359,7 @@ def test_explicit_research_uses_research_workflow() -> None:
                 ),
             )
 
-    assert state.run_registry.last_terminal_event()["mode"] == "research"
+    assert _terminal(state)["mode"] == "research"
     assert research_iteration.call_count == 1
 
 
@@ -318,7 +368,7 @@ def test_workspace_provider_failure_does_not_resend() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.AppContext(Path(td, "state"))
+        state = AppContext(Path(td, "state"))
         agent_run = mock.Mock(return_value=RunResult("fixed", "done", 1))
         runner = _runner(
             state,
@@ -340,14 +390,14 @@ def test_workspace_provider_failure_does_not_resend() -> None:
             )
 
     agent_run.assert_not_called()
-    assert state.run_registry.last_terminal_event()["stop_reason"] == "provider_failure"
+    assert _terminal(state)["stop_reason"] == "provider_failure"
 
 
 def test_workspace_cancellation_stops_task_without_second_runner() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.AppContext(Path(td, "state"))
+        state = AppContext(Path(td, "state"))
         agent_run = mock.Mock(return_value=RunResult("fixed", "done", 1))
         main_provider = _CancelProvider("{}")
         runner = _runner(
@@ -370,8 +420,8 @@ def test_workspace_cancellation_stops_task_without_second_runner() -> None:
             )
 
     agent_run.assert_not_called()
-    assert state.run_registry.last_terminal_event()["stop_reason"] == "stopped"
-    assert state.run_registry.last_terminal_event()["mode"] == "chat"
+    assert _terminal(state)["stop_reason"] == "stopped"
+    assert _terminal(state)["mode"] == "chat"
     assert main_provider.closed
 
 
@@ -379,7 +429,7 @@ def test_workspace_teach_cancellation_stops_task_without_second_runner() -> None
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.AppContext(Path(td, "state"))
+        state = AppContext(Path(td, "state"))
         agent_run = mock.Mock(return_value=RunResult("fixed", "done", 1))
         main_provider = _TeachCancelProvider("{}")
         runner = _runner(
@@ -402,8 +452,8 @@ def test_workspace_teach_cancellation_stops_task_without_second_runner() -> None
             )
 
     agent_run.assert_not_called()
-    assert state.run_registry.last_terminal_event()["stop_reason"] == "stopped"
-    assert state.run_registry.last_terminal_event()["mode"] == "chat"
+    assert _terminal(state)["stop_reason"] == "stopped"
+    assert _terminal(state)["mode"] == "chat"
     assert main_provider.closed
 
 
@@ -412,7 +462,7 @@ def test_ghost_disabled_preserves_chat_execution_without_learning() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.AppContext(Path(td, "state"))
+        state = AppContext(Path(td, "state"))
         assert state.ghost_inbox is not None
         state.ghost_inbox.set_learning_enabled(False)
         main_provider = _Provider("fixed by chat")
@@ -436,10 +486,12 @@ def test_ghost_disabled_preserves_chat_execution_without_learning() -> None:
                 ),
             )
 
+        observations = _observations(state)
+
     agent_run.assert_not_called()
-    assert state.run_registry.last_terminal_event()["mode"] == "chat"
-    assert state.run_registry.last_terminal_event()["summary"] == "fixed by chat"
-    assert state.ghost_observations.read_committed(session_id="session-1") == ()
+    assert _terminal(state)["mode"] == "chat"
+    assert _terminal(state)["summary"] == "fixed by chat"
+    assert observations == ()
 
 
 def test_explicit_review_does_not_start_writer_or_repair() -> None:
@@ -447,7 +499,7 @@ def test_explicit_review_does_not_start_writer_or_repair() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.AppContext(Path(td, "state"))
+        state = AppContext(Path(td, "state"))
         main_provider = _Provider()
         agent_run = mock.Mock(return_value=RunResult("should not run", "done", 1))
         review = ReviewResult(
@@ -480,21 +532,24 @@ def test_explicit_review_does_not_start_writer_or_repair() -> None:
 
     agent_run.assert_not_called()
     run_review.assert_called_once()
-    assert state.run_registry.last_terminal_event()["mode"] == "review"
-    assert state.run_registry.last_terminal_event()["changed"] is False
-    assert "Bug remains" in state.run_registry.last_terminal_event()["summary"]
-    assert getattr(state, "_project_writer_leases", {}) == {}
+    assert _terminal(state)["mode"] == "review"
+    assert _terminal(state)["changed"] is False
+    summary = _terminal(state)["summary"]
+    assert isinstance(summary, str) and "Bug remains" in summary
+    assert state.workspace_leases.leases == {}
 
 
 def test_review_only_provider_failure_is_unavailable_and_not_committed_as_success() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
-        state = server.AppContext(Path(td, "state"))
+        state = AppContext(Path(td, "state"))
         main_provider = _Provider()
         run_review = mock.Mock(side_effect=RuntimeError("review provider down"))
+        agent_run = mock.Mock(return_value=RunResult("done", "done", 1))
         runner = _runner(
             state,
+            agent_run=agent_run,
             collect_changes=_reviewable_changes,
             run_review=run_review,
         )
@@ -514,16 +569,18 @@ def test_review_only_provider_failure_is_unavailable_and_not_committed_as_succes
                 ),
             )
 
-        observations = state.ghost_observations.read_committed(session_id="session-1")
+        observations = _observations(state)
 
     run_review.assert_called_once()
-    runner.agent_run.assert_not_called()
+    agent_run.assert_not_called()
     assert observations == ()
-    assert state.run_registry.last_terminal_event()["stop_reason"] == "review_unavailable"
-    assert state.run_registry.last_terminal_event()["review"]["status"] == "unavailable"
-    assert state.run_registry.last_terminal_event()["mode"] == "review"
-    assert state.run_registry.last_terminal_event()["changed"] is False
-    assert state.run_registry.last_terminal_event()["summary"] == "Review unavailable. No files were changed."
+    assert _terminal(state)["stop_reason"] == "review_unavailable"
+    terminal_review = _terminal(state)["review"]
+    assert isinstance(terminal_review, dict)
+    assert terminal_review["status"] == "unavailable"
+    assert _terminal(state)["mode"] == "review"
+    assert _terminal(state)["changed"] is False
+    assert _terminal(state)["summary"] == "Review unavailable. No files were changed."
 
 
 def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
@@ -532,7 +589,7 @@ def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
         project.mkdir()
         target = project / "app.py"
         target.write_text("old\n", encoding="utf-8")
-        state = server.AppContext(Path(td, "state"))
+        state = AppContext(Path(td, "state"))
         tracker = state.change_tracker_for(project, persistent=True)
         tracker.capture_before("app.py")
         target.write_text("new\n", encoding="utf-8")
@@ -542,7 +599,7 @@ def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
         run_review = mock.Mock(return_value=("glm", review))
         runner = _runner(
             state,
-            collect_changes=collect_project_changes,
+            collect_changes=_project_changes,
             run_review=run_review,
             is_git_repository=lambda _project: False,
         )
@@ -562,6 +619,12 @@ def test_review_only_uses_snapshot_diff_for_non_git_project() -> None:
                 ),
             )
 
-    assert state.run_registry.last_terminal_event()["mode"] == "review"
-    assert state.run_registry.last_terminal_event()["changed"] is False
-    assert run_review.call_args.kwargs["changes"]["mode"] == "snapshot"
+    assert _terminal(state)["mode"] == "review"
+    assert _terminal(state)["changed"] is False
+    call = run_review.call_args
+    assert call is not None
+    raw_kwargs: object = call.kwargs
+    assert mapping_fields(raw_kwargs)
+    changes = raw_kwargs["changes"]
+    assert mapping_fields(changes)
+    assert changes["mode"] == "snapshot"

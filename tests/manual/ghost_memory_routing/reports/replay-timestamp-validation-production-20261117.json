@@ -1,0 +1,867 @@
+{
+  "experiment": "replay-timestamp-validation-production-20261117",
+  "baseline_revision": "09a03b31",
+  "status": "PRODUCTION_MERGED",
+  "model": null,
+  "candidate": {
+    "passed": 211,
+    "junit": "candidate.xml",
+    "freeze_artifact": "candidate-freeze.json"
+  },
+  "original_matrix": {
+    "valid_cells": 12,
+    "passed": 12,
+    "explicitly_rejected_corrupt_cells": 9,
+    "legal_rebuild_controls": 3,
+    "cells": [
+      {
+        "first": {
+          "accepted": true,
+          "digest": "540e2cacf603052b0e7482f7522c90e4d25371991717fccf632a36e9846e3e06",
+          "edges": [
+            [
+              "gae_b3752db1a5fb74f12e0ff037",
+              0.076109,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_c5b76ff9b961e511ec9765d9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_eeebbd6a7eb23d93a292ea67",
+              0.088,
+              "active"
+            ]
+          ]
+        },
+        "scope": "user",
+        "second": {
+          "accepted": true,
+          "digest": "540e2cacf603052b0e7482f7522c90e4d25371991717fccf632a36e9846e3e06",
+          "edges": [
+            [
+              "gae_b3752db1a5fb74f12e0ff037",
+              0.076109,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_c5b76ff9b961e511ec9765d9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_eeebbd6a7eb23d93a292ea67",
+              0.088,
+              "active"
+            ]
+          ]
+        },
+        "variant": "valid",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": true,
+          "digest": "a9b1b00ac65c22bcab25d060b597b4ccfb1aa7180a3647a8b85c2e9e7adbd334",
+          "edges": [
+            [
+              "gae_45d71e7566ab5a6650f05566",
+              0.076109,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_5b8c075854cd89f8bf2a8d50",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_7fd0bcf86812c7265ef60fc1",
+              0.088,
+              "active"
+            ]
+          ]
+        },
+        "scope": "project",
+        "second": {
+          "accepted": true,
+          "digest": "a9b1b00ac65c22bcab25d060b597b4ccfb1aa7180a3647a8b85c2e9e7adbd334",
+          "edges": [
+            [
+              "gae_45d71e7566ab5a6650f05566",
+              0.076109,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_5b8c075854cd89f8bf2a8d50",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_7fd0bcf86812c7265ef60fc1",
+              0.088,
+              "active"
+            ]
+          ]
+        },
+        "variant": "valid",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": true,
+          "digest": "e924aa5be130bb5f979cc64cb92e569520fb9bac381b848b339076e4559bc3a8",
+          "edges": [
+            [
+              "gae_b28702bca2218abb9d6d0e6f",
+              0.076109,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_efeaeb9208408c372de7d44d",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_9f6d8f820c60b8bb5d363ac9",
+              0.088,
+              "active"
+            ]
+          ]
+        },
+        "scope": "session",
+        "second": {
+          "accepted": true,
+          "digest": "e924aa5be130bb5f979cc64cb92e569520fb9bac381b848b339076e4559bc3a8",
+          "edges": [
+            [
+              "gae_b28702bca2218abb9d6d0e6f",
+              0.076109,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_efeaeb9208408c372de7d44d",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_9f6d8f820c60b8bb5d363ac9",
+              0.088,
+              "active"
+            ]
+          ]
+        },
+        "variant": "valid",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": false,
+          "digest": "765641d1db320cdd15d66eedd0eecc0fbe5f340d262f6e4aba1eaa16b6529aae",
+          "edges": [
+            [
+              "gae_b3752db1a5fb74f12e0ff037",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_c5b76ff9b961e511ec9765d9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_eeebbd6a7eb23d93a292ea67",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "scope": "user",
+        "second": {
+          "accepted": false,
+          "digest": "765641d1db320cdd15d66eedd0eecc0fbe5f340d262f6e4aba1eaa16b6529aae",
+          "edges": [
+            [
+              "gae_b3752db1a5fb74f12e0ff037",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_c5b76ff9b961e511ec9765d9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_eeebbd6a7eb23d93a292ea67",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "variant": "reinforcement",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": false,
+          "digest": "c5b07fc5bc0cb690412d567e37869034fabdf97173f19c63ed65d436bc505cd3",
+          "edges": [
+            [
+              "gae_8ee3653475a9214879618ccb",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_3e90e9bf5ff4be757fc8a0d7",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_ecb41d80c9082296db19331c",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "scope": "project",
+        "second": {
+          "accepted": false,
+          "digest": "c5b07fc5bc0cb690412d567e37869034fabdf97173f19c63ed65d436bc505cd3",
+          "edges": [
+            [
+              "gae_8ee3653475a9214879618ccb",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_3e90e9bf5ff4be757fc8a0d7",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_ecb41d80c9082296db19331c",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "variant": "reinforcement",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": false,
+          "digest": "b447d1a9c0537ee0078af84156b3caa8398a8e5ef2ca0e9354c5b98d367a11ad",
+          "edges": [
+            [
+              "gae_b28702bca2218abb9d6d0e6f",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_9f6d8f820c60b8bb5d363ac9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_efeaeb9208408c372de7d44d",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "scope": "session",
+        "second": {
+          "accepted": false,
+          "digest": "b447d1a9c0537ee0078af84156b3caa8398a8e5ef2ca0e9354c5b98d367a11ad",
+          "edges": [
+            [
+              "gae_b28702bca2218abb9d6d0e6f",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_9f6d8f820c60b8bb5d363ac9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_efeaeb9208408c372de7d44d",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "variant": "reinforcement",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": false,
+          "digest": "765641d1db320cdd15d66eedd0eecc0fbe5f340d262f6e4aba1eaa16b6529aae",
+          "edges": [
+            [
+              "gae_b3752db1a5fb74f12e0ff037",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_c5b76ff9b961e511ec9765d9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_eeebbd6a7eb23d93a292ea67",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "scope": "user",
+        "second": {
+          "accepted": false,
+          "digest": "765641d1db320cdd15d66eedd0eecc0fbe5f340d262f6e4aba1eaa16b6529aae",
+          "edges": [
+            [
+              "gae_b3752db1a5fb74f12e0ff037",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_c5b76ff9b961e511ec9765d9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_eeebbd6a7eb23d93a292ea67",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "variant": "decay",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": false,
+          "digest": "78c8ad8a8991e00dc633bf759b5d75089d014aa1e092842a15df8596a2149ffa",
+          "edges": [
+            [
+              "gae_f76686dc4a965932038f6da4",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_3a8dddc3bcdfd6e517272634",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_71deca2802fccefd2d7389c4",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "scope": "project",
+        "second": {
+          "accepted": false,
+          "digest": "78c8ad8a8991e00dc633bf759b5d75089d014aa1e092842a15df8596a2149ffa",
+          "edges": [
+            [
+              "gae_f76686dc4a965932038f6da4",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_3a8dddc3bcdfd6e517272634",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_71deca2802fccefd2d7389c4",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "variant": "decay",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": false,
+          "digest": "b447d1a9c0537ee0078af84156b3caa8398a8e5ef2ca0e9354c5b98d367a11ad",
+          "edges": [
+            [
+              "gae_b28702bca2218abb9d6d0e6f",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_9f6d8f820c60b8bb5d363ac9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_efeaeb9208408c372de7d44d",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "scope": "session",
+        "second": {
+          "accepted": false,
+          "digest": "b447d1a9c0537ee0078af84156b3caa8398a8e5ef2ca0e9354c5b98d367a11ad",
+          "edges": [
+            [
+              "gae_b28702bca2218abb9d6d0e6f",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_9f6d8f820c60b8bb5d363ac9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_efeaeb9208408c372de7d44d",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "variant": "decay",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": false,
+          "digest": "765641d1db320cdd15d66eedd0eecc0fbe5f340d262f6e4aba1eaa16b6529aae",
+          "edges": [
+            [
+              "gae_b3752db1a5fb74f12e0ff037",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_c5b76ff9b961e511ec9765d9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_eeebbd6a7eb23d93a292ea67",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "scope": "user",
+        "second": {
+          "accepted": false,
+          "digest": "765641d1db320cdd15d66eedd0eecc0fbe5f340d262f6e4aba1eaa16b6529aae",
+          "edges": [
+            [
+              "gae_b3752db1a5fb74f12e0ff037",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_c5b76ff9b961e511ec9765d9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_eeebbd6a7eb23d93a292ea67",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "variant": "snapshot_basis",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": false,
+          "digest": "894e27f0d3a804c20526e5bee25e4eeb4d2db25b570f5d40dafabee7a9065d2d",
+          "edges": [
+            [
+              "gae_788e0fdcf1043471ecb89d81",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_336999b1e64bfb25250d3027",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_79cf5fadf837cd4d4e12a4b2",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "scope": "project",
+        "second": {
+          "accepted": false,
+          "digest": "894e27f0d3a804c20526e5bee25e4eeb4d2db25b570f5d40dafabee7a9065d2d",
+          "edges": [
+            [
+              "gae_788e0fdcf1043471ecb89d81",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_336999b1e64bfb25250d3027",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_79cf5fadf837cd4d4e12a4b2",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "variant": "snapshot_basis",
+        "passed": true
+      },
+      {
+        "first": {
+          "accepted": false,
+          "digest": "b447d1a9c0537ee0078af84156b3caa8398a8e5ef2ca0e9354c5b98d367a11ad",
+          "edges": [
+            [
+              "gae_b28702bca2218abb9d6d0e6f",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_9f6d8f820c60b8bb5d363ac9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_efeaeb9208408c372de7d44d",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "scope": "session",
+        "second": {
+          "accepted": false,
+          "digest": "b447d1a9c0537ee0078af84156b3caa8398a8e5ef2ca0e9354c5b98d367a11ad",
+          "edges": [
+            [
+              "gae_b28702bca2218abb9d6d0e6f",
+              0.128,
+              "active"
+            ]
+          ],
+          "nodes": [
+            [
+              "gan_9f6d8f820c60b8bb5d363ac9",
+              0.176,
+              "active"
+            ],
+            [
+              "gan_efeaeb9208408c372de7d44d",
+              0.176,
+              "active"
+            ]
+          ]
+        },
+        "variant": "snapshot_basis",
+        "passed": true
+      }
+    ]
+  },
+  "new_acceptance_cases": 71,
+  "owned_sources": [
+    "codey/ghost/graph_primitives.py",
+    "codey/ghost/affinity_events.py",
+    "tests/test_ghost_graph_primitives.py",
+    "tests/test_ghost_replay_timestamp_validation.py",
+    "tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py"
+  ],
+  "audited_sources": [
+    "codey/ghost/graph_primitives.py",
+    "codey/ghost/affinity_events.py",
+    "tests/test_ghost_graph_primitives.py",
+    "tests/test_ghost_replay_timestamp_validation.py",
+    "tests/test_ghost_replay_clock_boundary.py",
+    "tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py"
+  ],
+  "source_lf_sha256": {
+    "codey/ghost/graph_primitives.py": "736f6d1b766374711d66f25184306d38de7257d5db35b582e330017d7a870ddd",
+    "codey/ghost/affinity_events.py": "e712acff7b411b69b3c94c6359d528aafa7c93856e7a09a0ba9d2656d81e8f1a",
+    "tests/test_ghost_graph_primitives.py": "5e7f1a64e4fd2a8e1500e59bd3006446cefeddcffff2b4be8857398fed5f4791",
+    "tests/test_ghost_replay_timestamp_validation.py": "09454b1616ae007dc9b195d945f277acb12a91ba7fedab8b2133bf078e68425d",
+    "tests/test_ghost_replay_clock_boundary.py": "156023b08b63cc363c3413b170af5a4f2f07863ec5285cfb301150146c7f106a",
+    "tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py": "ed46cf6b0377cd816525289d6c99ecd48588bb29ba279403c9e5fe0f76e9c534"
+  },
+  "production_files_frozen": 702,
+  "default_behavior": "normal event application, rebuild, graph decay and Sleep use strict historical time validation; no new rollout flag",
+  "limitations": [
+    "No evidence an ordinary producer emitted the corrupt fixture",
+    "Retains corrupt history for explicit diagnosis; no repair or purge is claimed",
+    "Complete Sleep maintenance_as_of remains pending",
+    "No complete 0.6.4 or World Model acceptance",
+    "Rollback retains the pre-transaction projection; arbitrary pre-existing corrupt projections are not automatically repaired or certified"
+  ],
+  "expanded_initial": {
+    "passed": 1194,
+    "failed": 1,
+    "subtests_passed": 36,
+    "junit": "production.xml",
+    "failure_owner": "pre-existing test: read_committed after TemporaryDirectory removed the database",
+    "not_relabelled_as_all_passed": true,
+    "freeze_artifact": "production-freeze.json"
+  },
+  "initial_owned_post_turn_diagnostics": 184,
+  "initial_static_failures": [
+    "mypy unreachable intersection of bounded edge type variable and status protocol",
+    "two unittest list contexts and a sorted lambda inferred Any"
+  ],
+  "preverification": {
+    "six_sources_mypy": 0,
+    "six_sources_pyrefly": 0,
+    "six_sources_ty": 0,
+    "six_sources_extra_any_owned_diagnostics": 0,
+    "extra_any_command_exit": 1,
+    "logs": "candidate-v3-owned-*"
+  },
+  "final_verification": {
+    "passed": 523,
+    "subtests_passed": 36,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "junit": "production-final.xml",
+    "files": 24,
+    "freeze_artifact": "production-final-freeze.json",
+    "not_added_to_other_batches": true
+  },
+  "checks": [
+    {
+      "check": "related",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "pytest",
+        "tests/test_ghost_replay_clock_boundary.py",
+        "tests/test_ghost_replay_timestamp_validation.py",
+        "tests/test_ghost_graph_primitives.py",
+        "tests/test_ghost_affinity.py",
+        "tests/test_affinity_replay_single_transition.py",
+        "tests/test_affinity_apply_validates_envelope.py",
+        "tests/test_affinity_schema_version_exact_int.py",
+        "tests/test_ghost_graph_sqlite.py",
+        "tests/test_ghost_corruption_contract.py",
+        "tests/test_ghost_sleep.py",
+        "tests/test_ghost_hebbian.py",
+        "tests/test_ghost_directive.py",
+        "tests/test_ghost_continuity.py",
+        "tests/test_ghost_work_queue.py",
+        "tests/test_ghost_graph_exact_replacement.py",
+        "tests/test_ghost_legacy_projection_admission.py",
+        "tests/test_experience_memory.py",
+        "tests/test_ghost_language_production.py",
+        "tests/test_ghost_provider_send_boundary.py",
+        "tests/test_ghost_post_turn_affinity.py",
+        "tests/test_ghost_post_turn_work_queue.py",
+        "tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py",
+        "tests/test_ghost_control_surface.py",
+        "tests/test_ghost_manifest_production_wiring.py",
+        "-q",
+        "--tb=short",
+        "-o",
+        "junit_logging=all",
+        "--junitxml=D:\\codey\\.e2e-artifacts\\ghost-replay-clock-20261117\\production-final.xml"
+      ]
+    },
+    {
+      "check": "ruff",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ]
+    },
+    {
+      "check": "mypy",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "precision",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ]
+    },
+    {
+      "check": "owned-mypy",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey/ghost/graph_primitives.py",
+        "codey/ghost/affinity_events.py",
+        "tests/test_ghost_graph_primitives.py",
+        "tests/test_ghost_replay_timestamp_validation.py",
+        "tests/test_ghost_replay_clock_boundary.py",
+        "tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey/ghost/graph_primitives.py",
+        "codey/ghost/affinity_events.py",
+        "tests/test_ghost_graph_primitives.py",
+        "tests/test_ghost_replay_timestamp_validation.py",
+        "tests/test_ghost_replay_clock_boundary.py",
+        "tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey/ghost/graph_primitives.py",
+        "codey/ghost/affinity_events.py",
+        "tests/test_ghost_graph_primitives.py",
+        "tests/test_ghost_replay_timestamp_validation.py",
+        "tests/test_ghost_replay_clock_boundary.py",
+        "tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-any",
+      "exit": 1,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey/ghost/graph_primitives.py",
+        "codey/ghost/affinity_events.py",
+        "tests/test_ghost_graph_primitives.py",
+        "tests/test_ghost_replay_timestamp_validation.py",
+        "tests/test_ghost_replay_clock_boundary.py",
+        "tests/test_ghost_post_turn_shared_workspace_and_explicit_workflows.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ]
+    }
+  ],
+  "extra_any_audit": {
+    "owned_diagnostics": 0,
+    "owned_source_count": 5,
+    "additional_baseline_source_count": 1,
+    "untouched_dependency_diagnostics": 11025,
+    "untouched_dependency_files": 338,
+    "exit": 1,
+    "not_global_any_pass": true
+  }
+}

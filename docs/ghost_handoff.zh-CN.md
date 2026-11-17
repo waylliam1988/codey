@@ -12,10 +12,17 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新实验：[固定日志重建的隐含时间](ghost_progress/replay-clock-boundary-baseline-20261117.md)。
+2026-11-17 最新完成：[重放历史时间校验](ghost_progress/replay-timestamp-validation-production-20261117.md)。
+原12项3→12通过，九项坏时间默认拒绝并原子保留原日志/事务前有效投影；71项新验收、
+候选211、最终523/36子测试及全静态门通过，六受检文件额外Any零诊断。首轮扩大
+1194/1为旧测试在临时目录销毁后读DB，已修正并清理全文件类型，原断言与失败记录保留。
+无新增默认关闭开关；继续显式maintenance_as_of、稳定排序/digest及真实World Model。
+本次不等于完整0.6.4或既有坏投影自动恢复。
+
+此前实验：[固定日志重建的隐含时间](ghost_progress/replay-clock-boundary-baseline-20261117.md)。
 真实Affinity store固定日志跨两个时钟重建，12 cell全有效：合法时间3通过，损坏强化ts/
 衰减ts/快照基点9项均改变实际权重或状态；前两轮夹具scope/对照断言错误保留并排除。
-生产未修改，下一步独立修复坏时间回退当前时间的边界，再推进显式维护时间和World Model。
+原始实验未改生产；上述后续修复已闭合本矩阵，再推进显式维护时间和World Model。
 
 2026-11-17 最新完成：[observation 兼容消费视图](ghost_progress/observation-consumption-view-production-20261117.md)。
 schema9正常owner构造原地保留历史，旧名改为有界原生只读视图；原reader15项13→15通过，

@@ -23,23 +23,53 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from datetime import UTC, datetime
-from typing import Any, TypeVar
+from typing import Protocol, TypeVar, runtime_checkable
 
-_RowT = TypeVar("_RowT")
+
+class GraphRow(Protocol):
+    @property
+    def weight(self) -> float: ...
+
+    @property
+    def updated_at(self) -> str: ...
+
+
+@runtime_checkable
+class GraphNode(GraphRow, Protocol):
+    @property
+    def status(self) -> str: ...
+
+
+class GraphEdge(GraphRow, Protocol):
+    @property
+    def source(self) -> str: ...
+
+    @property
+    def target(self) -> str: ...
+
+
+_NodeT = TypeVar("_NodeT", bound=GraphNode)
+_EdgeT = TypeVar("_EdgeT", bound=GraphEdge)
 
 
 def parse_ts(value: object) -> datetime:
-    """Parse an ISO timestamp; unparseable input means "now" (fail lively)."""
-    text = str(value or "").strip()
+    """Parse recorded ISO time; legacy naive timestamps mean UTC.
+
+    Missing or corrupt history is an error, never the current wall clock.
+    Callers own rollback and reporting at the projection boundary.
+    """
+    if not isinstance(value, str):
+        raise ValueError("invalid Ghost timestamp")
+    text = value.strip()
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
         parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return datetime.now(UTC)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    except (ValueError, OverflowError):
+        raise ValueError("invalid Ghost timestamp") from None
 
 
 def decay_basis_of(
@@ -65,10 +95,7 @@ def decayed_by_half_life(
     half_life_days: float,
 ) -> float:
     """Raw decayed weight (unclamped). Callers apply their own clamp."""
-    try:
-        age = (parse_ts(now) - parse_ts(basis)).total_seconds()
-    except Exception:
-        return float(weight or 0.0)
+    age = (parse_ts(now) - parse_ts(basis)).total_seconds()
     return float(weight or 0.0) * exp_decay_factor(age, half_life_days)
 
 
@@ -80,33 +107,34 @@ def any_decay_due(
 ) -> bool:
     """True when any decay basis is older than the minimum interval."""
     threshold = max(0, (min_interval_seconds or 0))
+    now_ts = parse_ts(now)
     if threshold <= 0:
         return True
-    now_ts = parse_ts(now)
     for basis in bases:
-        try:
-            age = (now_ts - parse_ts(basis)).total_seconds()
-        except Exception:
-            continue
+        age = (now_ts - parse_ts(basis)).total_seconds()
         if max(0.0, age) >= threshold:
             return True
     return False
 
 
-def _node_rank(row: Any) -> tuple[Any, ...]:
+def _node_rank(row: GraphNode) -> tuple[bool, float, str]:
     return (
-        getattr(row, "status", "") == "active",
-        float(getattr(row, "weight", 0.0) or 0.0),
-        str(getattr(row, "updated_at", "")),
+        row.status == "active",
+        float(row.weight or 0.0),
+        row.updated_at,
     )
 
 
+def _active_row(row: GraphRow) -> bool:
+    return isinstance(row, GraphNode) and row.status == "active"
+
+
 def bound_graph_nodes(
-    rows: Iterable[_RowT],
+    rows: Iterable[_NodeT],
     *,
     min_active_weight: float,
     limit: int,
-) -> list[_RowT]:
+) -> list[_NodeT]:
     """Keep active rows above ``min_active_weight`` (inactive rows always
     survive the filter), active-first by weight, truncated to ``limit``.
 
@@ -118,22 +146,21 @@ def bound_graph_nodes(
     kept = [
         row
         for row in rows
-        if getattr(row, "status", "") != "active"
-        or float(getattr(row, "weight", 0.0) or 0.0) >= threshold
+        if row.status != "active" or float(row.weight or 0.0) >= threshold
     ]
     kept.sort(key=_node_rank, reverse=True)
     return kept[: max(0, (limit or 0))]
 
 
 def bound_graph_edges(
-    rows: Iterable[_RowT],
+    rows: Iterable[_EdgeT],
     *,
     node_ids: set[str],
     min_weight: float,
     limit: int,
     max_out_degree: int,
     require_active: bool = False,
-) -> list[_RowT]:
+) -> list[_EdgeT]:
     """Keep edges between surviving nodes above ``min_weight`` (active-only
     when ``require_active``), by weight, with per-endpoint degree caps."""
     threshold = float(min_weight)
@@ -142,25 +169,25 @@ def bound_graph_edges(
     kept = [
         row
         for row in rows
-        if getattr(row, "source", None) in node_ids
-        and getattr(row, "target", None) in node_ids
-        and float(getattr(row, "weight", 0.0) or 0.0) >= threshold
-        and (not require_active or getattr(row, "status", "") == "active")
+        if row.source in node_ids
+        and row.target in node_ids
+        and float(row.weight or 0.0) >= threshold
+        and (not require_active or _active_row(row))
     ]
     kept.sort(
         key=lambda row: (
-            float(getattr(row, "weight", 0.0) or 0.0),
-            str(getattr(row, "updated_at", "")),
+            float(row.weight or 0.0),
+            row.updated_at,
         ),
         reverse=True,
     )
-    bounded: list[_RowT] = []
+    bounded: list[_EdgeT] = []
     degree: dict[str, int] = {}
     for row in kept:
         if len(bounded) >= cap:
             break
-        source = str(getattr(row, "source", ""))
-        target = str(getattr(row, "target", ""))
+        source = row.source
+        target = row.target
         if degree.get(source, 0) >= degree_cap:
             continue
         if degree.get(target, 0) >= degree_cap:
