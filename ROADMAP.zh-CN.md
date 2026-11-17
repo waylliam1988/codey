@@ -1882,6 +1882,11 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 升级前无 receipt 输入、完整 manifest 调度和混合恢复未完成；不据此宣布 0.6.3 全部通过。
 见[输入身份、命名空间负结果与验收](docs/ghost_progress/inflight-input-origins-20261117.md)。
 
+后续已用真实 InputQueue 的 placed/pending 输入复现更早的缺口：intake 后、执行入口前
+删除的 8 cell 全有效，开启的 4 cell 仍重学。已保留负结果，身份登记需继续前移到真实
+接收端；这不是 busy-queue 或完整 HTTP 调度验收。见
+[已接收未执行输入](docs/ghost_progress/received-input-deletion-20261117.md)。
+
 2026-11-17：普通 control surface 已修复 store 返回 False 时误报成功、SQLite 错误逸出的问题，
 默认报告逐 store 失败并继续其余 store；231 项相关回归与完整静态检查通过。
 这不等于跨 store 原子删除或 durable manifest 调度已完成。见

@@ -12,6 +12,7 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 已接收未执行输入的删除 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | InputQueue placed/pending intake 后删除的 8 cell 全有效，开启的 4 cell 仍重学旧输入、关闭为 0；执行入口登记不足，需前移到真实 intake producer | [有效矩阵与无效 fixture](received-input-deletion-20261117.md) |
 | 首次投影前输入身份 2026-11-17 | `PRODUCTION_MERGED`（限定执行入口） | 相同 8 cell 中开启状态旧输入 4→0，48 项新验收与最终 162 项相关回归通过；schema 6 输入登记、持久退役与实际 Sleep 默认接线，全树静态门通过；排队 intake 仍未覆盖 | [输入身份与边界](inflight-input-origins-20261117.md) |
 | 首次投影前在途删除与 Sleep 来源控制 2026-11-17 | `PRODUCTION_MERGED`（仅 Sleep 来源控制） | 本轮关闭的 4 个真实任务 cell 旧输入泄漏 4→0，139 项相关回归与全树静态门通过；当时开启的 4 cell 负结果由后续执行入口身份实验闭合，排队 intake 等边界仍缺 | [复现、修复与限制](inflight-deletion-source-controls-20261117.md) |
 | 删除后重新读取来源 2026-11-17 | `PRODUCTION_MERGED`（限定来源退役） | 初始 12 项旧来源复活已闭合；continuity/work queue 来源身份默认持久退役；新 run、新手工确认和其他 scope 可用；本轮 425 项相关回归与完整静态检查通过；无投影输入见后续限定执行入口实验 | [来源生命周期与候选负结果](deleted-source-lifetime-20261117.md) |
