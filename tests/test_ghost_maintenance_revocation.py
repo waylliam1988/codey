@@ -143,6 +143,16 @@ def _run_cell(home: Path, scope: str, window: str, revoked: bool) -> dict[str, o
                 writer_errors.append(f"{type(exc).__name__}: {exc}")
 
         writer = threading.Thread(target=write_control, name="maintenance-control-writer", daemon=True)
+        original_stop = app.ghost_sleep_daemon.stop_requested
+
+        def stop_requested() -> bool:
+            # After a held store transaction releases, give the waiting writer
+            # its turn before the next real admission. Return the actual stop state.
+            if barrier.release.is_set() and barrier.reached.is_set() and writer.ident is not None:
+                assert committed.wait(15), "control writer did not commit before the next admission"
+            return original_stop()
+
+        app.ghost_sleep_daemon.stop_requested = stop_requested
         try:
             assert app.kick_ghost_sleep(project=project, session_id=session)
             assert barrier.reached.wait(15), "real worker did not reach the requested boundary"

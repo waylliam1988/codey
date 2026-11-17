@@ -75,3 +75,13 @@ compaction 按真实 store 分别准入，queue lease reconciliation 与该 stor
 重建、重新打开的控制语义；真实 writer 在已准入维护事务期间竞争不出现死锁或越界写。
 这些是确定性控制安全修复，不需要重跑已完成的模型收益对照。完整其他 scope 触发的
 全局维护过滤仍单独列缺口，本修复不扩大其声明。
+
+### 调度补强与候选首轮记录
+
+候选首轮 **16 passed / 2 failed**：18 项均无 post-commit 领域变化，但两个 compaction
+撤回项的 writer 被 SQLite 连续事务竞争推迟到整个周期结束；其报告不 cancelled，
+没有证明预定的在途取消，不记通过。保留 `production.log/xml`，不改原 scorer。
+为排除该调度歧义，实验只给真实 daemon 的 stop_requested 回调加 barrier：已持锁的
+store 释放后，在下次准入前等待真实 writer 提交，仍返回原始 stop 状态。不开启取消、
+不伪造维护结果、不在事务内互等。重新运行原生产 `b260673a`，仍 **9 passed / 9 failed**，
+18 项有效；见本地 `baseline-scheduled.log/xml`。修复判定与原断言全部保留。
