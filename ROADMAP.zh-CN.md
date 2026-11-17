@@ -2079,6 +2079,12 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
+2026-11-18：[节点容量裁剪与跨 scope 重建](docs/ghost_progress/graph-capacity-scope-replay-20261118.md)
+真实 500 节点 cap 的冻结 12 项全有效，6 通过/6 失败。超容量后删另一 scope，warm/cold
+两次重建均恢复一个已裁保留节点（499→500），删除 scope 仍为空且原始历史保留；不是
+用户删除数据复活。原有 192 项和全树静态门通过，新测试 owned Any 零诊断。待补正常
+writer 的可重放裁剪差量与缺历史边界保护，未接生产，不宣布完整 G0 或 World Model。
+
 2026-11-18：[Hebbian control payload](docs/ghost_progress/hebbian-control-replay-20261118.md)
 冻结 168 项真实 producer 对照全有效，36 通过/132 失败；坏计数/缺字段/额外字段等
 132 项两次重建均误报成功，原日志与有效投影未变。原负结果 `9b90e1e7` 保留；

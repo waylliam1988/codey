@@ -12,7 +12,16 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-18 最新完成：[Hebbian control payload](ghost_progress/hebbian-control-replay-20261118.md)。
+2026-11-18 最新实验：[节点容量与跨 scope 重建](ghost_progress/graph-capacity-scope-replay-20261118.md)。
+冻结 `50b58c39` 后 12 fixture 全有效、6 通过/6 失败；超容量组三 scope×warm/cold 在
+删除另一 scope 后，两次重建均把保留节点 499→500，已裁身份重现；删除 scope 不复活，
+原始历史保留。旧 tie/control 192 项通过，所有静态门与 owned Any 零诊断；新测试及
+基线报告可复现，尚无生产修改。下一步实现有界裁剪差量，补旧日志缺边界拒绝保护与
+相关生产回归，不能仅在 CLI 临时修补或复制每次全图快照。候选与边界已在记录冻结。
+本地 baseline DB 是旧重建后的状态，不是独立保存的实验前 499 快照；不要虚构恢复证明。
+保留原 12 项 scorer/源文件；目标继续，用户原改动不动，不复制 worktree。
+
+2026-11-18 此前完成：[Hebbian control payload](ghost_progress/hebbian-control-replay-20261118.md)。
 冻结提交 `4c5feeb6` 后原 168 项全有效、36 通过/132 失败；原始负结果 `9b90e1e7`
 保留，生产 `24c79933` 修复后原 168 全通过。严格计数/身份/keys 校验保留最早 v1 两字段 decay，
 candidate_removed/state_decayed 仍为 snapshot 后的审计标记，不重复操作。普通 CLI

@@ -1,7 +1,7 @@
 # Hebbian 节点容量裁剪与跨 scope 删除后的重建
 
 - 日期：2026-11-18；关联 0.6.3 /0.6.4。
-- 状态：`INCOMPLETE`（冻结，尚未执行矩阵）。
+- 状态：`EXPERIMENT_COMPLETE`（真实裁剪后重建差异已确认，生产修复待完成）。
 - 代码基线：`bc2534e7`。上一轮控制 payload 修复保留，不重复同分/内部时间/坏控制矩阵。
 - 模型、endpoint、采样参数：不适用，无模型调用，不产生模型收益或实验阴性结论。
 
@@ -63,3 +63,49 @@ codey 的 mypy/Pyrefly/ty/precision gate，以及 owned 三类型与 Any 审计�
 仓库只留复现脚本、脱敏指标和必要 fixture。不复制 worktree。
 本轮不证明全部图历史、其他领域、完整 G0 或 World Model；World Model 仍需有新增
 预测信息的真实消费者，不重跑重复当前 verification 事实的无收益候选。
+
+## 冻结基线结果
+
+冻结提交 `50b58c39` 后，**12/12 fixture 全有效，6 passed /6 failed**。
+at_cap 三 scope×warm/cold 六项均保持删除后 499 个保留节点；over_cap 六项在两次
+普通成功重建后均变为 500 个节点，原本因容量排除的同一身份两次均重新出现。
+全部原始 sequence/event_id/payload 不变，删除 scope 可见数始终为零；这不是被删
+scope 数据复活，也不是来源重新学习。第一次重建改变了有效投影，第二次保持错误集合。
+
+已有图 tie 24 项和 control payload 168 项继续通过，合批 **198 passed /6 failed**，
+用时 812.96s；不运行全量 pytest。预检首项通过后结束预检进程，第二项夹具构造中断，
+不计入冻结矩阵，不算生产失败；其日志/局部 state 保留。没有改变源文件或 scorer。
+
+全仓 Ruff、完整 702 文件 codey 的 mypy/Pyrefly/ty/precision gate、新测试定向三类型
+均通过；owned Any 零诊断，额外审计 exit 1 来自未修改依赖 3873 项/181 文件。
+生产 Pyrefly 保留既有 35 suppressed /158 warnings，定向零错误/警告，无新增豁免。
+检查期间 702 文件与新测试哈希冻结通过。
+
+逐 cell、命令和哈希见
+[基线报告](../../tests/manual/ghost_memory_routing/reports/graph-capacity-scope-replay-baseline-20261118.json)。
+完整日志/XML 与全部通过/失败 SQLite 只留 `baseline-state`。这些 DB 是实验后状态，
+over_cap 投影已被旧 replay 改成 500，不能拿它冒充最初的 499 快照；实验前 digest、
+排除身份与两次结果留在指标中。未承诺自动恢复此前已被旧 replay 覆盖的投影。
+
+```powershell
+python -m pytest tests/test_ghost_graph_capacity_scope_replay.py tests/test_ghost_graph_tie_replay.py tests/test_ghost_hebbian_control_replay.py -q -s --tb=short --basetemp=.e2e-artifacts/ghost-graph-capacity-scope-replay-20261118/baseline-state
+```
+
+## 生产候选与追加边界（待实现）
+
+根因是 live reinforce 已裁剪，但日志没有表达这个 writer 边界。优先用同一 graph
+事务记录**实际移除的节点/边差量**，使两条 reinforce 分支共享同一提交逻辑；不在每次
+单节点裁剪后复制完整 500 节点快照，避免原历史永久保留时的磁盘放大。无裁剪不得新增
+事件；裁剪记录大小应随实际移除数量变化，不能靠新增静默中央索引或强制退役身份。
+维护仍沿用已有 snapshot/window，普通 rebuild-state 消费新事件并默认生效。
+
+新裁剪事件必须有独立严格解码，不混同 snapshot 后 record-only 标记。旧日志没有
+中间裁剪事实时，不能伪造确定历史；删除控制前存在未记录 bounds 的歧义应拒绝重建并
+保留当前投影/原日志，不能自动把旧 500 修称为原 499。保持可显式 reset/合法维护恢复。
+这是后续候选契约，尚未产生生产实现或通过结论。
+
+追加检查目标：真实 node/degree 裁剪、两个 reinforce 分支、无裁剪无新增事件、记录
+大小随 delta 而非全图增长；坏 payload 原子拒绝、旧缺边界日志保护、正常 CLI/reader、
+四开关、跨 scope 删除/reset、撤回、Sleep/过期、写入故障与冷恢复。新格式对旧 reader
+及 rollback 的限制要如实记录，不能声称任意混版本兼容。原 12 项源码不改；再跑必要
+回归和要求的全部静态门，收益与生产边界通过后独立提交生产，而非只留默认关闭模块。

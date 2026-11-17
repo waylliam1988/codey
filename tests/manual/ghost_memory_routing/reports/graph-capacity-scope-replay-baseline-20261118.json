@@ -1,0 +1,652 @@
+{
+  "experiment": "ghost-graph-capacity-scope-replay-20261118",
+  "status": "EXPERIMENT_COMPLETE",
+  "verdict": "CAPACITY_PRUNED_RETAINED_NODE_REAPPEARS_AFTER_OTHER_SCOPE_DELETE",
+  "freeze_commit": "50b58c39",
+  "baseline_code_commit": "bc2534e7",
+  "model_called": false,
+  "production_changed": false,
+  "real_node_cap": 500,
+  "cells_valid": 12,
+  "passed": 6,
+  "failed": 6,
+  "projection_before_each_rebuild": 499,
+  "over_cap_replay_node_count": 500,
+  "deleted_scope_resurrections": 0,
+  "history_preserved": 12,
+  "cells": [
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "user",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "a46396c2fc1bae82fa4651bdc40c00ce66744214736b0e1d7818bbbe2de395cb",
+        "a46396c2fc1bae82fa4651bdc40c00ce66744214736b0e1d7818bbbe2de395cb",
+        "a46396c2fc1bae82fa4651bdc40c00ce66744214736b0e1d7818bbbe2de395cb"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "warm",
+      "retained_scope": "project"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "project",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "07848746140bf2777736534f7a3cadd0386201ee7b9b35b3bccbfb37022b5e6f",
+        "07848746140bf2777736534f7a3cadd0386201ee7b9b35b3bccbfb37022b5e6f",
+        "07848746140bf2777736534f7a3cadd0386201ee7b9b35b3bccbfb37022b5e6f"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "warm",
+      "retained_scope": "session"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "session",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "2c076c65c3c209824f6272516b2d69fd27c4db2cf4b315eabb7e7caeb6b385c9",
+        "2c076c65c3c209824f6272516b2d69fd27c4db2cf4b315eabb7e7caeb6b385c9",
+        "2c076c65c3c209824f6272516b2d69fd27c4db2cf4b315eabb7e7caeb6b385c9"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "warm",
+      "retained_scope": "user"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "user",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "e3b1488d89a87d5f64b5fab5cb84f3e170bed776659acf4cdf14b4bde7db67cf",
+        "e3b1488d89a87d5f64b5fab5cb84f3e170bed776659acf4cdf14b4bde7db67cf",
+        "e3b1488d89a87d5f64b5fab5cb84f3e170bed776659acf4cdf14b4bde7db67cf"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "cold",
+      "retained_scope": "project"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "project",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "767297ed3afec234fc0876daf1f1dfd9b4fa7811f30fcd297a0af988d4cec979",
+        "767297ed3afec234fc0876daf1f1dfd9b4fa7811f30fcd297a0af988d4cec979",
+        "767297ed3afec234fc0876daf1f1dfd9b4fa7811f30fcd297a0af988d4cec979"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "cold",
+      "retained_scope": "session"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "session",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "5f90a4e0fd766f6f0f5a7b3505f94a08db329d65115ed1bb2f93b0c96f567430",
+        "5f90a4e0fd766f6f0f5a7b3505f94a08db329d65115ed1bb2f93b0c96f567430",
+        "5f90a4e0fd766f6f0f5a7b3505f94a08db329d65115ed1bb2f93b0c96f567430"
+      ],
+      "excluded_count": 0,
+      "excluded_reappeared": [
+        [],
+        []
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "at_cap",
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        499,
+        499
+      ],
+      "restart": "cold",
+      "retained_scope": "user"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "user",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "35fc46532fe14f4307525b37306e0adcf91e1a778027fd345009b7bfbe1c89a0",
+        "de3ddad9c6220df7ef34f9efccc23ecce1f99bf3c36b33812b73a93779190e2e",
+        "de3ddad9c6220df7ef34f9efccc23ecce1f99bf3c36b33812b73a93779190e2e"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [
+          "ghn_976ca59e434e3dcfffa3142c"
+        ],
+        [
+          "ghn_976ca59e434e3dcfffa3142c"
+        ]
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        500,
+        500
+      ],
+      "restart": "warm",
+      "retained_scope": "project"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "project",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "105377ae851b0a24df12827a9dce5c7734f54142bf96d129c8e759a6d69028e3",
+        "5727011b273f2f58af01147ac86d32670c7ea241514040ec89da1b01a3c9be8e",
+        "5727011b273f2f58af01147ac86d32670c7ea241514040ec89da1b01a3c9be8e"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [
+          "ghn_ef6bbc32fb8d17f84c3b58ce"
+        ],
+        [
+          "ghn_ef6bbc32fb8d17f84c3b58ce"
+        ]
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        500,
+        500
+      ],
+      "restart": "warm",
+      "retained_scope": "session"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "session",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "c5ecccfe400e6073d59c18c58b955510c3ea573a80da6428bec367dfbc306588",
+        "beb8133655e2bc35624fcb4c1ac5cce37901085da69a984461d2f961dfe21cdc",
+        "beb8133655e2bc35624fcb4c1ac5cce37901085da69a984461d2f961dfe21cdc"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [
+          "ghn_1f7f02698f2e2d7612654667"
+        ],
+        [
+          "ghn_1f7f02698f2e2d7612654667"
+        ]
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        500,
+        500
+      ],
+      "restart": "warm",
+      "retained_scope": "user"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "user",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "ec5fcce2db6659634cb60ddb64577b6847f3654c1b38aa0f3ff976bd7e4e544f",
+        "9189b677ea4e3d0c968f6c3cadc2031b5f786ef98fc87e4123a77b7dde5a8b9f",
+        "9189b677ea4e3d0c968f6c3cadc2031b5f786ef98fc87e4123a77b7dde5a8b9f"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [
+          "ghn_e661672693f12d8873e7d118"
+        ],
+        [
+          "ghn_e661672693f12d8873e7d118"
+        ]
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        500,
+        500
+      ],
+      "restart": "cold",
+      "retained_scope": "project"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "project",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "cb594854563a5a62d6e57b523dd91b4dacbc6f45732c6fc358e612bfb8937c1a",
+        "b2a9627724898a9da0f8e034f8aa4299820859734fb66ddd09f22609d37ea846",
+        "b2a9627724898a9da0f8e034f8aa4299820859734fb66ddd09f22609d37ea846"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [
+          "ghn_ef6bbc32fb8d17f84c3b58ce"
+        ],
+        [
+          "ghn_ef6bbc32fb8d17f84c3b58ce"
+        ]
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        500,
+        500
+      ],
+      "restart": "cold",
+      "retained_scope": "session"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "before_node_count": 499,
+      "deleted_scope": "session",
+      "deleted_scope_visible": [
+        0,
+        0
+      ],
+      "digests": [
+        "86a0ecc66dbcbfd841d8d5cef5491d4887b9d6673a2ce342937e68153780d0b3",
+        "aab6d7dc4feadc12282e88ec29a225bc38f23a2cd52e96dd886c6b9c530f8097",
+        "aab6d7dc4feadc12282e88ec29a225bc38f23a2cd52e96dd886c6b9c530f8097"
+      ],
+      "excluded_count": 1,
+      "excluded_reappeared": [
+        [
+          "ghn_1f7f02698f2e2d7612654667"
+        ],
+        [
+          "ghn_1f7f02698f2e2d7612654667"
+        ]
+      ],
+      "fixture_valid": true,
+      "history_unchanged": [
+        true,
+        true
+      ],
+      "pressure": "over_cap",
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "real_cap": 500,
+      "replay_node_counts": [
+        500,
+        500
+      ],
+      "restart": "cold",
+      "retained_scope": "user"
+    }
+  ],
+  "regression": {
+    "passed": 198,
+    "files": 3,
+    "unaffected_existing_passed": 192,
+    "failed": 6
+  },
+  "checks": [
+    {
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_ghost_graph_capacity_scope_replay.py",
+        "tests/test_ghost_graph_tie_replay.py",
+        "tests/test_ghost_hebbian_control_replay.py",
+        "-q",
+        "-s",
+        "--basetemp=.e2e-artifacts/ghost-graph-capacity-scope-replay-20261118/baseline-state",
+        "--tb=short",
+        "-o",
+        "junit_logging=all",
+        "--junitxml=.e2e-artifacts/ghost-graph-capacity-scope-replay-20261118/baseline.xml"
+      ],
+      "check": "related",
+      "exit": 1
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "check": "ruff",
+      "exit": 0
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "mypy",
+      "exit": 0
+    },
+    {
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "pyrefly",
+      "exit": 0
+    },
+    {
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "ty",
+      "exit": 0
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "check": "precision",
+      "exit": 0
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_graph_capacity_scope_replay.py",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "owned-mypy",
+      "exit": 0
+    },
+    {
+      "command": [
+        "pyrefly",
+        "check",
+        "tests/test_ghost_graph_capacity_scope_replay.py",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "owned-pyrefly",
+      "exit": 0
+    },
+    {
+      "command": [
+        "ty",
+        "check",
+        "tests/test_ghost_graph_capacity_scope_replay.py",
+        "--python-version",
+        "3.11"
+      ],
+      "check": "owned-ty",
+      "exit": 0
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_graph_capacity_scope_replay.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ],
+      "check": "owned-any",
+      "exit": 1
+    }
+  ],
+  "production_files_frozen": 702,
+  "owned_working_tree_hashes": {
+    "tests/test_ghost_graph_capacity_scope_replay.py": "24A4B87F436C6E080AF3E1684A8A635B91DA9B227C2572BE84FBFAA2B6DB2A43"
+  },
+  "owned_any_diagnostics": 0,
+  "dependency_any_diagnostics": 3873,
+  "dependency_any_files": 181,
+  "raw_artifacts": ".e2e-artifacts/ghost-graph-capacity-scope-replay-20261118",
+  "limitations": [
+    "does not show deleted-scope resurrection",
+    "raw SQLite stores post-replay state, not an independently saved pre-replay projection",
+    "production fix pending; no model inference or model benefit claim"
+  ]
+}
