@@ -3,7 +3,8 @@
 - 日期：2026-11-17 冻结并执行基线；2026-11-18 完成生产验收
 - 状态：`PRODUCTION_MERGED`（Hebbian 解码及普通消费者默认路径）
 - 关联：0.6.4；基线 `e60757b4`。
-- 实验提交：`0cc805486cf97fc510fd22dacb872e712e97bab8`；生产修复独立提交。
+- 实验提交：`0cc805486cf97fc510fd22dacb872e712e97bab8`。
+- 生产提交：`bc9b977910937fef2566f17cba4bf67fa494493c`（master，普通消费者默认生效）。
 - 前序：已完成 [event envelope 原子重建](hebbian-replay-integrity-20261117.md)，不重做该矩阵。
 
 ## 冻结配置

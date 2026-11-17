@@ -1341,5 +1341,6 @@
     "Record-only control payloads, stable ordering/digest, remaining replay and full G0 still incomplete",
     "World Model still requires real consumer benefit evaluation"
   ],
-  "local_artifacts": ".e2e-artifacts/ghost-hebbian-row-time-20261117"
+  "local_artifacts": ".e2e-artifacts/ghost-hebbian-row-time-20261117",
+  "production_commit": "bc9b977910937fef2566f17cba4bf67fa494493c"
 }
