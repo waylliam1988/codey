@@ -2,8 +2,12 @@
 
 - 状态：`EXPERIMENT_COMPLETE`（有效负结果），候选控制面实验。
 - 基线：`47410ec6`。
+- 实验提交：`e9fb6500`。
 - 生产结论：`EXPERIMENT_ONLY`，不改现有默认行为。
 - 关联：0.6.2 / 0.6.3，Deletion Manifest 生产调度前置。
+
+后续：[同库原子删除候选](deletion-manifest-atomic-mutation-20261117.md)，与本记录的历史
+负结果分开维护；原始探针和报告保留，不能拿禁止该交错后的探针超时当作通过。
 
 ## 冻结目标
 

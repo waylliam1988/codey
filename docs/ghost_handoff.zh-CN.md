@@ -19,6 +19,11 @@
 完整 0.6.1–0.6.4、升级输入、完整 manifest 与混合恢复、身份/scope 异常和 World Model 仍未完成。后文是推进顺序，
 不要据此重做已经完成的 0.6.0 或语言实机批次；实际下一步以进度板和最新实验记录为准。
 
+后续 [Manifest 原子 mutation/ack 候选](ghost_progress/deletion-manifest-atomic-mutation-20261117.md)
+通过 68 项新增验收、652 项相关回归和另批 48 项恢复/启动复验，包含同操作两进程与三窗口硬退出。
+旧 coordinator 的重复删除负结果另存 `e9fb6500`；候选尚未接默认控制面调度，下一步继续不同
+operation、失败恢复与 writer/rebuild/Sleep 混合生命周期，再完成正常入口接线，不重复旧探针时序。
+
 ## 先读这段：不要把路线图当成无条件功能清单
 
 你接手的是一条**按证据推进、可以暂停或终止**的实验路线，不是把 Ghost 和 World Model 的所有设想逐项实现完。

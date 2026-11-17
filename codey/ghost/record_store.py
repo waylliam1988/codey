@@ -71,7 +71,8 @@ class GhostRecords:
             yield
             return
         with self.database.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
+            if not connection.in_transaction:
+                connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             if write:
                 self.database.check_projection_inputs(connection)
             if deleting:

@@ -1,0 +1,291 @@
+{
+  "schema_version": 1,
+  "baseline": "e9fb6500",
+  "candidate_sources": "same commit as this report",
+  "scope": "same Ghost SQLite path; default control-surface scheduling still pending",
+  "model": null,
+  "python": "3.12.8",
+  "junit": {
+    "tests": 793,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "pytest_passed": 652,
+  "pytest_subtests_passed": 141,
+  "new_atomic_cases": 68,
+  "cases": [
+    {
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[before_ack-delete_scope-user]",
+      "passed": true
+    },
+    {
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[before_ack-delete_scope-project]",
+      "passed": true
+    },
+    {
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[before_ack-delete_scope-session]",
+      "passed": true
+    },
+    {
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[before_ack-reset_all-all]",
+      "passed": true
+    },
+    {
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[after_completion-delete_scope-user]",
+      "passed": true
+    },
+    {
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[after_completion-delete_scope-project]",
+      "passed": true
+    },
+    {
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[after_completion-delete_scope-session]",
+      "passed": true
+    },
+    {
+      "name": "test_stale_pending_coordinator_cannot_repeat_mutation[after_completion-reset_all-all]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-inbox]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-hebbian]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-continuity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-sleep]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-work_queue]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-affinity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-delete_scope-project-observations]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-inbox]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-hebbian]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-continuity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-sleep]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-work_queue]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-affinity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[raise-reset_all-all-observations]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-inbox]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-hebbian]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-continuity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-sleep]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-work_queue]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-affinity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-delete_scope-project-observations]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-inbox]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-hebbian]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-continuity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-sleep]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-work_queue]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-affinity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[false-reset_all-all-observations]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-inbox]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-hebbian]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-continuity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-sleep]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-work_queue]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-affinity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-delete_scope-project-observations]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-inbox]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-hebbian]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-continuity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-sleep]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-work_queue]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-affinity]",
+      "passed": true
+    },
+    {
+      "name": "test_each_store_mutation_rolls_back_with_failed_acknowledgement[ack-reset_all-all-observations]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[mutation-delete_scope-user]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[mutation-delete_scope-project]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[mutation-delete_scope-session]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[mutation-reset_all-all]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[ack-delete_scope-user]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[ack-delete_scope-project]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[ack-delete_scope-session]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[ack-reset_all-all]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[commit-delete_scope-user]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[commit-delete_scope-project]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[commit-delete_scope-session]",
+      "passed": true
+    },
+    {
+      "name": "test_process_death_cannot_separate_delete_and_ack[commit-reset_all-all]",
+      "passed": true
+    },
+    {
+      "name": "test_two_processes_resume_same_pending_operation_once[delete_scope-user]",
+      "passed": true
+    },
+    {
+      "name": "test_two_processes_resume_same_pending_operation_once[delete_scope-project]",
+      "passed": true
+    },
+    {
+      "name": "test_two_processes_resume_same_pending_operation_once[delete_scope-session]",
+      "passed": true
+    },
+    {
+      "name": "test_two_processes_resume_same_pending_operation_once[reset_all-all]",
+      "passed": true
+    },
+    {
+      "name": "test_nested_write_failure_rolls_back_only_its_savepoint",
+      "passed": true
+    },
+    {
+      "name": "test_different_ghost_paths_never_join_a_transaction",
+      "passed": true
+    }
+  ]
+}

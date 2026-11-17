@@ -18,6 +18,11 @@ def _encode(value: Mapping[str, object]) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
+def _decoded_row(row: sqlite3.Row) -> dict[str, object]:
+    encoded: object = row[0]
+    return decoded_object(encoded)
+
+
 class GhostGraph:
     """One of the two learning graphs; no file projection or fallback owner.
 
@@ -43,7 +48,8 @@ class GhostGraph:
             yield
             return
         with self.database.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
+            if not connection.in_transaction:
+                connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             if write:
                 self.database.check_projection_inputs(connection)
             if deleting:
@@ -70,7 +76,7 @@ class GhostGraph:
                 "SELECT payload FROM graph_events WHERE graph=? ORDER BY sequence", (self.name,),
             )
             return [
-                decoded_object(row[0])
+                _decoded_row(row)
                 for row in rows
             ]
 
@@ -81,11 +87,11 @@ class GhostGraph:
             node_rows: Iterable[sqlite3.Row] = database.execute(
                 "SELECT payload FROM graph_nodes WHERE graph=? ORDER BY id", (self.name,),
             )
-            nodes = [decoded_object(row[0]) for row in node_rows]
+            nodes = [_decoded_row(row) for row in node_rows]
             edge_rows: Iterable[sqlite3.Row] = database.execute(
                 "SELECT payload FROM graph_edges WHERE graph=? ORDER BY source,target,relation", (self.name,),
             )
-            edges = [decoded_object(row[0]) for row in edge_rows]
+            edges = [_decoded_row(row) for row in edge_rows]
             return nodes, edges
 
     def _check_cursor(self) -> None:
@@ -93,11 +99,15 @@ class GhostGraph:
         tail_row: sqlite3.Row | None = database.execute(
             "SELECT coalesce(max(sequence),0) FROM graph_events WHERE graph=?", (self.name,)
         ).fetchone()
-        tail: object = tail_row[0] if tail_row is not None else None
+        tail: object = None
+        if tail_row is not None:
+            tail = tail_row[0]
         cursor: sqlite3.Row | None = database.execute(
             "SELECT applied_sequence FROM graph_consumers WHERE graph=?", (self.name,),
         ).fetchone()
-        position: object = cursor[0] if cursor is not None else 0
+        position: object = 0
+        if cursor is not None:
+            position = cursor[0]
         if type(tail) is not int or type(position) is not int or tail != position:
             raise OSError("Ghost graph consumer position disagrees with committed events")
 
@@ -113,7 +123,8 @@ class GhostGraph:
                     "SELECT payload FROM graph_events WHERE graph=? AND event_id=?", (self.name, identity)
                 ).fetchone()
                 if existing is not None:
-                    if existing[0] != payload:
+                    previous: object = existing[0]
+                    if previous != payload:
                         raise ValueError("Ghost graph event identity conflict")
                     continue
                 database.execute(
@@ -166,8 +177,11 @@ class GhostGraph:
                 )
                 .fetchone()
             )
-            events: object = row[0] if row is not None else None
-            size: object = row[1] if row is not None else None
+            events: object = None
+            size: object = None
+            if row is not None:
+                events = row[0]
+                size = row[1]
             if type(events) is not int or type(size) is not int:
                 raise OSError("invalid Ghost graph event statistics")
             return {"events": events, "bytes": size}

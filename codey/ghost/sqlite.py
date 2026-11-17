@@ -15,10 +15,11 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-from codey.durable.input_receipts import read_input_receipt
-
 GHOST_SCHEMA_VERSION = 7
 _PROJECTION_INPUTS: ContextVar[Mapping[Path, int] | None] = ContextVar("ghost_projection_inputs", default=None)
+_WRITE_CONNECTIONS: ContextVar[Mapping[Path, sqlite3.Connection] | None] = ContextVar(
+    "ghost_atomic_write_connections", default=None,
+)
 
 
 def _row_factory(cursor: sqlite3.Cursor, values: tuple[object, ...]) -> sqlite3.Row:
@@ -45,7 +46,8 @@ class GhostSQLite:
     def __init__(self, state_home: str | Path) -> None:
         self.path = Path(state_home) / "ghost.sqlite3"
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+        if self.path.resolve() not in (_WRITE_CONNECTIONS.get() or {}):
+            self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
         database = sqlite3.connect(self.path, timeout=5.0)
@@ -67,6 +69,8 @@ class GhostSQLite:
                 or not database_name or not isinstance(identity, str) or not identity):
             return 0
         try:
+            from codey.durable.input_receipts import read_input_receipt
+
             return int(read_input_receipt(self.path.with_name(database_name), identity, "ghost") is True)
         except (OSError, sqlite3.Error, TypeError, ValueError):
             return 0
@@ -75,8 +79,7 @@ class GhostSQLite:
         """Bind run projections to the app's existing canonical input store."""
         if not database_name or Path(database_name).name != database_name:
             raise ValueError("canonical input authority must be in the same runtime directory")
-        with self.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self.write_transaction() as connection:
             previous: sqlite3.Row | None = connection.execute(
                 "SELECT database_name FROM ghost_input_authority WHERE singleton=1",
             ).fetchone()
@@ -448,8 +451,42 @@ class GhostSQLite:
                 )
 
     @contextmanager
+    def write_transaction(self) -> Generator[sqlite3.Connection]:
+        """Join an explicit atomic write across owners of this Ghost database.
+
+        Only the same resolved Ghost path and calling context can join. Each
+        nested scope has a savepoint, so a caught store failure cannot commit
+        a partial mutation. Other threads/processes contend on BEGIN IMMEDIATE.
+        """
+        identity = self.path.resolve()
+        inherited = _WRITE_CONNECTIONS.get() or {}
+        existing = inherited.get(identity)
+        if existing is not None:
+            existing.execute("SAVEPOINT ghost_atomic_write")
+            try:
+                yield existing
+            except BaseException:
+                existing.execute("ROLLBACK TO ghost_atomic_write")
+                existing.execute("RELEASE ghost_atomic_write")
+                raise
+            else:
+                existing.execute("RELEASE ghost_atomic_write")
+            return
+        with self.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            token = _WRITE_CONNECTIONS.set({**inherited, identity: database})
+            try:
+                yield database
+            finally:
+                _WRITE_CONNECTIONS.reset(token)
+
+    @contextmanager
     def connection(self) -> Generator[sqlite3.Connection, None, None]:
         """Yield one connection and commit or roll back its transaction."""
+        if self.path.resolve() in (_WRITE_CONNECTIONS.get() or {}):
+            with self.write_transaction() as inherited:
+                yield inherited
+            return
         database = self._connect()
         try:
             yield database

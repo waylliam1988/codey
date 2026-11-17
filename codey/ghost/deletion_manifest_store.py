@@ -1,9 +1,9 @@
 """Durable owner for Ghost control-plane deletion manifests.
 
 The manifest is deliberately separate from every Ghost projection store. It
-records the operation and each store transition so a process restart can
-resume pending stores without pretending that the stores share one SQLite
-transaction.
+records the operation and each store transition. A coordinator can join each
+store mutation and its acknowledgement in the same Ghost SQLite transaction;
+it never joins the canonical runtime database or a separate Ghost path.
 """
 
 from __future__ import annotations
@@ -20,11 +20,17 @@ from codey.ghost.deletion_manifest import (
     replay,
     started_event,
 )
+from codey.ghost.payload_types import decoded_object
 from codey.ghost.sqlite import GhostSQLite
 
 
 def _encode(value: Mapping[str, object]) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _decode(row: sqlite3.Row) -> dict[str, object]:
+    encoded: object = row[0]
+    return decoded_object(encoded)
 
 
 class DeletionManifestStore:
@@ -41,8 +47,7 @@ class DeletionManifestStore:
         if self._connection.get() is not None:
             yield
             return
-        with self.database.connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self.database.write_transaction() as connection:
             token = self._connection.set(connection)
             try:
                 yield
@@ -59,12 +64,12 @@ class DeletionManifestStore:
         """Create or idempotently reopen a manifest with the same operation id."""
         with self.transaction():
             database = self._db()
-            existing = database.execute(
+            existing: sqlite3.Row | None = database.execute(
                 "SELECT manifest FROM ghost_deletion_manifests WHERE operation_id=?",
                 (manifest.operation_id,),
             ).fetchone()
             if existing is not None:
-                current = DeletionManifest.from_payload(json.loads(existing[0]))
+                current = DeletionManifest.from_payload(_decode(existing))
                 if not _same_identity(current, manifest):
                     raise DeletionManifestError("operation id already names a different manifest")
                 return self._replay_unlocked(manifest.operation_id)
@@ -86,13 +91,14 @@ class DeletionManifestStore:
             event_id = event.get("event_id")
             if not isinstance(event_id, str) or not event_id.strip():
                 raise DeletionManifestError("manifest event event_id is required")
-            existing = self._db().execute(
+            existing: sqlite3.Row | None = self._db().execute(
                 "SELECT payload FROM ghost_deletion_manifest_events WHERE operation_id=? AND event_id=?",
                 (operation_id, event_id),
             ).fetchone()
             encoded = _encode(dict(event))
             if existing is not None:
-                if existing[0] != encoded:
+                previous: object = existing[0]
+                if previous != encoded:
                     raise DeletionManifestError("manifest event identity conflict")
                 return manifest
             updated = replay(self._events_unlocked(operation_id) + [dict(event)])
@@ -112,25 +118,25 @@ class DeletionManifestStore:
             return tuple(self._events_unlocked(operation_id))
 
     def _replay_unlocked(self, operation_id: str) -> DeletionManifest:
-        row = self._db().execute(
+        row: sqlite3.Row | None = self._db().execute(
             "SELECT manifest FROM ghost_deletion_manifests WHERE operation_id=?", (operation_id,)
         ).fetchone()
         if row is None:
             raise DeletionManifestError("deletion manifest not found")
         manifest = replay(self._events_unlocked(operation_id))
-        stored = DeletionManifest.from_payload(json.loads(row[0]))
+        stored = DeletionManifest.from_payload(_decode(row))
         if stored.to_payload() != manifest.to_payload():
             raise DeletionManifestError("stored manifest disagrees with its event stream")
         return manifest
 
     def _events_unlocked(self, operation_id: str) -> list[dict[str, object]]:
-        rows = self._db().execute(
+        rows: list[sqlite3.Row] = self._db().execute(
             "SELECT payload FROM ghost_deletion_manifest_events WHERE operation_id=? ORDER BY sequence",
             (operation_id,),
         ).fetchall()
         if not rows:
             raise DeletionManifestError("deletion manifest event log is empty")
-        return [json.loads(row[0]) for row in rows]
+        return [_decode(row) for row in rows]
 
     def _append_event_unlocked(self, operation_id: str, event: Mapping[str, object]) -> None:
         event_id = event.get("event_id")

@@ -1877,6 +1877,12 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 后续原子性候选：同一 Ghost SQLite 的 pending 复查、真实 store mutation 和
+完成 event 共用每 store 事务，失败回滚后另记 blocked。68 项新增验收覆盖 stale pending、
+七 store ack 故障、同操作两进程和三窗口硬退出；最终 652 项相关回归与全树静态门通过。
+Manifest 尚未进入默认控制面调度，混合生命周期等边界继续推进；不是完整 0.6.3 通过。
+见[原子性实现与验收](docs/ghost_progress/deletion-manifest-atomic-mutation-20261117.md)。
+
 2026-11-17 同一 Manifest 操作并发恢复新增有效负结果：24 cell 中顺序对照 8/8 通过，
 并发 16/16 失败；其中 8 个在操作 completed 后误删新请求 observation，6 个出现事件冲突。
 Manifest 持久化与不同 store 并发 append 不能替代同一 store mutation 的互斥/原子性。

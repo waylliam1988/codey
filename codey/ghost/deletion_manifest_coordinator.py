@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
-from codey.ghost.deletion_manifest import DeletionManifest, store_event
+from codey.ghost.deletion_manifest import STORE_PENDING, DeletionManifest, store_event
 from codey.ghost.deletion_manifest_store import DeletionManifestStore
 
 GHOST_STORE_NAMES = (
@@ -63,23 +63,34 @@ class DeletionManifestCoordinator:
         for name in current.pending_stores:
             target = self.targets[name]
             try:
-                if current.action == "reset_all":
-                    result = target.reset_all()
-                else:
-                    result = target.delete_scope(
-                        current.scope,
-                        project=current.project,
-                        session_id=current.session_id,
-                    )
-                if result is False:
-                    raise OSError("store reported unsuccessful deletion")
-                detail = _result_detail(result)
-                current = self.manifests.append(store_event(current, name, "completed", detail=detail))
+                with self.manifests.transaction():
+                    # The first pending list is only a scheduling hint. A
+                    # competing coordinator may already have completed it.
+                    current = self.manifests.get(manifest.operation_id)
+                    if current.store(name).status != STORE_PENDING:
+                        continue
+                    if current.action == "reset_all":
+                        result = target.reset_all()
+                    else:
+                        result = target.delete_scope(
+                            current.scope,
+                            project=current.project,
+                            session_id=current.session_id,
+                        )
+                    if result is False:
+                        raise OSError("store reported unsuccessful deletion")
+                    detail = _result_detail(result)
+                    current = self.manifests.append(store_event(current, name, "completed", detail=detail))
             except Exception as exc:  # noqa: BLE001 - durable blocked transition
                 detail = f"{type(exc).__name__}: {exc}"[:240]
-                current = self.manifests.append(store_event(current, name, "blocked", detail=detail))
-                break
-        return current
+                # The failed mutation/ack transaction has rolled back. A
+                # concurrent success must not be overwritten by this failure.
+                with self.manifests.transaction():
+                    current = self.manifests.get(manifest.operation_id)
+                    if current.store(name).status == STORE_PENDING:
+                        current = self.manifests.append(store_event(current, name, "blocked", detail=detail))
+                        break
+        return self.manifests.get(manifest.operation_id)
 
 
 def _result_detail(value: object) -> str:

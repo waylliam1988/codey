@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
 
-from codey.runtime.core.models import ToolCall
-from codey.toolchain.runtime import ToolOutcome
 from codey.utils.refs import coerce_int
+
+if TYPE_CHECKING:
+    from codey.runtime.core.models import ToolCall
+    from codey.toolchain.runtime import ToolOutcome
 
 MAX_EVENT_TEXT_CHARS = 1_000
 MAX_EVENT_RESULT_CHARS = 200
@@ -38,9 +41,16 @@ def _safe_byte_count(value: object) -> int:
     return max(0, number)
 
 
-def _event_metadata(event: RunEvent) -> dict[str, Any]:
-    metadata = getattr(event, "metadata", {})
-    return metadata if isinstance(metadata, dict) else {}
+def _fields(value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        return {}
+    fields: Mapping[object, object] = value
+    return {key: item for key, item in fields.items() if isinstance(key, str)}
+
+
+def _event_metadata(event: RunEvent) -> dict[str, object]:
+    metadata: object = getattr(event, "metadata", {})
+    return _fields(metadata)
 
 
 def _tool_identity(event: RunEvent, run_id: str) -> dict[str, str]:
@@ -114,9 +124,8 @@ class RunEvent:
         return cls("status", message=message)
 
 
-def _call_args(call: ToolCall | None) -> dict[str, Any]:
-    args = call.args if call is not None else dict[str, object]()
-    return args if isinstance(args, dict) else {}
+def _call_args(call: ToolCall | None) -> dict[str, object]:
+    return _fields(call.args) if call is not None else {}
 
 
 def render_run_event(event: RunEvent) -> str:
@@ -139,7 +148,7 @@ def render_run_event(event: RunEvent) -> str:
     return event.message
 
 
-def display_tool(name: str, args: dict[str, Any], path: str = "") -> tuple[str, str]:
+def display_tool(name: str, args: Mapping[str, object], path: str = "") -> tuple[str, str]:
     research_names = {
         "web_search": ("search", str(args.get("query") or "")),
         "open_url": ("read", str(args.get("url") or "")),
@@ -159,9 +168,9 @@ def run_event_ui_payload(
     run_id: str,
     session_id: str,
     event: RunEvent,
-) -> dict[str, Any] | None:
+) -> dict[str, object] | None:
     """Render one RunEvent as the existing UI/SSE payload shape."""
-    payload: dict[str, Any]
+    payload: dict[str, object]
 
     if event.kind == "user_question":
         metadata = dict(event.metadata)
@@ -244,7 +253,7 @@ def run_event_ui_payload(
     command = str(tool_args.get("command") or "")
     preview = event.outcome.presentation.get("preview")
     if isinstance(preview, dict):
-        payload["preview"] = dict(preview)
+        payload["preview"] = _fields(preview)
     if command:
         payload["command"] = command
     # Strict exit: only real ints are projected; bool/str/float are omitted.

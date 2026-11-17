@@ -12,6 +12,7 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| Manifest 原子删除/确认 2026-11-17 | `EXPERIMENT_COMPLETE`（控制候选） | 同库 pending 复查、mutation/ack 同事务；68 项新增验收含七 store 故障、同操作两进程和三窗口硬退出；最终 652 项相关回归及全树静态门通过；默认 Manifest 调度仍未接入 | [实现、失败归属与限制](deletion-manifest-atomic-mutation-20261117.md) |
 | 同一 Manifest 操作并发恢复 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | 24 cell 全有效；8 个顺序重试通过，16 个并发失败；8 个误删 completed 后新输入，6 个事件冲突；候选不得直接晋级默认调度 | [冻结矩阵与结果](deletion-manifest-same-operation-20261117.md) |
 | canonical 输入接收结果 2026-11-17 | `PRODUCTION_MERGED`（限定正常应用 runtime） | 原始 canonical commit 保存应用 receipt；实际 observation/run-source 写口与新消费者默认检查；31 cell 全有效，双故障开启删除旧输入 12→0；最终 296 项 Ghost 与 48 项恢复/启动复验通过，全树静态门通过；完整 0.6.3 仍缺 | [生产接线与失败归属](canonical-input-receipt-20261117.md) |
 | 接收登记与隔离双故障 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果，后续限定闭合） | 31 cell 全有效；基线双故障开启并删除的 12 cell 全部重学旧输入；原始负结果保留，后续 canonical receipt 修复正常应用 runtime 的本次矩阵 | [矩阵、报告与限制](intake-double-fault-20261117.md) |

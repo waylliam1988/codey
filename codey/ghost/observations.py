@@ -73,8 +73,7 @@ class GhostObservationStore:
         except (OSError, sqlite3.Error):
             # A failed safety receipt must not fall back to untracked learning.
             # Keep the runtime task usable, but quarantine this Ghost identity.
-            with self.database.connection() as database:
-                database.execute("BEGIN IMMEDIATE")
+            with self.database.write_transaction() as database:
                 self.database.advance_deletion(database)
                 database.execute(
                     "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) VALUES('observation',?)", (run_id,),
@@ -82,18 +81,20 @@ class GhostObservationStore:
             raise
 
     def _bind_input(self, run_id: str, session_id: str, project: str) -> bool:
-        with self.database.connection() as database:
-            database.execute("BEGIN IMMEDIATE")
+        with self.database.write_transaction() as database:
             self.database.check_projection_inputs(database)
-            if database.execute(
+            retired: sqlite3.Row | None = database.execute(
                 "SELECT 1 FROM ghost_retired_inputs WHERE kind='observation' AND identity=?", (run_id,),
-            ).fetchone() is not None:
+            ).fetchone()
+            if retired is not None:
                 return False
             previous: sqlite3.Row | None = database.execute(
                 "SELECT session_id,project FROM ghost_input_origins WHERE run_id=?", (run_id,),
             ).fetchone()
             if previous is not None:
-                if previous[0] != session_id or previous[1] != project:
+                previous_session: object = previous[0]
+                previous_project: object = previous[1]
+                if previous_session != session_id or previous_project != project:
                     raise ValueError("Ghost input identity belongs to another scope")
                 return True
             database.execute(
@@ -135,8 +136,7 @@ class GhostObservationStore:
         if not row["run_id"] or not row["session_id"]:
             return False
         try:
-            with self.database.connection() as database:
-                database.execute("BEGIN IMMEDIATE")
+            with self.database.write_transaction() as database:
                 self.database.check_projection_inputs(database)
                 database.execute(
                     """
@@ -263,8 +263,7 @@ class GhostObservationStore:
         else:
             clauses.append("session_id = ?")
             values.append(normalized_session)
-        with self.database.connection() as database:
-            database.execute("BEGIN IMMEDIATE")
+        with self.database.write_transaction() as database:
             self.database.advance_deletion(database)
             database.execute(
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
@@ -298,8 +297,7 @@ class GhostObservationStore:
         return retrieve_relevant_observations(rows, query, max_items=max_items, budget_chars=budget_chars)
 
     def reset_all(self) -> None:
-        with self.database.connection() as database:
-            database.execute("BEGIN IMMEDIATE")
+        with self.database.write_transaction() as database:
             self.database.advance_deletion(database)
             database.execute(
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
@@ -323,19 +321,24 @@ class GhostObservationStore:
 
 
 def _row_payload(row: sqlite3.Row) -> dict[str, object]:
+    fields: dict[str, object] = {}
+    names: list[str] = row.keys()
+    for name in names:
+        value: object = row[name]
+        fields[name] = value
     return {
         "schema_version": OBSERVATIONS_SCHEMA_VERSION,
-        "ts": str(row["ts"]),
+        "ts": str(fields["ts"]),
         "type": "ghost_observation",
-        "run_id": str(row["run_id"]),
-        "session_id": str(row["session_id"]),
-        "project": str(row["project"]),
-        "mode": str(row["mode"]),
-        "user_text": str(row["user_text"]),
-        "assistant_text": str(row["assistant_text"]),
-        "stop_reason": str(row["stop_reason"]),
-        "committed": bool(row["committed"]),
-        "provider_id": str(row["provider_id"]),
+        "run_id": str(fields["run_id"]),
+        "session_id": str(fields["session_id"]),
+        "project": str(fields["project"]),
+        "mode": str(fields["mode"]),
+        "user_text": str(fields["user_text"]),
+        "assistant_text": str(fields["assistant_text"]),
+        "stop_reason": str(fields["stop_reason"]),
+        "committed": bool(fields["committed"]),
+        "provider_id": str(fields["provider_id"]),
     }
 
 

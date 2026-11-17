@@ -8,6 +8,12 @@
 - 关联 Roadmap 验收门：0.6.2 Scope Control and Four Learning Switches
 - 生产合并结论：`EXPERIMENT_ONLY`
 
+2026-11-17 后续：[同一操作并发](deletion-manifest-same-operation-20261117.md)的 24-cell
+矩阵证实旧 coordinator 会重复删除，含 completed 后新输入误删。后续
+[同库原子 mutation/ack 候选](deletion-manifest-atomic-mutation-20261117.md)通过 68 项新增
+验收及最终 652 项相关回归，闭合本次同操作与三窗口崩溃边界；仍不能把不同 store 的
+并发 append 或这些限定正结果外推为完整生产调度安全，混合生命周期及默认调度待接。
+
 ## 本次目标和假设
 
 为 scope delete/reset 设计一个 control-plane deletion manifest：它必须携带 operation id、
