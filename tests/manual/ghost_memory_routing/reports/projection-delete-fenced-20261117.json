@@ -1,0 +1,329 @@
+{
+  "schema_version": 1,
+  "model": null,
+  "cell_count": 32,
+  "resurrections": 0,
+  "all_deletes_ok": true,
+  "cells": [
+    {
+      "action": "delete_scope",
+      "writer": "continuity",
+      "order": "writer_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "continuity",
+      "order": "writer_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "continuity",
+      "order": "delete_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "continuity",
+      "order": "delete_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "work_queue",
+      "order": "writer_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "work_queue",
+      "order": "writer_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "work_queue",
+      "order": "delete_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "work_queue",
+      "order": "delete_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "affinity",
+      "order": "writer_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "affinity",
+      "order": "writer_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "affinity",
+      "order": "delete_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "affinity",
+      "order": "delete_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "sleep",
+      "order": "writer_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "sleep",
+      "order": "writer_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "sleep",
+      "order": "delete_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "sleep",
+      "order": "delete_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "continuity",
+      "order": "writer_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "continuity",
+      "order": "writer_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "continuity",
+      "order": "delete_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "continuity",
+      "order": "delete_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "work_queue",
+      "order": "writer_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "work_queue",
+      "order": "writer_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "work_queue",
+      "order": "delete_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "work_queue",
+      "order": "delete_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "affinity",
+      "order": "writer_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "affinity",
+      "order": "writer_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "affinity",
+      "order": "delete_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "affinity",
+      "order": "delete_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "sleep",
+      "order": "writer_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "sleep",
+      "order": "writer_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "sleep",
+      "order": "delete_first",
+      "repetition": 0,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "sleep",
+      "order": "delete_first",
+      "repetition": 1,
+      "delete_ok": true,
+      "writer_ok": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    }
+  ]
+}
