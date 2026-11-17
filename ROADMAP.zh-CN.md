@@ -2079,6 +2079,12 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
+2026-11-18：[图同分裁剪与重建基线](docs/ghost_progress/graph-tie-replay-20261118.md)
+原 24 cell 全有效，9 通过/15 失败；真实 Hebbian degree cap 的同分主组 6/6 在
+warm/cold rebuild 改变弱边集合，唯一权重 6/6 正常，节点/边排列另 9 项失败。
+原日志、强边及 cap 正常，生产修复尚未接入；先闭合语义身份排序，不据纯 helper
+通过宣布 G0/World Model 完成。
+
 2026-11-18：[Hebbian 内部记录时间与普通消费者](docs/ghost_progress/hebbian-row-time-20261117.md)
 原 54 cell 全有效、18 通过/36 失败，修复后 54/54 通过；原始负结果 `0cc80548` 保留。
 解码默认拒绝坏内部时间并保留合法可选空值/真实 fallback；reader/Sleep/directive 故障隔离、

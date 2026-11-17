@@ -1,0 +1,390 @@
+{
+  "experiment": "ghost-graph-tie-replay-20261118",
+  "status": "EXPERIMENT_COMPLETE",
+  "verdict": "PRODUCTION_REPLAY_MISMATCH",
+  "freeze_commit": "ff990fb0",
+  "baseline_commit": "0f36de60",
+  "model_called": false,
+  "effective_time": "2026-11-18T00:00:00Z",
+  "production_constants_changed": false,
+  "cells_valid": 24,
+  "passed": 9,
+  "failed": 15,
+  "cells": [
+    {
+      "digests": [
+        "2e54b7cbef5c7d62dc199cab6006ea0f247be6ea139167a9d3187eaa94f26e50",
+        "f793a0f39ebf0cb5224d370d8d03c81be8a25c45fd69d8d5f977a0bf945d6d15",
+        "f793a0f39ebf0cb5224d370d8d03c81be8a25c45fd69d8d5f977a0bf945d6d15"
+      ],
+      "kind": "public_degree",
+      "restart": "warm",
+      "same_state": false,
+      "scope": "user",
+      "valid": true,
+      "weights": "tie"
+    },
+    {
+      "digests": [
+        "4b0a6b4b64daa3fdca8e76287daea29b364c37fe5fc181860785952a341d208c",
+        "ada84ad14f675f82fbf70e61476c900e83db071b90d0c165590159519508bdee",
+        "ada84ad14f675f82fbf70e61476c900e83db071b90d0c165590159519508bdee"
+      ],
+      "kind": "public_degree",
+      "restart": "warm",
+      "same_state": false,
+      "scope": "project",
+      "valid": true,
+      "weights": "tie"
+    },
+    {
+      "digests": [
+        "07bcf604a29f0f43a7ceba4c0cc65f742f2b6cc5f6c06b9f752739341a3d048a",
+        "f200544b4c55dd84e95dff3430537b16e4bec599b7ea1246a99db654a66da322",
+        "f200544b4c55dd84e95dff3430537b16e4bec599b7ea1246a99db654a66da322"
+      ],
+      "kind": "public_degree",
+      "restart": "warm",
+      "same_state": false,
+      "scope": "session",
+      "valid": true,
+      "weights": "tie"
+    },
+    {
+      "digests": [
+        "dcaa695a2c5c8ef71eaf24674971a3fb22a3d3358ec515d04d138f861857b013",
+        "261fa8456fc5e4e7e6565a1c8e7d85cad4a47ec3aa6b5ce94a6921edfeff1f9f",
+        "261fa8456fc5e4e7e6565a1c8e7d85cad4a47ec3aa6b5ce94a6921edfeff1f9f"
+      ],
+      "kind": "public_degree",
+      "restart": "cold",
+      "same_state": false,
+      "scope": "user",
+      "valid": true,
+      "weights": "tie"
+    },
+    {
+      "digests": [
+        "a370f191b7cb38963c55facc03b6b6e30091bad24d89c93562e7481562f54de7",
+        "82969ddbf1eb33b3210b92413f034d0939eacfb3d8c4e0924852171a01a0dd30",
+        "82969ddbf1eb33b3210b92413f034d0939eacfb3d8c4e0924852171a01a0dd30"
+      ],
+      "kind": "public_degree",
+      "restart": "cold",
+      "same_state": false,
+      "scope": "project",
+      "valid": true,
+      "weights": "tie"
+    },
+    {
+      "digests": [
+        "a56974e8f0b4c1f65e0ff66a3da468a44670bc7555db093122b9ad9ec33a6e35",
+        "28ae2104f602dd31fdda7f4af52f86503d7f632c068ab79a93c9e29eadddb489",
+        "28ae2104f602dd31fdda7f4af52f86503d7f632c068ab79a93c9e29eadddb489"
+      ],
+      "kind": "public_degree",
+      "restart": "cold",
+      "same_state": false,
+      "scope": "session",
+      "valid": true,
+      "weights": "tie"
+    },
+    {
+      "digests": [
+        "2db318861b40a369443ce433dd36e2052bc683a9fd59436d7a5db7386aa80c64",
+        "2db318861b40a369443ce433dd36e2052bc683a9fd59436d7a5db7386aa80c64",
+        "2db318861b40a369443ce433dd36e2052bc683a9fd59436d7a5db7386aa80c64"
+      ],
+      "kind": "public_degree",
+      "restart": "warm",
+      "same_state": true,
+      "scope": "user",
+      "valid": true,
+      "weights": "unique"
+    },
+    {
+      "digests": [
+        "4cfe38b08273725dd87cd73018058a3a4ff42494079027cf836b92d2dd8a5a56",
+        "4cfe38b08273725dd87cd73018058a3a4ff42494079027cf836b92d2dd8a5a56",
+        "4cfe38b08273725dd87cd73018058a3a4ff42494079027cf836b92d2dd8a5a56"
+      ],
+      "kind": "public_degree",
+      "restart": "warm",
+      "same_state": true,
+      "scope": "project",
+      "valid": true,
+      "weights": "unique"
+    },
+    {
+      "digests": [
+        "0894f02a06cae73eab60137688accf9461e035dfa259f70a246c085fe48aea91",
+        "0894f02a06cae73eab60137688accf9461e035dfa259f70a246c085fe48aea91",
+        "0894f02a06cae73eab60137688accf9461e035dfa259f70a246c085fe48aea91"
+      ],
+      "kind": "public_degree",
+      "restart": "warm",
+      "same_state": true,
+      "scope": "session",
+      "valid": true,
+      "weights": "unique"
+    },
+    {
+      "digests": [
+        "76cc139bf890e6dff86a28d9740e74d476ae2e469c0282fdefb3ff1230147226",
+        "76cc139bf890e6dff86a28d9740e74d476ae2e469c0282fdefb3ff1230147226",
+        "76cc139bf890e6dff86a28d9740e74d476ae2e469c0282fdefb3ff1230147226"
+      ],
+      "kind": "public_degree",
+      "restart": "cold",
+      "same_state": true,
+      "scope": "user",
+      "valid": true,
+      "weights": "unique"
+    },
+    {
+      "digests": [
+        "355e7fdfee94eb3992beb6761bfa059a9b198e0c8a851212d1da80d497827a8e",
+        "355e7fdfee94eb3992beb6761bfa059a9b198e0c8a851212d1da80d497827a8e",
+        "355e7fdfee94eb3992beb6761bfa059a9b198e0c8a851212d1da80d497827a8e"
+      ],
+      "kind": "public_degree",
+      "restart": "cold",
+      "same_state": true,
+      "scope": "project",
+      "valid": true,
+      "weights": "unique"
+    },
+    {
+      "digests": [
+        "497b7794b2a03cf50d30ddf5e29dbc2e9dbaf5fcc22ad9628461bbb3a2766bd3",
+        "497b7794b2a03cf50d30ddf5e29dbc2e9dbaf5fcc22ad9628461bbb3a2766bd3",
+        "497b7794b2a03cf50d30ddf5e29dbc2e9dbaf5fcc22ad9628461bbb3a2766bd3"
+      ],
+      "kind": "public_degree",
+      "restart": "cold",
+      "same_state": true,
+      "scope": "session",
+      "valid": true,
+      "weights": "unique"
+    },
+    {
+      "digest": "22862917c6fa98621fbfe5360aadc3a13decf2cf4da05b7bfa7c4fe48ec2be04",
+      "kind": "node_tie",
+      "order": 0,
+      "same_state": true,
+      "valid": true
+    },
+    {
+      "digest": "cae2c3aa3c791cf11a75d81c4a736bde319caeb140e9733c1e0adfeea8eca1dc",
+      "kind": "node_tie",
+      "order": 1,
+      "same_state": false,
+      "valid": true
+    },
+    {
+      "digest": "6c84fc120549059572bb565b8a7c02724894d2ad27366ca51503fc09ce816a6b",
+      "kind": "node_tie",
+      "order": 2,
+      "same_state": false,
+      "valid": true
+    },
+    {
+      "digest": "993c95c91808703ad3ac89bcee66e153d21bd75477b25849bf26034912ddc899",
+      "kind": "node_tie",
+      "order": 3,
+      "same_state": false,
+      "valid": true
+    },
+    {
+      "digest": "debc26db5b3a3afaac02dccbe7109e38b7f39302d3f5037cf2a7293d8b1b61a6",
+      "kind": "node_tie",
+      "order": 4,
+      "same_state": false,
+      "valid": true
+    },
+    {
+      "digest": "e5d904245a3c6d5afb3b3f22791e0b44d7b906e2fc166d542961d0b70b59777c",
+      "kind": "node_tie",
+      "order": 5,
+      "same_state": false,
+      "valid": true
+    },
+    {
+      "digest": "6a93b6311e36a02dc3a0548202164dc04099b9a32e693aaf8cba8c8024633d10",
+      "kind": "edge_tie",
+      "order": 0,
+      "same_state": true,
+      "valid": true
+    },
+    {
+      "digest": "6a93b6311e36a02dc3a0548202164dc04099b9a32e693aaf8cba8c8024633d10",
+      "kind": "edge_tie",
+      "order": 1,
+      "same_state": true,
+      "valid": true
+    },
+    {
+      "digest": "2960ffdfe9ab533fae9ef887c686fac728ca8a02e93ba922753a1674dc45a42d",
+      "kind": "edge_tie",
+      "order": 2,
+      "same_state": false,
+      "valid": true
+    },
+    {
+      "digest": "2960ffdfe9ab533fae9ef887c686fac728ca8a02e93ba922753a1674dc45a42d",
+      "kind": "edge_tie",
+      "order": 3,
+      "same_state": false,
+      "valid": true
+    },
+    {
+      "digest": "c3f7ecfca5fb278a23327c5c748f0433e8f98bb8e67a6bac27862e75c3d1cc04",
+      "kind": "edge_tie",
+      "order": 4,
+      "same_state": false,
+      "valid": true
+    },
+    {
+      "digest": "c3f7ecfca5fb278a23327c5c748f0433e8f98bb8e67a6bac27862e75c3d1cc04",
+      "kind": "edge_tie",
+      "order": 5,
+      "same_state": false,
+      "valid": true
+    }
+  ],
+  "related_passed": 72,
+  "related_test_files": 3,
+  "checks": [
+    {
+      "check": "related",
+      "exit": 1,
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_ghost_graph_tie_replay.py",
+        "-q",
+        "--tb=short",
+        "-o",
+        "junit_logging=all",
+        "--junitxml=.e2e-artifacts/ghost-graph-tie-replay-20261118/baseline-final.xml"
+      ]
+    },
+    {
+      "check": "ruff",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ]
+    },
+    {
+      "check": "mypy",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "precision",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ]
+    },
+    {
+      "check": "owned-mypy",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_graph_tie_replay.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "tests/test_ghost_graph_tie_replay.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "tests/test_ghost_graph_tie_replay.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-any",
+      "exit": 1,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "tests/test_ghost_graph_tie_replay.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ]
+    }
+  ],
+  "owned_any_audit": {
+    "owned_diagnostics": 0,
+    "summary": "Found 3873 errors in 181 files (checked 1 source file)",
+    "dependency_only": true
+  },
+  "source_sha256": {
+    "tests/test_ghost_graph_tie_replay.py": "CFEADA6B2FC431449FEE8CB362CA24ADC90C4DE4A2408E8B5FA41D4547223ED3"
+  },
+  "production_default_changed": false,
+  "limitations": [
+    "Real public Hebbian degree-cap consumer plus pure semantic node/edge bounds",
+    "No model behavioral gain claimed",
+    "No full G0, capacity, mixed-version lifecycle or World Model completion"
+  ],
+  "local_artifacts": ".e2e-artifacts/ghost-graph-tie-replay-20261118"
+}
