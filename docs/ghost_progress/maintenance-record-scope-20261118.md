@@ -64,3 +64,31 @@ mypy/Pyrefly/ty及precision gate通过；新增fixture三类型检查通过，�
 零诊断，未修改依赖10864项/334文件导致额外审计exit1，独立保留。
 完整命令/指标见[脱敏基线](../../tests/manual/ghost_memory_routing/reports/maintenance-record-scope-baseline-20261118.json)。
 未改生产或默认开关；下一步必须冻结逐记录保护、确定性事件与相关边界，再接线。
+
+## 修复分轮冻结：queue 租约与 checkpoint
+
+2026-11-18，生产修改前冻结。先闭合 queue 独立消费者，不将其他三个领域的失败隐藏或
+重标为通过。复用上述12格内 queue 的6正/6负证据，不重跑模型。主要变量为真实 queue
+owner 在写事务内读取实际 inbox 控制并按记录身份选择；沿用既有严格 transition 事件，
+replay 不读取当前控制。普通 App/default daemon 已调用该 owner，无新开关。
+
+控制快照须完整校验现有 scoped entries，独立于其他三个控制。queue project 使用 raw
+normalized ref，session 使用 session_key；不能把形似hash的原始session当作已编码身份。
+user deny 继承至所有记录，显式session/project deny保护该身份。现有queue session没有
+canonical父project来源；存在任一project deny时，session记录保守不回收，直到来源证明
+另行实现；允许user/其他project仍回收，不猜父子关系。该限制必须在交付中明确。
+
+有scope deny或user deny时，queue全库checkpoint（包括mutation内部自动checkpoint）暂缓，
+避免维护被拒绝scope的历史；继续追加允许transition，保留原始历史。不能把行相等称为
+选择性compaction。其他显式业务操作、删除权威及retention/purge不纳入本轮修复声明。
+
+验收冻结：新增正常App同12组合queue专属断言（原四领域scorer不改）；补user/legacy及
+其他三个控制、raw/hash身份、未知父project、损坏控制fail closed、过期/未来lease、重试
+上限、容量满载、禁用/恢复、撤回、删除、冷重启/rebuild、事件/投影故障回滚及事务并发。
+每个状态组都检查真实行/事件，允许对照必须实际变更；rebuild切换当前控制后仍须复现
+实际历史。阈值预算设低以实际触发checkpoint，restricted组不得生成全库snapshot，
+恢复允许后须可正常checkpoint。线程barrier只控制真实事务顺序，不代替生产结果。
+
+停止条件为冻结验收完成或fixture/检查错误；错误归属与原始日志保留，不能放宽scorer。
+修复通过相关回归、全仓Ruff/三生产树类型检查/precision及owned额外Any审计后，默认
+接入master并独立提交。原四领域矩阵仍作为未闭合总门；后续逐领域继续，不宣称G0完成。
