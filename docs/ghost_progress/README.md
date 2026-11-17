@@ -12,6 +12,7 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 删除响应丢失后的操作发现 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | 三个真实硬退出窗口均无法通过普通 export 发现原操作；后续发现与恢复入口待补 | [冻结复现与边界](deletion-manifest-discovery-baseline-20261117.md) |
 | Manifest 默认生产调度 2026-11-17 | `PRODUCTION_MERGED`（普通 API/CLI） | delete/reset 默认持久调度；同 ID 重试跳过 completed、blocked 保留；新增 34 项含真实 CLI/认证 HTTP；扩大回归 741 passed / 141 subtests，类型收窄后 123 项复验，完整静态门与 owned Any 审计通过；完整 retention/升级输入仍缺 | [接线、失败归属、恢复及限制](deletion-manifest-production-wiring-20261117.md) |
 | 图精确替换与混合删除 2026-11-17 | `PRODUCTION_MERGED`（限定 graph owner） | 同一 36-cell 矩阵 28→36 通过；保留完全未变节点，变化节点及边继续拒绝退役来源；新增 23 项，相关回归 675 passed / 141 subtests；完整静态门通过；默认调度随后接线见上行 | [实现、复验与限制](graph-exact-replacement-20261117.md) |
 | 不同 Manifest 操作混合生命周期 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果） | 36 cell 全有效，28 通过、8 个不同项目交错失败；图整体重插退役保留节点导致 blocked；原始证据保留，后续 graph 修复闭合本矩阵 | [冻结矩阵、探针修订与结果](deletion-manifest-mixed-lifecycle-20261117.md) |
