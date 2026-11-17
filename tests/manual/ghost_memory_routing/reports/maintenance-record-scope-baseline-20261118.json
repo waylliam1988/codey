@@ -1,0 +1,437 @@
+{
+  "experiment": "cross-scope automatic maintenance record contract",
+  "status": "EXPERIMENT_COMPLETE",
+  "baseline_production": "9ef0f712",
+  "freeze": "ac450a20",
+  "model_called": false,
+  "sample_size": 12,
+  "passed": 6,
+  "failed": 6,
+  "cells": [
+    {
+      "fixture_valid": true,
+      "pass": true,
+      "peer_after_digest": "3da8426b97427228d8c2503dbd779f9f4a26432dea3d264f5b3b1578b5c5a199",
+      "peer_before_digest": "6e6e7e37de889cde1adde9552a5d9e013e6d5d240b31c25d463bdec79014af83",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "target_after_digest": "bd7bbad29fe16f589745f535b088096d22f4341041f67b27b40410903be88122",
+      "target_before_digest": "48d6831e803911a9b4b661d7d839f35eac2f97f3d13d54c4349c2a6ba46537fa",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "project",
+      "trigger_scope": "user"
+    },
+    {
+      "fixture_valid": true,
+      "pass": true,
+      "peer_after_digest": "c6dec8a13c9e4af82e1674a189aebf6b1eee5c48537d8566d93376b61fb3d8c5",
+      "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "target_after_digest": "70a12fde633470255f4fc1af0fb9bfb3ce3ade9581a69c4b756916a078b6f347",
+      "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "session",
+      "trigger_scope": "user"
+    },
+    {
+      "fixture_valid": true,
+      "pass": true,
+      "peer_after_digest": "8b259100629fc436b872333b652ad718398e8f940a43dd3f0b313d900071b7cb",
+      "peer_before_digest": "251ad05d030a9e45a5856a18cd3247a1d21082a18f61f059420f4c949fed6a6a",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "target_after_digest": "5da825c6bd0c39fa74d0efc95b7071f225f53c1778751f218727459e73f742cd",
+      "target_before_digest": "fbd3421d08cc47ccd85ddbad510e51c948e10dbda39fe322786ea65ea84a63cd",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "project",
+      "trigger_scope": "project"
+    },
+    {
+      "fixture_valid": true,
+      "pass": true,
+      "peer_after_digest": "c6dec8a13c9e4af82e1674a189aebf6b1eee5c48537d8566d93376b61fb3d8c5",
+      "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "target_after_digest": "70a12fde633470255f4fc1af0fb9bfb3ce3ade9581a69c4b756916a078b6f347",
+      "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "session",
+      "trigger_scope": "project"
+    },
+    {
+      "fixture_valid": true,
+      "pass": true,
+      "peer_after_digest": "71b8b5cefcf3488a1cb8f2869e52c2e9a1b29c7ac6fe18af4cc7fadba8912769",
+      "peer_before_digest": "ac875ca60f151c291da1a0686ca2a5652e2a7e02af361913f5216eac8b71a80e",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "target_after_digest": "3d650e0793d4b86e896d00fe3532b14e30bbd112ba0d5ba24e83eaad998cafb0",
+      "target_before_digest": "138468b881224ad8e1dfd17ee6d4e3ff1db3a3c233f95c445f02359a1c24b513",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "project",
+      "trigger_scope": "session"
+    },
+    {
+      "fixture_valid": true,
+      "pass": true,
+      "peer_after_digest": "a7dcdccda826de333c5e1e764b34d2029e05f6149be4c55476296d43a31b6294",
+      "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "target_after_digest": "6315671d7c3f6cbbd5bfbbd4b14f5b9380e916c7b3523befe5ade737ae18e5c7",
+      "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "session",
+      "trigger_scope": "session"
+    },
+    {
+      "fixture_valid": true,
+      "pass": false,
+      "peer_after_digest": "f9225b76c38171fda0160d9092f61ae0c78f011420c60d27682ca66758a407ee",
+      "peer_before_digest": "d0eabcf63fc1b32203a6b5a10e508ecd44bfe990b32fce36af9c1130169aef5e",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "target_after_digest": "719fc27c87321b4bc921d8ce8f71ad3fcdb205aeeadca135818f0b16ce5ba241",
+      "target_before_digest": "bfa9be59eb2343e0189d90cfdb82b89430861606ebaa1ea13af24be5f85cfcd9",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "project",
+      "trigger_scope": "user"
+    },
+    {
+      "fixture_valid": true,
+      "pass": false,
+      "peer_after_digest": "a7dcdccda826de333c5e1e764b34d2029e05f6149be4c55476296d43a31b6294",
+      "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "target_after_digest": "6315671d7c3f6cbbd5bfbbd4b14f5b9380e916c7b3523befe5ade737ae18e5c7",
+      "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "session",
+      "trigger_scope": "user"
+    },
+    {
+      "fixture_valid": true,
+      "pass": false,
+      "peer_after_digest": "67db46e33e1f2dda14089c73936dee6945fd2bb37a762e18fb62193145eab32d",
+      "peer_before_digest": "e6bc913379f35aafc0a225d90f36fc164271bf337e5fb4a34ad49ce427e52b62",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "target_after_digest": "fe0d1dce5ccb70b2f41f6d9fca234235d9b66113b0c552f4b7dd358ed4811f17",
+      "target_before_digest": "a7479d80302b8cbbf642c1a1b9691dafc3dd4ac32cd8bc57cc7949d158e6cf79",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "project",
+      "trigger_scope": "project"
+    },
+    {
+      "fixture_valid": true,
+      "pass": false,
+      "peer_after_digest": "b1d1de7c3ae94d164b397679baa67554ff56e99d2b9ff6aa4487b01f8b7e7927",
+      "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "target_after_digest": "a74c959f1dc2b57121fba8a6f51cd4800e1d0b0e480da09c3a7af3138350a23e",
+      "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "session",
+      "trigger_scope": "project"
+    },
+    {
+      "fixture_valid": true,
+      "pass": false,
+      "peer_after_digest": "2b590647ea5608d89c3a5d28bc1397061421988e12d986a55dee2c39f778159b",
+      "peer_before_digest": "12d51b782deedfee687f5976a2c1f544bd6264e2cb07ef572055da9ebafefb68",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "target_after_digest": "15a1508c565e979777949983f9d6b2b620210f1f4fdfc6cf417e3775644ccc3d",
+      "target_before_digest": "b3a9c424be00bd2b597380d5526405564f3a17a48011e6855d7a2d0097a028e3",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "project",
+      "trigger_scope": "session"
+    },
+    {
+      "fixture_valid": true,
+      "pass": false,
+      "peer_after_digest": "86eeedcca41386b494d360fc64122ba8d011417e67c6bcd23132f614054b2915",
+      "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+      "peer_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "peer_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "target_after_digest": "ef41a7c9d960cbcb0556a9e0126de2e360afefc18434f01a55ea453f19a98093",
+      "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+      "target_changed": {
+        "affinity": true,
+        "continuity": true,
+        "hebbian": true,
+        "work_queue": true
+      },
+      "target_queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "target_scope": "session",
+      "trigger_scope": "session"
+    }
+  ],
+  "regression": "431 passed, 2 subtests",
+  "checks": [
+    {
+      "command": "python -m ruff check .",
+      "exit_code": 0,
+      "log": "baseline-check-0.log"
+    },
+    {
+      "command": "python -m mypy codey --python-version 3.11",
+      "exit_code": 0,
+      "log": "baseline-check-1.log"
+    },
+    {
+      "command": "pyrefly check codey --python-version 3.11",
+      "exit_code": 0,
+      "log": "baseline-check-2.log"
+    },
+    {
+      "command": "ty check codey --python-version 3.11",
+      "exit_code": 0,
+      "log": "baseline-check-3.log"
+    },
+    {
+      "command": "python -m tools.kernel_type_precision_gate",
+      "exit_code": 0,
+      "log": "baseline-check-4.log"
+    },
+    {
+      "command": "python -m mypy tests/test_ghost_maintenance_record_scope.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "baseline-check-5.log"
+    },
+    {
+      "command": "pyrefly check tests/test_ghost_maintenance_record_scope.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "baseline-check-6.log"
+    },
+    {
+      "command": "ty check tests/test_ghost_maintenance_record_scope.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "baseline-check-7.log"
+    },
+    {
+      "command": "python -m mypy tests/test_ghost_maintenance_record_scope.py --python-version 3.11 --disallow-any-expr",
+      "exit_code": 1,
+      "log": "baseline-check-8.log"
+    }
+  ],
+  "artifacts": ".e2e-artifacts/ghost-maintenance-record-scope-20261118",
+  "preflight": [
+    "First12 invalid: public Affinity no-scope listing selects user records, not global. Fixture now validates actual graph rows.",
+    "Second3passed/9failed: six project cases invalid due hashed queue project scope_ref; production converter stores raw project and hashed session. Corrected fixture encoding, scorer unchanged."
+  ]
+}

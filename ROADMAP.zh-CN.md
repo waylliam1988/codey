@@ -1863,6 +1863,11 @@ rendered envelope 才能交给 provider。trace 只记录准入结果，不能�
 
 #### 0.6.2 - Scope Control and Four Learning Switches
 
+2026-11-18 [跨scope记录保护基线](docs/ghost_progress/maintenance-record-scope-20261118.md)：
+普通App的12格6通过/6失败，另一允许scope触发Sleep会改变明确关闭的project/session
+记录，Hebbian/Affinity/continuity/queue四领域均复现；431/2子测试与全静态门通过。
+生产未改，触发scope的在途控制修复不能替代记录scope保护，后续需逐记录修复并验收。
+
 2026-11-18：[Sleep 维护撤回与控制 fallback](docs/ghost_progress/maintenance-control-revocation-20261118.md)
 已默认生产：Sleep `06c8cfc4` 同事务读取 scoped maintenance 与执行写步骤/逐 store compaction，
 18 格 9→18 通过；setter `5407430f` materialize 原四控制值，96 格 92→96，不再因单独切换

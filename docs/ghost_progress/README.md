@@ -10,6 +10,12 @@
 
 ## 当前状态
 
+[跨 scope 自动维护记录保护](maintenance-record-scope-20261118.md)有效基线已完成：12格
+6通过/6失败。另一个允许的 user/project/session 触发普通 App Sleep，仍会改变明确
+关闭的 project/session 记录，四领域均受影响。开启邻居正常；14文件431/2子测试及
+全静态门通过，新增fixture owned Any零诊断。生产尚未改，不能把此前触发scope撤回
+通过外推为逐记录保护。下一步冻结相关修复，原始夹具错误单独留档。
+
 [Sleep 维护撤回及单项控制兼容](maintenance-control-revocation-20261118.md)已在本地 master 默认修复：
 Sleep `06c8cfc4` 将 scoped 控制读取与写步骤/逐 store compaction 放在同事务，原 18 格
 9→18 通过；setter `5407430f` 固定 legacy fallback 原值，96 格 92→96 通过。
