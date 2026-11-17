@@ -105,8 +105,9 @@ python -m mypy codey/ghost/hebbian.py tests/test_ghost_hebbian_replay_integrity.
 ## 剩余审查
 
 本轮只证明上述 Hebbian envelope、结构解码与状态一致性边界，不是任意内容损坏检测，
-也不自动发现或恢复此前已经被旧 replay 覆盖的有效投影。节点/边内部各时间字段、记录型
-control payload 的更严格校验仍应独立冻结验证，不能把 envelope ts 通过写成完整时间验收。
+也不自动发现或恢复此前已经被旧 replay 覆盖的有效投影。节点/边内部各时间字段随后由
+[内部时间实验与生产修复](hebbian-row-time-20261117.md)独立闭合（原 54 项 18→54），
+本记录原始 envelope 测量不变；记录型 control payload 的更严格校验仍需独立冻结验证。
 图的同分稳定排序、snapshot/digest 与其他领域 replay、完整 App/硬退出/跨 run 的发送
 恢复、升级/混版本和其余生命周期仍未整体闭合。World Model 仍无真实闭环；依赖满足后
 继续独立消费者实验，不用本存储修复冒充模型收益或 World Model 验收。

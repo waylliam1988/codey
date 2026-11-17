@@ -2079,16 +2079,17 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
-2026-11-17：[Hebbian 内部记录时间基线](docs/ghost_progress/hebbian-row-time-20261117.md)
-54 cell 全有效、18 通过/36 失败；坏内部时间可覆盖有效投影，6 项进一步使普通 directive
-抛 ValueError。合法可选空字段/真实 fallback 通过；生产解码校验待独立提交，不能以 envelope ts
-修复代替内部时间验收。
+2026-11-18：[Hebbian 内部记录时间与普通消费者](docs/ghost_progress/hebbian-row-time-20261117.md)
+原 54 cell 全有效、18 通过/36 失败，修复后 54/54 通过；原始负结果 `0cc80548` 保留。
+解码默认拒绝坏内部时间并保留合法可选空值/真实 fallback；reader/Sleep/directive 故障隔离、
+关闭/删除/reset/冷恢复及 App→HTTP 恢复已验。最终 27 文件 1031 项/34 子测试与全树静态门
+通过，无新增默认关闭开关。本项不等于记录型 control、稳定排序/digest 或完整 G0/World Model。
 
 2026-11-17 用户恢复任务后，[Hebbian 损坏事件重建基线](docs/ghost_progress/hebbian-replay-integrity-20261117.md)
 54 cell 全有效、原 12 通过/42 生产失败。生产修复后 54/54 通过，普通显式重建默认拒绝
 坏 envelope/node/edge/status，保留有效投影与原日志，禁止静默复活/丢状态；另 27 项
 CLI/删除/reset/冷恢复/写入失败验收，扩大 891/34 子测试、测试类型修订后最终 81 项及
-全树静态门通过。内部记录时间、稳定排序/digest及其余 G0/World Model 仍未完整闭合。
+全树静态门通过。内部记录时间随后闭合见上；稳定排序/digest及其余 G0/World Model 仍未完整闭合。
 
 2026-11-17：[continuity过期持久事实与消费者](docs/ghost_progress/continuity-expiry-production-20261117.md)
 已在普通维护/reader/builder/真实work queue默认生效；有界过期事件与投影同事务提交，

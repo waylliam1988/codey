@@ -1,0 +1,1345 @@
+{
+  "experiment": "hebbian-row-time-20261117",
+  "status": "PRODUCTION_MERGED",
+  "started": "2026-11-17",
+  "completed": "2026-11-18",
+  "baseline_revision": "e60757b4",
+  "experiment_commit": "0cc805486cf97fc510fd22dacb872e712e97bab8",
+  "production_commit_subject": "fix(ghost): validate Hebbian record times before consuming",
+  "external_model_calls": 0,
+  "production_consumers": [
+    "ghost rebuild-state --yes",
+    "GhostHebbianStore readers",
+    "ordinary Sleep",
+    "Ghost directive",
+    "ordinary App entry -> kernel -> HTTP"
+  ],
+  "production_default_enabled": true,
+  "new_default_off_flags": 0,
+  "baseline": {
+    "valid_cells": 54,
+    "passed": 18,
+    "consumer_exception_cells": 6,
+    "failed": 36
+  },
+  "final_matrix": {
+    "cells": [
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "node",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "node",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "node",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "edge",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "edge",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "edge",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "node",
+        "variant": "created_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "node",
+        "variant": "created_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "node",
+        "variant": "created_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "edge",
+        "variant": "created_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "edge",
+        "variant": "created_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "edge",
+        "variant": "created_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "node",
+        "variant": "updated_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "node",
+        "variant": "updated_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "node",
+        "variant": "updated_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "edge",
+        "variant": "updated_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "edge",
+        "variant": "updated_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "edge",
+        "variant": "updated_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "node",
+        "variant": "last_reinforced_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "node",
+        "variant": "last_reinforced_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "node",
+        "variant": "last_reinforced_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "edge",
+        "variant": "last_reinforced_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "edge",
+        "variant": "last_reinforced_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "edge",
+        "variant": "last_reinforced_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "node",
+        "variant": "last_decayed_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "node",
+        "variant": "last_decayed_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "node",
+        "variant": "last_decayed_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "edge",
+        "variant": "last_decayed_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "edge",
+        "variant": "last_decayed_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "edge",
+        "variant": "last_decayed_at"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "node",
+        "variant": "nonstring"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "node",
+        "variant": "nonstring"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "node",
+        "variant": "nonstring"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "edge",
+        "variant": "nonstring"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "edge",
+        "variant": "nonstring"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "edge",
+        "variant": "nonstring"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "node",
+        "variant": "missing_anchor"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "node",
+        "variant": "missing_anchor"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "node",
+        "variant": "missing_anchor"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "edge",
+        "variant": "missing_anchor"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "edge",
+        "variant": "missing_anchor"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "edge",
+        "variant": "missing_anchor"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "node",
+        "variant": "legacy_optional"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "node",
+        "variant": "legacy_optional"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "node",
+        "variant": "legacy_optional"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "edge",
+        "variant": "legacy_optional"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "edge",
+        "variant": "legacy_optional"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "edge",
+        "variant": "legacy_optional"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "node",
+        "variant": "legacy_fallback"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "node",
+        "variant": "legacy_fallback"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "node",
+        "variant": "legacy_fallback"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "user",
+        "target": "edge",
+        "variant": "legacy_fallback"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "project",
+        "target": "edge",
+        "variant": "legacy_fallback"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "consumer_errors": [
+          "",
+          ""
+        ],
+        "directive_unchanged": [
+          true,
+          true
+        ],
+        "projection_unchanged": [
+          true,
+          true
+        ],
+        "scope": "session",
+        "target": "edge",
+        "variant": "legacy_fallback"
+      }
+    ],
+    "valid_cells": 54,
+    "passed": 54,
+    "failed": 0
+  },
+  "final_regression": {
+    "checks": [
+      {
+        "check": "related",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/test_ghost_hebbian_row_time.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "tests/test_ghost_hebbian.py",
+          "tests/test_ghost_directive.py",
+          "tests/test_ghost_graph_primitives.py",
+          "tests/test_ghost_graph_sqlite.py",
+          "tests/test_ghost_graph_exact_replacement.py",
+          "tests/test_ghost_scope_history_retention.py",
+          "tests/test_ghost_reset_history_retention.py",
+          "tests/test_ghost_capacity_history_retention.py",
+          "tests/test_ghost_history_delete_guards.py",
+          "tests/test_ghost_projection_delete_fence.py",
+          "tests/test_ghost_deleted_input_fence.py",
+          "tests/test_ghost_deleted_source_lifetime.py",
+          "tests/test_ghost_manifest_atomic_mutation.py",
+          "tests/test_ghost_manifest_production_wiring.py",
+          "tests/test_ghost_manifest_discovery.py",
+          "tests/test_ghost_deletion_manifest_recovery.py",
+          "tests/test_ghost_corruption_contract.py",
+          "tests/test_ghost_controls.py",
+          "tests/test_ghost_control_contract.py",
+          "tests/test_ghost_language_production.py",
+          "tests/test_ghost_sleep.py",
+          "tests/test_ghost_maintenance_as_of.py",
+          "tests/test_ghost_context_admission.py",
+          "tests/test_ghost_provider_send_boundary.py",
+          "tests/test_ghost_replay_timestamp_validation.py",
+          "-q",
+          "--tb=short",
+          "-o",
+          "junit_logging=all",
+          "--junitxml=.e2e-artifacts/ghost-hebbian-row-time-20261117/production.xml"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "ruff",
+        "command": [
+          "python",
+          "-m",
+          "ruff",
+          "check",
+          "."
+        ],
+        "exit": 0
+      },
+      {
+        "check": "mypy",
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "pyrefly",
+        "command": [
+          "pyrefly",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "ty",
+        "command": [
+          "ty",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "precision",
+        "command": [
+          "python",
+          "-m",
+          "tools.kernel_type_precision_gate"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "owned-mypy",
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_row_time.py",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "owned-pyrefly",
+        "command": [
+          "pyrefly",
+          "check",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_row_time.py",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "owned-ty",
+        "command": [
+          "ty",
+          "check",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_row_time.py",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0
+      },
+      {
+        "check": "owned-any",
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_row_time.py",
+          "--python-version",
+          "3.11",
+          "--disallow-any-expr"
+        ],
+        "exit": 1
+      }
+    ],
+    "errors": 0,
+    "pytest_seconds": 372.14,
+    "test_files": 27,
+    "skipped": 0,
+    "new_test_file_passed": 140,
+    "passed": 1031,
+    "subtests_passed": 34,
+    "failed": 0
+  },
+  "owned_any_audit": {
+    "note": "Expanded App/HTTP test imports expose more existing dependency diagnostics than the baseline test; owned paths remain zero.",
+    "dependency_diagnostics": 10919,
+    "scope_changed": false,
+    "dependency_files": 338,
+    "exit": 1,
+    "owned_diagnostics": 0
+  },
+  "source_sha256": {
+    "tests/test_ghost_hebbian_row_time.py": "3F07ACAC3C885E745C4D8A73B6C8CEFB96019CB638801B2341129E267812028A",
+    "codey/ghost/hebbian.py": "1506043E4592CF4789373FC3F5ED2369B588A7BDE867D2CD3A7A2540151E9849"
+  },
+  "production_freeze_files": 702,
+  "frozen_hashes_verified": true,
+  "limitations": [
+    "No actual model inference or new model behavior claim",
+    "Does not restore projection overwritten by older replay",
+    "Record-only control payloads, stable ordering/digest, remaining replay and full G0 still incomplete",
+    "World Model still requires real consumer benefit evaluation"
+  ],
+  "local_artifacts": ".e2e-artifacts/ghost-hebbian-row-time-20261117"
+}

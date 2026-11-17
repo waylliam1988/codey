@@ -126,7 +126,7 @@ class GhostNode:
 
     @classmethod
     def from_payload(cls, payload: object) -> GhostNode | None:
-        if not object_fields(payload):
+        if not object_fields(payload) or not _valid_recorded_times(payload):
             return None
         kind = str(payload.get("kind") or "").strip().lower()
         status = str(payload.get("status") or "").strip().lower()
@@ -193,7 +193,7 @@ class GhostEdge:
 
     @classmethod
     def from_payload(cls, payload: object) -> GhostEdge | None:
-        if not object_fields(payload):
+        if not object_fields(payload) or not _valid_recorded_times(payload):
             return None
         source = clip_signal_text(payload.get("source"), 120)
         target = clip_signal_text(payload.get("target"), 120)
@@ -685,6 +685,22 @@ class GhostHebbianStore:
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
         self.graph.append(events, replace=True)
+
+
+def _valid_recorded_times(payload: dict[str, object]) -> bool:
+    times: list[str] = []
+    for field in ("created_at", "updated_at", "last_reinforced_at", "last_decayed_at"):
+        value = payload.get(field, "")
+        if not isinstance(value, str):
+            return False
+        if value:
+            try:
+                parse_ts(value)
+            except ValueError:
+                return False
+        times.append(value)
+    # Legacy rows may omit optional times, but never the entire decay anchor.
+    return any(times[1:])
 
 
 def _replay_event_type(event: dict[str, object]) -> str:

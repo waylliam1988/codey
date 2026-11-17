@@ -1,8 +1,9 @@
 # Hebbian 内部记录时间与普通消费者
 
-- 日期：2026-11-17
-- 状态：`EXPERIMENT_COMPLETE`（原始负结果，生产修复另提交）
+- 日期：2026-11-17 冻结并执行基线；2026-11-18 完成生产验收
+- 状态：`PRODUCTION_MERGED`（Hebbian 解码及普通消费者默认路径）
 - 关联：0.6.4；基线 `e60757b4`。
+- 实验提交：`0cc805486cf97fc510fd22dacb872e712e97bab8`；生产修复独立提交。
 - 前序：已完成 [event envelope 原子重建](hebbian-replay-integrity-20261117.md)，不重做该矩阵。
 
 ## 冻结配置
@@ -58,3 +59,44 @@ Sleep 和 directive 的正常消费者，不加默认关闭开关。保留合法
 ```powershell
 python -m pytest tests/test_ghost_hebbian_row_time.py -q -s --tb=short
 ```
+
+## 生产修复与默认消费者
+
+`GhostNode.from_payload` / `GhostEdge.from_payload` 在字符串转换前检查四个原始时间字段：
+非字符串、不可解析的非空时间和全部为空的衰减基点均拒绝；合法可选空值、真实
+last_reinforced_at fallback、naive UTC 和带时区历史继续可读，不读取当前时钟补造时间。
+重建沿用既有事务，坏事件不替换最后有效投影，也不改原日志。
+
+本地 master 的普通 `ghost rebuild-state --yes`、reader、Sleep 和 directive 默认使用此边界，
+无新增默认关闭开关，不限定模型。坏 projection 使 reader 明确报损坏、Sleep 保留现有
+step_error、directive 返回 store_unreadable 并省略提示；普通 App→entry→kernel→HTTP
+仍能完成请求，原事件有效时显式重建恢复已确认中文提示。retrieve/admit 关闭仍禁止提示。
+本轮不调用真实模型，不把存储可靠性收益或 loopback HTTP 当作模型行为收益。
+
+## 最终验证
+
+原 54 项从 18 通过/36 失败变为 54/54 通过；暖/冷各验证一次。
+新增测试文件最终 140 项通过，包含 64 项原始坏值解码、6 项时区与无时钟、12 项
+三 scope reader/Sleep/关闭控制/删除或 reset/冷恢复，以及 4 项真实 App 到 HTTP 的消费者验收。
+此前候选 181 项/34 子测试与单文件 140 项为不同阶段，不相加。
+最终冻结的 27 文件回归为 1031 passed / 34 subtests，零失败/错误/跳过。
+
+全仓 Ruff、完整 codey 树 mypy/Pyrefly/ty/precision gate 与两个修改文件定向三类型检查
+通过；702 个生产文件和两个修改文件 SHA256 冻结验证不变。额外 Any 审计 owned 零诊断，
+exit 1 来自未修改依赖的 10919 项/338 文件诊断；新增 App/HTTP 回归导入了更多既有依赖，
+不能与基线 3897/182 直接作质量差比较。Pyrefly 仍有既有 35 suppressed/158 warnings，
+不声称全仓无 Any。未增加豁免、cast 或忽略。原始日志、XML、隔离 state 和冻结哈希只留本地。
+不运行全量 pytest，无前端或静态资源改动。完整命令和源码 SHA256 见
+[生产报告](../../tests/manual/ghost_memory_routing/reports/hebbian-row-time-production-20261117.json)。
+
+回滚：revert 本生产修复会重新暴露 36 项坏时间覆盖与 6 项普通 directive 异常。
+优先保留原始日志和最后有效投影；已有 retrieve_projections/admit_hints 控制可隔离提示。
+坏 projection 可从有效原事件显式重建；用户仍可在四开关关闭时 delete/reset。
+坏历史不被自动跳过；reset 推进重放窗口后冷重建为空且不复活，历史仍保留。
+
+## 剩余审查
+
+本轮不是任意内容损坏检测，也不自动还原旧版本已经覆盖的投影。记录型 control payload、
+稳定排序/digest、其余 replay、完整 App/硬退出/跨 run 恢复及混版本生命周期仍需独立验证。
+G0 与 World Model 不能据此标为完成；下一轮收窄到真实验证复盘消费者的收益实验，
+复用本轮存储和准入证据，不再重做已闭合矩阵。
