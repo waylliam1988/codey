@@ -1877,6 +1877,12 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 不同 operation 混合生命周期基线：36 cell 全有效，28 passed / 8 failed；
+不同项目删除在 inbox 已退役、graph 未删除窗口交错时，graph 整体重插保留节点触发
+退役输入 guard，两个 operation 及新 operation 恢复均可 blocked，rebuild 失败。
+这是待修复的生产 graph 缺口，默认 Manifest 调度仍未启用；见
+[混合生命周期负结果](docs/ghost_progress/deletion-manifest-mixed-lifecycle-20261117.md)。
+
 2026-11-17 后续原子性候选：同一 Ghost SQLite 的 pending 复查、真实 store mutation 和
 完成 event 共用每 store 事务，失败回滚后另记 blocked。68 项新增验收覆盖 stale pending、
 七 store ack 故障、同操作两进程和三窗口硬退出；最终 652 项相关回归与全树静态门通过。
