@@ -8,7 +8,7 @@ work-queue store owns transactions and delegates here.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING
 
 from codey.ghost import _common
 from codey.ghost.schema import clip_signal_text
@@ -24,7 +24,6 @@ from codey.ghost.work_queue_model import (
     _clean_scope,
     _clean_source,
     _clean_status,
-    _field,
     _int,
     _list,
     _project_ref,
@@ -32,6 +31,12 @@ from codey.ghost.work_queue_model import (
     _stable_item_id,
     _unit_float,
 )
+
+if TYPE_CHECKING:
+    from codey.ghost.continuity import GhostContinuityStore
+    from codey.knowledge.research_interest import ResearchInterestCandidate
+    from codey.runs.ledger_projection import RunLedgerProjection
+    from codey.runs.work_checkpoint import WorkCheckpointStore
 
 
 def new_item(
@@ -89,7 +94,7 @@ def new_item(
 
 
 def items_from_continuity(
-    store: Any | None,
+    store: GhostContinuityStore | None,
     *,
     session_id: str,
     project: str,
@@ -99,7 +104,7 @@ def items_from_continuity(
     if store is None:
         return []
     try:
-        rows = store.list_items(project=project, session_id=session_id)
+        rows = store.list_items(project=project, session_id=session_id, maintenance_as_of=now)
     except Exception:
         return []
     out: list[GhostWorkItem] = []
@@ -140,7 +145,7 @@ def items_from_continuity(
 
 
 def items_from_research_interest_candidates(
-    candidates: Iterable[Any],
+    candidates: Iterable[ResearchInterestCandidate],
     *,
     session_id: str,
     project: str,
@@ -148,42 +153,42 @@ def items_from_research_interest_candidates(
 ) -> list[GhostWorkItem]:
     """Convert research-interest candidates into work items."""
     out: list[GhostWorkItem] = []
-    for candidate in list(candidates or []):
-        title = _clean_item_text(_field(candidate, "question"), max_chars=MAX_WORK_TITLE_CHARS)
+    for candidate in candidates:
+        title = _clean_item_text(candidate.question, max_chars=MAX_WORK_TITLE_CHARS)
         if not title:
             continue
-        source = _clean_source(_field(candidate, "source")) or "research_interest"
-        source_ref = clip_signal_text(_field(candidate, "source_ref") or _field(candidate, "id"), MAX_WORK_REF_CHARS)
+        source = _clean_source(candidate.source) or "research_interest"
+        source_ref = clip_signal_text(candidate.source_ref or candidate.id, MAX_WORK_REF_CHARS)
         if not source_ref:
             continue
-        scope = _clean_scope(_field(candidate, "scope")) or (
+        scope = _clean_scope(candidate.scope) or (
             "session" if session_id else "project" if project else "user"
         )
-        raw_scope_ref = clip_signal_text(_field(candidate, "scope_ref"), 240)
+        raw_scope_ref = clip_signal_text(candidate.scope_ref, 240)
         if scope == "session":
             scope_ref = _session_ref(raw_scope_ref or session_id)
         elif scope == "project":
             scope_ref = _common.normalize_project(raw_scope_ref or project)
         else:
             scope_ref = ""
-        confidence = _unit_float(_field(candidate, "confidence"))
-        strong = bool(_field(candidate, "strong_support"))
+        confidence = _unit_float(candidate.confidence)
+        strong = candidate.strong_support
         if source == "research_note":
             kind = "research"
             status = "queued" if confidence >= 0.7 else "candidate"
-            priority = max(0.62, _unit_float(_field(candidate, "priority")))
+            priority = max(0.62, _unit_float(candidate.priority))
         elif source == "concept_open_question" and strong and confidence >= 0.72:
             kind = "research"
             status = "queued"
-            priority = max(0.66, _unit_float(_field(candidate, "priority")))
+            priority = max(0.66, _unit_float(candidate.priority))
         else:
             kind = "open_question"
             status = "candidate"
-            priority = max(0.42, _unit_float(_field(candidate, "priority")))
+            priority = max(0.42, _unit_float(candidate.priority))
         evidence_refs = _bounded_refs(
             (
-                f"research_interest:{clip_signal_text(_field(candidate, 'id'), MAX_WORK_REF_CHARS)}",
-                *_list(_field(candidate, "source_refs")),
+                f"research_interest:{clip_signal_text(candidate.id, MAX_WORK_REF_CHARS)}",
+                *candidate.source_refs,
             )
         )
         out.append(
@@ -193,7 +198,7 @@ def items_from_research_interest_candidates(
                 scope=scope,
                 scope_ref=scope_ref,
                 title=title,
-                why_now=str(_field(candidate, "why_now") or "Bounded local research interest."),
+                why_now=candidate.why_now or "Bounded local research interest.",
                 priority=priority,
                 confidence=confidence,
                 source=source,
@@ -202,8 +207,8 @@ def items_from_research_interest_candidates(
                 run_refs=(),
                 now=now,
                 metadata={
-                    "related_concepts": _list(_field(candidate, "related_concepts"))[:6],
-                    "shared_neighbors": _list(_field(candidate, "shared_neighbors"))[:6],
+                    "related_concepts": _list(candidate.related_concepts)[:6],
+                    "shared_neighbors": _list(candidate.shared_neighbors)[:6],
                     "strong_support": strong,
                 },
             )
@@ -212,7 +217,7 @@ def items_from_research_interest_candidates(
 
 
 def items_from_work_checkpoint(
-    store: Any,
+    store: WorkCheckpointStore | None,
     *,
     session_id: str,
     project: str,
@@ -227,14 +232,14 @@ def items_from_work_checkpoint(
         return []
     if checkpoint is None:
         return []
-    checkpoint_project = _common.normalize_project(getattr(checkpoint, "project", "") or project)
+    checkpoint_project = _common.normalize_project(checkpoint.project or project)
     project_ref = _project_ref(project)
     if project_ref and _project_ref(checkpoint_project) != project_ref:
         return []
-    title = _clean_item_text(getattr(checkpoint, "original_task", ""), max_chars=MAX_WORK_TITLE_CHARS)
+    title = _clean_item_text(checkpoint.original_task, max_chars=MAX_WORK_TITLE_CHARS)
     if not title:
         return []
-    status = str(getattr(checkpoint, "status", "") or "")
+    status = checkpoint.status
     if status not in {"interrupted", "ready_for_review", "fixing_review", "working"}:
         return []
     return [
@@ -248,9 +253,9 @@ def items_from_work_checkpoint(
             priority=0.86,
             confidence=0.9,
             source="work_checkpoint",
-            source_ref=clip_signal_text(getattr(checkpoint, "run_id", ""), MAX_WORK_REF_CHARS),
+            source_ref=clip_signal_text(checkpoint.run_id, MAX_WORK_REF_CHARS),
             evidence_refs=(f"checkpoint:{_session_ref(session_id)}",),
-            run_refs=(clip_signal_text(getattr(checkpoint, "run_id", ""), MAX_WORK_REF_CHARS),),
+            run_refs=(clip_signal_text(checkpoint.run_id, MAX_WORK_REF_CHARS),),
             now=now,
             metadata={"checkpoint_status": status, "project_ref": _project_ref(checkpoint_project)},
         )
@@ -258,21 +263,21 @@ def items_from_work_checkpoint(
 
 
 def items_from_run_projection(
-    projection: Any,
+    projection: RunLedgerProjection | None,
     *,
     session_id: str,
     project: str,
     now: str,
 ) -> list[GhostWorkItem]:
     """Convert an unfinished run-ledger projection into a follow-up item."""
-    if projection is None or not clip_signal_text(getattr(projection, "run_id", ""), 120):
+    if projection is None or not clip_signal_text(projection.run_id, 120):
         return []
-    stop_reason = clip_signal_text(getattr(projection, "stop_reason", ""), 80)
-    mode = clip_signal_text(getattr(projection, "mode", ""), 40)
-    tool_errors = _int(getattr(projection, "tool_errors", 0))
+    stop_reason = clip_signal_text(projection.stop_reason, 80)
+    mode = clip_signal_text(projection.mode, 40)
+    tool_errors = _int(projection.tool_errors)
     if stop_reason not in {"error", "no_progress", "stopped"} and tool_errors <= 0:
         return []
-    project_ref = _project_ref(project or getattr(projection, "project", ""))
+    project_ref = _project_ref(project or projection.project)
     if not project_ref:
         return []
     title = f"Resume {mode or 'project'} run after {stop_reason or 'tool errors'}"
@@ -281,15 +286,15 @@ def items_from_run_projection(
             kind="project_followup",
             status="queued" if stop_reason in {"error", "no_progress", "stopped"} else "candidate",
             scope="project",
-            scope_ref=_common.normalize_project(project or getattr(projection, "project", "")),
+            scope_ref=_common.normalize_project(project or projection.project),
             title=title,
             why_now="A bounded run ledger projection recorded unfinished local work.",
             priority=0.72,
             confidence=0.75,
             source="run_ledger",
-            source_ref=clip_signal_text(getattr(projection, "run_id", ""), MAX_WORK_REF_CHARS),
-            evidence_refs=(f"ledger:{clip_signal_text(getattr(projection, 'run_id', ''), MAX_WORK_REF_CHARS)}",),
-            run_refs=(clip_signal_text(getattr(projection, "run_id", ""), MAX_WORK_REF_CHARS),),
+            source_ref=clip_signal_text(projection.run_id, MAX_WORK_REF_CHARS),
+            evidence_refs=(f"ledger:{clip_signal_text(projection.run_id, MAX_WORK_REF_CHARS)}",),
+            run_refs=(clip_signal_text(projection.run_id, MAX_WORK_REF_CHARS),),
             now=now,
             metadata={"stop_reason": stop_reason, "tool_errors": tool_errors, "session_ref": _session_ref(session_id)},
         )

@@ -2067,15 +2067,21 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
+2026-11-17：[continuity过期持久事实与消费者](docs/ghost_progress/continuity-expiry-production-20261117.md)
+已在普通维护/reader/builder/真实work queue默认生效；有界过期事件与投影同事务提交，
+旧同步日志按记录时间重建，保留原始历史与同来源新事实。原18项3→18、升级日志9项3→9通过；
+75项新增，最终44文件1064/4子测试及完整静态门通过，五文件owned Any零诊断。
+其余维护入口、稳定排序/digest与其他领域replay仍缺，完整0.6.4及World Model未完成。
+
 2026-11-17：[continuity过期基线](docs/ghost_progress/continuity-expiry-baseline-20261117.md)
 18项有效，3过期前正对照通过、15项持久清理/混合新增重建/普通reader与实际队列失败；
 renderer过期控制正确，702生产文件冻结不变，相关135/2子测试及静态门通过。
-这是原始负结果，尚未修生产；下一步记录可重放过期事实并贯通消费者逻辑时间，保留历史和新事实。
+这是原始负结果，后续上方生产接线限定闭合本矩阵；原3/15测量保留。
 
 2026-11-17：[Sleep显式维护时间](docs/ghost_progress/sleep-maintenance-time-production-20261117.md)
 已在普通入口默认接线，共用maintenance_as_of进行衰减、continuity刷新、租约回收及Affinity
 来源过期筛选，逻辑时间写入报告。原15项0→15通过，63项新增、扩大1047/36子测试、
-最终281/2子测试及完整静态门通过，九文件owned Any零诊断。过期持久投影、其他维护入口、
+最终281/2子测试及完整静态门通过，九文件owned Any零诊断。continuity过期随后闭合见上，其他维护入口、
 稳定排序/digest及其余领域replay仍缺，不等于整个0.6.4或World Model完成。
 
 2026-11-17：[Sleep周期取时基线](docs/ghost_progress/sleep-maintenance-clock-baseline-20261117.md)

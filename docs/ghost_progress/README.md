@@ -10,14 +10,16 @@
 
 ## 当前状态
 
-最新实验：[continuity过期持久投影与消费者基线](continuity-expiry-baseline-20261117.md)。
-18 cell全部有效，3过期前正对照通过、15项暴露持久清理/事件重建/实际队列消费缺口。
-本次不改生产；下一步修复默认维护与reader，保留原始历史和同来源新事实可用性。
+最新完成：[continuity过期持久事实与消费者](continuity-expiry-production-20261117.md)。
+普通Sleep/post-turn维护记录可重放过期事实，reader/builder/真实队列共用逻辑时间筛选；
+同来源可重新出现，原始历史保留。原18项3→18通过，旧日志9项3→9通过；75项新增，
+最终44文件1064/4子测试及全静态门通过，五受检文件额外Any零诊断。无新增默认关闭开关。
+其余维护/排序/digest/replay、完整准入/控制/生命周期及World Model仍待继续。
 
 最新完成：[Sleep显式维护时间](sleep-maintenance-time-production-20261117.md)。
 普通Sleep默认捕获一次maintenance_as_of，衰减、continuity刷新、租约回收与Affinity来源过期
 筛选共用；原15-cell矩阵0→15通过。63项新增，扩大1047/36子测试、最终281/2子测试及
-全静态门通过，九受检文件owned Any零诊断。继续过期持久投影、稳定排序/digest与其余replay；
+全静态门通过，九受检文件owned Any零诊断。continuity过期随后闭合见上，继续其余维护/排序/digest/replay；
 完整0.6.4与World Model未完成，原始负结果保留。
 
 最新完成：[重放历史时间校验](replay-timestamp-validation-production-20261117.md)。
@@ -49,7 +51,8 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
-| continuity过期持久投影基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果） | 三scope×六场景18项有效，3通过/15失败；过期清理、混合新增重放及普通reader/实际队列存在缺口，renderer控制正确；相关135/2子测试及静态门通过 | [冻结矩阵与结果](continuity-expiry-baseline-20261117.md) |
+| continuity过期持久事实与消费者 2026-11-17 | `PRODUCTION_MERGED`（普通维护/读取/队列消费） | 原18项3→18通过，旧同步日志9项3→9通过；75项新增，最终44文件1064/4子测试及全静态门通过，五文件owned Any零诊断；历史/来源可更新性保留，无新增默认关闭开关 | [生产接线与边界](continuity-expiry-production-20261117.md) |
+| continuity过期持久投影基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 三scope×六场景18项有效，原3通过/15失败；renderer控制正确，相关135/2子测试及静态门通过；后续生产接线闭合本矩阵，原测量保留 | [冻结矩阵与结果](continuity-expiry-baseline-20261117.md) |
 | Sleep显式维护时间 2026-11-17 | `PRODUCTION_MERGED`（普通Sleep及实际消费者） | 同一逻辑时间贯通衰减/刷新/租约/来源筛选；原15项0→15通过；63项新增，扩大1047/36子测试、最终281/2子测试及全静态门通过，九文件owned Any零诊断 | [生产接线与边界](sleep-maintenance-time-production-20261117.md) |
 | Sleep维护周期取时基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 15 cell全有效，恒定复验全部相同；原前跳/后跳各15差异，影响权重、TTL、租约及来源过期筛选；后续显式时间闭合本矩阵，原负结果保留 | [冻结矩阵与结果](sleep-maintenance-clock-baseline-20261117.md) |
 | 重放历史时间校验 2026-11-17 | `PRODUCTION_MERGED`（限定历史时间/原子重建） | 原12项3→12通过；坏时间默认拒绝，保留原日志及事务前投影；71项新增，候选211、最终523/36子测试及全静态门通过，六受检文件额外Any零诊断；原扩大1194/1夹具失败保留 | [生产修复与失败归属](replay-timestamp-validation-production-20261117.md) |
@@ -102,7 +105,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（历史候选，后续已接线） | 持久化、七 store 失败恢复与冷启动原始证据保留；后续原子性、混合矩阵和普通 API/CLI 默认调度已完成，完整 retention/升级输入仍缺 | [候选记录](deletion-manifest-candidate.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含 observation 兼容消费隔离） | 默认删除调度/恢复、来源退役与旧投影准入、删除/reset历史保留、容量窗口、原历史DELETE约束和schema9 observation只读消费视图已生效；其他领域旧reader/旧快照及内存、其他事务、磁盘retention/purge、其余身份/scope异常及完整生命周期仍缺 | [兼容消费视图](observation-consumption-view-production-20261117.md) / [物理删除防护](history-delete-guards-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
-| 0.6.4 确定性 replay 与显式时间 | `INCOMPLETE`（普通Sleep显式维护时间已生产接线） | 坏历史时间默认拒绝并原子回滚；普通Sleep及来源过期筛选共用显式时间，原15项通过；过期持久投影、其他维护入口、稳定排序/digest与其余领域重放仍缺 | [显式时间接线](sleep-maintenance-time-production-20261117.md) / [历史时间校验](replay-timestamp-validation-production-20261117.md) |
+| 0.6.4 确定性 replay 与显式时间 | `INCOMPLETE`（普通Sleep及continuity过期已生产接线） | 坏历史时间拒绝并原子回滚；普通Sleep共用显式时间，原15项通过；continuity过期/旧同步日志重建/实际队列已闭合；其他维护入口、稳定排序/digest与其余领域重放仍缺 | [过期接线](continuity-expiry-production-20261117.md) / [显式时间](sleep-maintenance-time-production-20261117.md) / [历史时间校验](replay-timestamp-validation-production-20261117.md) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.7 language 有条件启用与回滚 | `INCOMPLETE`（受测中文子集已默认启用） | Gemma 12B/受测预算的普通 Chat 已启用并可关闭、删除和回退；不代表完整规划项完成 | [生产启用](language-production-enablement-20261117.md) |

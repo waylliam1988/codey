@@ -277,11 +277,13 @@ class GhostContinuityStore:
                 existing = list(self._load_items_unlocked())
                 candidates = list(self.records.live_sources(candidates))
 
-                active_existing = _bounded_items(item for item in existing if not _is_expired(item, now))
+                expired_ids = {item.id for item in existing if _is_expired(item, now)}
+                active_existing = _bounded_items(item for item in existing if item.id not in expired_ids)
                 merged, changed_items = _merge_items(active_existing, candidates, now=now)
                 merged = _bounded_items(item for item in merged if not _is_expired(item, now))
-                projection_changed = _item_payloads(active_existing) != _item_payloads(merged)
-                if not changed_items and not projection_changed:
+                projection_changed = _item_payloads(existing) != _item_payloads(merged)
+                changed_ids = expired_ids | {item.id for item in changed_items}
+                if not changed_ids and not projection_changed:
                     self.last_warnings = _bounded_warnings(warnings)
                     return GhostContinuityResult(
                         True,
@@ -289,8 +291,16 @@ class GhostContinuityStore:
                         total_items=len(merged),
                         warnings=self.last_warnings,
                     )
-                if changed_items:
-                    events = [_item_event(item, action="upsert", ts=now) for item in changed_items]
+                if changed_ids:
+                    events: list[dict[str, object]] = []
+                    if expired_ids:
+                        events.append(_ghost_control_event(
+                            schema_version=CONTINUITY_SCHEMA_VERSION,
+                            event_name="ghost_continuity_items_expired",
+                            payload={"item_ids": sorted(expired_ids)},
+                            now=now,
+                        ))
+                    events.extend(_item_event(item, action="upsert", ts=now) for item in changed_items)
                     events.append(
                         _ghost_control_event(
                             schema_version=CONTINUITY_SCHEMA_VERSION,
@@ -301,7 +311,7 @@ class GhostContinuityStore:
                                 "project": _common.normalize_project(project),
                                 "mode": clip_signal_text(mode, 40),
                                 "items_seen": len(candidates),
-                                "items_changed": len(changed_items),
+                                "items_changed": len(changed_ids),
                                 "items_total": len(merged),
                             },
                             now=now,
@@ -310,13 +320,13 @@ class GhostContinuityStore:
                     )
                     self._append_events(events)
                 elif projection_changed:
-                    self._rewrite_events_from_items(merged)
+                    self._rewrite_events_from_items(merged, ts=now)
                 self._write_state(merged, now=now, warnings=warnings)
-                self._compact_if_needed(merged)
+                self._compact_if_needed(merged, ts=now)
                 self.last_warnings = _bounded_warnings(warnings)
                 return GhostContinuityResult(
                     True,
-                    items_changed=len(changed_items),
+                    items_changed=len(changed_ids),
                     total_items=len(merged),
                     warnings=self.last_warnings,
                 )
@@ -332,9 +342,12 @@ class GhostContinuityStore:
         scope: str = "",
         project: str = "",
         session_id: str = "",
+        maintenance_as_of: str | None = None,
     ) -> tuple[GhostContinuityItem, ...]:
+        time_input = _common.now_iso_z() if maintenance_as_of is None else maintenance_as_of
+        now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
         with self.records.transaction(write=False):
-            return self._list_items_unlocked(scope=scope, project=project, session_id=session_id)
+            return self._list_items_unlocked(scope=scope, project=project, session_id=session_id, now=now)
 
     def _list_items_unlocked(
         self,
@@ -342,6 +355,7 @@ class GhostContinuityStore:
         scope: str = "",
         project: str = "",
         session_id: str = "",
+        now: str,
     ) -> tuple[GhostContinuityItem, ...]:
         items = self._load_items_unlocked(live_only=True)
         project_ref = _common.normalize_project(project)
@@ -350,6 +364,7 @@ class GhostContinuityStore:
             item
             for item in items
             if _scope_filter_matches(item, scope=scope, project_ref=project_ref, session_ref=session_ref)
+            and not _is_expired(item, now)
         ]
         return tuple(sorted(rows, key=_item_sort_key))
 
@@ -467,23 +482,24 @@ class GhostContinuityStore:
     def _read_events_unlocked(self) -> list[dict[str, object]]:
         return self.records.events()
 
-    def _rewrite_events_from_items(self, items: Iterable[GhostContinuityItem]) -> None:
-        rows = [_item_event(item, action="upsert") for item in _bounded_items(items)]
+    def _rewrite_events_from_items(self, items: Iterable[GhostContinuityItem], *, ts: str | None = None) -> None:
+        now = _common.now_iso_z() if ts is None else ts
+        rows = [_item_event(item, action="upsert", ts=now) for item in _bounded_items(items)]
         rows.append(
             _ghost_control_event(
                 schema_version=CONTINUITY_SCHEMA_VERSION,
                 event_name="ghost_continuity_events_compacted",
                 payload={"items": len(rows)},
-                now=_common.now_iso_z(),
+                now=now,
                 payload_cleaner=_clean_metadata,
             )
         )
         self.records.append(rows, replace=True)
 
-    def _compact_if_needed(self, items: Iterable[GhostContinuityItem]) -> None:
+    def _compact_if_needed(self, items: Iterable[GhostContinuityItem], *, ts: str | None = None) -> None:
         stats = self.records.event_stats()
         if stats["events"] > MAX_CONTINUITY_EVENTS or stats["bytes"] > MAX_CONTINUITY_EVENTS_BYTES:
-            self._rewrite_events_from_items(items)
+            self._rewrite_events_from_items(items, ts=ts)
             self.records.mark_applied()
 
 
@@ -493,11 +509,14 @@ def build_ghost_continuity(
     project: str = "",
     session_id: str = "",
     budget: int = DEFAULT_CONTINUITY_BUDGET,
+    maintenance_as_of: str | None = None,
 ) -> GhostContinuity:
     if store is None:
         return GhostContinuity("")
+    time_input = _common.now_iso_z() if maintenance_as_of is None else maintenance_as_of
+    now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
     try:
-        items = store.list_items()
+        items = store.list_items(maintenance_as_of=now)
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
@@ -507,6 +526,7 @@ def build_ghost_continuity(
         project=project,
         session_id=session_id,
         budget=budget,
+        maintenance_as_of=now,
     )
 
 
@@ -516,9 +536,11 @@ def render_ghost_continuity(
     project: str = "",
     session_id: str = "",
     budget: int = DEFAULT_CONTINUITY_BUDGET,
+    maintenance_as_of: str | None = None,
 ) -> GhostContinuity:
     warnings: list[str] = []
-    now = _common.now_iso_z()
+    time_input = _common.now_iso_z() if maintenance_as_of is None else maintenance_as_of
+    now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
     applicable = _applicable_items(
         items,
         project=project,
@@ -1012,6 +1034,36 @@ def _items_from_events(events: Iterable[object]) -> list[GhostContinuityItem]:
         if not object_fields(event):
             continue
         event_type = str(event.get("type") or "")
+        if event_type in {"ghost_continuity_items_expired", "ghost_continuity_synced"}:
+            schema = event.get("schema_version")
+            timestamp = event.get("ts")
+            payload = event.get("payload")
+            if type(schema) is not int or schema != CONTINUITY_SCHEMA_VERSION or not isinstance(timestamp, str):
+                raise ValueError("invalid continuity maintenance event")
+            now = parse_ts(timestamp).isoformat().replace("+00:00", "Z")
+            if not object_fields(payload):
+                raise ValueError("invalid continuity maintenance payload")
+            if event_type == "ghost_continuity_synced":
+                # Legacy syncs recorded the maintenance horizon but omitted
+                # explicit removals when expiry coincided with new sources.
+                by_id = {identity: item for identity, item in by_id.items() if not _is_expired(item, now)}
+                continue
+            raw_ids = payload.get("item_ids")
+            if not isinstance(raw_ids, list):
+                raise ValueError("invalid continuity expiry identities")
+            identities: list[object] = raw_ids
+            if not 0 < len(identities) <= MAX_CONTINUITY_ITEMS:
+                raise ValueError("invalid continuity expiry identities")
+            item_ids: set[str] = set()
+            for identity in identities:
+                if not isinstance(identity, str) or not identity or clip_signal_text(identity, 120) != identity:
+                    raise ValueError("invalid continuity expiry identity")
+                if identity in item_ids:
+                    raise ValueError("duplicate continuity expiry identity")
+                item_ids.add(identity)
+            by_id = {identity: item for identity, item in by_id.items()
+                     if identity not in item_ids or not _is_expired(item, now)}
+            continue
         if event_type == "ghost_continuity_scope_deleted":
             payload = event.get("payload")
             if not object_fields(payload):

@@ -1,0 +1,721 @@
+{
+  "experiment": "continuity-expiry-production-20261117",
+  "status": "PRODUCTION_MERGED",
+  "baseline_revision": "92276feca9fba73506d03e614e2dfd7e845ef044",
+  "model": null,
+  "model_calls": 0,
+  "production_default_enabled": true,
+  "original_matrix": {
+    "valid_cells": 18,
+    "baseline_passed": 3,
+    "production_passed": 18,
+    "cells": [
+      {
+        "expected_records": 1,
+        "expected_visible": 1,
+        "reader_ids": [
+          "expired-context"
+        ],
+        "rebuilt_digests": [
+          "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+          "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c"
+        ],
+        "rebuilt_ids": [
+          [
+            "expired-context"
+          ],
+          [
+            "expired-context"
+          ]
+        ],
+        "record_digest": "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+        "record_ids": [
+          "expired-context"
+        ],
+        "rendered_expired": true,
+        "reported_total": 1,
+        "scope": "user",
+        "variant": "before",
+        "work_source_refs": [
+          "note:expired-context"
+        ]
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 1,
+        "reader_ids": [
+          "expired-context"
+        ],
+        "rebuilt_digests": [
+          "b0cdf1d55653c1f9b0567ad67e94bd5f41a4fa7f77f621c5a914933aa3d4c5d7",
+          "b0cdf1d55653c1f9b0567ad67e94bd5f41a4fa7f77f621c5a914933aa3d4c5d7"
+        ],
+        "rebuilt_ids": [
+          [
+            "expired-context"
+          ],
+          [
+            "expired-context"
+          ]
+        ],
+        "record_digest": "b0cdf1d55653c1f9b0567ad67e94bd5f41a4fa7f77f621c5a914933aa3d4c5d7",
+        "record_ids": [
+          "expired-context"
+        ],
+        "rendered_expired": true,
+        "reported_total": 1,
+        "scope": "project",
+        "variant": "before",
+        "work_source_refs": [
+          "note:expired-context"
+        ]
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 1,
+        "reader_ids": [
+          "expired-context"
+        ],
+        "rebuilt_digests": [
+          "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+          "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559"
+        ],
+        "rebuilt_ids": [
+          [
+            "expired-context"
+          ],
+          [
+            "expired-context"
+          ]
+        ],
+        "record_digest": "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+        "record_ids": [
+          "expired-context"
+        ],
+        "rendered_expired": true,
+        "reported_total": 1,
+        "scope": "session",
+        "variant": "before",
+        "work_source_refs": [
+          "note:expired-context"
+        ]
+      },
+      {
+        "expected_records": 0,
+        "expected_visible": 0,
+        "reader_ids": [],
+        "rebuilt_digests": [
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        ],
+        "rebuilt_ids": [
+          [],
+          []
+        ],
+        "record_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "record_ids": [],
+        "rendered_expired": false,
+        "reported_total": 0,
+        "scope": "user",
+        "variant": "at",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 0,
+        "expected_visible": 0,
+        "reader_ids": [],
+        "rebuilt_digests": [
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        ],
+        "rebuilt_ids": [
+          [],
+          []
+        ],
+        "record_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "record_ids": [],
+        "rendered_expired": false,
+        "reported_total": 0,
+        "scope": "project",
+        "variant": "at",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 0,
+        "expected_visible": 0,
+        "reader_ids": [],
+        "rebuilt_digests": [
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        ],
+        "rebuilt_ids": [
+          [],
+          []
+        ],
+        "record_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "record_ids": [],
+        "rendered_expired": false,
+        "reported_total": 0,
+        "scope": "session",
+        "variant": "at",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 0,
+        "expected_visible": 0,
+        "reader_ids": [],
+        "rebuilt_digests": [
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        ],
+        "rebuilt_ids": [
+          [],
+          []
+        ],
+        "record_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "record_ids": [],
+        "rendered_expired": false,
+        "reported_total": 0,
+        "scope": "user",
+        "variant": "after",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 0,
+        "expected_visible": 0,
+        "reader_ids": [],
+        "rebuilt_digests": [
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        ],
+        "rebuilt_ids": [
+          [],
+          []
+        ],
+        "record_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "record_ids": [],
+        "rendered_expired": false,
+        "reported_total": 0,
+        "scope": "project",
+        "variant": "after",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 0,
+        "expected_visible": 0,
+        "reader_ids": [],
+        "rebuilt_digests": [
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        ],
+        "rebuilt_ids": [
+          [],
+          []
+        ],
+        "record_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "record_ids": [],
+        "rendered_expired": false,
+        "reported_total": 0,
+        "scope": "session",
+        "variant": "after",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 1,
+        "reader_ids": [
+          "live-context"
+        ],
+        "rebuilt_digests": [
+          "fc4bf3ebdc4cd2bf66cd1a6d90fd4864b0f1c0e2482806965f3816e31dca1392",
+          "fc4bf3ebdc4cd2bf66cd1a6d90fd4864b0f1c0e2482806965f3816e31dca1392"
+        ],
+        "rebuilt_ids": [
+          [
+            "live-context"
+          ],
+          [
+            "live-context"
+          ]
+        ],
+        "record_digest": "fc4bf3ebdc4cd2bf66cd1a6d90fd4864b0f1c0e2482806965f3816e31dca1392",
+        "record_ids": [
+          "live-context"
+        ],
+        "rendered_expired": false,
+        "reported_total": 1,
+        "scope": "user",
+        "variant": "mixed",
+        "work_source_refs": [
+          "note:live-context"
+        ]
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 1,
+        "reader_ids": [
+          "live-context"
+        ],
+        "rebuilt_digests": [
+          "96c038c6c0b7f9472bb2527dea72e8ed8e56b926e2ed4ed459a685fa8c7e4da8",
+          "96c038c6c0b7f9472bb2527dea72e8ed8e56b926e2ed4ed459a685fa8c7e4da8"
+        ],
+        "rebuilt_ids": [
+          [
+            "live-context"
+          ],
+          [
+            "live-context"
+          ]
+        ],
+        "record_digest": "96c038c6c0b7f9472bb2527dea72e8ed8e56b926e2ed4ed459a685fa8c7e4da8",
+        "record_ids": [
+          "live-context"
+        ],
+        "rendered_expired": false,
+        "reported_total": 1,
+        "scope": "project",
+        "variant": "mixed",
+        "work_source_refs": [
+          "note:live-context"
+        ]
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 1,
+        "reader_ids": [
+          "live-context"
+        ],
+        "rebuilt_digests": [
+          "7b766fbb9f3ede945e910ebc6d63d8eede4d650d8803be1ad11d48adc1b68d4c",
+          "7b766fbb9f3ede945e910ebc6d63d8eede4d650d8803be1ad11d48adc1b68d4c"
+        ],
+        "rebuilt_ids": [
+          [
+            "live-context"
+          ],
+          [
+            "live-context"
+          ]
+        ],
+        "record_digest": "7b766fbb9f3ede945e910ebc6d63d8eede4d650d8803be1ad11d48adc1b68d4c",
+        "record_ids": [
+          "live-context"
+        ],
+        "rendered_expired": false,
+        "reported_total": 1,
+        "scope": "session",
+        "variant": "mixed",
+        "work_source_refs": [
+          "note:live-context"
+        ]
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 1,
+        "reader_ids": [
+          "cont_72a95b5b5ff1d1a2117bf0b0"
+        ],
+        "rebuilt_digests": [
+          "72debabaf3586d446940d4ae524625a638bca7e77050d506c8ffe7df37b98d24",
+          "72debabaf3586d446940d4ae524625a638bca7e77050d506c8ffe7df37b98d24"
+        ],
+        "rebuilt_ids": [
+          [
+            "cont_72a95b5b5ff1d1a2117bf0b0"
+          ],
+          [
+            "cont_72a95b5b5ff1d1a2117bf0b0"
+          ]
+        ],
+        "record_digest": "72debabaf3586d446940d4ae524625a638bca7e77050d506c8ffe7df37b98d24",
+        "record_ids": [
+          "cont_72a95b5b5ff1d1a2117bf0b0"
+        ],
+        "rendered_expired": false,
+        "reported_total": 1,
+        "scope": "user",
+        "variant": "new_source",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 1,
+        "reader_ids": [
+          "cont_893d454b1fb56f8c8b4b03b4"
+        ],
+        "rebuilt_digests": [
+          "763f842d6dfeece3b700d09387f0c0a4d2a366f8b773121e2be675c6ee76dafc",
+          "763f842d6dfeece3b700d09387f0c0a4d2a366f8b773121e2be675c6ee76dafc"
+        ],
+        "rebuilt_ids": [
+          [
+            "cont_893d454b1fb56f8c8b4b03b4"
+          ],
+          [
+            "cont_893d454b1fb56f8c8b4b03b4"
+          ]
+        ],
+        "record_digest": "763f842d6dfeece3b700d09387f0c0a4d2a366f8b773121e2be675c6ee76dafc",
+        "record_ids": [
+          "cont_893d454b1fb56f8c8b4b03b4"
+        ],
+        "rendered_expired": false,
+        "reported_total": 1,
+        "scope": "project",
+        "variant": "new_source",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 1,
+        "reader_ids": [
+          "cont_c8a92e954ccb3c19b9755b17"
+        ],
+        "rebuilt_digests": [
+          "d7394adfb297607a5ae40f02198ab342c83f345adcbabda62cb56d1f087f7c1e",
+          "d7394adfb297607a5ae40f02198ab342c83f345adcbabda62cb56d1f087f7c1e"
+        ],
+        "rebuilt_ids": [
+          [
+            "cont_c8a92e954ccb3c19b9755b17"
+          ],
+          [
+            "cont_c8a92e954ccb3c19b9755b17"
+          ]
+        ],
+        "record_digest": "d7394adfb297607a5ae40f02198ab342c83f345adcbabda62cb56d1f087f7c1e",
+        "record_ids": [
+          "cont_c8a92e954ccb3c19b9755b17"
+        ],
+        "rendered_expired": false,
+        "reported_total": 1,
+        "scope": "session",
+        "variant": "new_source",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 0,
+        "reader_ids": [],
+        "rebuilt_digests": [
+          "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+          "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c"
+        ],
+        "rebuilt_ids": [
+          [
+            "expired-context"
+          ],
+          [
+            "expired-context"
+          ]
+        ],
+        "record_digest": "720c8efadf1af1653007963d1fa617397f6bbe96bd37cd6bfc51f0ed5d848f4c",
+        "record_ids": [
+          "expired-context"
+        ],
+        "rendered_expired": false,
+        "reported_total": null,
+        "scope": "user",
+        "variant": "reader_only",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 0,
+        "reader_ids": [],
+        "rebuilt_digests": [
+          "358a10a016729cc1c1ab4dd034212fff1d11268d9fe506fd80cd8d20e09bc2df",
+          "358a10a016729cc1c1ab4dd034212fff1d11268d9fe506fd80cd8d20e09bc2df"
+        ],
+        "rebuilt_ids": [
+          [
+            "expired-context"
+          ],
+          [
+            "expired-context"
+          ]
+        ],
+        "record_digest": "358a10a016729cc1c1ab4dd034212fff1d11268d9fe506fd80cd8d20e09bc2df",
+        "record_ids": [
+          "expired-context"
+        ],
+        "rendered_expired": false,
+        "reported_total": null,
+        "scope": "project",
+        "variant": "reader_only",
+        "work_source_refs": []
+      },
+      {
+        "expected_records": 1,
+        "expected_visible": 0,
+        "reader_ids": [],
+        "rebuilt_digests": [
+          "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+          "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559"
+        ],
+        "rebuilt_ids": [
+          [
+            "expired-context"
+          ],
+          [
+            "expired-context"
+          ]
+        ],
+        "record_digest": "f2438abd2487dd1287f16cfbf7c5d712a097bad1f59e01dd4ef8858211fd3559",
+        "record_ids": [
+          "expired-context"
+        ],
+        "rendered_expired": false,
+        "reported_total": null,
+        "scope": "session",
+        "variant": "reader_only",
+        "work_source_refs": []
+      }
+    ],
+    "baseline_failed": 15
+  },
+  "upgrade_matrix": {
+    "first_candidate_passed": 3,
+    "valid_cells": 9,
+    "clocks": [
+      "2026-01-01T00:00:00Z",
+      "2029-01-01T00:00:00Z"
+    ],
+    "first_candidate_failed": 6,
+    "final_passed": 9
+  },
+  "first_candidate": {
+    "subtests_passed": 2,
+    "passed": 205,
+    "failed": 3,
+    "failure_owner": "fixture omitted supported chat mode; production unchanged for fixture correction"
+  },
+  "first_expanded": {
+    "files": 37,
+    "subtests_passed": 2,
+    "passed": 897,
+    "final_source": false
+  },
+  "acceptance": {
+    "files": 6,
+    "subtests_passed": 2,
+    "passed": 227,
+    "new_acceptance_cases": 75
+  },
+  "final": {
+    "files": 44,
+    "errors": 0,
+    "passed": 1064,
+    "failures": 0,
+    "skipped": 0,
+    "subtests_passed": 4
+  },
+  "frozen_production_python_files": 702,
+  "production_pyrefly": "INFO 0 errors (35 suppressed, 158 warnings not shown)",
+  "owned_audited_files": 5,
+  "owned_any_diagnostics": 0,
+  "dependency_any_diagnostics": 3873,
+  "dependency_any_files": 181,
+  "owned_type_corrections": [
+    "named callback replaces unspecified keyword dictionary",
+    "explicit object element type for malformed empty container"
+  ],
+  "source_lf_sha256": {
+    "codey/ghost/continuity.py": "5374b48af2fffb02f7e203bcde5ca3af434f4dbd28e7b53078193e9caf7889db",
+    "codey/ghost/work_queue_sources.py": "cccb251d5efdcc6d855398e13785ff8dd6b34f30d63260048bb3e64c6bc72af3",
+    "tests/test_work_queue_sources_own_conversions.py": "1335baca3983303254f6d407b76a824ebf8bf1eca34d703fa1b66dcc1210ff34",
+    "tests/test_ghost_continuity_expiry.py": "01a4cfb409f607481566dde2e4a0529e9404c9f85f1d8b3f755242fdd8e85734",
+    "tests/test_ghost_continuity_expiry_boundary.py": "7b9e45fd028f0cd5750bdfafaf28dbd7bc3fa52a1bc6bb00d68835c5a417359f"
+  },
+  "checks": [
+    {
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_ghost_continuity_expiry_boundary.py",
+        "tests/test_ghost_continuity_expiry.py",
+        "tests/test_work_queue_sources_own_conversions.py",
+        "tests/test_ghost_continuity.py",
+        "tests/test_ghost_work_queue.py",
+        "tests/test_ghost_sleep.py",
+        "tests/test_ghost_maintenance_as_of.py",
+        "tests/test_ghost_sleep_clock_boundary.py",
+        "tests/test_ghost_hebbian.py",
+        "tests/test_ghost_affinity.py",
+        "tests/test_ghost_post_turn_work_queue.py",
+        "tests/test_ghost_sleep_source_controls.py",
+        "tests/test_ghost_work_queue_ownership.py",
+        "tests/test_work_queue_transition_split.py",
+        "tests/test_work_queue_no_legacy_aliases.py",
+        "tests/test_work_queue_events_owns_replay.py",
+        "tests/test_work_queue_claim_preserves_invalid_retry_count.py",
+        "tests/test_research_interest_queue.py",
+        "tests/test_ghost_research_continuity_ab.py",
+        "tests/test_ghost_work_queue_ab.py",
+        "tests/test_ghost_controls.py",
+        "tests/test_ghost_control_surface.py",
+        "tests/test_ghost_control_contract.py",
+        "tests/test_ghost_deleted_source_lifetime.py",
+        "tests/test_ghost_capacity_history_retention.py",
+        "tests/test_ghost_scope_history_retention.py",
+        "tests/test_ghost_reset_history_retention.py",
+        "tests/test_ghost_projection_delete_fence.py",
+        "tests/test_ghost_deleted_input_fence.py",
+        "tests/test_ghost_deletion_manifest.py",
+        "tests/test_ghost_deletion_manifest_recovery.py",
+        "tests/test_ghost_deletion_manifest_multiprocess.py",
+        "tests/test_ghost_control_mutation_failures.py",
+        "tests/test_ghost_mixed_schema_history.py",
+        "tests/test_ghost_history_delete_guards.py",
+        "tests/test_hardening_batch2.py",
+        "tests/test_affinity_sources_ownership.py",
+        "tests/test_ghost_language_production.py",
+        "tests/test_ghost_provider_send_boundary.py",
+        "tests/test_ghost_post_turn.py",
+        "tests/test_ghost_manifest_production_wiring.py",
+        "tests/test_ghost_legacy_projection_admission.py",
+        "tests/test_ghost_corruption_contract.py",
+        "tests/test_context_source.py",
+        "-q",
+        "--tb=short",
+        "-o",
+        "junit_logging=all",
+        "--junitxml=.e2e-artifacts/ghost-continuity-expiry-20261117/production-final.xml"
+      ],
+      "exit": 0,
+      "check": "related"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "exit": 0,
+      "check": "ruff"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "mypy"
+    },
+    {
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "pyrefly"
+    },
+    {
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "ty"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ],
+      "exit": 0,
+      "check": "precision"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey/ghost/continuity.py",
+        "codey/ghost/work_queue_sources.py",
+        "tests/test_work_queue_sources_own_conversions.py",
+        "tests/test_ghost_continuity_expiry.py",
+        "tests/test_ghost_continuity_expiry_boundary.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "owned-mypy"
+    },
+    {
+      "command": [
+        "pyrefly",
+        "check",
+        "codey/ghost/continuity.py",
+        "codey/ghost/work_queue_sources.py",
+        "tests/test_work_queue_sources_own_conversions.py",
+        "tests/test_ghost_continuity_expiry.py",
+        "tests/test_ghost_continuity_expiry_boundary.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "owned-pyrefly"
+    },
+    {
+      "command": [
+        "ty",
+        "check",
+        "codey/ghost/continuity.py",
+        "codey/ghost/work_queue_sources.py",
+        "tests/test_work_queue_sources_own_conversions.py",
+        "tests/test_ghost_continuity_expiry.py",
+        "tests/test_ghost_continuity_expiry_boundary.py",
+        "--python-version",
+        "3.11"
+      ],
+      "exit": 0,
+      "check": "owned-ty"
+    },
+    {
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey/ghost/continuity.py",
+        "codey/ghost/work_queue_sources.py",
+        "tests/test_work_queue_sources_own_conversions.py",
+        "tests/test_ghost_continuity_expiry.py",
+        "tests/test_ghost_continuity_expiry_boundary.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ],
+      "exit": 1,
+      "check": "owned-any"
+    }
+  ],
+  "production_consumers": [
+    "AppContext ordinary Sleep continuity refresh",
+    "Chat/Research continuity builder",
+    "post-turn continuity and work queue sync",
+    "existing CLI/control reader"
+  ],
+  "limits": [
+    "existing independent work items are not revoked by continuity TTL",
+    "full mixed-version runtime and old snapshots/process memory remain unproven",
+    "other maintenance/replay and full 0.6.1-0.6.4 incomplete",
+    "World Model still requires actual experiment and consumer"
+  ],
+  "local_artifacts": ".e2e-artifacts/ghost-continuity-expiry-20261117"
+}

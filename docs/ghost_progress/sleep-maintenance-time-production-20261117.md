@@ -90,3 +90,8 @@ compaction/snapshot/report中的审计时间与随机ID不参与本矩阵行为d
 `.e2e-artifacts/ghost-sleep-clock-20261117/`；仓库只保留实验脚本、脱敏指标及命令。
 下一步继续固定事件的TTL/过期持久投影、稳定排序/digest与其他领域重放，再推进其余
 admission/controls边界和真实World Model闭环；不恢复已停止语言实机批次。
+
+2026-11-17 后续：[continuity过期持久事实与消费者](continuity-expiry-production-20261117.md)
+已默认闭合continuity过期清理/重建/新队列消费及旧同步日志输入；原18项3→18、旧日志9项
+3→9通过，最终1064/4子测试及完整静态门通过。本报告原15-cell测量与历史限制不改，
+其余维护入口、稳定排序/digest与全领域replay仍待验收。
