@@ -10,6 +10,10 @@
 
 ## 当前状态
 
+World Model [结构化复盘传输对照](world-model-structured-review-20261118.md)已冻结：
+保持原 scorer/任务，在两臂共同加同一 wire JSON schema，单独评估预测复盘是否有额外收益。
+新矩阵尚未执行，前序负结果不重判，不改变生产默认。
+
 World Model 首个[验证复盘消费者实验](world-model-verification-review-20261118.md)已完成真实
 check/proof→prediction→review→独立投影/admission→Gemma 的 40 次请求。严格 action
 scorer on/off 均 0/20（全为带围栏 JSON），输入 token +16.3%；按冻结门终止本候选接口，
