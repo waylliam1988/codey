@@ -1,9 +1,10 @@
 # Ghost 原生回执不完整 HTTP 响应生产修复与暂停交接
 
-- 状态：`PRODUCTION_MERGED`（普通JSON generation默认路径；本批验收通过，提交收尾后暂停）
+- 状态：`PRODUCTION_MERGED`（普通JSON generation默认路径；本批已完成，按用户要求暂停）
 - 日期：2026-11-17
 - 关联：0.6.1 / 0.6.2
 - 原始实验 commit：`c9487a65b88c25c34998122bfac5307a5ec70ec0`
+- 生产修复 commit：`36e97ea4078c3930c26e46139d0d8be757623f50`
 - 原始测量：[72项冻结基线](native-uncertain-response-baseline-20261117.md)，48通过、24生产失败。
 - 用户要求：本批处理完后暂停，维护交接文档并commit，不启动下一批。
 
@@ -65,7 +66,7 @@ python -m mypy codey/providers/api_generation.py tests/test_ghost_native_uncerta
 
 ## 暂停交接
 
-本批验证完成，文档与提交收尾后按用户要求停下。所有本批测试/检查进程已退出，无待轮询句柄。
+本批验证、文档和生产修复提交已完成，按用户要求停下。所有本批测试/检查进程已退出，无待轮询句柄。
 继续工作须由用户重新启动；不自动展开下一批。没有新增模块，无需runtime发布清单更新。
 
 接班先读本文、[进度板](README.md)、[路线图](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量)、

@@ -1,6 +1,7 @@
 {
   "experiment": "native-uncertain-response-production-20261117",
   "status": "PRODUCTION_MERGED",
+  "production_commit": "36e97ea4078c3930c26e46139d0d8be757623f50",
   "baseline_revision": "c9487a65b88c25c34998122bfac5307a5ec70ec0",
   "model": "deterministic-native-receipt-fixture",
   "external_model_calls": 0,
