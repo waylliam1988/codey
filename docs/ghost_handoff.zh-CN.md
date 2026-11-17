@@ -12,6 +12,11 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
+2026-11-17 最新混合删除修复：[graph 精确替换](ghost_progress/graph-exact-replacement-20261117.md)
+已在正常 Hebbian/Affinity owner 默认生效，同一不同操作矩阵由 28/36 提升为 36/36，
+相关回归 675 passed / 141 subtests 及全树静态门通过；Manifest 默认控制面调度仍须继续接线，
+不要重跑已停止的语言批次或把本次 graph 修复等同完整 0.6.3 / World Model。
+
 2026-11-17 最新接收生命周期进展：[输入接收登记](ghost_progress/received-input-admission-wiring-20261117.md)
 已在新 task commit 前默认接线，覆盖 busy queue、普通提交、headless、重启与限定崩溃边界。
 后续 [canonical 接收结果](ghost_progress/canonical-input-receipt-20261117.md)把登记/隔离失败结果

@@ -1877,6 +1877,11 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 后续生产修复：graph 精确保留所有索引列及 payload 均未变的行，新建/变化
+节点与变化边仍拒绝退役来源。同一混合矩阵 36/36 全有效且通过，相关回归 675 passed /
+141 subtests 及全树静态门通过。正常 Hebbian/Affinity 默认使用此修复，Manifest 默认
+调度仍未接入，见[精确替换复验](docs/ghost_progress/graph-exact-replacement-20261117.md)。
+
 2026-11-17 不同 operation 混合生命周期基线：36 cell 全有效，28 passed / 8 failed；
 不同项目删除在 inbox 已退役、graph 未删除窗口交错时，graph 整体重插保留节点触发
 退役输入 guard，两个 operation 及新 operation 恢复均可 blocked，rebuild 失败。

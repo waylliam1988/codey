@@ -23,6 +23,14 @@ def _decoded_row(row: sqlite3.Row) -> dict[str, object]:
     return decoded_object(encoded)
 
 
+def _stored_values(row: sqlite3.Row) -> tuple[object, ...]:
+    values: list[object] = []
+    for index in range(len(row)):
+        value: object = row[index]
+        values.append(value)
+    return tuple(values)
+
+
 class GhostGraph:
     """One of the two learning graphs; no file projection or fallback owner.
 
@@ -134,25 +142,59 @@ class GhostGraph:
     def replace_rows(self, nodes: Iterable[Mapping[str, object]], edges: Iterable[Mapping[str, object]]) -> None:
         with self.transaction():
             database = self._db()
-            database.execute("DELETE FROM graph_nodes WHERE graph=?", (self.name,))
+            stored_nodes: Iterable[sqlite3.Row] = database.execute(
+                "SELECT id,kind,scope,scope_ref,status,weight,payload FROM graph_nodes WHERE graph=?", (self.name,),
+            )
+            previous_nodes: dict[str, tuple[object, ...]] = {}
+            for row in stored_nodes:
+                values = _stored_values(row)
+                stored_identity = values[0]
+                if not isinstance(stored_identity, str):
+                    raise OSError("invalid stored Ghost graph identity")
+                previous_nodes[stored_identity] = values
+            stored_edges: Iterable[sqlite3.Row] = database.execute(
+                "SELECT source,target,relation,weight,payload FROM graph_edges WHERE graph=?", (self.name,),
+            )
+            previous_edges: set[tuple[object, ...]] = {_stored_values(row) for row in stored_edges}
+            database.execute("DELETE FROM graph_edges WHERE graph=?", (self.name,))
+            seen: set[str] = set()
             for node in nodes:
+                identity = node["id"]
+                if not isinstance(identity, str):
+                    raise ValueError("Ghost graph node identity must be a string")
+                if identity in seen:
+                    raise sqlite3.IntegrityError("duplicate Ghost graph node identity")
+                seen.add(identity)
+                desired = (identity, node["kind"], node["scope"], node["scope_ref"], node["status"], node["weight"], _encode(node))
+                # A different scope may already have retired this unchanged
+                # row's inputs while its own graph deletion is still pending.
+                # Preserve it exactly; changed/new rows still use INSERT and
+                # its retired-input guard, including indexed-column repairs.
+                if previous_nodes.pop(identity, None) == desired:
+                    continue
+                database.execute("DELETE FROM graph_nodes WHERE graph=? AND id=?", (self.name, identity))
                 database.execute(
                     "INSERT INTO graph_nodes(graph,id,kind,scope,scope_ref,status,weight,payload) VALUES(?,?,?,?,?,?,?,?)",
-                    (
-                        self.name,
-                        node["id"],
-                        node["kind"],
-                        node["scope"],
-                        node["scope_ref"],
-                        node["status"],
-                        node["weight"],
-                        _encode(node),
-                    ),
+                    (self.name, *desired),
                 )
+            for identity in previous_nodes:
+                database.execute("DELETE FROM graph_nodes WHERE graph=? AND id=?", (self.name, identity))
             for edge in edges:
+                desired_edge = (edge["source"], edge["target"], edge["relation"], edge["weight"], _encode(edge))
+                if desired_edge not in previous_edges:
+                    # Retaining a node must not permit new learning through a
+                    # new/changed edge attached to its retired candidate.
+                    retired: sqlite3.Row | None = database.execute(
+                        "SELECT 1 FROM graph_nodes AS node, json_each(node.payload,'$.candidate_ids') AS candidate "
+                        "JOIN ghost_retired_inputs AS retired ON retired.identity=candidate.value "
+                        "WHERE node.graph=? AND node.id IN (?,?) AND retired.kind='candidate' LIMIT 1",
+                        (self.name, edge["source"], edge["target"]),
+                    ).fetchone()
+                    if retired is not None:
+                        raise sqlite3.IntegrityError("deleted Ghost graph input")
                 database.execute(
                     "INSERT INTO graph_edges(graph,source,target,relation,weight,payload) VALUES(?,?,?,?,?,?)",
-                    (self.name, edge["source"], edge["target"], edge["relation"], edge["weight"], _encode(edge)),
+                    (self.name, *desired_edge),
                 )
             database.execute(
                 "INSERT INTO graph_consumers(graph,applied_sequence) SELECT ?,coalesce(max(sequence),0) "
