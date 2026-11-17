@@ -1,7 +1,7 @@
 # Sleep 维护控制撤回
 
 - 日期：2026-11-18；关联验收：0.6.2、0.6.4。
-- 状态：`FROZEN`；基线生产提交：`b9b189c6`。
+- 状态：`EXPERIMENT_COMPLETE`（有效生产失败，待修复）；基线生产提交：`b9b189c6`。
 - 无模型/endpoint/采样参数：本实验验证真实 App 默认 Sleep 与 SQLite 控制边界，不作模型收益主张。
 
 ## 冻结矩阵与判定
@@ -36,3 +36,26 @@
 原始 SQLite、完整日志/XML 留 `.e2e-artifacts/ghost-maintenance-revocation-20261118/`；
 仓库只保存 typed 可复现实验和脱敏指标。停止条件：基线矩阵完成或 fixture 错误；
 生产矩阵任意有效 cell 不满足原契约则不晋级，不修改 scorer。
+
+## 基线结果
+
+冻结 `1dd89214` 后有效矩阵 **9 passed / 9 failed**，18 项夹具均有效。
+开启组全部回收两个真实过期 lease；三个撤回窗口×三个 scope 均在 deny 提交后继续
+修改领域行/原事件，报告均未 cancelled。前两个窗口涉及同步、衰减、continuity 和
+queue；第三个窗口仍回收 queue lease。真实普通 App/默认 daemon 已复现，不是仅静态猜测。
+
+首轮 **6 passed / 12 failed**：其中六个 session 项因夹具用 raw session identity，
+公开 queue filter 需要 `session_key`，尚未形成完整有效 cell；其余六个关闭失败有效。
+修正种入的 queue scope_ref 后重跑完整矩阵，原 scorer/断言未放宽；首轮完整日志保留。
+
+```powershell
+python -m pytest tests/test_ghost_maintenance_revocation.py -q -s --tb=short --basetemp=.e2e-artifacts/ghost-maintenance-revocation-20261118/baseline-valid-state --junitxml=.e2e-artifacts/ghost-maintenance-revocation-20261118/baseline-valid.xml
+python -m pytest tests/test_ghost_sleep.py tests/test_ghost_sleep_source_controls.py tests/test_ghost_sleep_clock_boundary.py tests/test_ghost_maintenance_as_of.py tests/test_ghost_controls.py tests/test_learning_switch_fail_closed.py -q
+```
+
+后者六文件 **120 passed**。指定全仓 Ruff、完整 702 文件生产树 mypy/Pyrefly/ty 和
+precision gate 均通过；Pyrefly 158 warnings/35 suppressed 与既有结果相同。
+新增实验文件三类型检查通过，额外 mypy `--disallow-any-expr` owned 零诊断；未修改依赖
+334 文件 10864 项诊断导致该额外审计 exit 1，不能声称整个项目 Any 清零。
+命令/退出码、18 项 digest 和实际变化见
+[脱敏基线](../../tests/manual/ghost_memory_routing/reports/maintenance-control-baseline-20261118.json)。

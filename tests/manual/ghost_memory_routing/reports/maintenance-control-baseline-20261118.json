@@ -1,0 +1,520 @@
+{
+  "experiment": "Sleep maintenance control revocation",
+  "status": "EXPERIMENT_COMPLETE",
+  "baseline_production": "b9b189c6",
+  "freeze_commit": "1dd89214",
+  "model_called": false,
+  "cells": [
+    {
+      "at_control_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "5e404ef94b37dba3fd0d5f3592681a0d90bb2c46aa8557302d90ad2737563a4a",
+      "fixture_valid": true,
+      "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+      "pass": true,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "scope": "user",
+      "window": "before_worker"
+    },
+    {
+      "at_control_digest": "36d6c73b3c8a58dbb34fe88138007d66a7b7056696e37b76ef1082eaab613acd",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "140952f8d2fb041d11b807d8f8213b9269477b1d772211fb21e502487b8eaa14",
+      "fixture_valid": true,
+      "initial_digest": "36d6c73b3c8a58dbb34fe88138007d66a7b7056696e37b76ef1082eaab613acd",
+      "pass": true,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "scope": "project",
+      "window": "before_worker"
+    },
+    {
+      "at_control_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "8f8436302152dc82fc4a08cb82ec3d04d81414ccad8c6966c129dee5a5c76200",
+      "fixture_valid": true,
+      "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+      "pass": true,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "scope": "session",
+      "window": "before_worker"
+    },
+    {
+      "at_control_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "c2bf23ea32fd1270acd46b22b6fc04a80044d518a92f78c0963950418b6d9c72",
+      "fixture_valid": true,
+      "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+      "pass": true,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "scope": "user",
+      "window": "after_health"
+    },
+    {
+      "at_control_digest": "7a7d7bfbc9d6ab56a4de979910220f1202358c285252cf645edd7dc84775ad2c",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "854ad85e3ec02767818ce97e63f065f977676c4c51ffd2a6609667b5b935abf2",
+      "fixture_valid": true,
+      "initial_digest": "7a7d7bfbc9d6ab56a4de979910220f1202358c285252cf645edd7dc84775ad2c",
+      "pass": true,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "scope": "project",
+      "window": "after_health"
+    },
+    {
+      "at_control_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "ab16015503998d7b7cef313d1a1a9daf512071bdd5b14c0c3c948f503b4cc355",
+      "fixture_valid": true,
+      "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+      "pass": true,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "scope": "session",
+      "window": "after_health"
+    },
+    {
+      "at_control_digest": "8b3d3edd776cd9ae750947e12d9c88668a7e83486740b158fd418abfe89b36b5",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "f0ea4120a61b1c996f15ac2c435d673cb7e6d8650d79449fc1d4cecf2bbd50cc",
+      "fixture_valid": true,
+      "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+      "pass": true,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "scope": "user",
+      "window": "after_inbox_compaction"
+    },
+    {
+      "at_control_digest": "2ee65e4c22fd48cc2756518e571891eb8bd6d157d165f163b724195207e951ce",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "91ab527a03f422544247c217f2ba6d4e67903d8c7dc7490ff92f55e70c150050",
+      "fixture_valid": true,
+      "initial_digest": "b40faf5f57c316e219648429f4b351853e2a941f524277b3c1daac0a894800c1",
+      "pass": true,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "scope": "project",
+      "window": "after_inbox_compaction"
+    },
+    {
+      "at_control_digest": "06756d228391538f41393942525ebf8775df4b01fd52de8d69a1c839cfdbb6c4",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "f418a8859f24b867d4485c0ba25f9b50e8c9b0bb0c198c01f108aea8ea545831",
+      "fixture_valid": true,
+      "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+      "pass": true,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": false,
+      "scope": "session",
+      "window": "after_inbox_compaction"
+    },
+    {
+      "at_control_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "4f65dd090b6ac0c8fe0a08b262a9b06527bf6c829d6944bb32fd1a00c739e6fc",
+      "fixture_valid": true,
+      "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+      "pass": false,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "scope": "user",
+      "window": "before_worker"
+    },
+    {
+      "at_control_digest": "eb32e00a8d32fde6c95389186ab147b50b1f0fa2be40bd4deed5bea79788166a",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "9e71b79b4ac254757ab5668af8d33256b744a533de33293087ae1ee3f25397e1",
+      "fixture_valid": true,
+      "initial_digest": "eb32e00a8d32fde6c95389186ab147b50b1f0fa2be40bd4deed5bea79788166a",
+      "pass": false,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "scope": "project",
+      "window": "before_worker"
+    },
+    {
+      "at_control_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "cffaef0e14f12e27cbc65fd210585a2434966c088c24f2ef7861d5395b279b8f",
+      "fixture_valid": true,
+      "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+      "pass": false,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "scope": "session",
+      "window": "before_worker"
+    },
+    {
+      "at_control_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "d1ae652a7d4441a9504537e4abd5ea0f3044c0d7fd8ba9320e3d92c374371b42",
+      "fixture_valid": true,
+      "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+      "pass": false,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "scope": "user",
+      "window": "after_health"
+    },
+    {
+      "at_control_digest": "68c60574755b5cb6b5961b4313a595ed27c15fa33235538cae437a81c5b17654",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "99c891b1c546be41c002cdc45c406596f77cad1c320232b96a7ee437feac8ee1",
+      "fixture_valid": true,
+      "initial_digest": "68c60574755b5cb6b5961b4313a595ed27c15fa33235538cae437a81c5b17654",
+      "pass": false,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "scope": "project",
+      "window": "after_health"
+    },
+    {
+      "at_control_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "17c5539e29887354d77b0a639e3a593abdd8965e659217b52f508188dc1d0b40",
+      "fixture_valid": true,
+      "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+      "pass": false,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "affinity_events",
+        "affinity_rows",
+        "continuity_events",
+        "continuity_rows",
+        "hebbian_events",
+        "hebbian_rows",
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "scope": "session",
+      "window": "after_health"
+    },
+    {
+      "at_control_digest": "76112defc847f07a484164c6c119de0f48ae9f3231834e10f66ffc2e34ca0076",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "0425dbd305b936ecc5d374bd938e0076564c8b8b92d7699f778dab646d19821c",
+      "fixture_valid": true,
+      "initial_digest": "92144c40032a5c38e19371d5bafbe5b59e1399185d655302bbd0aec1284c8655",
+      "pass": false,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "scope": "user",
+      "window": "after_inbox_compaction"
+    },
+    {
+      "at_control_digest": "2a42c14b2e05fa8affeada59dbe9090c8bc8f5338275c71649afe053bafbdc5e",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "ebe9ef0e944ea3987484acecd9da189fdef00eb1339e36797e8248b0ad15ae5f",
+      "fixture_valid": true,
+      "initial_digest": "639092f57b50b3e8ea9dea3a11903bd57543e36659b30c7a9fdf73213d718e1b",
+      "pass": false,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "scope": "project",
+      "window": "after_inbox_compaction"
+    },
+    {
+      "at_control_digest": "2e1be1879cca92469828727cc110ba689f230627a1d6ee568ac71a9537fc9e9f",
+      "cancelled": false,
+      "committed_while_paused": true,
+      "final_digest": "17a01527d2dddc5ea95c9f41abddf7a69862ebe999280dfbd0868b013c430988",
+      "fixture_valid": true,
+      "initial_digest": "49017a112077903e1f605df5d56b0a4a0f233a713dbe13f7b9d85986a51df316",
+      "pass": false,
+      "pending_steps": [],
+      "post_commit_changes": [
+        "queue_events",
+        "queue_rows"
+      ],
+      "queue_statuses": [
+        "queued",
+        "queued"
+      ],
+      "revoked": true,
+      "scope": "session",
+      "window": "after_inbox_compaction"
+    }
+  ],
+  "sample_size": 18,
+  "passed": 9,
+  "failed": 9,
+  "regression": "120 passed",
+  "checks": [
+    {
+      "command": "python -m ruff check .",
+      "exit_code": 0,
+      "seconds": 0.320896,
+      "log": "baseline-check-0.log"
+    },
+    {
+      "command": "python -m mypy codey --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 24.8000212,
+      "log": "baseline-check-1.log"
+    },
+    {
+      "command": "pyrefly check codey --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 0.7498288,
+      "log": "baseline-check-2.log"
+    },
+    {
+      "command": "ty check codey --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 0.5852887,
+      "log": "baseline-check-3.log"
+    },
+    {
+      "command": "python -m tools.kernel_type_precision_gate",
+      "exit_code": 0,
+      "seconds": 1.8181246,
+      "log": "baseline-check-4.log"
+    },
+    {
+      "command": "python -m mypy tests/test_ghost_maintenance_revocation.py --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 9.1464448,
+      "log": "baseline-check-5.log"
+    },
+    {
+      "command": "pyrefly check tests/test_ghost_maintenance_revocation.py --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 0.5158629,
+      "log": "baseline-check-6.log"
+    },
+    {
+      "command": "ty check tests/test_ghost_maintenance_revocation.py --python-version 3.11",
+      "exit_code": 0,
+      "seconds": 0.271223,
+      "log": "baseline-check-7.log"
+    },
+    {
+      "command": "python -m mypy tests/test_ghost_maintenance_revocation.py --python-version 3.11 --disallow-any-expr",
+      "exit_code": 1,
+      "seconds": 25.8374808,
+      "log": "baseline-check-8.log"
+    }
+  ],
+  "preflight": "First batch: 6 passed, 6 valid production failures, 6 invalid session queue filters. Original logs retained; queue fixture now uses canonical session_key. Scorer unchanged."
+}
