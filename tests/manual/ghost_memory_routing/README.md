@@ -27,6 +27,14 @@
 
 ## 文件与数据位置
 
+2026-11-18 G0 [Queue逐记录维护](../../../docs/ghost_progress/queue-record-maintenance-production-20261118.md)：
+入口 `python -m pytest tests/test_ghost_queue_record_maintenance.py -q -s --tb=short`，46项通过；
+最终20文件495项与全静态门通过，三个owned Any零诊断。普通App/default daemon及直接
+owner默认消费；报告 `reports/queue-record-maintenance-production-20261118.json`。
+原四领域矩阵不改仍6通过/6失败，queue子比较12/12，其余三个领域未修；scope限制下queue
+checkpoint暂缓/窗口可能超预算、未知父project时session暂停的限制均保留。
+原始state/log/XML在`.e2e-artifacts/ghost-queue-record-maintenance-20261118`，未调用模型。
+
 2026-11-18 G0 [Sleep 维护撤回与独立控制兼容](../../../docs/ghost_progress/maintenance-control-revocation-20261118.md)：
 入口 `python -m pytest tests/test_ghost_maintenance_revocation.py tests/test_ghost_control_materialization.py tests/test_ghost_maintenance_control_boundary.py -q -s --tb=short`。
 撤回18格9→18、纯控制96格92→96，44项追加边界；生产 `06c8cfc4`/`5407430f` 在普通

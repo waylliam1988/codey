@@ -1863,10 +1863,11 @@ rendered envelope 才能交给 provider。trace 只记录准入结果，不能�
 
 #### 0.6.2 - Scope Control and Four Learning Switches
 
-2026-11-18 [跨scope记录保护基线](docs/ghost_progress/maintenance-record-scope-20261118.md)：
-普通App的12格6通过/6失败，另一允许scope触发Sleep会改变明确关闭的project/session
-记录，Hebbian/Affinity/continuity/queue四领域均复现；431/2子测试与全静态门通过。
-生产未改，触发scope的在途控制修复不能替代记录scope保护，后续需逐记录修复并验收。
+2026-11-18 [跨scope记录保护](docs/ghost_progress/maintenance-record-scope-20261118.md)：
+原普通App12格6通过/6失败，四领域均复现。[Queue随后默认修复](docs/ghost_progress/queue-record-maintenance-production-20261118.md)，
+新增46项/最终495项及全静态门通过，三个owned Any零诊断。原scorer重验仍6/6，queue
+子比较12/12；Hebbian/Affinity/continuity仍待修。缺父project的session保守暂停；scope
+限制下queue全库checkpoint暂缓，消费窗口有界化未闭合，不称整个0.6.2/G0完成。
 
 2026-11-18：[Sleep 维护撤回与控制 fallback](docs/ghost_progress/maintenance-control-revocation-20261118.md)
 已默认生产：Sleep `06c8cfc4` 同事务读取 scoped maintenance 与执行写步骤/逐 store compaction，
@@ -2099,6 +2100,12 @@ store 执行顺序必须可回放；manifest 损坏时 fail closed，不能恢�
 manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线 fixture 通过不等于全 scope 验收。
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
+
+2026-11-18：[Queue逐记录维护](docs/ghost_progress/queue-record-maintenance-production-20261118.md)
+已默认消费实际scope控制与原transition事件，重建不按当前权限重做历史维护；满容量、
+真实写回滚、并发撤回/重启/删除及checkpoint暂停/恢复验收通过。新增46项、最终495项
+及全树静态门通过。消费窗口在scope限制期间可能超预算，选择性有界checkpoint、其他
+三个领域逐记录维护与完整生命周期仍缺，0.6.4/G0保持未完成。
 
 2026-11-18：[维护控制撤回](docs/ghost_progress/maintenance-control-revocation-20261118.md)
 已补齐同事务步骤准入、逐 store compaction 取消、queue lease/compaction 原子失败回滚及

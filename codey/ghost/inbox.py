@@ -36,6 +36,7 @@ from codey.ghost.typed_fields import metadata_conflict_key, metadata_value_key
 from codey.runtime.core import cancellation
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
+    session_key,
 )
 
 INBOX_SCHEMA_VERSION = 1
@@ -55,6 +56,32 @@ MAX_CANDIDATE_EVIDENCE_REFS = 32
 _TOKEN_RE = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]+", re.IGNORECASE)
 _PROJECTION_KIND = "ghost_memory_inbox_projection"
 _STORED_REJECTION_REASONS = {"confidence_below_candidate_threshold"}
+
+
+@dataclass(frozen=True)
+class GhostMaintenancePolicy:
+    """One validated authority snapshot; callers own its write transaction."""
+
+    enabled: bool
+    denied_projects: frozenset[str]
+    denied_session_keys: frozenset[str]
+
+    @property
+    def allows_global_checkpoint(self) -> bool:
+        return self.enabled and not self.denied_projects and not self.denied_session_keys
+
+    def allows_queue_record(self, scope: str, scope_ref: str) -> bool:
+        if not self.enabled:
+            return False
+        if scope == "user":
+            return not scope_ref
+        if scope == "project":
+            return bool(scope_ref) and _common.normalize_project(scope_ref) not in self.denied_projects
+        if scope == "session":
+            # Queue session refs cannot establish their parent project. A project
+            # denial must not be bypassed by guessing an unrelated parent.
+            return bool(scope_ref) and not self.denied_projects and scope_ref not in self.denied_session_keys
+        return False
 
 
 def _object_fields(value: object) -> TypeGuard[dict[str, object]]:
@@ -612,6 +639,31 @@ class GhostInboxStore:
             return self._effective_controls_unlocked(
                 self._read_settings_unlocked(), project=project, session_id=session_id,
             )
+
+    def maintenance_policy(self) -> GhostMaintenancePolicy:
+        """Decode all record overrides, including scopes other than the trigger."""
+        with self.records.transaction(write=False):
+            settings = self._read_settings_unlocked()
+            enabled = self._effective_controls_unlocked(settings)["run_maintenance"]
+            scoped = settings.get("control_scopes", {})
+            if not _object_fields(scoped):
+                raise GhostSettingsError(self.database.path, "control_scopes must be object")
+            denied: dict[str, set[str]] = {"project": set(), "session": set()}
+            for scope, identities in denied.items():
+                bucket = scoped.get(scope, {})
+                if not _object_fields(bucket):
+                    raise GhostSettingsError(self.database.path, f"{scope} controls must be object")
+                for scope_ref, entry in bucket.items():
+                    if not scope_ref or not _object_fields(entry):
+                        raise GhostSettingsError(self.database.path, "invalid control scope entry")
+                    for name in GHOST_CONTROL_NAMES:
+                        value = entry.get(name)
+                        if value is not None and type(value) is not bool:
+                            raise GhostSettingsError(self.database.path, f"{name} must be bool")
+                    if entry.get("run_maintenance") is False:
+                        identities.add(_common.normalize_project(scope_ref) if scope == "project"
+                                       else session_key(clip_signal_text(scope_ref, 120)))
+            return GhostMaintenancePolicy(enabled, frozenset(denied["project"]), frozenset(denied["session"]))
 
     def set_control(
         self,

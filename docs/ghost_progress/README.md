@@ -10,11 +10,13 @@
 
 ## 当前状态
 
-[跨 scope 自动维护记录保护](maintenance-record-scope-20261118.md)有效基线已完成：12格
-6通过/6失败。另一个允许的 user/project/session 触发普通 App Sleep，仍会改变明确
-关闭的 project/session 记录，四领域均受影响。开启邻居正常；14文件431/2子测试及
-全静态门通过，新增fixture owned Any零诊断。生产尚未改，不能把此前触发scope撤回
-通过外推为逐记录保护。下一步冻结相关修复，原始夹具错误单独留档。
+[Queue逐记录维护](queue-record-maintenance-production-20261118.md)已在master默认修复：
+普通App/default daemon和直接owner按写锁内实际scope控制选择租约，原transition确定性
+重放；新增46项、最终20文件495项与全静态门通过，三个owned文件额外Any零诊断。
+[四领域原12格](maintenance-record-scope-20261118.md)不改scorer，仍6通过/6失败；queue
+子比较12/12，Hebbian/Affinity/continuity的deny组仍失败。scope限制下queue全库checkpoint
+暂缓、窗口可能超预算；缺canonical父project时session保守暂停回收。继续其他三个领域、
+选择性有界checkpoint及完整生命周期，不称整个G0通过。原始锁竞争/夹具/Any失败均保留。
 
 [Sleep 维护撤回及单项控制兼容](maintenance-control-revocation-20261118.md)已在本地 master 默认修复：
 Sleep `06c8cfc4` 将 scoped 控制读取与写步骤/逐 store compaction 放在同事务，原 18 格

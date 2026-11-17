@@ -1,7 +1,7 @@
 # 跨 scope 自动维护的记录保护
 
 - 日期：2026-11-18；关联：0.6.2、0.6.4。
-- 状态：`EXPERIMENT_COMPLETE`（有效负结果，尚未修复）；生产基线 `9ef0f712`。
+- 状态：`EXPERIMENT_COMPLETE`（有效负结果；queue随后独立修复，其余三个领域未修）；生产基线 `9ef0f712`。
 - 无模型/endpoint/temperature：验证普通 App 的控制与持久记录边界，不宣称模型行为收益。
 - 依赖：触发 scope 在途撤回和控制 fallback 已由 `06c8cfc4`/`5407430f` 默认修复，不重复实现。
 
@@ -92,3 +92,11 @@ canonical父project来源；存在任一project deny时，session记录保守不
 停止条件为冻结验收完成或fixture/检查错误；错误归属与原始日志保留，不能放宽scorer。
 修复通过相关回归、全仓Ruff/三生产树类型检查/precision及owned额外Any审计后，默认
 接入master并独立提交。原四领域矩阵仍作为未闭合总门；后续逐领域继续，不宣称G0完成。
+
+## Queue 分轮结果
+
+[Queue生产修复](queue-record-maintenance-production-20261118.md)新增46项与最终20文件495项
+通过，全部指定静态门通过，三个owned文件额外Any零诊断。原12格再次6通过/6失败，
+queue子比较已12/12，其余三个领域的关闭组仍失败；原scorer不改，不称全局修复。
+普通App/default daemon及直接owner默认消费，有scope限制时暂缓queue全库checkpoint；
+窗口可能超预算和未知父project的session保守暂停均明确保留，不算完整G0完成。

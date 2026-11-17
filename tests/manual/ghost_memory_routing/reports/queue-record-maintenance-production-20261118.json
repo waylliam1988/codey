@@ -1,0 +1,587 @@
+{
+  "experiment": "queue record maintenance and checkpoint admission",
+  "status": "PRODUCTION_MERGED",
+  "baseline_production": "a5cf011f",
+  "freeze": "1b8d3e3d",
+  "baseline_evidence": "maintenance-record-scope-baseline-20261118.json",
+  "model_called": false,
+  "queue_matrix": {
+    "passed": 12,
+    "cells": [
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": false,
+        "target_changed": true,
+        "target_scope": "project",
+        "trigger_scope": "user"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": false,
+        "target_changed": true,
+        "target_scope": "session",
+        "trigger_scope": "user"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": false,
+        "target_changed": true,
+        "target_scope": "project",
+        "trigger_scope": "project"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": false,
+        "target_changed": true,
+        "target_scope": "session",
+        "trigger_scope": "project"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": false,
+        "target_changed": true,
+        "target_scope": "project",
+        "trigger_scope": "session"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": false,
+        "target_changed": true,
+        "target_scope": "session",
+        "trigger_scope": "session"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": true,
+        "target_changed": false,
+        "target_scope": "project",
+        "trigger_scope": "user"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": true,
+        "target_changed": false,
+        "target_scope": "session",
+        "trigger_scope": "user"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": true,
+        "target_changed": false,
+        "target_scope": "project",
+        "trigger_scope": "project"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": true,
+        "target_changed": false,
+        "target_scope": "session",
+        "trigger_scope": "project"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": true,
+        "target_changed": false,
+        "target_scope": "project",
+        "trigger_scope": "session"
+      },
+      {
+        "pass": true,
+        "peer_changed": true,
+        "revoked": true,
+        "target_changed": false,
+        "target_scope": "session",
+        "trigger_scope": "session"
+      }
+    ],
+    "sample_size": 12,
+    "provenance": "Printed measurements from 46-pass queue-final batch before a pure metric-dict type annotation fix; final expanded 495-pass batch reran all46 assertions on final owned source bytes."
+  },
+  "new_boundary_tests": 34,
+  "new_tests_total": 46,
+  "regression": {
+    "files": 20,
+    "seconds": 79.18,
+    "passed": 495,
+    "failed": 0,
+    "log": "expanded.log",
+    "command": "python -m pytest tests/test_ghost_queue_record_maintenance.py tests/test_ghost_maintenance_revocation.py tests/test_ghost_maintenance_control_boundary.py tests/test_ghost_control_materialization.py tests/test_ghost_controls.py tests/test_ghost_control_contract.py tests/test_ghost_control_mutation_failures.py tests/test_ghost_sleep.py tests/test_ghost_sleep_clock_boundary.py tests/test_ghost_sleep_source_controls.py tests/test_ghost_maintenance_as_of.py tests/test_ghost_work_queue.py tests/test_ghost_work_queue_ownership.py tests/test_ghost_work_queue_ab.py tests/test_ghost_post_turn_work_queue.py tests/test_work_queue_transition_split.py tests/test_work_queue_sources_own_conversions.py tests/test_work_queue_events_owns_replay.py tests/test_work_queue_no_legacy_aliases.py tests/test_work_queue_claim_preserves_invalid_retry_count.py -q --tb=short --basetemp=.e2e-artifacts/ghost-queue-record-maintenance-20261118/expanded-state --junitxml=.e2e-artifacts/ghost-queue-record-maintenance-20261118/expanded.xml"
+  },
+  "four_domain_recheck": {
+    "passed": 6,
+    "remaining_failed_domains": [
+      "hebbian",
+      "affinity",
+      "continuity"
+    ],
+    "exit_code": 1,
+    "sample_size": 12,
+    "cells": [
+      {
+        "fixture_valid": true,
+        "pass": true,
+        "peer_after_digest": "a1a18d16098d00ff86850b9b9652bab5f2213c099a2b4d4f8a9e02045a312d4f",
+        "peer_before_digest": "22bd32d596a076cf9ccd81c8feae56787de5ce2a8d29932632c2cb4b0f9710c6",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "target_after_digest": "2ac7250b5746fa503b2f67a3d42cd5fc1d6083e52bd7a25295922faa8ea776e7",
+        "target_before_digest": "65bc1d4dceb80e339fb38271259ae06f4ab43b6424472dbe0e60f8a723875fdb",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "target_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "target_scope": "project",
+        "trigger_scope": "user"
+      },
+      {
+        "fixture_valid": true,
+        "pass": true,
+        "peer_after_digest": "51607bf999a77cf6162195bd736c23905efaa98479c3c6857451d3c4fe0ee9be",
+        "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "target_after_digest": "129e78bb2c8761c2a4384c1ea45c180587b8247753ee90c0c4edc6d1fb3d1a95",
+        "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "target_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "target_scope": "session",
+        "trigger_scope": "user"
+      },
+      {
+        "fixture_valid": true,
+        "pass": true,
+        "peer_after_digest": "95a2311f03f2bf8eaa7ddf8cc519ab1ec180a1a98eeec39412289e3abe1293ef",
+        "peer_before_digest": "0c3358be9b56151d608f934cf2143367db6099a65f81f500003c7d5157c0b2e8",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "target_after_digest": "d5fa6734db50b81cee73d1ae79999fbc6765cbaad5ca5ebdf5d315190a5061d5",
+        "target_before_digest": "c4e62d6c7a539f9e3275ad62a38e626943dafdbf65f5db6f786f03e255f08526",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "target_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "target_scope": "project",
+        "trigger_scope": "project"
+      },
+      {
+        "fixture_valid": true,
+        "pass": true,
+        "peer_after_digest": "51607bf999a77cf6162195bd736c23905efaa98479c3c6857451d3c4fe0ee9be",
+        "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "target_after_digest": "129e78bb2c8761c2a4384c1ea45c180587b8247753ee90c0c4edc6d1fb3d1a95",
+        "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "target_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "target_scope": "session",
+        "trigger_scope": "project"
+      },
+      {
+        "fixture_valid": true,
+        "pass": true,
+        "peer_after_digest": "7e8d06f99abc57faf1bde2df42b75c22cd210c2ca450f3220c33019af018de86",
+        "peer_before_digest": "9c50af6afbe1f02e2ff7b35a7ba28898683fcd26dbb737db54a9bd07baffe183",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "target_after_digest": "0ab9774f3dbd0c347843fdf51f004b2f222f87f57752eed5c252d15b9bc0f7e6",
+        "target_before_digest": "9e4d32d71d611b0432aac50d6427a0685edf80fc9f8f11fa48d2c579e02728ee",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "target_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "target_scope": "project",
+        "trigger_scope": "session"
+      },
+      {
+        "fixture_valid": true,
+        "pass": true,
+        "peer_after_digest": "a507a84c4a15d779ab91032b4e61a57824c21b37c73efb1af492506430caab53",
+        "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": false,
+        "target_after_digest": "fafe023f2ccce82ceb8ca06d54297b639ba1b4d19d6d794b543c2b4f858ac5d2",
+        "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "target_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "target_scope": "session",
+        "trigger_scope": "session"
+      },
+      {
+        "fixture_valid": true,
+        "pass": false,
+        "peer_after_digest": "bc672a245f46a90db8322ff2a8309de6548f708fc2af1a5fc079045f7cbaf3dd",
+        "peer_before_digest": "6c4f056eedd7f71601e70aea00a723dc616fab7e5b32c28ebf6b929c1b560fd3",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": true,
+        "target_after_digest": "092b100f5a006a548d64e419438037c71924633f3e8dd37127595102b2e30302",
+        "target_before_digest": "3881264ca42fef36bcf458045de230c5eb939eba7ea9115a7136435a897458b2",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": false
+        },
+        "target_queue_statuses": [
+          "running",
+          "running"
+        ],
+        "target_scope": "project",
+        "trigger_scope": "user"
+      },
+      {
+        "fixture_valid": true,
+        "pass": false,
+        "peer_after_digest": "c3402a7c98914c6a77e8bde9cb78e227e03d0102b2076fc50c1a6dfcedb10142",
+        "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": true,
+        "target_after_digest": "2628d5ae833bbd0f5e4b3ba1070bfd8c9c8a9f5795b3a687f47b9753da5ce0a6",
+        "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": false
+        },
+        "target_queue_statuses": [
+          "running",
+          "running"
+        ],
+        "target_scope": "session",
+        "trigger_scope": "user"
+      },
+      {
+        "fixture_valid": true,
+        "pass": false,
+        "peer_after_digest": "b4574cb813e12aed25f0345acc1d24c21dc36466311b59eb8a4a7d233b378305",
+        "peer_before_digest": "48763439c627650783a17db936b04e5fa7eb1eb08f05eef887ea08b7630529fd",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": true,
+        "target_after_digest": "1437383532d43eb63ffd5ec3f46f0c57484e08e8aa593c53caacf26b7473dce4",
+        "target_before_digest": "de810cdf0c7f38f8d864b926cdbd6de9fd106be12d7315646799dcbc59788b6b",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": false
+        },
+        "target_queue_statuses": [
+          "running",
+          "running"
+        ],
+        "target_scope": "project",
+        "trigger_scope": "project"
+      },
+      {
+        "fixture_valid": true,
+        "pass": false,
+        "peer_after_digest": "c3402a7c98914c6a77e8bde9cb78e227e03d0102b2076fc50c1a6dfcedb10142",
+        "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": true,
+        "target_after_digest": "2628d5ae833bbd0f5e4b3ba1070bfd8c9c8a9f5795b3a687f47b9753da5ce0a6",
+        "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": false
+        },
+        "target_queue_statuses": [
+          "running",
+          "running"
+        ],
+        "target_scope": "session",
+        "trigger_scope": "project"
+      },
+      {
+        "fixture_valid": true,
+        "pass": false,
+        "peer_after_digest": "599060cdc25335b37e2d6ffa355581f6dd7e91127c2c8ffb3f13341482d00a81",
+        "peer_before_digest": "fd4a0011eab442873de15590185cf678785b45642c570729804573ec659ef4a1",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": true,
+        "target_after_digest": "1c981309295c11464b0174cc477e70030be28c7572c7936f5a247ef4ecb19d29",
+        "target_before_digest": "04c8ea96d05b1287348a633bdb8cbea30341d7747e5c4bf86c45641c02c8c4c3",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": false
+        },
+        "target_queue_statuses": [
+          "running",
+          "running"
+        ],
+        "target_scope": "project",
+        "trigger_scope": "session"
+      },
+      {
+        "fixture_valid": true,
+        "pass": false,
+        "peer_after_digest": "e750963ab1276123eb46c95a3ac95f8037ea06c045eff0fd8bbed4221c9e7690",
+        "peer_before_digest": "4c0d5e713cf02f5c7d788adfd9a7093b06eb268ba9796d5888ba11ea02240fd0",
+        "peer_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": true
+        },
+        "peer_queue_statuses": [
+          "queued",
+          "queued"
+        ],
+        "revoked": true,
+        "target_after_digest": "2f54bfe69c855ad1ee739b858fd593ccc171e095ff268a181f64cb1f394a5253",
+        "target_before_digest": "c9ddc2f42f703029f00250d8fec544e65493c13773eb9ac8cda6d2c82b99da8e",
+        "target_changed": {
+          "affinity": true,
+          "continuity": true,
+          "hebbian": true,
+          "work_queue": false
+        },
+        "target_queue_statuses": [
+          "running",
+          "running"
+        ],
+        "target_scope": "session",
+        "trigger_scope": "session"
+      }
+    ],
+    "queue_component_passed": 12,
+    "failed": 6,
+    "command": "python -m pytest tests/test_ghost_maintenance_record_scope.py -q -s --tb=short --basetemp=.e2e-artifacts/ghost-queue-record-maintenance-20261118/four-domain-state --junitxml=.e2e-artifacts/ghost-queue-record-maintenance-20261118/four-domain.xml"
+  },
+  "checks": [
+    {
+      "command": "python -m ruff check .",
+      "exit_code": 0,
+      "log": "final-check-0.log"
+    },
+    {
+      "command": "python -m mypy codey --python-version 3.11",
+      "exit_code": 0,
+      "log": "final-check-1.log"
+    },
+    {
+      "command": "pyrefly check codey --python-version 3.11",
+      "exit_code": 0,
+      "log": "final-check-2.log"
+    },
+    {
+      "command": "ty check codey --python-version 3.11",
+      "exit_code": 0,
+      "log": "final-check-3.log"
+    },
+    {
+      "command": "python -m tools.kernel_type_precision_gate",
+      "exit_code": 0,
+      "log": "final-check-4.log"
+    },
+    {
+      "command": "python -m mypy codey/ghost/inbox.py codey/ghost/work_queue.py tests/test_ghost_queue_record_maintenance.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "final-check-5.log"
+    },
+    {
+      "command": "pyrefly check codey/ghost/inbox.py codey/ghost/work_queue.py tests/test_ghost_queue_record_maintenance.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "final-check-6.log"
+    },
+    {
+      "command": "ty check codey/ghost/inbox.py codey/ghost/work_queue.py tests/test_ghost_queue_record_maintenance.py --python-version 3.11",
+      "exit_code": 0,
+      "log": "final-check-7.log"
+    },
+    {
+      "command": "python -m mypy codey/ghost/inbox.py codey/ghost/work_queue.py tests/test_ghost_queue_record_maintenance.py --python-version 3.11 --disallow-any-expr",
+      "exit_code": 1,
+      "log": "final-check-8.log"
+    }
+  ],
+  "extra_any_audit": {
+    "owned_diagnostics": 0,
+    "summary": "Found 10864 errors in 334 files (checked 3 source files)",
+    "imported_diagnostics": 10864,
+    "exit_code": 1,
+    "imported_files": 334
+  },
+  "frozen_production_files": 702,
+  "owned_files": [
+    "codey/ghost/inbox.py",
+    "codey/ghost/work_queue.py",
+    "tests/test_ghost_queue_record_maintenance.py"
+  ],
+  "default_consumers": [
+    "ordinary App/default Sleep daemon queue lease reconciliation",
+    "direct queue reconcile_stale_claims",
+    "queue internal and explicit checkpoint admission"
+  ],
+  "rollback": "Revert the production commit and restart idle processes; no schema or event format migration, preserve SQLite and explicit controls.",
+  "limitations": [
+    "No canonical parent project on session records: any project deny pauses session lease reclamation; allowed user and other project records still advance.",
+    "Global queue checkpoints defer under any maintenance restriction. Consumption window can exceed compaction budgets until controls permit a checkpoint; physical retention and selective scoped checkpoint remain open.",
+    "Canonical queue project refs are raw normalized paths and session refs are hashes; legacy malformed or overlong identity provenance is not established.",
+    "Hebbian/Affinity/continuity still fail the unchanged four-domain denied-scope scorer; no full G0 or World Model completion claim."
+  ],
+  "preflight": [
+    "First candidate interrupted after 12 printed App successes when direct-owner reader construction inside an unshared Records write transaction caused SQLite initialization lock contention. Original log/state retained, not a scored complete run. Reader is now created before mutation and settings are read fresh under queue write lock.",
+    "Second candidate 44 passed / 2 fixture errors: public list_items hides expired persisted rows. Fixture now checks actual rows and keeps explicit reader expiry assertion.",
+    "Raw hash-shaped session fixture corrected to production queue session_key encoding before the effective batch; scorer unchanged.",
+    "First extra Any audit found one owned inline metric dict inference; typed dict fixed. Final owned diagnostics zero."
+  ],
+  "artifacts": ".e2e-artifacts/ghost-queue-record-maintenance-20261118"
+}

@@ -12,7 +12,16 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-18 最新完成：[Sleep 维护撤回及单项控制兼容](ghost_progress/maintenance-control-revocation-20261118.md)。
+2026-11-18 最新完成：[Queue逐记录维护](ghost_progress/queue-record-maintenance-production-20261118.md)。
+普通App/default daemon及直接owner默认按实际控制保护另一scope的租约，原transition
+replay不读取当前权限。新增46项、最终20文件495项及全树静态门通过，三个owned Any零
+诊断；依赖334文件10864额外诊断单列。原四领域12格仍6通过/6失败，queue子比较12/12，
+其余三个领域仍待修。scope限制时queue全库checkpoint暂缓，窗口有界化未完成；缺canonical
+父project时session保守暂停，user及其他project继续。首锁竞争中断、夹具错误/Any首检
+均保留。继续其他领域、窗口/pending/混版本/retention与有新增信息的World Model候选；
+完整G0未完成，保护原两项用户改动，不复制worktree、不跑全量pytest。
+
+2026-11-18 此前完成：[Sleep 维护撤回及单项控制兼容](ghost_progress/maintenance-control-revocation-20261118.md)。
 Sleep `06c8cfc4` 同事务复查触发 scope 的 run_maintenance，逐步骤/逐 store compaction
 准入，queue lease/compaction 故障一起回滚；原18格9→18。setter `5407430f` 固定旧
 learning_enabled fallback 原值，96格92→96，避免单项切换意外开关其他控制。

@@ -19,6 +19,7 @@ from codey.ghost.affinity import apply_affinity_work_boost
 from codey.ghost.affinity_model import AffinityHint
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.graph_primitives import parse_ts
+from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.payload_types import mapping_fields
 from codey.ghost.projection_fence import fence_projection
 from codey.ghost.record_store import GhostRecords
@@ -130,6 +131,7 @@ class GhostWorkQueueStore:
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
         self.database = GhostSQLite(state_home)
         self.records = GhostRecords(self.database, "work_queue")
+        self._maintenance_controls = GhostInboxStore(state_home)
         self.last_warnings: tuple[str, ...] = ()
 
     @fence_projection
@@ -604,10 +606,12 @@ class GhostWorkQueueStore:
             now = parse_ts(time_input).isoformat().replace("+00:00", "Z")
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
+                # The queue write lock serializes controls with this snapshot.
+                policy = self._maintenance_controls.maintenance_policy()
                 items = _bounded_items(items_from_events(events))
                 append_events: list[dict[str, object]] = []
                 for item in items:
-                    if not _is_stale_claim(item, now):
+                    if not policy.allows_queue_record(item.scope, item.scope_ref) or not _is_stale_claim(item, now):
                         continue
                     next_status = "blocked" if item.retry_count >= MAX_WORK_RETRIES else "queued"
                     append_events.append(
@@ -639,6 +643,7 @@ class GhostWorkQueueStore:
                     ),
                     append_events=tuple(append_events),
                     items=tuple(new_items),
+                    compact=policy.allows_global_checkpoint,
                 )
 
             result = self._mutate(decide)
@@ -871,6 +876,10 @@ class GhostWorkQueueStore:
     def _compact_if_needed_locked(self, items: Iterable[GhostWorkItem]) -> None:
         stats = self.records.event_stats()
         if stats["events"] > MAX_WORK_EVENTS or stats["bytes"] > MAX_WORK_EVENTS_BYTES:
+            # A full checkpoint also rewrites the denied scopes' consumption
+            # history. Defer it rather than describing it as selective compaction.
+            if not self._maintenance_controls.maintenance_policy().allows_global_checkpoint:
+                return
             self._write_events_atomic([_snapshot_event(items, ts=_common.now_iso_z(), reason="events_compacted")])
             self.records.mark_applied()
 
