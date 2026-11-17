@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 from codey.operations.context import RunFrame, RunHooks, RunWork
 from codey.operations.conversation_window import WindowActivationError, activate_window
 from codey.operations.generation_boundary import durable_generation_boundary_callback
-from codey.operations.ghost_context import ghost_control_enabled
+from codey.operations.ghost_context import ghost_hints_enabled
 from codey.operations.kernel_request_builder import KernelRunRequestBuilder
 from codey.operations.result import ModeOutcome
 from codey.operations.task_guidance import task_guidance_for_policy
@@ -270,7 +270,10 @@ def _entry_context(frame: RunFrame, deps: Any, policy: Any) -> tuple[str, tuple[
     if frame.provider is None:
         raise RuntimeError("provider is not connected")
     scope = request.project or ""
-    directive = ghost_directive(deps.state, session_id=request.session_id, project=scope)
+    directive = ghost_directive(
+        deps.state, session_id=request.session_id, project=scope,
+        provider=frame.provider if frame.task_kind in {"chat", "auto"} else None,
+    )
     continuity = ghost_continuity(deps.state, session_id=request.session_id, project=scope)
     experiences = ghost_experiences(deps.state, session_id=request.session_id, project=scope,
                                      query=request.task, exclude_run_id=frame.run_id)
@@ -451,8 +454,10 @@ def _run_entry_kernel(  # noqa: PLR0915
                     context_scope=request_scope(request.project, request.session_id),
                     ghost_sources=ghost_sources,
                     admit_hints=admit_hints,
-                    attempt_admit_hints=lambda: ghost_control_enabled(
-                        deps.state, "admit_hints", project=str(request.project or ""), session_id=request.session_id,
+                    attempt_admit_hints=lambda: ghost_hints_enabled(
+                        deps.state, project=str(request.project or ""), session_id=request.session_id,
+                        provider=frame.provider,
+                        directive_text=next((source.text for source in ghost_sources if source.key == "ghost_directive"), ""),
                     ),
                     window_ref=getattr(active_provider, "window_ref", None),
                     task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),

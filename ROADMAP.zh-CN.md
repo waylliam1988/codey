@@ -1,6 +1,8 @@
 # Codey 未来版本规划
 
 > 2026-10-19 Ghost 路线修订：语言偏好在受测模型上有收益，生产投递链路和跨模型复核尚待验收。
+> 2026-11-17 晋级要求修订：一个目标本地模型及配置的行为收益与相关生产边界通过，即可在受测范围正式启用；跨模型复核为可选扩展，不再作为单模型生产晋级前置。
+> 同日生产落地：受测 Gemma 12B 普通 Chat 的中文偏好已接线并默认启用；[启用范围与遗漏核对](docs/ghost_progress/language-production-enablement-20261117.md)记录具体配置和已有验证。按用户要求停止新增实机 A/B。
 > 当前方向是按 family、模型和投递配置验证的本地经验路由；Hebbian 是辅助特征与研究机制。
 > 实验测量、限制和晋级协议见 [Ghost 决策基线](docs/ghost_future_direction.zh-CN.md#偏好投递与预算路由的实验决策基线2026-10-19)。
 > 下面的 0.3 记录是历史阶段，不表示退役的 extractor、learning loop 或 router 仍在生产。
@@ -1733,7 +1735,7 @@ command 为 0/20 对 0/20，继续 SHADOW。生产接线和跨模型复核未完
 cap12 语言服从为分层 9/10、生产 Hebbian 6/10、新近 2/10；行数、内容和顺序共同
 变化，不能仅按入选覆盖率判断收益，也不能据此认定位置的独立因果。
 旧入口 580 字节 parity 不包含扩槽位 treatment；真实发送 admission 待验收。
-不把 harness 里的 PROMOTE 当作已经上线，也不等第二模型才开始修控制和投递边界。
+不把 harness 里的 PROMOTE 当作已经上线；目标单模型通过行为与生产边界验收后即可正式启用，无需等待第二模型。
 
 ## 0.6 之后的可执行路线：一个版本只推进一个可验证增量
 
@@ -1769,7 +1771,7 @@ delete 后 rebuild 不会复活已删除数据
 状态和事件都有大小上限、scope 隔离和 schema version
 失败可以 quarantine、报告并继续使用上一次有效 projection
 新增模型调用、prompt token、延迟和磁盘增长都有可观测记录
-自动晋级缺必测模型/对照/样本时是 INCOMPLETE，不把缺失对照算作零
+自动晋级缺目标单模型/对照/样本时是 INCOMPLETE，不把缺失对照算作零；其他模型未测不阻塞
 ```
 
 每个版本的交付物固定为：实现、行为命名测试、deterministic replay fixture、指标报告、
@@ -1798,12 +1800,12 @@ G0 沿用现有隔离 SQLite 与领域事件/投影，不建立新的中央事�
 
 交付：在已归档的任务/scorer 上补齐冻结配置、采样参数和生产版本身份；
 生产不 import harness，不提交 raw prompt/reply。
-列出必测模型、任务、on/off 对照、每 cell 最低样本量、收益差和回滚条件；language
-以每模型 on/off 各至少 20 次、4 问法作起始复核规模，并报告任务分层与不确定性。
+列出一个目标本地模型及配置、任务、on/off 对照、每 cell 最低样本量、收益差和回滚条件；language
+以该模型 on/off 各至少 20 次、4 问法作起始复核规模，并报告任务分层与不确定性。
 
-自动判定必须先验证完整性：缺必测模型、任务、off 对照或样本量返回 INCOMPLETE；
-不跳过缺失模型、不把缺失对照当零；修正 `PROMOTE-MATCHED` 的 rank 映射。
-完整矩阵才取最弱必测模型；单模型试点必须明确限定范围。
+自动判定必须先验证完整性：目标模型缺失，或其任务、off 对照、样本量不足时返回 INCOMPLETE；
+不把缺失对照当零；修正 `PROMOTE-MATCHED` 的 rank 映射。
+单模型矩阵完整即可作出该模型的晋级判定，明确模型、任务和配置范围；不要求第二模型或按最弱模型聚合。
 
 事件契约只冻结当前消费者需要的 event identity、time、kind、scope、schema version、
 producer/source 与 provenance；涉及 action/outcome 时绑定 refs 和幂等键，不能猜测 outcome。
@@ -1919,7 +1921,8 @@ G1 只闭合已发现收益的语言偏好。schema 扩展、默认投递和 fam
 目标：把 harness 中有效的语言表达接到生产类型化契约，并在 shadow 中解释选择全过程。
 
 交付：在 `typed_fields.py` 扩明确的语言 kind/slot/value 配对，同步候选校验、冲突键和
-manual UI/API 允许值；不靠任意自由文本绕开 allowlist。language 的生产 treatment 默认不开启。
+manual UI/API 允许值；不靠任意自由文本绕开 allowlist。尚未验证的 language treatment 默认不开启；
+2026-11-17 已对受测 Gemma 12B/预算的普通 Chat 默认启用已确认中文偏好，具体范围见生产启用记录。
 
 路由顺序固定为：可表达/有效性 → scope/冲突 → family 上线状态 → 排位 → 行数与字符/token 预算
 → admission。language 优先、稳定新近顺序是最小候选策略；Hebbian/Affinity 只作辅助特征。
@@ -1940,8 +1943,8 @@ cap4/8/12 均不能因有空位而回填自述；每个结果可确定性解释�
 live A/B 通过显式实验开关运行，shadow 本身不改变普通用户 prompt、不增后台模型调用。
 在同一任务/行集合/文本长度下只置换语言行位置；另测 4/8/12 预算曲线、新近/生产/最小路由基线。
 
-验收：每模型 on/off、当前请求覆盖、位置、预算与成本分开报告；没有对照增益不晋级。
-保留一次性 live gate 结果与回滚决定；第二模型未完成时只支持 modelA 受测配置结论。
+验收：目标单模型 on/off、当前请求覆盖、位置、预算与成本分开报告；没有对照增益不晋级。
+保留一次性 live gate 结果与回滚决定；结果用于该模型受测范围的正式启用，不要求第二模型参与验收。
 
 #### 0.6.7 - Conditional Language Promotion and Rollback
 
@@ -1955,7 +1958,9 @@ live A/B 通过显式实验开关运行，shadow 本身不改变普通用户 pro
 shadow admission 不代表默认 prompt admission。不新增全局 promotion controller。
 
 验收：禁用、降级、隔离、删除、重启与模型切换都不泄漏旧 hint；生产 payload 与已验证配置一致。
-多模型全局默认须完整必测矩阵按最弱模型通过；单模型限定试点不能标成全局完成。
+一个目标模型通过行为收益与上述生产边界验收，即可在受测范围正式启用；功能进入主分支后可标记
+`PRODUCTION_MERGED`，不因仅有单模型证据而保留 `SHADOW_ONLY`。新模型或新配置独立验收，
+未通过时回退基线，不撤销已通过模型的晋级；不将单模型结论外推到未测试范围。
 
 ### G2：其他族 shadow 与解释（0.6.8–0.6.12）
 
@@ -2017,17 +2022,18 @@ World Model 不产生 evidence_refs。
 
 ### G3：选择性晋级（0.7.x）
 
-0.7 在 0.6 语言闭环上扩模型与任务，再验证其他 family。每个版本最多晋级一种 family；
+0.7 在 0.6 语言闭环上按需扩模型与任务，再验证其他 family；新增模型为可选扩展，不阻塞已通过单模型的启用或其他 family 的独立验收。每个版本最多晋级一种 family；
 版本编号不构成晋级承诺，command/repair/continuity 失败就维持 shadow。
 
 #### 0.7.0 - Cross-model and Held-out Task Expansion
 
-复用 0.6.0/0.6.6 的冻结评估，加入第二模型与未用于调整策略的任务/问法，
-扩大支持矩阵；不将多次据同一电池调参后的结果视为独立泛化证据。
+复用 0.6.0/0.6.6 的冻结评估，按需加入未用于调整策略的任务/问法；可选加入新模型，
+逐模型扩大支持范围。没有第二模型时也可进行同模型留出任务验收；不将多次据同一电池调参后的结果视为独立泛化证据。
 
 验收指标固定为：价值、安全、成本、控制权；记录 hint rejection rate、stale hint leakage rate、
 delete/rebuild resurrection rate。
-缺任一必测模型/对照保持 INCOMPLETE；完整后按最弱模型收敛，并保留各模型各配置结果。
+每个目标模型独立检查任务、对照与样本完整性，缺失时仅将该模型的扩展验收标为 INCOMPLETE；
+通过的模型可独立晋级，未测试或失败的其他模型不阻塞它。保留各模型各配置结果，不按最弱模型决定已有部署。
 
 #### 0.7.1 - Verification Habit Consumer Trial and Conditional Promotion
 
@@ -2438,7 +2444,7 @@ CompletionProof / Evidence / EvidenceLedger 不能成为模型工具
 Ghost protocol affinity 不能进入 EvidenceLedger / CompletionProof
 Project habit 不能产生 fresh verification fact
 人工接受状态不能自动晋级整个 hint family
-未完成的必测模型/任务/对照矩阵不能生成 PROMOTE
+目标单模型的任务/对照/样本矩阵未完成时不能生成 PROMOTE；其他模型未测不阻塞该模型晋级
 自述在任意预算下都不能因空位回填；弱提示不能挤掉已验证语言
 被 supersede 的历史节点可以保留，但不能进入 active/selected/payload 集
 候选、admitted envelope 与实际 payload 的 refs/digest/排位一致

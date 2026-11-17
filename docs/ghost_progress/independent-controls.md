@@ -4,12 +4,15 @@
 - 状态：`INCOMPLETE`
 - 负责人：Codex
 - 开始日期：2026-10-21
-- 最后更新：2026-10-21
+- 最后更新：2026-11-17（核对生产状态；历史测量不变）
 - 关联 Roadmap 验收门：0.6.2 scope 与四个开关
 - 实验 commit：`496247fc` (`feat(ghost): add independent control gates`); scoped projection/send gate `89622a8c`; lifecycle/expiry fixture `c3701ab4`; expiry trace `e8127019`; scoped export fixture `44fb29cf`; scoped health fix `91fe542f`; admit gate propagation `85efe9fb`; architecture audits `a7797877`, `84473e15`; follow-up boundary fix `6f18485e`
-- 生产合并结论：`SHADOW_ONLY`
+- 生产合并结论：`PRODUCTION_MERGED`（四开关的现有生产接线；完整 0.6.2 仍为 `INCOMPLETE`）
 
 ## 本次目标
+
+2026-11-17 核对：四开关已分别用于生产事件接收、检索、维护和发送准入；缺省设置开启，显式关闭继续
+生效。本次修正文档中遗留的 shadow 描述，不重新开启用户已经关闭的控制，也不宣称整个 0.6.2 验收完成。
 
 2026-10-21 后续边界更新：`34e201dc` 已移除 scoped TypeError 后无 scope 重试、旧 learning reader
 降级及 post-turn 缺 authority 放行；settlement 改为真实 scoped accept_events，保留 settings_error
@@ -95,8 +98,8 @@ control 缺失拒绝。不得恢复该 fallback。
   请求矩阵、成本/延迟测量和完整 0.6.2 acceptance battery。
 - 本实验没有 live/offline 模型行为对照，也没有证明任何 language 或 command
   收益；不能把它当作 Ghost language 晋级。
-- 这是控制面 shadow 研究，未进入真实 provider-send 的生产启用决策，默认 prompt
-  内容没有改变。
+- 四开关已有真实生产消费者；控制接线本身不新增模型可见内容。历史离线实验的验证范围与
+  完整 0.6.2 未完成项继续保留。
 
 ## 已知问题和回滚方式
 
@@ -112,6 +115,6 @@ control 缺失拒绝。不得恢复该 fallback。
 2. 初始 `admit_hints` 关闭、scoped 读取失败和首轮后关闭的实际 entry→HTTP 已验证；当前
    Attempt Gate 已拒绝历史重发。下一步覆盖正常发送、native results/repair/receipt/resume/
    compaction，保留拒绝后的恢复语义，再测成本/延迟。
-3. 保持 0.6.2 `INCOMPLETE`，完成后再决定是否进入更窄的 shadow runtime。
+3. 保持完整 0.6.2 `INCOMPLETE`，现有生产控制继续生效；后续扩展单独验收。
 4. World Model 继续保持 shadow：只研究 bounded event/prediction review 和
    projection admission，不进入默认 prompt。

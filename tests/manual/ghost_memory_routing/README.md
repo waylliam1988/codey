@@ -3,6 +3,14 @@
 这里保存同 prompt 排序、扩槽位排序、分层路由、偏好族投递与预算压力实验的脚本和
 历史报告。它们是 manual/evaluation 材料，不是生产功能或自动上线控制器。
 
+2026-11-17 晋级要求修订：一个实际使用的本地模型及配置完成行为 on/off 对照与相关生产边界验收，
+即可在受测范围正式启用。第二模型为可选扩展，不阻塞单模型晋级；新模型或配置各自验收。
+对照、最低样本量、任务范围、成本/延迟和关闭、删除、恢复等相关边界要求继续适用。
+历史 `reports/` 保留当时测量与判定，后续晋级以当前[晋级协议](../../../docs/ghost_future_direction.zh-CN.md#06-晋级协议)为准；本次修订不自动将历史候选改为已启用。
+
+同日已根据既有结果完成 Gemma 12B 普通 Chat 中文子集的生产接线与默认启用，见
+[启用及遗漏核对](../../../docs/ghost_progress/language-production-enablement-20261117.md)。用户已要求停止新增实机 A/B；本次不继续补跑，新批次的不完整数据单独留档。
+
 ## 文件与数据位置
 
 | 文件 | 作用 |
@@ -80,13 +88,14 @@ python tests/manual/ghost_memory_routing/round4.py run --suite <suite> --cells l
 设置 `GHOST_EXPERIMENT_HOME` 可将所有生成物和隔离 state 重定向到另一个目录。
 重新导出 metrics 时显式执行 `summarize.py --export --input <新快照路径>`，不要覆盖历史快照。
 
-## 第二模型或新配置运行
+## 目标单模型的新批次或配置运行
 
-从仓库根目录执行；模型服务需已由使用者配置并启动：
+从仓库根目录执行；模型服务需已由使用者配置并启动。新 suite 标识独立批次，不要求更换模型；
+可选的后续模型扩展也使用此流程，并独立评估：
 
 ```powershell
 python tests/manual/ghost_memory_routing/round4.py seed
-python tests/manual/ghost_memory_routing/round4.py run --suite modelB --endpoint <URL> --model <MODEL_ID>
+python tests/manual/ghost_memory_routing/round4.py run --suite <NEW_SUITE> --endpoint <URL> --model <MODEL_ID>
 python tests/manual/ghost_memory_routing/round4.py report
 ```
 
@@ -96,8 +105,10 @@ python tests/manual/ghost_memory_routing/round4.py report
 `python tests/manual/ghost_memory_routing/round3.py t5` 准备过期 fixture，再执行
 `python tests/manual/ghost_memory_routing/round4.py offline`。归档已有 `T5` 时无需重种。
 不能把缺少该 fixture 时的空 directive 当成过期验证通过。
-同名 suite/cell 的 `run` 会重写对应原始 JSONL，应为新模型或配置使用新的 suite 名。
+同名 suite/cell 的 `run` 会重写对应原始 JSONL，应为新批次、新模型或配置使用新的 suite 名。
 这些是显式 live 运行，会启动本地测试 HTTP server 并调用指定模型；报告复算不调用模型。
+现有冻结 evaluator 固定读取 `modelA`；新 suite 的正式评估须在运行前另行冻结该目标模型的
+suite、任务、样本与对照配置，不能把缺少 `modelA` 的新 suite 直接当作现有 evaluator 已通过。
 
 ## 历史结论的使用边界
 

@@ -6,6 +6,8 @@
 
 这份文档可以直接转发给接班同事。它是工作方法和当前判断的交接记录；路线图中的版本号只是内部验收门槛，不要求连续实验按版本号命名。具体验收条件仍以 [Roadmap](../ROADMAP.zh-CN.md) 为准，实验细节以 [Ghost 方向与晋级协议](ghost_future_direction.zh-CN.md) 和 [memory-routing 实验目录](../tests/manual/ghost_memory_routing/README.md) 为准。
 
+> 2026-11-17 晋级要求修订：以一个实际使用的本地模型和配置为验收单位；行为收益与相关生产边界通过后，可在受测范围正式启用并按合并事实标记 `PRODUCTION_MERGED`。第二模型与跨模型验证为可选扩展，不阻塞单模型生产晋级；未测试模型回退基线。历史测量、样本门槛、对照及生产边界要求保留，本次规则修订不自动改变任何实验的完成或合并状态。
+
 ## 先读这段：不要把路线图当成无条件功能清单
 
 你接手的是一条**按证据推进、可以暂停或终止**的实验路线，不是把 Ghost 和 World Model 的所有设想逐项实现完。
@@ -20,7 +22,7 @@
 |---|---|---|
 | Ghost 基础设施 | 已有可审计、可删除、可重建的本地经验存储和投影 | 这证明基础设施存在，不证明记忆一定改变行为 |
 | 历史 memory-routing 实验 | 已归档并提交，含无回复测量、报告、脚本和来源摘要 | 原始回复/state 在被 Git 忽略的 `artifacts/ghost_memory_routing/`；生产代码不 import harness |
-| language family | modelA、当前投递配置下是有条件的生产候选：送达 19/20，未送达 0/20 | 还没有跨模型结论，也没有完成真实 provider-send admission 验收；不能全局默认开启 |
+| language family | modelA 普通 Chat 的中文子集已于 2026-11-17 接入生产并默认启用；历史冻结评估为 19/20 对 0/20，后续 live 为 20/20 对 0/20 | 仅对[受测模型与配置](ghost_progress/language-production-enablement-20261117.md)启用；当前请求优先，其他模型回退基线；新增实机已按用户要求停止 |
 | command / verification habit | `SHADOW` | directive 不是已证明的宿主；要区分命令建议、工具选择、审批结果和任务完成 |
 | format / length / answer-first | `WEAK-HINT-ONLY` | 没有稳定的精确服从收益；列表本来就容易通过，不能算记忆收益 |
 | self-description | 默认排除 | 空余名额不能回填系统自述 |
@@ -34,12 +36,12 @@
 默认从路线图中第一个未完成的验收门开始，不能直接跳到 World Model 或大规模学习机制。接班记录使用实验名称，不要求把每次连续实验写成新的版本号。
 
 1. **先确认工作区和基线。** 阅读本文、[Roadmap](../ROADMAP.zh-CN.md)、[Ghost 方向](ghost_future_direction.zh-CN.md)，运行现有的无模型复查；确认当前分支、Python 环境、测试状态和 `git status`。
-2. **先做 0.6.0。** 冻结必测模型、任务、on/off 对照、最低样本量、scorer、收益门槛和缺失数据规则。缺模型、缺 off、缺样本必须输出 `INCOMPLETE`，不能按 0% 计算。
+2. **先做 0.6.0。** 冻结一个目标本地模型及配置、任务、on/off 对照、最低样本量、scorer、收益门槛和缺失数据规则。目标模型缺失、缺 off 或缺样本必须输出 `INCOMPLETE`，不能按 0% 计算；其他模型未测不阻塞该模型验收。
 3. **再做 0.6.1。** 把真实 provider-send 路径上的 `ContextSource → PromptEnvelope → Context Epoch admission → provider send` 接通，先用捕获和故障注入验证实际发送字节，再做最小 live smoke。
 4. **按顺序推进 0.6.2–0.6.4。** 完成开关、scope、删除/冲突生命周期和显式时间/replay。单个 offline fixture 通过，不等于所有 scope 和真实发送路径都通过。
 5. **再推进 0.6.5–0.6.7。** 只扩 language 类型化槽位和最小路由遥测；先 shadow，再对通过的模型/配置做限定启用和回滚。不要因为 allowlist 能表达 command、format 或 code 就默认投递它们。
 6. **0.6.8–0.6.12 保持分族 shadow。** 先研究 command 的正确宿主、provider outcome 和 Explain；World Model 只有在有真实预测/复盘消费者时才启动 0.6.12。
-7. **0.7 才扩第二模型和留出任务。** 完整矩阵按最弱必测模型收敛；不能把第二模型缺席时的 modelA 结果写成跨模型通过。
+7. **0.7 可选扩展模型和留出任务。** 每个模型及配置独立验收；新模型未测或失败不阻塞已通过模型的生产启用。不能把单模型结果写成跨模型通过。
 8. **0.8、0.9 是独立下游轨道。** Protocol Adaptation 和 Hebbian/可塑性研究都需要自己的数据、对照、停止条件；它们不能反向扩大 Ghost 的默认 prompt 权限。
 
 如果某个实验的前置条件没有满足，就把它标记为 `BLOCKED` 或 `INCOMPLETE`，记录原因，先处理阻塞项。不要通过修改 scorer、放宽样本量或把缺失对照当作阴性来“过门”。
@@ -86,14 +88,14 @@ python tests/manual/ghost_memory_routing/round4.py --help
 
 ```powershell
 python tests/manual/ghost_memory_routing/round4.py seed
-python tests/manual/ghost_memory_routing/round4.py run --suite modelB --endpoint <KOBOLDCPP_ENDPOINT> --model <MODEL_ID>
+python tests/manual/ghost_memory_routing/round4.py run --suite <NEW_SUITE> --endpoint <KOBOLDCPP_ENDPOINT> --model <MODEL_ID>
 python tests/manual/ghost_memory_routing/round4.py report
 ```
 
 规则如下：
 
 1. 先确认 KoboldCpp 当前 endpoint、model ID、上下文长度和超时设置；报告中写明实际使用值。
-2. 同一个 suite/cell 的 `run` 可能重写原始 JSONL。新模型、新量化或新配置必须使用新的 suite 名，例如 `modelB_q4`。
+2. 同一个 suite/cell 的 `run` 可能重写原始 JSONL。新批次、新模型、新量化或新配置必须使用新的 suite 名，例如 `local_model_q4_20261117`。
 3. KoboldCpp 无响应、崩溃、返回格式错误、超时或被审批挂起时，先停止重试，保存时间、命令、cell、模型和错误摘要。
 4. 把故障信息发给我，请我重新打开或修复 KoboldCpp；不要自行修改 scorer、降低门槛或把未完成的 cell 记成通过。
 5. KoboldCpp 恢复后只重跑缺失或损坏的 cell，保留旧失败记录，并在报告中说明重跑原因。若要生成可比较的正式结果，使用新的 suite 名或新的明确运行目录。
@@ -137,6 +139,7 @@ endpoint：
 1. **有明确生产问题和收益。** 能说明它改善了用户行为、运行安全、可靠性、可观测性、成本或恢复能力中的至少一项；“架构上很有趣”不算收益。
 2. **真实路径成立。** 代码经过实际 runtime / builder / admission / provider-send 中与它相关的路径验证；harness-only 结果不能作为生产合并依据。
 3. **有对照和边界。** 有基线、样本量、任务范围、模型/config 范围、成本/延迟和阴性结果；缺失数据输出 `INCOMPLETE`。
+   一个目标模型及配置满足上述要求即可；第二模型缺席不构成该模型的缺失数据，也不要求按其他模型的最弱结果判定。
 4. **安全边界无回归。** 不绕过权限、审批、Evidence、CompletionProof、删除、scope 或当前请求优先级。
 5. **可以关闭和回滚。** 有显式开关、降级/隔离路径、删除/replay 语义和失败恢复说明。
 6. **结果可复现。** 另一个同事能从 commit、命令、报告和 fixture 重跑关键判断。
@@ -146,6 +149,8 @@ endpoint：
 - `PRODUCTION_MERGED`：生产代码/功能已通过门槛并进入主分支；
 - `SHADOW_ONLY`：代码可观测但不改变默认行为，继续收集证据；
 - `EXPERIMENT_ONLY`：实验无效、证据不足或暂时没有生产消费者，只保留实验材料，不合并生产实现。
+
+这些结论按功能、模型、任务和配置范围记录；单模型通过即可正式启用，不因缺少第二模型而限定为试点或 `SHADOW_ONLY`。
 
 ## Commit 和交接记录规则
 

@@ -402,6 +402,7 @@ function rowsOf(value: unknown): LocalRecord[] {
     preference.required = true;
     for (const [value, label] of [
       ['', 'Choose a preference'],
+      ['language:chinese', 'Chinese answers'],
       ['reply_length:concise', 'Concise answers'],
       ['reply_length:detailed', 'Detailed answers'],
       ['reply_structure:answer_first', 'Answer first'],

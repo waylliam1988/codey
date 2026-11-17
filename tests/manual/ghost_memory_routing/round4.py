@@ -363,7 +363,9 @@ def parity_check() -> dict:
     from codey.ghost.hebbian import GhostHebbianStore
     arm = round2.ARMS_ROOT / "R4"
     # strict parity: production renderer + production sort on BOTH sides
-    direct = build_ghost_directive(GhostHebbianStore(arm), affinity_store=GhostAffinityStore(arm))
+    direct = build_ghost_directive(
+        GhostHebbianStore(arm), affinity_store=GhostAffinityStore(arm), include_language=False,
+    )
     direct_payload = direct.to_payload()
     ops = _ops_directive_payload()
     ops_json = ops if isinstance(ops, dict) else ops.to_payload()
@@ -374,7 +376,7 @@ def parity_check() -> dict:
         "ops_bytes": len(ops_json.get("text", "").encode("utf-8")),
         "direct_bytes": len(direct_payload.get("text", "").encode("utf-8")),
         "ops_warnings": list(ops_json.get("warnings", []))[:6],
-        "note": "expanded families exist only harness-side; ops cannot render them",
+        "note": "baseline without an eligible active model; the Chinese production rollout is checked separately",
     }
     PARITY_DIR.mkdir(exist_ok=True)
     (PARITY_DIR / "parity.json").write_text(json.dumps(result, ensure_ascii=False, indent=2),

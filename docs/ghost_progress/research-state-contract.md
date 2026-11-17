@@ -4,14 +4,17 @@
 - 状态：`EXPERIMENT_COMPLETE`
 - 负责人：Codex
 - 开始日期：2026-10-21
-- 最后更新：2026-10-21
+- 最后更新：2026-11-17（核对生产状态；历史测量不变）
 - 关联 Roadmap 验收门：0.6.1 Context Epoch admission；0.6.2 控制边界
 - 实验 commit：`41167a7a`（生产契约）；`23e4a4b6`（parity/test fixture）；
   `8abb6a7f`（settlement frame fixture）；`50cc333d`（durable cold-start lock ordering）；
   `ea33efbe`（concurrent cold-start regression）
-- 生产合并结论：`SHADOW_ONLY`
+- 生产合并结论：`PRODUCTION_MERGED`（现有 state 契约；2026-11-17 核对修正文档状态）
 
 ## 本次目标
+
+2026-11-17 生产核对：该契约已在生产 `ResearchFlowDeps.state` 与真实 dispatch 组装中使用，
+并非等待启用的 shadow 功能。本文的实验验证范围保留，生产状态按实际接线修正；没有新增模型投递权限。
 
 确认 research 的真实生产依赖包含 `TaskRunDeps.state`，并验证缺少 state
 不会由生产代码隐式打开 Ghost admission。假设是：冷启动和测试 fixture 都能
@@ -104,7 +107,7 @@ python -m pytest tests/durable/test_database_cursor.py::test_concurrent_cold_sta
 - 是否经过真实 provider-send：经过 shared kernel fake provider-send capture；未经过 KoboldCpp
 - 是否改变默认 prompt：正常生产 state 且控制开启时不改变；缺失控制时 fail closed
 - 支持的模型 / 任务 / 配置：所有使用真实 `TaskRunDeps` 的 research runtime；不宣称跨模型收益
-- 生产合并结论：`SHADOW_ONLY`
+- 生产合并结论：`PRODUCTION_MERGED`（仅现有 state 契约，不代表模型行为收益）
 
 ## 已知问题和回滚方式
 

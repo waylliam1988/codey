@@ -9,6 +9,10 @@
 - 实验 commit：`250a1fea` (`test(ghost): freeze evaluation and ownership audit`)
 - 生产合并结论：EXPERIMENT_ONLY
 
+2026-11-17 晋级要求修订：现有 evaluator 已只要求 `modelA`，满足单模型评估范围要求，无需修改
+冻结配置或历史测量。该模型行为收益与相关生产边界通过后，可在受测范围正式启用，无需第二模型；
+本次修订不改变本实验的历史完成和合并结论。
+
 ## 本次目标
 
 冻结 Ghost 0.6.0 的最小可复查评估矩阵和所有权边界。假设是：先把缺失模型、缺失 off 对照和不足样本明确标成 `INCOMPLETE`，并修正

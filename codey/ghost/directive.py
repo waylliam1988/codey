@@ -73,6 +73,7 @@ def build_ghost_directive(
     budget: int = DEFAULT_DIRECTIVE_BUDGET,
     affinity_hints: Iterable[Any] = (),
     affinity_store: Any = None,
+    include_language: bool = True,
 ) -> GhostDirective:
     """Build prompt context from confirmed local Ghost state."""
 
@@ -98,6 +99,7 @@ def build_ghost_directive(
         session_id=session_id,
         budget=budget,
         affinity_hints=hints,
+        include_language=include_language,
     )
 
 
@@ -108,6 +110,7 @@ def render_ghost_directive(
     session_id: str = "",
     budget: int = DEFAULT_DIRECTIVE_BUDGET,
     affinity_hints: Iterable[Any] = (),
+    include_language: bool = True,
 ) -> GhostDirective:
     warnings: list[str] = []
     now = _common.now_iso_z()
@@ -117,6 +120,7 @@ def render_ghost_directive(
         session_id=session_id,
         now=now,
         warnings=warnings,
+        include_language=include_language,
     )
     selected = _resolve_competing_nodes(applicable, warnings=warnings)
     selected = _suppress_lower_scope_conflicts(selected, warnings=warnings)
@@ -166,6 +170,7 @@ def _applicable_nodes(
     session_id: str,
     now: str,
     warnings: list[str],
+    include_language: bool,
 ) -> list[GhostNode]:
     project_ref = _common.normalize_project(project)
     session_ref = clip_signal_text(session_id, 120)
@@ -179,6 +184,9 @@ def _applicable_nodes(
         if node.weight < MIN_DIRECTIVE_WEIGHT:
             continue
         if not _node_scope_matches(node, project_ref=project_ref, session_ref=session_ref):
+            continue
+        if node.conflict_key == "style_preference:language" and not include_language:
+            warnings.append("language_model_or_config_not_enabled")
             continue
         if contains_sensitive_signal_text(node.label):
             warnings.append(f"sensitive_directive_skipped:{node.kind}:{node.conflict_key}")
@@ -255,9 +263,10 @@ def _suppress_lower_scope_conflicts(
     return selected
 
 
-def _node_sort_key(node: GhostNode, hint_weights: dict[str, float] | None = None) -> tuple[int, int, float, tuple[int, ...]]:
+def _node_sort_key(node: GhostNode, hint_weights: dict[str, float] | None = None) -> tuple[int, int, int, float, tuple[int, ...]]:
     hint = (hint_weights or {}).get(node.id, 0.0)
     return (
+        0 if node.kind == "style_preference" and node.conflict_key == "style_preference:language" else 1,
         KIND_PRIORITY.get(node.kind, 99),
         SCOPE_PRIORITY.get(node.scope, 99),
         -(node.weight + min(0.2, hint)),

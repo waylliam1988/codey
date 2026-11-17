@@ -142,6 +142,7 @@ process.stdout.write('\n' + allText(element('local-context-menu')));
         self.assertIn("Please keep answers concise.", result.stdout)
         self.assertNotIn("No local context yet", result.stdout)
         self.assertIn("Add to pending review", result.stdout)
+        self.assertIn("Chinese answers", result.stdout)
         self.assertIn("Needs attention", result.stdout)
         self.assertIn("Retry", result.stdout)
 

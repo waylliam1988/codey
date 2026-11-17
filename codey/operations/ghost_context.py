@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import sqlite3
 from typing import Any
+from urllib.parse import urlsplit
 
 from codey.ghost.continuity import build_ghost_continuity
-from codey.ghost.directive import build_ghost_directive
+from codey.ghost.directive import GhostDirective, build_ghost_directive
 from codey.ghost.inbox import GhostSettingsError
 from codey.ghost.observation_index import (
     MAX_RETRIEVED_ITEMS,
@@ -24,6 +25,30 @@ from codey.ghost.observation_index import (
     render_retrieved_block,
 )
 from codey.ghost.observations import GhostObservationCorruptedError
+from codey.providers.compat_transport import provider_attribute
+from codey.providers.token_accounting import ContextBudget
+
+VERIFIED_LANGUAGE_MODEL = "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M"
+LANGUAGE_DIRECTIVE_LINE = "- Prefer: reply language = Chinese."
+
+
+def _language_directive_enabled(provider: object) -> bool:
+    """Enable the Chinese treatment only for the evaluated local configuration."""
+    if provider_attribute(provider, "model") != VERIFIED_LANGUAGE_MODEL:
+        return False
+    endpoint = urlsplit(str(provider_attribute(provider, "base_url") or ""))
+    budget = provider_attribute(provider, "context_budget")
+    return (
+        endpoint.scheme == "http" and endpoint.hostname in {"127.0.0.1", "localhost", "::1"}
+        and endpoint.path.rstrip("/") == "/v1"
+        and provider_attribute(provider, "api_protocol") == "openai-completions"
+        and provider_attribute(provider, "native_tools") is True
+        and isinstance(budget, ContextBudget)
+        and budget.window_tokens == 262144
+        and budget.output_tokens + budget.safety_tokens == 32768
+        and budget.keep_recent_tokens == 32000
+        and budget.input_limit_tokens is None
+    )
 
 
 def ghost_control_enabled(
@@ -63,7 +88,8 @@ def ghost_directive(
     *,
     project: str = "",
     session_id: str = "",
-) -> Any:
+    provider: object = None,
+) -> GhostDirective:
     if not ghost_control_enabled(state, "retrieve_projections", project=project, session_id=session_id):
         return build_ghost_directive(None)
     store = getattr(state, "ghost_hebbian", None)
@@ -74,6 +100,7 @@ def ghost_directive(
         project=project,
         session_id=session_id,
         affinity_store=ghost_affinity_store(state, project=project, session_id=session_id),
+        include_language=_language_directive_enabled(provider),
     )
 
 
@@ -93,6 +120,23 @@ def ghost_continuity(
         project=project,
         session_id=session_id,
     )
+
+
+def ghost_hints_enabled(
+    state: Any,
+    *,
+    project: str = "",
+    session_id: str = "",
+    provider: object = None,
+    directive_text: str = "",
+) -> bool:
+    """Recheck a promoted language source at each physical send attempt."""
+    if not ghost_control_enabled(state, "admit_hints", project=project, session_id=session_id):
+        return False
+    if LANGUAGE_DIRECTIVE_LINE in directive_text:
+        current = ghost_directive(state, project=project, session_id=session_id, provider=provider)
+        return current.text == directive_text
+    return True
 
 
 def ghost_experiences(
@@ -166,5 +210,6 @@ __all__ = [
     "ghost_affinity_store",
     "ghost_continuity",
     "ghost_directive",
+    "ghost_hints_enabled",
     "ghost_experiences",
 ]
