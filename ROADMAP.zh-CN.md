@@ -1877,6 +1877,11 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 双故障复验：接收登记与备用 quarantine 同时失败的 31 cell 矩阵全部有效，
+开启学习且删除的 12 cell 全部重新产生旧输入投影，含执行中恢复及应用重开。关闭组与
+单故障隔离组正常；这是确认的生产缺口，尚未修复，不撤销已闭合场景的限定结果。见
+[双故障负结果](docs/ghost_progress/intake-double-fault-20261117.md)。
+
 2026-11-17 后续：新 task 的 canonical commit 前由应用层默认登记输入身份，普通 InputQueue、
 busy queue、submit_task 与 headless 共用接收边界，durable 核心不 import Ghost。原接收后删除
 8 cell 中开启的旧输入复活 4→0；27 项验收覆盖编辑/放置、重复输入、重开、receipt 后 commit 前
