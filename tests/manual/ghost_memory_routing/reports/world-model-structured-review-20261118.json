@@ -874,5 +874,6 @@
     "Single model/config; latency descriptive only",
     "Full G0 and World Model production remain incomplete"
   ],
-  "local_artifacts": ".e2e-artifacts/world-model-structured-review-20261118"
+  "local_artifacts": ".e2e-artifacts/world-model-structured-review-20261118",
+  "experiment_commit": "3419feaa87d4d62827680449bd63a5110d9cac41"
 }
