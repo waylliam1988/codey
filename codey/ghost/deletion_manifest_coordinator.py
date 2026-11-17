@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import Protocol
 
 from codey.ghost.deletion_manifest import DeletionManifest, store_event
 from codey.ghost.deletion_manifest_store import DeletionManifestStore
@@ -25,11 +26,15 @@ GHOST_STORE_NAMES = (
 )
 
 
+class ScopeDeletion(Protocol):
+    def __call__(self, scope: str, *, project: str = "", session_id: str = "") -> object: ...
+
+
 @dataclass(frozen=True)
 class DeletionTarget:
     """One existing store's already-owned mutation entry points."""
 
-    delete_scope: Callable[..., object]
+    delete_scope: ScopeDeletion
     reset_all: Callable[[], object]
 
 
@@ -66,6 +71,8 @@ class DeletionManifestCoordinator:
                         project=current.project,
                         session_id=current.session_id,
                     )
+                if result is False:
+                    raise OSError("store reported unsuccessful deletion")
                 detail = _result_detail(result)
                 current = self.manifests.append(store_event(current, name, "completed", detail=detail))
             except Exception as exc:  # noqa: BLE001 - durable blocked transition

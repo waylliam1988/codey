@@ -8,13 +8,25 @@ import sqlite3
 from collections.abc import Generator, Iterable, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Literal, cast
+from typing import Literal
 
 from codey.ghost.sqlite import GhostSQLite
 
 
 def _encode(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def _payload(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        raise ValueError("Ghost record payload must be an object")
+    fields: Mapping[object, object] = value
+    result: dict[str, object] = {}
+    for key, item in fields.items():
+        if not isinstance(key, str):
+            raise ValueError("Ghost record keys must be strings")
+        result[key] = item
+    return result
 
 
 class GhostRecords:
@@ -49,7 +61,7 @@ class GhostRecords:
     def events(self) -> list[dict[str, object]]:
         with self.transaction(write=False):
             return [
-                json.loads(row[0])
+                _payload(json.loads(row[0]))
                 for row in self._db().execute(
                     "SELECT payload FROM memory_events WHERE collection=? ORDER BY sequence",
                     (self.collection,),
@@ -60,7 +72,7 @@ class GhostRecords:
         with self.transaction(write=False):
             self._check_cursor()
             return [
-                json.loads(row[0])
+                _payload(json.loads(row[0]))
                 for row in self._db().execute(
                     "SELECT payload FROM memory_records WHERE collection=? ORDER BY id",
                     (self.collection,),
@@ -124,6 +136,15 @@ class GhostRecords:
                 )
             self.mark_applied()
 
+    def retire_candidates(self, identities: Iterable[str]) -> None:
+        """Fence explicitly deleted source identities in the caller's transaction."""
+        if self.collection != "inbox":
+            raise ValueError("only the inbox owns candidate retirement")
+        self._db().executemany(
+            "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) VALUES('candidate',?)",
+            ((identity,) for identity in identities),
+        )
+
     def setting(self, key: str, default: object) -> object:
         with self.transaction(write=False):
             row = self._db().execute("SELECT value FROM ghost_settings WHERE key=?", (key,)).fetchone()
@@ -139,6 +160,11 @@ class GhostRecords:
     def reset(self, *, settings: bool = False) -> None:
         with self.transaction():
             database = self._db()
+            if self.collection == "inbox":
+                database.execute(
+                    "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
+                    "SELECT 'candidate',id FROM memory_records WHERE collection='inbox'",
+                )
             database.execute("DELETE FROM memory_records WHERE collection=?", (self.collection,))
             database.execute("DELETE FROM memory_events WHERE collection=?", (self.collection,))
             database.execute("DELETE FROM memory_consumers WHERE collection=?", (self.collection,))
@@ -160,4 +186,4 @@ class GhostRecords:
 
     def payload(self) -> dict[str, object] | None:
         rows = self.rows()
-        return cast(dict[str, object], rows[0]["payload"]) if rows else None
+        return _payload(rows[0]["payload"]) if rows else None

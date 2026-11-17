@@ -48,3 +48,45 @@ run_id 的独立 writer 可在删除结束后重写。manifest 完成仅证明�
 若发现复活，先定位身份失效和写入事务边界，再补回归和修复；没有完整证据前不把
 manifest 接入默认调度。随后推进混合操作、多进程、失败恢复和范围隔离矩阵。
 World Model 的新增消费者依赖这些删除/恢复边界，不能靠另设历史绕过它们。
+
+## 限定生产修复
+
+基线实验提交：`40f24302`。生产修复见 `git log --grep="fence deleted Ghost inputs"`。
+
+在既有 `ghost.sqlite3` 内增加持久的 retired input 身份集合（schema 3），并默认接到
+当前控制面的 inbox delete/reset 和 observation delete/reset。身份失效与对应删除同事务提交；
+SQLite insert gate 拒绝旧 candidate 的重新投影/强化以及旧 run_id 的重复结算。
+这些 gate 在真实生产 store 写入入口生效，不依赖实验开关或内存锁。
+
+同一偏好的新手工确认使用新 candidate identity，仍可正常学习；其他 scope 不受影响。
+普通 inbox compaction / 容量筛选不会作废 candidate，只有显式删除/reset 会写入 retirement。
+retirement 跨重启/reset 保留；已升级 schema 的 retirement 表缺失时拒绝冷启动，不能静默
+创建空表恢复旧身份。v1/v2 数据库正常升级，升级前已删除且无身份记录的历史不补猜。
+
+另修复候选协调器：store 明确返回 False 时记 blocked，不能标为 completed；合法的
+0 条删除和 None 返回仍有效。delete_scope callback 使用明确参数 Protocol，移除无限参数签名。
+本轮修改文件的 cast 已移除；输入字典验证 key 后收窄到 object-valued mapping，所有本轮新增
+函数、测试和脚本参数/返回值均明确，无显式 Any 或新增检查豁免。
+
+复测：
+
+```powershell
+python -m tests.manual.ghost_memory_routing.deletion_runtime_probe --output tests/manual/ghost_memory_routing/reports/deletion-runtime-fenced-20261117.json
+```
+
+[相同 16 cell](../../tests/manual/ghost_memory_routing/reports/deletion-runtime-fenced-20261117.json)
+复活 0；与基线对比为 8 → 0。生产/持久化/控制/语言/各领域受影响回归
+`284 passed, 139 subtests passed`，没有运行全量 pytest。包含 21 项新 regression；额外保留
+schema 3 的未来版本测试修正：用当前 schema + 1，继续检验未来数据库被拒绝。
+
+全仓 Ruff、完整 `codey` 的 mypy / Pyrefly / ty（Python 3.11 目标）及
+`tools.kernel_type_precision_gate` 均通过；mypy 检查 697 个生产模块。8 个本轮 Python 文件
+另经三个 checker 单独检查通过。Pyrefly 全树为 0 errors、35 个既有 suppression、158 个
+warning；本轮目标 0 errors、4 warnings，没有修改配置或新增 suppression。
+命令和输出归档于本地 `.e2e-artifacts/ghost-deletion-fence-20261117/checks/`。
+
+上述输入 fence 是 `PRODUCTION_MERGED` 的限定修复；manifest 默认调度仍未晋级。
+尚缺：未落盘的在途输入、continuity/work_queue/affinity/sleep 的旧来源缓存、完整七 store
+混合并发与恢复、retirement 存储增长/维护度量。不能将 16 cell 推广为完整删除生命周期通过。
+retirement 是永久失效边界，不通过删除表回滚；回滚程序时保留数据库，旧 schema 程序会拒绝
+新数据库，不允许以丢弃 tombstone 的方式强行降级。

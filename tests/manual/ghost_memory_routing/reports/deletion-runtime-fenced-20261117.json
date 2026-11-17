@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "model": null,
+  "cells": [
+    {
+      "action": "delete_scope",
+      "writer": "hebbian",
+      "order": "writer_first",
+      "repetition": 0,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "hebbian",
+      "order": "writer_first",
+      "repetition": 1,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "hebbian",
+      "order": "delete_first",
+      "repetition": 0,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "hebbian",
+      "order": "delete_first",
+      "repetition": 1,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "observations",
+      "order": "writer_first",
+      "repetition": 0,
+      "manifest_status": "completed",
+      "writer_applied": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "observations",
+      "order": "writer_first",
+      "repetition": 1,
+      "manifest_status": "completed",
+      "writer_applied": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "observations",
+      "order": "delete_first",
+      "repetition": 0,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "delete_scope",
+      "writer": "observations",
+      "order": "delete_first",
+      "repetition": 1,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "hebbian",
+      "order": "writer_first",
+      "repetition": 0,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "hebbian",
+      "order": "writer_first",
+      "repetition": 1,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "hebbian",
+      "order": "delete_first",
+      "repetition": 0,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "hebbian",
+      "order": "delete_first",
+      "repetition": 1,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "observations",
+      "order": "writer_first",
+      "repetition": 0,
+      "manifest_status": "completed",
+      "writer_applied": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "observations",
+      "order": "writer_first",
+      "repetition": 1,
+      "manifest_status": "completed",
+      "writer_applied": true,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "observations",
+      "order": "delete_first",
+      "repetition": 0,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    },
+    {
+      "action": "reset_all",
+      "writer": "observations",
+      "order": "delete_first",
+      "repetition": 1,
+      "manifest_status": "completed",
+      "writer_applied": false,
+      "resurrected": false,
+      "rebuild_ok": true
+    }
+  ],
+  "cell_count": 16,
+  "resurrections": 0,
+  "all_manifests_completed": true
+}

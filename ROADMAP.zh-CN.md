@@ -1869,6 +1869,11 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17：已修复 inbox candidate 与 observation run 的删除后旧 writer 复活，
+相同 16 cell 从 8 次复活降到 0，限定生产 fence 默认生效；完整 manifest 调度、
+七 store 混合并发和生命周期仍未完成。见
+[运行时删除交错验证](docs/ghost_progress/deletion-runtime-acceptance-20261117.md)。
+
 目标：同槽偏好替换和删除是存储级语义，不能靠 renderer 偶然去重。
 
 先核对当前行为：`hebbian.py` 已在新证据和重复证据路径对人工接受做 supersede，

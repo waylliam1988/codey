@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import SupportsIndex, SupportsInt, TypeAlias, cast
+from typing import SupportsIndex, SupportsInt, TypeGuard
 
 from codey.ghost import _common
 from codey.ghost.events import (
@@ -38,8 +38,6 @@ from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
 )
 
-_INT_INPUT: TypeAlias = str | bytes | bytearray | SupportsInt | SupportsIndex
-
 INBOX_SCHEMA_VERSION = 1
 GHOST_CONTROL_NAMES = (
     "accept_events",
@@ -57,6 +55,13 @@ MAX_CANDIDATE_EVIDENCE_REFS = 32
 _TOKEN_RE = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]+", re.IGNORECASE)
 _PROJECTION_KIND = "ghost_memory_inbox_projection"
 _STORED_REJECTION_REASONS = {"confidence_below_candidate_threshold"}
+
+
+def _object_fields(value: object) -> TypeGuard[dict[str, object]]:
+    if not isinstance(value, dict):
+        return False
+    fields: Mapping[object, object] = value
+    return all(isinstance(key, str) for key in fields)
 
 
 class GhostSettingsError(ValueError):
@@ -129,7 +134,7 @@ class GhostMemoryCandidate:
 
     @classmethod
     def from_payload(cls, payload: object) -> GhostMemoryCandidate | None:
-        if not isinstance(payload, dict):
+        if not _object_fields(payload):
             return None
         candidate_type = str(payload.get("candidate_type") or "").strip()
         signal_kind = str(payload.get("signal_kind") or "").strip().lower()
@@ -470,6 +475,7 @@ class GhostInboxStore:
                     project=normalized_project,
                     session_id=normalized_session,
                 ):
+                    self.records.retire_candidates((candidate.id,))
                     removed += 1
                 else:
                     remaining.append(candidate)
@@ -504,7 +510,7 @@ class GhostInboxStore:
     ) -> bool:
         settings = self._read_settings_unlocked()
         scoped = settings.get("control_scopes", {})
-        if not isinstance(scoped, dict):
+        if not _object_fields(scoped):
             raise GhostSettingsError(self.database.path, "control_scopes must be object")
         changed = False
         if scope == "user":
@@ -518,13 +524,13 @@ class GhostInboxStore:
                 settings[name] = True
         elif scope == "project":
             projects = scoped.get("project", {})
-            if not isinstance(projects, dict):
+            if not _object_fields(projects):
                 raise GhostSettingsError(self.database.path, "project controls must be object")
             changed = project in projects
             projects.pop(project, None)
         elif scope == "session":
             sessions = scoped.get("session", {})
-            if not isinstance(sessions, dict):
+            if not _object_fields(sessions):
                 raise GhostSettingsError(self.database.path, "session controls must be object")
             changed = session_id in sessions
             sessions.pop(session_id, None)
@@ -620,9 +626,11 @@ class GhostInboxStore:
             with self.records.transaction():
                 current = self._read_settings_unlocked()
                 scoped = current.setdefault("control_scopes", {})
-                if not isinstance(scoped, dict):
+                if not _object_fields(scoped):
                     raise GhostSettingsError(self.database.path, "control_scopes must be object")
                 bucket = scoped.setdefault(normalized_scope, {})
+                if not _object_fields(bucket):
+                    raise GhostSettingsError(self.database.path, "control scope bucket must be object")
                 if normalized_scope == "user":
                     bucket[control] = enabled
                     current[control] = enabled
@@ -632,7 +640,7 @@ class GhostInboxStore:
                     if not scope_ref:
                         raise ValueError(f"{normalized_scope} scope reference required")
                     entry = bucket.setdefault(scope_ref, {})
-                    if not isinstance(entry, dict):
+                    if not _object_fields(entry):
                         raise GhostSettingsError(self.database.path, "control scope entry must be object")
                     entry[control] = enabled
                 current["schema_version"] = INBOX_SCHEMA_VERSION
@@ -671,13 +679,13 @@ class GhostInboxStore:
             for name in GHOST_CONTROL_NAMES
         }
         scoped = settings.get("control_scopes", {})
-        if not isinstance(scoped, dict):
+        if not _object_fields(scoped):
             raise GhostSettingsError(self.database.path, "control_scopes must be object")
 
         def apply(bucket: object) -> None:
             if bucket is None:
                 return
-            if not isinstance(bucket, dict):
+            if not _object_fields(bucket):
                 raise GhostSettingsError(self.database.path, "control scope bucket must be object")
             for name in GHOST_CONTROL_NAMES:
                 value = bucket.get(name)
@@ -691,12 +699,12 @@ class GhostInboxStore:
         session_ref = clip_signal_text(session_id, 120)
         if project_ref:
             projects = scoped.get("project", {})
-            if not isinstance(projects, dict):
+            if not _object_fields(projects):
                 raise GhostSettingsError(self.database.path, "project controls must be object")
             apply(projects.get(project_ref, {}))
         if session_ref:
             sessions = scoped.get("session", {})
-            if not isinstance(sessions, dict):
+            if not _object_fields(sessions):
                 raise GhostSettingsError(self.database.path, "session controls must be object")
             apply(sessions.get(session_ref, {}))
         return values
@@ -858,7 +866,7 @@ class GhostInboxStore:
 
     def _read_settings_unlocked(self) -> dict[str, object]:
         payload = self.records.setting("learning", {"schema_version": INBOX_SCHEMA_VERSION, "learning_enabled": True})
-        if not isinstance(payload, dict) or type(payload.get("learning_enabled")) is not bool:
+        if not _object_fields(payload) or type(payload.get("learning_enabled")) is not bool:
             raise GhostSettingsError(self.database.path, "learning_enabled must be bool")
         if type(payload.get("schema_version")) is not int or payload["schema_version"] != INBOX_SCHEMA_VERSION:
             raise GhostSettingsError(self.database.path, "schema mismatch")
@@ -867,11 +875,11 @@ class GhostInboxStore:
             if type(value) is not bool:
                 raise GhostSettingsError(self.database.path, f"{name} must be bool")
         scoped = payload.get("control_scopes", {})
-        if not isinstance(scoped, dict):
+        if not _object_fields(scoped):
             raise GhostSettingsError(self.database.path, "control_scopes must be object")
         for scope in GHOST_CONTROL_SCOPES:
             bucket = scoped.get(scope, {})
-            if not isinstance(bucket, dict):
+            if not _object_fields(bucket):
                 raise GhostSettingsError(self.database.path, f"{scope} controls must be object")
         return payload
 
@@ -1123,7 +1131,8 @@ def _clean_evidence_refs(
 ) -> tuple[str, ...]:
     refs: list[str] = []
     if isinstance(value, (list, tuple)):
-        for item in value:
+        items: Iterable[object] = value
+        for item in items:
             ref = clip_signal_text(item, 160)
             if ref and ref not in refs:
                 refs.append(ref)
@@ -1136,7 +1145,7 @@ def _clean_evidence_refs(
 
 
 def _clean_metadata(value: object) -> dict[str, object]:
-    if not isinstance(value, dict):
+    if not _object_fields(value):
         return {}
     clean: dict[str, object] = {}
     for key, item in value.items():
@@ -1173,6 +1182,8 @@ def _int_or_default(value: object, default: int) -> int:
     if isinstance(value, str) and not value.strip().isascii():
         return default
     try:
-        return int(cast(_INT_INPUT, value))
+        if not isinstance(value, (str, bytes, bytearray, SupportsInt, SupportsIndex)):
+            return default
+        return int(value)
     except (TypeError, ValueError, OverflowError):
         return default

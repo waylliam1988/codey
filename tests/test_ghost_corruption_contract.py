@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.ghost.observations import GhostObservationStore
-from codey.ghost.sqlite import GhostSchemaVersionError
+from codey.ghost.sqlite import GHOST_SCHEMA_VERSION, GhostSchemaVersionError
 
 
 class GhostSQLiteContractTests(unittest.TestCase):
@@ -18,7 +18,7 @@ class GhostSQLiteContractTests(unittest.TestCase):
             path = Path(td) / "ghost.sqlite3"
             database = sqlite3.connect(path)
             try:
-                database.execute("PRAGMA user_version=3")
+                database.execute(f"PRAGMA user_version={GHOST_SCHEMA_VERSION + 1}")
                 database.commit()
             finally:
                 database.close()

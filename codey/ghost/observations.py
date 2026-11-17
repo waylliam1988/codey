@@ -217,6 +217,12 @@ class GhostObservationStore:
             clauses.append("session_id = ?")
             values.append(normalized_session)
         with self.database.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            database.execute(
+                "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
+                "SELECT 'observation',run_id FROM observation_events WHERE " + " AND ".join(clauses),
+                tuple(values),
+            )
             result = database.execute(
                 "DELETE FROM observation_events WHERE " + " AND ".join(clauses), tuple(values)
             )
@@ -237,6 +243,11 @@ class GhostObservationStore:
 
     def reset_all(self) -> None:
         with self.database.connection() as database:
+            database.execute("BEGIN IMMEDIATE")
+            database.execute(
+                "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
+                "SELECT 'observation',run_id FROM observation_events",
+            )
             database.execute("DELETE FROM observation_events")
 
     def export_state(self) -> dict[str, object]:

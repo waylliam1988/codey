@@ -14,7 +14,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 
-GHOST_SCHEMA_VERSION = 2
+GHOST_SCHEMA_VERSION = 3
 
 
 class GhostSchemaVersionError(RuntimeError):
@@ -63,6 +63,10 @@ class GhostSQLite:
             version = int(database.execute("PRAGMA user_version").fetchone()[0])
             if version > GHOST_SCHEMA_VERSION:
                 raise GhostSchemaVersionError("ghost database uses a newer schema")
+            if version >= 3 and database.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_retired_inputs'",
+            ).fetchone() is None:
+                raise GhostSchemaVersionError("Ghost deletion fences are missing from an existing schema")
             self._enable_wal(database)
             database.executescript(
                 """
@@ -169,6 +173,29 @@ class GhostSQLite:
                 ) STRICT;
                 CREATE INDEX IF NOT EXISTS ghost_deletion_manifest_event_order
                     ON ghost_deletion_manifest_events(operation_id, sequence);
+                CREATE TABLE IF NOT EXISTS ghost_retired_inputs (
+                    kind TEXT NOT NULL CHECK(kind IN ('candidate','observation')),
+                    identity TEXT NOT NULL,
+                    PRIMARY KEY(kind,identity)
+                ) STRICT;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_candidate
+                BEFORE INSERT ON memory_records WHEN NEW.collection='inbox'
+                  AND EXISTS(SELECT 1 FROM ghost_retired_inputs
+                             WHERE kind='candidate' AND identity=NEW.id)
+                BEGIN SELECT RAISE(ABORT,'deleted Ghost candidate'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_graph_input
+                BEFORE INSERT ON graph_nodes
+                WHEN EXISTS(
+                    SELECT 1 FROM json_each(NEW.payload,'$.candidate_ids') AS candidate
+                    JOIN ghost_retired_inputs AS retired ON retired.identity=candidate.value
+                    WHERE retired.kind='candidate'
+                )
+                BEGIN SELECT RAISE(ABORT,'deleted Ghost graph input'); END;
+                CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_observation
+                BEFORE INSERT ON observation_events
+                WHEN EXISTS(SELECT 1 FROM ghost_retired_inputs
+                            WHERE kind='observation' AND identity=NEW.run_id)
+                BEGIN SELECT RAISE(ABORT,'deleted Ghost observation'); END;
                 """
             )
             version = int(database.execute("PRAGMA user_version").fetchone()[0])

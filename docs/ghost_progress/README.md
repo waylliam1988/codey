@@ -12,7 +12,7 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
-| 删除与旧 writer 交错 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | 基线 16 cell 中 8 次删除后复活，所有 manifest 却都 completed；定位到输入身份未持久失效，阻止直接接入调度 | [冻结矩阵及负结果](deletion-runtime-acceptance-20261117.md) |
+| 删除与旧 writer 交错 2026-11-17 | `PRODUCTION_MERGED`（限定输入 fence） | 基线 16 cell 中 8 次删除后复活；生产候选/run 身份作废 gate 后复活 0；284 项相关回归通过，完整 manifest 调度和混合生命周期仍待完成 | [冻结矩阵、负结果及修复](deletion-runtime-acceptance-20261117.md) |
 | 已验证中文偏好生产启用 2026-11-17 | `PRODUCTION_MERGED`（受测模型与普通 Chat） | 中文 typed field、UI、语言优先与真实发送前复查已接线并默认启用；沿用既有单模型正结果，新增实机批次按用户要求停止；已逐项核对其他实验消费者 | [启用与遗漏核对](language-production-enablement-20261117.md) |
 | 历史 memory-routing 归档 | `EXPERIMENT_COMPLETE` | 脚本、脱敏测量、报告和来源摘要已提交；这是实验基线，不是生产晋级 | [实验目录](../../tests/manual/ghost_memory_routing/README.md) |
 | 0.6.0 评估冻结与所有权审计 | `EXPERIMENT_COMPLETE` | modelA 单模型 pilot 的矩阵、完整性规则、rank 映射和 admission 所有权已冻结；不改变默认 prompt | [进度记录](frozen-evaluation-ownership-audit.md) |
