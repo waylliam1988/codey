@@ -2079,6 +2079,11 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
+2026-11-17：[Hebbian 内部记录时间基线](docs/ghost_progress/hebbian-row-time-20261117.md)
+54 cell 全有效、18 通过/36 失败；坏内部时间可覆盖有效投影，6 项进一步使普通 directive
+抛 ValueError。合法可选空字段/真实 fallback 通过；生产解码校验待独立提交，不能以 envelope ts
+修复代替内部时间验收。
+
 2026-11-17 用户恢复任务后，[Hebbian 损坏事件重建基线](docs/ghost_progress/hebbian-replay-integrity-20261117.md)
 54 cell 全有效、原 12 通过/42 生产失败。生产修复后 54/54 通过，普通显式重建默认拒绝
 坏 envelope/node/edge/status，保留有效投影与原日志，禁止静默复活/丢状态；另 27 项

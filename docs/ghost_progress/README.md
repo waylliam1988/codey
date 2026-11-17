@@ -10,6 +10,10 @@
 
 ## 当前状态
 
+新完成基线：[Hebbian 内部记录时间](hebbian-row-time-20261117.md)。54 cell 全有效，
+18 合法旧时间/正常对照通过，36 坏内部时间被暖冷重建接受并污染投影，其中 6 项使普通
+directive 抛 ValueError。前序仅校验 envelope ts，不覆盖这些字段；限定生产修复接下来独立提交。
+
 2026-11-17 用户已恢复持续推进。新完成：
 [Hebbian 损坏事件原子重建](hebbian-replay-integrity-20261117.md)，原 54 cell 12→54 通过；
 普通 rebuild-state 默认拒绝坏 envelope/node/edge/status 并保留有效投影和原日志，

@@ -1,0 +1,1146 @@
+{
+  "experiment": "hebbian-row-time-20261117",
+  "status": "EXPERIMENT_COMPLETE",
+  "baseline_revision": "e60757b4",
+  "external_model_calls": 0,
+  "valid_cells": 54,
+  "passed": 18,
+  "failed": 36,
+  "consumer_exception_cells": 6,
+  "cells": [
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "user",
+      "target": "node",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "project",
+      "target": "node",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "session",
+      "target": "node",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "user",
+      "target": "edge",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "project",
+      "target": "edge",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "session",
+      "target": "edge",
+      "variant": "valid"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "node",
+      "variant": "created_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "node",
+      "variant": "created_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "node",
+      "variant": "created_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "edge",
+      "variant": "created_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "edge",
+      "variant": "created_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "edge",
+      "variant": "created_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "node",
+      "variant": "updated_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "node",
+      "variant": "updated_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "node",
+      "variant": "updated_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "edge",
+      "variant": "updated_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "edge",
+      "variant": "updated_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "edge",
+      "variant": "updated_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "node",
+      "variant": "last_reinforced_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "node",
+      "variant": "last_reinforced_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "node",
+      "variant": "last_reinforced_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "edge",
+      "variant": "last_reinforced_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "edge",
+      "variant": "last_reinforced_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "edge",
+      "variant": "last_reinforced_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "ValueError",
+        "ValueError"
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "node",
+      "variant": "last_decayed_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "ValueError",
+        "ValueError"
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "node",
+      "variant": "last_decayed_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "ValueError",
+        "ValueError"
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "node",
+      "variant": "last_decayed_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "edge",
+      "variant": "last_decayed_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "edge",
+      "variant": "last_decayed_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "edge",
+      "variant": "last_decayed_at"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "node",
+      "variant": "nonstring"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "node",
+      "variant": "nonstring"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "node",
+      "variant": "nonstring"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "edge",
+      "variant": "nonstring"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "edge",
+      "variant": "nonstring"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "edge",
+      "variant": "nonstring"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "ValueError",
+        "ValueError"
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "node",
+      "variant": "missing_anchor"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "ValueError",
+        "ValueError"
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "node",
+      "variant": "missing_anchor"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "ValueError",
+        "ValueError"
+      ],
+      "directive_unchanged": [
+        false,
+        false
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "node",
+      "variant": "missing_anchor"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "user",
+      "target": "edge",
+      "variant": "missing_anchor"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "project",
+      "target": "edge",
+      "variant": "missing_anchor"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        false,
+        false
+      ],
+      "scope": "session",
+      "target": "edge",
+      "variant": "missing_anchor"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "user",
+      "target": "node",
+      "variant": "legacy_optional"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "project",
+      "target": "node",
+      "variant": "legacy_optional"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "session",
+      "target": "node",
+      "variant": "legacy_optional"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "user",
+      "target": "edge",
+      "variant": "legacy_optional"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "project",
+      "target": "edge",
+      "variant": "legacy_optional"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "session",
+      "target": "edge",
+      "variant": "legacy_optional"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "user",
+      "target": "node",
+      "variant": "legacy_fallback"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "project",
+      "target": "node",
+      "variant": "legacy_fallback"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "session",
+      "target": "node",
+      "variant": "legacy_fallback"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "user",
+      "target": "edge",
+      "variant": "legacy_fallback"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "project",
+      "target": "edge",
+      "variant": "legacy_fallback"
+    },
+    {
+      "accepted": [
+        true,
+        true
+      ],
+      "consumer_errors": [
+        "",
+        ""
+      ],
+      "directive_unchanged": [
+        true,
+        true
+      ],
+      "projection_unchanged": [
+        true,
+        true
+      ],
+      "scope": "session",
+      "target": "edge",
+      "variant": "legacy_fallback"
+    }
+  ]
+}
