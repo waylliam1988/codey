@@ -491,5 +491,6 @@
     "No cross-machine run, mixed-version upgrade or full lifecycle proof",
     "Record-only control payloads, other ranking/digest rules, full G0 and World Model production remain incomplete"
   ],
-  "local_artifacts": ".e2e-artifacts/ghost-graph-tie-replay-20261118"
+  "local_artifacts": ".e2e-artifacts/ghost-graph-tie-replay-20261118",
+  "production_commit": "95fd4e708834b3ad768c30c29855b3e564848aea"
 }
