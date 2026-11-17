@@ -12,7 +12,18 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-18 最新完成：[节点容量与跨 scope 重建](ghost_progress/graph-capacity-scope-replay-20261118.md)，
+2026-11-18 最新完成：[正常 App 硬退出与 HTTP 恢复](ghost_progress/app-http-crash-recovery-20261118.md)。
+基线 `c0fa5117` 原 24 格 18 通过/6 个保存响应组失败；生产 `86ad9a83` 恢复原声明工具，
+原矩阵 24/24 通过。普通 shared kernel 冷窗口直接消费，不需要新开关；六组保存响应
+完成原 run 且新增 HTTP=0，未知发送保持诚实中止、不重发，24 个后续新任务成功。
+追加 API 两协议 12 项、扩大 24 文件 384 passed/1 既有 skipped 与所有指定全树门通过，
+五 owned 文件额外 Any 零诊断，依赖 10988 项/336 文件单独保留。无模型调用，完整
+日志/state/wire 留本地；旧 smoke 和单元夹具失败不作生产/模型阴性。
+回滚 revert 该生产提交并正常重启，保留 SQLite/原 artifacts；不自动重开已 failed 的
+旧任务。下一步是混版本/retention、其余消费者/遥测及有新增预测信息的 World Model；
+完整 G0 未完成，两个重复事实候选不补跑。用户原改动保留，不复制 worktree，目标继续。
+
+2026-11-18 此前完成：[节点容量与跨 scope 重建](ghost_progress/graph-capacity-scope-replay-20261118.md)，
 生产 `34852638` 已在 master 默认生效。原 12 项从 6→12，正常两条 reinforce 分支在
 同事务记录实际裁剪差量；强化/裁剪用独立身份，同秒反复重学追加回归从 0→3。普通
 writer/rebuild/CLI 直接消费，无新开关。44 项新增边界通过；扩大 34 文件批次为
@@ -27,7 +38,7 @@ snapshot，不删原始历史。baseline DB 已被旧 replay 改过，不是最�
 冷 provider 未恢复原工具声明，拒绝本地 native terminal 回执。旧 smoke 的 positional
 JSONL constructor 已原样复现 TypeError，未进入恢复；typed harness 已改走普通 headless
 初始化、正常 App 默认 scheduler 恢复，不重复提交旧 run。三次预检失败归属单独保留，
-先提交基线再修生产。完整 G0/World Model 仍未完成；两个重复事实预测负结果不重跑。
+负结果独立提交后生产缺口已修复，见本页最新记录。完整 G0/World Model 仍未完成；两个重复事实预测负结果不重跑。
 目标继续，用户原改动不动，不复制 worktree。
 
 2026-11-18 此前完成：[Hebbian control payload](ghost_progress/hebbian-control-replay-20261118.md)。

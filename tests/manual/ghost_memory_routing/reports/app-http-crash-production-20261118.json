@@ -5558,5 +5558,14 @@
       "openai-responses"
     ],
     "fixture_failure_preserved": "initial incomplete call/result fixture: 12 errors before helper; corrected paired canonical view retained all assertions"
-  }
+  },
+  "production_commit": "86ad9a83",
+  "default_consumer": "normal App scheduler -> shared kernel restore_provider_window -> API context owner",
+  "new_flag": false,
+  "limitations": [
+    "fixed loopback HTTP replies; no model calls or new behavioral benefit evidence",
+    "App HTTP matrix covers the frozen native OpenAI Completions configuration; separate local contract tests cover both API protocols",
+    "unknown sends retain honest interruption; old failed tasks are not automatically reopened",
+    "mixed-version, old-failed-state migration, full G0 and World Model remain incomplete"
+  ]
 }

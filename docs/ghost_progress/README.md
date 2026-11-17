@@ -10,12 +10,13 @@
 
 ## 当前状态
 
-[正常 App 硬退出与 HTTP 恢复](app-http-crash-recovery-20261118.md)基线 24 格完成：
-18 通过、6 失败，三 scope 的 enabled/revoked 保存响应组均无法完成原 run。真实
-headless/SQLite/os._exit→正常 App scheduler→loopback HTTP，所有 fixture 有效，原请求/
-响应身份保留、没有重复 HTTP、独立新 run 均完成。根因为冷 provider 缺原工具声明，
-本地 native terminal acknowledgement 被拒绝；先留基线再修，尚不标完整生产闭合。
-旧过时 smoke 与三次预检失败保留，各自归属见记录；未调用模型。
+[正常 App 硬退出与 HTTP 恢复](app-http-crash-recovery-20261118.md)已默认生产修复，
+提交 `86ad9a83`：原 24 格从 18→24 通过，六个保存响应组恢复原工具声明后完成原 run，
+新增 HTTP=0；请求冻结/撤回/未知发送/二次冷开/独立新任务不回归。普通 shared kernel
+直接消费，无新开关；真实 headless/SQLite/硬退出→默认 App scheduler→loopback HTTP。
+新增 API 两协议 12 项通过，扩大 24 文件 384 passed/1 既有 skipped 及全树静态门通过，
+五个 owned 文件额外 Any 零诊断。负结果 `c0fa5117`、旧 smoke 与夹具失败保留；无模型
+调用。不自动重开旧 failed 任务，不宣称混版本/完整 G0/World Model 已完成。
 
 [节点容量裁剪与跨 scope 重建](graph-capacity-scope-replay-20261118.md)已默认生产修复，
 提交 `34852638`：原 12 项 6→12，实际裁剪差量与强化事务独立身份供普通 writer/rebuild/

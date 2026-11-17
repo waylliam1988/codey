@@ -30,7 +30,10 @@
 2026-11-18 G0 [正常 App 硬退出与 HTTP 恢复](../../../docs/ghost_progress/app-http-crash-recovery-20261118.md)：
 入口 `python -B tests/manual/completion_operation_resume_smoke.py --self-test --state-root <isolated-dir>`；
 pytest 等价入口 `tests/test_ghost_app_http_crash_recovery.py`。三 scope×四窗口×enabled/revoked
-24 格基线 18 通过/6 个保存响应恢复失败；报告 `reports/app-http-crash-baseline-20261118.json`。
+24 格基线 18 通过/6 个保存响应恢复失败，生产 `86ad9a83` 后原矩阵 24/24 通过。
+报告 `reports/app-http-crash-{baseline,production}-20261118.json`；新增 API 两协议契约
+边界在 `tests/test_api_restored_tool_contract.py`。普通 App/kernel 默认恢复原声明工具，
+保存响应不再重发 HTTP 来完成；unknown 不重试、旧失败任务不自动重开。
 真实 SQLite/硬退出/默认 App scheduler/loopback HTTP，无模型调用；完整日志/请求/state
 仅留本地 `.e2e-artifacts/ghost-app-http-crash-recovery-20261118`。旧脚本接口及夹具失败
 单独保留；历史 release smoke 的通过不代表当前版本已通过此矩阵。

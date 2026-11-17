@@ -1818,11 +1818,13 @@ runtime 写 observation、Ghost 做 projection 的所有权可追溯；本版本
 
 #### 0.6.1 - Context Epoch Admission Wiring
 
-2026-11-18：[正常 App 硬退出与 HTTP 恢复基线](docs/ghost_progress/app-http-crash-recovery-20261118.md)
-24 格（三 scope×四崩溃窗口×enabled/revoked）18 通过、6 个保存响应组失败。
-实际 headless/SQLite/硬退出→正常 App scheduler/HTTP，非 fake provider；无重发、
-独立后续 run 均完成。冷 provider 缺原声明工具，保存响应的本地 native 回执被拒绝。
-保留基线后修复，不据此宣称完整 App/恢复或 0.6.1 已通过；无模型收益/服务健康主张。
+2026-11-18：[正常 App 硬退出与 HTTP 恢复](docs/ghost_progress/app-http-crash-recovery-20261118.md)
+生产 `86ad9a83` 默认恢复保存响应的原声明工具，原 24 格（三 scope×四窗口×enabled/revoked）
+18→24 通过。六个保存响应组原 run 完成且新增 HTTP=0；不重发未知 effect，独立后续
+run 均成功。负结果 `c0fa5117` 保留，真实 headless/SQLite/硬退出→正常 App scheduler/HTTP。
+新增 API 两协议 12 项、扩大 24 文件 384 passed/1 既有 skipped 与全树静态门通过，
+五个 owned 文件 Any 零诊断。无新开关/模型调用，不自动重开旧 failed 任务，不宣称
+完整 0.6.1、混版本/旧失败迁移或 World Model 通过。
 
 2026-11-17：[不完整HTTP响应生产修复与暂停交接](docs/ghost_progress/native-uncertain-response-production-20261117.md)
 已在普通JSON发送默认核对帧长度。原72项48→72通过，合法JSON但声明字节未收齐不再误判完成，

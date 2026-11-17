@@ -3,6 +3,7 @@
 - 日期：2026-11-18；关联 0.6.1–0.6.4。
 - 状态：`PRODUCTION_MERGED`（本次 master 保存响应/本地 native 回执冷恢复修复）。
 - 诊断 A 基线：`6d844752`；B 负结果 `c0fa5117`，C 冻结 `f56e7d5b`。
+- 生产提交：`86ad9a83`；普通 App/shared kernel 默认消费，无新开关。
 - 模型：A 旧 smoke 离线；B/C 使用固定 SSE 的真实 loopback HTTP，不调用模型。
 
 ## 已有证据与实际缺口
@@ -222,8 +223,8 @@ canonical 历史。模型请求、原响应、Permission、Completion、Attempt 
 正式矩阵与检查期冻结全部 702 个生产文件及五个 owned 文件；相对 B 只有上述两个
 生产模块变更，B 两脚本字节不变。原始 wire/state/JUnit/日志在本地
 `production*`，仓库 [脱敏结果](../../tests/manual/ghost_memory_routing/reports/app-http-crash-production-20261118.json)
-保留逐格结论和 source hashes。此处先记矩阵结果，扩大回归/全树门及生产 commit
-完成后再标正式合并，不能只据候选预检宣称接线完毕。
+保留逐格结论和 source hashes。正式生产结论还依赖下文扩大回归、全树门与实际
+生产提交，不能只据候选预检宣称接线完毕。
 
 受测正常入口是保存实际 Local 配置/模型允许列表→普通 headless→冷 App 默认 scheduler；
 修复消费者是现有 shared kernel 的窗口恢复，非 harness-only hook，无新增默认关闭开关。
