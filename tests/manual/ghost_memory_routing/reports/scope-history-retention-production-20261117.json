@@ -1,0 +1,551 @@
+{
+  "schema_version": 1,
+  "experiment": "ordinary-scope-history-retention-production",
+  "baseline_commit": "f09eddd2",
+  "negative_commit": "41393284",
+  "model": null,
+  "production_consumer": "Default GhostControlSurface scope deletion with durable Manifest; normal readers and existing replay reducers",
+  "default_enabled": true,
+  "cells": [
+    {
+      "store": "inbox",
+      "scope": "user",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "hebbian",
+      "scope": "user",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "continuity",
+      "scope": "user",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "work_queue",
+      "scope": "user",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "affinity",
+      "scope": "user",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "sleep",
+      "scope": "user",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "observations",
+      "scope": "user",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "inbox",
+      "scope": "project",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "hebbian",
+      "scope": "project",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "continuity",
+      "scope": "project",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "work_queue",
+      "scope": "project",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "affinity",
+      "scope": "project",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "sleep",
+      "scope": "project",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "observations",
+      "scope": "project",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "inbox",
+      "scope": "session",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "hebbian",
+      "scope": "session",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "continuity",
+      "scope": "session",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "work_queue",
+      "scope": "session",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "affinity",
+      "scope": "session",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "sleep",
+      "scope": "session",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "observations",
+      "scope": "session",
+      "deleted": false,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "inbox",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "hebbian",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "continuity",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "work_queue",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "affinity",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "sleep",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "observations",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "inbox",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "hebbian",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "continuity",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "work_queue",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "affinity",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "sleep",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "observations",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "inbox",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "hebbian",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "continuity",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "work_queue",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "affinity",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "sleep",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "observations",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": false,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "inbox",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "hebbian",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "continuity",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "work_queue",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "affinity",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "sleep",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "observations",
+      "scope": "user",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "inbox",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "hebbian",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "continuity",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "work_queue",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "affinity",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "sleep",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "observations",
+      "scope": "project",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "inbox",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "hebbian",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "continuity",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "work_queue",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "affinity",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "sleep",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    },
+    {
+      "store": "observations",
+      "scope": "session",
+      "deleted": true,
+      "rebuild": true,
+      "passed": true,
+      "outcome": "passed"
+    }
+  ],
+  "summary": {
+    "total": 63,
+    "passed": 63,
+    "failed": 0,
+    "control_cells_passed": 21,
+    "deletion_cells_passed": 42,
+    "deletion_cells_failed": 0
+  },
+  "additional_acceptance_tests": 23,
+  "same_timestamp_candidate": {
+    "before_unique_control_ids": {
+      "passed": 0,
+      "failed": 9
+    },
+    "after_unique_control_ids": {
+      "passed": 9,
+      "failed": 0
+    }
+  },
+  "regressions": {
+    "expanded_before_final_control_identity_edit": {
+      "passed": 853,
+      "subtests_passed": 141
+    },
+    "final_source_affected_recheck": {
+      "passed": 454,
+      "subtests_passed": 133
+    }
+  },
+  "limitations": [
+    "Below existing compaction limits",
+    "No reset_all or physical purge claim",
+    "Inbox replay uses existing private reducer; Sleep and observations are reopened, not rebuilt by an invented API",
+    "Independent stores; no new local-model benefit claim",
+    "Final-source affected recheck is separate from the earlier expanded run; do not sum counts or claim a final 862-test expanded run"
+  ]
+}

@@ -484,6 +484,7 @@ class GhostInboxStore:
             control = _ghost_control_event(
                 schema_version=INBOX_SCHEMA_VERSION,
                 event_name="ghost_memory_scope_deleted",
+                event_id_prefix="gmd_",
                 payload={
                     "scope": normalized_scope,
                     "project": normalized_project if normalized_scope == "project" else "",
@@ -494,7 +495,7 @@ class GhostInboxStore:
                 now=_common.now_iso_z(),
             )
             if removed:
-                self._rewrite_events_from_candidates(remaining, control_event=control)
+                self._append_events([control])
                 self._write_state(remaining)
             else:
                 self._append_events([control])
@@ -840,7 +841,11 @@ class GhostInboxStore:
             ):
                 continue
             rows.append(candidate)
-        return sorted(rows, key=lambda item: item.updated_at, reverse=True)
+
+        def updated_at(candidate: GhostMemoryCandidate) -> str:
+            return candidate.updated_at
+
+        return sorted(rows, key=updated_at, reverse=True)
 
     def _load_candidates_unlocked(self) -> tuple[GhostMemoryCandidate, ...]:
         rows = []
@@ -856,6 +861,22 @@ class GhostInboxStore:
         events = self._read_events_unlocked()
         for event in events:
             event_type = str(event.get("type") or "")
+            if event_type == "ghost_memory_scope_deleted":
+                payload = event.get("payload")
+                if not _object_fields(payload):
+                    raise ValueError("invalid Ghost candidate scope deletion")
+                scope = payload.get("scope")
+                project = payload.get("project", "")
+                session_id = payload.get("session_id", "")
+                if (not isinstance(scope, str) or scope not in SIGNAL_SCOPES
+                        or not isinstance(project, str) or not isinstance(session_id, str)
+                        or (scope == "project" and not project) or (scope == "session" and not session_id)):
+                    raise ValueError("invalid Ghost candidate deletion scope")
+                by_id = {
+                    identity: candidate for identity, candidate in by_id.items()
+                    if not _scope_delete_match(candidate, scope, project=project, session_id=session_id)
+                }
+                continue
             if event_type != "ghost_memory_candidate_upsert":
                 continue
             candidate = GhostMemoryCandidate.from_payload(event.get("candidate"))
@@ -1008,7 +1029,7 @@ def _derived_value_key(summary: object, evidence_quote: object) -> str:
 
 
 def _token_slug(value: object) -> str:
-    tokens: list[str] = [token.casefold() for token in _TOKEN_RE.findall(str(value or ""))]
+    tokens = [match.group(0).casefold() for match in _TOKEN_RE.finditer(str(value or ""))]
     if not tokens:
         return "empty"
     return "_".join(tokens[:8])[:120]

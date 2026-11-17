@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import math
 import tempfile
 import unittest
+from collections.abc import Sequence
 from dataclasses import replace
 from unittest import mock
 
@@ -15,8 +17,8 @@ from codey.ghost.hebbian import (
     GhostNode,
 )
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
+from codey.ghost.payload_types import object_fields
 from codey.ghost.schema import GhostSignal
-from tests.ghost_fixtures import event_text
 
 
 def _signal(
@@ -68,14 +70,24 @@ def _accept(inbox: GhostInboxStore, candidate: GhostMemoryCandidate) -> GhostMem
     return reviewed
 
 
+def event_text(store: GhostHebbianStore) -> str:
+    return "".join(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n" for event in store.graph.events())
+
+
+def _items(value: object) -> Sequence[object]:
+    if not isinstance(value, list):
+        raise AssertionError("expected an array")
+    items: Sequence[object] = value
+    return items
+
+
 class GhostHebbianStoreTests(unittest.TestCase):
     def test_accepted_candidate_creates_weighted_node(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             hebbian = GhostHebbianStore(td)
             candidate = _ingest_one(inbox, _signal(confidence=0.8), project=td)
-            candidate = inbox.review_candidate(candidate.id, "accept", reviewed_by="test")
-            assert candidate is not None
+            candidate = _accept(inbox, candidate)
 
             result = hebbian.reinforce_candidate(candidate)
 
@@ -126,6 +138,7 @@ class GhostHebbianStoreTests(unittest.TestCase):
             self.assertFalse(second.applied)
             self.assertEqual(second.reason, "duplicate_evidence")
             self.assertEqual(len(hebbian.list_nodes()), 1)
+            assert first.node is not None
             self.assertEqual(hebbian.list_nodes()[0].weight, first.node.weight)
 
     def test_new_evidence_refs_raise_weight_without_exceeding_one(self) -> None:
@@ -245,8 +258,12 @@ class GhostHebbianStoreTests(unittest.TestCase):
             hebbian.reinforce_candidate(second)
             nodes = hebbian.list_nodes(status="active")
 
-            self.assertEqual({node.value_key for node in nodes}, {"concise", "detailed"})
-            self.assertEqual({node.status for node in nodes}, {"active"})
+            values: set[str] = {node.value_key for node in nodes}
+            statuses: set[str] = {node.status for node in nodes}
+            expected_values: set[str] = {"concise", "detailed"}
+            expected_statuses: set[str] = {"active"}
+            self.assertEqual(values, expected_values)
+            self.assertEqual(statuses, expected_statuses)
 
     def test_manual_accept_new_value_supersedes_old_active_node(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -308,7 +325,8 @@ class GhostHebbianStoreTests(unittest.TestCase):
 
             removed = hebbian.remove_candidate(second)
 
-            self.assertEqual(removed, {"nodes": 1, "edges": 1})
+            expected_removed: dict[str, int] = {"nodes": 1, "edges": 1}
+            self.assertEqual(removed, expected_removed)
             self.assertEqual(len(hebbian.list_nodes()), 1)
             self.assertEqual(hebbian.list_edges(), ())
             self.assertNotIn("Prefer concise replies.", event_text(hebbian))
@@ -427,12 +445,17 @@ class GhostHebbianStoreTests(unittest.TestCase):
 
             self.assertEqual(len(hebbian.list_nodes(scope="project", project=project_a)), 1)
             self.assertEqual(len(hebbian.list_nodes(scope="project", project=project_b)), 1)
+            original_events = hebbian.graph.events()
             removed = hebbian.delete_scope("project", project=project_a)
 
             self.assertEqual(removed["nodes"], 1)
             self.assertEqual(hebbian.list_nodes(scope="project", project=project_a), ())
             self.assertEqual(len(hebbian.list_nodes(scope="project", project=project_b)), 1)
-            self.assertNotIn("Project A memory unique phrase", event_text(hebbian))
+            self.assertIn("Project A memory unique phrase", event_text(hebbian))
+            self.assertEqual(hebbian.graph.events()[:len(original_events)], original_events)
+            self.assertTrue(hebbian.rebuild_from_events())
+            self.assertEqual(hebbian.list_nodes(scope="project", project=project_a), ())
+            self.assertEqual(len(hebbian.list_nodes(scope="project", project=project_b)), 1)
 
     def test_coactivation_edges_only_use_same_run_accepted_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -520,8 +543,10 @@ class GhostHebbianStoreTests(unittest.TestCase):
 
             self.assertTrue(hebbian.rebuild_from_events())
             exported = hebbian.export_state()
-            self.assertEqual(len(exported["state"]["nodes"]), 1)
-            self.assertEqual(len(exported["events"]), 1)
+            state = exported["state"]
+            assert object_fields(state)
+            self.assertEqual(len(_items(state["nodes"])), 1)
+            self.assertEqual(len(_items(exported["events"])), 1)
             self.assertTrue(hebbian.reset_all())
             self.assertEqual(hebbian.list_nodes(), ())
             self.assertFalse(bool(event_text(hebbian)))

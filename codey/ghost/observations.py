@@ -186,7 +186,10 @@ class GhostObservationStore:
                 """
                 SELECT run_id, session_id, project, mode, user_text,
                        assistant_text, stop_reason, committed, provider_id, ts
-                FROM observation_events ORDER BY sequence
+                FROM observation_events
+                WHERE NOT EXISTS (SELECT 1 FROM ghost_retired_inputs
+                                  WHERE kind='observation' AND identity=observation_events.run_id)
+                ORDER BY sequence
                 """
             ).fetchall()
         return tuple(_row_payload(row) for row in rows)
@@ -270,6 +273,20 @@ class GhostObservationStore:
             values.append(normalized_session)
         with self.database.write_transaction() as database:
             self.database.advance_deletion(database)
+            row: sqlite3.Row | None = database.execute(
+                "SELECT count(*) FROM observation_events WHERE (" + " AND ".join(clauses) + ") "
+                "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
+                "WHERE kind='observation' AND identity=observation_events.run_id)", tuple(values),
+            ).fetchone()
+            removed: object = None
+            if row is not None:
+                removed = row[0]
+            if type(removed) is not int:
+                raise ValueError("invalid observation deletion count")
+            database.execute(
+                "DELETE FROM memory_embeddings WHERE run_id IN "
+                "(SELECT run_id FROM observation_events WHERE " + " AND ".join(clauses) + ")", tuple(values),
+            )
             database.execute(
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
                 "SELECT 'observation',run_id FROM ghost_input_origins WHERE " + " AND ".join(clauses),
@@ -283,10 +300,9 @@ class GhostObservationStore:
                 "SELECT 'observation',run_id FROM observation_events WHERE " + " AND ".join(clauses),
                 tuple(values),
             )
-            result = database.execute(
-                "DELETE FROM observation_events WHERE " + " AND ".join(clauses), tuple(values)
-            )
-            return int(result.rowcount)
+            # Retired identities remove normal readers' eligibility. Preserve
+            # the domain facts here; physical retention/purge is a separate act.
+            return removed
 
     def retrieve(
         self, query: str, *, session_id: str = "", project: str = "", scope: str = "session",

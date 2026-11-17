@@ -10,11 +10,13 @@
 
 ## 当前状态
 
-最新未闭合：[普通 scope 删除的历史保留基线](scope-history-retention-baseline-20261117.md)。
-63项有效矩阵39通过/24失败；四个store物理重写历史，当前不是来源复活；生产修复待提交。
+最新完成：[普通 scope 删除保留领域历史](scope-history-retention-production-20261117.md)。
+原63项矩阵39→63通过，默认删除和消费者已接线；当前剩余容量compaction/retention、
+reset及其他历史重写路径，不把低容量普通删除通过说成完整0.6.3通过。
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 普通 scope 删除的历史保留 2026-11-17 | `PRODUCTION_MERGED`（低于compaction阈值） | 原63项39→63通过；追加领域删除事件、保留observation事实并退役过滤、同事务清派生向量及写回/检索复查；86项验收，独立ID修改前853项扩大回归/141子测试、最终源码454项复验/133子测试及完整静态门通过；九个owned文件额外Any审计零诊断 | [生产修复与失败归属](scope-history-retention-production-20261117.md) / [原始负结果](scope-history-retention-baseline-20261117.md) |
 | 升级旧投影的消费者准入 2026-11-17 | `PRODUCTION_MERGED`（默认reader/claim） | 原24项8→24通过；未知/false/退役来源在排序与容量裁剪前过滤，原始审计记录保留；47项验收、553项相关回归及8个subtest、最终50项复验、完整静态门通过，五个owned文件额外Any审计零诊断 | [生产修复及夹具失败归属](legacy-projection-admission-production-20261117.md) / [原负结果](legacy-projection-admission-baseline-20261117.md) |
 | 删除操作发现与显式恢复 2026-11-17 | `PRODUCTION_MERGED`（普通 summary/export/action） | 默认有界分页，12个响应前硬退出案例可从普通入口找回原ID并恢复；completed不重复删、blocked不自动重试；329项相关回归、类型收窄后50项复验及完整静态门通过，四个owned文件Any审计零诊断 | [生产接线与限制](deletion-manifest-discovery-production-20261117.md) |
 | 删除响应丢失后的操作发现基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果） | 三个真实硬退出窗口均无法通过普通 export 发现原操作；后续生产发现入口已闭合本缺口 | [冻结复现与边界](deletion-manifest-discovery-baseline-20261117.md) |
@@ -53,7 +55,7 @@
 | 0.6.2 scope 与四个开关 | `INCOMPLETE`（控制及 Manifest 已生产接线） | 四开关默认接线，显式关闭仍生效；delete/reset 已默认持久调度；完整维护撤回、生命周期及 acceptance battery 仍缺 | [进度记录](independent-controls.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（历史候选，后续已接线） | 持久化、七 store 失败恢复与冷启动原始证据保留；后续原子性、混合矩阵和普通 API/CLI 默认调度已完成，完整 retention/升级输入仍缺 | [候选记录](deletion-manifest-candidate.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
-| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含默认 Manifest 调度、发现及旧投影准入） | 输入登记、canonical receipt、来源退役、派生 fence、graph精确替换、默认delete/reset、原操作发现及升级旧投影拒绝准入已生效；retention/历史保留、其余升级输入、身份/scope异常及完整生命周期验收仍缺 | [旧投影准入](legacy-projection-admission-production-20261117.md) / [发现恢复](deletion-manifest-discovery-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
+| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含普通删除历史保留） | 输入登记、canonical receipt、来源退役、派生 fence、graph精确替换、默认delete/reset、原操作发现、升级旧投影拒绝准入及低容量普通删除历史保留已生效；容量retention/其他历史重写、其余升级输入、身份/scope异常及完整生命周期验收仍缺 | [历史保留](scope-history-retention-production-20261117.md) / [旧投影准入](legacy-projection-admission-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |

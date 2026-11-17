@@ -12,16 +12,19 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新未闭合：[普通删除历史保留](ghost_progress/scope-history-retention-baseline-20261117.md)
-有效矩阵63项39通过/24失败，四个store的普通删除改写领域历史，尚未生产修复；不把已经
-通过的删除隐藏和不复活检查说成失败。保留原始负结果，下一步追加事件并保持永久退役。
+2026-11-17 最新完成：[普通删除历史保留](ghost_progress/scope-history-retention-production-20261117.md)
+原63项矩阵39→63通过，inbox/Hebbian/Sleep追加删除事件、observation保留事实并退役过滤；
+派生向量同事务清理与embedding期间删除复查默认生效。86项验收、独立ID修订前853项扩大
+回归/141子测试、最终源码454项复验/133子测试及完整静态门通过，九个owned文件额外Any
+审计零诊断。当前下一步是容量compaction/retention、reset和其他历史重写路径，不能把
+低容量普通scope删除通过当作完整0.6.3；随后继续显式时间/replay及真实World Model闭环。
 
 此前：[升级旧投影消费者准入](ghost_progress/legacy-projection-admission-production-20261117.md)
 已在普通经历检索、continuity和work queue默认reader/claim接线，原24项矩阵8→24通过。
 None/false不补true，原始审计数据保留，独立研究及人工偏好仍可用。47项新增验收、553项相关
 回归及8个subtest、最终50项复验和完整静态门通过；五个owned文件额外Any审计零诊断。
 扩大回归中的旧A/B夹具失败已在旧源码复现并通过真实输入admission修正，未改scorer。
-下一步补普通删除的历史事件保留、retention、其余升级/异常身份scope、显式时间/replay，
+普通删除低容量历史保留随后已修复，下一步补容量retention、其余升级/异常身份scope、显式时间/replay，
 随后继续真实World Model闭环；不重跑已停止语言批次，不将本次修复视为完整0.6.3通过。
 
 此前：[删除操作发现与显式恢复](ghost_progress/deletion-manifest-discovery-production-20261117.md)

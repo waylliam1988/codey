@@ -5,10 +5,16 @@ from __future__ import annotations
 import hashlib
 import importlib
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
+from typing import Protocol, runtime_checkable
 
 from codey.ghost.embeddings import Embeddings, pack_embedding
 from codey.ghost.sqlite import GhostSQLite
+
+
+@runtime_checkable
+class _VectorExtension(Protocol):
+    def load(self, connection: sqlite3.Connection) -> None: ...
 
 
 def observation_text(row: Mapping[str, object]) -> str:
@@ -36,20 +42,32 @@ class GhostVectorMemory:
         placeholders = ",".join("?" for _run in run_ids)
         with self.database.connection() as connection:
             self._load_extension(connection)
-            found = connection.execute(
+            found: list[sqlite3.Row] = connection.execute(
                 "SELECT o.run_id, e.content_digest, vec_distance_cosine(e.vector, ?) AS distance "
                 "FROM memory_embeddings e JOIN observation_events o ON o.run_id=e.run_id "
                 f"WHERE e.model_id=? AND e.dimensions=? AND o.committed=1 AND o.run_id IN ({placeholders}) "
+                "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs WHERE kind='observation' AND identity=o.run_id) "
+                "AND codey_input_receipt_ok((SELECT database_name FROM ghost_input_authority WHERE singleton=1),o.run_id) "
                 "ORDER BY distance, o.sequence DESC LIMIT ?",
                 (vector, self.embeddings.model_id, self.embeddings.dimensions, *run_ids, min(200, limit)),
             ).fetchall()
         by_id = {str(row["run_id"]): row for row in rows}
-        return tuple(by_id[str(row["run_id"])] for row in found
-                     if str(row["content_digest"]) == observation_digest(by_id[str(row["run_id"])]))
+        ranked: list[dict[str, object]] = []
+        for match in found:
+            identity: object = match["run_id"]
+            digest: object = match["content_digest"]
+            if not isinstance(identity, str) or not isinstance(digest, str):
+                raise ValueError("invalid Ghost vector ranking row")
+            candidate = by_id.get(identity)
+            if candidate is not None and digest == observation_digest(candidate):
+                ranked.append(candidate)
+        return tuple(ranked)
 
     @staticmethod
     def _load_extension(connection: sqlite3.Connection) -> None:
-        extension = importlib.import_module("sqlite_vec")
+        extension: object = importlib.import_module("sqlite_vec")
+        if not isinstance(extension, _VectorExtension):
+            raise TypeError("sqlite_vec must expose its connection loader")
         connection.enable_load_extension(True)
         try:
             extension.load(connection)
@@ -58,10 +76,19 @@ class GhostVectorMemory:
 
     def _index(self, rows: tuple[dict[str, object], ...]) -> None:
         with self.database.connection() as connection:
-            cached = {
-                str(row["run_id"]): (str(row["model_id"]), int(row["dimensions"]), str(row["content_digest"]))
-                for row in connection.execute("SELECT run_id, model_id, dimensions, content_digest FROM memory_embeddings")
-            }
+            cached: dict[str, tuple[str, int, str]] = {}
+            cache_rows: Iterable[sqlite3.Row] = connection.execute(
+                "SELECT run_id, model_id, dimensions, content_digest FROM memory_embeddings",
+            )
+            for stored in cache_rows:
+                identity: object = stored["run_id"]
+                model_id: object = stored["model_id"]
+                dimensions: object = stored["dimensions"]
+                digest: object = stored["content_digest"]
+                if (not isinstance(identity, str) or not isinstance(model_id, str) or type(dimensions) is not int
+                        or not isinstance(digest, str)):
+                    raise ValueError("invalid Ghost vector cache row")
+                cached[identity] = model_id, dimensions, digest
         missing = [row for row in rows if cached.get(str(row["run_id"])) != (
             self.embeddings.model_id, self.embeddings.dimensions, observation_digest(row),
         )]
@@ -78,6 +105,9 @@ class GhostVectorMemory:
                         "INSERT INTO memory_embeddings(run_id, model_id, dimensions, content_digest, vector) "
                         "SELECT run_id, ?, ?, ?, ? FROM observation_events "
                         "WHERE run_id=? AND committed=1 AND user_text=? AND assistant_text=? "
+                        "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
+                        "WHERE kind='observation' AND identity=observation_events.run_id) "
+                        "AND codey_input_receipt_ok((SELECT database_name FROM ghost_input_authority WHERE singleton=1),run_id) "
                         "ON CONFLICT(run_id) DO UPDATE SET model_id=excluded.model_id, dimensions=excluded.dimensions, "
                         "content_digest=excluded.content_digest, vector=excluded.vector",
                         (self.embeddings.model_id, self.embeddings.dimensions, observation_digest(row), vector,

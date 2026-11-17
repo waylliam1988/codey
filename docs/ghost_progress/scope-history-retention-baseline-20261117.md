@@ -2,6 +2,8 @@
 
 - 日期：2026-11-17；生产比较基线：`f09eddd2`。
 - 状态：`EXPERIMENT_COMPLETE`（基础设施负结果，无模型或HTTP调用）。
+- 后续：[普通删除生产修复](scope-history-retention-production-20261117.md)已将相同63项矩阵
+  修复为全通过并默认接线；本文件保留原始负结果，不代表完整容量retention已闭合。
 - 合同：Roadmap 0.6.3要求普通tombstone scope delete不物理重写历史事件；删除来源不再
   进入消费者，重启和重放不得复活。物理purge与容量retention需要独立、显式的策略。
 

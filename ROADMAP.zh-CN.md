@@ -1877,6 +1877,13 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 普通删除历史保留已生产修复：原63项有效矩阵39→63通过，追加inbox/Hebbian/Sleep
+删除事件、保留observation原始事实并永久退役过滤；派生向量同事务清理，embedding写回与检索
+重查来源。86项验收，独立删除ID修改前853项扩大回归/141子测试、最终源码454项复验/133子测试
+及完整静态门通过；九个owned文件额外Any审计零诊断。见[生产修复与限制](docs/ghost_progress/scope-history-retention-production-20261117.md)。
+低于compaction阈值的普通scope删除已闭合，容量retention/自动裁剪、reset及其他历史重写路径
+仍需独立验收；后文63项负结果保留历史，不再表示本次限定生产缺口仍开放。
+
 2026-11-17 普通删除历史保留基线：七store × 三scope的63项有效矩阵39通过/24失败。
 inbox、Hebbian、Sleep及observation各6个删除cell丢失原始历史；本次删除隐藏和重开/重放
 不复活检查通过。其余三store的18个删除cell及21个不删除对照通过。见

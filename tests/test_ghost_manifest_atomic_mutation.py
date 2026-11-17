@@ -48,14 +48,16 @@ def _manifest(action: str, scope: str, project: str, *, stores: tuple[str, ...] 
     )
 
 
-def _count(home: Path, run_id: str) -> int:
-    return _count_database(GhostSQLite(home), run_id)
+def _live_count(home: Path, run_id: str) -> int:
+    return _live_count_database(GhostSQLite(home), run_id)
 
 
-def _count_database(owner: GhostSQLite, run_id: str) -> int:
+def _live_count_database(owner: GhostSQLite, run_id: str) -> int:
     with owner.connection() as database:
         row: sqlite3.Row | None = database.execute(
-            "SELECT count(*) FROM observation_events WHERE run_id=?", (run_id,),
+            "SELECT count(*) FROM observation_events WHERE run_id=? "
+            "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
+            "WHERE kind='observation' AND identity=observation_events.run_id)", (run_id,),
         ).fetchone()
     assert row is not None
     count: object = row[0]
@@ -155,23 +157,23 @@ def test_stale_pending_coordinator_cannot_repeat_mutation(
                 assert mutated.wait(20)
                 # Actual deletion already ran inside the first transaction.
                 # Independent readers still see the previous committed row.
-                assert _count_database(first_surface.observations.database, "old-run") == 1
+                assert _live_count_database(first_surface.observations.database, "old-run") == 1
                 if release_at == "before_ack":
                     paused.release.set()
                     assert paused.attempted.wait(20)
                     assert not second_calls
                 acknowledge.set()
                 assert pending_first.result(timeout=25).status == "completed"
-                assert _count(tmp_path, "old-run") == 0
+                assert _live_count(tmp_path, "old-run") == 0
                 _run(state, _receive(state, project, run_id="fresh-run"))
-                assert _count(tmp_path, "fresh-run") == 1
+                assert _live_count(tmp_path, "fresh-run") == 1
                 paused.release.set()
                 assert pending_second.result(timeout=25).status == "completed"
             finally:
                 acknowledge.set()
                 paused.release.set()
         assert len(first_calls) == 1 and not second_calls
-        assert _count(tmp_path, "fresh-run") == 1
+        assert _live_count(tmp_path, "fresh-run") == 1
         assert len(first.manifests.events(manifest.operation_id)) == 8
 
 
@@ -289,14 +291,14 @@ def test_process_death_cannot_separate_delete_and_ack(
     manifest = _manifest(action, scope, project)
     recovered = coordinator.manifests.get(manifest.operation_id)
     assert recovered.store("observations").status == ("completed" if stage == "commit" else "pending")
-    assert _count(tmp_path, "old-run") == (0 if stage == "commit" else 1)
+    assert _live_count(tmp_path, "old-run") == (0 if stage == "commit" else 1)
     assert coordinator.run(manifest).status == "completed"
-    assert _count(tmp_path, "old-run") == 0
+    assert _live_count(tmp_path, "old-run") == 0
     with closing(AppContext(tmp_path, start_scheduler=False)) as state:
         _run(state, _receive(state, project, run_id="fresh-run"))
-        assert _count(tmp_path, "fresh-run") == 1
+        assert _live_count(tmp_path, "fresh-run") == 1
         assert coordinator.run(manifest).status == "completed"
-        assert _count(tmp_path, "fresh-run") == 1
+        assert _live_count(tmp_path, "fresh-run") == 1
 
 
 class ProcessPausedStart(DeletionManifestStore):
@@ -365,15 +367,15 @@ def test_two_processes_resume_same_pending_operation_once(tmp_path: Path, action
         first.join(25)
         assert first.exitcode == 0
         assert first_report.read_text(encoding="utf-8").splitlines() == ["completed", "1"]
-        assert _count(tmp_path, "old-run") == 0
+        assert _live_count(tmp_path, "old-run") == 0
         with closing(AppContext(tmp_path, start_scheduler=False)) as state:
             _run(state, _receive(state, project, run_id="fresh-run"))
-            assert _count(tmp_path, "fresh-run") == 1
+            assert _live_count(tmp_path, "fresh-run") == 1
             second_release.set()
             second.join(25)
             assert second.exitcode == 0
             assert second_report.read_text(encoding="utf-8").splitlines() == ["completed", "0"]
-            assert _count(tmp_path, "fresh-run") == 1
+            assert _live_count(tmp_path, "fresh-run") == 1
     finally:
         first_release.set()
         second_release.set()

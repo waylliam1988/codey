@@ -7,11 +7,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from unittest import mock
 
 import codey.app.cli as cli
-from codey.app.server import AppContext
+from codey.app.context import AppContext
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import (
     GhostInboxStore,
@@ -19,8 +20,8 @@ from codey.ghost.inbox import (
     conflict_key_for_signal,
     value_key_for_signal,
 )
+from codey.ghost.payload_types import decoded_object, object_fields
 from codey.ghost.schema import GhostSignal
-from tests.ghost_fixtures import event_text
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,7 +33,7 @@ def _signal(
     summary: str = "Prefer concise answers.",
     quote: str = "以后回答短一点",
     confidence: float = 0.9,
-    metadata: dict[str, object] | None = None,
+    metadata: Mapping[str, object] | None = None,
 ) -> GhostSignal:
     clean_metadata = metadata
     if clean_metadata is None and kind == "style_preference":
@@ -43,13 +44,30 @@ def _signal(
         summary=summary,
         evidence_quote=quote,
         confidence=confidence,
-        metadata=clean_metadata or {},
+        metadata=dict(clean_metadata or {}),
         source="test",
     )
 
 
 def _result(*signals: GhostSignal) -> tuple[GhostSignal, ...]:
     return tuple(signals)
+
+
+def event_text(store: GhostInboxStore) -> str:
+    return "".join(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n" for event in store.records.events())
+
+
+def _object(value: object) -> dict[str, object]:
+    if not object_fields(value):
+        raise AssertionError("expected an object with string keys")
+    return value
+
+
+def _items(value: object) -> list[object]:
+    if not isinstance(value, list):
+        raise AssertionError("expected an array")
+    items: Iterable[object] = value
+    return list(items)
 
 
 class GhostInboxStoreTests(unittest.TestCase):
@@ -339,8 +357,12 @@ class GhostInboxStoreTests(unittest.TestCase):
 
             rows = store.list_candidates()
             self.assertEqual(len(rows), 2)
-            self.assertEqual({row.value_key for row in rows}, {"concise", "detailed"})
-            self.assertEqual({row.status for row in rows}, {"accepted"})
+            values: set[str] = {row.value_key for row in rows}
+            statuses: set[str] = {row.status for row in rows}
+            expected_values: set[str] = {"concise", "detailed"}
+            expected_statuses: set[str] = {"accepted"}
+            self.assertEqual(values, expected_values)
+            self.assertEqual(statuses, expected_statuses)
 
     def test_review_candidate_accept_supersedes_conflicting_accepted_value(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -514,7 +536,9 @@ class GhostInboxStoreTests(unittest.TestCase):
 
             rows = store.applicable_candidates(project=td, session_id="s1")
 
-            self.assertEqual([row.scope for row in rows], ["session", "project", "user"])
+            scopes: list[str] = [row.scope for row in rows]
+            expected: list[str] = ["session", "project", "user"]
+            self.assertEqual(scopes, expected)
 
     def test_applicable_candidates_keep_newest_first_within_same_scope(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -550,7 +574,9 @@ class GhostInboxStoreTests(unittest.TestCase):
 
             rows = store.applicable_candidates(project=td, session_id="s1")
 
-            self.assertEqual([row.summary for row in rows], ["New user preference", "Old user preference"])
+            summaries: list[str] = [row.summary for row in rows]
+            expected: list[str] = ["New user preference", "Old user preference"]
+            self.assertEqual(summaries, expected)
 
     def test_project_scope_does_not_leak_to_other_project(self) -> None:
         with (
@@ -577,7 +603,7 @@ class GhostInboxStoreTests(unittest.TestCase):
             self.assertEqual(len(store.list_candidates(scope="project", project=p1)), 1)
             self.assertEqual(store.list_candidates(scope="project", project=p2), ())
 
-    def test_delete_scope_only_removes_target_and_compacts_event_text(self) -> None:
+    def test_delete_scope_hides_only_target_and_preserves_original_audit_events(self) -> None:
         with tempfile.TemporaryDirectory() as state_td, tempfile.TemporaryDirectory() as project_td:
             store = GhostInboxStore(state_td)
             store.ingest_signals(
@@ -600,14 +626,23 @@ class GhostInboxStoreTests(unittest.TestCase):
                 project=project_td,
             )
 
+            original_events = store.records.events()
             removed = store.delete_scope("project", project=project_td)
 
             self.assertEqual(removed, 1)
-            self.assertEqual([row.scope for row in store.list_candidates()], ["user"])
+            scopes: list[str] = [row.scope for row in store.list_candidates()]
+            expected: list[str] = ["user"]
+            self.assertEqual(scopes, expected)
             self.assertNotIn(
                 "Unique project deletion phrase", json.dumps(store.export_state()["inbox"], ensure_ascii=False)
             )
-            self.assertNotIn("unique deletion quote", event_text(store))
+            self.assertIn("unique deletion quote", event_text(store))
+            self.assertEqual(store.records.events()[:len(original_events)], original_events)
+            with store.records.transaction():
+                rebuilt = store._rebuild_candidates_from_events_unlocked()
+                assert rebuilt is not None
+                store._write_state(rebuilt)
+            self.assertEqual(store.list_candidates(scope="project", project=project_td), ())
 
     def test_export_and_reset_work(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -620,7 +655,7 @@ class GhostInboxStoreTests(unittest.TestCase):
             )
 
             exported = store.export_state()
-            self.assertEqual(len(exported["inbox"]["candidates"]), 1)
+            self.assertEqual(len(_items(_object(exported["inbox"])["candidates"])), 1)
             self.assertTrue(store.reset_all())
             self.assertEqual(store.list_candidates(), ())
             self.assertFalse(bool(event_text(store)))
@@ -651,7 +686,7 @@ class GhostInboxStoreTests(unittest.TestCase):
                 (),
             )
             self.assertEqual(store.list_candidates(), ())
-            self.assertEqual(store.export_state()["settings"]["learning_enabled"], False)
+            self.assertEqual(_object(store.export_state()["settings"])["learning_enabled"], False)
 
             self.assertTrue(store.set_learning_enabled(True))
             self.assertEqual(
@@ -701,7 +736,7 @@ class GhostCliTests(unittest.TestCase):
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 export_code = cli.main(["ghost", "export", "--state-home", td])
-            export_payload = json.loads(stdout.getvalue())
+            export_payload = decoded_object(stdout.getvalue())
 
             self.assertEqual(export_code, 0)
             self.assertIn("inbox", export_payload)
@@ -710,7 +745,7 @@ class GhostCliTests(unittest.TestCase):
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 reset_code = cli.main(["ghost", "reset", "--state-home", td, "--yes"])
-            reset_payload = json.loads(stdout.getvalue())
+            reset_payload = decoded_object(stdout.getvalue())
 
             self.assertEqual(reset_code, 0)
             self.assertTrue(reset_payload["ok"])
@@ -737,17 +772,17 @@ class GhostCliTests(unittest.TestCase):
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 accept_code = cli.main(["ghost", "accept", "--state-home", td, candidate.id])
-            accept_payload = json.loads(stdout.getvalue())
+            accept_payload = decoded_object(stdout.getvalue())
 
             self.assertEqual(accept_code, 0)
             self.assertTrue(accept_payload["ok"])
-            self.assertTrue(accept_payload["hebbian"]["applied"])
+            self.assertTrue(_object(accept_payload["hebbian"])["applied"])
             self.assertEqual(len(GhostHebbianStore(td).list_nodes()), 1)
 
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 rebuild_code = cli.main(["ghost", "rebuild-state", "--state-home", td, "--yes"])
-            rebuild_payload = json.loads(stdout.getvalue())
+            rebuild_payload = decoded_object(stdout.getvalue())
 
             self.assertEqual(rebuild_code, 0)
             self.assertTrue(rebuild_payload["ok"])
@@ -755,21 +790,22 @@ class GhostCliTests(unittest.TestCase):
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 state_code = cli.main(["ghost", "state", "--state-home", td])
-            state_payload = json.loads(stdout.getvalue())
+            state_payload = decoded_object(stdout.getvalue())
 
             self.assertEqual(state_code, 0)
             self.assertTrue(state_payload["ok"])
-            self.assertEqual(len(state_payload["state"]["nodes"]), 1)
+            self.assertEqual(len(_items(_object(state_payload["state"])["nodes"])), 1)
 
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 reject_code = cli.main(["ghost", "reject", "--state-home", td, candidate.id])
-            reject_payload = json.loads(stdout.getvalue())
+            reject_payload = decoded_object(stdout.getvalue())
 
             self.assertEqual(reject_code, 0)
             self.assertTrue(reject_payload["ok"])
-            self.assertEqual(reject_payload["candidate"]["status"], "rejected")
-            self.assertEqual(reject_payload["hebbian_removed"], {"edges": 0, "nodes": 1})
+            self.assertEqual(_object(reject_payload["candidate"])["status"], "rejected")
+            expected_removed: dict[str, int] = {"edges": 0, "nodes": 1}
+            self.assertEqual(reject_payload["hebbian_removed"], expected_removed)
             self.assertEqual(GhostHebbianStore(td).list_nodes(status="active"), ())
 
     def test_ghost_accept_cli_creates_coactivation_edges_for_same_run_siblings(self) -> None:
@@ -809,10 +845,10 @@ class GhostCliTests(unittest.TestCase):
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
                 self.assertEqual(cli.main(["ghost", "accept", "--state-home", td, second.id]), 0)
-            payload = json.loads(stdout.getvalue())
+            payload = decoded_object(stdout.getvalue())
 
-            self.assertTrue(payload["hebbian"]["applied"])
-            self.assertEqual(len(payload["hebbian"]["edges"]), 1)
+            self.assertTrue(_object(payload["hebbian"])["applied"])
+            self.assertEqual(len(_items(_object(payload["hebbian"])["edges"])), 1)
             self.assertEqual(len(GhostHebbianStore(td).list_edges()), 1)
 
     def test_ghost_delete_scope_reports_storage_errors_as_json(self) -> None:
@@ -827,11 +863,11 @@ class GhostCliTests(unittest.TestCase):
             ):
                 code = cli.main(["ghost", "delete-scope", "--state-home", td, "user", "--yes"])
 
-            payload = json.loads(stdout.getvalue())
+            payload = decoded_object(stdout.getvalue())
             self.assertEqual(code, 1)
             self.assertFalse(payload["ok"])
             self.assertTrue(payload["errors"])
-            self.assertTrue(any("inbox" in str(item) for item in payload["errors"]))
+            self.assertTrue(any("inbox" in str(item) for item in _items(payload["errors"])))
 
     def test_ghost_list_cli_outputs_json_without_provider_stack(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -855,19 +891,15 @@ class GhostCliTests(unittest.TestCase):
             )
 
         rows = completed.stdout.splitlines()
-        payload = json.loads(rows[0])
-        loaded = json.loads(rows[-1])
+        payload = decoded_object(rows[0])
+        loaded = decoded_object(rows[-1])
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["candidates"], [])
-        self.assertEqual(
-            loaded,
-            {
-                "code": 0,
-                "browser": False,
-                "providers": False,
-                "tool_runtime": False,
-            },
-        )
+        expected_candidates: list[object] = []
+        self.assertEqual(payload["candidates"], expected_candidates)
+        expected_loaded: dict[str, object] = {
+            "code": 0, "browser": False, "providers": False, "tool_runtime": False,
+        }
+        self.assertEqual(loaded, expected_loaded)
 
 
 class GhostInboxArchitectureTests(unittest.TestCase):

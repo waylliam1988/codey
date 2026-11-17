@@ -47,7 +47,7 @@ MAX_SLEEP_WARNINGS = 20
 DEFAULT_HEBBIAN_DECAY_MIN_INTERVAL_SECONDS = 6 * 60 * 60
 DEFAULT_AFFINITY_DECAY_MIN_INTERVAL_SECONDS = 6 * 60 * 60
 _STATE_KIND = "ghost_sleep_state_projection"
-_STEP_NAMES = (
+_STEP_NAMES: tuple[str, ...] = (
     "projection_health",
     "affinity_sync",
     "hebbian_decay",
@@ -311,7 +311,7 @@ class GhostSleepStore:
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
         with self.records.transaction(deleting=True):
-            events = self._read_events_unlocked()
+            events = _live_report_events(self._read_events_unlocked())
             kept: list[dict[str, object]] = []
             removed = 0
             for event in events:
@@ -338,6 +338,7 @@ class GhostSleepStore:
                 control = _ghost_control_event(
                     schema_version=SLEEP_SCHEMA_VERSION,
                     event_name="ghost_sleep_scope_deleted",
+                    event_id_prefix="gsd_",
                     payload={
                         "scope": normalized_scope,
                         "project": project_ref if normalized_scope == "project" else "",
@@ -346,7 +347,7 @@ class GhostSleepStore:
                     },
                     now=_common.now_iso_z(),
                 )
-                self._write_events_atomic([*kept, control])
+                self._append_events([control])
             if state_deleted:
                 latest = _latest_report_from_events(kept)
                 if latest is None:
@@ -368,7 +369,12 @@ class GhostSleepStore:
         with self.database.connection() as database:
             database.execute("BEGIN")
             check_rows: Iterable[sqlite3.Row] = database.execute("PRAGMA quick_check")
-            checks = [str(row[0]) for row in check_rows]
+            checks: list[str] = []
+            for row in check_rows:
+                check: object = row[0]
+                if not isinstance(check, str):
+                    raise ValueError("invalid Ghost integrity check result")
+                checks.append(check)
             foreign_keys: list[sqlite3.Row] = database.execute("PRAGMA foreign_key_check").fetchall()
             cursor_row: sqlite3.Row | None = database.execute(
                 "WITH owners AS (SELECT collection FROM memory_consumers UNION SELECT collection FROM memory_events) "
@@ -376,14 +382,18 @@ class GhostSleepStore:
                 "WHERE coalesce(c.applied_sequence,0) != "
                 "(SELECT coalesce(max(sequence),0) FROM memory_events e WHERE e.collection=o.collection)"
             ).fetchone()
-            cursors: object = cursor_row[0] if cursor_row is not None else None
+            cursors: object = None
+            if cursor_row is not None:
+                cursors = cursor_row[0]
             graph_row: sqlite3.Row | None = database.execute(
                 "WITH owners AS (SELECT graph FROM graph_consumers UNION SELECT graph FROM graph_events) "
                 "SELECT count(*) FROM owners o LEFT JOIN graph_consumers c USING(graph) "
                 "WHERE coalesce(c.applied_sequence,0) != "
                 "(SELECT coalesce(max(sequence),0) FROM graph_events e WHERE e.graph=o.graph)"
             ).fetchone()
-            graph_cursors: object = graph_row[0] if graph_row is not None else None
+            graph_cursors: object = None
+            if graph_row is not None:
+                graph_cursors = graph_row[0]
             if type(cursors) is not int or type(graph_cursors) is not int:
                 raise ValueError("invalid Ghost projection health counts")
         warnings = []
@@ -689,13 +699,41 @@ def _report_event(report: GhostSleepReport) -> dict[str, object]:
 
 def _latest_report_from_events(events: Iterable[dict[str, object]]) -> GhostSleepReport | None:
     latest: GhostSleepReport | None = None
-    for event in events:
+    for event in _live_report_events(events):
         if event.get("type") != "ghost_sleep_report":
             continue
         report = GhostSleepReport.from_payload(event.get("report"))
         if report is not None:
             latest = report
     return latest
+
+
+def _live_report_events(events: Iterable[dict[str, object]]) -> list[dict[str, object]]:
+    reports: list[dict[str, object]] = []
+    for event in events:
+        if event.get("type") == "ghost_sleep_report":
+            if GhostSleepReport.from_payload(event.get("report")) is not None:
+                reports.append(event)
+        elif event.get("type") == "ghost_sleep_scope_deleted":
+            payload = event.get("payload")
+            if not object_fields(payload):
+                raise ValueError("invalid Ghost Sleep scope deletion")
+            scope = payload.get("scope")
+            project = payload.get("project", "")
+            session_id = payload.get("session_id", "")
+            if (not isinstance(scope, str) or scope not in {"user", "project", "session"}
+                    or not isinstance(project, str) or not isinstance(session_id, str)
+                    or (scope == "project" and not project) or (scope == "session" and not session_id)):
+                raise ValueError("invalid Ghost Sleep deletion scope")
+            kept: list[dict[str, object]] = []
+            for previous in reports:
+                report = GhostSleepReport.from_payload(previous.get("report"))
+                if report is not None and not _scope_matches_report(
+                    report, scope, project=project, session_id=session_id,
+                ):
+                    kept.append(previous)
+            reports = kept
+    return reports
 
 
 def _scope_matches_report(

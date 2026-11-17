@@ -418,7 +418,11 @@ class GhostHebbianStore:
             if scope_ref and node.scope_ref != scope_ref:
                 continue
             rows.append(node)
-        return tuple(sorted(rows, key=lambda item: (item.weight, item.updated_at), reverse=True))
+
+        def node_rank(node: GhostNode) -> tuple[float, str]:
+            return node.weight, node.updated_at
+
+        return tuple(sorted(rows, key=node_rank, reverse=True))
 
     def list_edges(self, *, relation: str = "") -> tuple[GhostEdge, ...]:
         with self.graph.transaction(write=False):
@@ -433,7 +437,11 @@ class GhostHebbianStore:
             return ()
         normalized_relation = (relation or "").strip().lower()
         rows = [edge for edge in edges if not normalized_relation or edge.relation == normalized_relation]
-        return tuple(sorted(rows, key=lambda item: (item.weight, item.updated_at), reverse=True))
+
+        def edge_rank(edge: GhostEdge) -> tuple[float, str]:
+            return edge.weight, edge.updated_at
+
+        return tuple(sorted(rows, key=edge_rank, reverse=True))
 
     def export_state(self) -> dict[str, object]:
         with self.graph.transaction(write=False):
@@ -477,12 +485,11 @@ class GhostHebbianStore:
             remaining_edges = [
                 edge for edge in edges if edge.source not in removed_ids and edge.target not in removed_ids
             ]
-            self._rewrite_events_from_state(
-                remaining_nodes,
-                remaining_edges,
-                control_event=_ghost_control_event(
+            self._append_events([
+                _ghost_control_event(
                     schema_version=HEBBIAN_SCHEMA_VERSION,
                     event_name="ghost_hebbian_scope_deleted",
+                    event_id_prefix="ghd_",
                     payload={
                         "scope": normalized_scope,
                         "scope_ref": scope_ref,
@@ -491,7 +498,7 @@ class GhostHebbianStore:
                     },
                     now=_common.now_iso_z(),
                 ),
-            )
+            ])
             self._write_state(remaining_nodes, remaining_edges)
             return {"nodes": len(removed_ids), "edges": len(removed_edges)}
 
@@ -592,7 +599,25 @@ class GhostHebbianStore:
         edges: dict[tuple[str, str, str], GhostEdge] = {}
         for event in events:
             event_type = str(event.get("type") or "")
-            if event_type in {"ghost_hebbian_node_upsert", "ghost_hebbian_node_superseded"}:
+            if event_type == "ghost_hebbian_scope_deleted":
+                payload = event.get("payload")
+                if not object_fields(payload):
+                    raise ValueError("invalid Ghost Hebbian scope deletion")
+                scope = payload.get("scope")
+                scope_ref = payload.get("scope_ref", "")
+                if (not isinstance(scope, str) or scope not in SIGNAL_SCOPES or not isinstance(scope_ref, str)
+                        or (scope != "user" and not scope_ref)):
+                    raise ValueError("invalid Ghost Hebbian deletion scope")
+                removed = {
+                    node.id for node in nodes.values()
+                    if node.scope == scope and (scope == "user" or node.scope_ref == scope_ref)
+                }
+                nodes = {identity: node for identity, node in nodes.items() if identity not in removed}
+                edges = {
+                    identity: edge for identity, edge in edges.items()
+                    if edge.source not in removed and edge.target not in removed
+                }
+            elif event_type in {"ghost_hebbian_node_upsert", "ghost_hebbian_node_superseded"}:
                 node = GhostNode.from_payload(event.get("node"))
                 if node is not None:
                     nodes[node.id] = node
