@@ -58,6 +58,7 @@ _ACTIONS = frozenset({
     "set_control",
     "delete_scope",
     "reset_all",
+    "list_deletions",
 })
 
 
@@ -172,6 +173,11 @@ class GhostControlSurface:
             warnings,
             "observation_read_failed",
         )
+        try:
+            deletions = self._deletion_page({}, applicable_scope=(project_ref, session_ref))
+        except (OSError, ValueError, TypeError, sqlite3.Error):
+            warnings.append("deletion_read_failed")
+            deletions = {"ok": False, "error": "deletion_read_failed"}
         affinity_warnings = affinity_health.get("warnings")
         affinity_warning_rows: Sequence[object] = (
             affinity_warnings if isinstance(affinity_warnings, (list, tuple)) else ()
@@ -207,6 +213,7 @@ class GhostControlSurface:
             "active": [_node_payload(node, project=project_ref, session_id=session_ref) for node in active_nodes[:MAX_SUMMARY_ITEMS]],
             "tasks": [_work_item_payload(item) for item in work_items[:MAX_SUMMARY_ITEMS]],
             "observations": [_observation_payload(row) for row in observation_rows[:MAX_SUMMARY_ITEMS]],
+            "deletions": deletions,
             "health": {
                 "status": "warning" if warning_rows else "ok",
                 "associations": affinity_health.get("status") or "unavailable",
@@ -225,6 +232,8 @@ class GhostControlSurface:
         if action not in _ACTIONS:
             return 400, _error_payload("unsupported action")
         try:
+            if action == "list_deletions":
+                return 200, self._deletion_page(body)
             if action == "propose_preference":
                 return self._propose_preference(body)
             if action == "accept_candidate":
@@ -279,10 +288,48 @@ class GhostControlSurface:
         payload["work_queue"] = export_store("work_queue", self.work_queue)
         payload["affinity"] = export_store("affinity", self.affinity)
         payload["observations"] = export_store("observations", self.observations)
+        payload["deletions"] = _export("deletions", lambda: self._deletion_page({}))
         if errors:
             payload["ok"] = False
             payload["errors"] = errors
         return payload
+
+    def _deletion_page(
+        self, body: Mapping[str, object], *, applicable_scope: tuple[str, str] | None = None,
+    ) -> dict[str, object]:
+        assert self.inbox is not None
+        after = body.get("after", "")
+        limit = body.get("limit", MAX_SUMMARY_ITEMS)
+        if not isinstance(after, str):
+            raise ValueError("after must be a string")
+        if not isinstance(limit, int) or isinstance(limit, bool):
+            raise ValueError("limit must be an integer")
+        scope = body.get("scope", "")
+        if not isinstance(scope, str) or scope not in {"", "user", "project", "session", "all"}:
+            raise ValueError("invalid deletion scope filter")
+        project = _common.normalize_project(body.get("project"))
+        session_id = clip_signal_text(body.get("session_id"), 120)
+        if scope == "project" and not project:
+            raise ValueError("project required")
+        if scope == "session" and not session_id:
+            raise ValueError("session_id required")
+        try:
+            page = DeletionManifestStore(self.inbox.records.database).list_page(after=after, limit=limit)
+        except DeletionManifestError as exc:
+            raise OSError("Ghost deletion manifest cannot be trusted") from exc
+        visible = tuple(
+            item for item in page.items
+            if (not scope or (item.scope == scope and (scope != "project" or item.project == project)
+                             and (scope != "session" or item.session_id == session_id)))
+            and (applicable_scope is None or _deletion_visible(item, *applicable_scope))
+        )
+        return {
+            "schema_version": CONTROL_SURFACE_SCHEMA_VERSION,
+            "ok": True,
+            "items": [_deletion_payload(item) for item in visible],
+            "next_cursor": page.next_cursor,
+            "limit": limit,
+        }
 
     def _review_candidate(self, body: Mapping[str, object], *, review_action: str) -> tuple[int, dict[str, object]]:
         if self.inbox is None:
@@ -567,6 +614,28 @@ class GhostControlSurface:
             else:
                 results[item.store] = _stored_deletion_result(item.detail)
         return results, errors, manifest
+
+
+def _deletion_visible(manifest: DeletionManifest, project: str, session_id: str) -> bool:
+    return (
+        manifest.scope in {"user", "all"}
+        or (manifest.scope == "project" and bool(project) and manifest.project == project)
+        or (manifest.scope == "session" and bool(session_id) and manifest.session_id == session_id)
+    )
+
+
+def _deletion_payload(manifest: DeletionManifest) -> dict[str, object]:
+    return {
+        "delete_operation_id": manifest.operation_id,
+        "action": manifest.action,
+        "scope": manifest.scope,
+        "project": manifest.project,
+        "session_id": manifest.session_id,
+        "requested_at": manifest.requested_at,
+        "status": manifest.status,
+        "pending_stores": manifest.pending_stores,
+        "blocked_stores": tuple(item.store for item in manifest.stores if item.status == "blocked"),
+    }
 
 
 def _store_database(store: _ControlStore) -> GhostSQLite:

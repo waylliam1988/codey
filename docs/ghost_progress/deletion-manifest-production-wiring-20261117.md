@@ -1,5 +1,8 @@
 # Ghost Manifest 默认控制面接线
 
+2026-11-17 后续：[普通入口发现与显式恢复](deletion-manifest-discovery-production-20261117.md)
+已接线；本文关于“响应前崩溃后pending发现仍缺”的描述保留当时限制，当前以新记录为准。
+
 - 状态：`PRODUCTION_MERGED`（普通控制面默认调度，随本记录提交）；比较基线 `e8131422`。
 - 前置证据：同库 mutation/ack 原子性、同操作进程/崩溃验收与 36-cell 混合生命周期已通过。
 - 目标：普通应用 API、CLI 所用 GhostControlSurface 默认以 Manifest 调度 delete/reset，

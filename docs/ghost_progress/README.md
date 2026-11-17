@@ -12,7 +12,8 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
-| 删除响应丢失后的操作发现 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | 三个真实硬退出窗口均无法通过普通 export 发现原操作；后续发现与恢复入口待补 | [冻结复现与边界](deletion-manifest-discovery-baseline-20261117.md) |
+| 删除操作发现与显式恢复 2026-11-17 | `PRODUCTION_MERGED`（普通 summary/export/action） | 默认有界分页，12个响应前硬退出案例可从普通入口找回原ID并恢复；completed不重复删、blocked不自动重试；329项相关回归、类型收窄后50项复验及完整静态门通过，四个owned文件Any审计零诊断 | [生产接线与限制](deletion-manifest-discovery-production-20261117.md) |
+| 删除响应丢失后的操作发现基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果） | 三个真实硬退出窗口均无法通过普通 export 发现原操作；后续生产发现入口已闭合本缺口 | [冻结复现与边界](deletion-manifest-discovery-baseline-20261117.md) |
 | Manifest 默认生产调度 2026-11-17 | `PRODUCTION_MERGED`（普通 API/CLI） | delete/reset 默认持久调度；同 ID 重试跳过 completed、blocked 保留；新增 34 项含真实 CLI/认证 HTTP；扩大回归 741 passed / 141 subtests，类型收窄后 123 项复验，完整静态门与 owned Any 审计通过；完整 retention/升级输入仍缺 | [接线、失败归属、恢复及限制](deletion-manifest-production-wiring-20261117.md) |
 | 图精确替换与混合删除 2026-11-17 | `PRODUCTION_MERGED`（限定 graph owner） | 同一 36-cell 矩阵 28→36 通过；保留完全未变节点，变化节点及边继续拒绝退役来源；新增 23 项，相关回归 675 passed / 141 subtests；完整静态门通过；默认调度随后接线见上行 | [实现、复验与限制](graph-exact-replacement-20261117.md) |
 | 不同 Manifest 操作混合生命周期 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果） | 36 cell 全有效，28 通过、8 个不同项目交错失败；图整体重插退役保留节点导致 blocked；原始证据保留，后续 graph 修复闭合本矩阵 | [冻结矩阵、探针修订与结果](deletion-manifest-mixed-lifecycle-20261117.md) |
@@ -48,7 +49,7 @@
 | 0.6.2 scope 与四个开关 | `INCOMPLETE`（控制及 Manifest 已生产接线） | 四开关默认接线，显式关闭仍生效；delete/reset 已默认持久调度；完整维护撤回、生命周期及 acceptance battery 仍缺 | [进度记录](independent-controls.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（历史候选，后续已接线） | 持久化、七 store 失败恢复与冷启动原始证据保留；后续原子性、混合矩阵和普通 API/CLI 默认调度已完成，完整 retention/升级输入仍缺 | [候选记录](deletion-manifest-candidate.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
-| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含默认 Manifest 调度） | 输入登记、canonical receipt、来源退役、派生 fence、graph 精确替换及普通 delete/reset Manifest 已默认生效；retention、响应前崩溃的 pending 发现、升级前无 receipt、身份/scope 异常及完整生命周期验收仍缺 | [默认调度](deletion-manifest-production-wiring-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
+| 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含默认 Manifest 调度与发现） | 输入登记、canonical receipt、来源退役、派生 fence、graph精确替换、默认delete/reset及响应丢失后的原操作发现已生效；retention、升级前无receipt、身份/scope异常及完整生命周期验收仍缺 | [默认调度](deletion-manifest-production-wiring-20261117.md) / [发现恢复](deletion-manifest-discovery-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `NOT STARTED` | 不依赖 wall clock，projection digest 可复现 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |

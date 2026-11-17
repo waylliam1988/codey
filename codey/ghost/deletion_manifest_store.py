@@ -13,6 +13,7 @@ import sqlite3
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 
 from codey.ghost.deletion_manifest import (
     DeletionManifest,
@@ -22,6 +23,14 @@ from codey.ghost.deletion_manifest import (
 )
 from codey.ghost.payload_types import decoded_object
 from codey.ghost.sqlite import GhostSQLite
+
+MAX_MANIFEST_PAGE_SIZE = 100
+
+
+@dataclass(frozen=True)
+class DeletionManifestPage:
+    items: tuple[DeletionManifest, ...]
+    next_cursor: str
 
 
 def _encode(value: Mapping[str, object]) -> str:
@@ -132,15 +141,44 @@ class DeletionManifestStore:
         with self.transaction():
             return tuple(self._events_unlocked(operation_id))
 
+    def list_page(self, *, after: str = "", limit: int = 20) -> DeletionManifestPage:
+        """Read a bounded ID-ordered page, validating each canonical stream.
+
+        Include event-only operations so corruption cannot look like absence.
+        A cursor resumes this scan, not a snapshot; restart from the beginning
+        to discover operations created concurrently with earlier IDs.
+        """
+        if type(limit) is not int or not 1 <= limit <= MAX_MANIFEST_PAGE_SIZE:
+            raise ValueError(f"limit must be an integer from 1 to {MAX_MANIFEST_PAGE_SIZE}")
+        if not isinstance(after, str) or len(after) > 240:
+            raise ValueError("after must be a string of at most 240 characters")
+        with self.transaction():
+            rows: list[sqlite3.Row] = self._db().execute(
+                "SELECT operation_id FROM ghost_deletion_manifests WHERE operation_id > ? "
+                "UNION SELECT operation_id FROM ghost_deletion_manifest_events WHERE operation_id > ? "
+                "ORDER BY operation_id LIMIT ?", (after, after, limit + 1),
+            ).fetchall()
+            items: list[DeletionManifest] = []
+            cursor = ""
+            for row in rows[:limit]:
+                operation_id: object = row[0]
+                if not isinstance(operation_id, str) or not operation_id or len(operation_id) > 240:
+                    raise DeletionManifestError("invalid stored deletion operation identity")
+                items.append(self._replay_unlocked(operation_id))
+                cursor = operation_id
+            return DeletionManifestPage(tuple(items), cursor if len(rows) > limit else "")
+
     def _replay_unlocked(self, operation_id: str) -> DeletionManifest:
         row: sqlite3.Row | None = self._db().execute(
-            "SELECT manifest FROM ghost_deletion_manifests WHERE operation_id=?", (operation_id,)
+            "SELECT manifest, status FROM ghost_deletion_manifests WHERE operation_id=?", (operation_id,)
         ).fetchone()
         if row is None:
             raise DeletionManifestError("deletion manifest not found")
         manifest = replay(self._events_unlocked(operation_id))
         stored = DeletionManifest.from_payload(_decode(row))
-        if stored.to_payload() != manifest.to_payload():
+        indexed_status: object = row[1]
+        if (stored.to_payload() != manifest.to_payload() or manifest.operation_id != operation_id
+                or indexed_status != manifest.status):
             raise DeletionManifestError("stored manifest disagrees with its event stream")
         return manifest
 
@@ -177,4 +215,4 @@ def _same_identity(first: DeletionManifest, second: DeletionManifest) -> bool:
     )
 
 
-__all__ = ["DeletionManifestStore"]
+__all__ = ["DeletionManifestPage", "DeletionManifestStore", "MAX_MANIFEST_PAGE_SIZE"]

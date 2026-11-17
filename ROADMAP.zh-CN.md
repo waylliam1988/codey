@@ -1877,9 +1877,14 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
-2026-11-17 发现缺口：无客户端 ID、响应前硬退出的三个窗口，普通 export 均无法列出原操作；
-详见[冻结负结果](docs/ghost_progress/deletion-manifest-discovery-baseline-20261117.md)。
-默认 Manifest 已生效，不重做调度；下一步补普通入口发现与显式恢复。
+2026-11-17 当前结论：普通 summary/export 默认列出有界删除操作，认证 action 支持分页；
+响应前崩溃无需手查数据库即可找回原 ID，显式同 ID 恢复，completed 不重复执行、blocked保留。
+12个真实硬退出案例及329项相关回归通过。见[生产发现与恢复](docs/ghost_progress/deletion-manifest-discovery-production-20261117.md)。
+retention、升级前无 receipt、异常身份/scope和完整生命周期仍未完成；以下分批记录保留当时
+限制，当前未完成清单以上述结论及进度板为准，不重做已接线的调度或发现入口。
+
+此前[三个响应丢失窗口的负结果](docs/ghost_progress/deletion-manifest-discovery-baseline-20261117.md)
+保留原始证据，后续生产接线已闭合本次发现缺口。
 
 2026-11-17 最新默认接线：普通 API/CLI 的 scope delete/reset 默认使用持久 Manifest，
 每 store mutation/ack 同 commit，同 ID 重试跳过 completed，blocked 保留且继续其他

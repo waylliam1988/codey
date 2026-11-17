@@ -12,7 +12,14 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新：[Manifest 默认调度](ghost_progress/deletion-manifest-production-wiring-20261117.md)
+2026-11-17 最新：[删除操作发现与显式恢复](ghost_progress/deletion-manifest-discovery-production-20261117.md)
+已在普通 summary/export/action 默认接线，CLI export 可打印第一页，认证 action可继续分页。
+12个响应前硬退出案例、329项相关回归、类型收窄后50项复验及完整静态门通过；四个owned
+文件额外Any审计零诊断。原ID恢复仍走现有API，completed不重做、blocked
+不自动重试。当前剩余 retention、升级输入、异常身份/scope及完整生命周期，随后推进显式
+时间/replay和真实World Model消费者；下文“pending发现待补”属于历史阶段。
+
+此前：[Manifest 默认调度](ghost_progress/deletion-manifest-production-wiring-20261117.md)
 已在普通 API/CLI 生效，无待开启的候选开关；同 ID 的 API 重试仅处理 pending，blocked
 保留，需要新操作显式恢复。相关回归 741 passed / 141 subtests，类型收窄后 123 项复验
 及全树静态门通过。后文关于“Manifest 待接线”描述历史阶段，下一步补 retention、响应前

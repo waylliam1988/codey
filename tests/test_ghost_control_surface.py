@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from unittest.mock import patch
 
 from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.hebbian import GhostHebbianStore
-from codey.ghost.inbox import GhostInboxStore
+from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.observations import GhostObservationStore
+from codey.ghost.payload_types import mapping_fields
 from codey.ghost.schema import GhostSignal
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.runs.work_checkpoint import WorkCheckpointStore
@@ -41,7 +44,7 @@ def _ingest_candidate(
     session_id: str = "s1",
     run_id: str = "r1",
     project: str = "",
-):
+) -> GhostMemoryCandidate:
     inbox = GhostInboxStore(state_home)
     created = inbox.ingest_signals(
         (signal or _signal(),),
@@ -54,6 +57,22 @@ def _ingest_candidate(
     return created[0]
 
 
+def _fields(value: object) -> Mapping[str, object]:
+    assert mapping_fields(value)
+    return value
+
+
+def _rows(value: object) -> Sequence[object]:
+    assert isinstance(value, (list, tuple))
+    rows: Sequence[object] = value
+    return rows
+
+
+def _integer(value: object) -> int:
+    assert isinstance(value, int) and not isinstance(value, bool)
+    return value
+
+
 class GhostControlSurfaceTests(unittest.TestCase):
     def test_export_and_reset_cover_current_ghost_stores(self) -> None:
         stores = {"inbox", "hebbian", "continuity", "sleep", "work_queue", "affinity", "observations"}
@@ -63,24 +82,25 @@ class GhostControlSurfaceTests(unittest.TestCase):
             reset_status, reset = surface.dispatch_action({"action": "reset_all", "confirm": True})
 
         self.assertTrue(exported["ok"])
-        self.assertEqual(set(exported) - {"schema_version", "ok", "available", "generated_at"}, stores)
+        self.assertEqual(set(exported) - {"schema_version", "ok", "available", "generated_at", "deletions"}, stores)
+        empty_rows: list[object] = []
+        self.assertEqual(_fields(exported["deletions"])["items"], empty_rows)
         self.assertEqual(reset_status, 200)
-        self.assertEqual(set(reset["results"]), stores)
+        result_names: set[str] = set(_fields(reset["results"]))
+        self.assertEqual(result_names, stores)
 
     def test_observation_read_failure_appears_in_summary_health(self) -> None:
-        class BrokenObservations:
-            def read_committed(self, **_kwargs):
-                raise OSError("broken observation log")
-
         with tempfile.TemporaryDirectory() as td:
+            observations = GhostObservationStore(td)
             surface = GhostControlSurface(
-                inbox=GhostInboxStore(td), observations=BrokenObservations(),
+                inbox=GhostInboxStore(td), observations=observations,
             )
-            payload = surface.summary(session_id="s1")
+            with patch.object(observations, "read_committed", side_effect=OSError("broken observation log")):
+                payload = surface.summary(session_id="s1")
 
-        self.assertEqual(payload["health"]["status"], "warning")
-        self.assertGreater(payload["counts"]["warnings"], 0)
-        self.assertIn("Some local context could not be read", payload["health"]["warnings"])
+        self.assertEqual(_fields(payload["health"])["status"], "warning")
+        self.assertGreater(_integer(_fields(payload["counts"])["warnings"]), 0)
+        self.assertIn("Some local context could not be read", _rows(_fields(payload["health"])["warnings"]))
 
     def test_summary_without_chat_does_not_show_other_chats_experiences(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -90,8 +110,9 @@ class GhostControlSurfaceTests(unittest.TestCase):
             ))
             payload = GhostControlSurface.from_state_home(td).summary(session_id="")
 
-        self.assertEqual(payload["counts"]["observations"], 0)
-        self.assertEqual(payload["observations"], [])
+        self.assertEqual(_fields(payload["counts"])["observations"], 0)
+        empty_rows: list[object] = []
+        self.assertEqual(payload["observations"], empty_rows)
 
     def test_state_home_none_is_unavailable_and_actions_do_not_write(self) -> None:
         surface = GhostControlSurface.from_state_home(None)
@@ -116,10 +137,12 @@ class GhostControlSurfaceTests(unittest.TestCase):
 
         encoded = json.dumps(payload, ensure_ascii=False)
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["counts"]["review"], 1)
+        self.assertEqual(_fields(payload["counts"])["review"], 1)
         self.assertNotIn("evidence_quote", encoded)
         self.assertNotIn("raw_text", encoded)
-        self.assertLessEqual(len(payload["review"][0]["evidence_preview"]), 120)
+        preview = _fields(_rows(payload["review"])[0])["evidence_preview"]
+        assert isinstance(preview, str)
+        self.assertLessEqual(len(preview), 120)
 
     def test_accept_and_reject_candidate_update_inbox_and_hebbian_state(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -140,7 +163,7 @@ class GhostControlSurfaceTests(unittest.TestCase):
 
         self.assertEqual(accept_status, 200)
         self.assertTrue(accept_payload["ok"])
-        self.assertTrue(accept_payload["state_update"]["applied"])
+        self.assertTrue(_fields(accept_payload["state_update"])["applied"])
         self.assertEqual(reject_status, 200)
         self.assertTrue(reject_payload["ok"])
         self.assertEqual(inbox_rows[0].status, "rejected")
@@ -196,6 +219,7 @@ class GhostControlSurfaceTests(unittest.TestCase):
                 project=project,
                 task="Finish the parser follow-up",
             )
+            assert checkpoint is not None
             checkpoints.set_status(checkpoint, "interrupted", "error")
             queue = GhostWorkQueueStore(td)
             self.assertTrue(queue.sync_from_sources(
@@ -237,6 +261,7 @@ class GhostControlSurfaceTests(unittest.TestCase):
                 project=project,
                 task="Finish the parser follow-up",
             )
+            assert checkpoint is not None
             checkpoints.set_status(checkpoint, "interrupted", "error")
             queue = GhostWorkQueueStore(td)
             self.assertTrue(queue.sync_from_sources(
@@ -284,6 +309,7 @@ class GhostControlSurfaceTests(unittest.TestCase):
                 project=project,
                 task="Finish the parser follow-up",
             )
+            assert checkpoint is not None
             checkpoints.set_status(checkpoint, "interrupted", "error")
             queue = GhostWorkQueueStore(td)
             self.assertTrue(queue.sync_from_sources(
@@ -356,28 +382,21 @@ class GhostControlSurfaceTests(unittest.TestCase):
                 project=str(second),
             )["health"]
 
-        self.assertEqual(first_health["association_nodes"], 1)
-        self.assertEqual(second_health["association_nodes"], 1)
-        self.assertEqual(first_health["association_edges"], 0)
+        self.assertEqual(_fields(first_health)["association_nodes"], 1)
+        self.assertEqual(_fields(second_health)["association_nodes"], 1)
+        self.assertEqual(_fields(first_health)["association_edges"], 0)
 
     def test_summary_maps_internal_store_warnings_to_neutral_ui_text(self) -> None:
-        class WarningAffinity:
-            last_warnings = ("affinity_events_missing",)
-
-            def list_nodes(self, **_kwargs):
-                return ()
-
-            def list_edges(self, **_kwargs):
-                return ()
-
         with tempfile.TemporaryDirectory() as td:
-            payload = GhostControlSurface(
-                inbox=GhostInboxStore(td),
-                affinity=WarningAffinity(),
-            ).summary(session_id="s1", project="E:/project")
+            affinity = GhostAffinityStore(td)
+            affinity.last_warnings = ("affinity_events_missing",)
+            with patch.object(affinity, "list_nodes", return_value=()), patch.object(affinity, "list_edges", return_value=()):
+                payload = GhostControlSurface(
+                    inbox=GhostInboxStore(td), affinity=affinity,
+                ).summary(session_id="s1", project="E:/project")
 
         encoded = json.dumps(payload, ensure_ascii=False).lower()
-        self.assertIn("Some local ordering could not be read", payload["health"]["warnings"])
+        self.assertIn("Some local ordering could not be read", _rows(_fields(payload["health"])["warnings"]))
         self.assertNotIn("affinity", encoded)
         self.assertNotIn("hebbian", encoded)
         self.assertNotIn("directive", encoded)
@@ -414,7 +433,7 @@ class GhostControlSurfaceTests(unittest.TestCase):
         self.assertFalse(unconfirmed_payload["ok"])
         self.assertEqual(delete_status, 200)
         self.assertTrue(delete_payload["ok"])
-        self.assertGreaterEqual(delete_payload["results"]["inbox"], 1)
+        self.assertGreaterEqual(_integer(_fields(delete_payload["results"])["inbox"]), 1)
         self.assertEqual(remaining, ())
         self.assertEqual(candidate.scope, "project")
 
