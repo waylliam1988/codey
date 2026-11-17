@@ -9,6 +9,7 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from time import perf_counter
@@ -48,6 +49,7 @@ MAX_SLEEP_WARNINGS = 20
 DEFAULT_HEBBIAN_DECAY_MIN_INTERVAL_SECONDS = 6 * 60 * 60
 DEFAULT_AFFINITY_DECAY_MIN_INTERVAL_SECONDS = 6 * 60 * 60
 _STATE_KIND = "ghost_sleep_state_projection"
+_MAINTENANCE_STOP_REASONS = frozenset({"maintenance_disabled", "maintenance_control_failed", "cancelled"})
 _STEP_NAMES: tuple[str, ...] = (
     "projection_health",
     "affinity_sync",
@@ -193,6 +195,7 @@ class GhostSleepStore:
             run_projection=run_projection,
         )
         budget = budget or GhostSleepBudget()
+        controls = inbox_store if inbox_store is not None else GhostInboxStore(self.database.path.parent)
         cycle_id = "gsc_" + uuid.uuid4().hex[:24]
         steps: list[GhostSleepStepResult] = []
         pending_steps: tuple[str, ...] = ()
@@ -243,6 +246,9 @@ class GhostSleepStore:
                 work_queue_store=work_queue_store,
                 affinity_store=affinity_store,
                 maintenance_as_of=as_of,
+                controls=controls,
+                cursor=cursor,
+                should_cancel=should_cancel,
             ),
         }
         for index, name in enumerate(_STEP_NAMES[:-1]):
@@ -250,7 +256,18 @@ class GhostSleepStore:
                 cancelled = True
                 pending_steps = _STEP_NAMES[index:-1]
                 break
-            steps.append(_timed_step(name, step_fns[name]))
+            def execute_step(step_name: str = name) -> GhostSleepStepResult:
+                return self._controlled_step(
+                    step_name, step_fns[step_name], controls=controls, cursor=cursor,
+                    read_only=step_name in {"projection_health", "event_compaction"},
+                )
+
+            result = _timed_step(name, execute_step)
+            steps.append(result)
+            if result.skipped_reason in _MAINTENANCE_STOP_REASONS:
+                cancelled = True
+                pending_steps = _STEP_NAMES[index:-1]
+                break
         warnings = _bounded_warnings(warning for step in steps for warning in step.warnings)
         report_step = _timed_step("report", self._report_write_allowed_step)
         final_warnings = _bounded_warnings((*warnings, *report_step.warnings))
@@ -290,6 +307,28 @@ class GhostSleepStore:
                 )
         self.last_warnings = final_report.warnings
         return final_report
+
+    def _controlled_step(
+        self, name: str, function: Callable[[], GhostSleepStepResult], *,
+        controls: GhostInboxStore, cursor: GhostSleepCursor, read_only: bool = False,
+    ) -> GhostSleepStepResult:
+        # Serialize the authority read with its mutation, across all same-path owners.
+        # Health is read-only; composite compaction admits each store independently.
+        with nullcontext() if read_only else self.database.write_transaction():
+            try:
+                if controls.database.path.resolve() != self.database.path.resolve():
+                    raise ValueError("maintenance authority belongs to another database")
+                enabled = controls.control_enabled(
+                    "run_maintenance", project=cursor.project, session_id=cursor.session_id,
+                )
+            except (OSError, TypeError, ValueError, sqlite3.Error) as exc:
+                return GhostSleepStepResult(
+                    name, False, skipped_reason="maintenance_control_failed",
+                    warnings=(f"sleep_maintenance_control_failed:{type(exc).__name__}",),
+                )
+            if not enabled:
+                return GhostSleepStepResult(name, True, skipped_reason="maintenance_disabled")
+            return function()
 
     def export_state(self) -> dict[str, object]:
         with self.records.transaction(write=False):
@@ -566,6 +605,9 @@ class GhostSleepStore:
         work_queue_store: GhostWorkQueueStore | None,
         affinity_store: GhostAffinityStore | None,
         maintenance_as_of: str,
+        controls: GhostInboxStore,
+        cursor: GhostSleepCursor,
+        should_cancel: Callable[[], bool] | None,
     ) -> GhostSleepStepResult:
         warnings: list[str] = []
         counts = {"stores_checked": 0, "stores_compacted": 0, "stores_failed": 0, "stale_work_claims": 0}
@@ -579,29 +621,29 @@ class GhostSleepStore:
         for name, store in targets:
             if store is None:
                 continue
-            counts["stores_checked"] += 1
-            if name == "work_queue" and work_queue_store is not None:
-                try:
-                    reconcile_result = work_queue_store.reconcile_stale_claims(maintenance_as_of=maintenance_as_of)
-                except Exception as exc:
-                    counts["stores_failed"] += 1
-                    warnings.append(f"{name}_reconcile_error:{type(exc).__name__}")
-                    continue
-                if not reconcile_result.ok:
-                    counts["stores_failed"] += 1
-                counts["stale_work_claims"] += reconcile_result.items_changed
-                warnings.extend(reconcile_result.warnings)
+            if should_cancel is not None and should_cancel():
+                return GhostSleepStepResult(
+                    "event_compaction", counts["stores_failed"] == 0, skipped_reason="cancelled",
+                    counts=counts, warnings=_bounded_warnings(warnings),
+                )
+
+            target_store: CompactionStore = store
+
+            def compact(target_name: str = name, target: CompactionStore = target_store) -> GhostSleepStepResult:
+                return _compact_target(target_name, target, work_queue_store, maintenance_as_of)
+
             try:
-                result = store.compact_if_needed()
+                result = self._controlled_step(name, compact, controls=controls, cursor=cursor)
             except Exception as exc:
+                counts["stores_checked"] += 1
                 counts["stores_failed"] += 1
                 warnings.append(f"{name}_compact_error:{type(exc).__name__}")
                 continue
-            if not bool(result.get("ok", True)):
-                counts["stores_failed"] += 1
-            if bool(result.get("compacted")):
-                counts["stores_compacted"] += 1
-            warnings.extend(_bounded_warnings(result.get("warnings", ())))
+            warnings.extend(result.warnings)
+            for key, count in result.counts.items():
+                counts[key] += count
+            if result.skipped_reason in _MAINTENANCE_STOP_REASONS:
+                return replace(result, name="event_compaction", counts=counts, warnings=_bounded_warnings(warnings))
         return GhostSleepStepResult(
             "event_compaction",
             counts["stores_failed"] == 0,
@@ -651,6 +693,25 @@ class GhostSleepStore:
         stats = self.records.event_stats()
         if stats["events"] > MAX_SLEEP_EVENTS or stats["bytes"] > MAX_SLEEP_EVENTS_BYTES:
             self.records.retain_recent_events(max_events=MAX_SLEEP_EVENTS, max_bytes=MAX_SLEEP_EVENTS_BYTES)
+
+
+def _compact_target(
+    name: str, store: CompactionStore, work_queue: GhostWorkQueueStore | None, maintenance_as_of: str,
+) -> GhostSleepStepResult:
+    warnings: list[str] = []
+    counts = {"stores_checked": 1, "stores_compacted": 0, "stores_failed": 0, "stale_work_claims": 0}
+    if name == "work_queue" and work_queue is not None:
+        # Reconciliation and compaction share the admitted transaction. Exceptions
+        # escape so a failed compaction cannot commit only the lease transition.
+        result = work_queue.reconcile_stale_claims(maintenance_as_of=maintenance_as_of)
+        counts["stores_failed"] += int(not result.ok)
+        counts["stale_work_claims"] += result.items_changed
+        warnings.extend(result.warnings)
+    compacted = store.compact_if_needed()
+    counts["stores_failed"] += int(not bool(compacted.get("ok", True)))
+    counts["stores_compacted"] += int(bool(compacted.get("compacted")))
+    warnings.extend(_bounded_warnings(compacted.get("warnings", ())))
+    return GhostSleepStepResult(name, counts["stores_failed"] == 0, counts=counts, warnings=_bounded_warnings(warnings))
 
 
 def _external_source_permission(
