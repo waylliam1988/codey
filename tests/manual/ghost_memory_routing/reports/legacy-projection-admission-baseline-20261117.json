@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "experiment": "legacy-projection-original-receipt",
+  "baseline_commit": "9e318370",
+  "model": null,
+  "cells": [
+    {
+      "consumer": "observation",
+      "reopen": false,
+      "receipt": null,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "observation",
+      "reopen": false,
+      "receipt": false,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "observation",
+      "reopen": false,
+      "receipt": true,
+      "visible": true,
+      "passed": true
+    },
+    {
+      "consumer": "continuity",
+      "reopen": false,
+      "receipt": null,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "continuity",
+      "reopen": false,
+      "receipt": false,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "continuity",
+      "reopen": false,
+      "receipt": true,
+      "visible": true,
+      "passed": true
+    },
+    {
+      "consumer": "work_queue",
+      "reopen": false,
+      "receipt": null,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "work_queue",
+      "reopen": false,
+      "receipt": false,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "work_queue",
+      "reopen": false,
+      "receipt": true,
+      "visible": true,
+      "passed": true
+    },
+    {
+      "consumer": "claim",
+      "reopen": false,
+      "receipt": null,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "claim",
+      "reopen": false,
+      "receipt": false,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "claim",
+      "reopen": false,
+      "receipt": true,
+      "visible": true,
+      "passed": true
+    },
+    {
+      "consumer": "observation",
+      "reopen": true,
+      "receipt": null,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "observation",
+      "reopen": true,
+      "receipt": false,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "observation",
+      "reopen": true,
+      "receipt": true,
+      "visible": true,
+      "passed": true
+    },
+    {
+      "consumer": "continuity",
+      "reopen": true,
+      "receipt": null,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "continuity",
+      "reopen": true,
+      "receipt": false,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "continuity",
+      "reopen": true,
+      "receipt": true,
+      "visible": true,
+      "passed": true
+    },
+    {
+      "consumer": "work_queue",
+      "reopen": true,
+      "receipt": null,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "work_queue",
+      "reopen": true,
+      "receipt": false,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "work_queue",
+      "reopen": true,
+      "receipt": true,
+      "visible": true,
+      "passed": true
+    },
+    {
+      "consumer": "claim",
+      "reopen": true,
+      "receipt": null,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "claim",
+      "reopen": true,
+      "receipt": false,
+      "visible": true,
+      "passed": false
+    },
+    {
+      "consumer": "claim",
+      "reopen": true,
+      "receipt": true,
+      "visible": true,
+      "passed": true
+    }
+  ],
+  "cell_count": 24,
+  "valid_cells": 24,
+  "passed": 8,
+  "failed": 16
+}

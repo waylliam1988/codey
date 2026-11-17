@@ -12,6 +12,7 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 升级旧投影的消费者准入 2026-11-17 | `EXPERIMENT_COMPLETE`（负结果） | 24项有效矩阵中true对照8项通过，缺receipt/false的16项旧投影仍进入retrieve、continuity、待办列表及claim；读取和选择边界待修 | [冻结矩阵与限制](legacy-projection-admission-baseline-20261117.md) |
 | 删除操作发现与显式恢复 2026-11-17 | `PRODUCTION_MERGED`（普通 summary/export/action） | 默认有界分页，12个响应前硬退出案例可从普通入口找回原ID并恢复；completed不重复删、blocked不自动重试；329项相关回归、类型收窄后50项复验及完整静态门通过，四个owned文件Any审计零诊断 | [生产接线与限制](deletion-manifest-discovery-production-20261117.md) |
 | 删除响应丢失后的操作发现基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果） | 三个真实硬退出窗口均无法通过普通 export 发现原操作；后续生产发现入口已闭合本缺口 | [冻结复现与边界](deletion-manifest-discovery-baseline-20261117.md) |
 | Manifest 默认生产调度 2026-11-17 | `PRODUCTION_MERGED`（普通 API/CLI） | delete/reset 默认持久调度；同 ID 重试跳过 completed、blocked 保留；新增 34 项含真实 CLI/认证 HTTP；扩大回归 741 passed / 141 subtests，类型收窄后 123 项复验，完整静态门与 owned Any 审计通过；完整 retention/升级输入仍缺 | [接线、失败归属、恢复及限制](deletion-manifest-production-wiring-20261117.md) |
