@@ -10,6 +10,9 @@
 
 ## 当前状态
 
+最新未闭合：[普通 scope 删除的历史保留基线](scope-history-retention-baseline-20261117.md)。
+63项有效矩阵39通过/24失败；四个store物理重写历史，当前不是来源复活；生产修复待提交。
+
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
 | 升级旧投影的消费者准入 2026-11-17 | `PRODUCTION_MERGED`（默认reader/claim） | 原24项8→24通过；未知/false/退役来源在排序与容量裁剪前过滤，原始审计记录保留；47项验收、553项相关回归及8个subtest、最终50项复验、完整静态门通过，五个owned文件额外Any审计零诊断 | [生产修复及夹具失败归属](legacy-projection-admission-production-20261117.md) / [原负结果](legacy-projection-admission-baseline-20261117.md) |

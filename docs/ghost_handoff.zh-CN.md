@@ -12,7 +12,11 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新：[升级旧投影消费者准入](ghost_progress/legacy-projection-admission-production-20261117.md)
+2026-11-17 最新未闭合：[普通删除历史保留](ghost_progress/scope-history-retention-baseline-20261117.md)
+有效矩阵63项39通过/24失败，四个store的普通删除改写领域历史，尚未生产修复；不把已经
+通过的删除隐藏和不复活检查说成失败。保留原始负结果，下一步追加事件并保持永久退役。
+
+此前：[升级旧投影消费者准入](ghost_progress/legacy-projection-admission-production-20261117.md)
 已在普通经历检索、continuity和work queue默认reader/claim接线，原24项矩阵8→24通过。
 None/false不补true，原始审计数据保留，独立研究及人工偏好仍可用。47项新增验收、553项相关
 回归及8个subtest、最终50项复验和完整静态门通过；五个owned文件额外Any审计零诊断。

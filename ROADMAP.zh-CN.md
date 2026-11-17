@@ -1877,6 +1877,12 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 普通删除历史保留基线：七store × 三scope的63项有效矩阵39通过/24失败。
+inbox、Hebbian、Sleep及observation各6个删除cell丢失原始历史；本次删除隐藏和重开/重放
+不复活检查通过。其余三store的18个删除cell及21个不删除对照通过。见
+[冻结矩阵与负结果](docs/ghost_progress/scope-history-retention-baseline-20261117.md)。普通删除
+不能靠物理重写剩余快照实现历史保留；完整容量retention仍是独立验收。
+
 2026-11-17 后续默认消费者修复：普通经历检索、continuity及work queue的list/claim在容量
 裁剪前复查原始receipt和来源退役；原24项矩阵8→24通过，47项验收、553项相关回归及8个
 subtest、最终50项复验与完整静态门通过。旧原始审计数据保留，不自动补true；独立研究及
