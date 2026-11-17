@@ -10,6 +10,9 @@
 
 ## 当前状态
 
+[图同分裁剪与重建一致性](graph-tie-replay-20261118.md)已冻结：真实 Hebbian degree cap
+下比较正常写入和 warm/cold rebuild，含三 scope 与唯一权重对照。尚未运行，不预判缺陷。
+
 World Model [结构化复盘传输对照](world-model-structured-review-20261118.md)已完成：
 同一 Gemma 配置新 40 请求两臂各 20/20 格式有效、正确数均 8/20，输入 tokens +16.3%。
 按冻结门终止重复当前验证事实的候选，不只换提示词补跑；格式改善不归因于 World Model，
