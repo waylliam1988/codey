@@ -109,3 +109,18 @@ python -m pytest tests/test_ghost_graph_capacity_scope_replay.py tests/test_ghos
 四开关、跨 scope 删除/reset、撤回、Sleep/过期、写入故障与冷恢复。新格式对旧 reader
 及 rollback 的限制要如实记录，不能声称任意混版本兼容。原 12 项源码不改；再跑必要
 回归和要求的全部静态门，收益与生产边界通过后独立提交生产，而非只留默认关闭模块。
+
+### 候选提交身份追加回归（实现中冻结）
+
+候选一已实现差量记录，40 个小型边界试跑通过；统一验收尚未完成时，静态核对发现
+control_event 默认不分配 event_id，GhostGraph 会以整条 payload hash 去重。固定同秒
+重复裁剪可能丢失真实转换；原 edge/node upsert 在重学相同 payload 时也可能被去重。
+因此主动结束候选一的统一 pytest，记 INCOMPLETE，不记整个矩阵通过或生产阴性。
+保持受检源码不变，等待该冻结检查批完成，再验证下面追加的候选回归。
+
+追加 3 cell：三 deleted scope 及既定保留 scope 轮转，时间固定 NOW。用现有真实 8 degree
+cap 夹具（hub+9 peers），每次从当前缺边的唯一 peer 重新强化 reward=1，共 9 次，
+覆盖同秒裁剪身份重复与同 payload 重学。然后创建/删除另一 scope 的独立节点，普通
+rebuild 两次必须成功且与 live 8 边完全相同、原始历史不变。先验证候选一，记录实际
+失败/成功；若身份去重问题确认，真实发生的强化事件与裁剪事实均需每事务独立身份，
+无变化的 duplicate_evidence 仍不写。此回归不修改原 12 项 scorer 或扩大模型结论。
