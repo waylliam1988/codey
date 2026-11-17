@@ -1,7 +1,7 @@
 # 正常 App 硬退出与真实 HTTP 恢复审查
 
 - 日期：2026-11-18；关联 0.6.1–0.6.4。
-- 状态：旧 smoke 单项诊断完成；真实 HTTP 矩阵待接口核对后单独冻结。
+- 状态：旧 smoke 单项诊断完成；真实 HTTP 矩阵已冻结，夹具预检后运行基线。
 - 代码基线：`6d844752`；上一轮裁剪修复 `34852638` 保留，不重复其矩阵。
 - 模型：本阶段不调用模型；旧 smoke 使用离线 scripted writer/provider。
 
@@ -125,3 +125,22 @@ typed cell。先做单格 fixture 预检，夹具修订保留失败证据；正�
 检查期锁定整个生产树与本轮脚本/测试哈希。完成后运行必需生产回归、全部指定静态门
 及两个修改/新增文件的三类型和 Any 审计，不运行全量 pytest。原始 replies/wire/state
 只留本地；仓库报告只留脱敏 refs/digest/counts、命令、失败归属和限制。
+
+### 正式基线前的夹具核对
+
+所有预检 state、日志、JUnit 留在本地 `fixture*`，不覆盖任何失败。首版单格未保存
+App 模型允许列表，正常 App 正确报 `Selected model is disabled`，headless 则不依赖
+此 UI 设置；这是未满足冷恢复前提的夹具失败，不能记为生产故障。已用真实
+`ModelPreferences.save` 在隔离目录显式启用 Local/受测模型，并在崩溃前验证。
+
+第二、三版各单格的 HTTP/完成行为通过，但脚本误把 native terminal 的本地
+`acknowledge_tool_results_bound` 当作替换模型请求：现行实现为其保存独立
+request/response/effect，却只提交协议历史、不发送 HTTP。第三版还误用了控制回执的
+display_ref。两次断言失败保留；按实际 display_ref 与 owner_effect_id 分辨回执，
+模型请求/响应 ref+hash 必须完全相等，不删除身份断言，也不修改生产迁就夹具。
+同时追加原冻结要求的 prepared context hint 校验、第二次冷开/新任务后原结论一致、
+撤回组无虚构 response/已发送 receipt 检查；不改变物理发送/完成/未知状态验收门。
+
+第四版预检两格：user/request_ready/enabled 通过；user/response_saved/revoked 为
+有效 fixture，原响应存在且没有新增 HTTP，但原 run 未完成。先保留该现象，不在
+完整基线前修生产，也不把它算模型负结果。正式矩阵使用独立 state，继续全部 24 格。
