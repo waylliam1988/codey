@@ -1,0 +1,853 @@
+{
+  "experiment": "sleep-maintenance-clock-baseline-20261117",
+  "status": "EXPERIMENT_COMPLETE",
+  "production_commit": "648c5a9e",
+  "model_calls": 0,
+  "valid_cells": 15,
+  "matrix_passed": 0,
+  "matrix_failed": 15,
+  "clock_fixture_passed": 1,
+  "constant_repeats_passed": 15,
+  "forward_differences": 15,
+  "backward_differences": 15,
+  "horizon": "2026-04-01T00:00:00Z",
+  "profiles": {
+    "fixed": "2026-04-01T00:00:00Z",
+    "forward_after_entry": "2026-07-01T00:00:00Z",
+    "backward_after_entry": "2026-01-02T00:00:00Z"
+  },
+  "frozen_production_python_files": 702,
+  "related": {
+    "passed": 136,
+    "subtests_passed": 2
+  },
+  "checks": [
+    {
+      "check": "related",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "pytest",
+        "tests/test_ghost_sleep.py",
+        "tests/test_ghost_hebbian.py",
+        "tests/test_ghost_affinity.py",
+        "tests/test_ghost_continuity.py",
+        "tests/test_ghost_work_queue.py",
+        "-q",
+        "--tb=short",
+        "--junitxml=.e2e-artifacts\\ghost-sleep-clock-20261117\\baseline-related.xml"
+      ]
+    },
+    {
+      "check": "ruff",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ]
+    },
+    {
+      "check": "mypy",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "precision",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ]
+    },
+    {
+      "check": "owned-mypy",
+      "exit": 0,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "tests/test_ghost_sleep_clock_boundary.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "tests/test_ghost_sleep_clock_boundary.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "tests/test_ghost_sleep_clock_boundary.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-any",
+      "exit": 1,
+      "command": [
+        "C:\\Program Files\\Python312\\python.exe",
+        "-m",
+        "mypy",
+        "tests/test_ghost_sleep_clock_boundary.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr"
+      ]
+    }
+  ],
+  "owned_any_diagnostics": 0,
+  "extra_any_summary": "Found 4010 errors in 184 files (checked 1 source file)",
+  "cells": [
+    {
+      "scope": "user",
+      "domain": "hebbian_decay",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "c97e4a3a16a4ccb2b4097fa40199b3350adcd71e8c6dd499ac7634099b86ae42",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "de1b31f8ab0fcac5f1ac56c778a611aaac3acb5160d94a431ab61b39cc9506b3",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "6d2c23eb69ef1d90487b6334e91b005487539cae5d4b17da417a2ec0745f75ff",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "de1b31f8ab0fcac5f1ac56c778a611aaac3acb5160d94a431ab61b39cc9506b3",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "project",
+      "domain": "hebbian_decay",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "4aee9bc47f01d835da0eb28970672c90a5219b9cfbbb35c29600ae4181c6cc01",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "21ad6e6bde7864cdd4f8f8e0caa5033ed4c78d11ba003179a413e243b6d55631",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "79356780d939b734760f58d1bfc2a6b379d422514b0ca199668e60826f191c70",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "21ad6e6bde7864cdd4f8f8e0caa5033ed4c78d11ba003179a413e243b6d55631",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "session",
+      "domain": "hebbian_decay",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "3356b6ed73e0844adffd153a05598263df3e8993769c77c5e3a7ae804b415110",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "1429f7e5ee3425cc4668aa6b53eb40e381a9a26d7d055646c59430ff244cc661",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "6b6d577612ddf589f156a8a274b151fea88cac5c97aeab022364874754db8be6",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "1429f7e5ee3425cc4668aa6b53eb40e381a9a26d7d055646c59430ff244cc661",
+          "counts": {
+            "decayed_edges": 0,
+            "decayed_nodes": 1,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "user",
+      "domain": "affinity_decay",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "75e32fb37ec300b8a2c978213d526af6d64e3386deeb143a98be44e3851892e5",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "d6115bee965c39fc4eab53d193c64edac6767d358feca0a925ba049ab74d7bc7",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "8a3fc152cde6bd474c1bed592482c4c3a8e3aa27fe55fb4764331a6b308555c1",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "d6115bee965c39fc4eab53d193c64edac6767d358feca0a925ba049ab74d7bc7",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "project",
+      "domain": "affinity_decay",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "630a3d6bb90b2a79830716bf2698cbd7497668b93aa179b665fcfa3652bbe01c",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "836b4b447b3ccee3be0cfced29be1cea6f4a39643d214626e319fb2df5683f64",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "d2bbaccf66f62446c7d98acc98309733313818f656eabe6d0b3a7cdae74f84d8",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "836b4b447b3ccee3be0cfced29be1cea6f4a39643d214626e319fb2df5683f64",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "session",
+      "domain": "affinity_decay",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "51bdb176c85b12231ffcccd34d38227ec9b61036c39c7ac7555fd76d20982a70",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "b8a54895704fa44007966075f353ece034b1ab2b0d2b38ec6cd0b609d706cfd8",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "71aaeb930d9b94136192d5f74f1261031b9f86db33de6521ad76c47fdfcd3447",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "b8a54895704fa44007966075f353ece034b1ab2b0d2b38ec6cd0b609d706cfd8",
+          "counts": {
+            "decayed_edges": 1,
+            "decayed_nodes": 2,
+            "removed_edges": 0,
+            "removed_nodes": 0
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "user",
+      "domain": "continuity_refresh",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "50d002f064c80e2ff8ac17f8111d1a9ea87f4ddd24425cdfe724912e967d9cd6",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "e8e93086474a4ef4ac2c680c93ac9769eaf53bcb71583ecbfb708da8feac4a6f",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "54f70cf08fd4a08012f6c620bf1a3b8d7869f33f11fd89f49f11ba60127c0078",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "e8e93086474a4ef4ac2c680c93ac9769eaf53bcb71583ecbfb708da8feac4a6f",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "project",
+      "domain": "continuity_refresh",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "498aef1649583d63850a81411469c88f86198b93c8e8e03f716ac3281f500d4d",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "c3166f3fe65d2f5d9c06f5130d6bde3f96a6c91c9a16184c8503d0261e176c78",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "8dcf690f142377766ecc2bb617ebe10db31b8f9f498be4e2803a26de5b47aece",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "c3166f3fe65d2f5d9c06f5130d6bde3f96a6c91c9a16184c8503d0261e176c78",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "session",
+      "domain": "continuity_refresh",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "a064750552e8d1d1169762213db9423932e706a7eb964360d3f3bd589094a36d",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "bfc44bf717fc5d2fbe111ab36df5eacf2da9c8f91c644e858e9ba9bd293cbc97",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "4efd8a6268dd59e1bbb9ac206ba8f258a8f01d7e9fecf73eab913b2a1e38c14b",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "bfc44bf717fc5d2fbe111ab36df5eacf2da9c8f91c644e858e9ba9bd293cbc97",
+          "counts": {
+            "external_sources_allowed": 1,
+            "items_changed": 1,
+            "total_items": 1
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "user",
+      "domain": "queue_reconcile",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "d1e1847a201ec65047bc14ac1b6d44b611cf1c0b696f6415ea5de5b34b03a066",
+          "counts": {
+            "stale_work_claims": 0,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "a29b509c9ab6692c4ae6574ca5c9082ba9873f0787a4affae2adfab6cd794cb2",
+          "counts": {
+            "stale_work_claims": 1,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "d402d8fc2c62fe9a715749f62713b0c49de3f333f9d03d90e66098e55eadfd07",
+          "counts": {
+            "stale_work_claims": 2,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "a29b509c9ab6692c4ae6574ca5c9082ba9873f0787a4affae2adfab6cd794cb2",
+          "counts": {
+            "stale_work_claims": 1,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "project",
+      "domain": "queue_reconcile",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "70675f2a9dcb52849b849a1ddd5e4a167f21d234d74b8e94268c8c0b3415c6f5",
+          "counts": {
+            "stale_work_claims": 0,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "39772049c027708e9ed4e4c0c36321023af359b32e4487b2ae3bd03fd1a5e8da",
+          "counts": {
+            "stale_work_claims": 1,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "5f82a9b16c11b894f1eabc0230a75d191907838bf5325e5af0d3474cc309855e",
+          "counts": {
+            "stale_work_claims": 2,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "39772049c027708e9ed4e4c0c36321023af359b32e4487b2ae3bd03fd1a5e8da",
+          "counts": {
+            "stale_work_claims": 1,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "session",
+      "domain": "queue_reconcile",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "7170542c39aa94191e4b0f1e672d491223c3bbe5635c82584bb677ed040da532",
+          "counts": {
+            "stale_work_claims": 0,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "0852ce61b8d67f13cad1f47be15a2ccdeba5afbee6c23ec265facd710d866d3f",
+          "counts": {
+            "stale_work_claims": 1,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "8f7f535d84f7464f0ed93cb487aa623faf46c09edc782257d68e2cf7adfbb4d7",
+          "counts": {
+            "stale_work_claims": 2,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        },
+        "repeat": {
+          "digest": "0852ce61b8d67f13cad1f47be15a2ccdeba5afbee6c23ec265facd710d866d3f",
+          "counts": {
+            "stale_work_claims": 1,
+            "stores_checked": 1,
+            "stores_compacted": 0,
+            "stores_failed": 0
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "user",
+      "domain": "affinity_sync",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "1557cb71ebbc5a6eb669f81e07d42ecac8ca6dd7dfab5a065260a18771dd7fe6",
+          "counts": {
+            "edges_changed": 0,
+            "external_sources_allowed": 1,
+            "nodes_changed": 2,
+            "total_edges": 0,
+            "total_nodes": 1
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "913db1001acc64c24378a747f5b8f6a0c9eeb66fa788efaa3ac43f3051336d9c",
+          "counts": {
+            "edges_changed": 0,
+            "external_sources_allowed": 1,
+            "nodes_changed": 2,
+            "total_edges": 0,
+            "total_nodes": 1
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726",
+          "counts": {
+            "edges_changed": 0,
+            "external_sources_allowed": 1,
+            "nodes_changed": 0,
+            "total_edges": 0,
+            "total_nodes": 0
+          },
+          "skipped_reason": "no_change"
+        },
+        "repeat": {
+          "digest": "913db1001acc64c24378a747f5b8f6a0c9eeb66fa788efaa3ac43f3051336d9c",
+          "counts": {
+            "edges_changed": 0,
+            "external_sources_allowed": 1,
+            "nodes_changed": 2,
+            "total_edges": 0,
+            "total_nodes": 1
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "project",
+      "domain": "affinity_sync",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "9819f9ea41dca0ee164c16318455456b393b19f0757732fda3d945ed1c952e89",
+          "counts": {
+            "edges_changed": 2,
+            "external_sources_allowed": 1,
+            "nodes_changed": 4,
+            "total_edges": 1,
+            "total_nodes": 2
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "2d24f59d261939faeb163dbefb22748f3bc037bf9fb1059bdad396baab23f7e1",
+          "counts": {
+            "edges_changed": 2,
+            "external_sources_allowed": 1,
+            "nodes_changed": 4,
+            "total_edges": 1,
+            "total_nodes": 2
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726",
+          "counts": {
+            "edges_changed": 0,
+            "external_sources_allowed": 1,
+            "nodes_changed": 0,
+            "total_edges": 0,
+            "total_nodes": 0
+          },
+          "skipped_reason": "no_change"
+        },
+        "repeat": {
+          "digest": "2d24f59d261939faeb163dbefb22748f3bc037bf9fb1059bdad396baab23f7e1",
+          "counts": {
+            "edges_changed": 2,
+            "external_sources_allowed": 1,
+            "nodes_changed": 4,
+            "total_edges": 1,
+            "total_nodes": 2
+          },
+          "skipped_reason": ""
+        }
+      }
+    },
+    {
+      "scope": "session",
+      "domain": "affinity_sync",
+      "constant_repeat_equal": true,
+      "profiles": {
+        "backward": {
+          "digest": "2096c5f19a0aecb7a3dfb87785feada57e4179b9fb99ab8c7a5e7dbe83b0bfc8",
+          "counts": {
+            "edges_changed": 0,
+            "external_sources_allowed": 1,
+            "nodes_changed": 2,
+            "total_edges": 0,
+            "total_nodes": 1
+          },
+          "skipped_reason": ""
+        },
+        "fixed": {
+          "digest": "eec101c672c5e45660bd1965fe04ee59de7bc8dcdd7b9966e4560e3b25603363",
+          "counts": {
+            "edges_changed": 0,
+            "external_sources_allowed": 1,
+            "nodes_changed": 2,
+            "total_edges": 0,
+            "total_nodes": 1
+          },
+          "skipped_reason": ""
+        },
+        "forward": {
+          "digest": "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726",
+          "counts": {
+            "edges_changed": 0,
+            "external_sources_allowed": 1,
+            "nodes_changed": 0,
+            "total_edges": 0,
+            "total_nodes": 0
+          },
+          "skipped_reason": "no_change"
+        },
+        "repeat": {
+          "digest": "eec101c672c5e45660bd1965fe04ee59de7bc8dcdd7b9966e4560e3b25603363",
+          "counts": {
+            "edges_changed": 0,
+            "external_sources_allowed": 1,
+            "nodes_changed": 2,
+            "total_edges": 0,
+            "total_nodes": 1
+          },
+          "skipped_reason": ""
+        }
+      }
+    }
+  ]
+}

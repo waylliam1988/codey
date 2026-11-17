@@ -2067,6 +2067,11 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
+2026-11-17：[Sleep周期取时基线](docs/ghost_progress/sleep-maintenance-clock-baseline-20261117.md)
+三scope×五消费者15 cell全有效；恒定复验全部相同，入口后前跳/后跳各15项实际状态不同，
+涉及衰减权重、continuity TTL、租约回收及Affinity来源过期筛选。原15失败/1时钟夹具通过，
+相关136/2子测试、全静态门及新增脚本owned Any零诊断。尚未修生产，不代表本阶段完成。
+
 2026-11-17：[固定日志重建基线](docs/ghost_progress/replay-clock-boundary-baseline-20261117.md)
 已验证真实Affinity store跨两个时钟重建。12 cell全部有效，三个合法时间对照通过；
 强化ts、衰减ts和快照衰减基点损坏的九项均出现实际权重/状态差异。后续
