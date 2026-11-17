@@ -85,3 +85,16 @@ compaction 按真实 store 分别准入，queue lease reconciliation 与该 stor
 store 释放后，在下次准入前等待真实 writer 提交，仍返回原始 stop 状态。不开启取消、
 不伪造维护结果、不在事务内互等。重新运行原生产 `b260673a`，仍 **9 passed / 9 failed**，
 18 项有效；见本地 `baseline-scheduled.log/xml`。修复判定与原断言全部保留。
+
+### 四开关独立性附加冻结
+
+补充生产边界首轮 **38 passed / 1 failed**，失败属于已有 setter 契约：新状态首次
+user `accept_events=false` 同时改写 legacy learning_enabled，使其他未显式存储的控制
+跟随 fallback 关闭；Sleep 正确读取了这个错误结果。不能让 Sleep 忽略实际控制来迁就。
+
+在修改 setter 前冻结纯真实控制矩阵：missing、legacy-on、legacy-off、部分显式当前
+字段四种设置×四个目标开关×开/关×三 scope，**96 cell**。前后读取全部四开关，只有
+目标控制可以改变；project/session 的 allow 不能越过 user deny；冷开结果一致。
+保留旧数据的真实有效设置，不猜测历史上哪些关是无意造成。无模型、无采样变量。
+任一非目标控制改变即失败；先记录基线，再在同一写事务中 materialize 原四个值后
+更新单项。该修复是本轮独立性生产验收的必要依赖，不能删断言或改成全开夹具。
