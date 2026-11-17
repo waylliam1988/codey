@@ -10,10 +10,12 @@
 
 ## 当前状态
 
-2026-11-17 用户已恢复持续推进。新发现并完成基线：
-[Hebbian 损坏事件原子重建](hebbian-replay-integrity-20261117.md)，54 cell 全有效，
-12 通过/42 生产失败；损坏 supersede/未知事件会复活旧 active 并改变普通 directive，
-坏 upsert/edge 会丢状态。生产修复接下来单独提交，不重做已闭合的 HTTP/continuity 矩阵。
+2026-11-17 用户已恢复持续推进。新完成：
+[Hebbian 损坏事件原子重建](hebbian-replay-integrity-20261117.md)，原 54 cell 12→54 通过；
+普通 rebuild-state 默认拒绝坏 envelope/node/edge/status 并保留有效投影和原日志，
+不再复活旧 active 或静默丢状态。26 文件 891 项/34 子测试通过，测试类型修订后最终
+81 项及全树静态门通过；实验负结果 `ab68edb7` 保留，完整 G0 与 World Model 未完成。
+本轮未停止目标；继续剩余依赖，不重做已闭合的 HTTP/continuity 矩阵。
 以下暂停说明为此前批次历史，不再阻止本次已授权工作。
 
 按用户要求，本批完成后暂停，不自动启动下一批。最新完成：
@@ -71,6 +73,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| Hebbian 损坏事件原子重建 2026-11-17 | `PRODUCTION_MERGED`（普通显式重建） | 原 54 项 12→54 通过；另 27 项 CLI/关闭控制下删除与 reset/冷恢复/写入失败/状态一致性验收；扩大 891/34 子测试、类型修订后最终 81 项与全静态门通过；原日志及有效投影保留，无新增默认关闭开关 | [基线、生产与剩余审查](hebbian-replay-integrity-20261117.md) |
 | 原生回执不完整HTTP响应修复 2026-11-17 | `PRODUCTION_MERGED`（普通JSON发送默认路径） | 原72项48→72通过，扩大417项、类型修订后最终155项与全静态门通过，两个文件owned Any零诊断；未收齐帧为MAYBE_SENT、不完成不重发；按用户要求本批后暂停 | [生产修复与暂停交接](native-uncertain-response-production-20261117.md) |
 | 原生回执不确定HTTP响应基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 原72项48通过/24失败；合法JSON但Content-Length未收齐误完成，EOF与坏JSON对照正确；后续修复闭合，原测量保留 | [冻结矩阵与负结果](native-uncertain-response-baseline-20261117.md) |
 | 原生回执准入拒绝与恢复 2026-11-17 | `EXPERIMENT_COMPLETE`（现有默认生产链路） | 两协议/三scope/成功错误回执/enabled暖冷36项与相关187项通过；回调类型修订后36项复验、全静态门与owned Any零诊断；真实HTTP/SQLite证明NOT_SENT续传不重复工具；生产无需重复修复 | [组合验收与限制](native-refusal-recovery-20261117.md) |
@@ -128,7 +131,7 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 | Deletion Manifest Candidate | `EXPERIMENT_COMPLETE`（历史候选，后续已接线） | 持久化、七 store 失败恢复与冷启动原始证据保留；后续原子性、混合矩阵和普通 API/CLI 默认调度已完成，完整 retention/升级输入仍缺 | [候选记录](deletion-manifest-candidate.md) / [默认调度](deletion-manifest-production-wiring-20261117.md) |
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含 observation 兼容消费隔离） | 默认删除调度/恢复、来源退役与旧投影准入、删除/reset历史保留、容量窗口、原历史DELETE约束和schema9 observation只读消费视图已生效；其他领域旧reader/旧快照及内存、其他事务、磁盘retention/purge、其余身份/scope异常及完整生命周期仍缺 | [兼容消费视图](observation-consumption-view-production-20261117.md) / [物理删除防护](history-delete-guards-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
-| 0.6.4 确定性 replay 与显式时间 | `INCOMPLETE`（普通Sleep及continuity过期已生产接线） | 坏历史时间拒绝并原子回滚；普通Sleep共用显式时间，原15项通过；continuity过期/旧同步日志重建/实际队列已闭合；其他维护入口、稳定排序/digest与其余领域重放仍缺 | [过期接线](continuity-expiry-production-20261117.md) / [显式时间](sleep-maintenance-time-production-20261117.md) / [历史时间校验](replay-timestamp-validation-production-20261117.md) |
+| 0.6.4 确定性 replay 与显式时间 | `INCOMPLETE`（含 Hebbian 原子拒绝） | Affinity 坏时间拒绝、普通 Sleep 显式时间、continuity 过期/重建/队列及 Hebbian 坏事件原子拒绝已接线；内部记录时间、其他维护入口、稳定排序/digest与其余领域重放仍缺 | [Hebbian 重建](hebbian-replay-integrity-20261117.md) / [过期接线](continuity-expiry-production-20261117.md) / [显式时间](sleep-maintenance-time-production-20261117.md) / [历史时间校验](replay-timestamp-validation-production-20261117.md) |
 | 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |
 | 0.6.7 language 有条件启用与回滚 | `INCOMPLETE`（受测中文子集已默认启用） | Gemma 12B/受测预算的普通 Chat 已启用并可关闭、删除和回退；不代表完整规划项完成 | [生产启用](language-production-enablement-20261117.md) |

@@ -77,6 +77,10 @@ NODE_KINDS = SIGNAL_KINDS
 NODE_STATUSES = ("active", "superseded", "expired")
 EDGE_RELATIONS = ("coactivated_with",)
 _STATE_KIND = "ghost_hebbian_state_projection"
+_REPLAY_EVENT_TYPES = frozenset({
+    "ghost_hebbian_node_upsert", "ghost_hebbian_node_superseded", "ghost_hebbian_edge_upsert",
+    "ghost_hebbian_scope_deleted", "ghost_hebbian_candidate_removed", "ghost_hebbian_state_decayed",
+})
 
 
 @dataclass(frozen=True)
@@ -507,8 +511,6 @@ class GhostHebbianStore:
         try:
             with self.graph.transaction():
                 nodes, edges = self._rebuild_state_from_events_unlocked()
-                if nodes is None or edges is None:
-                    return False
                 self._write_state(nodes, edges)
                 return True
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
@@ -596,12 +598,12 @@ class GhostHebbianStore:
             raise OSError("invalid Ghost Hebbian graph row")
         return [node for node in nodes if node is not None], [edge for edge in edges if edge is not None]
 
-    def _rebuild_state_from_events_unlocked(self) -> tuple[list[GhostNode] | None, list[GhostEdge] | None]:
+    def _rebuild_state_from_events_unlocked(self) -> tuple[list[GhostNode], list[GhostEdge]]:
         events = self._read_events_unlocked()
         nodes: dict[str, GhostNode] = {}
         edges: dict[tuple[str, str, str], GhostEdge] = {}
         for event in events:
-            event_type = str(event.get("type") or "")
+            event_type = _replay_event_type(event)
             if event_type == "ghost_hebbian_scope_deleted":
                 payload = event.get("payload")
                 if not object_fields(payload):
@@ -622,12 +624,16 @@ class GhostHebbianStore:
                 }
             elif event_type in {"ghost_hebbian_node_upsert", "ghost_hebbian_node_superseded"}:
                 node = GhostNode.from_payload(event.get("node"))
-                if node is not None:
-                    nodes[node.id] = node
+                if node is None:
+                    raise ValueError("invalid Ghost Hebbian replay node")
+                if (event_type == "ghost_hebbian_node_superseded") != (node.status == "superseded"):
+                    raise ValueError("Ghost Hebbian replay node status disagrees with event type")
+                nodes[node.id] = node
             elif event_type == "ghost_hebbian_edge_upsert":
                 edge = GhostEdge.from_payload(event.get("edge"))
-                if edge is not None:
-                    edges[_edge_key(edge)] = edge
+                if edge is None:
+                    raise ValueError("invalid Ghost Hebbian replay edge")
+                edges[_edge_key(edge)] = edge
         bounded_nodes = _bounded_nodes(nodes.values())
         bounded_edges = _bounded_edges(edges.values(), node_ids={node.id for node in bounded_nodes})
         return bounded_nodes, bounded_edges
@@ -679,6 +685,17 @@ class GhostHebbianStore:
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
         self.graph.append(events, replace=True)
+
+
+def _replay_event_type(event: dict[str, object]) -> str:
+    version = event.get("schema_version")
+    if type(version) is not int or version != HEBBIAN_SCHEMA_VERSION:
+        raise ValueError("unsupported Ghost Hebbian replay schema")
+    event_type = event.get("type")
+    if not isinstance(event_type, str) or event_type not in _REPLAY_EVENT_TYPES:
+        raise ValueError("unknown Ghost Hebbian replay event")
+    parse_ts(event.get("ts"))
+    return event_type
 
 
 def node_id_for_candidate(candidate: GhostMemoryCandidate) -> str:

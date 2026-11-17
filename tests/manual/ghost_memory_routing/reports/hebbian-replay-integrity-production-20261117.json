@@ -1,0 +1,1401 @@
+{
+  "experiment": "hebbian-replay-integrity-20261117",
+  "status": "PRODUCTION_MERGED",
+  "baseline_commit": "ab68edb7248b4aa34ac221df81b7218a1baa1363",
+  "production_commit_subject": "fix(ghost): reject corrupt Hebbian replay atomically",
+  "external_model_calls": 0,
+  "production_consumer": "python -m codey ghost rebuild-state --yes",
+  "production_default_enabled": true,
+  "new_default_off_flags": 0,
+  "baseline": {
+    "valid_cells": 54,
+    "passed": 12,
+    "failed": 42
+  },
+  "final_matrix": {
+    "valid_cells": 54,
+    "passed": 54,
+    "cells": [
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "user",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "project",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "session",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "user",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "project",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          true,
+          true
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "session",
+        "variant": "valid"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "user",
+        "variant": "superseded_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "project",
+        "variant": "superseded_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "session",
+        "variant": "superseded_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "user",
+        "variant": "superseded_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "project",
+        "variant": "superseded_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "session",
+        "variant": "superseded_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "user",
+        "variant": "upsert_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "project",
+        "variant": "upsert_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "session",
+        "variant": "upsert_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "user",
+        "variant": "upsert_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "project",
+        "variant": "upsert_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "session",
+        "variant": "upsert_node"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "user",
+        "variant": "edge"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "project",
+        "variant": "edge"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "session",
+        "variant": "edge"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "user",
+        "variant": "edge"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "project",
+        "variant": "edge"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "session",
+        "variant": "edge"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "user",
+        "variant": "unknown_type"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "project",
+        "variant": "unknown_type"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "session",
+        "variant": "unknown_type"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "user",
+        "variant": "unknown_type"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "project",
+        "variant": "unknown_type"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "session",
+        "variant": "unknown_type"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "user",
+        "variant": "schema_version"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "project",
+        "variant": "schema_version"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "session",
+        "variant": "schema_version"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "user",
+        "variant": "schema_version"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "project",
+        "variant": "schema_version"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "session",
+        "variant": "schema_version"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "user",
+        "variant": "boolean_schema"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "project",
+        "variant": "boolean_schema"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "session",
+        "variant": "boolean_schema"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "user",
+        "variant": "boolean_schema"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "project",
+        "variant": "boolean_schema"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "session",
+        "variant": "boolean_schema"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "user",
+        "variant": "timestamp"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "project",
+        "variant": "timestamp"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "session",
+        "variant": "timestamp"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "user",
+        "variant": "timestamp"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "project",
+        "variant": "timestamp"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "session",
+        "variant": "timestamp"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "user",
+        "variant": "deletion_payload"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "project",
+        "variant": "deletion_payload"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "warm",
+        "scope": "session",
+        "variant": "deletion_payload"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "user",
+        "variant": "deletion_payload"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "project",
+        "variant": "deletion_payload"
+      },
+      {
+        "accepted": [
+          false,
+          false
+        ],
+        "active": [
+          "detailed"
+        ],
+        "directive_unchanged": true,
+        "projection_unchanged": true,
+        "restart": "cold",
+        "scope": "session",
+        "variant": "deletion_payload"
+      }
+    ]
+  },
+  "expanded_regression": {
+    "files": 26,
+    "passed": 891,
+    "subtests": 34,
+    "skipped": 0,
+    "production_files_frozen": 702,
+    "checks": [
+      {
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "tests/test_ghost_hebbian.py",
+          "tests/test_ghost_directive.py",
+          "tests/test_ghost_graph_primitives.py",
+          "tests/test_ghost_graph_sqlite.py",
+          "tests/test_ghost_graph_exact_replacement.py",
+          "tests/test_ghost_scope_history_retention.py",
+          "tests/test_ghost_reset_history_retention.py",
+          "tests/test_ghost_capacity_history_retention.py",
+          "tests/test_ghost_history_delete_guards.py",
+          "tests/test_ghost_projection_delete_fence.py",
+          "tests/test_ghost_deleted_input_fence.py",
+          "tests/test_ghost_deleted_source_lifetime.py",
+          "tests/test_ghost_manifest_atomic_mutation.py",
+          "tests/test_ghost_manifest_production_wiring.py",
+          "tests/test_ghost_manifest_discovery.py",
+          "tests/test_ghost_deletion_manifest_recovery.py",
+          "tests/test_ghost_corruption_contract.py",
+          "tests/test_ghost_controls.py",
+          "tests/test_ghost_control_contract.py",
+          "tests/test_ghost_language_production.py",
+          "tests/test_ghost_sleep.py",
+          "tests/test_ghost_maintenance_as_of.py",
+          "tests/test_ghost_context_admission.py",
+          "tests/test_ghost_provider_send_boundary.py",
+          "tests/test_ghost_replay_timestamp_validation.py",
+          "-q",
+          "--tb=short",
+          "-o",
+          "junit_logging=all",
+          "--junitxml=.e2e-artifacts/ghost-hebbian-replay-integrity-20261117/verified.xml"
+        ],
+        "exit": 0,
+        "check": "related"
+      },
+      {
+        "command": [
+          "python",
+          "-m",
+          "ruff",
+          "check",
+          "."
+        ],
+        "exit": 0,
+        "check": "ruff"
+      },
+      {
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0,
+        "check": "mypy"
+      },
+      {
+        "command": [
+          "pyrefly",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0,
+        "check": "pyrefly"
+      },
+      {
+        "command": [
+          "ty",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0,
+        "check": "ty"
+      },
+      {
+        "command": [
+          "python",
+          "-m",
+          "tools.kernel_type_precision_gate"
+        ],
+        "exit": 0,
+        "check": "precision"
+      },
+      {
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 1,
+        "check": "owned-mypy"
+      },
+      {
+        "command": [
+          "pyrefly",
+          "check",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0,
+        "check": "owned-pyrefly"
+      },
+      {
+        "command": [
+          "ty",
+          "check",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "--python-version",
+          "3.11"
+        ],
+        "exit": 0,
+        "check": "owned-ty"
+      },
+      {
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "--python-version",
+          "3.11",
+          "--disallow-any-expr"
+        ],
+        "exit": 1,
+        "check": "owned-any"
+      }
+    ]
+  },
+  "final_acceptance": {
+    "passed": 81,
+    "skipped": 0,
+    "production_files_frozen": 702,
+    "cases": [
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[valid-warm-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[valid-warm-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[valid-warm-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[valid-cold-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[valid-cold-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[valid-cold-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[superseded_node-warm-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[superseded_node-warm-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[superseded_node-warm-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[superseded_node-cold-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[superseded_node-cold-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[superseded_node-cold-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[upsert_node-warm-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[upsert_node-warm-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[upsert_node-warm-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[upsert_node-cold-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[upsert_node-cold-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[upsert_node-cold-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[edge-warm-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[edge-warm-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[edge-warm-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[edge-cold-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[edge-cold-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[edge-cold-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[unknown_type-warm-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[unknown_type-warm-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[unknown_type-warm-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[unknown_type-cold-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[unknown_type-cold-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[unknown_type-cold-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[schema_version-warm-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[schema_version-warm-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[schema_version-warm-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[schema_version-cold-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[schema_version-cold-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[schema_version-cold-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[boolean_schema-warm-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[boolean_schema-warm-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[boolean_schema-warm-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[boolean_schema-cold-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[boolean_schema-cold-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[boolean_schema-cold-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[timestamp-warm-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[timestamp-warm-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[timestamp-warm-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[timestamp-cold-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[timestamp-cold-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[timestamp-cold-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[deletion_payload-warm-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[deletion_payload-warm-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[deletion_payload-warm-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[deletion_payload-cold-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[deletion_payload-cold-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_bad_hebbian_event_rejects_rebuild_and_preserves_last_valid_projection[deletion_payload-cold-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[False-valid-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[False-valid-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[False-valid-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[False-superseded_node-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[False-superseded_node-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[False-superseded_node-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[True-valid-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[True-valid-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[True-valid-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[True-superseded_node-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[True-superseded_node-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_normal_cli_rebuild_reports_rejection_without_an_enable_flag[True-superseded_node-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_rejected_replay_does_not_block_explicit_deletion_or_resurrect_after_reopen[delete_scope-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_rejected_replay_does_not_block_explicit_deletion_or_resurrect_after_reopen[delete_scope-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_rejected_replay_does_not_block_explicit_deletion_or_resurrect_after_reopen[delete_scope-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_rejected_replay_does_not_block_explicit_deletion_or_resurrect_after_reopen[reset_all-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_rejected_replay_does_not_block_explicit_deletion_or_resurrect_after_reopen[reset_all-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_rejected_replay_does_not_block_explicit_deletion_or_resurrect_after_reopen[reset_all-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_failed_projection_write_rolls_back_and_a_later_rebuild_recovers[user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_failed_projection_write_rolls_back_and_a_later_rebuild_recovers[project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_failed_projection_write_rolls_back_and_a_later_rebuild_recovers[session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_replay_rejects_node_status_that_disagrees_with_event_type[superseded_status-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_replay_rejects_node_status_that_disagrees_with_event_type[superseded_status-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_replay_rejects_node_status_that_disagrees_with_event_type[superseded_status-session]",
+        "status": "passed"
+      },
+      {
+        "name": "test_replay_rejects_node_status_that_disagrees_with_event_type[upsert_status-user]",
+        "status": "passed"
+      },
+      {
+        "name": "test_replay_rejects_node_status_that_disagrees_with_event_type[upsert_status-project]",
+        "status": "passed"
+      },
+      {
+        "name": "test_replay_rejects_node_status_that_disagrees_with_event_type[upsert_status-session]",
+        "status": "passed"
+      }
+    ],
+    "checks": [
+      {
+        "exit": 0,
+        "check": "related",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "-q",
+          "--tb=short",
+          "-o",
+          "junit_logging=all",
+          "--junitxml=.e2e-artifacts/ghost-hebbian-replay-integrity-20261117/final.xml"
+        ]
+      },
+      {
+        "exit": 0,
+        "check": "ruff",
+        "command": [
+          "python",
+          "-m",
+          "ruff",
+          "check",
+          "."
+        ]
+      },
+      {
+        "exit": 0,
+        "check": "mypy",
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "exit": 0,
+        "check": "pyrefly",
+        "command": [
+          "pyrefly",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "exit": 0,
+        "check": "ty",
+        "command": [
+          "ty",
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "exit": 0,
+        "check": "precision",
+        "command": [
+          "python",
+          "-m",
+          "tools.kernel_type_precision_gate"
+        ]
+      },
+      {
+        "exit": 0,
+        "check": "owned-mypy",
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "exit": 0,
+        "check": "owned-pyrefly",
+        "command": [
+          "pyrefly",
+          "check",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "exit": 0,
+        "check": "owned-ty",
+        "command": [
+          "ty",
+          "check",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "exit": 1,
+        "check": "owned-any",
+        "command": [
+          "python",
+          "-m",
+          "mypy",
+          "codey/ghost/hebbian.py",
+          "tests/test_ghost_hebbian_replay_integrity.py",
+          "--python-version",
+          "3.11",
+          "--disallow-any-expr"
+        ]
+      }
+    ]
+  },
+  "owned_any_audit": {
+    "owned_diagnostics": 0,
+    "exit": 1,
+    "dependency_diagnostics": 3897,
+    "dependency_files": 182,
+    "scope_changed": false
+  },
+  "source_sha256": {
+    "codey/ghost/hebbian.py": "4B3EE0063FD124E499BBAF431408366472311275E2D3C35526D39E68F8291ED4",
+    "tests/test_ghost_hebbian_replay_integrity.py": "FAFFB1DE4789F499ADB035CC4AF290E448A2B5B118E8DA1787C9F656677A0479"
+  },
+  "limitations": [
+    "Envelope and structural/status validation only; internal row timestamps and record-only control payload validation remain unaudited",
+    "Does not restore a valid projection previously overwritten by older replay",
+    "Full G0 and World Model remain incomplete"
+  ],
+  "local_artifacts": ".e2e-artifacts/ghost-hebbian-replay-integrity-20261117"
+}

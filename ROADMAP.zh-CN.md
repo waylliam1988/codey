@@ -2080,8 +2080,10 @@ manifest、隔离、恢复与失败注入沿用领域存储事务；单个离线
 #### 0.6.4 - Deterministic Replay and Explicit Time
 
 2026-11-17 用户恢复任务后，[Hebbian 损坏事件重建基线](docs/ghost_progress/hebbian-replay-integrity-20261117.md)
-54 cell 全有效、12 通过/42 生产失败。静默跳过坏 supersede/未知事件会复活旧 active，
-坏 upsert/edge 会丢失状态；下一步限定修复日志验证和原子拒绝。完整本阶段与 World Model 未完成。
+54 cell 全有效、原 12 通过/42 生产失败。生产修复后 54/54 通过，普通显式重建默认拒绝
+坏 envelope/node/edge/status，保留有效投影与原日志，禁止静默复活/丢状态；另 27 项
+CLI/删除/reset/冷恢复/写入失败验收，扩大 891/34 子测试、测试类型修订后最终 81 项及
+全树静态门通过。内部记录时间、稳定排序/digest及其余 G0/World Model 仍未完整闭合。
 
 2026-11-17：[continuity过期持久事实与消费者](docs/ghost_progress/continuity-expiry-production-20261117.md)
 已在普通维护/reader/builder/真实work queue默认生效；有界过期事件与投影同事务提交，

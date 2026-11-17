@@ -1,9 +1,10 @@
 # Hebbian 损坏事件的原子重建
 
 - 日期：2026-11-17
-- 状态：`EXPERIMENT_COMPLETE`（原始负结果；生产修复另提交）
+- 状态：`PRODUCTION_MERGED`（普通 Hebbian 显式重建入口；原始负结果保留）
 - 关联：0.6.3 / 0.6.4；不重复已完成的 Affinity 时间校验。
 - 起点：master `6762f1ea`；保留已有 tar.gz 删除与未跟踪 HTML。
+- 实验提交：`ab68edb7248b4aa34ac221df81b7218a1baa1363`。
 
 ## 冻结目标与配置
 
@@ -50,9 +51,61 @@ python -m pytest tests/test_ghost_hebbian_replay_integrity.py -q -s --tb=short
 
 ## 生产边界与后续
 
-若有可复现缺口，限定修复 Hebbian replay 的验证与事务失败路径，复用原 owner，不增加
-中央日志、后台模型、权限或 Evidence 写口。正常生产重建直接消费修复，无新增默认关闭开关。
-保留显式 reset/delete 和原日志供排障；未知未来 schema/type 必须拒绝而不是猜测语义。
+生产已限定修复 `hebbian.py`：首先验证严格 int schema、已知事件类型和记录时间，然后
+拒绝无法解码的 node/edge，以及与事件类型不符的 superseded 状态。原事务异常回滚并
+返回 False，CLI 返回 `ok=false` / exit 1；不再跳过坏事件后写入不完整投影。
+私有重建函数明确返回具体节点/边列表，移除不可能返回 None 的死分支。
 
-完成后补记实际结果、回归、三个完整生产树类型检查、Ruff、precision gate、修改文件
-定向类型/Any 审计及独立实验/生产 commit。完整 G0 与 World Model 仍未完成。
+复用原 graph/SQLite owner，无中央日志、后台模型、权限或 Evidence 写口。普通生产入口
+`python -m codey ghost rebuild-state --state-home <隔离目录> --yes` 直接消费修复，无新增
+默认关闭开关；不修改偏好入选、内容或语言模型 allowlist。返回 False 后继续使用最后有效
+投影；不会“修好”原日志。原日志、id 和 sequence 全部保留供排障。
+
+追加验收预定为：三 scope × valid/坏 supersede × 有/无 --yes 的 12 项真实 CLI；三 scope
+× delete/reset 的 6 项四开关关闭后显式删除及冷恢复；3 项写入后故障的原子回滚与后续
+不读 clock 的正常重建；6 项事件类型/节点状态不一致拒绝。合计 27 项，连同原矩阵 81 项。
+
+补充测试首轮 75 项中 6 项因误以为 CLI error JSON 写 stderr 而失败，按实际 stdout
+契约修订，保留确认/exit/未变状态断言。再追加状态不一致测试时，clock 恢复断言误放进
+拒绝测试，81 项中 6 项失败；Ruff 同时指出错位的 events 未定义，已移回故障恢复测试。
+这两轮均为测试编写问题，不计作生产负结果，原日志/XML 保留。
+
+## 最终验证
+
+原 54 项由 12 通过/42 失败变为 54/54 通过。扩大 26 文件回归为 891 passed / 34 subtests，
+零失败/错误/跳过，包含 81 项新验收。随后定向 mypy 指出故障回调组合断言的 tuple 泛型
+上下文推断冲突，拆为两条等价断言，保留 node/edge 非空检查；最终该 81 项全部复验通过。
+891 与 81 属不同测试源码阶段，不相加；两阶段 702 个生产文件 SHA256 均冻结且验证不变。
+
+最终全树 Ruff、mypy、Pyrefly、ty、precision gate 和两个修改文件定向三类型检查通过。
+Pyrefly 的 35 既有 suppressed / 158 warnings 不代表全仓无 Any；修改文件额外 Any
+审计零 owned 诊断，exit 1 来自未修改依赖的 3897 项/182 文件诊断，未增加豁免或改范围。
+结果及全部命令见[脱敏报告](../../tests/manual/ghost_memory_routing/reports/hebbian-replay-integrity-production-20261117.json)。
+不运行全量 pytest，无前端变更、无新增模块或额外模型调用，不需要静态资源发布。
+
+```powershell
+python -m pytest tests/test_ghost_hebbian_replay_integrity.py -q --tb=short
+python -m ruff check .
+python -m mypy codey --python-version 3.11
+pyrefly check codey --python-version 3.11
+ty check codey --python-version 3.11
+python -m tools.kernel_type_precision_gate
+python -m mypy codey/ghost/hebbian.py tests/test_ghost_hebbian_replay_integrity.py --python-version 3.11
+pyrefly check codey/ghost/hebbian.py tests/test_ghost_hebbian_replay_integrity.py --python-version 3.11
+ty check codey/ghost/hebbian.py tests/test_ghost_hebbian_replay_integrity.py --python-version 3.11
+python -m mypy codey/ghost/hebbian.py tests/test_ghost_hebbian_replay_integrity.py --python-version 3.11 --disallow-any-expr
+```
+
+回滚：可 revert 生产修复，但会重新暴露原 42 项缺口。故障隔离优先保留原日志和最后有效
+投影，暂停显式 rebuild 或用现有控制禁止检索/准入。用户可显式 delete/reset；scope delete
+仍因旧坏日志拒绝后续重建并保留空投影，reset 推进窗口后可重建，原始历史都不被重写。
+不以自动跳过坏事件或物理删日志恢复“成功”。
+
+## 剩余审查
+
+本轮只证明上述 Hebbian envelope、结构解码与状态一致性边界，不是任意内容损坏检测，
+也不自动发现或恢复此前已经被旧 replay 覆盖的有效投影。节点/边内部各时间字段、记录型
+control payload 的更严格校验仍应独立冻结验证，不能把 envelope ts 通过写成完整时间验收。
+图的同分稳定排序、snapshot/digest 与其他领域 replay、完整 App/硬退出/跨 run 的发送
+恢复、升级/混版本和其余生命周期仍未整体闭合。World Model 仍无真实闭环；依赖满足后
+继续独立消费者实验，不用本存储修复冒充模型收益或 World Model 验收。

@@ -39,7 +39,7 @@ CLI 预览可以显示中文字段；实际投递另受上述模型与配置限�
 | Scope Authority、过期/撤回、Canonical Context/Attempt Gate、approval context snapshot | 已在生产发送、durable context 和恢复路径接线 | 保留；历史候选实现不重复接入 |
 | Research state contract、四个 Ghost 控制 | 已有生产消费者，部分文档仍写 `SHADOW_ONLY` | 同步实际生产状态；完整并发/reset 验收的未完成记录继续保留 |
 | Frozen evaluator、Attempt Gate lifecycle fixtures | 评估规则及回归材料，生产 gate 已存在 | 保留测试职责，不把实验 harness import 到生产 |
-| Deletion Manifest | 七 store 离线恢复及多进程状态验证有效；生产混合并发与完整删除生命周期仍未验证 | 继续作为控制面候选，未将其当成已验证的模型功能开启 |
+| Deletion Manifest | 本次核对时仍为候选；后续已完成混合生命周期限定修复、普通 API/CLI 默认调度及操作发现恢复，见[生产调度](deletion-manifest-production-wiring-20261117.md)与[发现恢复](deletion-manifest-discovery-production-20261117.md) | 已默认接入控制面；完整 retention、升级/异常输入等边界仍按进度板推进，不是新增模型行为晋级 |
 | command / verification intent、复杂 Hebbian 排序、format/length 精确服从 | 没有证明可新增默认启用的稳定净收益 | 不扩大已有投递范围 |
 | World Model、Protocol Adaptation、可塑性研究 | 无已验证的可上线消费者或尚属提案 | 保留研究状态 |
 
