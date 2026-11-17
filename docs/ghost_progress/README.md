@@ -12,7 +12,7 @@
 
 [Hebbian control payload](hebbian-control-replay-20261118.md)已默认生产修复：原
 168 项 36→168 通过，严格 counts/identity/keys 校验保留最早 v1 两字段 decay，
-record-only 标记不重复执行。基线 `9b90e1e7` 保留；新增 153 项边界，32 文件
+record-only 标记不重复执行，生产 `24c79933`。基线 `9b90e1e7` 保留；新增 153 项边界，32 文件
 1421 项/34 子测试及全树静态门通过，三个 owned 文件 Any 零诊断。普通 CLI 直接消费，
 无新开关或模型调用；容量中间裁剪/其余恢复、完整 G0 与 World Model 仍未完成。
 

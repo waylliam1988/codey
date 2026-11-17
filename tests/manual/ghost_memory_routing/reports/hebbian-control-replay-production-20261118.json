@@ -3559,5 +3559,6 @@
     "counts are structurally validated, not reconciled with historical totals",
     "unknown legacy event types not expanded",
     "full G0 and World Model remain incomplete"
-  ]
+  ],
+  "production_commit": "24c79933b5ce2f44f18af581c933cfaf96ddbba5"
 }

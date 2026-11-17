@@ -3,6 +3,7 @@
 - 日期：2026-11-18；关联 0.6.3 / 0.6.4。
 - 状态：`PRODUCTION_MERGED`（限定三个 Hebbian 控制 payload；本地 master 默认接线）。
 - 基线：`cced47da`；不重复已闭合的 envelope、内部时间和同分裁剪实验。
+- 生产提交：`24c79933b5ce2f44f18af581c933cfaf96ddbba5`；基线证据：`9b90e1e7`。
 - 模型/endpoint：不适用，不调用模型；本轮不产生模型收益或阴性结论。
 
 ## 契约核对与假设

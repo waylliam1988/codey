@@ -14,7 +14,7 @@
 
 2026-11-18 最新完成：[Hebbian control payload](ghost_progress/hebbian-control-replay-20261118.md)。
 冻结提交 `4c5feeb6` 后原 168 项全有效、36 通过/132 失败；原始负结果 `9b90e1e7`
-保留，修复后原 168 全通过。严格计数/身份/keys 校验保留最早 v1 两字段 decay，
+保留，生产 `24c79933` 修复后原 168 全通过。严格计数/身份/keys 校验保留最早 v1 两字段 decay，
 candidate_removed/state_decayed 仍为 snapshot 后的审计标记，不重复操作。普通 CLI
 rebuild-state 默认消费，无新开关、schema 迁移或模型调用。153 项新增边界和最终
 32 文件 1421 项/34 子测试及全树静态门通过；三个 owned 文件 Any 零诊断，依赖既有
