@@ -100,3 +100,40 @@ canonical父project来源；存在任一project deny时，session记录保守不
 queue子比较已12/12，其余三个领域的关闭组仍失败；原scorer不改，不称全局修复。
 普通App/default daemon及直接owner默认消费，有scope限制时暂缓queue全库checkpoint；
 窗口可能超预算和未知父project的session保守暂停均明确保留，不算完整G0完成。
+
+## 剩余三个领域修复冻结
+
+2026-11-18，生产基线`e5ca1bf7`，修改前冻结；复用有效12格原始负结果及queue已通过的
+实际子比较，不新增模型请求。目标是在同一普通App入口通过**原12格四领域scorer**，
+不改断言、身份编码、时间或邻居实际维护门。主变量是owner写锁内的逐记录维护选择与
+持久事件；正常post-turn接受新事实不由maintenance开关代替accept_events控制。
+
+复用不可变inbox policy，明确Hebbian/continuity raw、Affinity encoded身份，user deny
+继承，未知父project的session按queue相同保守规则暂停。Sleep显式调用维护来源同步；
+普通学习来源同步保持原控制职责。每次在写锁内重读，不缓存上一周期允许。
+
+Hebbian decay改为实际允许节点/边的upsert及既有精确pruned事件；不再以全库checkpoint
+表示一次衰减。无独立scope的边由两端判定；任一端被拒绝就保留边，并保留其另一端以免
+衰减裁剪产生孤边。Affinity还须检查边自身scope。受保护端点不被容量裁剪或来源强化覆盖。
+
+Affinity新增严格的维护boundary事件，持久化实际选择的decay节点/边ID；replay先恢复
+当前有界投影，再只衰减这些ID并执行确定性bounds，不读现时policy。维护sync在已接受
+来源强化后用空decay选择的同类boundary固定本次有界投影；不能让历史未落盘的中间容量
+裁剪跨过维护边界。每个source提案若会裁剪protected行则不接纳该提案，其余允许来源
+继续；不能因另一scope deny取消全周期。坏身份/重复/缺失引用/坏时间事件须明确拒绝。
+
+continuity维护只过期eligible行，只消费eligible来源；protected现存行保留原样并预留
+容量。追加实际upsert后记录严格的最终成员ID boundary，replay按实际保留集投影，不用
+旧synced的全局expiry语义，也不把容量淘汰伪装成过期。显式删除权威优先，不复活retired
+sources。三个领域的全库checkpoint在scope限制期间暂缓，不把它称为选择性compaction。
+
+验收：原12格及新增的直接owner/普通Sleep、user/其他独立控制、raw/encoded、未知父scope、
+跨scope边/端点、满容量/degree、阈值裁剪、过期/重新来源、撤回/恢复、删除/冷重启/
+rebuild、事件与projection实际写后故障回滚、并发deny的两种提交顺序，以及checkpoint
+真实超预算暂停/恢复。新事件有效/无效输入都检查；当前控制改变不能重解释历史维护。
+若失败先分生产/旧夹具归属，保留原始日志，不改scorer或跳过断言。
+
+停止条件为上述完成或fixture/检查错误；修复后相关回归、指定五项全树门与所有owned
+脚本三检查器/额外Any审计通过，再在master默认消费者提交并更新板/roadmap。无新默认
+关闭flag。受限消费窗口有界化、旧非canonical身份、混版本及完整pending/retention仍
+单列，不能以本轮通过冒称完整G0；随后继续这些真实缺口和有新增预测信息的World Model。
