@@ -1,0 +1,38 @@
+# Sleep 维护控制撤回
+
+- 日期：2026-11-18；关联验收：0.6.2、0.6.4。
+- 状态：`FROZEN`；基线生产提交：`b9b189c6`。
+- 无模型/endpoint/采样参数：本实验验证真实 App 默认 Sleep 与 SQLite 控制边界，不作模型收益主张。
+
+## 冻结矩阵与判定
+
+目标：确认已排队或正在执行的普通 Sleep 是否在 scoped `run_maintenance=false`
+提交后继续写入领域投影/维护事件。固定三个 scope（user/project/session）、三个窗口
+（worker 调用前、真实 health 完成后、真实 inbox compaction 完成后）、开启/撤回对照，
+共 18 cell，各一次，独立本地 state。真实 AppContext、默认 daemon 和实际 store；
+仅用 barrier 调度，不替换维护结果、不伪造控制持久化或 stale-claim 结果。
+
+种入有效 Hebbian 节点和两个真实过期 running queue lease（均早于本轮墙上时间）。
+开启组必须完成两个 lease 回收，且有实际维护状态/事件变化；不接受空夹具通过。
+关闭由独立线程的真实控制事务提交，以该事务内最后的领域状态为线性化快照。
+比较该快照与 worker 结束后的 Hebbian/Affinity/continuity/work_queue 行及事件。
+撤回组必须零新增领域变化、原租约不能在提交后被回收，并保存 cancelled 报告。
+控制面自身事件和 bounded Sleep 取消报告不算维护泄漏；不允许借报告改写其他领域。
+
+若控制 writer 被已获准事务阻塞，释放 barrier 让该事务结束，允许其在 deny 提交前
+完成；提交前的变化计入快照，不算失败。不得同步等待持锁 worker 与 writer 互相完成。
+不要求取消已提交事实或中断正在运行的 SQLite 事务。控制提交后的下一次维护准入必须拒绝。
+开启对照同样写入 true 并记录快照；保持其余三个开关开启。
+
+主要变量仅为 scope、撤回时机、control enabled；不改维护阈值、权重、TTL、原 scorer。
+读取/持久化失败、barrier 超时、daemon 错误、开启组无真实变化均记 fixture/error，
+保留日志，不归为生产阴性。18 项全部完成后记录原始结果；复现生产失败后先独立提交
+基线，再冻结最小修复。修复后原矩阵不改判定，相关边界及全树静态门通过才生产提交。
+
+本矩阵只验证周期触发 scope 的撤回，不证明另一 scope 触发的全局 decay 能按每条记录
+过滤 denied scope；该问题独立审查，不能从本实验推断解决。正常 delete/reset、重启、
+控制损坏、事务故障、重新开启与其他开关独立性列入后续生产回归。
+
+原始 SQLite、完整日志/XML 留 `.e2e-artifacts/ghost-maintenance-revocation-20261118/`；
+仓库只保存 typed 可复现实验和脱敏指标。停止条件：基线矩阵完成或 fixture 错误；
+生产矩阵任意有效 cell 不满足原契约则不晋级，不修改 scorer。
