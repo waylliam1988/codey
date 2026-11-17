@@ -14,8 +14,8 @@ from tests.test_ghost_mixed_schema_history import _finish_worker, _legacy_worker
 from tests.test_ghost_reset_boundaries import _state
 from tests.test_ghost_scope_history_retention import _seed_history, _visible
 
-TABLES = ("memory_events", "graph_events", "observation_events")
-STORES = {"memory_events": "inbox", "graph_events": "hebbian", "observation_events": "observations"}
+TABLES = ("memory_events", "graph_events", "observation_history")
+STORES = {"memory_events": "inbox", "graph_events": "hebbian", "observation_history": "observations"}
 
 
 @pytest.mark.parametrize("table", TABLES)
@@ -46,13 +46,14 @@ def test_connection_opened_before_real_schema_upgrade_cannot_delete_history(
         sqlite3.connect(tmp_path / "ghost.sqlite3"),
     ) as old:
         old.row_factory = _row_factory
-        delete = f"DELETE FROM {table} WHERE sequence=?"
+        legacy_table = "observation_events" if table == "observation_history" else table
+        delete = f"DELETE FROM {legacy_table} WHERE sequence=?"
         if mode == "cached_statement":
             old.execute(delete, (-1,))
             old.commit()
         else:
             old.execute("BEGIN")
-        first: sqlite3.Row | None = old.execute(f"SELECT sequence FROM {table} ORDER BY sequence LIMIT 1").fetchone()
+        first: sqlite3.Row | None = old.execute(f"SELECT sequence FROM {legacy_table} ORDER BY sequence LIMIT 1").fetchone()
         assert first is not None
         sequence: object = first[0]
         assert type(sequence) is int
@@ -61,8 +62,12 @@ def test_connection_opened_before_real_schema_upgrade_cannot_delete_history(
         with pytest.raises(sqlite3.Error) as failure:
             old.execute(delete, (sequence,))
         if mode == "cached_statement":
-            assert isinstance(failure.value, sqlite3.IntegrityError)
-            assert "Ghost original history is retained" in str(failure.value)
+            if table == "observation_history":
+                assert isinstance(failure.value, sqlite3.OperationalError)
+                assert "observation_events because it is a view" in str(failure.value)
+            else:
+                assert isinstance(failure.value, sqlite3.IntegrityError)
+                assert "Ghost original history is retained" in str(failure.value)
         else:
             assert failure.value.sqlite_errorcode == sqlite3.SQLITE_BUSY_SNAPSHOT
         old.rollback()
@@ -72,14 +77,15 @@ def test_connection_opened_before_real_schema_upgrade_cannot_delete_history(
         assert _visible(surface, STORES[table])
 
 
-def test_existing_schema_eight_installation_adds_guards_without_changing_history_or_windows(tmp_path: Path) -> None:
+def test_existing_installation_adds_guards_without_changing_history_or_windows(tmp_path: Path) -> None:
     surface = _seed_history(tmp_path, "project")
     assert surface.observations is not None
     before = _state(surface)
-    # Previous schema-eight builds have the same tables/windows but no guards.
+    # Guard repair is independent of the current history table's schema name.
     with surface.observations.database.connection() as database:
         for table in TABLES:
-            database.execute(f"DROP TRIGGER ghost_preserve_{table}")
+            guard = "observation_events" if table == "observation_history" else table
+            database.execute(f"DROP TRIGGER ghost_preserve_{guard}")
     reopened = GhostControlSurface.from_state_home(tmp_path)
     assert _state(reopened) == before
     assert reopened.observations is not None

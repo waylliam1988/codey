@@ -1,0 +1,615 @@
+{
+  "experiment": "observation-consumption-view-production",
+  "date": "2026-11-17",
+  "status": "PRODUCTION_MERGED",
+  "parent_source_commit": "c956c5ef34c9e69ea7fef1779fc1cd728708ac01",
+  "legacy_source_commits": {
+    "7": "7244c1e3bd6c44c645f43209aa834cd0cd759c75",
+    "8": "8cffa97c9046252cd4e9233b3a997cc66ae45553"
+  },
+  "schema_version": 9,
+  "default_enabled": true,
+  "new_production_modules": 0,
+  "new_flags": 0,
+  "model_calls": 0,
+  "original_reader_baseline": {
+    "cells": 15,
+    "passed": 13,
+    "failed": 2,
+    "invalid": 0
+  },
+  "batches": [
+    {
+      "batch": "candidate-with-write-triggers",
+      "junit_case_count": 267,
+      "failures": [
+        "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-observations]"
+      ],
+      "errors": 0,
+      "skips": 0
+    },
+    {
+      "batch": "candidate-native-readonly",
+      "junit_case_count": 273,
+      "failures": [],
+      "errors": 0,
+      "skips": 0
+    },
+    {
+      "batch": "production-expanded",
+      "junit_case_count": 1122,
+      "failures": [],
+      "errors": 0,
+      "skips": 0
+    }
+  ],
+  "primary_reader_results": [
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_visible-user]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_visible-project]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_visible-session]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_trimmed-user]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_trimmed-project]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_trimmed-session]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[capacity-user]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[capacity-project]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[capacity-session]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[delete-user]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[delete-project]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[delete-session]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[reset-user]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[reset-project]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_retrieval_respects_observation_window[reset-session]",
+      "passed": true
+    }
+  ],
+  "legacy_writer_results": [
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-inbox]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-hebbian]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-continuity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-work_queue]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-affinity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-sleep]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-compact-observations]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-inbox]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-hebbian]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-continuity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-work_queue]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-affinity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-sleep]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[schema7-reset-observations]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-inbox]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-hebbian]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-continuity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-work_queue]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-affinity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-sleep]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-compact-observations]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-inbox]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-hebbian]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-continuity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-work_queue]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-affinity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-sleep]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[upgraded-reset-observations]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-inbox]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-hebbian]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-continuity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-work_queue]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-affinity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-sleep]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-compact-observations]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-inbox]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-hebbian]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-continuity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-work_queue]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-affinity]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-sleep]",
+      "passed": true
+    },
+    {
+      "case": "test_warm_legacy_mutation_preserves_upgraded_history[reset_after_upgrade-reset-observations]",
+      "passed": true
+    }
+  ],
+  "new_acceptance_results": [
+    {
+      "case": "test_real_upgrade_preserves_rows_sequences_foreign_keys_and_cached_vectors[False-7244c1e3-7]",
+      "passed": true
+    },
+    {
+      "case": "test_real_upgrade_preserves_rows_sequences_foreign_keys_and_cached_vectors[False-8cffa97c-8]",
+      "passed": true
+    },
+    {
+      "case": "test_real_upgrade_preserves_rows_sequences_foreign_keys_and_cached_vectors[True-7244c1e3-7]",
+      "passed": true
+    },
+    {
+      "case": "test_real_upgrade_preserves_rows_sequences_foreign_keys_and_cached_vectors[True-8cffa97c-8]",
+      "passed": true
+    },
+    {
+      "case": "test_failed_migration_rolls_back_table_rename_ddl_and_version[7244c1e3-7]",
+      "passed": true
+    },
+    {
+      "case": "test_failed_migration_rolls_back_table_rename_ddl_and_version[8cffa97c-8]",
+      "passed": true
+    },
+    {
+      "case": "test_old_cached_select_reparses_against_bounded_view_without_retiring_other_sources[7244c1e3-7]",
+      "passed": true
+    },
+    {
+      "case": "test_old_cached_select_reparses_against_bounded_view_without_retiring_other_sources[8cffa97c-8]",
+      "passed": true
+    },
+    {
+      "case": "test_plain_legacy_view_fails_closed_on_invalid_window[missing]",
+      "passed": true
+    },
+    {
+      "case": "test_plain_legacy_view_fails_closed_on_invalid_window[unacknowledged]",
+      "passed": true
+    },
+    {
+      "case": "test_plain_legacy_view_fails_closed_on_invalid_window[anchor]",
+      "passed": true
+    },
+    {
+      "case": "test_existing_schema_nine_missing_relation_is_not_silently_recreated[history]",
+      "passed": true
+    },
+    {
+      "case": "test_existing_schema_nine_missing_relation_is_not_silently_recreated[view]",
+      "passed": true
+    },
+    {
+      "case": "test_native_readonly_view_rejects_even_zero_row_legacy_mutations[False-insert]",
+      "passed": true
+    },
+    {
+      "case": "test_native_readonly_view_rejects_even_zero_row_legacy_mutations[False-update]",
+      "passed": true
+    },
+    {
+      "case": "test_native_readonly_view_rejects_even_zero_row_legacy_mutations[False-delete]",
+      "passed": true
+    },
+    {
+      "case": "test_native_readonly_view_rejects_even_zero_row_legacy_mutations[True-insert]",
+      "passed": true
+    },
+    {
+      "case": "test_native_readonly_view_rejects_even_zero_row_legacy_mutations[True-update]",
+      "passed": true
+    },
+    {
+      "case": "test_native_readonly_view_rejects_even_zero_row_legacy_mutations[True-delete]",
+      "passed": true
+    }
+  ],
+  "production_expanded": {
+    "passed": 1122,
+    "subtests_passed": 136,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "frozen_production_python_files": 702,
+  "production_source_unchanged_since_native_readonly_candidate": true,
+  "owned_source_sha256_lf": {
+    "codey/ghost/event_windows.py": "a888dac5e6bff8e97fc7d8ce201244ee0029478c630a35e2a1d9cf5b4155a288",
+    "codey/ghost/observations.py": "7d542f8da4dbae03d9d5ca6500ab3ed87454f167d772111f8255446f5b3d211a",
+    "codey/ghost/sqlite.py": "1447114c7b11d7f5499ef99d8819e77ec378ffd1fe5a101223b12d529ad36cbf",
+    "codey/ghost/vectors.py": "c8933c852e062c6f27c5d022e43c993dfac071ead33ac9dd93f75da741717d96",
+    "tests/manual/ghost_memory_routing/legacy_observation_reader.py": "71f8ca169930a65fd27d432261beb04df700d02f9b33a185fcc1ff73f747cfa6",
+    "tests/test_experience_memory.py": "f567c523b9871149aa745c3e0f43a773909275d01f4c781d8a0f5ed0e4b8c55c",
+    "tests/test_ghost_canonical_input_receipts.py": "c9f79a493ac7ea56f6f3b07da44ba7d051e9c46e193321c0635817abdd098c62",
+    "tests/test_ghost_capacity_history_retention.py": "751e9228dc88b93bf7651333c97c65510d1b8b29eabceb8cde18bce01711e1ab",
+    "tests/test_ghost_event_windows.py": "26fe94650ce8d5ec33d368521c5186b8afc1e9c723407fae54d145359f067211",
+    "tests/test_ghost_history_delete_guards.py": "1aaa63acf62a748b76822cf3cfe70064d7a269d0914f4fffc13a9ef67837a297",
+    "tests/test_ghost_legacy_observation_reader.py": "dbe94a218ceeab06913c838d9ecf71c85a2c87e190a06a5b4129e665ffa2c385",
+    "tests/test_ghost_legacy_projection_admission.py": "e40becdf9ef7f34b74b8830553fe69c9505d6acfb75223e668ab5433afc6badf",
+    "tests/test_ghost_manifest_atomic_mutation.py": "62ed78038075c9b8553023393bba63c68a6546851a0c1a70bc11e4a87767afe1",
+    "tests/test_ghost_reset_boundaries.py": "8070e366a16cba1d3e7fc0c92e8dc9eb212f941cc91f2987098db8d0f33b6dc4",
+    "tests/test_ghost_scope_history_retention.py": "e262fe4f39a23f1d5b69581a54bc91abc75e4b678ebb6b4cfc7981565c6c67d8",
+    "tests/test_ghost_observation_consumption_view.py": "0084825b21e84e1de8cf779cbb2890996967b5c8ecb6ded8242697e8cce93ffa"
+  },
+  "limitations": [
+    "Existing read snapshots and already loaded legacy process contents are not revoked.",
+    "Actual provider send and complete mixed-version App are not proven.",
+    "Other six domains legacy replay/readers and physical disk retention/purge remain separate.",
+    "Full 0.6.3 and World Model loop are incomplete."
+  ],
+  "candidate_failure_attribution": "INSTEAD OF DELETE did not reject zero-row legacy reset; replaced write triggers with native SQLite read-only view.",
+  "rollback": "Keep schema9 history and retirement metadata; isolate affected consumers and recover with a compatible runtime, without downgrading user_version.",
+  "checks": [
+    {
+      "check": "related",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/test_ghost_mixed_schema_history.py",
+        "tests/test_ghost_history_delete_guards.py",
+        "tests/test_ghost_event_windows.py",
+        "tests/test_ghost_scope_history_retention.py",
+        "tests/test_ghost_capacity_history_retention.py",
+        "tests/test_ghost_reset_history_retention.py",
+        "tests/test_ghost_reset_boundaries.py",
+        "tests/test_ghost_sqlite_store.py",
+        "tests/test_ghost_corruption_contract.py",
+        "tests/test_ghost_graph_sqlite.py",
+        "tests/test_ghost_control_surface.py",
+        "tests/test_ghost_control_mutation_failures.py",
+        "tests/test_ghost_manifest_atomic_mutation.py",
+        "tests/test_ghost_manifest_production_wiring.py",
+        "tests/test_ghost_manifest_discovery.py",
+        "tests/test_ghost_deletion_manifest_recovery.py",
+        "tests/test_ghost_deletion_manifest_multiprocess.py",
+        "tests/test_ghost_canonical_input_receipts.py",
+        "tests/test_ghost_legacy_projection_admission.py",
+        "tests/test_ghost_deleted_input_fence.py",
+        "tests/test_ghost_deleted_source_lifetime.py",
+        "tests/test_ghost_inflight_input_lifetime.py",
+        "tests/test_ghost_received_input_lifetime.py",
+        "tests/test_ghost_projection_delete_fence.py",
+        "tests/test_ghost_vectors.py",
+        "tests/test_experience_memory.py",
+        "tests/test_ghost_inbox.py",
+        "tests/test_ghost_hebbian.py",
+        "tests/test_ghost_continuity.py",
+        "tests/test_ghost_work_queue.py",
+        "tests/test_ghost_affinity.py",
+        "tests/test_ghost_sleep.py",
+        "tests/durable/test_operation_driver_restart.py",
+        "tests/durable/test_legacy_chat_rescue.py",
+        "-q",
+        "--tb=short",
+        "tests/test_ghost_legacy_observation_reader.py",
+        "tests/test_ghost_observation_consumption_view.py",
+        "--junitxml=.e2e-artifacts\\ghost-observation-view-20261117/production.xml"
+      ]
+    },
+    {
+      "check": "ruff",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ]
+    },
+    {
+      "check": "mypy",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "precision",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "tools.kernel_type_precision_gate"
+      ]
+    },
+    {
+      "check": "owned-mypy",
+      "exit": 0,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey/ghost/event_windows.py",
+        "codey/ghost/observations.py",
+        "codey/ghost/sqlite.py",
+        "codey/ghost/vectors.py",
+        "tests/manual/ghost_memory_routing/legacy_observation_reader.py",
+        "tests/test_experience_memory.py",
+        "tests/test_ghost_canonical_input_receipts.py",
+        "tests/test_ghost_capacity_history_retention.py",
+        "tests/test_ghost_event_windows.py",
+        "tests/test_ghost_history_delete_guards.py",
+        "tests/test_ghost_legacy_observation_reader.py",
+        "tests/test_ghost_legacy_projection_admission.py",
+        "tests/test_ghost_manifest_atomic_mutation.py",
+        "tests/test_ghost_reset_boundaries.py",
+        "tests/test_ghost_scope_history_retention.py",
+        "tests/test_ghost_observation_consumption_view.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-pyrefly",
+      "exit": 0,
+      "command": [
+        "pyrefly",
+        "check",
+        "codey/ghost/event_windows.py",
+        "codey/ghost/observations.py",
+        "codey/ghost/sqlite.py",
+        "codey/ghost/vectors.py",
+        "tests/manual/ghost_memory_routing/legacy_observation_reader.py",
+        "tests/test_experience_memory.py",
+        "tests/test_ghost_canonical_input_receipts.py",
+        "tests/test_ghost_capacity_history_retention.py",
+        "tests/test_ghost_event_windows.py",
+        "tests/test_ghost_history_delete_guards.py",
+        "tests/test_ghost_legacy_observation_reader.py",
+        "tests/test_ghost_legacy_projection_admission.py",
+        "tests/test_ghost_manifest_atomic_mutation.py",
+        "tests/test_ghost_reset_boundaries.py",
+        "tests/test_ghost_scope_history_retention.py",
+        "tests/test_ghost_observation_consumption_view.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-ty",
+      "exit": 0,
+      "command": [
+        "ty",
+        "check",
+        "codey/ghost/event_windows.py",
+        "codey/ghost/observations.py",
+        "codey/ghost/sqlite.py",
+        "codey/ghost/vectors.py",
+        "tests/manual/ghost_memory_routing/legacy_observation_reader.py",
+        "tests/test_experience_memory.py",
+        "tests/test_ghost_canonical_input_receipts.py",
+        "tests/test_ghost_capacity_history_retention.py",
+        "tests/test_ghost_event_windows.py",
+        "tests/test_ghost_history_delete_guards.py",
+        "tests/test_ghost_legacy_observation_reader.py",
+        "tests/test_ghost_legacy_projection_admission.py",
+        "tests/test_ghost_manifest_atomic_mutation.py",
+        "tests/test_ghost_reset_boundaries.py",
+        "tests/test_ghost_scope_history_retention.py",
+        "tests/test_ghost_observation_consumption_view.py",
+        "--python-version",
+        "3.11"
+      ]
+    },
+    {
+      "check": "owned-any",
+      "exit": 1,
+      "command": [
+        "python",
+        "-m",
+        "mypy",
+        "codey/ghost/event_windows.py",
+        "codey/ghost/observations.py",
+        "codey/ghost/sqlite.py",
+        "codey/ghost/vectors.py",
+        "tests/manual/ghost_memory_routing/legacy_observation_reader.py",
+        "tests/test_experience_memory.py",
+        "tests/test_ghost_canonical_input_receipts.py",
+        "tests/test_ghost_capacity_history_retention.py",
+        "tests/test_ghost_event_windows.py",
+        "tests/test_ghost_history_delete_guards.py",
+        "tests/test_ghost_legacy_observation_reader.py",
+        "tests/test_ghost_legacy_projection_admission.py",
+        "tests/test_ghost_manifest_atomic_mutation.py",
+        "tests/test_ghost_reset_boundaries.py",
+        "tests/test_ghost_scope_history_retention.py",
+        "tests/test_ghost_observation_consumption_view.py",
+        "--python-version",
+        "3.11",
+        "--disallow-any-expr",
+        "--no-error-summary"
+      ]
+    }
+  ],
+  "typing": {
+    "owned_python_files": 16,
+    "owned_any_diagnostics": 0,
+    "untouched_dependency_files": 351,
+    "untouched_dependency_diagnostics": 11596,
+    "initial_experience_diagnostics": 88,
+    "production_pyrefly": {
+      "errors": 0,
+      "suppressed": 35,
+      "warnings": 158
+    }
+  }
+}

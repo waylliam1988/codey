@@ -63,7 +63,11 @@ def _history(surface: GhostControlSurface, store: str) -> tuple[tuple[object, ..
                 "SELECT sequence,event_id,payload FROM graph_events WHERE graph=? ORDER BY sequence", (store,),
             )
         elif store == "observations":
-            cursor = connection.execute("SELECT * FROM observation_events ORDER BY sequence")
+            retained: sqlite3.Row | None = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='observation_history'",
+            ).fetchone()
+            table = "observation_history" if retained is not None else "observation_events"
+            cursor = connection.execute(f"SELECT * FROM {table} ORDER BY sequence")
         else:
             assert store in {"inbox", "continuity", "work_queue", "sleep"}
             cursor = connection.execute(

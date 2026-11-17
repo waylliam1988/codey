@@ -19,12 +19,13 @@ def _emit(payload: dict[str, object]) -> None:
     print(json.dumps(payload), flush=True)
 
 
-def run(home: Path, phase: str, scope: str) -> None:
-    finder = GitGhostFinder(LEGACY_REVISION)
+def run(home: Path, phase: str, scope: str, revision: str = LEGACY_REVISION) -> None:
+    finder = GitGhostFinder(revision)
     sys.meta_path.insert(0, finder)
     try:
         from codey.ghost.observation_index import render_retrieved_block
         from codey.ghost.observations import MAX_OBSERVATIONS, GhostObservationStore
+        from codey.ghost.sqlite import GHOST_SCHEMA_VERSION
 
         store = GhostObservationStore(home)
         project = str(home / "project")
@@ -38,8 +39,8 @@ def run(home: Path, phase: str, scope: str) -> None:
             version: sqlite3.Row | None = database.execute("PRAGMA user_version").fetchone()
             assert version is not None
             number: object = version[0]
-            assert number == 7
-        _emit({"ready": True, "schema": 7, "revision": finder.revision})
+            assert number == GHOST_SCHEMA_VERSION
+        _emit({"ready": True, "schema": number, "revision": finder.revision})
         if input() != "go":
             raise ValueError("expected explicit release")
         if phase == "schema7_trimmed":
@@ -75,13 +76,16 @@ def main() -> None:
     parser.add_argument("--phase", choices=("schema7_visible", "schema7_trimmed", "capacity", "delete", "reset"),
                         required=True)
     parser.add_argument("--scope", choices=("user", "project", "session"), required=True)
+    parser.add_argument("--revision", default=LEGACY_REVISION)
     arguments = parser.parse_args()
     home: object = arguments.home
     phase: object = arguments.phase
     scope: object = arguments.scope
-    if not isinstance(home, Path) or not isinstance(phase, str) or not isinstance(scope, str):
+    revision: object = arguments.revision
+    if (not isinstance(home, Path) or not isinstance(phase, str) or not isinstance(scope, str)
+            or not isinstance(revision, str)):
         raise TypeError("invalid reader arguments")
-    run(home, phase, scope)
+    run(home, phase, scope, revision)
 
 
 if __name__ == "__main__":

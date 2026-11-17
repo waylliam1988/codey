@@ -35,7 +35,7 @@ CASES: tuple[tuple[str, str], ...] = (
 TABLES = (
     "memory_events", "memory_records", "memory_consumers", "ghost_settings",
     "graph_events", "graph_nodes", "graph_edges", "graph_consumers",
-    "observation_events", "memory_embeddings", "ghost_input_origins",
+    "observation_history", "memory_embeddings", "ghost_input_origins",
     "ghost_retired_inputs", "ghost_retired_sources", "ghost_projection_epoch",
 )
 
@@ -55,9 +55,9 @@ def _live_count(home: Path, run_id: str) -> int:
 def _live_count_database(owner: GhostSQLite, run_id: str) -> int:
     with owner.connection() as database:
         row: sqlite3.Row | None = database.execute(
-            "SELECT count(*) FROM observation_events WHERE run_id=? "
+            "SELECT count(*) FROM observation_history WHERE run_id=? "
             "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
-            "WHERE kind='observation' AND identity=observation_events.run_id)", (run_id,),
+            "WHERE kind='observation' AND identity=observation_history.run_id)", (run_id,),
         ).fetchone()
     assert row is not None
     count: object = row[0]

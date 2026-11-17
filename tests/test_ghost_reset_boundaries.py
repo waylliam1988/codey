@@ -26,7 +26,7 @@ from tests.test_ghost_scope_history_retention import (
 TABLES = (
     "memory_events", "memory_records", "memory_consumers", "ghost_settings",
     "graph_events", "graph_nodes", "graph_edges", "graph_consumers",
-    "observation_events", "memory_embeddings", "ghost_input_origins",
+    "observation_history", "memory_embeddings", "ghost_input_origins",
     "ghost_retired_inputs", "ghost_retired_sources", "ghost_projection_epoch", "ghost_replay_windows",
 )
 
@@ -126,7 +126,7 @@ def test_reset_preserves_original_history_above_actual_capacity(tmp_path: Path, 
     if store == "observations":
         with surface.observations.database.write_transaction() as database:
             database.executemany(
-                "INSERT INTO observation_events(run_id,session_id,project,mode,user_text,assistant_text,"
+                "INSERT INTO observation_history(run_id,session_id,project,mode,user_text,assistant_text,"
                 "stop_reason,committed,provider_id,ts) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (
                     (f"capacity-{index:06d}", "session", str(tmp_path / "project"), "chat", "Capacity fact.",

@@ -12,11 +12,20 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新实验：[旧 observation reader 容量窗口基线](ghost_progress/legacy-observation-reader-baseline-20261117.md)。
+2026-11-17 最新完成：[observation 兼容消费视图](ghost_progress/observation-consumption-view-production-20261117.md)。
+schema9正常owner构造原地保留历史，旧名改为有界原生只读视图；原reader15项13→15通过，
+旧writer42项继续通过，另19项真实7/8迁移、回滚、向量外键、序号、缓存SELECT、损坏和
+空写入验收通过。候选273、扩大1122/136子测试及完整静态门通过，16个owned文件额外
+Any零诊断。首轮266/1的空视图触发器失败保留，使用原生只读修复，不放宽原断言。
+无新默认关闭开关；不撤销已有读快照/旧进程内存、不证明整个旧App和实际模型发送。
+继续其余生命周期/retention与admission/controls边界、显式时间/replay及真实World Model。
+完整0.6.3与World Model仍未完成，不重跑已停止语言批次。
+
+此前实验：[旧 observation reader 容量窗口基线](ghost_progress/legacy-observation-reader-baseline-20261117.md)。
 真实 schema7 reader 持有原 store 跨当前升级；15 cell 全有效，13通过、2个capacity的
 project/session公开检索及渲染返回窗口外旧词。当前reader、delete/reset、旧版裁剪与
-新词可用性对照正常，相关236项回归通过。生产未改；下一步独立评估存储层消费隔离，
-不能以来源永久退役混淆容量过期与用户删除，不将本次结果说成实际模型发送泄漏。
+新词可用性对照正常，相关236项回归通过。原始负结果commit为`c956c5ef`，以上后续视图
+已限定闭合本矩阵；不能以来源永久退役混淆容量过期与用户删除，不外推实际模型发送。
 此前原事件DELETE约束继续有效；完整混版本runtime、0.6.3和World Model仍未完成。
 
 此前完成：[原事件物理删除防护](ghost_progress/history-delete-guards-production-20261117.md)。

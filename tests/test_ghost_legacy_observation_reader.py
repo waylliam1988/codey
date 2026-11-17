@@ -21,10 +21,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @contextmanager
-def _reader(home: Path, phase: str, scope: str) -> Generator[subprocess.Popen[str]]:
+def _reader(
+    home: Path, phase: str, scope: str, *, revision: str = "7244c1e3", schema: int = 7,
+) -> Generator[subprocess.Popen[str]]:
     process = subprocess.Popen(
         [sys.executable, "-m", "tests.manual.ghost_memory_routing.legacy_observation_reader",
-         "--home", str(home), "--phase", phase, "--scope", scope],
+         "--home", str(home), "--phase", phase, "--scope", scope, "--revision", revision],
         cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8",
     )
@@ -37,7 +39,7 @@ def _reader(home: Path, phase: str, scope: str) -> Generator[subprocess.Popen[st
             except BaseException:
                 process.kill()
                 raise
-        assert ready["ready"] is True and ready["schema"] == 7
+        assert ready["ready"] is True and ready["schema"] == schema
         yield process
     finally:
         if process.poll() is None:
@@ -60,7 +62,7 @@ def test_warm_legacy_retrieval_respects_observation_window(
             project = str(tmp_path / "project")
             with store.database.write_transaction() as database:
                 database.executemany(
-                    "INSERT INTO observation_events(run_id,session_id,project,mode,user_text,assistant_text,"
+                    "INSERT INTO observation_history(run_id,session_id,project,mode,user_text,assistant_text,"
                     "stop_reason,committed,provider_id,ts) VALUES(?,?,?,?,?,?,?,?,?,?)",
                     ((f"noise-{index}", "other-session", str(tmp_path / "other-project"), "chat", "Noise.",
                       "Recorded.", "done", 1, "fixture", "2026-11-17T00:00:00Z")
@@ -85,7 +87,7 @@ def test_warm_legacy_retrieval_respects_observation_window(
             assert len(store.read_all()) <= MAX_OBSERVATIONS
             with store.database.connection() as database:
                 retained: sqlite3.Row | None = database.execute(
-                    "SELECT 1 FROM observation_events WHERE run_id='archived-run'",
+                    "SELECT 1 FROM observation_history WHERE run_id='archived-run'",
                 ).fetchone()
                 assert retained is not None, "invalid fixture: archived history not retained"
         output, errors = process.communicate("go\n", timeout=30)

@@ -15,7 +15,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-GHOST_SCHEMA_VERSION = 8
+GHOST_SCHEMA_VERSION = 9
 _PROJECTION_INPUTS: ContextVar[Mapping[Path, int] | None] = ContextVar("ghost_projection_inputs", default=None)
 _WRITE_CONNECTIONS: ContextVar[Mapping[Path, sqlite3.Connection] | None] = ContextVar(
     "ghost_atomic_write_connections", default=None,
@@ -30,6 +30,18 @@ def _row_factory(cursor: sqlite3.Cursor, values: tuple[object, ...]) -> sqlite3.
 def _has_row(database: sqlite3.Connection, statement: str, parameters: tuple[object, ...] = ()) -> bool:
     row: sqlite3.Row | None = database.execute(statement, parameters).fetchone()
     return row is not None
+
+
+def _execute_schema(database: sqlite3.Connection, script: str) -> None:
+    """Execute DDL without executescript's implicit commit of a migration."""
+    statement = ""
+    for line in script.splitlines(keepends=True):
+        statement += line
+        if sqlite3.complete_statement(statement):
+            database.execute(statement)
+            statement = ""
+    if statement.strip():
+        raise ValueError("incomplete Ghost schema statement")
 
 
 class GhostSchemaVersionError(RuntimeError):
@@ -185,6 +197,11 @@ class GhostSQLite:
             version = self._schema_version(database)
             if version > GHOST_SCHEMA_VERSION:
                 raise GhostSchemaVersionError("ghost database uses a newer schema")
+            self._enable_wal(database)
+            database.execute("BEGIN IMMEDIATE")
+            version = self._schema_version(database)
+            if version > GHOST_SCHEMA_VERSION:
+                raise GhostSchemaVersionError("ghost database uses a newer schema")
             if version >= 3 and not _has_row(database,
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='ghost_retired_inputs'",
             ):
@@ -213,10 +230,22 @@ class GhostSQLite:
                 "HAVING count(*)=7",
             )):
                 raise GhostSchemaVersionError("Ghost replay windows are missing from an existing schema")
-            self._enable_wal(database)
-            database.executescript(
+            legacy_observations = _has_row(database,
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='observation_events'",
+            )
+            retained_observations = _has_row(database,
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='observation_history'",
+            )
+            if version >= 9 and (not retained_observations or not _has_row(database,
+                "SELECT 1 FROM sqlite_master WHERE type='view' AND name='observation_events'",
+            )):
+                raise GhostSchemaVersionError("Ghost observation history or consumption view is missing")
+            if legacy_observations:
+                if retained_observations:
+                    raise GhostSchemaVersionError("Ghost observation history has conflicting layouts")
+                database.execute("ALTER TABLE observation_events RENAME TO observation_history")
+            _execute_schema(database,
                 """
-                BEGIN IMMEDIATE;
                 CREATE TABLE IF NOT EXISTS ghost_replay_windows (
                     stream TEXT PRIMARY KEY CHECK(stream IN
                         ('inbox','continuity','work_queue','sleep','hebbian','affinity','observations')),
@@ -227,7 +256,7 @@ class GhostSQLite:
                     singleton INTEGER PRIMARY KEY CHECK(singleton=1),
                     database_name TEXT NOT NULL
                 ) STRICT;
-                CREATE TABLE IF NOT EXISTS observation_events (
+                CREATE TABLE IF NOT EXISTS observation_history (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     run_id TEXT NOT NULL UNIQUE,
                     session_id TEXT NOT NULL,
@@ -241,13 +270,13 @@ class GhostSQLite:
                     ts TEXT NOT NULL
                 ) STRICT;
                 CREATE INDEX IF NOT EXISTS observation_by_session
-                    ON observation_events(session_id, sequence DESC);
+                    ON observation_history(session_id, sequence DESC);
                 CREATE INDEX IF NOT EXISTS observation_by_project
-                    ON observation_events(project, sequence DESC);
+                    ON observation_history(project, sequence DESC);
                 CREATE INDEX IF NOT EXISTS observation_by_committed
-                    ON observation_events(committed, sequence DESC);
+                    ON observation_history(committed, sequence DESC);
                 CREATE TABLE IF NOT EXISTS memory_embeddings (
-                    run_id TEXT PRIMARY KEY REFERENCES observation_events(run_id) ON DELETE CASCADE,
+                    run_id TEXT PRIMARY KEY REFERENCES observation_history(run_id) ON DELETE CASCADE,
                     model_id TEXT NOT NULL,
                     dimensions INTEGER NOT NULL CHECK(dimensions BETWEEN 1 AND 8192),
                     content_digest TEXT NOT NULL,
@@ -303,7 +332,7 @@ class GhostSQLite:
                 BEFORE DELETE ON graph_events
                 BEGIN SELECT RAISE(ABORT,'Ghost original history is retained'); END;
                 CREATE TRIGGER IF NOT EXISTS ghost_preserve_observation_events
-                BEFORE DELETE ON observation_events
+                BEFORE DELETE ON observation_history
                 BEGIN SELECT RAISE(ABORT,'Ghost original history is retained'); END;
                 CREATE TABLE IF NOT EXISTS memory_consumers (
                     collection TEXT PRIMARY KEY,
@@ -396,12 +425,12 @@ class GhostSQLite:
                 )
                 BEGIN SELECT RAISE(ABORT,'deleted Ghost graph input'); END;
                 CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_observation
-                BEFORE INSERT ON observation_events
+                BEFORE INSERT ON observation_history
                 WHEN EXISTS(SELECT 1 FROM ghost_retired_inputs
                             WHERE kind='observation' AND identity=NEW.run_id)
                 BEGIN SELECT RAISE(ABORT,'deleted Ghost observation'); END;
                 CREATE TRIGGER IF NOT EXISTS ghost_reject_retired_observation_update
-                BEFORE UPDATE ON observation_events
+                BEFORE UPDATE ON observation_history
                 WHEN EXISTS(SELECT 1 FROM ghost_retired_inputs
                             WHERE kind='observation' AND identity=NEW.run_id)
                 BEGIN SELECT RAISE(ABORT,'deleted Ghost observation'); END;
@@ -426,12 +455,12 @@ class GhostSQLite:
                              WHERE kind='observation' AND identity=json_extract(NEW.payload,'$.source_ref'))
                 BEGIN SELECT RAISE(ABORT,'deleted Ghost run source'); END;
                 CREATE TRIGGER IF NOT EXISTS ghost_reject_unaccepted_observation_insert
-                BEFORE INSERT ON observation_events
+                BEFORE INSERT ON observation_history
                 WHEN NOT codey_input_receipt_ok(
                     (SELECT database_name FROM ghost_input_authority WHERE singleton=1),NEW.run_id)
                 BEGIN SELECT RAISE(ABORT,'unaccepted Ghost input'); END;
                 CREATE TRIGGER IF NOT EXISTS ghost_reject_unaccepted_observation_update
-                BEFORE UPDATE ON observation_events
+                BEFORE UPDATE ON observation_history
                 WHEN NOT codey_input_receipt_ok(
                     (SELECT database_name FROM ghost_input_authority WHERE singleton=1),NEW.run_id)
                 BEGIN SELECT RAISE(ABORT,'unaccepted Ghost input'); END;
@@ -457,6 +486,12 @@ class GhostSQLite:
                       (SELECT database_name FROM ghost_input_authority WHERE singleton=1),
                       json_extract(NEW.payload,'$.source_ref'))
                 BEGIN SELECT RAISE(ABORT,'unaccepted Ghost run source'); END;
+                CREATE VIEW IF NOT EXISTS observation_events AS
+                SELECT o.* FROM observation_history AS o JOIN ghost_replay_windows AS w
+                    ON w.stream='observations'
+                WHERE o.sequence>w.after_sequence AND w.after_sequence=w.applied_after_sequence
+                    AND (w.after_sequence=0 OR EXISTS(
+                        SELECT 1 FROM observation_history AS anchor WHERE anchor.sequence=w.after_sequence));
                 """
             )
             version = self._schema_version(database)

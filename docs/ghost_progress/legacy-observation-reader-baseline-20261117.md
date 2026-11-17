@@ -5,6 +5,10 @@
 - 状态：`EXPERIMENT_COMPLETE`（有效基础设施负结果）；关联 0.6.3；生产结论：`EXPERIMENT_ONLY`。
 - 模型/endpoint：不使用；明确移除 embedding 配置，不恢复已停止的语言批次。
 
+- 后续：[schema9 兼容消费视图](observation-consumption-view-production-20261117.md)已在默认
+  owner 构造启用，将原 15 cell 全部修复为通过；本文件保留原始 13/2，不代表实际模型
+  发送、旧快照/内存或整个混版本 App 已验证。
+
 ## 冻结目标、变量和验收
 
 假设：schema8 保留原始 observation 历史并推进消费窗口后，已运行的 schema7

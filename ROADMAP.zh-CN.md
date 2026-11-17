@@ -1877,6 +1877,15 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 最新observation兼容消费视图：schema9正常owner构造将原表原地保留为
+observation_history，旧名成为受窗口约束的原生只读视图；原reader15项13→15通过、
+旧writer42项继续通过，另19项真实schema7/8迁移/并发/回滚/序号/向量外键/缓存SELECT/
+损坏/空写入验收通过。候选273、扩大1122/136子测试及完整静态门通过，16个owned
+文件额外Any零诊断。首轮266/1的空视图触发器失败保留，不放宽原断言。
+见[生产修复及限制](docs/ghost_progress/observation-consumption-view-production-20261117.md)；
+不撤销旧快照/旧进程内存，不证明整个旧App/实际模型发送；其余生命周期、磁盘策略、
+其他领域旧reader及完整0.6.3/World Model仍未完成。以下13/2是原始负结果。
+
 2026-11-17 旧observation reader容量基线：真实schema7持有reader跨当前升级，15cell全有效，
 13通过、2个capacity的project/session公开检索及渲染仍消费窗口外旧词；当前reader与
 delete/reset对照正常，相关236项回归通过。生产未改，消费存储隔离待独立修复；

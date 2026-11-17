@@ -115,7 +115,7 @@ def test_observation_append_at_capacity_preserves_original_facts(
     count = MAX_OBSERVATIONS if over_capacity else 2
     with store.database.write_transaction() as database:
         database.executemany(
-            "INSERT INTO observation_events(run_id,session_id,project,mode,user_text,assistant_text,"
+            "INSERT INTO observation_history(run_id,session_id,project,mode,user_text,assistant_text,"
             "stop_reason,committed,provider_id,ts) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (
                 (f"capacity-{index:06d}", "session", str(tmp_path / "project"), "chat", "Capacity fact.",

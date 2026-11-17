@@ -141,7 +141,7 @@ class GhostObservationStore:
                 self.database.check_projection_inputs(database)
                 database.execute(
                     """
-                    INSERT INTO observation_events(
+                    INSERT INTO observation_history(
                         run_id, session_id, project, mode, user_text,
                         assistant_text, stop_reason, committed, provider_id, ts
                     ) VALUES(?,?,?,?,?,?,?,?,?,?)
@@ -170,7 +170,7 @@ class GhostObservationStore:
                 boundary = advance_observation_window(database, limit=MAX_OBSERVATIONS)
                 database.execute(
                     "DELETE FROM memory_embeddings WHERE run_id NOT IN "
-                    "(SELECT run_id FROM observation_events WHERE sequence>?)", (boundary,),
+                    "(SELECT run_id FROM observation_history WHERE sequence>?)", (boundary,),
                 )
             return True
         except (OSError, sqlite3.Error, TypeError, ValueError):
@@ -185,9 +185,9 @@ class GhostObservationStore:
                 """
                 SELECT run_id, session_id, project, mode, user_text,
                        assistant_text, stop_reason, committed, provider_id, ts
-                FROM observation_events
+                FROM observation_history
                 WHERE sequence>? AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs
-                                  WHERE kind='observation' AND identity=observation_events.run_id)
+                                  WHERE kind='observation' AND identity=observation_history.run_id)
                 ORDER BY sequence
                 """, (boundary,),
             ).fetchall()
@@ -220,7 +220,7 @@ class GhostObservationStore:
             "committed = 1",
             "sequence > ?",
             "NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
-            "WHERE kind='observation' AND identity=observation_events.run_id)",
+            "WHERE kind='observation' AND identity=observation_history.run_id)",
             "codey_input_receipt_ok((SELECT database_name FROM ghost_input_authority WHERE singleton=1),run_id)",
         ]
         values: list[object] = []
@@ -241,7 +241,7 @@ class GhostObservationStore:
             boundary = event_window(database, "observations")
             rows: list[sqlite3.Row] = database.execute(
                 "SELECT run_id, session_id, project, mode, user_text, assistant_text, "
-                "stop_reason, committed, provider_id, ts FROM observation_events WHERE "
+                "stop_reason, committed, provider_id, ts FROM observation_history WHERE "
                 + " AND ".join(clauses)
                 + " ORDER BY sequence DESC LIMIT ?",
                 (boundary, *values),
@@ -278,9 +278,9 @@ class GhostObservationStore:
             self.database.advance_deletion(database)
             boundary = event_window(database, "observations")
             row: sqlite3.Row | None = database.execute(
-                "SELECT count(*) FROM observation_events WHERE (" + " AND ".join(clauses) + ") "
+                "SELECT count(*) FROM observation_history WHERE (" + " AND ".join(clauses) + ") "
                 "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
-                "WHERE kind='observation' AND identity=observation_events.run_id) AND sequence>?",
+                "WHERE kind='observation' AND identity=observation_history.run_id) AND sequence>?",
                 (*values, boundary),
             ).fetchone()
             removed: object = None
@@ -290,7 +290,7 @@ class GhostObservationStore:
                 raise ValueError("invalid observation deletion count")
             database.execute(
                 "DELETE FROM memory_embeddings WHERE run_id IN "
-                "(SELECT run_id FROM observation_events WHERE " + " AND ".join(clauses) + ")", tuple(values),
+                "(SELECT run_id FROM observation_history WHERE " + " AND ".join(clauses) + ")", tuple(values),
             )
             database.execute(
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
@@ -302,7 +302,7 @@ class GhostObservationStore:
             )
             database.execute(
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
-                "SELECT 'observation',run_id FROM observation_events WHERE " + " AND ".join(clauses),
+                "SELECT 'observation',run_id FROM observation_history WHERE " + " AND ".join(clauses),
                 tuple(values),
             )
             # Retired identities remove normal readers' eligibility. Preserve
@@ -332,7 +332,7 @@ class GhostObservationStore:
             database.execute("DELETE FROM ghost_input_origins")
             database.execute(
                 "INSERT OR IGNORE INTO ghost_retired_inputs(kind,identity) "
-                "SELECT 'observation',run_id FROM observation_events",
+                "SELECT 'observation',run_id FROM observation_history",
             )
             reset_window(database, "observations")
             database.execute("DELETE FROM memory_embeddings")

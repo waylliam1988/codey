@@ -275,13 +275,13 @@ def test_direct_observation_sql_cannot_bypass_failed_receipt(tmp_path: Path, ope
     with (_session(tmp_path, False), pytest.raises(sqlite3.IntegrityError, match="unaccepted Ghost input"),
           GhostSQLite(tmp_path).connection() as connection):
         if operation == "update":
-            connection.execute("UPDATE observation_events SET run_id='run' WHERE run_id='standalone-seed'")
+            connection.execute("UPDATE observation_history SET run_id='run' WHERE run_id='standalone-seed'")
         else:
             connection.execute(
-                "INSERT INTO observation_events(run_id,session_id,project,mode,user_text,assistant_text,"
+                "INSERT INTO observation_history(run_id,session_id,project,mode,user_text,assistant_text,"
                 "stop_reason,committed,provider_id,ts) "
                 "SELECT 'run',session_id,project,mode,user_text,assistant_text,stop_reason,committed,provider_id,ts "
-                "FROM observation_events WHERE run_id='standalone-seed'",
+                "FROM observation_history WHERE run_id='standalone-seed'",
             )
 
 
@@ -328,7 +328,7 @@ def test_old_connection_cannot_write_after_authority_schema_upgrade(tmp_path: Pa
             number: object = None
             if version is not None:
                 number = version[0]
-            assert number == GHOST_SCHEMA_VERSION == 8
+            assert number == GHOST_SCHEMA_VERSION == 9
 
 
 def test_custom_canonical_database_name_uses_the_actual_app_binding(tmp_path: Path) -> None:

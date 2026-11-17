@@ -46,7 +46,7 @@ class GhostVectorMemory:
             event_window(connection, "observations")
             found: list[sqlite3.Row] = connection.execute(
                 "SELECT o.run_id, e.content_digest, vec_distance_cosine(e.vector, ?) AS distance "
-                "FROM memory_embeddings e JOIN observation_events o ON o.run_id=e.run_id "
+                "FROM memory_embeddings e JOIN observation_history o ON o.run_id=e.run_id "
                 f"WHERE e.model_id=? AND e.dimensions=? AND o.committed=1 AND o.run_id IN ({placeholders}) "
                 "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs WHERE kind='observation' AND identity=o.run_id) "
                 "AND codey_input_receipt_ok((SELECT database_name FROM ghost_input_authority WHERE singleton=1),o.run_id) "
@@ -107,10 +107,10 @@ class GhostVectorMemory:
                 for row, vector in zip(batch, packed, strict=True):
                     connection.execute(
                         "INSERT INTO memory_embeddings(run_id, model_id, dimensions, content_digest, vector) "
-                        "SELECT run_id, ?, ?, ?, ? FROM observation_events "
+                        "SELECT run_id, ?, ?, ?, ? FROM observation_history "
                         "WHERE run_id=? AND committed=1 AND user_text=? AND assistant_text=? "
                         "AND NOT EXISTS (SELECT 1 FROM ghost_retired_inputs "
-                        "WHERE kind='observation' AND identity=observation_events.run_id) "
+                        "WHERE kind='observation' AND identity=observation_history.run_id) "
                         "AND codey_input_receipt_ok((SELECT database_name FROM ghost_input_authority WHERE singleton=1),run_id) "
                         "AND sequence>(SELECT after_sequence FROM ghost_replay_windows WHERE stream='observations') "
                         "ON CONFLICT(run_id) DO UPDATE SET model_id=excluded.model_id, dimensions=excluded.dimensions, "

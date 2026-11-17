@@ -15,7 +15,7 @@ def _event_position(database: sqlite3.Connection, stream: EventStream, *, positi
     if stream in {"hebbian", "affinity"}:
         table, selector, parameters = "graph_events", "graph=?", (stream,)
     elif stream == "observations":
-        table, selector, parameters = "observation_events", "1=1", ()
+        table, selector, parameters = "observation_history", "1=1", ()
     else:
         table, selector, parameters = "memory_events", "collection=?", (stream,)
     if position is None:
@@ -93,7 +93,7 @@ def advance_observation_window(database: sqlite3.Connection, *, limit: int) -> i
         raise ValueError("observation window requires a positive limit")
     previous = event_window(database, "observations")
     row: sqlite3.Row | None = database.execute(
-        "SELECT sequence FROM observation_events ORDER BY sequence DESC LIMIT 1 OFFSET ?", (limit,),
+        "SELECT sequence FROM observation_history ORDER BY sequence DESC LIMIT 1 OFFSET ?", (limit,),
     ).fetchone()
     if row is None:
         return previous

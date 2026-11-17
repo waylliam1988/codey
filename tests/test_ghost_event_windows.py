@@ -203,13 +203,13 @@ def test_schema_seven_upgrade_preserves_all_existing_events_and_initializes_wind
         row: sqlite3.Row | None = database.execute("PRAGMA user_version").fetchone()
         assert row is not None
         version: object = row[0]
-        assert version == GHOST_SCHEMA_VERSION == 8
+        assert version == GHOST_SCHEMA_VERSION == 9
 
 
 def _advance_observations(store: GhostObservationStore, project: str) -> None:
     with store.database.write_transaction() as database:
         database.executemany(
-            "INSERT INTO observation_events(run_id,session_id,project,mode,user_text,assistant_text,"
+            "INSERT INTO observation_history(run_id,session_id,project,mode,user_text,assistant_text,"
             "stop_reason,committed,provider_id,ts) VALUES(?,?,?,?,?,?,?,?,?,?)",
             (
                 (f"window-{index:06d}", "other", project, "chat", "Newer fact.", "Recorded.", "done", 1, "fixture", NOW)

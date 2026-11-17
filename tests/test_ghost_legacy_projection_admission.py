@@ -142,7 +142,7 @@ def test_observation_receipt_filter_precedes_recent_limit(tmp_path: Path) -> Non
     # This is a schema-6 producer, before the new build installs replay metadata.
     with surface.observations.database.connection() as connection:
         connection.execute(
-            "INSERT INTO observation_events(run_id,session_id,project,mode,user_text,assistant_text,"
+            "INSERT INTO observation_history(run_id,session_id,project,mode,user_text,assistant_text,"
             "stop_reason,committed,provider_id,ts) VALUES(?,?,?,?,?,?,?,?,?,?)",
             ("unaccepted-newer", "session", "", "chat", MARKER, "Unknown old source.", "done", 1, "fixture", NOW),
         )
