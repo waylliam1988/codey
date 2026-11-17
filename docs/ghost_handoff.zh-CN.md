@@ -12,7 +12,14 @@
 > 描述未验证阶段，不意味着本轮可以只交提案；前置边界通过后继续真实消费者和效果评估。
 > 单模型有收益且相关生产边界通过，即在受测范围接线、默认启用并更新状态；没有收益保留负结果。
 
-2026-11-17 最新完成：[原事件物理删除防护](ghost_progress/history-delete-guards-production-20261117.md)。
+2026-11-17 最新实验：[旧 observation reader 容量窗口基线](ghost_progress/legacy-observation-reader-baseline-20261117.md)。
+真实 schema7 reader 持有原 store 跨当前升级；15 cell 全有效，13通过、2个capacity的
+project/session公开检索及渲染返回窗口外旧词。当前reader、delete/reset、旧版裁剪与
+新词可用性对照正常，相关236项回归通过。生产未改；下一步独立评估存储层消费隔离，
+不能以来源永久退役混淆容量过期与用户删除，不将本次结果说成实际模型发送泄漏。
+此前原事件DELETE约束继续有效；完整混版本runtime、0.6.3和World Model仍未完成。
+
+此前完成：[原事件物理删除防护](ghost_progress/history-delete-guards-production-20261117.md)。
 真实warm schema7旧写口原42项14→42通过，另13项回滚/缓存SQL/跨升级读快照/既有schema8补装
 验收通过；扩大1088项/136子测试、测试行工厂类型修正后13项复验及完整静态门通过，四个owned
 文件额外Any审计零诊断。普通owner构造默认在三原始事件表安装DELETE约束，无新关闭开关。

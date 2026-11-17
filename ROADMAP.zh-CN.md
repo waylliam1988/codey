@@ -1877,6 +1877,11 @@ admit_hints=false         可继续生成 shadow 统计；禁止进入 Context E
 
 #### 0.6.3 - Conflict Lifecycle and Durable Deletion
 
+2026-11-17 旧observation reader容量基线：真实schema7持有reader跨当前升级，15cell全有效，
+13通过、2个capacity的project/session公开检索及渲染仍消费窗口外旧词；当前reader与
+delete/reset对照正常，相关236项回归通过。生产未改，消费存储隔离待独立修复；
+不将纯SQL审计可读当泄漏，不把本次结果外推为实际模型发送。见[矩阵与失败归属](docs/ghost_progress/legacy-observation-reader-baseline-20261117.md)。
+
 2026-11-17 最新原事件物理删除防护：默认GhostSQLite构造为memory_events、graph_events和
 observation_events安装BEFORE DELETE约束；真实warm schema7破坏性写口原42项14→42通过，
 另13项回滚、缓存SQL、跨升级读快照及已有schema8补装验收通过。扩大1088项/136子测试，

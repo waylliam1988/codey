@@ -10,6 +10,12 @@
 
 ## 当前状态
 
+最新实验：[旧 observation reader 容量窗口基线](legacy-observation-reader-baseline-20261117.md)。
+真实 schema7 旧 reader 的 15 cell 全有效，13 通过、2 个容量处理的 project/session
+在公开检索及历史渲染返回窗口外旧记录；当前 reader、删除/reset及旧版裁剪对照正常。
+相关236项回归及完整静态门通过，两个owned文件额外Any零诊断；生产未改，存储层消费隔离
+待独立修复，不声称实际模型发送泄漏。
+
 最新完成：[原始事件物理删除防护](history-delete-guards-production-20261117.md)。
 真实warm schema7旧压缩/reset原42项14→42通过，另13项旧缓存SQL/读快照/事务回滚/既有schema8
 补装验收通过；扩大1088项/136子测试、测试行工厂类型修正后13项复验及完整静态门通过，
@@ -27,6 +33,7 @@
 
 | 路线图轨道/实验主题 | 状态 | 说明 | 记录 |
 |---|---|---|---|
+| 旧 observation reader 容量窗口基线 2026-11-17 | `EXPERIMENT_COMPLETE`（有效负结果，待生产修复） | 真实 schema7 reader 跨当前升级；15 cell 全有效，13通过、2个capacity项目/会话读取并渲染旧记录；当前reader与删除/reset对照正常，相关236项回归通过；不证明实际模型发送 | [冻结矩阵、归属及结果](legacy-observation-reader-baseline-20261117.md) |
 | 原始事件物理删除防护 2026-11-17 | `PRODUCTION_MERGED`（限定破坏性旧写口） | 默认构造安装三表DELETE约束；原42项14→42通过，另13项验收、扩大1088项/136子测试、测试类型修正后13项复验及完整静态门通过，四个owned文件额外Any审计零诊断；不隔离旧reader | [生产修复与边界](history-delete-guards-production-20261117.md) |
 | 混版本warm owner历史保留基线 2026-11-17 | `EXPERIMENT_COMPLETE`（原始负结果，后续限定闭合） | 真实Git schema7 owner先启动再升级同库；42项全部有效，原14项旧schema正对照通过、28项升级处理在最后历史比较失败；后续物理删除防护见上行 | [冻结矩阵与结果](mixed-schema-history-baseline-20261117.md) |
 | 普通reset历史保留 2026-11-17 | `PRODUCTION_MERGED`（正常单版本runtime） | 原63项21→63通过，另50项恢复/容量/回滚/新输入/开关/向量交错全部通过；扩大906项/136子测试、import格式修正后125项复验及完整静态门通过，六个owned文件额外Any审计零诊断 | [生产修复与失败归属](reset-history-retention-production-20261117.md) |

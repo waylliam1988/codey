@@ -1,0 +1,367 @@
+{
+  "experiment": "legacy-observation-reader-baseline",
+  "date": "2026-11-17",
+  "current_source_commit": "8cffa97c9046252cd4e9233b3a997cc66ae45553",
+  "legacy_source_commit": "7244c1e3bd6c44c645f43209aa834cd0cd759c75",
+  "cells": 15,
+  "passed": 13,
+  "failed": 2,
+  "invalid": 0,
+  "model_calls": 0,
+  "production_source_unchanged": true,
+  "frozen_production_python_files": 702,
+  "batches": [
+    {
+      "artifact": "baseline.xml",
+      "cells": 15,
+      "passed": 13,
+      "failed": 2,
+      "invalid": 0,
+      "results": [
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_visible-user]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": true,
+          "archived_retrieved": true,
+          "archived_rendered": true,
+          "active_retrieved": false
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_visible-project]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": true,
+          "archived_retrieved": true,
+          "archived_rendered": true,
+          "active_retrieved": false
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_visible-session]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": true,
+          "archived_retrieved": true,
+          "archived_rendered": true,
+          "active_retrieved": false
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_trimmed-user]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_trimmed-project]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_trimmed-session]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[capacity-user]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[capacity-project]",
+          "passed": false,
+          "valid": true,
+          "archived_committed": true,
+          "archived_retrieved": true,
+          "archived_rendered": true,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[capacity-session]",
+          "passed": false,
+          "valid": true,
+          "archived_committed": true,
+          "archived_retrieved": true,
+          "archived_rendered": true,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[delete-user]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[delete-project]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[delete-session]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[reset-user]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[reset-project]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[reset-session]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        }
+      ]
+    },
+    {
+      "artifact": "baseline-typed.xml",
+      "cells": 15,
+      "passed": 13,
+      "failed": 2,
+      "invalid": 0,
+      "results": [
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_visible-user]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": true,
+          "archived_retrieved": true,
+          "archived_rendered": true,
+          "active_retrieved": false
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_visible-project]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": true,
+          "archived_retrieved": true,
+          "archived_rendered": true,
+          "active_retrieved": false
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_visible-session]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": true,
+          "archived_retrieved": true,
+          "archived_rendered": true,
+          "active_retrieved": false
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_trimmed-user]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_trimmed-project]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[schema7_trimmed-session]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[capacity-user]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[capacity-project]",
+          "passed": false,
+          "valid": true,
+          "archived_committed": true,
+          "archived_retrieved": true,
+          "archived_rendered": true,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[capacity-session]",
+          "passed": false,
+          "valid": true,
+          "archived_committed": true,
+          "archived_retrieved": true,
+          "archived_rendered": true,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[delete-user]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[delete-project]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[delete-session]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[reset-user]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[reset-project]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        },
+        {
+          "case": "test_warm_legacy_retrieval_respects_observation_window[reset-session]",
+          "passed": true,
+          "valid": true,
+          "archived_committed": false,
+          "archived_retrieved": false,
+          "archived_rendered": false,
+          "active_retrieved": true
+        }
+      ]
+    }
+  ],
+  "related_regression": {
+    "passed": 236,
+    "failed": 0,
+    "skipped": 0
+  },
+  "production_merged": false,
+  "actual_provider_send_not_tested": true,
+  "vector_not_tested": true,
+  "owned_source_sha256_lf": {
+    "tests/test_ghost_legacy_observation_reader.py": "a630c4d4f7ccb26f7689b24a0971dd9807fcd5c6cef505ec6bc8c24dfa6335b0",
+    "tests/manual/ghost_memory_routing/legacy_observation_reader.py": "b9922c084696ba3908382ac77b91e2b8325c0f248e6ba457146cecf0fca9b25b"
+  },
+  "initial_owned_any_diagnostics": 1,
+  "initial_any_fix": "Narrow the SQL fetchone result to sqlite3.Row | None before checking retention.",
+  "final_checks": [
+    {
+      "check": "typed",
+      "exit": 1
+    },
+    {
+      "check": "ruff",
+      "exit": 0
+    },
+    {
+      "check": "mypy",
+      "exit": 0
+    },
+    {
+      "check": "pyrefly",
+      "exit": 0
+    },
+    {
+      "check": "ty",
+      "exit": 0
+    },
+    {
+      "check": "precision",
+      "exit": 0
+    },
+    {
+      "check": "owned-mypy",
+      "exit": 0
+    },
+    {
+      "check": "owned-pyrefly",
+      "exit": 0
+    },
+    {
+      "check": "owned-ty",
+      "exit": 0
+    },
+    {
+      "check": "owned-any",
+      "exit": 1
+    }
+  ],
+  "owned_any_diagnostics": 0,
+  "untouched_dependency_any_files": 187,
+  "untouched_dependency_any_diagnostics": 4065,
+  "pyrefly_production": {
+    "errors": 0,
+    "suppressed": 35,
+    "warnings": 158
+  }
+}
