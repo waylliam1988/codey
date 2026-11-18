@@ -16,6 +16,7 @@ import time
 from collections.abc import Sequence
 from datetime import datetime
 
+from codey.ghost.payload_types import object_fields
 from codey.utils.refs import coerce_int
 
 MAX_RETRIEVED_ITEMS = 3
@@ -40,7 +41,8 @@ def tokenize(text: object) -> frozenset[str]:
     without any model call or language-specific dictionary.
     """
     tokens: set[str] = set()
-    for run in _TOKEN_RE.findall(str(text or "").casefold()):
+    for match in _TOKEN_RE.finditer(str(text or "").casefold()):
+        run = match.group(0)
         latin: list[str] = []
         cjk: list[str] = []
         for char in run:
@@ -89,7 +91,7 @@ def _row_time_score(row: dict[str, object], now: float) -> float:
 def score_observation(query_tokens: frozenset[str], row: object, now: float) -> float:
     if not query_tokens:
         return 0.0
-    if not isinstance(row, dict):
+    if not object_fields(row):
         return 0.0
     try:
         doc_tokens = tokenize(row.get("user_text")) | tokenize(row.get("assistant_text"))
@@ -143,7 +145,7 @@ def retrieve_relevant_observations(
     now = time.time()
     scored: list[tuple[float, dict[str, object]]] = []
     for row in list(rows)[-RECENT_SCAN_LIMIT:]:
-        if not isinstance(row, dict):
+        if not object_fields(row):
             continue
         try:
             if exclude_run_id and str(row.get("run_id") or "") == exclude_run_id:
@@ -153,11 +155,15 @@ def retrieve_relevant_observations(
             continue
         if score > 0.0:
             scored.append((score, row))
-    scored.sort(key=lambda item: item[0], reverse=True)
+    scored.sort(key=_score_key, reverse=True)
     ranked = [row for _, row in scored]
     return tuple(
         row for row, _block in _fit_blocks(ranked, budget_chars, max_items)
     )
+
+
+def _score_key(item: tuple[float, dict[str, object]]) -> float:
+    return item[0]
 
 
 def fit_observation_rows(
@@ -169,7 +175,7 @@ def fit_observation_rows(
 
 def _render_single_block(row: object, remaining: int) -> str | None:
     """Render one row within the remaining budget; None when nothing fits."""
-    if not isinstance(row, dict):
+    if not object_fields(row):
         return None
     try:
         user_text = str(row.get("user_text") or "").strip()
@@ -183,27 +189,29 @@ def _render_single_block(row: object, remaining: int) -> str | None:
         ts = str(row.get("ts") or "")
     except (AttributeError, TypeError):
         return None
-    head = f"- [{mode} {ts}] user said: "
-    if remaining < len(head) + 1:
-        return None
-    user_room = remaining - len(head)
-    user_shown = (
-        user_text[: user_room - 1] + "…"
-        if len(user_text) > user_room
-        else user_text
-    )
-    block = head + user_shown
-    left = remaining - len(block)
+    head = f"- [{mode} {ts}] "
+    if not user_text or not assistant_text:
+        label, text = ("user said: ", user_text) if user_text else ("assistant said: ", assistant_text)
+        room = remaining - len(head) - len(label)
+        if room < min(2, len(text)):
+            return None
+        return head + label + _excerpt(text, room)
+    head += "user said: "
     assistant_head = "\n  assistant said: "
-    if assistant_text and left > len(assistant_head) + 1:
-        room = left - len(assistant_head)
-        assistant_shown = (
-            assistant_text[: room - 1] + "…"
-            if len(assistant_text) > room
-            else assistant_text
-        )
-        block += assistant_head + assistant_shown
-    return block
+    content_room = remaining - len(head) - len(assistant_head)
+    # A clipped field needs one source character plus its ellipsis. Never
+    # select a two-sided experience and silently turn it into one-sided data.
+    user_min, assistant_min = min(2, len(user_text)), min(2, len(assistant_text))
+    if content_room < user_min + assistant_min:
+        return None
+    user_room = min(len(user_text), max(user_min, content_room // 2))
+    assistant_room = min(len(assistant_text), content_room - user_room)
+    user_room = min(len(user_text), content_room - assistant_room)
+    return head + _excerpt(user_text, user_room) + assistant_head + _excerpt(assistant_text, assistant_room)
+
+
+def _excerpt(text: str, room: int) -> str:
+    return text[:room - 1] + "…" if len(text) > room else text
 
 
 def _fit_blocks(
@@ -226,7 +234,7 @@ def _fit_blocks(
     fitted: list[tuple[dict[str, object], str]] = []
     used = 0
     for row in rows:
-        if not isinstance(row, dict):
+        if not object_fields(row):
             continue
         if len(fitted) >= limit:
             break

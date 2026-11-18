@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
@@ -638,10 +639,13 @@ class GhostInboxStore:
         control = str(name or "").strip().lower()
         if control not in GHOST_CONTROL_NAMES:
             raise ValueError(f"unknown Ghost control: {control or '<empty>'}")
-        with self.records.transaction(write=False):
-            return self._effective_controls_unlocked(
-                self._read_settings_unlocked(), project=project, session_id=session_id,
-            )[control]
+        try:
+            with self.records.transaction(write=False):
+                return self._effective_controls_unlocked(
+                    self._read_settings_unlocked(), project=project, session_id=session_id,
+                )[control]
+        except sqlite3.Error as exc:
+            raise GhostSettingsError(self.database.path, "control_read_failed") from exc
 
     def controls(self, *, project: str = "", session_id: str = "") -> dict[str, bool]:
         """Return all independent controls as a bounded settings snapshot."""

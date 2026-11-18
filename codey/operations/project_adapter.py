@@ -7,24 +7,36 @@ adapter replaces only its model/tool turn loop, preserving its public
 
 from __future__ import annotations
 
-from dataclasses import replace
-from types import SimpleNamespace
-from typing import Any, cast
+from dataclasses import dataclass, replace
 
 from codey.agents.request import AgentRequest
+from codey.ghost.payload_types import object_fields
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_request_builder import KernelRunRequestBuilder
+from codey.operations.project_experiences import validated_project_experiences
 from codey.operations.provider_session import ConversationProvider
+from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_guidance import task_guidance_for_policy
 from codey.operations.task_loop import (
     KernelExecutionDeps,
     KernelObservationDeps,
 )
-from codey.operations.task_session import session_checks_passed
+from codey.operations.task_session import TaskSession, session_checks_passed
+from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.run_result import RunResult
+from codey.workspace.context_admission import GhostContextSource
 
 
-def _project_context(request: AgentRequest) -> str:
+@dataclass(frozen=True)
+class _ProjectPolicyInput:
+    project: str
+    requested_capabilities: tuple[str, ...]
+    strict_research: bool
+    project_changes_required: bool
+    denied_capabilities: tuple[str, ...]
+
+
+def _project_context(request: AgentRequest, *, experiences: str = "") -> str:
     from codey.agents.context import build_agent_context, load_project_instructions
     from codey.agents.tools import DEFAULT_TOOL_FNS
     from codey.policies.permissions import profile_for_name
@@ -46,7 +58,7 @@ def _project_context(request: AgentRequest) -> str:
         work_checkpoint=request.work_checkpoint,
         ghost_directive=request.ghost_directive if request.admit_hints else "",
         ghost_continuity=request.ghost_continuity if request.admit_hints else "",
-        ghost_experiences=request.ghost_experiences if request.admit_hints else "",
+        ghost_experiences=experiences,
         completion_repair_context=request.completion_repair_context,
     )
     trace = FailOpenPromptTrace(request.trace_recorder)
@@ -70,7 +82,7 @@ def _project_context(request: AgentRequest) -> str:
     return f"{rendered.text}\n\n{candidate_text}" if candidate_text else rendered.text
 
 
-def _project_ghost_sources(request: AgentRequest) -> tuple[Any, ...]:
+def _project_ghost_sources(request: AgentRequest) -> tuple[GhostContextSource, ...]:
     from codey.policies.permissions import allows_context_source, profile_for_name
     from codey.workspace.context_admission import request_scope, sources_from_values
 
@@ -82,9 +94,8 @@ def _project_ghost_sources(request: AgentRequest) -> tuple[Any, ...]:
                    if allows_context_source(profile, "ghost_directive") else ""),
         continuity=(request.ghost_continuity
                     if allows_context_source(profile, "ghost_continuity") else ""),
-        # build_agent_context currently does not expose the experiences key
-        # through permission profiles, so it cannot be admitted on this path.
-        experiences="",
+        experiences=(validated_project_experiences(request)
+                     if allows_context_source(profile, "ghost_experiences") else ""),
         scope=request_scope(request.project, request.session_id),
     )
 
@@ -102,34 +113,43 @@ def _open_fresh_chat(request: AgentRequest) -> bool:
     return True
 
 
-def _task_kind_and_policy(request: AgentRequest) -> tuple[str, Any]:
+def _request_session(request: AgentRequest) -> TaskSession | None:
+    session: object = request.task_session
+    if session is not None and not isinstance(session, TaskSession):
+        raise TypeError("project continuation requires TaskSession")
+    return session
+
+
+def _task_kind_and_policy(request: AgentRequest) -> tuple[str, TaskPolicy]:
     from codey.agents.protocol import task_forbids_verification
     from codey.policies.task_policy import build_task_policy
 
-    existing = getattr(request, "task_policy", None)
+    existing = request.task_policy
+    if existing is not None and not isinstance(existing, TaskPolicy):
+        raise TypeError("project authorization requires TaskPolicy")
     # A read-only writer continuation narrows tool permissions for this
     # attempt; it must retain the parent project's task identity and
     # conversation mode. Standalone planning requests have no project-write
     # grant in their entry policy and remain planning tasks.
-    inherited_kind = str(getattr(getattr(request, "task_session", None), "task_kind", "") or "").strip().lower()
+    session = _request_session(request)
+    inherited_kind = session.task_kind.strip().lower() if session is not None else ""
     if inherited_kind in {"project", "hybrid", "research", "planning"}:
         task_kind = inherited_kind
     elif request.permission_profile == "planning_readonly":
         task_kind = (
             "project"
-            if existing is not None and callable(getattr(existing, "allows", None))
-            and existing.allows("project.write")
+            if existing is not None and existing.allows("project.write")
             else "planning"
         )
     else:
         task_kind = "project"
-    if existing is not None and callable(getattr(existing, "allows", None)):
+    if existing is not None:
         return task_kind, existing
     policy = build_task_policy(
-        SimpleNamespace(
+        _ProjectPolicyInput(
             project=str(request.project),
-            requested_capabilities=getattr(request, "requested_capabilities", ()),
-            strict_research=bool(getattr(request, "strict_research", False) is True),
+            requested_capabilities=request.requested_capabilities,
+            strict_research=request.strict_research is True,
             project_changes_required=request.project_changes_required,
             denied_capabilities=("project.verify",) if task_forbids_verification(request.task) else (),
         ),
@@ -138,33 +158,23 @@ def _task_kind_and_policy(request: AgentRequest) -> tuple[str, Any]:
     return task_kind, policy
 
 
-def _require_write_permission(task_kind: str, policy: Any, request: AgentRequest) -> None:
-    try:
-        _requires = bool(getattr(request, "project_changes_required", False) is True)
-    except Exception:
-        _requires = False
-    if _requires and task_kind in {"project", "hybrid"}:
-        try:
-            _allows = bool(policy.allows("project.write"))
-        except Exception:
-            _allows = False
-        if not _allows:
-            raise RuntimeError(
-                "project_changes_required without project.write: task declares must-change "
-                "but entry grants no write permission"
-            )
+def _require_write_permission(task_kind: str, policy: TaskPolicy, request: AgentRequest) -> None:
+    if (request.project_changes_required is True and task_kind in {"project", "hybrid"}
+            and not policy.allows("project.write")):
+        raise RuntimeError(
+            "project_changes_required without project.write: task declares must-change "
+            "but entry grants no write permission"
+        )
 
 
-def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any, Any]:
-    intent_sink = None
+def _wrap_provider_with_sink(request: AgentRequest, provider: object) -> tuple[object, KernelEffectSink | None]:
+    intent_sink: KernelEffectSink | None = None
     if request.runtime_mutations is not None and request.session_id and request.run_id:
         # Durable path requires an explicit provider_id; the empty string
         # fails instead of silently falling back to provider.name. The
         # provider.name fallback above is conversation-display only.
         if not (request.provider_id or "").strip():
             raise ValueError("provider_id must not be empty when runtime_mutations are supplied")
-        from codey.operations.task_effects import KernelEffectSink
-
         intent_sink = KernelEffectSink(
             request.runtime_mutations, session_id=request.session_id,
             run_id=request.run_id, provider_id=request.provider_id,
@@ -178,12 +188,12 @@ def _wrap_provider_with_sink(request: AgentRequest, provider: Any) -> tuple[Any,
 
 def run(request: AgentRequest) -> RunResult:
     from codey.operations.task_loop import run_task_kernel
-    from codey.operations.task_session import TaskSession
     from codey.workspace.context_admission import request_scope
 
     task_kind, policy = _task_kind_and_policy(request)
     _require_write_permission(task_kind, policy, request)
-    if request.task_session is not None and request.task_session.policy != policy:
+    session = _request_session(request)
+    if session is not None and session.policy != policy:
         raise ValueError("project continuation cannot replace task authorization")
     if request.runtime_mutations is not None and request.session_id and request.run_id:
         from codey.operations.recovery import durable_task_for, record_entry_policy
@@ -206,7 +216,7 @@ def run(request: AgentRequest) -> RunResult:
             display_provider_name(request.provider_id, request.provider),
             "project", str(request.project.expanduser().resolve()),
         )
-    session = request.task_session
+    shared = session is not None
     if session is None:
         from codey.task.web_intent import explicit_web_intent
 
@@ -218,14 +228,13 @@ def run(request: AgentRequest) -> RunResult:
             task_text=request.task,
             required_source_urls=explicit_web_intent(request.task).urls,
             handoff=request.handoff,
-            project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
-            coding_context_enabled=bool(getattr(request, "coding_context_enabled", True) is True),
+            project_changes_required=request.project_changes_required is True,
+            coding_context_enabled=request.coding_context_enabled is True,
             verification_candidates=request.verification_candidates,
             verification_candidate_loader=request.verification_candidate_loader,
         )
-    shared = request.task_session is not None
     if not shared and request.workspace_revision_store is not None:
-        current = cast(Any, request.workspace_revision_store).current_state(
+        current = request.workspace_revision_store.current_state(
             str(request.project), ignored_paths=request.workspace_ignored_paths,
         )
         session.set_workspace_state(current.revision, current.fingerprint)
@@ -239,6 +248,20 @@ def run(request: AgentRequest) -> RunResult:
         session.verification_forbidden = ("project.verify" in policy.denied_capabilities or
                                               task_forbids_verification(request.task))
     effect_scope = request.effect_scope or ("planning:1" if task_kind == "planning" else "writer:1")
+    ghost_sources = _project_ghost_sources(request)
+    experiences = next((source.text for source in ghost_sources if source.key == "ghost_experiences"), "")
+    completion_context: object = request.completion_context
+    if completion_context is None:
+        completion_context = dict[str, object]()
+    if not object_fields(completion_context):
+        raise TypeError("project completion context requires an object with string keys")
+
+    def sources_still_valid(actual: tuple[GhostContextSource, ...]) -> bool:
+        # Recovery can replace the transport's context/sources. Validate that
+        # actual tuple, rather than authorizing a different restored request
+        # through the new entry's otherwise valid projection.
+        return request.admit_hints and actual == ghost_sources and _project_ghost_sources(request) == actual
+
     outcome = run_task_kernel(
         session,
         request=KernelRunRequestBuilder(
@@ -247,9 +270,11 @@ def run(request: AgentRequest) -> RunResult:
                 effect_scope=effect_scope,
                 provider_id=request.provider_id,
                 user_task=request.task,
-                context_text=_project_context(request),
+                context_text=_project_context(request, experiences=experiences),
                 context_scope=request_scope(request.project, request.session_id),
-                ghost_sources=_project_ghost_sources(request),
+                ghost_sources=ghost_sources,
+                admit_hints=request.admit_hints,
+                attempt_validate_ghost_sources=sources_still_valid,
                 stop_flag=request.stop_flag,
                 stagnant_turns=request.stagnant_turns,
                 task_guidance=task_guidance_for_policy(session.policy, task_kind=session.task_kind),
@@ -270,7 +295,7 @@ def run(request: AgentRequest) -> RunResult:
                     sink=intent_sink,
                 ),
                 completion_context={
-                    **(request.completion_context or {}),
+                    **completion_context,
                     "run_id": request.run_id,
                     "task": request.task,
                     "question": request.task,

@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-18",
+  "status": "PRODUCTION_MERGED",
+  "consumer": "normal coding_writer project continuation",
+  "user_visible_behavior": "A new session resumes the same project choice and recorded reason, including after a long prior request.",
+  "production_commit": "same master commit as this report; git log --grep=\"enable validated project experience continuity\"",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "configuration": {
+    "endpoint": "loopback HTTP /v1",
+    "api_protocol": "openai-completions",
+    "native_tools": true,
+    "temperature": 0,
+    "stream": false,
+    "context_window_tokens": 262144,
+    "output_tokens": 128,
+    "safety_tokens": 32640,
+    "keep_recent_tokens": 32000,
+    "input_limit_tokens": null
+  },
+  "unverified_configuration_fallback": "omit new project experiences; includes default output8192",
+  "default_enablement": "validated configuration, coding_writer profile, retrieve_projections/admit_hints enabled, durable input authority",
+  "experiment": {
+    "implementation_commit": "1dc4e79f",
+    "result_commit": "94816100",
+    "independent_synthetic_streams": 20,
+    "physical_generations": 40,
+    "on_correct": 19,
+    "off_correct": 0,
+    "choice_correct": {
+      "borosql": 9,
+      "lumenlog": 10
+    },
+    "max_extra_input_tokens": 280,
+    "on_p95_ms": 2547,
+    "off_p95_ms": 2594,
+    "benefit_gate": true,
+    "cost_gate": true,
+    "strict_scorer_unchanged": true,
+    "production_decision_in_frozen_artifact": "EXPERIMENT_ONLY"
+  },
+  "implementation": [
+    "role-balanced bounded rendering",
+    "independent experiences permission/source",
+    "committed project rows plus exact current lexical projection validation",
+    "physical attempt validates actual restored source tuple",
+    "SQLite control-read errors normalized at existing inbox boundary"
+  ],
+  "historical_regressions": [
+    {
+      "name": "corrected unchanged-production role/entry baseline",
+      "passed": 13,
+      "failed": 9
+    },
+    {
+      "name": "role fix before entry wiring",
+      "passed": 21,
+      "failed": 1
+    },
+    {
+      "name": "initial entry and experiment contracts",
+      "passed": 37,
+      "failed": 0
+    },
+    {
+      "name": "expanded affected regressions before late source callback",
+      "passed": 442,
+      "subtests_passed": 19,
+      "failed": 0
+    },
+    {
+      "name": "closure regressions before late source callback",
+      "passed": 278,
+      "subtests_passed": 153,
+      "failed": 0
+    },
+    {
+      "name": "restored deleted B borrowing current valid A baseline",
+      "passed": 0,
+      "failed": 1
+    },
+    {
+      "name": "initial late-source regressions",
+      "passed": 271,
+      "failed": 3,
+      "classification": "all 3 shell fixture failures reproduced using HEAD production modules loaded from Git objects in memory"
+    },
+    {
+      "name": "typed corrected shell fixtures focused check",
+      "passed": 15,
+      "failed": 0
+    }
+  ],
+  "verification": {
+    "status": "PRODUCTION_GATES_PASSED_OWNED_VERIFIED_WITH_DEPENDENCY_DIAGNOSTICS",
+    "final_scope_file": ".e2e-artifacts/ghost-experience-role-budget-20261118/final-test-scope.txt",
+    "owned_python_files": [
+      "codey/ghost/observation_index.py",
+      "codey/ghost/inbox.py",
+      "codey/operations/project_adapter.py",
+      "codey/operations/project_experiences.py",
+      "codey/operations/kernel_contracts.py",
+      "codey/operations/kernel_request_builder.py",
+      "codey/operations/kernel_actions.py",
+      "codey/policies/permissions.py",
+      "tests/test_ghost_experience_role_budget.py",
+      "tests/test_project_experience_production.py",
+      "tests/test_project_experience_continuity_trial.py",
+      "tests/manual/ghost_memory_routing/project_experience_continuity.py",
+      "tests/test_shell_approval_native_identity.py",
+      "tests/test_chat_shell_approval_preserves_workspace_and_intent.py"
+    ],
+    "final_regression": {
+      "files": 19,
+      "passed": 274,
+      "failed": 0,
+      "skipped": 0,
+      "seconds": 500.24
+    },
+    "after_test_only_typing_changes": {
+      "passed": 31,
+      "failed": 0,
+      "seconds": 105.91,
+      "production_bytes_unchanged": true
+    },
+    "full_static_gates": [
+      {
+        "command": "python -m ruff check .",
+        "exit_code": 0
+      },
+      {
+        "command": "python -m mypy codey --python-version 3.11",
+        "exit_code": 0
+      },
+      {
+        "command": "pyrefly check codey --python-version 3.11",
+        "exit_code": 0
+      },
+      {
+        "command": "ty check codey --python-version 3.11",
+        "exit_code": 0
+      },
+      {
+        "command": "python -m tools.kernel_type_precision_gate",
+        "exit_code": 0
+      }
+    ],
+    "type_audit": {
+      "full_gates_passed": true,
+      "owned_python_files": 14,
+      "owned_errors": 0,
+      "mypy": {
+        "owned_errors": 0,
+        "unmodified_dependency_errors": 269,
+        "dependency_files": 8,
+        "command_exit_code": 1,
+        "raw_summary": "Found 269 errors in 8 files (checked 14 source files)"
+      },
+      "extra_any": {
+        "owned_errors": 0,
+        "unmodified_dependency_errors": 14107,
+        "dependency_files": 351,
+        "command_exit_code": 1,
+        "raw_summary": "Found 14107 errors in 351 files (checked 14 source files)"
+      },
+      "pyrefly": "0 errors (12 warnings not shown)",
+      "ty": "All checks passed!",
+      "verified_source_hashes": 709
+    },
+    "git_diff_check": "passed",
+    "frontend_changes": false,
+    "full_pytest": false
+  },
+  "rollback": "disable scoped retrieve_projections/admit_hints or remove ghost_experiences from coding_writer profile; keep stored experiences",
+  "limitations": [
+    "one model/config and synthetic history",
+    "no streaming claim",
+    "not a new learning mechanism",
+    "source replacement injection is not full App cold recovery",
+    "production local reread overhead not part of frozen model p95",
+    "full conditional adaptation and new-information World Model consumer remain incomplete"
+  ],
+  "local_evidence_root": ".e2e-artifacts/ghost-experience-role-budget-20261118",
+  "new_generation_requests_for_production_boundary_checks": 0,
+  "worktree_copies": 0,
+  "review_items": [
+    "unmodified helper type diagnostics remain outside owned files; raw nonzero command exits preserved",
+    "selective retention/pending/mixed-version lifecycle items remain outside this consumer batch"
+  ]
+}

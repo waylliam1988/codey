@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Generator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from dataclasses import dataclass, field
@@ -22,6 +22,7 @@ from codey.ghost.observation_index import (
     retrieve_relevant_observations,
 )
 from codey.ghost.payload_types import mapping_fields
+from codey.operations.project_experiences import VERIFIED_PROJECT_EXPERIENCE_MODEL
 from codey.operations.task_entry import run_task_submission
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ChatProvider
@@ -109,10 +110,15 @@ def endpoint() -> Generator[Endpoint]:
             payload: object = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             assert mapping_fields(payload)
             capture.payloads.append(dict(payload))
+            arguments: dict[str, str] = {"summary": RESULT}
             message: dict[str, object] = {"role": "assistant", "content": None, "tool_calls": [
                 {"id": f"done-{len(capture.payloads)}", "type": "function", "function": {
-                    "name": "done", "arguments": json.dumps({"summary": RESULT})}}]}
-            body = json.dumps({"choices": [{"message": message, "finish_reason": "stop"}]}).encode()
+                    "name": "done", "arguments": json.dumps(arguments)}}]}
+            if not payload.get("tools"):
+                text_reply: dict[str, object] = {"tool": "done", "args": arguments}
+                message = {"role": "assistant", "content": json.dumps(text_reply)}
+            response: dict[str, object] = {"choices": [{"message": message, "finish_reason": "stop"}]}
+            body = json.dumps(response).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -134,14 +140,19 @@ def endpoint() -> Generator[Endpoint]:
 def _execute(
     state: AppContext, capture: Endpoint, *, task: str, session: str,
     project: str | None = None, intent: str = "chat", identity: str,
+    configure: Callable[[ApiProvider], None] | None = None,
+    expected_stop: str = "done",
 ) -> Mapping[str, object]:
     request = TaskSubmission(session, project, task, 3, False, "deepseek", intent=intent, run_id=identity)
     _queue(state).create(identity, {
         "session_id": session, "project": project, "run_id": identity, "task": task,
         "provider": "deepseek", "intent": intent, "max_turns": 3, "project_changes_required": False,
     })
-    provider = ApiProvider(capture.url, "experience-budget-test", native_tools=True, temperature=0,
-                           timeout=10, output_tokens=256)
+    provider = ApiProvider(capture.url, VERIFIED_PROJECT_EXPERIENCE_MODEL, native_tools=True, temperature=0,
+                           timeout=10, output_tokens=128, context_window_tokens=262144,
+                           context_reserve_tokens=32768, context_keep_recent_tokens=32000)
+    if configure is not None:
+        configure(provider)
 
     def connect_provider(_identity: str) -> ChatProvider:
         return provider
@@ -158,7 +169,7 @@ def _execute(
     assert state.wait_for_ghost_sleep(timeout=10)
     event: object = state.run_registry.last_terminal_event()
     assert mapping_fields(event) and event.get("run_id") == identity
-    assert event.get("stop_reason") == "done", event
+    assert event.get("stop_reason") == expected_stop, event
     return event
 
 

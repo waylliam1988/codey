@@ -8,6 +8,7 @@ import json
 import math
 import time
 from dataclasses import replace
+from http.client import HTTPResponse
 from pathlib import Path
 from unittest.mock import patch
 from urllib.request import urlopen
@@ -110,7 +111,10 @@ class CapturedProvider(ApiProvider):
 
 
 def _models(home: Path, name: str) -> None:
-    with urlopen(ENDPOINT + "/models", timeout=5) as response:
+    connection: object = urlopen(ENDPOINT + "/models", timeout=5)
+    if not isinstance(connection, HTTPResponse):
+        raise ValueError("model metadata requires HTTP")
+    with connection as response:
         raw = response.read()
     (home / f"models-{name}.json").write_bytes(raw)
     value: object = json.loads(raw)
@@ -245,7 +249,8 @@ def run(home: Path) -> None:
     try:
         _models(home, "before")
         profiles = {name: replace(profile, context_sources=(*profile.context_sources, "ghost_experiences"))
-                    if name == "coding_writer" else profile for name, profile in PERMISSION_PROFILES.items()}
+                    if name == "coding_writer" and "ghost_experiences" not in profile.context_sources
+                    else profile for name, profile in PERMISSION_PROFILES.items()}
         with patch.dict(PERMISSION_PROFILES, profiles), patch.object(project_adapter, "_project_ghost_sources", candidate_sources):
             for index in range(SAMPLES):
                 for enabled in ((False, True) if index % 2 == 0 else (True, False)):

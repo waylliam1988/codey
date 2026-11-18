@@ -46,6 +46,7 @@ class KernelRunRequestBuilder:
     stop_flag: StopSignal | None = None
     stagnant_turns: int | None = None
     window_ref: ProtocolWindowRef | None = None
+    attempt_validate_ghost_sources: Callable[[tuple[GhostContextSource, ...]], bool] | None = None
 
     def build(
         self,
@@ -67,6 +68,7 @@ class KernelRunRequestBuilder:
                 admit_hints=self.admit_hints,
                 attempt_gate=self.attempt_gate,
                 attempt_admit_hints=self.attempt_admit_hints,
+                attempt_validate_ghost_sources=self.attempt_validate_ghost_sources,
                 stop_flag=self.stop_flag,
                 stagnant_turns=self.stagnant_turns,
                 window_ref=self.window_ref,

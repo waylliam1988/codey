@@ -78,12 +78,13 @@ def result_from_payload(payload: object) -> KernelResult:
     current = legacy | {"research_report"}
     if not isinstance(payload, dict):
         raise ValueError("invalid persisted kernel result")
-    if set(payload) == legacy:
-        payload = {**payload, "research_report": None}
-    elif set(payload) == current | {"schema_version"}:
-        if type(payload["schema_version"]) is not int or payload["schema_version"] != 2:
+    fields: Mapping[object, object] = payload
+    if set(fields) == legacy:
+        payload = {**fields, "research_report": None}
+    elif set(fields) == current | {"schema_version"}:
+        if type(fields["schema_version"]) is not int or fields["schema_version"] != 2:
             raise ValueError("unknown persisted kernel result version")
-        payload = {key: value for key, value in payload.items() if key != "schema_version"}
+        payload = {key: value for key, value in fields.items() if key != "schema_version"}
     payload = decode_json_object(payload)
     if set(payload) != current:
         raise ValueError("invalid persisted kernel result")
@@ -161,6 +162,7 @@ class KernelTransportDeps:
     stop_flag: StopSignal | None = None
     stagnant_turns: int | None = None
     window_ref: ProtocolWindowRef | None = None
+    attempt_validate_ghost_sources: Callable[[tuple[GhostContextSource, ...]], bool] | None = None
 
     def __post_init__(self) -> None:
         from codey.operations.provider_session import adapt_provider

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
     "ghost_continuity",
     "ghost_directive",
+    "ghost_experiences",
     "project_instructions",
     "verified_facts",
     "research_brief",
@@ -24,6 +25,7 @@ KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
     "completion_repair_context",
 })
 CODING_WRITER_CONTEXT_SOURCE_KEYS = (
+    "ghost_experiences",
     "project_instructions",
     "verified_facts",
     "research_brief",

@@ -27,6 +27,16 @@
 
 ## 文件与数据位置
 
+2026-11-18 当前[项目经历连续性](../../../docs/ghost_progress/project-experience-continuity-result-20261118.md)：
+`project_experience_continuity.py`冻结20条独立合成流、40物理请求，19/20对0/20，成本门通过。
+`project_experience_continuity_metrics.json`保留当时`EXPERIMENT_ONLY`，不重写实验历史；
+后续正常入口已在master受测范围默认启用，`PRODUCTION_MERGED`，见
+[生产记录](../../../docs/ghost_progress/project-experience-production-20261118.md)及`reports/project-experience-production-20261118.json`。
+最终274项与类型整理后31项通过，指定全树门及14 owned审计结果见该记录，依赖诊断分列。
+仅Gemma/native/非流式/output128，默认8192回退；没有新增学习机制/World Model完成主张。
+生产故障注入与额外Any审计均无新增模型调用，原始日志/state/hash留本地。
+
+
 2026-11-18 G0 [图与continuity逐记录维护](../../../docs/ghost_progress/selective-maintenance-production-20261118.md)：
 入口 `python -m pytest tests/test_ghost_selective_maintenance.py tests/test_ghost_selective_maintenance_events.py tests/test_ghost_maintenance_record_scope.py -q --tb=short`。
 原12格scorer不改，四领域12/12；另135项新边界。普通App/default daemon默认消费；

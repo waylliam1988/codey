@@ -80,6 +80,8 @@ def _bind_attempt_gate(
             enabled = (transport.attempt_admit_hints() if transport.attempt_admit_hints is not None
                        else transport.admit_hints)
             sources = transport.ghost_sources
+            if transport.attempt_validate_ghost_sources is not None:
+                enabled = enabled and transport.attempt_validate_ghost_sources(sources)
             if client.purpose == "compaction":
                 # Auxiliary prompts may contain only a declared encoding of a
                 # source.  Gate the representations that are actually present;
@@ -200,7 +202,7 @@ def _approval_stop(
                 cwd=str(call.args.get("path") or "."),
                 command=str(call.args.get("command") or ""),
                 deferred_calls=deferred,
-                call_id=str(getattr(call, "call_id", "") or ""),
+                call_id=str(call.call_id or ""),
                 provider_id=str(provider_id or ""),
                 turn=turn,
                 tool_index=index,
