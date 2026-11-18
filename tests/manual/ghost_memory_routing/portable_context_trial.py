@@ -80,9 +80,9 @@ class CapturedProvider(ApiProvider):
 def run_task(state: AppContext, provider: ChatProvider, project: Path, *, task: str, identity: str,
              intent: str) -> dict[str, object]:
     session = "source-session" if identity == "source" else "next-session"
-    request = TaskSubmission(session, str(project), task, 1, False, "trial", intent=intent, run_id=identity)
+    request = TaskSubmission(session, str(project), task, 1, False, "deepseek", intent=intent, run_id=identity)
     _queue(state).create(identity, {"session_id": session, "project": str(project), "task": task,
-        "provider": "trial", "intent": intent, "max_turns": 1, "project_changes_required": False})
+        "provider": "deepseek", "run_id": identity, "intent": intent, "max_turns": 1, "project_changes_required": False})
     state.durable.claim_task(identity)
     state.durable.start_task(identity, state=dict(state.durable.task(identity).state))
 
