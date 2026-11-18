@@ -21,6 +21,7 @@ from codey.ghost.hebbian import GhostHebbianStore, GhostNode, node_id_for_candid
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.observations import MAX_OBSERVATIONS, GhostObservationStore
 from codey.ghost.payload_types import mapping_fields
+from codey.ghost.project_goals import is_project_goal, propose_project_goal, validate_goal_review
 from codey.ghost.schema import (
     MAX_SIGNAL_QUOTE_CHARS,
     GhostSignal,
@@ -49,6 +50,7 @@ _Row = TypeVar("_Row")
 
 _ACTIONS = frozenset({
     "propose_preference",
+    "propose_project_goal",
     "accept_candidate",
     "reject_candidate",
     "queue_work_item",
@@ -236,6 +238,12 @@ class GhostControlSurface:
                 return 200, self._deletion_page(body)
             if action == "propose_preference":
                 return self._propose_preference(body)
+            if action == "propose_project_goal":
+                if self.inbox is None or self.observations is None:
+                    return 200, _unavailable_payload()
+                candidate = propose_project_goal(self.inbox, self.observations, body)
+                return 200, {"schema_version": CONTROL_SURFACE_SCHEMA_VERSION, "ok": True,
+                             "action": action, "candidate": _candidate_payload(candidate)}
             if action == "accept_candidate":
                 return self._review_candidate(body, review_action="accept")
             if action == "reject_candidate":
@@ -342,11 +350,25 @@ class GhostControlSurface:
             return 404, _error_payload("candidate not found")
         if not _candidate_visible_for_scope(current, body):
             return 409, _error_payload("scope changed")
-        candidate = self.inbox.review_candidate(
-            candidate_id,
-            review_action,
-            reviewed_by=clip_signal_text(body.get("reviewed_by") or "ui", 80) or "ui",
-        )
+        if is_project_goal(current):
+            with self.inbox.database.write_transaction():
+                if review_action == "accept":
+                    if self.observations is None:
+                        raise ValueError("goal observations are unavailable")
+                    if not self.inbox.control_enabled("accept_events", project=current.project, session_id=current.session_id):
+                        raise ValueError("local updates are disabled")
+                    validate_goal_review(self.inbox, self.observations, current)
+                candidate = self.inbox.review_candidate(
+                    candidate_id,
+                    review_action,
+                    reviewed_by=clip_signal_text(body.get("reviewed_by") or "ui", 80) or "ui",
+                )
+        else:
+            candidate = self.inbox.review_candidate(
+                candidate_id,
+                review_action,
+                reviewed_by=clip_signal_text(body.get("reviewed_by") or "ui", 80) or "ui",
+            )
         if candidate is None:
             return 404, _error_payload("candidate not found")
         payload: dict[str, object] = {
@@ -355,6 +377,11 @@ class GhostControlSurface:
             "action": f"{review_action}_candidate",
             "candidate": _candidate_payload(candidate),
         }
+        if is_project_goal(candidate):
+            # This family has a separately evaluated, model/config-gated source.
+            # Generic graph/continuity consumers must not bypass that boundary.
+            payload["state_update"] = {"applied": review_action == "accept", "reason": "manual_project_goal_review"}
+            return 200, payload
         if self.hebbian is None:
             return 200, payload
         if review_action == "accept":
@@ -686,6 +713,8 @@ def _applicable_nodes(
 
 
 def _candidate_needs_repair(candidate: GhostMemoryCandidate, nodes: Iterable[GhostNode]) -> bool:
+    if is_project_goal(candidate):
+        return False  # Its confirmed source is the inbox, rather than a graph node.
     node_id = node_id_for_candidate(candidate)
     node = next((item for item in nodes if item.id == node_id), None)
     return node is None or candidate.id not in node.candidate_ids

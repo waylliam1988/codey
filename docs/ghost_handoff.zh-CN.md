@@ -18,7 +18,12 @@
 当前新批次：[项目目标/新方案选择结果](ghost_progress/semantic-goal-result-20261118.md)。
 语义取舍及output8192是新增变量；20条合成流、240请求完整，三阶段全对流0/20对
 检索/确认/预测各20/20。确认状态不优于检索，预测无新增收益而终止；
-[正常入口候选](ghost_progress/project-goal-production-20261118.md)正在验收，旧结果不重判。
+[正常入口](ghost_progress/project-goal-production-20261118.md)已在master受测范围默认启用，
+`PRODUCTION_MERGED`：Gemma/native/非流式/output8192、coding_writer存储方案讨论，
+人工提案及已有审核绑定实际reply后修正/维持状态；不进入通用图消费者。
+369项/154子测试、最终84项及五个全树门通过；累计22 owned Any零诊断，依赖269/14107项
+和Pyrefly警告独立保留。冻结`2b5946a8`，结果`a87e477f`；生产commit按记录标题定位。
+没有新预测生产来源；完整有收益World Model、自动理解及其他目标/配置仍缺，不重跑旧负结果。
 
 用户已恢复持续实现/实验授权，直接使用原 master，不创建或复制worktree。
 当前[项目经历生产接线](ghost_progress/project-experience-production-20261118.md)的用户可见目标：

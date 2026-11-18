@@ -14,6 +14,7 @@ from codey.ghost.payload_types import object_fields
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_request_builder import KernelRunRequestBuilder
 from codey.operations.project_experiences import validated_project_experiences
+from codey.operations.project_goals import validated_project_goal_sources
 from codey.operations.provider_session import ConversationProvider
 from codey.operations.task_effects import KernelEffectSink
 from codey.operations.task_guidance import task_guidance_for_policy
@@ -89,7 +90,7 @@ def _project_ghost_sources(request: AgentRequest) -> tuple[GhostContextSource, .
     profile = profile_for_name(request.permission_profile)
     if not request.admit_hints:
         return ()
-    return sources_from_values(
+    return (*sources_from_values(
         directive=(request.ghost_directive
                    if allows_context_source(profile, "ghost_directive") else ""),
         continuity=(request.ghost_continuity
@@ -97,7 +98,7 @@ def _project_ghost_sources(request: AgentRequest) -> tuple[GhostContextSource, .
         experiences=(validated_project_experiences(request)
                      if allows_context_source(profile, "ghost_experiences") else ""),
         scope=request_scope(request.project, request.session_id),
-    )
+    ), *validated_project_goal_sources(request))
 
 
 def _open_fresh_chat(request: AgentRequest) -> bool:
@@ -262,6 +263,11 @@ def run(request: AgentRequest) -> RunResult:
         # through the new entry's otherwise valid projection.
         return request.admit_hints and actual == ghost_sources and _project_ghost_sources(request) == actual
 
+    goal_context = "\n\n".join(source.text for source in ghost_sources
+                               if source.key in {"ghost_project_goal_history", "ghost_confirmed_project_goal"})
+    context_text = _project_context(request, experiences=experiences)
+    if goal_context:
+        context_text = f"{context_text}\n\n{goal_context}"
     outcome = run_task_kernel(
         session,
         request=KernelRunRequestBuilder(
@@ -270,7 +276,7 @@ def run(request: AgentRequest) -> RunResult:
                 effect_scope=effect_scope,
                 provider_id=request.provider_id,
                 user_task=request.task,
-                context_text=_project_context(request, experiences=experiences),
+                context_text=context_text,
                 context_scope=request_scope(request.project, request.session_id),
                 ghost_sources=ghost_sources,
                 admit_hints=request.admit_hints,

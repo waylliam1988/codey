@@ -10,9 +10,11 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
+from unittest.mock import patch
 
 import pytest
 
+from codey.app import provider_services
 from codey.app.context import AppContext
 from codey.app.task_services import build_task_deps
 from codey.ghost.control_surface import GhostControlSurface
@@ -164,7 +166,10 @@ def _execute(
     def execute() -> None:
         run_task_submission(deps, request)
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    def no_external_advisors(_state: object) -> dict[str, bool]:
+        return {}
+
+    with patch.object(provider_services, "provider_availability", no_external_advisors), ThreadPoolExecutor(max_workers=1) as executor:
         executor.submit(execute).result(timeout=30)
     assert state.wait_for_ghost_sleep(timeout=10)
     event: object = state.run_registry.last_terminal_event()

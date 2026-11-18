@@ -1,6 +1,6 @@
 {
-  "status": "BOUNDARIES_PASSED",
-  "production_decision": "PENDING_PRODUCTION_COMMIT",
+  "status": "PRODUCTION_MERGED",
+  "production_decision": "PRODUCTION_MERGED",
   "experiment_freeze_commit": "2b5946a8",
   "experiment_report": "semantic-goal-20261118.json",
   "consumer": "manually_confirmed_storage_goal_continuity",
@@ -124,5 +124,8 @@
     "single model/config",
     "no incremental accuracy over same-history retrieval",
     "no beneficial World Model production consumer"
-  ]
+  ],
+  "experiment_result_commit": "a87e477f",
+  "production_commit_locator": "git log --oneline --grep=\"enable confirmed project storage goals\"",
+  "default_enabled_in_verified_scope": true
 }

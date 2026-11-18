@@ -877,6 +877,11 @@ class GhostInboxStore:
     ) -> int | None:
         incoming_ref = _scope_ref(incoming)
         for index, candidate in enumerate(candidates):
+            # Goal feedback retains one independently attributable event per run,
+            # including repeated confirmation of the same current priority.
+            if (manual_proposal and incoming.metadata.get("consumer") == "project_storage_goal_v1"
+                    and candidate.run_id != incoming.run_id):
+                continue
             if manual_proposal and candidate.status in {"rejected", "superseded"}:
                 continue
             if candidate.scope != incoming.scope:

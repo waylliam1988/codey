@@ -13,6 +13,8 @@ KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
     "ghost_continuity",
     "ghost_directive",
     "ghost_experiences",
+    "ghost_project_goal_history",
+    "ghost_confirmed_project_goal",
     "project_instructions",
     "verified_facts",
     "research_brief",
@@ -26,6 +28,8 @@ KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
 })
 CODING_WRITER_CONTEXT_SOURCE_KEYS = (
     "ghost_experiences",
+    "ghost_project_goal_history",
+    "ghost_confirmed_project_goal",
     "project_instructions",
     "verified_facts",
     "research_brief",

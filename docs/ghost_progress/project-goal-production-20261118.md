@@ -1,6 +1,8 @@
 # 人工确认项目目标：生产接入与验收
 
-2026-11-18，验收通过，等待独立生产提交进入master；尚未标记`PRODUCTION_MERGED`。
+2026-11-18，`PRODUCTION_MERGED`，在受测范围默认启用。
+冻结`2b5946a8`，实验结果提交`a87e477f`；独立生产提交按
+`git log --oneline --grep="enable confirmed project storage goals"`定位。
 用户可见行为：用户明确确认或纠正存储设计优先级后，新会话将其用于新的方案取舍。
 沿用[冻结实机结果](semantic-goal-result-20261118.md)，20/20完整三阶段流对无历史0/20，
 与相同经历检索持平；不称人工状态或World Model额外准确率收益。方案预测收益门失败，不进入产品。
