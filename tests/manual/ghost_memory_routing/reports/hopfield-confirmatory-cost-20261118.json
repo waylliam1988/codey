@@ -1,0 +1,285 @@
+{
+  "kind": "POST_HOC_COST_SUPPLEMENT_CORRECTING_CANDIDATE_COUNT_ONLY",
+  "meaning": "implementation cost with generated diverse keys; not storage capacity or TB training evidence",
+  "original_actual_counts_preserved": [
+    46,
+    296,
+    1108,
+    4726
+  ],
+  "quality_parameters_unchanged": true,
+  "rows": [
+    {
+      "actual_size": 64,
+      "arm": "cosine",
+      "build_ms_instrumented": 7.406,
+      "encoder_cache_array_bytes": 43008,
+      "index_array_bytes": 133632,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 1
+      },
+      "query_ms_p50": 0.0379,
+      "query_ms_p95": 0.04441999999999999,
+      "requested_size": 64,
+      "rss_after_bytes": 81371136,
+      "rss_before_bytes": 80818176,
+      "traced_build_peak_bytes": 313628
+    },
+    {
+      "actual_size": 64,
+      "arm": "linear",
+      "build_ms_instrumented": 8.2464,
+      "encoder_cache_array_bytes": 43008,
+      "index_array_bytes": 657920,
+      "parameters": {
+        "beta": 8.0,
+        "steps": 3
+      },
+      "query_ms_p50": 0.0899,
+      "query_ms_p95": 0.0948,
+      "requested_size": 64,
+      "rss_after_bytes": 83025920,
+      "rss_before_bytes": 81371136,
+      "traced_build_peak_bytes": 1227580
+    },
+    {
+      "actual_size": 64,
+      "arm": "hopfield",
+      "build_ms_instrumented": 7.2605,
+      "encoder_cache_array_bytes": 43008,
+      "index_array_bytes": 133632,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 3
+      },
+      "query_ms_p50": 0.0944,
+      "query_ms_p95": 0.1006,
+      "requested_size": 64,
+      "rss_after_bytes": 83034112,
+      "rss_before_bytes": 83025920,
+      "traced_build_peak_bytes": 312988
+    },
+    {
+      "actual_size": 64,
+      "arm": "anchored",
+      "build_ms_instrumented": 7.2882,
+      "encoder_cache_array_bytes": 43008,
+      "index_array_bytes": 133632,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 3
+      },
+      "query_ms_p50": 0.1052,
+      "query_ms_p95": 0.11273999999999999,
+      "requested_size": 64,
+      "rss_after_bytes": 82112512,
+      "rss_before_bytes": 83034112,
+      "traced_build_peak_bytes": 312948
+    },
+    {
+      "actual_size": 512,
+      "arm": "cosine",
+      "build_ms_instrumented": 54.1512,
+      "encoder_cache_array_bytes": 313344,
+      "index_array_bytes": 1054720,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 1
+      },
+      "query_ms_p50": 0.3031,
+      "query_ms_p95": 0.31408,
+      "requested_size": 512,
+      "rss_after_bytes": 83177472,
+      "rss_before_bytes": 82112512,
+      "traced_build_peak_bytes": 2465860
+    },
+    {
+      "actual_size": 512,
+      "arm": "linear",
+      "build_ms_instrumented": 55.9783,
+      "encoder_cache_array_bytes": 313344,
+      "index_array_bytes": 1579008,
+      "parameters": {
+        "beta": 8.0,
+        "steps": 3
+      },
+      "query_ms_p50": 0.348,
+      "query_ms_p95": 0.36102,
+      "requested_size": 512,
+      "rss_after_bytes": 84791296,
+      "rss_before_bytes": 83177472,
+      "traced_build_peak_bytes": 2465852
+    },
+    {
+      "actual_size": 512,
+      "arm": "hopfield",
+      "build_ms_instrumented": 54.3896,
+      "encoder_cache_array_bytes": 313344,
+      "index_array_bytes": 1054720,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 3
+      },
+      "query_ms_p50": 0.5029,
+      "query_ms_p95": 0.5125000000000001,
+      "requested_size": 512,
+      "rss_after_bytes": 83951616,
+      "rss_before_bytes": 84791296,
+      "traced_build_peak_bytes": 2465844
+    },
+    {
+      "actual_size": 512,
+      "arm": "anchored",
+      "build_ms_instrumented": 54.7602,
+      "encoder_cache_array_bytes": 313344,
+      "index_array_bytes": 1054720,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 3
+      },
+      "query_ms_p50": 0.5199,
+      "query_ms_p95": 0.53892,
+      "requested_size": 512,
+      "rss_after_bytes": 84033536,
+      "rss_before_bytes": 83951616,
+      "traced_build_peak_bytes": 2465828
+    },
+    {
+      "actual_size": 2048,
+      "arm": "cosine",
+      "build_ms_instrumented": 220.2185,
+      "encoder_cache_array_bytes": 1271808,
+      "index_array_bytes": 4212736,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 1
+      },
+      "query_ms_p50": 1.6253,
+      "query_ms_p95": 2.06528,
+      "requested_size": 2048,
+      "rss_after_bytes": 88264704,
+      "rss_before_bytes": 84033536,
+      "traced_build_peak_bytes": 9882012
+    },
+    {
+      "actual_size": 2048,
+      "arm": "linear",
+      "build_ms_instrumented": 221.4775,
+      "encoder_cache_array_bytes": 1271808,
+      "index_array_bytes": 4737024,
+      "parameters": {
+        "beta": 8.0,
+        "steps": 3
+      },
+      "query_ms_p50": 1.9207,
+      "query_ms_p95": 2.1885399999999997,
+      "requested_size": 2048,
+      "rss_after_bytes": 90431488,
+      "rss_before_bytes": 88264704,
+      "traced_build_peak_bytes": 9882004
+    },
+    {
+      "actual_size": 2048,
+      "arm": "hopfield",
+      "build_ms_instrumented": 222.6022,
+      "encoder_cache_array_bytes": 1271808,
+      "index_array_bytes": 4212736,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 3
+      },
+      "query_ms_p50": 3.7316,
+      "query_ms_p95": 3.92222,
+      "requested_size": 2048,
+      "rss_after_bytes": 89071616,
+      "rss_before_bytes": 90431488,
+      "traced_build_peak_bytes": 9881996
+    },
+    {
+      "actual_size": 2048,
+      "arm": "anchored",
+      "build_ms_instrumented": 221.1543,
+      "encoder_cache_array_bytes": 1271808,
+      "index_array_bytes": 4212736,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 3
+      },
+      "query_ms_p50": 3.7538,
+      "query_ms_p95": 4.287019999999999,
+      "requested_size": 2048,
+      "rss_after_bytes": 88616960,
+      "rss_before_bytes": 89071616,
+      "traced_build_peak_bytes": 9881988
+    },
+    {
+      "actual_size": 8192,
+      "arm": "cosine",
+      "build_ms_instrumented": 894.5458,
+      "encoder_cache_array_bytes": 5091328,
+      "index_array_bytes": 16844800,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 1
+      },
+      "query_ms_p50": 6.1073,
+      "query_ms_p95": 8.60546,
+      "requested_size": 8192,
+      "rss_after_bytes": 107065344,
+      "rss_before_bytes": 89337856,
+      "traced_build_peak_bytes": 39596236
+    },
+    {
+      "actual_size": 8192,
+      "arm": "linear",
+      "build_ms_instrumented": 904.6382,
+      "encoder_cache_array_bytes": 5091328,
+      "index_array_bytes": 17369088,
+      "parameters": {
+        "beta": 8.0,
+        "steps": 3
+      },
+      "query_ms_p50": 6.3363,
+      "query_ms_p95": 8.38486,
+      "requested_size": 8192,
+      "rss_after_bytes": 106979328,
+      "rss_before_bytes": 107065344,
+      "traced_build_peak_bytes": 39683652
+    },
+    {
+      "actual_size": 8192,
+      "arm": "hopfield",
+      "build_ms_instrumented": 900.2749,
+      "encoder_cache_array_bytes": 5091328,
+      "index_array_bytes": 16844800,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 3
+      },
+      "query_ms_p50": 11.5245,
+      "query_ms_p95": 12.558739999999998,
+      "requested_size": 8192,
+      "rss_after_bytes": 108044288,
+      "rss_before_bytes": 106979328,
+      "traced_build_peak_bytes": 39555772
+    },
+    {
+      "actual_size": 8192,
+      "arm": "anchored",
+      "build_ms_instrumented": 900.8461,
+      "encoder_cache_array_bytes": 5091328,
+      "index_array_bytes": 16844800,
+      "parameters": {
+        "beta": 2.0,
+        "steps": 3
+      },
+      "query_ms_p50": 11.1939,
+      "query_ms_p95": 11.57146,
+      "requested_size": 8192,
+      "rss_after_bytes": 107012096,
+      "rss_before_bytes": 108044288,
+      "traced_build_peak_bytes": 39555756
+    }
+  ]
+}
