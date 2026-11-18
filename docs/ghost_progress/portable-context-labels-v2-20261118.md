@@ -1,6 +1,6 @@
 # 流式用量与明确标签接口：修复及定向复验
 
-日期：2026-11-18。状态：`FROZEN / NOT_RUN`，实机前提交本协议。
+日期：2026-11-18。状态：`INCOMPLETE / LABEL_INTERFACE_FAILURE`，冻结提交`39b7adf4`。
 本轮仅修实验脚本和验证接口，不修改生产逻辑，不实现开放式偏好学习。
 
 ## 问题与证据
@@ -52,4 +52,24 @@ python -m tests.manual.ghost_memory_routing.portable_context_trial --protocol la
 
 ## 结果
 
-待按冻结协议执行。测试命令、实际结果和本地模型可用性在后续独立结果提交记录。
+按冻结协议执行后在第一格（output8192、非流式、off）停止：1次物理请求、1份完整模型回复，
+0格成功评分，其余5格未启动。外层done arguments是有效JSON，summary字符串内部却是
+单引号Python字典；原始`response-events.jsonl`已确认该内容来自服务响应。
+`json.loads`拒绝它，不使用literal_eval、引号替换或宽松scorer。
+该次非流式usage正常上报5782输入/33输出tokens；未尝试流式，不能宣称实机流式修复已验证。
+
+这是一次标签接口失败观测，不是Ghost经历/偏好的效果阴性，也不是服务中断。
+原始证据留`.e2e-artifacts/portable-context-labels-v2-20261118`；
+[脱敏指标](../../tests/manual/ghost_memory_routing/reports/portable-context-labels-v2-20261118.json)。
+后续如调整summary序列化要求，应独立冻结新协议，不补跑本批或合并结果。
+
+离线相关回归53项通过（61.82秒）：
+
+```powershell
+python -m pytest tests/test_ghost_portable_context_trial.py tests/test_ghost_portable_context.py tests/test_api_exchange_usage_accounting.py tests/test_local_api_usage_parsing.py tests/test_api_stream_terminal_and_cancelled_generation.py -q --maxfail=2
+```
+
+全仓Ruff、706文件生产mypy、完整生产Pyrefly/ty及kernel精度门通过；Pyrefly仍有35项既有
+suppression及160条warning。本轮两个Python文件的专项mypy/Pyrefly/ty通过。
+额外五项disallow-any扫描本轮文件0诊断，但331个未修改依赖有11849条诊断、命令退出1，
+不将其称为整体通过。日志留`.e2e-artifacts/portable-labels-v2-*`。
