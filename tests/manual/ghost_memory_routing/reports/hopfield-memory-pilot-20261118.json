@@ -1,0 +1,857 @@
+{
+  "arms": [
+    "lexical",
+    "cosine",
+    "hebbian",
+    "fixed_state",
+    "latest_rule",
+    "hopfield"
+  ],
+  "benchmark": [
+    {
+      "arm": "lexical",
+      "array_bytes": 98816,
+      "build_ms_instrumented": 14.2888,
+      "query_ms_p50": 2.5507,
+      "query_ms_p95": 2.6696,
+      "rss_after_bytes": 45543424,
+      "rss_before_bytes": 45539328,
+      "size": 64,
+      "traced_build_peak_bytes": 207052
+    },
+    {
+      "arm": "cosine",
+      "array_bytes": 98816,
+      "build_ms_instrumented": 14.2522,
+      "query_ms_p50": 0.1868,
+      "query_ms_p95": 0.1953,
+      "rss_after_bytes": 45711360,
+      "rss_before_bytes": 45711360,
+      "size": 64,
+      "traced_build_peak_bytes": 207052
+    },
+    {
+      "arm": "hebbian",
+      "array_bytes": 393728,
+      "build_ms_instrumented": 14.8753,
+      "query_ms_p50": 0.6315,
+      "query_ms_p95": 0.6425,
+      "rss_after_bytes": 46039040,
+      "rss_before_bytes": 45711360,
+      "size": 64,
+      "traced_build_peak_bytes": 690020
+    },
+    {
+      "arm": "fixed_state",
+      "array_bytes": 98816,
+      "build_ms_instrumented": 14.1188,
+      "query_ms_p50": 0.1877,
+      "query_ms_p95": 0.1963,
+      "rss_after_bytes": 46039040,
+      "rss_before_bytes": 46039040,
+      "size": 64,
+      "traced_build_peak_bytes": 207604
+    },
+    {
+      "arm": "latest_rule",
+      "array_bytes": 98816,
+      "build_ms_instrumented": 14.3544,
+      "query_ms_p50": 0.2016,
+      "query_ms_p95": 0.2097,
+      "rss_after_bytes": 46039040,
+      "rss_before_bytes": 46039040,
+      "size": 64,
+      "traced_build_peak_bytes": 207052
+    },
+    {
+      "arm": "hopfield",
+      "array_bytes": 98816,
+      "build_ms_instrumented": 14.1491,
+      "query_ms_p50": 0.3196,
+      "query_ms_p95": 0.332,
+      "rss_after_bytes": 46039040,
+      "rss_before_bytes": 46039040,
+      "size": 64,
+      "traced_build_peak_bytes": 207052
+    },
+    {
+      "arm": "lexical",
+      "array_bytes": 790528,
+      "build_ms_instrumented": 113.6698,
+      "query_ms_p50": 19.752,
+      "query_ms_p95": 19.9374,
+      "rss_after_bytes": 46211072,
+      "rss_before_bytes": 46039040,
+      "size": 512,
+      "traced_build_peak_bytes": 1655052
+    },
+    {
+      "arm": "cosine",
+      "array_bytes": 790528,
+      "build_ms_instrumented": 114.6898,
+      "query_ms_p50": 1.0712,
+      "query_ms_p95": 1.0779,
+      "rss_after_bytes": 46182400,
+      "rss_before_bytes": 46219264,
+      "size": 512,
+      "traced_build_peak_bytes": 1655052
+    },
+    {
+      "arm": "hebbian",
+      "array_bytes": 1085440,
+      "build_ms_instrumented": 114.8448,
+      "query_ms_p50": 1.5161,
+      "query_ms_p95": 1.529,
+      "rss_after_bytes": 46690304,
+      "rss_before_bytes": 46182400,
+      "size": 512,
+      "traced_build_peak_bytes": 1655052
+    },
+    {
+      "arm": "fixed_state",
+      "array_bytes": 790528,
+      "build_ms_instrumented": 115.51,
+      "query_ms_p50": 1.0739,
+      "query_ms_p95": 1.0827,
+      "rss_after_bytes": 46399488,
+      "rss_before_bytes": 46690304,
+      "size": 512,
+      "traced_build_peak_bytes": 1659188
+    },
+    {
+      "arm": "latest_rule",
+      "array_bytes": 790528,
+      "build_ms_instrumented": 114.9448,
+      "query_ms_p50": 1.1937,
+      "query_ms_p95": 1.2399,
+      "rss_after_bytes": 46391296,
+      "rss_before_bytes": 46399488,
+      "size": 512,
+      "traced_build_peak_bytes": 1655052
+    },
+    {
+      "arm": "hopfield",
+      "array_bytes": 790528,
+      "build_ms_instrumented": 113.5661,
+      "query_ms_p50": 1.4107,
+      "query_ms_p95": 1.4258,
+      "rss_after_bytes": 46366720,
+      "rss_before_bytes": 46391296,
+      "size": 512,
+      "traced_build_peak_bytes": 1655052
+    },
+    {
+      "arm": "lexical",
+      "array_bytes": 3162112,
+      "build_ms_instrumented": 462.6069,
+      "query_ms_p50": 80.2863,
+      "query_ms_p95": 81.567,
+      "rss_after_bytes": 49180672,
+      "rss_before_bytes": 46534656,
+      "size": 2048,
+      "traced_build_peak_bytes": 6621132
+    },
+    {
+      "arm": "cosine",
+      "array_bytes": 3162112,
+      "build_ms_instrumented": 456.9658,
+      "query_ms_p50": 4.1198,
+      "query_ms_p95": 4.1702,
+      "rss_after_bytes": 49975296,
+      "rss_before_bytes": 49332224,
+      "size": 2048,
+      "traced_build_peak_bytes": 6621132
+    },
+    {
+      "arm": "hebbian",
+      "array_bytes": 3457024,
+      "build_ms_instrumented": 457.9221,
+      "query_ms_p50": 4.6021,
+      "query_ms_p95": 4.6755,
+      "rss_after_bytes": 50503680,
+      "rss_before_bytes": 50008064,
+      "size": 2048,
+      "traced_build_peak_bytes": 6621132
+    },
+    {
+      "arm": "fixed_state",
+      "array_bytes": 3162112,
+      "build_ms_instrumented": 458.4937,
+      "query_ms_p50": 4.1468,
+      "query_ms_p95": 4.215,
+      "rss_after_bytes": 50221056,
+      "rss_before_bytes": 50528256,
+      "size": 2048,
+      "traced_build_peak_bytes": 6637556
+    },
+    {
+      "arm": "latest_rule",
+      "array_bytes": 3162112,
+      "build_ms_instrumented": 458.235,
+      "query_ms_p50": 4.6332,
+      "query_ms_p95": 4.7506,
+      "rss_after_bytes": 49836032,
+      "rss_before_bytes": 50229248,
+      "size": 2048,
+      "traced_build_peak_bytes": 6621132
+    },
+    {
+      "arm": "hopfield",
+      "array_bytes": 3162112,
+      "build_ms_instrumented": 458.1204,
+      "query_ms_p50": 5.0491,
+      "query_ms_p95": 5.1678,
+      "rss_after_bytes": 50081792,
+      "rss_before_bytes": 49852416,
+      "size": 2048,
+      "traced_build_peak_bytes": 6621132
+    }
+  ],
+  "experiment": "ghost-hopfield-annotated-pilot-v1",
+  "failure": null,
+  "freeze": {
+    "config": {
+      "benchmark_queries": 25,
+      "benchmark_sizes": [
+        64,
+        512,
+        2048
+      ],
+      "beta": 8.0,
+      "budget_chars": 768,
+      "dimension": 192,
+      "max_memories": 2,
+      "max_tokens": 64,
+      "profiles": 4,
+      "recency_days": 30.0,
+      "seed": "ghost-hopfield-pilot-v1",
+      "steps": 6,
+      "temperature": 0,
+      "timeout_seconds": 120,
+      "version": 1
+    },
+    "fixture_sha256": "5af30c2bce812e45e622cfe766518f6defebc120d180d1bb2ba36c2ae1e9eca8",
+    "gate": {
+      "meaning": "pilot signal only; never production approval",
+      "minimum_net_extra_correct_vs_cosine": 4,
+      "must_beat_latest_rule": true,
+      "no_family_regression": true,
+      "zero_lifecycle_exposures": true
+    },
+    "sources": {
+      "docs\\ghost_progress\\hopfield-memory-protocol-20261118.md": "f3e215a8d88867aceeb9ab67f42f22f6f757d192234a3acae7877351e2bd5fd6",
+      "tests\\manual\\ghost_memory_routing\\hopfield_experiment.py": "08aba53ece83778d4fa28051c62087a9cf74c9e71f1ede8a6e285a4456df8fc3",
+      "tests\\manual\\ghost_memory_routing\\hopfield_methods.py": "d1f5ad33cfa913a88309b22a4a516eba5f275cc0d987014daf4aa19072eca985",
+      "tests\\manual\\ghost_memory_routing\\hopfield_protocol.py": "a25e8d46a9030e3a82afc2c6ad9ca78b84beafeab41ae3e7a87bf6f1eb783115",
+      "tests\\test_ghost_hopfield_experiment.py": "6e92ad8a1c99f5e588ebdeb95e05fe1ac95a46a92a91ca93b70637ce0534352f"
+    }
+  },
+  "limitations": [
+    "Synthetic, preannotated representation; no automatic semantic encoder evaluated.",
+    "Four synthetic profiles are clustered, not 44 independent users.",
+    "Exact duplicate wire requests share one model observation; no stochastic replication.",
+    "Fixed state means frozen per-context calibration exemplars, selected with cosine+recency.",
+    "Hebbian arm is a simple linear outer-product comparator, not the production association graph.",
+    "Lexical arm reuses production scoring at frozen time, not its complete retrieval/admission runtime.",
+    "Index rebuilding after common lifecycle filtering is not neural unlearning.",
+    "Scale benchmark repeats keys; it measures cost, not memory capacity at TB scale.",
+    "RSS includes interpreter/allocator; traced peak and array bytes are separate measurements.",
+    "Direct local chat-completions transport; not production runtime/builder/admission acceptance."
+  ],
+  "live": {
+    "exact_request_reuse": 148,
+    "gate": {
+      "checks": {
+        "beats_latest_rule": false,
+        "complete_matrix": true,
+        "net_at_least_four_over_cosine": true,
+        "no_family_regression_vs_cosine": true,
+        "zero_ineligible_exposures": true
+      },
+      "passes": false,
+      "production": "EXPERIMENT_ONLY"
+    },
+    "ghost_extra_generation_requests": 0,
+    "logical_cells": 264,
+    "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+    "physical_completion_tokens": 1533,
+    "physical_latency_ms_p50": 583.1767,
+    "physical_latency_ms_p95": 620.6338,
+    "physical_prompt_tokens": 28417,
+    "physical_requests": 116,
+    "status": "COMPLETE",
+    "summary": {
+      "adaptation": {
+        "cosine": {
+          "correct_by_update": {
+            "0": 4,
+            "1": 4,
+            "2": 4,
+            "3": 4,
+            "4": 4
+          },
+          "profiles_per_step": 4,
+          "updates_to_sustained_correct_by_profile": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "fixed_state": {
+          "correct_by_update": {
+            "0": 4,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0
+          },
+          "profiles_per_step": 4,
+          "updates_to_sustained_correct_by_profile": [
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "hebbian": {
+          "correct_by_update": {
+            "0": 4,
+            "1": 4,
+            "2": 4,
+            "3": 4,
+            "4": 4
+          },
+          "profiles_per_step": 4,
+          "updates_to_sustained_correct_by_profile": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "hopfield": {
+          "correct_by_update": {
+            "0": 4,
+            "1": 4,
+            "2": 4,
+            "3": 4,
+            "4": 4
+          },
+          "profiles_per_step": 4,
+          "updates_to_sustained_correct_by_profile": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "latest_rule": {
+          "correct_by_update": {
+            "0": 4,
+            "1": 4,
+            "2": 4,
+            "3": 4,
+            "4": 4
+          },
+          "profiles_per_step": 4,
+          "updates_to_sustained_correct_by_profile": [
+            1,
+            1,
+            1,
+            1
+          ]
+        },
+        "lexical": {
+          "correct_by_update": {
+            "0": 4,
+            "1": 4,
+            "2": 4,
+            "3": 4,
+            "4": 4
+          },
+          "profiles_per_step": 4,
+          "updates_to_sustained_correct_by_profile": [
+            1,
+            1,
+            1,
+            1
+          ]
+        }
+      },
+      "cosine": {
+        "behavior_correct": 31,
+        "by_family": {
+          "context": {
+            "correct": 8,
+            "n": 8
+          },
+          "cue": {
+            "correct": 3,
+            "n": 8
+          },
+          "drift": {
+            "correct": 20,
+            "n": 20
+          },
+          "lifecycle": {
+            "correct": 0,
+            "n": 8
+          }
+        },
+        "completion_tokens_p50": 13.5,
+        "completion_tokens_p95": 14.0,
+        "conflicting_values": 20,
+        "context_chars_max": 219,
+        "context_chars_mean": 213.5,
+        "hit_at_2_correct": 32,
+        "ineligible_exposures": 0,
+        "invalid_actions": 0,
+        "mean_recall_at_2": 0.7296,
+        "model_ms_p50": 578.6512,
+        "model_ms_p95": 619.7657,
+        "n": 44,
+        "physical_requests": 18,
+        "prompt_tokens_p50": 250.0,
+        "prompt_tokens_p95": 256.15,
+        "relevant_queries": 36,
+        "selection_action_correct": 32,
+        "top1_correct": 32
+      },
+      "fixed_state": {
+        "behavior_correct": 15,
+        "by_family": {
+          "context": {
+            "correct": 8,
+            "n": 8
+          },
+          "cue": {
+            "correct": 3,
+            "n": 8
+          },
+          "drift": {
+            "correct": 4,
+            "n": 20
+          },
+          "lifecycle": {
+            "correct": 0,
+            "n": 8
+          }
+        },
+        "completion_tokens_p50": 13.0,
+        "completion_tokens_p95": 14.0,
+        "conflicting_values": 48,
+        "context_chars_max": 217,
+        "context_chars_mean": 212.36,
+        "hit_at_2_correct": 16,
+        "ineligible_exposures": 0,
+        "invalid_actions": 0,
+        "mean_recall_at_2": 0.3778,
+        "model_ms_p50": 567.6053,
+        "model_ms_p95": 629.0689,
+        "n": 44,
+        "physical_requests": 12,
+        "prompt_tokens_p50": 250.0,
+        "prompt_tokens_p95": 252.45,
+        "relevant_queries": 36,
+        "selection_action_correct": 16,
+        "top1_correct": 16
+      },
+      "hebbian": {
+        "behavior_correct": 36,
+        "by_family": {
+          "context": {
+            "correct": 8,
+            "n": 8
+          },
+          "cue": {
+            "correct": 8,
+            "n": 8
+          },
+          "drift": {
+            "correct": 20,
+            "n": 20
+          },
+          "lifecycle": {
+            "correct": 0,
+            "n": 8
+          }
+        },
+        "completion_tokens_p50": 13.0,
+        "completion_tokens_p95": 14.0,
+        "conflicting_values": 8,
+        "context_chars_max": 219,
+        "context_chars_mean": 214.09,
+        "hit_at_2_correct": 32,
+        "ineligible_exposures": 0,
+        "invalid_actions": 0,
+        "mean_recall_at_2": 0.7296,
+        "model_ms_p50": 580.914,
+        "model_ms_p95": 619.4182,
+        "n": 44,
+        "physical_requests": 16,
+        "prompt_tokens_p50": 249.5,
+        "prompt_tokens_p95": 253.25,
+        "relevant_queries": 36,
+        "selection_action_correct": 36,
+        "top1_correct": 32
+      },
+      "hopfield": {
+        "behavior_correct": 35,
+        "by_family": {
+          "context": {
+            "correct": 8,
+            "n": 8
+          },
+          "cue": {
+            "correct": 7,
+            "n": 8
+          },
+          "drift": {
+            "correct": 20,
+            "n": 20
+          },
+          "lifecycle": {
+            "correct": 0,
+            "n": 8
+          }
+        },
+        "completion_tokens_p50": 13.0,
+        "completion_tokens_p95": 14.0,
+        "conflicting_values": 14,
+        "context_chars_max": 219,
+        "context_chars_mean": 213.91,
+        "hit_at_2_correct": 32,
+        "ineligible_exposures": 0,
+        "invalid_actions": 0,
+        "mean_recall_at_2": 0.7296,
+        "model_ms_p50": 588.2334,
+        "model_ms_p95": 618.9751,
+        "n": 44,
+        "physical_requests": 15,
+        "prompt_tokens_p50": 251.0,
+        "prompt_tokens_p95": 254.3,
+        "relevant_queries": 36,
+        "selection_action_correct": 36,
+        "top1_correct": 32
+      },
+      "hopfield_pairs": {
+        "cosine": {
+          "losses": 0,
+          "n": 44,
+          "same_selection": 32,
+          "wins": 4
+        },
+        "fixed_state": {
+          "losses": 0,
+          "n": 44,
+          "same_selection": 10,
+          "wins": 20
+        },
+        "hebbian": {
+          "losses": 1,
+          "n": 44,
+          "same_selection": 38,
+          "wins": 0
+        },
+        "latest_rule": {
+          "losses": 9,
+          "n": 44,
+          "same_selection": 20,
+          "wins": 3
+        },
+        "lexical": {
+          "losses": 0,
+          "n": 44,
+          "same_selection": 1,
+          "wins": 7
+        }
+      },
+      "latest_rule": {
+        "behavior_correct": 41,
+        "by_family": {
+          "context": {
+            "correct": 8,
+            "n": 8
+          },
+          "cue": {
+            "correct": 5,
+            "n": 8
+          },
+          "drift": {
+            "correct": 20,
+            "n": 20
+          },
+          "lifecycle": {
+            "correct": 8,
+            "n": 8
+          }
+        },
+        "completion_tokens_p50": 14.0,
+        "completion_tokens_p95": 14.0,
+        "conflicting_values": 8,
+        "context_chars_max": 219,
+        "context_chars_mean": 150.41,
+        "hit_at_2_correct": 32,
+        "ineligible_exposures": 0,
+        "invalid_actions": 0,
+        "mean_recall_at_2": 0.7296,
+        "model_ms_p50": 563.2256,
+        "model_ms_p95": 607.3689,
+        "n": 44,
+        "physical_requests": 21,
+        "prompt_tokens_p50": 210.0,
+        "prompt_tokens_p95": 254.0,
+        "relevant_queries": 36,
+        "selection_action_correct": 40,
+        "top1_correct": 40
+      },
+      "lexical": {
+        "behavior_correct": 28,
+        "by_family": {
+          "context": {
+            "correct": 8,
+            "n": 8
+          },
+          "cue": {
+            "correct": 0,
+            "n": 8
+          },
+          "drift": {
+            "correct": 20,
+            "n": 20
+          },
+          "lifecycle": {
+            "correct": 0,
+            "n": 8
+          }
+        },
+        "completion_tokens_p50": 14.0,
+        "completion_tokens_p95": 14.0,
+        "conflicting_values": 24,
+        "context_chars_max": 219,
+        "context_chars_mean": 213.91,
+        "hit_at_2_correct": 28,
+        "ineligible_exposures": 0,
+        "invalid_actions": 0,
+        "mean_recall_at_2": 0.6185,
+        "model_ms_p50": 591.1632,
+        "model_ms_p95": 616.5808,
+        "n": 44,
+        "physical_requests": 34,
+        "prompt_tokens_p50": 251.5,
+        "prompt_tokens_p95": 257.0,
+        "relevant_queries": 36,
+        "selection_action_correct": 28,
+        "top1_correct": 28
+      }
+    }
+  },
+  "offline_summary": {
+    "adaptation": {
+      "cosine": {
+        "correct_by_update": {
+          "0": 4,
+          "1": 4,
+          "2": 4,
+          "3": 4,
+          "4": 4
+        },
+        "profiles_per_step": 4,
+        "updates_to_sustained_correct_by_profile": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "fixed_state": {
+        "correct_by_update": {
+          "0": 4,
+          "1": 0,
+          "2": 0,
+          "3": 0,
+          "4": 0
+        },
+        "profiles_per_step": 4,
+        "updates_to_sustained_correct_by_profile": [
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      "hebbian": {
+        "correct_by_update": {
+          "0": 4,
+          "1": 4,
+          "2": 4,
+          "3": 4,
+          "4": 4
+        },
+        "profiles_per_step": 4,
+        "updates_to_sustained_correct_by_profile": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "hopfield": {
+        "correct_by_update": {
+          "0": 4,
+          "1": 4,
+          "2": 4,
+          "3": 4,
+          "4": 4
+        },
+        "profiles_per_step": 4,
+        "updates_to_sustained_correct_by_profile": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "latest_rule": {
+        "correct_by_update": {
+          "0": 4,
+          "1": 4,
+          "2": 4,
+          "3": 4,
+          "4": 4
+        },
+        "profiles_per_step": 4,
+        "updates_to_sustained_correct_by_profile": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "lexical": {
+        "correct_by_update": {
+          "0": 4,
+          "1": 4,
+          "2": 4,
+          "3": 4,
+          "4": 4
+        },
+        "profiles_per_step": 4,
+        "updates_to_sustained_correct_by_profile": [
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    "cosine": {
+      "conflicting_values": 20,
+      "context_chars_max": 219,
+      "context_chars_mean": 213.5,
+      "hit_at_2_correct": 32,
+      "ineligible_exposures": 0,
+      "mean_recall_at_2": 0.7296,
+      "n": 44,
+      "relevant_queries": 36,
+      "selection_action_correct": 32,
+      "top1_correct": 32
+    },
+    "fixed_state": {
+      "conflicting_values": 48,
+      "context_chars_max": 217,
+      "context_chars_mean": 212.36,
+      "hit_at_2_correct": 16,
+      "ineligible_exposures": 0,
+      "mean_recall_at_2": 0.3778,
+      "n": 44,
+      "relevant_queries": 36,
+      "selection_action_correct": 16,
+      "top1_correct": 16
+    },
+    "hebbian": {
+      "conflicting_values": 8,
+      "context_chars_max": 219,
+      "context_chars_mean": 214.09,
+      "hit_at_2_correct": 32,
+      "ineligible_exposures": 0,
+      "mean_recall_at_2": 0.7296,
+      "n": 44,
+      "relevant_queries": 36,
+      "selection_action_correct": 36,
+      "top1_correct": 32
+    },
+    "hopfield": {
+      "conflicting_values": 14,
+      "context_chars_max": 219,
+      "context_chars_mean": 213.91,
+      "hit_at_2_correct": 32,
+      "ineligible_exposures": 0,
+      "mean_recall_at_2": 0.7296,
+      "n": 44,
+      "relevant_queries": 36,
+      "selection_action_correct": 36,
+      "top1_correct": 32
+    },
+    "hopfield_pairs": {
+      "cosine": {
+        "losses": 0,
+        "n": 44,
+        "same_selection": 32,
+        "wins": 4
+      },
+      "fixed_state": {
+        "losses": 0,
+        "n": 44,
+        "same_selection": 10,
+        "wins": 20
+      },
+      "hebbian": {
+        "losses": 0,
+        "n": 44,
+        "same_selection": 38,
+        "wins": 0
+      },
+      "latest_rule": {
+        "losses": 8,
+        "n": 44,
+        "same_selection": 20,
+        "wins": 4
+      },
+      "lexical": {
+        "losses": 0,
+        "n": 44,
+        "same_selection": 1,
+        "wins": 8
+      }
+    },
+    "latest_rule": {
+      "conflicting_values": 8,
+      "context_chars_max": 219,
+      "context_chars_mean": 150.41,
+      "hit_at_2_correct": 32,
+      "ineligible_exposures": 0,
+      "mean_recall_at_2": 0.7296,
+      "n": 44,
+      "relevant_queries": 36,
+      "selection_action_correct": 40,
+      "top1_correct": 40
+    },
+    "lexical": {
+      "conflicting_values": 24,
+      "context_chars_max": 219,
+      "context_chars_mean": 213.91,
+      "hit_at_2_correct": 28,
+      "ineligible_exposures": 0,
+      "mean_recall_at_2": 0.6185,
+      "n": 44,
+      "relevant_queries": 36,
+      "selection_action_correct": 28,
+      "top1_correct": 28
+    }
+  },
+  "production": "EXPERIMENT_ONLY",
+  "queries": 44,
+  "status": "COMPLETE"
+}

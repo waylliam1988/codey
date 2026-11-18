@@ -1,0 +1,92 @@
+{
+  "behavior_correct_with_relevant_retrieval_or_correct_abstention": {
+    "cosine": 30,
+    "fixed_state": 14,
+    "hebbian": 32,
+    "hopfield": 31,
+    "latest_rule": 40,
+    "lexical": 28
+  },
+  "complete_cells": 264,
+  "correct_without_relevant_retrieval": {
+    "cosine": 1,
+    "fixed_state": 1,
+    "hebbian": 4,
+    "hopfield": 4,
+    "latest_rule": 1,
+    "lexical": 0
+  },
+  "exposure_total": 0,
+  "hopfield_behavior_wins_over_cosine": [
+    {
+      "cosine_relevant_hit": false,
+      "cosine_selected": [
+        "p0-distractor",
+        "p0-old-4"
+      ],
+      "family": "cue",
+      "hopfield_relevant_hit": false,
+      "hopfield_selected": [
+        "p0-old-4",
+        "p0-old-3"
+      ],
+      "query": "p0-partial"
+    },
+    {
+      "cosine_relevant_hit": false,
+      "cosine_selected": [
+        "p1-distractor",
+        "p1-old-4"
+      ],
+      "family": "cue",
+      "hopfield_relevant_hit": false,
+      "hopfield_selected": [
+        "p1-old-4",
+        "p1-old-3"
+      ],
+      "query": "p1-partial"
+    },
+    {
+      "cosine_relevant_hit": true,
+      "cosine_selected": [
+        "p3-research",
+        "p3-coding"
+      ],
+      "family": "cue",
+      "hopfield_relevant_hit": true,
+      "hopfield_selected": [
+        "p3-research",
+        "p3-distractor"
+      ],
+      "query": "p3-paraphrase"
+    },
+    {
+      "cosine_relevant_hit": false,
+      "cosine_selected": [
+        "p3-distractor",
+        "p3-old-4"
+      ],
+      "family": "cue",
+      "hopfield_relevant_hit": false,
+      "hopfield_selected": [
+        "p3-old-4",
+        "p3-old-3"
+      ],
+      "query": "p3-partial"
+    }
+  ],
+  "kind": "POST_HOC_DESCRIPTIVE_AUDIT_NOT_FROZEN_PRIMARY_SCORER",
+  "meaning": "Correct action labels without the relevant experience are not evidence of successful recall.",
+  "nonempty_irrelevant_context_on_lifecycle_queries": {
+    "cosine": 8,
+    "fixed_state": 8,
+    "hebbian": 8,
+    "hopfield": 8,
+    "latest_rule": 0,
+    "lexical": 8
+  },
+  "physical_request_ids": 116,
+  "production_files": 702,
+  "production_hashes_unchanged": true,
+  "source_freeze_verified": true
+}
