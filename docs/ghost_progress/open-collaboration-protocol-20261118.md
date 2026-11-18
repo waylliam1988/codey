@@ -14,3 +14,9 @@
 - 晋级：受测入口须通过相关 scope、撤回、删除、重建、重启、并发、禁用、故障和流式隐私回归。只报告实测范围；未测模型可靠性、自然语气评价、大规模排序、Research 专用完成合同自动学习不在此实验结论内。
 
 复现：`python -m tests.manual.ghost_memory_routing.open_collaboration_trial --output <全新本地目录>`。
+
+## 首次失败与 v2 运行前冻结
+
+v1 两种传输均完成 13 回合、每回合 1 请求，但模型在所有回合忽略可选学习字段，接受记录为 0，两个条件与修订后的行为都未成功。请求回执确认完整 schema 与说明已送达；属于模型提取遗漏，不能写成实验通过。原始目录：`D:/codey-local-evidence/open-collaboration-v1-first`。
+
+v2 只改变生产提示位置与清晰程度：复用同一 `GUIDANCE` 到普通 kernel 的 task guidance，明确有显式信号时在同次 done 中提供候选。仍为可选字段，缺失不会追加生成；校验、样本、任务、scorer、预算及停止条件均不变。重跑目录独立，不能将其与 v1 混成一次成功。此改变针对遗漏原因，不改 summary 或 grounding 合同。
