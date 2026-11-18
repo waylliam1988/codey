@@ -1,5 +1,9 @@
 # Ghost 偏好投递与预算路由实验
 
+2026-11-18：[条件接受率/纠正成本冻结协议](../../../docs/ghost_progress/proposal-risk-protocol-20261118.md)，
+`proposal_risk_trial.py`及`tests/test_proposal_risk_trial.py`，155项相关契约通过。
+计划一次20流×3阶段×4臂矩阵；实际生成前冻结，尚无结果，不改变生产默认。
+
 2026-11-18：[项目目标/新方案选择结果](../../../docs/ghost_progress/semantic-goal-result-20261118.md)，
 冻结`2b5946a8`、`semantic_goal_trial.py`；20条合成流、三阶段四臂240请求，output8192。
 全对流无历史0/20，检索/确认/预测各20/20；确认目标通过产品连续性门，预测无增益终止。
