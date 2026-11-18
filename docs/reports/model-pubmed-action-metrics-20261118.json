@@ -1,0 +1,124 @@
+{
+  "task": "帮我去PubMed上看看雷帕霉素的论文",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "root": "D:\\codey-local-evidence\\model-pubmed-action-20261118-first",
+  "conditions": "one independent natural-language live task per tool protocol; unchanged production tools; no forced read gate",
+  "modes": {
+    "native": {
+      "search_count": 7,
+      "open_attempt_count": 0,
+      "delivered_open_body_count": 0,
+      "stop_reason": "no_progress",
+      "request_count": 7,
+      "response_count": 7,
+      "seconds": 36.89,
+      "action_chain_pass": false,
+      "wire_request_attempts": 7,
+      "each_attempt_one": true,
+      "reading_rule_delivered": true,
+      "open_url_visible": true,
+      "all_acquired_hits_reviewed": 56,
+      "production_hash_drift": []
+    },
+    "text": {
+      "search_count": 4,
+      "open_attempt_count": 0,
+      "delivered_open_body_count": 0,
+      "stop_reason": "no_progress",
+      "request_count": 4,
+      "response_count": 4,
+      "seconds": 24.656,
+      "action_chain_pass": false,
+      "wire_request_attempts": 4,
+      "each_attempt_one": true,
+      "reading_rule_delivered": true,
+      "open_url_visible": true,
+      "all_acquired_hits_reviewed": 32,
+      "production_hash_drift": []
+    }
+  },
+  "independent_access": [
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/19587680/",
+      "status": "error",
+      "title": "",
+      "failure_code": "access_restricted",
+      "http_status": 403,
+      "characters": 36,
+      "delivered_to_tested_model": false
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/?term=rapamycin",
+      "status": "ok",
+      "title": "rapamycin - Search Results - PubMed",
+      "failure_code": null,
+      "http_status": null,
+      "characters": 12024,
+      "delivered_to_tested_model": false
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/40188830/",
+      "status": "error",
+      "title": "",
+      "failure_code": "access_restricted",
+      "http_status": 403,
+      "characters": 36,
+      "delivered_to_tested_model": false
+    },
+    {
+      "url": "https://pubmed.ncbi.nlm.nih.gov/41524558/",
+      "status": "error",
+      "title": "",
+      "failure_code": "access_restricted",
+      "http_status": 403,
+      "characters": 36,
+      "delivered_to_tested_model": false
+    }
+  ],
+  "postflight": {
+    "models": {
+      "object": "list",
+      "data": [
+        {
+          "id": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+          "object": "model",
+          "created": 1795005114,
+          "owned_by": "koboldcpp",
+          "status": {
+            "value": "loaded"
+          },
+          "permission": [],
+          "root": "koboldcpp"
+        }
+      ]
+    },
+    "backend": {
+      "last_process": 0.5998659729957581,
+      "last_eval": 45.5,
+      "last_token_count": 16,
+      "last_input_count": 7496,
+      "last_process_time": 4.496595333576202,
+      "last_eval_time": 0.728,
+      "last_process_speed": 1667.0390470823913,
+      "last_eval_speed": 21.978021978021978,
+      "last_seed": 4856,
+      "last_draft_success": 0,
+      "last_draft_failed": 0,
+      "total_gens": 1537,
+      "stop_reason": 1,
+      "total_img_gens": 0,
+      "total_tts_gens": 0,
+      "total_transcribe_gens": 0,
+      "queue": 0,
+      "idle": 1,
+      "hordeexitcounter": -1,
+      "uptime": 116962.55764484406,
+      "idletime": 258.4459500312805,
+      "quiet": false
+    },
+    "production_hash_drift": [
+      "codey\\agents\\context.py",
+      "codey\\workspace\\ghost_selection.py"
+    ]
+  }
+}
