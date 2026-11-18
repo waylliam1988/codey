@@ -4,9 +4,10 @@
 
 状态含义、KoboldCpp 故障流程、commit 约定和交接模板见 [团队交接说明](../ghost_handoff.zh-CN.md)。当前流程允许同事直接提交主分支，不要求 PR；生产代码仍必须满足交接说明中的生产合并门槛。
 
-2026-11-17 晋级要求修订：一个目标本地模型及配置的行为收益与相关生产边界通过，即可在受测范围
-正式启用并按合并事实标记 `PRODUCTION_MERGED`。第二模型与跨模型验证是可选扩展，不阻塞单模型晋级。
-本次只修订验收范围，历史测量与已有完成、合并状态不自动变化。
+2026-11-18现行[生产晋级与默认启用规则](../ghost_production_promotion.zh-CN.md)：一个实际模型证明收益、
+相关生产边界通过后，即完成正常入口并默认启用受支持的兼容路径。Gemma4、API地址、stream、128/8192等
+实验设置不直接成为生产白名单；额外限制须有具体依据。实测效果范围与默认生产范围分别记录。
+历史测量、负结果及已有完成、合并状态不自动变化；下方旧批次的窄范围描述只代表当时交付。
 
 ## 当前状态
 
@@ -304,15 +305,15 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 | Research parity state contract | `PRODUCTION_MERGED`（state 契约） | 核对确认 research 生产依赖已显式携带 state；缺失 Ghost control fail closed，无待开的实验开关；不改变默认 prompt | [进度记录](research-state-contract.md) |
 | 0.6.3 冲突生命周期与持久删除 | `INCOMPLETE`（含 observation 兼容消费隔离） | 默认删除调度/恢复、来源退役与旧投影准入、删除/reset历史保留、容量窗口、原历史DELETE约束和schema9 observation只读消费视图已生效；其他领域旧reader/旧快照及内存、其他事务、磁盘retention/purge、其余身份/scope异常及完整生命周期仍缺 | [兼容消费视图](observation-consumption-view-production-20261117.md) / [物理删除防护](history-delete-guards-production-20261117.md) / [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.4 确定性 replay 与显式时间 | `INCOMPLETE`（含控制 payload 与受测裁剪边界） | Affinity 坏时间拒绝、Sleep 显式时间、continuity 过期与 Hebbian 坏事件/内部时间/三个控制 payload 拒绝、图语义 tie 和受测 node/degree 裁剪事实已接线；任意旧历史/更新组合、其他维护入口/排序/digest及其余领域重放仍缺 | [裁剪边界](graph-capacity-scope-replay-20261118.md) / [控制 payload](hebbian-control-replay-20261118.md) / [图 tie](graph-tie-replay-20261118.md) / [内部时间](hebbian-row-time-20261117.md) / [Hebbian 重建](hebbian-replay-integrity-20261117.md) / [过期接线](continuity-expiry-production-20261117.md) / [显式时间](sleep-maintenance-time-production-20261117.md) |
-| 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（中文子集已接线） | 中文 typed field、UI 与模型/配置拒绝诊断已生产接线；其余遥测计划不作为本次已验证子集启用前置 | [生产启用](language-production-enablement-20261117.md) |
+| 0.6.5 类型化 language 与最小遥测 | `INCOMPLETE`（确认字段已通用接线） | typed field、UI及来源复查已接线，后续取消模型/配置白名单；其余遥测缺口不阻塞已接线功能默认启用 | [当前入口](portable-context-production-20261118.md) / [首次启用](language-production-enablement-20261117.md) |
 | 0.6.6 生产 shadow parity 与排位实验 | `INCOMPLETE`（已有生产发送回归） | 真实 entry/HTTP 验证通过；新增完整实机与排位矩阵未完成，按用户要求不再补跑 | [生产启用](language-production-enablement-20261117.md) |
-| 0.6.7 language 有条件启用与回滚 | `INCOMPLETE`（受测中文子集已默认启用） | Gemma 12B/受测预算的普通 Chat 已启用并可关闭、删除和回退；不代表完整规划项完成 | [生产启用](language-production-enablement-20261117.md) |
+| 0.6.7 language 默认消费与回滚 | `INCOMPLETE`（通用入口已默认启用） | 有效确认字段默认跨受支持模型/API及流式配置投递；可关闭、撤回、删除和回滚，完整遥测计划仍有缺口 | [当前入口](portable-context-production-20261118.md) / [现行规则](../ghost_production_promotion.zh-CN.md) |
 | 0.6.8 command/verification intent shadow | `NOT STARTED` | 先找正确宿主，不默认投 directive | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.9 provider outcome canonical event | `NOT STARTED` | 只接真实 send/repair/settlement 的 bounded outcome | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.10 correction/repair projection shadow | `NOT STARTED` | 未验证 outcome 只能是 hypothesis/unjudged | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.11 Ghost Explain | `NOT STARTED` | 解释选择过程，不重新计算、不产生 evidence | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.6.12 World Model review/shadow context | `INCOMPLETE`（首个实机消费者候选负结果） | 只读预测复盘原型与 40 次实机评估已完成；受测接口因格式无净收益而终止，尚无已验证生产消费者，不改默认 prompt | [实机负结果](world-model-verification-review-20261118.md) / [研究建议](world-model-shadow-proposal.md) |
-| 0.7 留出任务与可选模型扩展 | `NOT STARTED` | 逐模型独立验收；第二模型为可选扩展，不阻塞已通过单模型的生产启用 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
+| 0.7 留出任务与可选模型扩展 | `NOT STARTED` | 扩大效果证据、发现具体不兼容；不作为通用能力默认启用前置，不要求逐模型重跑效果矩阵 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.8 Protocol Adaptation | `NOT STARTED` | 独立下游轨道，不扩大 Ghost 权限 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 | 0.9+ 可塑性研究 | `NOT STARTED` | 独立 research benchmark，可随时终止 | [Roadmap](../../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量) |
 
@@ -322,7 +323,8 @@ schema9 默认原地保留 observation_history，旧名为窗口约束的原生�
 - 同事可以直接提交主分支；实验 commit、报告 commit 和生产 commit 必须在提交说明中区分。
 - `EXPERIMENT_COMPLETE` 必须有实验记录、报告、复现命令和实验 commit；它不自动产生生产合并。
 - 只有满足交接说明中的生产合并门槛，才能使用 `PRODUCTION_MERGED`。
-- 生产合并门槛只要求一个目标模型及配置；未测试的其他模型不算该模型的缺失数据，也不将其限制为试点或 `SHADOW_ONLY`。部署范围必须注明模型、任务和配置。
+- 单模型收益与相关生产边界通过后，按现行规则完成默认启用；未测试其他模型不构成通用能力关闭理由。不复制实验模型/数值白名单，不长期停在试点或 `SHADOW_ONLY`。
+- 分开记录实测模型/任务/配置、默认生产范围、正常消费者及有依据的例外和解除条件。兼容性修复按相关回归验证，不追加无关效果实验。
 - 目标模型缺失、缺对照、缺样本或 KoboldCpp 故障时使用 `INCOMPLETE` / `BLOCKED`，不能用 `EXPERIMENT_COMPLETE`。
 - `SHADOW` 是有意不改变默认行为，不等于失败，也不等于生产启用。
 - 阴性结果保留；无效实现使用 `EXPERIMENT_ONLY`，如果决定停止一个方向，使用 `ABANDONED` 并写明证据。
