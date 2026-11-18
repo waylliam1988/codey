@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY as COMPLETION_REPAIR_CONTEXT_SOURCE_KEY,
@@ -13,7 +12,7 @@ from codey.completion.repair_context import (
 from codey.completion.repair_context import (
     DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
 )
-from codey.policies.permissions import allows_context_source
+from codey.policies.permissions import PermissionProfile, allows_context_source
 from codey.runs.work_checkpoint import MAX_WORK_CHECKPOINT_PROMPT_CHARS
 from codey.runtime.observe.prompt_envelope import (
     PromptEnvelope,
@@ -27,6 +26,7 @@ from codey.workspace.context_source import (
     RenderedContextSource,
     render_context_sources_with_metadata,
 )
+from codey.workspace.ghost_selection import GhostContextSpan
 
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
@@ -57,6 +57,7 @@ class AgentContext:
     text: str
     sections: tuple[RenderedPromptSection, ...]
     sources: tuple[RenderedContextSource, ...]
+    ghost_spans: tuple[GhostContextSpan, ...] = ()
 
 
 def load_project_instructions(
@@ -95,7 +96,7 @@ def build_agent_context(
     project: Path,
     request_text: str,
     system_prompt_text: str,
-    profile: Any,
+    profile: PermissionProfile,
     list_directory: Callable[[Path, str], object],
     project_instructions: list[ProjectInstruction],
     project_facts: str,
@@ -128,6 +129,10 @@ def build_agent_context(
             capability_id=capability_id,
             admission_reason="run_start_assembly",
         )
+
+    def listing_text() -> str:
+        text: object = getattr(list_directory(project, "."), "model_text", "")
+        return str(text)
 
     sources: list[ContextSource] = []
     if include_ghost_directive:
@@ -195,7 +200,7 @@ def build_agent_context(
         ),
         intro_source(
             "initial_listing",
-            lambda: str(getattr(list_directory(project, "."), "model_text", "")),
+            listing_text,
             INITIAL_LISTING_CONTEXT_BUDGET,
             "current top-level project listing",
             heading="Initial listing:",
@@ -215,8 +220,9 @@ def build_agent_context(
     )
     context = rendered_context.text
     context_block = f"{context}\n\n" if context else ""
+    workspace_intro = "Project workspace: use paths relative to the project root.\n"
     request_context = (
-        "Project workspace: use paths relative to the project root.\n"
+        workspace_intro +
         f"{context_block}"
         f"User task:\n{request_text}"
     )
@@ -242,8 +248,16 @@ def build_agent_context(
             truncated=any(source.truncated for source in rendered_context.sources),
         ),
     )).render()
+    offset = len(system_prompt_text) + 2 if system_prompt_text else 0
+    offset += len(workspace_intro)
+    ghost_spans: list[GhostContextSpan] = []
+    for source in rendered_context.sources:
+        if source.key.startswith("ghost_"):
+            ghost_spans.append(GhostContextSpan(source.key, offset, offset + len(source.text)))
+        offset += len(source.text) + 2
     return AgentContext(
         text=rendered.text,
         sections=rendered.sections,
         sources=rendered_context.sources,
+        ghost_spans=tuple(ghost_spans),
     )

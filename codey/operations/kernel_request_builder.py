@@ -21,7 +21,7 @@ from codey.operations.provider_session import adapt_provider
 from codey.operations.represented_history import represented_history_refs, represented_inputs
 from codey.providers.attempt_gate import AttemptGateCallback
 from codey.workspace.context_admission import GhostContextSource
-from codey.workspace.ghost_selection import replace_ghost_text, select_ghost_sources
+from codey.workspace.ghost_selection import GhostContextSpan, replace_ghost_text, select_ghost_sources
 
 if TYPE_CHECKING:
     from codey.operations.kernel_contracts import StopSignal
@@ -42,6 +42,7 @@ class KernelRunRequestBuilder:
     context_text: str = ""
     context_scope: str = "request"
     ghost_sources: tuple[GhostContextSource, ...] = ()
+    ghost_spans: tuple[GhostContextSpan, ...] = ()
     admit_hints: bool = True
     attempt_gate: AttemptGateCallback | None = None
     attempt_admit_hints: Callable[[], bool] | None = None
@@ -62,6 +63,7 @@ class KernelRunRequestBuilder:
             text=self.context_text, sources=self.ghost_sources, scope=self.context_scope,
             run_id=self.run_id, task=self.user_task, enabled=self.admit_hints,
             execution=execution, validate=self.attempt_validate_ghost_sources,
+            spans=self.ghost_spans,
         )
         def input_entry_id(run_id: str) -> str:
             sink = execution.intent_sink
@@ -75,10 +77,14 @@ class KernelRunRequestBuilder:
 
         inputs = represented_inputs(self.provider, personal.sources, input_entry_id)
         represented = represented_history_refs(self.provider) | frozenset(ref for ref, _text in inputs)
-        selected = select_ghost_sources(personal.sources, represented=represented)
-        removed_refs = represented.intersection(
-            frozenset(ref for source in personal.sources for ref in _source_refs(source))
-        )
+        # Legacy callers without a registered layout retain their original
+        # projection. Never guess ownership from a matching substring.
+        registered = {span.key for span in personal.spans}
+        selected = (select_ghost_sources(personal.sources, represented=represented)
+                    if all(source.key in registered for source in personal.sources) else personal.sources)
+        removed_refs = represented.intersection(frozenset(
+            ref for source in personal.sources for ref in _source_refs(source)
+        )) - frozenset(ref for source in selected for ref in _source_refs(source))
 
         def validate_selected(actual: tuple[GhostContextSource, ...]) -> bool:
             return (actual == selected
@@ -94,7 +100,7 @@ class KernelRunRequestBuilder:
                 effect_scope=self.effect_scope,
                 provider_id=self.provider_id,
                 user_task=self.user_task,
-                context_text=replace_ghost_text(personal.text, personal.sources, selected),
+                context_text=replace_ghost_text(personal.text, personal.sources, selected, spans=personal.spans),
                 context_scope=self.context_scope,
                 ghost_sources=selected,
                 required_history_refs=removed_refs,

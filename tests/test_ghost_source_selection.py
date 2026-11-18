@@ -15,7 +15,7 @@ from codey.providers.api_provider import ApiProvider
 from codey.providers.attempt_gate import AttemptGateCallback, AttemptGateView
 from codey.types.json_value import JsonObject
 from codey.workspace.context_admission import GhostAdmissionError, GhostContextSource
-from codey.workspace.ghost_selection import replace_ghost_text, select_ghost_sources
+from codey.workspace.ghost_selection import GhostContextSpan, replace_ghost_text, select_ghost_sources
 
 
 def history(identity: str = "source", *, assistant: str = "I suggest quartzstore; not yet verified.") -> str:
@@ -59,7 +59,12 @@ def test_total_budget_preserves_atomic_goal_pair_and_whole_requirements(budget: 
     assert (prior.key in keys) == (goal.key in keys)
     if goal.key in keys:
         assert goal in selected and prior in selected
-    text = replace_ghost_text("\n\n".join(row.text for row in sources), sources, selected)
+    spans: list[GhostContextSpan] = []
+    offset = 0
+    for row in sources:
+        spans.append(GhostContextSpan(row.key, offset, offset + len(row.text)))
+        offset += len(row.text) + 2
+    text = replace_ghost_text("\n\n".join(row.text for row in sources), sources, selected, spans=tuple(spans))
     assert all(row.text in text and len(row.text) <= row.budget for row in selected)
     assert select_ghost_sources(selected, budget=budget) == selected
 
@@ -124,7 +129,8 @@ def test_empty_selection_still_checks_deleted_or_compacted_source_before_send(tm
         messages: list[dict[str, object]] = [{"role": "user", "content": text}]
         provider.load_durable_context(messages, source_entry_ids=("actual",))
         built = KernelRunRequestBuilder(provider, "next", "test", "fixture", "Continue.",
-            context_text=text, ghost_sources=(source("ghost_experiences", text),)).build()
+            context_text=text, ghost_sources=(source("ghost_experiences", text),),
+            ghost_spans=(GhostContextSpan("ghost_experiences", 0, len(text)),)).build()
         assert built.transport.ghost_sources == ()
         validator = built.transport.attempt_validate_ghost_sources
         assert validator is not None and validator(())

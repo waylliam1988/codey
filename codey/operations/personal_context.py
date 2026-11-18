@@ -18,6 +18,7 @@ from codey.operations.project_goals import project_goal_sources
 from codey.policies.permissions import allows_context_source
 from codey.runtime.effects.effect_records import RuntimeEffectError
 from codey.workspace.context_admission import GhostContextSource, request_scope, sources_from_values
+from codey.workspace.ghost_selection import GhostContextSpan
 
 SourceValidator = Callable[[tuple[GhostContextSource, ...]], bool]
 
@@ -27,6 +28,7 @@ class PersonalContext:
     text: str
     sources: tuple[GhostContextSource, ...]
     validate: SourceValidator | None
+    spans: tuple[GhostContextSpan, ...] = ()
 
 
 def _read(home: Path, *, project: str, session_id: str, run_id: str, task: str,
@@ -61,9 +63,10 @@ def _read(home: Path, *, project: str, session_id: str, run_id: str, task: str,
 def supplement_personal_context(*, text: str, sources: tuple[GhostContextSource, ...],
                                 scope: str, run_id: str, task: str, enabled: bool,
                                 execution: KernelExecutionDeps,
-                                validate: SourceValidator | None) -> PersonalContext:
+                                validate: SourceValidator | None,
+                                spans: tuple[GhostContextSpan, ...] = ()) -> PersonalContext:
     """Use the entry's durable local authority; never guess a global state home."""
-    original = PersonalContext(text, sources, validate)
+    original = PersonalContext(text, sources, validate, spans)
     sink = execution.intent_sink
     # Project adapters own their complete source snapshot and fault fallback.
     # Do not create a second route around their validator.
@@ -84,6 +87,18 @@ def supplement_personal_context(*, text: str, sources: tuple[GhostContextSource,
     session_id = sink.session_id
     if scope != request_scope(project, session_id):
         return original
+    if sources and not spans:
+        # The normal task entry renders its ordered Ghost sections first,
+        # then workspace context/follow-up. Register that complete prefix;
+        # project adapters supply their own layout through their validator.
+        prefix = "\n\n".join(source.text for source in sources)
+        if text == prefix or text.startswith(prefix + "\n\n"):
+            offset = 0
+            leading: list[GhostContextSpan] = []
+            for source in sources:
+                leading.append(GhostContextSpan(source.key, offset, offset + len(source.text)))
+                offset += len(source.text) + 2
+            spans = tuple(leading)
     try:
         home = sink.managed_outputs.root.parent
     except RuntimeEffectError:
@@ -117,5 +132,9 @@ def supplement_personal_context(*, text: str, sources: tuple[GhostContextSource,
         except (OSError, sqlite3.Error, ValueError, TypeError, OverflowError):
             return False
 
-    return PersonalContext("\n\n".join(part for part in (text, *(source.text for source in added)) if part),
-                           combined, still_valid)
+    registered = list(spans)
+    for source in added:
+        start = len(text) + (2 if text else 0)
+        text = f"{text}\n\n{source.text}" if text else source.text
+        registered.append(GhostContextSpan(source.key, start, len(text)))
+    return PersonalContext(text, combined, still_valid, tuple(registered))

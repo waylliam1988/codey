@@ -26,6 +26,7 @@ from codey.operations.task_session import TaskSession, session_checks_passed
 from codey.policies.task_policy import TaskPolicy
 from codey.runtime.core.run_result import RunResult
 from codey.workspace.context_admission import GhostContextSource
+from codey.workspace.ghost_selection import GhostContextSpan
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,8 @@ class _ProjectPolicyInput:
     denied_capabilities: tuple[str, ...]
 
 
-def _project_context(request: AgentRequest, *, experiences: str = "", directive: str | None = None) -> str:
+def _project_context(request: AgentRequest, *, experiences: str = "", directive: str | None = None,
+                     ghost_spans: list[GhostContextSpan] | None = None) -> str:
     from codey.agents.context import build_agent_context, load_project_instructions
     from codey.agents.tools import DEFAULT_TOOL_FNS
     from codey.policies.permissions import profile_for_name
@@ -62,6 +64,8 @@ def _project_context(request: AgentRequest, *, experiences: str = "", directive:
         ghost_experiences=experiences,
         completion_repair_context=request.completion_repair_context,
     )
+    if ghost_spans is not None:
+        ghost_spans.extend(rendered.ghost_spans)
     trace = FailOpenPromptTrace(request.trace_recorder)
     epoch = context_epoch_id(rendered.text)
     trace.call("record_permission_profile", request.permission_profile, phase="writer")
@@ -263,12 +267,14 @@ def run(request: AgentRequest) -> RunResult:
         # through the new entry's otherwise valid projection.
         return request.admit_hints and actual == ghost_sources and _project_ghost_sources(request) == actual
 
-    goal_context = "\n\n".join(source.text for source in ghost_sources
-                               if source.key in {"ghost_project_goal_history", "ghost_confirmed_project_goal"})
     directive = next((source.text for source in ghost_sources if source.key == "ghost_directive"), "")
-    context_text = _project_context(request, experiences=experiences, directive=directive)
-    if goal_context:
-        context_text = f"{context_text}\n\n{goal_context}"
+    ghost_spans: list[GhostContextSpan] = []
+    context_text = _project_context(request, experiences=experiences, directive=directive, ghost_spans=ghost_spans)
+    for source in ghost_sources:
+        if source.key in {"ghost_project_goal_history", "ghost_confirmed_project_goal"}:
+            start = len(context_text) + 2
+            context_text = f"{context_text}\n\n{source.text}"
+            ghost_spans.append(GhostContextSpan(source.key, start, len(context_text)))
     outcome = run_task_kernel(
         session,
         request=KernelRunRequestBuilder(
@@ -280,6 +286,7 @@ def run(request: AgentRequest) -> RunResult:
                 context_text=context_text,
                 context_scope=request_scope(request.project, request.session_id),
                 ghost_sources=ghost_sources,
+                ghost_spans=tuple(ghost_spans),
                 admit_hints=request.admit_hints,
                 attempt_validate_ghost_sources=sources_still_valid,
                 stop_flag=request.stop_flag,

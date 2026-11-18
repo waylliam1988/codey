@@ -1,7 +1,7 @@
 """Pure, atomic selection of already-authorized Ghost source candidates."""
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from codey.ghost.observation_index import history_refs, select_history_text
 from codey.workspace.context_admission import GHOST_TOTAL_BUDGET_CHARS, GhostContextSource
@@ -9,6 +9,19 @@ from codey.workspace.context_admission import GHOST_TOTAL_BUDGET_CHARS, GhostCon
 # Character cap for the combined local projection, not a model/output gate.
 # This bounds worst-case composition; it is not claimed to be optimal.
 _GOALS = frozenset({"ghost_project_goal_history", "ghost_confirmed_project_goal"})
+
+
+@dataclass(frozen=True)
+class GhostContextSpan:
+    """Source-owned character range registered by the context assembler."""
+
+    key: str
+    start: int
+    end: int
+
+
+def _span_start(span: GhostContextSpan) -> int:
+    return span.start
 
 
 def select_ghost_sources(sources: tuple[GhostContextSource, ...], *,
@@ -50,10 +63,22 @@ def select_ghost_sources(sources: tuple[GhostContextSource, ...], *,
 
 
 def replace_ghost_text(text: str, original: tuple[GhostContextSource, ...],
-                       selected: tuple[GhostContextSource, ...]) -> str:
+                       selected: tuple[GhostContextSource, ...], *,
+                       spans: tuple[GhostContextSpan, ...] = ()) -> str:
     """Replace frozen blocks before prompt/request freezing, never on the wire."""
     kept = {source.key: source.text for source in selected}
-    for source in original:
-        if source.text:
-            text = text.replace(source.text, kept.get(source.key, ""))
-    return text
+    sources = {source.key: source for source in original}
+    registered: set[str] = set()
+    chunks: list[str] = []
+    offset = 0
+    for span in sorted(spans, key=_span_start):
+        source = sources.get(span.key)
+        if (source is None or span.key in registered or not offset <= span.start <= span.end <= len(text)
+                or text[span.start:span.end] != source.text):
+            raise ValueError("invalid registered Ghost source span")
+        chunks.extend((text[offset:span.start], kept.get(span.key, "")))
+        offset = span.end
+        registered.add(span.key)
+    if any(source.text != kept.get(source.key, "") and source.key not in registered for source in original):
+        raise ValueError("Ghost source edit requires a registered span")
+    return "".join((*chunks, text[offset:]))

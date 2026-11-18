@@ -2,66 +2,53 @@
 from __future__ import annotations
 
 import json
-import threading
+from collections.abc import Mapping
 from contextlib import closing
 from dataclasses import replace
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
 from codey.agents.request import AgentRequest
 from codey.app.context import AppContext
-from codey.operations.project_adapter import _project_context, _project_ghost_sources
-from codey.operations.task_session import TaskSession
-from codey.policies.task_policy import TaskPolicy
-from codey.providers.api_provider import ApiProvider
-from codey.runs.trace import RunTraceStore
-from codey.utils.refs import digest_text
-from codey.workspace.context_admission import request_scope
-from codey.workspace.context_epoch import context_epoch_id
-from tests.support.kernel_runtime import (
+from codey.ghost.directive import GhostDirective
+from codey.ghost.payload_types import mapping_fields
+from codey.operations.generation_boundary import durable_generation_boundary_callback
+from codey.operations.kernel_contracts import (
     KernelExecutionDeps,
     KernelObservationDeps,
+    KernelResult,
     KernelRunRequest,
     KernelTransportDeps,
 )
-from tests.support.kernel_runtime import run_task_kernel as run_test_kernel
-from tests.test_chat_workspace_tools_and_answer_completion import execute_frame, workspace_frame
+from codey.operations.project_adapter import _project_context
+from codey.operations.provider_session import adapt_provider
+from codey.operations.task_effects import KernelEffectSink
+from codey.operations.task_loop import run_task_kernel
+from codey.operations.task_session import TaskSession
+from codey.policies.task_policy import TaskPolicy
+from codey.providers.api_provider import ApiProvider
+from codey.runs.trace import RunTraceRecorder, RunTraceStore
+from codey.storage.managed_outputs import ManagedOutputStore
+from codey.utils.refs import digest_text
+from codey.workspace.context_admission import GhostContextSource, request_scope, sources_from_values
+from codey.workspace.context_epoch import context_epoch_id
+from tests.durable_runtime import accept_writer, open_runtime
+from tests.test_ghost_experience_role_budget import Endpoint, _execute
+from tests.test_ghost_experience_role_budget import endpoint as endpoint
 
 
-@pytest.fixture
-def capture_endpoint():
-    payloads = []
-
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *_args):
-            pass
-
-        def do_POST(self):
-            payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            payloads.append(payload)
-            message = {"role": "assistant", "content": '{"tool":"done","args":{"summary":"done"}}'}
-            if payload.get("tools"):
-                message = {"role": "assistant", "content": None, "tool_calls": [
-                    {"id": "done-1", "type": "function", "function": {
-                        "name": "done", "arguments": '{"summary":"done"}'}}]}
-            body = json.dumps({"choices": [{"message": message, "finish_reason": "stop"}]}).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}/v1", payloads
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
+def run_test_kernel(root: Path, session: TaskSession, request: KernelRunRequest, *, session_id: str) -> KernelResult:
+    durable, line = open_runtime(root, session_id=session_id, run_id="admission")
+    with closing(durable):
+        accept_writer(durable, line, session_id=session_id, run_id="admission")
+        sink = KernelEffectSink(line, session_id=session_id, run_id="admission", provider_id="local",
+            durable=durable, managed_outputs=ManagedOutputStore(root / "outputs"))
+        return run_task_kernel(session, request=replace(request,
+            transport=replace(request.transport, run_id="admission", provider_id="local"),
+            execution=replace(request.execution, intent_sink=sink),
+            observation=replace(request.observation, on_boundary=durable_generation_boundary_callback(
+                durable=durable, session_id=session_id, task_id="admission", sink=sink))))
 
 
 @pytest.mark.parametrize("native", [False, True], ids=["text", "native"])
@@ -69,15 +56,19 @@ def capture_endpoint():
     "none", "off", "scope", "global_first_scope", "global_then_project", "session_scope", "budget", "expiry",
     "invalid_expiry", "missing_bytes", "disabled", "duplicate_key", "trace_failure", "scope_trace_failure", "empty_scope",
 ])
-def test_builder_kernel_api_wire_admission(tmp_path, capture_endpoint, native, fault):
-    endpoint, payloads = capture_endpoint
-    provider = ApiProvider(endpoint, "synthetic-admission", native_tools=native, timeout=5,
+def test_builder_kernel_api_wire_admission(tmp_path: Path, endpoint: Endpoint, native: bool,
+                                         fault: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    payloads = endpoint.payloads
+    provider = ApiProvider(endpoint.url, "synthetic-admission", native_tools=native, timeout=5,
                            temperature=0, output_tokens=128)
     request = AgentRequest(provider=provider, project=tmp_path, task="Say done.",
                            session_id="session-a", ghost_directive="Prefer Chinese answers.",
                            permission_profile="planning_readonly", admit_hints=fault != "off")
     context = _project_context(request)
-    sources = _project_ghost_sources(request)
+    # This matrix tests admission of synthetic sources, not the adapter's
+    # separate durable-preference authority (covered by portable-context tests).
+    sources = sources_from_values(directive=request.ghost_directive,
+        scope=request_scope(tmp_path, "session-a")) if request.admit_hints else ()
     if fault in {"scope", "global_first_scope", "scope_trace_failure"}:
         sources = (replace(sources[0], scope=request_scope("project-other")),)
         if fault == "global_first_scope":
@@ -95,46 +86,54 @@ def test_builder_kernel_api_wire_admission(tmp_path, capture_endpoint, native, f
     elif fault == "duplicate_key":
         sources = (*sources, sources[0])
 
-    admissions, boundaries = [], []
+    admissions: list[tuple[tuple[GhostContextSource, ...], dict[str, str]]] = []
+    boundaries: list[Mapping[str, object]] = []
     recorder = RunTraceStore(tmp_path / "trace").open(
         run_id="scope-capture", session_id="session-a", project=tmp_path,
         mode_initial="planning", provider_initial="local",
     )
 
-    def record_sources(rows, **kwargs):
+    def record_sources(rows: tuple[GhostContextSource, ...], *, epoch_id: str = "",
+                       admission_reason: str = "") -> None:
         if "trace_failure" in fault:
             raise RuntimeError("trace sink unavailable")
-        admissions.append((rows, kwargs))
-        recorder.record_context_sources(rows, **kwargs)
+        admissions.append((rows, {"epoch_id": epoch_id, "admission_reason": admission_reason}))
+        RunTraceRecorder.record_context_sources(recorder, rows, epoch_id=epoch_id, admission_reason=admission_reason)
 
-    def record_boundary(row, **_kwargs):
+    def record_boundary(row: Mapping[str, object], surface_payload: Mapping[str, object] | None = None) -> None:
         if "trace_failure" in fault:
             raise RuntimeError("trace sink unavailable")
         boundaries.append(row)
-        recorder.record_provider_prompt_boundary(row)
+        RunTraceRecorder.record_provider_prompt_boundary(recorder, row, surface_payload)
 
-    trace = SimpleNamespace(record_context_sources=record_sources, record_provider_prompt_boundary=record_boundary)
+    monkeypatch.setattr(recorder, "record_context_sources", record_sources)
+    monkeypatch.setattr(recorder, "record_provider_prompt_boundary", record_boundary)
     outcome = run_test_kernel(
+        tmp_path / "runtime",
         TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
         session_id="session-a", request=KernelRunRequest(
-            transport=KernelTransportDeps(provider=provider, user_task=request.task, context_text=context,
+            transport=KernelTransportDeps(provider=adapt_provider(provider), user_task=request.task, context_text=context,
                                           context_scope="" if fault == "empty_scope" else request_scope(tmp_path, "session-a"),
                                           ghost_sources=sources, admit_hints=fault != "disabled"),
             execution=KernelExecutionDeps(project_path=tmp_path),
-            observation=KernelObservationDeps(trace_recorder=trace),
+            observation=KernelObservationDeps(trace_recorder=recorder),
         ),
     )
     allowed = fault in {"none", "off", "global_then_project", "trace_failure"}
     assert len(payloads) == int(allowed), (fault, outcome)
     assert outcome.stop_reason == ("done" if allowed else "provider_failure"), outcome
     if allowed:
-        outbound = next(message["content"] for message in payloads[0]["messages"]
-                        if "User task (verbatim):" in message.get("content", ""))
+        messages = payloads[0]["messages"]
+        assert isinstance(messages, list)
+        entries: list[object] = messages
+        outbound = next(text for message in entries if mapping_fields(message)
+                        and isinstance(text := message.get("content"), str) and "User task (verbatim):" in text)
         assert (request.ghost_directive in outbound) == (fault != "off")
         assert context in outbound
         if fault != "trace_failure":
             assert len(boundaries) == 1
             provider_prompt = boundaries[0]["text"]
+            assert isinstance(provider_prompt, str)
             assert outbound.startswith(provider_prompt)
             assert boundaries[0]["epoch_id"] == context_epoch_id(provider_prompt)
             if sources:
@@ -167,15 +166,20 @@ def test_builder_kernel_api_wire_admission(tmp_path, capture_endpoint, native, f
         assert f":{expected_reason}" in outcome.summary
 
 
-def test_session_scope_uses_request_session_not_candidate():
-    sent = []
-    from codey.workspace.context_admission import sources_from_values
+def test_session_scope_uses_request_session_not_candidate(tmp_path: Path) -> None:
+    sent: list[str] = []
+
+    class NoSend:
+        def send(self, prompt: str) -> str:
+            sent.append(prompt)
+            return ""
 
     sources = sources_from_values(directive="Synthetic preference", scope=request_scope(session_id="other"))
     result = run_test_kernel(
+        tmp_path,
         TaskSession(policy=TaskPolicy(grants=frozenset({"control"})), max_turns=1),
         session_id="current", request=KernelRunRequest(
-            transport=KernelTransportDeps(provider=SimpleNamespace(send=lambda prompt: sent.append(prompt)),
+            transport=KernelTransportDeps(provider=adapt_provider(NoSend()),
                                           context_scope=request_scope(session_id="current"),
                                           context_text=sources[0].text, ghost_sources=sources),
             execution=KernelExecutionDeps(),
@@ -186,9 +190,9 @@ def test_session_scope_uses_request_session_not_candidate():
 
 
 @pytest.mark.parametrize("kind", ["project", "session"])
-def test_scope_identity_does_not_alias_long_shared_prefixes(kind):
+def test_scope_identity_does_not_alias_long_shared_prefixes(kind: str) -> None:
     prefix = "shared-" + "x" * 160
-    def scope(suffix):
+    def scope(suffix: str) -> str:
         return request_scope(prefix + suffix) if kind == "project" else request_scope(session_id=prefix + suffix)
 
     assert scope("a") != scope("b")
@@ -197,14 +201,18 @@ def test_scope_identity_does_not_alias_long_shared_prefixes(kind):
 
 
 @pytest.mark.parametrize("control", ["enabled", "disabled", "scoped_error"])
-def test_scoped_hint_control_reaches_entry_api_http(tmp_path, capture_endpoint, monkeypatch, control):
-    endpoint, payloads = capture_endpoint
+def test_scoped_hint_control_reaches_entry_api_http(tmp_path: Path, endpoint: Endpoint,
+                                                   monkeypatch: pytest.MonkeyPatch, control: str) -> None:
+    payloads = endpoint.payloads
     hint = "Synthetic reviewed preference"
-    monkeypatch.setattr("codey.operations.ghost_context.ghost_directive",
-                        lambda *args, **kwargs: SimpleNamespace(text=hint))
-    calls = []
 
-    def read(name, **scope):
+    def directive(state: object, *, session_id: str, project: str, provider: object = None) -> GhostDirective:
+        return GhostDirective(text=hint)
+
+    monkeypatch.setattr("codey.operations.ghost_context.ghost_directive", directive)
+    calls: list[dict[str, str]] = []
+
+    def read(name: str, **scope: str) -> bool:
         if name == "admit_hints":
             calls.append(scope)
             if control == "scoped_error" and scope:
@@ -212,14 +220,13 @@ def test_scoped_hint_control_reaches_entry_api_http(tmp_path, capture_endpoint, 
             return control != "disabled"
         return True
 
-    provider = ApiProvider(endpoint, "synthetic-admission", native_tools=True, timeout=5,
-                           temperature=0, output_tokens=128)
-    frame = workspace_frame("", provider)
-    with closing(AppContext(tmp_path / "state")) as state:
+    with closing(AppContext(tmp_path / "state", start_scheduler=False)) as state:
+        assert state.ghost_inbox is not None
         monkeypatch.setattr(state.ghost_inbox, "control_enabled", read)
-        result, _ = execute_frame(frame, state)
-    assert result.event["stop_reason"] == "done", result.event
+        event = _execute(state, endpoint, task="Hello", session="scope-session", identity="scope-run")
+    assert event["stop_reason"] == "done", event
     assert len(payloads) == 1
     assert (hint in json.dumps(payloads[0])) == (control == "enabled")
-    expected_calls = 2 if control == "enabled" else 1
-    assert calls == [{"project": "", "session_id": frame.request.session_id}] * expected_calls
+    # The entry and personal-context supplement each check the same scope,
+    # including when admission is disabled or a scoped read fails.
+    assert calls == [{"project": "", "session_id": "scope-session"}] * 2

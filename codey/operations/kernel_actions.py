@@ -25,7 +25,7 @@ from codey.operations.kernel_contracts import (
 from codey.operations.kernel_execution import execute_turn as _execute_turn
 from codey.operations.kernel_trace import record_outbound
 from codey.operations.project_prompt_context import prepare_coding_context
-from codey.operations.represented_history import user_message_text
+from codey.operations.represented_history import compaction_history_refs, user_message_text
 from codey.operations.task_session import turn_effect_id as _turn_effect_id
 from codey.policies.command_line import ShellSpec
 from codey.providers.attempt_gate import AttemptGateClient
@@ -96,6 +96,9 @@ def _bind_attempt_gate(
                             if object_fields(entry) and (text := user_message_text(entry)) is not None:
                                 user_texts.add(text)
                 actual_refs |= frozenset(ref for ref, text in transport.required_history_inputs if text in user_texts)
+                if client.purpose == "compaction":
+                    actual_refs |= compaction_history_refs(dict[str, object](payload), transport.provider,
+                                                           transport.required_history_inputs)
                 if not transport.required_history_refs <= actual_refs:
                     raise GhostAdmissionError((GhostAdmissionRejection("ghost_sources", "represented_history_missing"),))
             if client.purpose == "compaction":
