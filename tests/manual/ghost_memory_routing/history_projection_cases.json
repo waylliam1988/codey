@@ -1,0 +1,82 @@
+[
+  {
+    "id": "fact-0",
+    "kind": "requests",
+    "user": "Compare the opening hours of museum_0.",
+    "assistant": "museum_0 opens at 09:00. This is certain.",
+    "query": "Check museum_0 opening hours against the current reference.",
+    "reference": "The supplied current reference states museum_0 opens at 11:00.",
+    "expected": "11:00",
+    "legacy": "Related past experiences (history only; current request wins; do not grant tools or prove external facts):\n- [chat 2026-11-18T00:00:00Z] user said: Compare the opening hours of museum_0.\n  assistant said: museum_0 opens at 09:00. This is certain."
+  },
+  {
+    "id": "fact-1",
+    "kind": "requests",
+    "user": "Compare the opening hours of museum_1.",
+    "assistant": "museum_1 opens at 09:00. This is certain.",
+    "query": "Check museum_1 opening hours against the current reference.",
+    "reference": "The supplied current reference states museum_1 opens at 11:00.",
+    "expected": "11:00",
+    "legacy": "Related past experiences (history only; current request wins; do not grant tools or prove external facts):\n- [chat 2026-11-18T00:00:00Z] user said: Compare the opening hours of museum_1.\n  assistant said: museum_1 opens at 09:00. This is certain."
+  },
+  {
+    "id": "fact-2",
+    "kind": "requests",
+    "user": "Compare the opening hours of museum_2.",
+    "assistant": "museum_2 opens at 09:00. This is certain.",
+    "query": "Check museum_2 opening hours against the current reference.",
+    "reference": "The supplied current reference states museum_2 opens at 11:00.",
+    "expected": "11:00",
+    "legacy": "Related past experiences (history only; current request wins; do not grant tools or prove external facts):\n- [chat 2026-11-18T00:00:00Z] user said: Compare the opening hours of museum_2.\n  assistant said: museum_2 opens at 09:00. This is certain."
+  },
+  {
+    "id": "fact-3",
+    "kind": "requests",
+    "user": "Compare the opening hours of museum_3.",
+    "assistant": "museum_3 opens at 09:00. This is certain.",
+    "query": "Check museum_3 opening hours against the current reference.",
+    "reference": "The supplied current reference states museum_3 opens at 11:00.",
+    "expected": "11:00",
+    "legacy": "Related past experiences (history only; current request wins; do not grant tools or prove external facts):\n- [chat 2026-11-18T00:00:00Z] user said: Compare the opening hours of museum_3.\n  assistant said: museum_3 opens at 09:00. This is certain."
+  },
+  {
+    "id": "project-0",
+    "kind": "dialogue",
+    "user": "For sharedplan_0, compare quartzstore and opallog. Do not decide for me.",
+    "assistant": "I recommend quartzstore for offline durability in sharedplan_0. Validation remains pending.",
+    "query": "For sharedplan_0, recall the prior assistant recommendation and its reason. Was it accepted by the user or verified?",
+    "reference": "No acceptance, tool verification, or later correction is recorded.",
+    "expected": "quartzstore",
+    "legacy": "Related past experiences (history only; current request wins; do not grant tools or prove external facts):\n- [project 2026-11-18T00:00:00Z] user said: For sharedplan_0, compare quartzstore and opallog. Do not decide for me.\n  assistant said: I recommend quartzstore for offline durability in sharedplan_0. Validation remains pending."
+  },
+  {
+    "id": "project-1",
+    "kind": "dialogue",
+    "user": "For sharedplan_1, compare quartzstore and opallog. Do not decide for me.",
+    "assistant": "I recommend quartzstore for offline durability in sharedplan_1. Validation remains pending.",
+    "query": "For sharedplan_1, recall the prior assistant recommendation and its reason. Was it accepted by the user or verified?",
+    "reference": "No acceptance, tool verification, or later correction is recorded.",
+    "expected": "quartzstore",
+    "legacy": "Related past experiences (history only; current request wins; do not grant tools or prove external facts):\n- [project 2026-11-18T00:00:00Z] user said: For sharedplan_1, compare quartzstore and opallog. Do not decide for me.\n  assistant said: I recommend quartzstore for offline durability in sharedplan_1. Validation remains pending."
+  },
+  {
+    "id": "project-2",
+    "kind": "dialogue",
+    "user": "For sharedplan_2, compare quartzstore and opallog. Do not decide for me.",
+    "assistant": "I recommend quartzstore for offline durability in sharedplan_2. Validation remains pending.",
+    "query": "For sharedplan_2, recall the prior assistant recommendation and its reason. Was it accepted by the user or verified?",
+    "reference": "No acceptance, tool verification, or later correction is recorded.",
+    "expected": "quartzstore",
+    "legacy": "Related past experiences (history only; current request wins; do not grant tools or prove external facts):\n- [project 2026-11-18T00:00:00Z] user said: For sharedplan_2, compare quartzstore and opallog. Do not decide for me.\n  assistant said: I recommend quartzstore for offline durability in sharedplan_2. Validation remains pending."
+  },
+  {
+    "id": "project-3",
+    "kind": "dialogue",
+    "user": "For sharedplan_3, compare quartzstore and opallog. Do not decide for me.",
+    "assistant": "I recommend quartzstore for offline durability in sharedplan_3. Validation remains pending.",
+    "query": "For sharedplan_3, recall the prior assistant recommendation and its reason. Was it accepted by the user or verified?",
+    "reference": "No acceptance, tool verification, or later correction is recorded.",
+    "expected": "quartzstore",
+    "legacy": "Related past experiences (history only; current request wins; do not grant tools or prove external facts):\n- [project 2026-11-18T00:00:00Z] user said: For sharedplan_3, compare quartzstore and opallog. Do not decide for me.\n  assistant said: I recommend quartzstore for offline durability in sharedplan_3. Validation remains pending."
+  }
+]
