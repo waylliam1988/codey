@@ -39,3 +39,13 @@ python -m tests.manual.ghost_memory_routing.portable_context_trial --output .e2e
 批次按协议停止，未计通过。两次目录与 failure.json 保留。
 修正为在 provider.bind_usage 边界同时保存自身记录并转发生产 observer，新增原始 reply 留存。
 完整矩阵在独立 v3 目录重开，不能拼接前两批为通过，也不能把该观测器错误称作模型服务失败。
+
+用户后续明确授权一次 KoboldCpp 故障重试：v3 第6格返回嵌入 HTTP 头的畸形正文，
+原始失败及未知 usage 保留；前5格不重跑。只对第6格以新任务/独立本地状态补一次请求，
+记录在该格 `authorized-retry-1` 子目录，然后继续剩余6格；后续故障不自动重试。
+这是用户授权的协议例外，最终如完成标记 `COMPLETE_WITH_AUTHORIZED_RETRY`，
+不能称原协议无重试完成，也不能把失败请求用量计作0；评分与变量不变。
+
+```powershell
+python -m tests.manual.ghost_memory_routing.portable_context_trial --output .e2e-artifacts/portable-context-20261118-live-v3 --resume-after-authorized-retry
+```

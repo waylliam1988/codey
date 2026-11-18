@@ -189,27 +189,59 @@ def cell(home: Path, *, output: int, stream: bool, arm: str) -> dict[str, object
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--resume-after-authorized-retry", action="store_true")
     args = parser.parse_args()
     output_value: object = args.output
     if not isinstance(output_value, Path):
         raise ValueError("output path required")
     home = output_value
-    home.mkdir(parents=True, exist_ok=False)
+    resume_value: object = args.resume_after_authorized_retry
+    resume = resume_value is True
     completed: list[dict[str, object]] = []
+    if resume:
+        raw: object = json.loads((home / "progress.json").read_text(encoding="utf-8"))
+        if not isinstance(raw, list):
+            raise ValueError("invalid saved progress")
+        rows: list[object] = raw
+        for item in rows:
+            if not mapping_fields(item):
+                raise ValueError("invalid saved cell")
+            completed.append(dict(item))
+        expected = [(output, stream, arm) for output, stream in CONFIGS for arm in ARMS]
+        if len(completed) >= len(expected) or any(
+            (row.get("output_tokens"), row.get("stream"), row.get("arm")) != config
+            for row, config in zip(completed, expected, strict=False)
+        ):
+            raise ValueError("saved cells do not match the frozen matrix")
+        save(home / "authorized-resume.json", {"completed_before_resume": len(completed),
+            "failed_attempt_retained": True, "retry_limit": 1, "authorization": "explicit user request"})
+    else:
+        home.mkdir(parents=True, exist_ok=False)
+    completed_before = len(completed)
+    position = 0
     try:
-        _models(home, "before")
+        _models(home, "resume" if resume else "before")
         for output, stream in CONFIGS:
             for arm in ARMS:
+                position += 1
+                if position <= completed_before:
+                    continue
                 name = f"output{output}-stream{int(stream)}-{arm}"
-                row = cell(home / name, output=output, stream=stream, arm=arm)
+                cell_home = home / name
+                retry = resume and position == completed_before + 1 and cell_home.exists()
+                if retry:
+                    cell_home = cell_home / "authorized-retry-1"
+                row = cell(cell_home, output=output, stream=stream, arm=arm)
+                if retry:
+                    row["authorized_retry"] = True
                 completed.append(row)
                 save(home / "progress.json", completed)
                 print(json.dumps(row), flush=True)
         _models(home, "after")
-        save(home / "report.json", {"status": "COMPLETE", "kind": "portability_smoke", "model": MODEL,
+        save(home / "report.json", {"status": "COMPLETE_WITH_AUTHORIZED_RETRY" if resume else "COMPLETE", "kind": "portability_smoke", "model": MODEL,
             "independent_user_samples": 1, "cells": completed})
     except Exception as exc:
-        save(home / "failure.json", {"status": "INCOMPLETE", "type": type(exc).__name__,
+        save(home / ("resume-failure.json" if resume else "failure.json"), {"status": "INCOMPLETE", "type": type(exc).__name__,
             "message": str(exc), "completed": len(completed)})
         raise
 
