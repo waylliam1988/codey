@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from codey.automation.browser_document import same_document
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject, JsonValue, decode_json_object, require_json_integer
 
@@ -36,10 +38,10 @@ def _read_value(result: ToolResult) -> JsonObject:
 def _browser_value(result: ToolResult) -> JsonObject | None:
     if result.call.name == "browser_read" and result.ok and "research_observation" in result.canonical:
         return _read_value(result)
-    value = result.canonical.get("value")
-    if not result.call.name.startswith("browser_") or not isinstance(value, dict):
+    raw = result.canonical.get("value")
+    if not result.call.name.startswith("browser_") or not isinstance(raw, dict):
         return None
-    value = dict(value)
+    value = decode_json_object(raw)
     # Only protocol-owned locations are normalized. In particular, eval.value
     # and delivered download artifacts remain complete business values.
     for key in ("ref", "generation", "page_id"):
@@ -76,8 +78,11 @@ def _target(args: JsonObject, receipts: Mapping[str, ToolResult]) -> JsonObject:
     for receipt in reversed(tuple(receipts.values())):
         if receipt.call.name != "browser_snapshot" or not receipt.ok:
             continue
-        value = receipt.canonical.get("value")
-        if not isinstance(value, dict) or value.get("elements_truncated") is not False or receipt.truncated:
+        raw = receipt.canonical.get("value")
+        if not isinstance(raw, dict) or receipt.truncated:
+            continue
+        value = decode_json_object(raw)
+        if value.get("elements_truncated") is not False:
             continue
         elements = value.get("elements")
         if not isinstance(elements, list):
@@ -100,6 +105,80 @@ class ProgressComparison:
     call: ToolCall
     result: ToolResult
     information: str
+    browser_observation: bool = False
+
+
+def _observation_program(result: ToolResult, receipts: Mapping[str, ToolResult]) -> str | None:
+    """Compare complete observed children and only their known ref substitutions.
+
+    This is progress telemetry, never replay or repair authority. In particular,
+    arbitrary computed values, numeric generations and unknown children survive.
+    """
+    canonical = decode_json_object(result.canonical)
+    refs = canonical.get("child_effect_ids")
+    parent = result.audit.get("codemode_execution_id")
+    if (result.call.name != "codemode" or not result.ok or result.truncated
+            or not isinstance(parent, str) or not parent or not isinstance(refs, list) or not refs
+            or result.audit.get("child_calls") != len(refs) or "value" not in result.canonical):
+        return None
+    owned = {ref for ref, child in receipts.items() if child.call.call_id.startswith(parent + ":child:")}
+    if any(not isinstance(ref, str) for ref in refs) or set(refs) != owned or len(owned) != len(refs):
+        return None
+    children: list[JsonValue] = []
+    substitutions: dict[str, str] = {}
+    for index, ref in enumerate(refs):
+        child = receipts[str(ref)]
+        if (child.call.call_id != f"{parent}:child:{index}" or not child.ok or child.truncated
+                or child.call.name not in {"browser_snapshot", "browser_read"}
+                or (value := _browser_value(child)) is None
+                or not isinstance(document_raw := child.audit.get("browser_document"), dict)):
+            return None
+        document = decode_json_object(document_raw)
+        if not same_document(document, document):
+            return None
+        if child.call.name == "browser_snapshot":
+            raw = decode_json_object(child.canonical).get("value")
+            if (not isinstance(raw, dict) or raw.get("complete") is not True
+                    or raw.get("elements_truncated") is not False or raw.get("text_truncated") is not False
+                    or not isinstance(elements := raw.get("elements"), list)):
+                return None
+            for position, element in enumerate(elements):
+                if not isinstance(element, dict) or not isinstance(token := element.get("ref"), str) or not token:
+                    return None
+                replacement = f"<observed-control:{index}:{position}>"
+                if token in substitutions and substitutions[token] != replacement:
+                    return None
+                substitutions[token] = replacement
+        children.append({"tool": child.call.name, "args": child.call.args, "document": document, "value": value})
+    if not substitutions:
+        return None
+    # A literal also present in the program/input may be business data. Do not
+    # reinterpret it, or strings containing a ref as only part of an identifier.
+    arguments = _encoded(result.call.args)
+    if any(token in arguments for token in substitutions):
+        return None
+    pattern = re.compile(r"(?<![A-Za-z0-9_])(?:" + "|".join(
+        re.escape(token) for token in sorted(substitutions, key=len, reverse=True)) + r")(?![A-Za-z0-9_])")
+
+    def normalized(value: JsonValue) -> JsonValue:
+        if isinstance(value, str):
+            # Encode text and observed references as distinct parts. A business
+            # string equal to a runtime placeholder must not collide with it.
+            parts: list[JsonValue] = []
+            start = 0
+            for match in pattern.finditer(value):
+                parts.extend([value[start:match.start()], {"observed_ref": substitutions[match.group()]}])
+                start = match.end()
+            parts.append(value[start:])
+            return _encoded(parts)
+        if isinstance(value, list):
+            return [normalized(item) for item in value]
+        if isinstance(value, dict):
+            return {key: normalized(item) for key, item in value.items()}
+        return value
+
+    return _encoded({"ok": True, "children": children, "value": normalized(
+        decode_json_object(result.canonical)["value"])})
 
 
 def progress_comparison(result: ToolResult, receipts: Mapping[str, ToolResult]) -> ProgressComparison:
@@ -108,5 +187,7 @@ def progress_comparison(result: ToolResult, receipts: Mapping[str, ToolResult]) 
         call = ToolCall(result.call.name, _target(result.call.args, receipts))
         text = _encoded({"ok": result.ok, "value": value, "truncated": result.truncated})
         return ProgressComparison(call, ToolResult(call, text, ok=result.ok, audit=result.audit), text)
+    if (observed := _observation_program(result, receipts)) is not None:
+        return ProgressComparison(result.call, ToolResult(result.call, observed, ok=result.ok, audit=result.audit), observed, True)
     # General CodeMode return values retain their own semantics.
     return ProgressComparison(result.call, result, result.model_text)

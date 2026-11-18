@@ -130,6 +130,40 @@ def _call_handoff(session: TaskSession, snapshot: TurnSnapshot, call: ToolCall) 
     return snapshot, error if action is None else "Execute this next step: " + json.dumps(action, ensure_ascii=False)
 
 
+def observation_recovery_handoff(session: TaskSession, snapshot: TurnSnapshot,
+                                  context: CompletionContext) -> tuple[TurnSnapshot, str]:
+    """Offer current fill choices after a proven observation-only repeat.
+
+    The caller owns repeat accounting. This supplies choices, never selects a
+    business target or replays a delivered/uncertain action.
+    """
+    references = snapshot.browser_references
+    if (references is None or snapshot.input_binding is not None or snapshot.browser_copy is not None
+            or "browser_fill" not in snapshot.inventory_names
+            or not same_document(parse_json_object(references.document_json), context.browser_document)
+            or _action_receipts(session, snapshot, context)):
+        return snapshot, ""
+    records, results = tool_facts(session, context)
+    missing = [rule for check in session.policy.required_checks
+               if (rule := parse_tool_success_check(check)) is not None and rule.tool == "browser_fill"
+               and rule.observe(records, results=results, browser_document=context.browser_document
+                                ).evaluation.reason_code == "tool_execution_missing"]
+    if not missing:
+        return snapshot, ""
+    choices = [choice for choice in references.choices() if isinstance(choice, dict) and choice.get("role") == "textbox"]
+    if not choices:
+        return snapshot, ""
+    lines = ["The same observation-only program returned no new page information; only observed control refs changed. "
+             "The declared browser_fill still has no successful verified receipt. "
+             "Use the existing current control choices below; do not repeat the search loop or click a textbox to fill it. "
+             "Select the task's intended textbox and supply its value from the task. Another snapshot is unnecessary."]
+    for choice in choices:
+        snapshot, action, error = handoff_call(session, snapshot, ToolCall("browser_fill", {"ref": choice}))
+        lines.append(json.dumps(choice, ensure_ascii=False) + ": "
+                     + (json.dumps(action, ensure_ascii=False) if action is not None else error))
+    return snapshot, "\n".join(lines)
+
+
 def query_result_handoff(session: TaskSession, snapshot: TurnSnapshot, context: CompletionContext,
                          generation: int | None, *, task_named: bool = True) -> tuple[TurnSnapshot, str]:
     """Offer observed query controls under the calling task's selection policy."""

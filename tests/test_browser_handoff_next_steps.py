@@ -107,7 +107,9 @@ def test_navigation_binding_uses_explicit_unambiguous_intent(task: str, expected
     assert (call is not None) is expected
     if expected and "only" in task:
         assert call is not None and call.name == "codemode"
-        assert offer_browser_tools(snapshot, session) == snapshot
+        offered = offer_browser_tools(snapshot, session)
+        assert offered.tool_names == snapshot.tool_names and offered.browser_followups
+        assert restore_snapshot(snapshot_description(offered)) == offered
 
 
 @pytest.mark.parametrize("kind", ["bare", "bound", "denied"])

@@ -16,14 +16,15 @@ from codey.policies.tool_requirement import require_tool_success
 from codey.protocols.text_turn import decode_text_turn
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.types.json_value import JsonObject
-from tests.test_protocol_surface import TARGET
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_prerequisite_ab as fixture
 from tools.browser_leaf_exposure_ab import response_actions
 from tools.browser_production_live_gate import URL, run_case
 from tools.completion_artifact_audit import tool_receipts
+from tools.completion_explanation_ab import Target
 
 GRANTS = frozenset({"control", "web.read", "browser.observe", "browser.interact"})
+TARGET = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
 
 
 @pytest.mark.parametrize("via", ["", "codemode"])
@@ -43,13 +44,13 @@ def test_navigation_is_bound_and_respects_required_parent(via: str) -> None:
         assert initial_navigation(session, snapshot) is None
 
 
-@pytest.mark.parametrize("failure", ["absent", "ambiguous", "different_url", "denied", "wrong_parent", "research", "ordered"])
+@pytest.mark.parametrize("failure", ["absent", "ambiguous", "different_url", "denied", "wrong_parent", "ordered"])
 def test_initial_navigation_does_not_invent_permission_or_arguments(failure: str) -> None:
     requirement = require_tool_success("browser_navigate",
         via="other" if failure == "wrong_parent" else "",
         arguments={"url": "https://example.com/different"} if failure == "different_url" else {})
     session = TaskSession(TaskPolicy(GRANTS, required_checks=() if failure == "absent" else (requirement,)),
-                          task_kind="research" if failure == "research" else "chat",
+                          task_kind="chat",
                           task_text=f"Open {URL}", required_source_urls=frozenset({URL}))
     if failure == "ambiguous":
         session = replace(session, task_text=f"Open {URL} and https://example.com/other",
@@ -61,6 +62,13 @@ def test_initial_navigation_does_not_invent_permission_or_arguments(failure: str
                                                fill_name="Place", fill_value="Taipei", click_name="Load")
         session = replace(session, policy=replace(session.policy, required_checks=(requirement, sequence)))
     assert initial_navigation(session, build_turn_snapshot(session)) is None
+
+
+def test_research_can_initialize_an_explicit_required_navigation() -> None:
+    session = TaskSession(TaskPolicy(GRANTS, required_checks=(require_tool_success("browser_navigate"),)),
+                          task_kind="research", task_text=f"Open {URL}", required_source_urls=frozenset({URL}))
+    call = initial_navigation(session, build_turn_snapshot(session))
+    assert call is not None and call.name == "browser_navigate" and call.args == {"url": URL}
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")
@@ -98,10 +106,12 @@ def test_wait_exposure_uses_the_existing_frozen_leaf(kind: str, required: bool, 
     if not denied:
         spec = next(s for s in snapshot.frozen_specs if s.name == "browser_wait")
         assert next(s for s in snapshot.model_specs if s.name == "browser_wait") == spec
-        for args in ('{"condition":"invented","value":"Ready","timeout_ms":5000}',
-                     '{"condition":"text","value":"Ready"}'):
-            invalid = decode_text_turn('{"tool":"browser_wait","args":' + args + '}')
-            assert normalize_turn(invalid, snapshot=snapshot).protocol_error
+        invalid = decode_text_turn('{"tool":"browser_wait","args":{"condition":"invented","value":"Ready","timeout_ms":5000}}')
+        assert normalize_turn(invalid, snapshot=snapshot).protocol_error
+        valid = normalize_turn(decode_text_turn('{"tool":"browser_wait","args":{"condition":"text","value":"Ready"}}'),
+                               snapshot=snapshot)
+        assert not valid.protocol_error and valid.calls[0].name == "codemode"
+        assert valid.calls[0].args["inputs"] == {"condition": "text", "value": "Ready"}
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection", "no_external_advisor_models")

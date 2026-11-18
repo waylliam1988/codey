@@ -785,6 +785,15 @@ class KernelContext:
                 self.execution.research_tools.session_id if self.execution.research_tools is not None else "", research_scope=snapshot.research_scope,
                 tool_names=snapshot.tool_names, provider=self.provider)
         reminder = progress.repeat_feedback()
+        if reminder:
+            from codey.operations.browser_task_handoff import observation_recovery_handoff
+            from codey.operations.progress_comparison import progress_comparison
+
+            if any(progress_comparison(row, self.session._memory_results).browser_observation for row in results):
+                browser = self.execution.research_tools.browser_session if self.execution.research_tools is not None else None
+                context = replace(self.completion_context, browser_document=browser.document_identity() if browser else None)
+                snapshot, recovery = observation_recovery_handoff(self.session, snapshot, context)
+                handoff = "\n\n".join(part for part in (handoff, recovery) if part)
         if self.native and messages:
             messages[-1] = replace(messages[-1], user_content="\n\n".join(
                 part for part in (observations, messages[-1].user_content, reminder) if part))
