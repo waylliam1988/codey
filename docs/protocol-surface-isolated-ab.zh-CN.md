@@ -8,6 +8,31 @@
 
 入口：`python -m tools.protocol_surface_ab`。候选机制位于 `tools/protocol_surface.py`，结构化执行器位于 `tools/protocol_surface_program.js`；确定性测试为 `tests/test_protocol_surface.py`。
 
+### 2026-11-18 当前基线维护
+
+当前生产 `browser_wait` 已允许省略 `timeout_ms`：优先采用当前阶段匹配的任务声明，否则采用 5000ms；显式非法值继续拒绝。B3 的 schema 来自当前生产快照，因此不安装 B1，并不代表仍使用历史上的“超时必填”合同。B1 开关目前控制的是实验编译/调用入口的补值机制，不能再用“省略参数是否成功”单独证明 B1 相对当前生产有收益。历史实机报告保留原日期、源码与结果，不能据此推断当前差异。
+
+本次维护回归测试、两份实验运行器与本文档，不修改生产合同。修复前定向复现为 **5 失败、4 通过**：两项依赖旧的必填假设，一项把合法省略当成非法调用，另两项依赖旧错误字段路径。新测试检查 B3 继承生产 schema/说明、B1 编译补值与 B3 保留省略值的区别、合法边界及显式非法值、原参数不变；真实 Chromium 覆盖生产 A、B1、B3、combined 的省略参数执行与正式回执。原有非法调用不登记 durable 子意图、真实超时、恢复和 stale ref 断言继续保留。
+
+扩大到四份相关测试文件后得到 **20 失败、288 通过**，原始日志为同目录 `regression-final.log`（这是中间失败轮，不是最终通过记录），请求与回执位于 `R:/codey-pytest/run-bk8nexuj/`。归属核对及修改如下：
+
+- 普通来源字段复制现在提供 `codemode(path)`，拒绝同程序读来源并自由改写。旧实验却一直假定自由编辑。两个运行器现在共同使用 `content_edit_task()`，仅为 hybrid/stale_edit 的**完整文件接口诊断**明确要求自由 JavaScript 与 content 版本编辑；两侧任务相同，所有字段来源检查、版本冲突和外部字段 scorer 保留。它验证现有显式自由编辑入口，不能代表普通任务默认路径。普通字段复制的同程序拒绝与后续 destination-only 输入，由 `test_browser_repair_closure.py` 的原生产回归继续验证。
+- 结果正文后可附正式运行时说明，测试不能按旧的 metadata 标题切割并整段解析 JSON。测试辅助函数改用现有平衡括号扫描器定位开头的 JSON，再严格解码；回执身份与内容断言保留，不把附加说明作为结果数据。
+- 当前完整声明让部分脚本化请求超过原来的 32768 窗口。仅确定性测试 provider 使用 65536 窗口，使接口测试不混入预算耗尽；真实实验 provider 的配置不变，不声称在原 32768 窗口解决了该问题。生产预算与拒绝逻辑不变。
+- 结构化旧测试的“缺少必填参数”改为真实缺少 `condition`，仍要求无子意图、无子回执；实验 CLI 补充具体参数类型、严格 JSON 解码和日志容器类型，清除修改文件中的隐式 `Any`。
+
+首次复现证据为 `regression-before.log`，对应请求与回执位于保留的 `R:/codey-pytest/run-7qz_dtz5/`。开发中一次 schema 测试误用了不存在的工具函数，产生 **1 失败、34 通过**，也保留在 `regression-focused.log`；已改为使用现有 `canonical_json_object`。扩大修复的首次重跑为 **1 失败、35 通过**，记录在 `expanded-fix-1.log`，剩余失败是另一个旧 JSON 切割点；修正后单项 **1 通过**（`misfiled-fix.log`，该轮退出时另有 Windows RAM 临时目录清理警告）。最终验证结果另列，所有首次失败均保留。没有运行自主模型实验，本次不新增模型收益结论；任务及 harness 指纹变化后，历史报告不能当作当前实验资格证据。
+
+进一步纳入共享上传测试后，五文件整轮为 **314 通过、8 失败**（`regression-verified.log`，该文件名同样不代表整轮通过）。其中原四个核心文件的 **310 项全部通过**；新增的 8 项失败均位于 `test_receipt_bound_edit_surface_probe.py`：旧脚本自由 JS 在当前结构化上传阶段被拒绝，组装回答仍发送旧 `summary`，没有实际上传回执。现已复用现有上传 action helper，按 observe → select → read → done 调用，并采用 `paragraphs`。预取来源不能满足上传后读取、提前完成拒绝、导航顺序、上传只执行一次、错误服务器接收声明需纠正、哈希来自回执等断言均保留。该文件中的 JSON 输入也改为严格解码与字段收窄。
+
+修复后执行 `python -m pytest -vv tests/test_receipt_bound_edit_surface_probe.py tests/test_browser_structured_upload_production.py`，**22 项全部通过**（`upload-contract-fix-1.log`）。结合上一轮四个核心文件，分批覆盖 **332 个不同测试场景**；没有运行全量 pytest，也没有将中间两轮失败抹去或写成整轮通过。
+
+补全 JSON 字段的显式类型收窄后，对导航顺序、两种提前完成及四种回答组装再做定向回归，**7 项通过**（`upload-final-type-regression.log`）。该轮与最后上传整轮均正常清理 RAM 临时目录。
+
+最终静态检查：全仓 `python -m ruff check .`、完整 `codey` 树的 `mypy`（709 文件）、`pyrefly`、`ty`（三者均显式指定 `--python-version 3.11`）以及 `python -m tools.kernel_type_precision_gate` 通过。生产 Pyrefly 按现有配置仍显示 35 suppressed / 160 warnings，本轮没有新增豁免。五个修改 Python 文件的 Pyrefly、ty 均无错误；mypy 的文件精度审计使用 `--follow-imports=silent --disallow-any-expr --disallow-any-explicit --disallow-any-generics`，五文件无诊断。此审计只证明这些文件，不代替展开导入依赖的检查。
+
+完整展开测试导入依赖的 mypy **仍未通过**：`final-mypy-imports.log` 保留了 5 个未修改辅助文件中的 **68 条既有诊断**，分别是 `tools/local_model_gate_attempts.py`（2）、`tests/support/provider_actions.py`（6）、`tests/support/kernel_runtime.py`（11）、`tests/test_session_log_receipt_recovery_preserves_facts.py`（48）、`tests/test_mechanical_surface.py`（1）。五个本轮修改文件自身无诊断。未更改检查配置或新增豁免；这些跨测试基础设施的类型债单列待审，不声称测试依赖树类型门禁已通过。所有检查日志仍在上述本机证据目录中。
+
 ## 配置与隔离
 
 每个候选配置单独与 A 配对；A 使用当前生产工具、完成门和绑定器，经已有真实 Headless/Chromium fixture 与 ExperimentProvider 文本 JSON schema 接入。它不是完整桌面产品的无干预基线。两侧都将可选第二模型审查标记为不可用，不伪造审查通过。

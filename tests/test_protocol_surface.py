@@ -14,6 +14,7 @@ import pytest
 from codey.automation.browser_session import BrowserSession, BrowserToolOutput
 from codey.codemode import catalog
 from codey.codemode.host import CodeModeHost
+from codey.codemode.json_edit import requires_content_edit
 from codey.codemode.kernel import build_execute_turn_executor
 from codey.codemode.replay import DurableCodeModeReplay
 from codey.codemode.runtime import NodeWorkerRuntime
@@ -22,6 +23,7 @@ from codey.durable import DurableSession
 from codey.operations import completion_gate
 from codey.operations.completion_context import CompletionContext
 from codey.operations.completion_output import prepare_completion_output
+from codey.operations.declared_field_input import free_program_required
 from codey.operations.kernel_execution import execute_turn
 from codey.operations.kernel_protocol import build_turn_snapshot
 from codey.operations.task_effects import KernelEffectSink
@@ -29,7 +31,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import declaration
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import BrowserTextSelector, ToolSuccessRequirement, require_tool_success
-from codey.providers.token_accounting import ContextBudget
+from codey.protocols.json_scanner import balanced_json_spans
 from codey.research.ledger import OpenedSource
 from codey.research.ledger_receipts import source_snapshot
 from codey.runtime.core.models import ToolCall, ToolResult
@@ -40,6 +42,7 @@ from codey.toolchain import tool_prompt
 from codey.types.json_value import (
     JsonObject,
     JsonValue,
+    canonical_json_object,
     decode_json_object,
     parse_json_object,
     require_json_string,
@@ -49,17 +52,23 @@ from codey.workspace.revision import WorkspaceRevisionStore
 from tests.test_mechanical_surface import read_result, record
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tests.test_session_log_receipt_recovery_preserves_facts import _dirs, _open_runtime
-from tests.test_structured_surface import plan, session, step
+from tests.test_structured_surface import ScriptedExperimentProvider, plan, session, step
 from tools import browser_production_live_gate as gate
 from tools import protocol_surface as surface
 from tools import protocol_surface_ab as probe
 from tools import receipt_bound_edit_ab as edit_probe
+from tools import receipt_bound_edit_surface_probe as surface_probe
 from tools import structured_surface
 from tools.browser_production_live_gate import DOWNLOAD_BYTES, URL
 from tools.completion_artifact_audit import EffectReceipt, artifacts, tool_receipts
-from tools.completion_explanation_ab import ExperimentProvider, Target
+from tools.completion_explanation_ab import Target
 
 TARGET = Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10)
+
+
+@pytest.fixture(autouse=True)
+def scripted_context_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(surface, "ExperimentProvider", ScriptedExperimentProvider)
 
 
 def no_service(_url: str) -> dict[str, object]:
@@ -81,7 +90,10 @@ def result_values(messages: object) -> list[JsonObject]:
     for message in object_rows(messages):
         content = message.get("content")
         if isinstance(content, str) and content.startswith("[result: codemode]\nResult data (JSON):"):
-            result = parse_json_object(content.split("Result data (JSON):\n", 1)[1].split("\n\nResult metadata:", 1)[0])
+            body = content.split("Result data (JSON):\n", 1)[1]
+            start, end = balanced_json_spans(body)[0]
+            assert start == 0
+            result = parse_json_object(body[start:end])
             values.append(decode_json_object(result["value"]))
     return values
 
@@ -288,7 +300,7 @@ def test_receipt_delivery_explains_missing_evidence_before_format(tmp_path: Path
     assert reason in verdict.followup and "output_format_invalid" not in verdict.followup
 
 
-def test_b3_frozen_permissions_descriptions_and_no_implicit_b1_defaults() -> None:
+def test_b3_preserves_current_production_wait_schema_and_permissions() -> None:
     snapshot = build_turn_snapshot(TaskSession(TaskPolicy(frozenset({"control", "project.read"}))))
     limited = surface.entry_schemas(snapshot, defaults=False, stale_refs=False)
     assert not {"edit", "browser_property", "browser_upload"} & limited.keys()
@@ -297,22 +309,57 @@ def test_b3_frozen_permissions_descriptions_and_no_implicit_b1_defaults() -> Non
     default_required = schemas(defaults=True)["browser_wait"]["required"]
     upload_required = entries["browser_upload"]["required"]
     assert isinstance(wait_required, list) and isinstance(default_required, list) and isinstance(upload_required, list)
-    assert "timeout_ms" in wait_required
+    production_wait = next(entry for entry in catalog.build_catalog_from_specs(
+        build_turn_snapshot(session()).frozen_specs).entries if entry.name == "browser_wait")
+    production_parameters = canonical_json_object(production_wait.parameters)
+    assert wait_required == production_parameters["required"]
+    assert "timeout_ms" not in wait_required
     assert "timeout_ms" not in default_required
+    assert decode_json_object(entries["browser_wait"]["properties"]) == decode_json_object(
+        schemas(defaults=True)["browser_wait"]["properties"])
+    assert entries["browser_wait"]["properties"] == production_parameters["properties"]
+    assert require_json_string(entries["browser_wait"]["description"], "description").split(
+        " Result data schema: ", 1)[0] == production_wait.description
     assert "Result data schema" in str(entries["browser_property"]["description"])
     assert "target_name" in upload_required
     assert "snapshot_id" not in decode_json_object(entries["browser_click"]["properties"])
 
 
-@pytest.mark.parametrize("defect", ["same_plan", "invented", "reread_old_handle", "missing_timeout", "illegal_property"])
+@pytest.mark.parametrize("defaults", [False, True])
+@pytest.mark.parametrize("timeout", [None, 100, 1234, 30000])
+def test_b3_wait_compilation_separates_production_defaults_from_b1_normalization(
+    defaults: bool, timeout: int | None,
+) -> None:
+    args: JsonObject = {"condition": "text", "value": "ready"}
+    if timeout is not None:
+        args["timeout_ms"] = timeout
+    original = dict(args)
+    compiled = surface.compile_plan({"steps": [step("wait", "browser_wait", args)]},
+                                    schemas(defaults=defaults), {}, defaults=defaults)
+    lowered, = object_rows(decode_json_object(compiled["inputs"])["steps"])
+    expected: JsonObject = {**args, "timeout_ms": surface.DEFAULT_WAIT_MS} if defaults and timeout is None else args
+    assert lowered["args"] == expected
+    assert args == original
+
+
+@pytest.mark.parametrize("defaults", [False, True])
+@pytest.mark.parametrize("timeout", [None, True, "5000", 99, 30001])
+def test_b3_invalid_explicit_wait_is_rejected_before_execution(defaults: bool, timeout: JsonValue) -> None:
+    with pytest.raises(ValueError, match="timeout_ms"):
+        surface.compile_plan({"steps": [step("wait", "browser_wait", {
+            "condition": "text", "value": "ready", "timeout_ms": timeout})]},
+            schemas(defaults=defaults), {}, defaults=defaults)
+
+
+@pytest.mark.parametrize("defect", ["same_plan", "invented", "reread_old_handle", "missing_condition", "illegal_property"])
 def test_b3_invalid_plan_has_no_effect(defect: str) -> None:
     reads: JsonObject = {"receipt-1": {"path": "result.json", "result_ref": "receipt-1"}}
     steps: list[JsonValue] = [step("read", "read_file", {"path": "result.json"})]
     if defect in {"same_plan", "invented", "reread_old_handle"}:
         handle = "receipt-1" if defect == "reread_old_handle" else "read" if defect == "same_plan" else "invented"
         steps.append(step("edit", "edit", {"read_handle": handle, "content": "{}"}))
-    elif defect == "missing_timeout":
-        steps.append(step("wait", "browser_wait", {"condition": "text", "value": "ready"}))
+    elif defect == "missing_condition":
+        steps.append(step("wait", "browser_wait", {"value": "ready"}))
     else:
         steps.append(step("property", "browser_property", {"name": "x;bad()"}))
     with pytest.raises(ValueError):
@@ -550,12 +597,6 @@ def test_b3_real_conflict_observation_boundary_and_external_field_preservation(t
 def test_edit_boundary_rejects_new_receipt_for_precomposed_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str,
 ) -> None:
-    class ScriptedProvider(ExperimentProvider):
-        @property
-        def context_budget(self) -> ContextBudget:
-            return replace(super().context_budget, window_tokens=65536)
-
-    monkeypatch.setattr(surface, "ExperimentProvider", ScriptedProvider)
     external = {"marker": secrets.token_hex(16)}
     monkeypatch.setattr(gate, "EXTERNAL_FIELD", external)
     exchange = 0
@@ -803,7 +844,6 @@ def test_production_hybrid_completes_with_misfiled_browser_receipt(
         "return {browser_ref:browser.result_ref};")
     calls = 0
     browser_ref = ""
-    prefix = "[result: codemode]\nResult data (JSON):\n"
 
     def scripted(url: str, payload: dict[str, object], headers: dict[str, str], **kwargs: object) -> dict[str, object]:
         nonlocal calls, browser_ref
@@ -818,10 +858,8 @@ def test_production_hybrid_completes_with_misfiled_browser_receipt(
             messages = payload["messages"]
             assert isinstance(messages, list)
             if not browser_ref:
-                result = next(str(m["content"]) for m in messages if isinstance(m, dict)
-                              and str(m.get("content", "")).startswith(prefix))
-                payload_value = decode_json_object(parse_json_object(result[len(prefix):].split("\n\nResult metadata:", 1)[0]))
-                browser_ref = require_json_string(decode_json_object(payload_value["value"])["browser_ref"], "browser_ref")
+                payload_value = next(value for value in result_values(messages) if "browser_ref" in value)
+                browser_ref = require_json_string(payload_value["browser_ref"], "browser_ref")
             action = {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851，已更新项目文件。",
                 "knowledge_refs": [{"id": browser_ref, "revision": 1}]}}
         return surface.script_body(action)
@@ -894,7 +932,10 @@ def test_b3_real_upload_uses_control_name_and_preserves_raw_result_types(tmp_pat
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
-def test_b1_real_wait_omission_uses_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(("arm", "config"), [("A", "B1"), ("B", "B1"), ("B", "B3"), ("B", "combined")])
+def test_real_wait_omission_uses_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, config: str,
+) -> None:
     code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
         "let s=unwrap(await tools.browser_snapshot({}));"
         "unwrap(await tools.browser_fill({ref:s.elements.find(e=>e.name==='Locality').ref,value:'福州'}));"
@@ -902,10 +943,15 @@ def test_b1_real_wait_omission_uses_default(tmp_path: Path, monkeypatch: pytest.
         "unwrap(await tools.browser_click({ref:s.elements.find(e=>e.name==='Load record').ref}));"
         "unwrap(await tools.browser_wait({condition:'text',value:'鱼丸'}));"
         "return unwrap(await tools.browser_read({}));")
-    install_http(monkeypatch, [{"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}},
+    action: JsonObject = {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL}}}
+    if arm == "B" and config in {"B3", "combined"}:
+        steps = browser_steps()
+        steps[-2] = step("wait", "browser_wait", {"condition": "text", "value": "鱼丸"})
+        action = plan(*steps)
+    install_http(monkeypatch, [action,
         {"tool": "done", "args": {"summary": "净重 173 克，校验码 QUARTZ_851。"}}])
     directory = tmp_path / "run"
-    row = probe.run_arm(directory, "basic", "B", "B1", TARGET, max_turns=3)
+    row = probe.run_arm(directory, "basic", arm, config, TARGET, max_turns=3)
     assert row["passed"], row
     from tools.completion_artifact_audit import tool_receipts
 
@@ -1065,9 +1111,10 @@ def page_reset_action(*, navigate: bool = True, reread: bool = False) -> JsonObj
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 @pytest.mark.parametrize(("scenario", "invalid_args", "error"), [
-    ("basic", "condition:'text',value:'鱼丸'", "browser_wait missing required arg 'timeout_ms'"),
-    ("snapshot_restore", "condition:'invalid',value:'鱼丸',timeout_ms:5000", "browser_wait arg 'condition'"),
-    ("stale_ref", "condition:'text',value:'鱼丸',timeout_ms:30001", "browser_wait arg 'timeout_ms'"),
+    ("basic", "condition:'text',value:'鱼丸',timeout_ms:null", "browser_wait arg 'args.timeout_ms' must be integer"),
+    ("snapshot_restore", "condition:'invalid',value:'鱼丸',timeout_ms:5000",
+     "browser_wait arg 'args.condition' must be one of ['text', 'selector', 'url_contains']"),
+    ("stale_ref", "condition:'text',value:'鱼丸',timeout_ms:30001", "browser_wait arg 'args.timeout_ms' must be <= 30000"),
 ])
 def test_production_wait_validates_before_durable_child_registration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, scenario: str, invalid_args: str, error: str,
@@ -1434,9 +1481,14 @@ def test_combination_checks_evidence_content(tmp_path: Path, monkeypatch: pytest
             probe.check_evidence(paths, TARGET)
 
 
-def test_neutral_task_is_identical_for_both_arms() -> None:
+@pytest.mark.parametrize("scenario", ["basic", "hybrid", "stale_edit"])
+def test_neutral_task_is_identical_for_both_arms(scenario: str) -> None:
     task = "browser_read 返回字符串，直接 return unwrap(await tools.browser_read({}))，不要再取 .text。读取实际记录。"
-    assert probe.task_text(task, "basic") == "读取实际记录。"
+    business = "读取实际记录。"
+    actual = probe.task_text(task, scenario)
+    assert actual == surface_probe.content_edit_task(business, scenario)
+    assert free_program_required(actual) is (scenario != "basic")
+    assert requires_content_edit(actual) is (scenario != "basic")
 
 
 def test_matrix_preserves_negative_baseline_and_alternates_pairs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

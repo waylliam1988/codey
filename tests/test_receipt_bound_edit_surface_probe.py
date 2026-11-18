@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from codey.storage.input_attachments import InputAttachmentStore
-from codey.types.json_value import JsonObject
+from codey.types.json_value import JsonObject, parse_json_object, require_json_string
 from tools import receipt_bound_edit_surface_probe as probe
 from tools.browser_production_live_gate import URL, run_case
 from tools.completion_artifact_audit import tool_receipts
@@ -29,32 +29,43 @@ def install_http(monkeypatch: pytest.MonkeyPatch, replies: Iterable[JsonObject])
                               "finish_reason": "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5}}
 
     monkeypatch.setattr("codey.providers.api_generation.generate", scripted)
-    monkeypatch.setattr("tools.completion_explanation_ab.service_state", lambda _url: {})
+    def no_service(_url: str) -> dict[str, object]:
+        return {}
+
+    monkeypatch.setattr("tools.completion_explanation_ab.service_state", no_service)
 
 
 def run_prefetched_upload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, strict: bool,
-                         read_before_upload: bool = False) -> dict[str, object]:
+                         premature_completion: bool = False) -> dict[str, object]:
+    from tests.test_browser_structured_upload_production import action
+
     attachment = InputAttachmentStore(tmp_path / "inputs", "upload-test").put(
         "fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode())
     identity = str(attachment["id"])
-    read = "return unwrap(await tools.browser_read({}));"
-    code = ("const s=unwrap(await tools.browser_snapshot({}));"
-            "const ref=s.elements.find(e=>e.name==='Attachment').ref;"
-            "unwrap(await tools.browser_upload({ref,attachment_id:inputs.attachment}));"
-            "unwrap(await tools.browser_wait({condition:'text',value:'UPLOAD_BYTES_82',timeout_ms:5000}));")
-    code = "unwrap(await tools.browser_read({}));" + code + "return null;" if read_before_upload else code + read
-    summary: JsonObject = {"tool": "done", "args": {"summary": "已成功上传，服务器确认接收。" if strict else
-                                                    f"文件名：fixture.txt\n内容标记：UPLOAD_BYTES_82\nSHA256：{identity}"}}
+    summary: JsonObject = {"tool": "done", "args": {"paragraphs": ["已成功上传，服务器确认接收。"]} if strict else {
+        "summary": f"文件名：fixture.txt\n内容标记：UPLOAD_BYTES_82\nSHA256：{identity}"}}
+    corrected: JsonObject = {"tool": "done", "args": {
+        "paragraphs": ["已在网页选中附件。已读取选择后的页面。服务器接收状态未核验。"]}}
     replies: list[JsonObject] = [
-        {"tool": "codemode", "args": {"code": code, "inputs": {"attachment": identity}}}, summary,
+        action("observe"), action("select", target={"name": "Attachment"}, attachment_id=identity),
     ]
-    if read_before_upload:
-        replies.append({"tool": "codemode", "args": {"code": read}})
-    install_http(monkeypatch, [*replies, summary, summary])
-    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", lambda *_args, **_kwargs: {})
-    monkeypatch.setattr("codey.app.review_service.run_review", lambda *_args, **_kwargs: None)
+    if premature_completion:
+        replies.append(summary)
+    replies.extend([action("read", wait_for_text="UPLOAD_BYTES_82"), summary])
+    if strict:
+        replies.append(corrected)
+    install_http(monkeypatch, replies)
+
+    def no_tabs(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {}
+
+    def no_review(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("codey.app.provider_services.provider_tab_availability", no_tabs)
+    monkeypatch.setattr("codey.app.review_service.run_review", no_review)
     return run_case(tmp_path / "run", "chat", Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10),
-                    max_turns=4, upload_file=True, assembled_upload=strict, upload_navigation_required=strict)
+                    max_turns=len(replies), upload_file=True, assembled_upload=strict, upload_navigation_required=strict)
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
@@ -89,25 +100,26 @@ def test_required_navigation_commits_before_the_first_upload_on_a_prefetched_pag
     assert all(step.ok for step in steps)
     documents = [step.audit["browser_document"] for step in steps[1:]]
     assert documents[0] == documents[1] == documents[2]
-    output = json.loads(str(row["answer"]))
+    output = parse_json_object(str(row["answer"]))
     assert output["sha256"] == hashlib.sha256(b"UPLOAD_BYTES_82\n").hexdigest()
     assert set(output) == {"explanation", "filename", "sha256", "page_text"}
-    assert output["filename"] == "fixture.txt" and "UPLOAD_BYTES_82" in output["page_text"]
+    assert output["filename"] == "fixture.txt" and "UPLOAD_BYTES_82" in require_json_string(output["page_text"], "page_text")
     assert output["explanation"] == "已在网页选中附件。已读取选择后的页面。服务器接收状态未核验。"
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
 @pytest.mark.parametrize("strict", [False, True])
-def test_upload_report_requires_a_post_selection_read_without_repeating_the_upload(
+def test_upload_report_requires_a_post_selection_read_even_with_prefetched_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, strict: bool,
 ) -> None:
-    row = run_prefetched_upload(tmp_path, monkeypatch, strict=strict, read_before_upload=True)
+    row = run_prefetched_upload(tmp_path, monkeypatch, strict=strict, premature_completion=True)
     assert row["passed"] is True and row["stop_reason"] == "done", row
     rejection = row["first_rejection"]
     assert isinstance(rejection, dict) and "after selecting the attachment" in str(rejection["reason"])
     receipts = tool_receipts(tmp_path / "run" / "state")
     assert [receipt.result.call.name for receipt in receipts
-            if receipt.result.call.name in {"browser_read", "browser_upload"}] == ["browser_read", "browser_upload", "browser_read"]
+            if receipt.result.call.name in {"open_url", "browser_read", "browser_upload"}] == [
+                "open_url", "browser_upload", "browser_read"]
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
@@ -116,35 +128,32 @@ def test_upload_report_requires_a_post_selection_read_without_repeating_the_uplo
 def test_upload_assembly_uses_receipts_when_model_summary_omits_facts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arm: str, assembled: bool,
 ) -> None:
+    from tests.test_browser_structured_upload_production import action
+
     attachment = InputAttachmentStore(tmp_path / "inputs", "upload-test").put(
         "fixture.txt", base64.b64encode(b"UPLOAD_BYTES_82\n").decode())
-    code = ("unwrap(await tools.browser_navigate({url:inputs.url}));"
-            "const s=unwrap(await tools.browser_snapshot({}));"
-            "const ref=s.elements.find(e=>e.name==='Attachment').ref;"
-            "const upload=unwrap(await tools.browser_upload({ref,attachment_id:inputs.attachment}));"
-            "unwrap(await tools.browser_wait({condition:'text',value:'UPLOAD_BYTES_82',timeout_ms:5000}));"
-            "const body=unwrap(await tools.browser_read({})); return {upload,body};")
+    done_args: JsonObject = {"paragraphs": ["页面显示已选择的附件。"]} if assembled else {"summary": "页面显示已选择的附件。"}
     install_http(monkeypatch, [
-        {"tool": "codemode", "args": {"code": code, "inputs": {"url": URL, "attachment": str(attachment["id"])}}},
-        {"tool": "done", "args": {"summary": "页面显示已选择的附件。"}},
-        {"tool": "done", "args": {"summary": "页面显示已选择的附件。"}},
-        {"tool": "done", "args": {"summary": "页面显示已选择的附件。"}},
+        action("observe", url=URL),
+        action("select", target={"name": "Attachment"}, attachment_id=str(attachment["id"])),
+        action("read", wait_for_text="UPLOAD_BYTES_82"),
+        {"tool": "done", "args": done_args},
     ])
     row = probe.run_arm(tmp_path / "run", "upload_bound" if assembled else "upload", arm,
                         Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10), max_turns=4)
     assert row.get("stop_reason") == "done", row
     assert row["passed"] is True and row["facts_match"] is True, row
     assert row["receipt_report_available"] is True
-    report = json.loads((tmp_path / "run" / "receipt-report.json").read_text(encoding="utf-8"))
-    assert report["filename"] == "fixture.txt" and "UPLOAD_BYTES_82" in report["page_text"]
+    report = parse_json_object((tmp_path / "run" / "receipt-report.json").read_text(encoding="utf-8"))
+    assert report["filename"] == "fixture.txt" and "UPLOAD_BYTES_82" in require_json_string(report["page_text"], "page_text")
     assert report["effect_verified"] is False
     if assembled:
-        output = json.loads(str(row["answer"]))
+        output = parse_json_object(str(row["answer"]))
         assert output["sha256"] == report["sha256"]
         assert output["page_text"] == report["page_text"]
     else:
-        assert report["sha256"] in str(row["answer"])
-    assert row["model_calls"] == 2
+        assert require_json_string(report["sha256"], "sha256") in str(row["answer"])
+    assert row["model_calls"] == 4
 
 
 @pytest.mark.usefixtures("public_source_dns", "scripted_local_api_connection")
@@ -157,7 +166,7 @@ def test_fixed_source_attempt_generates_real_403_and_blocked(
                         Target("http://scripted.test/v1", "scripted-fixture", 123456789, 10), max_turns=4)
     assert row["passed"] and row["stop_reason"] == "blocked", row
     assert row["source_failure_receipts"] and row["model_calls"] == 1
-    request = json.loads((tmp_path / "run" / "request.json").read_text(encoding="utf-8"))
+    request = parse_json_object((tmp_path / "run" / "request.json").read_text(encoding="utf-8"))
     assert request["required_tools"] == [] and request["sources_open_required"] is True
     assert row["acquisition"] == "scripted-open-url"
 

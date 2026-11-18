@@ -413,7 +413,7 @@ def task_text(task: str, scenario: str) -> str:
     if scenario == "return_failure":
         task += ("诊断首步由脚本实际下载并读取页面，随后故意返回编码失败。"
                  "根据正式回执恢复结果交付，不要重新下载；不确定时明确说明。")
-    return task
+    return previous.content_edit_task(task, scenario)
 
 
 def artifact_metrics(directory: Path) -> JsonObject:

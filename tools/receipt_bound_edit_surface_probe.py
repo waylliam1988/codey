@@ -16,7 +16,7 @@ from typing import TypedDict
 from unittest.mock import patch
 
 from codey.runtime.core import cancellation
-from codey.types.json_value import JsonObject, JsonValue, decode_json_object
+from codey.types.json_value import JsonObject, JsonValue, decode_json_object, parse_json_object
 from tools import mechanical_surface, structured_surface
 from tools import receipt_bound_edit_ab as edit
 from tools.browser_production_live_gate import run_case, select_target
@@ -27,6 +27,15 @@ VERSION = "read-object-full-surface-v1"
 SCENARIOS = ("basic", "structured", "legacy_structured", "hybrid", "research", "snapshot_restore",
              "reread", "stale_ref", "stale_edit", "upload", "download", "source_failure",
              "upload_bound", "source_failure_fixed")
+
+
+def content_edit_task(task: str, scenario: str) -> str:
+    """Keep whole-file protocol diagnostics distinct from destination-only copies."""
+    if scenario in {"hybrid", "stale_edit"}:
+        task += ("本项为完整文件编辑接口诊断：必须手写 JavaScript。完整 read_file 后，"
+                 "使用 content 写入完整 JSON，以外层 Result.result_ref 作为 base_result_ref；"
+                 "遇到版本冲突后重新完整读取，基于新正文构造 content 并保留无关字段。")
+    return task
 
 
 class ScenarioOptions(TypedDict):
@@ -45,6 +54,21 @@ class ScenarioOptions(TypedDict):
     source_failure: bool
     source_attempt_only: bool
     fixed_source_attempt: bool
+
+
+class Options(argparse.Namespace):
+    run_dir: Path
+    scenario: str
+    repeats: int
+    timeout: float
+    budget: float
+    max_turns: int
+    mechanical_b: bool
+    structured_b: bool
+    kobold_base_url: str
+    worker_case: str | None
+    worker_arm: str | None
+    expected_model: str | None
 
 
 def upload_receipt_report(directory: Path) -> JsonObject:
@@ -95,9 +119,10 @@ def run_arm(directory: Path, scenario: str, arm: str, target: Target, *, max_tur
     with (edit.prototype_helper(directory, enabled=arm == "B" and not structured),
           mechanical_surface.prototype(directory, scenario, enabled=mechanical and arm == "B"),
           structured_surface.prototype(directory, scenario, enabled=structured and arm == "B"),
-          patch("codey.app.provider_services.provider_tab_availability", return_value={}),
+          patch("codey.app.provider_services.provider_tab_availability", return_value=dict[str, object]()),
           patch("codey.app.review_service.run_review", return_value=None)):
-        row = decode_json_object(run_case(directory, mode, target, max_turns=max_turns, **options))
+        row = decode_json_object(run_case(directory, mode, target, max_turns=max_turns,
+            task_transform=lambda task: content_edit_task(task, scenario), **options))
     after = edit.production_source_digest()
     row.update(scenario=scenario, arm=arm, source_before=before, source_after=after,
                source_stable=before == after, passed=row.get("passed") is True and before == after,
@@ -139,7 +164,7 @@ def run_worker(directory: Path, scenario: str, arm: str, target: Target, *, budg
     (directory / "worker.log").write_text(output + error, encoding="utf-8")
     summary = directory / "summary.json"
     if not error and summary.exists():
-        return decode_json_object(json.loads(summary.read_text(encoding="utf-8")))
+        return parse_json_object(summary.read_text(encoding="utf-8"))
     row: JsonObject = {"scenario": scenario, "arm": arm, "passed": False, "error": error or "missing worker summary"}
     # Preserve an incomplete worker's original result, rather than overwriting it.
     edit.write_json(directory / "worker-failure.json", row)
@@ -172,7 +197,7 @@ def main() -> int:
     parser.add_argument("--worker-case", choices=SCENARIOS, help=argparse.SUPPRESS)
     parser.add_argument("--worker-arm", choices=("A", "B"), help=argparse.SUPPRESS)
     parser.add_argument("--expected-model", help=argparse.SUPPRESS)
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=Options())
     if min(args.repeats, args.max_turns, args.timeout, args.budget) <= 0:
         parser.error("repeats, max-turns, timeout and budget must be positive")
     target = select_target(args.timeout, args.kobold_base_url)
@@ -228,13 +253,15 @@ def main() -> int:
             pair.mkdir()
             pair_rows: list[JsonObject] = []
             for arm in (("A", "B") if (index + repetition) % 2 == 0 else ("B", "A")):
-                print(json.dumps({"starting": scenario, "arm": arm, "repetition": repetition + 1}), flush=True)
+                starting: JsonObject = {"starting": scenario, "arm": arm, "repetition": repetition + 1}
+                print(json.dumps(starting), flush=True)
                 row = run_worker(pair / arm, scenario, arm, target, budget=args.budget,
                                  max_turns=args.max_turns, mechanical=args.mechanical_b, structured=args.structured_b)
                 rows.append(row)
                 pair_rows.append(row)
-                print(json.dumps({"scenario": scenario, "arm": arm, "passed": row["passed"],
-                                  "stop_reason": row.get("stop_reason"), "error": row.get("error")}), flush=True)
+                outcome: JsonObject = {"scenario": scenario, "arm": arm, "passed": row["passed"],
+                                       "stop_reason": row.get("stop_reason"), "error": row.get("error")}
+                print(json.dumps(outcome), flush=True)
                 edit.write_json(root / "progress.json", {"runs": list(rows), "pairs": pairs})
             pairs.append(pair_audit(pair, pair_rows))
     after = edit.production_source_digest()

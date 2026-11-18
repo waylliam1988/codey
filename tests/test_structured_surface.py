@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,7 @@ from codey.operations.task_session import TaskSession
 from codey.policies.output_requirement import declaration
 from codey.policies.task_policy import TaskPolicy
 from codey.policies.tool_requirement import require_tool_success
+from codey.providers.token_accounting import ContextBudget
 from codey.runtime.core.models import ToolCall, ToolResult
 from codey.runtime.write.mutation_line import RuntimeMutationLine
 from codey.storage.input_attachments import InputAttachmentStore
@@ -34,8 +36,21 @@ from tools import receipt_bound_edit_surface_probe as probe
 from tools import structured_surface as structured
 from tools.browser_production_live_gate import URL
 from tools.completion_artifact_audit import tool_receipts
-from tools.completion_explanation_ab import Target
+from tools.completion_explanation_ab import ExperimentProvider, Target
 from tools.receipt_bound_edit_recovery_probe import EXTERNAL_FIELD
+
+
+class ScriptedExperimentProvider(ExperimentProvider):
+    """Budget the full current schema for scripted protocol tests, not live A/B runs."""
+
+    @property
+    def context_budget(self) -> ContextBudget:
+        return replace(super().context_budget, window_tokens=65536)
+
+
+@pytest.fixture(autouse=True)
+def scripted_context_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(structured, "ExperimentProvider", ScriptedExperimentProvider)
 
 
 def session() -> TaskSession:
@@ -209,11 +224,11 @@ def test_durable_missing_parameter_keeps_root_cause_when_prechecked(tmp_path: Pa
                 turn=0, project_path=project, managed_outputs=managed, workspace_revision_store=revisions,
                 intent_sink=sink, durable=durable, session_id="s")
             result = execute_turn(s, [ToolCall("codemode", {"code":
-                "return unwrap(await tools.browser_wait({condition:'text',value:'ready'}));"}, call_id="parent")],
+                "return unwrap(await tools.browser_wait({value:'ready'}));"}, call_id="parent")],
                 executors={"codemode": executor}, run_id="r", effect_scope="probe", turn=0, project_path=project,
                 snapshot=snapshot, intent_sink=sink, durable=durable)[0]
         assert not result.ok
-        assert "timeout_ms" in result.model_text
+        assert "condition" in result.model_text
         assert result.canonical["child_effect_ids"] == []
         assert len(durable.effects("r")) == 1
     finally:
