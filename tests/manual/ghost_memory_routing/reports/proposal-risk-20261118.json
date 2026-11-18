@@ -1,0 +1,408 @@
+{
+  "status": "INCOMPLETE",
+  "stop_reason": "USER_INTERRUPTED",
+  "freeze_commit": "ede91617",
+  "production_decision": "NO_PROMOTION_INCOMPLETE",
+  "planned_cells": 240,
+  "completed_cells": 155,
+  "physical_attempt_records": 156,
+  "incomplete_attempts": 1,
+  "unstarted_cells": 84,
+  "retries": 0,
+  "interrupted_cell": {
+    "stream": 12,
+    "phase": 2,
+    "arm": "retrieval",
+    "response_present": false,
+    "usage_present": false,
+    "eventual_provider_outcome": "unknown"
+  },
+  "complete_streams": 12,
+  "started_streams": 13,
+  "complete_four_arm_phases": 38,
+  "reviews": 76,
+  "review_outcomes": [
+    {
+      "outcome": "hit",
+      "count": 45
+    },
+    {
+      "outcome": "miss",
+      "count": 7
+    },
+    {
+      "outcome": "unjudged",
+      "count": 24
+    }
+  ],
+  "judged_brier_observations": 52,
+  "descriptive_mean_brier": 0.1435642721836869,
+  "benefit_gate": null,
+  "cost_gate": null,
+  "prediction_quality_gate": null,
+  "eligible_for_production_boundaries": false,
+  "partial_arm_metrics": [
+    {
+      "arm": "none",
+      "completed_cells": 39,
+      "correct_cells": 8,
+      "valid_cells": 31,
+      "reported_input_tokens": 56420.0,
+      "reported_output_tokens": 632.0,
+      "observed_p95_ms": 2781.0000000026776
+    },
+    {
+      "arm": "retrieval",
+      "completed_cells": 38,
+      "correct_cells": 22,
+      "valid_cells": 38,
+      "reported_input_tokens": 163924.0,
+      "reported_output_tokens": 646.0,
+      "observed_p95_ms": 4406.000000002678
+    },
+    {
+      "arm": "counts",
+      "completed_cells": 39,
+      "correct_cells": 30,
+      "valid_cells": 39,
+      "reported_input_tokens": 172328.0,
+      "reported_output_tokens": 663.0,
+      "observed_p95_ms": 4547.000000005937
+    },
+    {
+      "arm": "forecast",
+      "completed_cells": 39,
+      "correct_cells": 30,
+      "valid_cells": 39,
+      "reported_input_tokens": 184438.0,
+      "reported_output_tokens": 663.0,
+      "observed_p95_ms": 4641.00000000326
+    }
+  ],
+  "total_saved_state_bytes": 501275.0,
+  "max_saved_state_bytes": 43269.0,
+  "full_local_live_directory_bytes": 60304150.0,
+  "source_hash_entries_compared": 729,
+  "unique_source_files_compared": 718,
+  "source_drift_outside_frozen_experiment": [
+    {
+      "path": "codey/ghost/project_goals.py",
+      "before_sha256": "CD1988ABC538FBA161BC6ACBAD96CEF278D1E3E05C23D44B2C93E66745895BDF",
+      "current_sha256": "848280454935935C869EDF3B8E2F12DA633180D5F52AC43972181EE99BD9C6EC"
+    },
+    {
+      "path": "codey/ghost/typed_fields.py",
+      "before_sha256": "F45550D02248CCFA64E79E917EED5B9CACF7EAB4CF837B2A2BD5910252C95990",
+      "current_sha256": "86F5E5897D3A182D8D96973D14D3696F9E31D5E0812138BBFB0247E98BE0CF7B"
+    },
+    {
+      "path": "codey/operations/ghost_context.py",
+      "before_sha256": "DB3D725C73D5A3B98FB234736879D3C1158289B0D69C00A2877E90E01F016851",
+      "current_sha256": "B4FABAF2E2F8E133DD6093A735FE68BEC0E61DBB86A21FB50FF38569D2377EB6"
+    },
+    {
+      "path": "codey/operations/kernel_request_builder.py",
+      "before_sha256": "EFDEC4F6A5B2644BB3844F11EE14F49F95A6AC0BF53751EEE9E2FB9810F00591",
+      "current_sha256": "DEF89AD37E7E98163EF6EE4E9006B8EECAA975104DBDF81523574CFD03D184FF"
+    },
+    {
+      "path": "codey/operations/project_adapter.py",
+      "before_sha256": "4125F2A07CC60EFA5EC9EA8A2C7D03AB3D7A33A49CFBA43E3C08B8907332ADE5",
+      "current_sha256": "89BBF4112DFAD65EAB0231D43893429986E11EEA85EE8495222025B1C6AB2AAD"
+    },
+    {
+      "path": "codey/operations/project_experiences.py",
+      "before_sha256": "15B723AA124408CE534A77DE0FEBF453D272A6B72687BB82389704BCBE933F4B",
+      "current_sha256": "FD8EEBA08D5470FF7FCE537C4EC43FFC3DAFA42DD0A455ECE62303BBF4485756"
+    },
+    {
+      "path": "codey/operations/project_goals.py",
+      "before_sha256": "EE66C6FBD3EE18C355B7B09662CEC7C82AF554BF5BF3081B58ABFF0D3B58361D",
+      "current_sha256": "B1E8F42A285DA39F3B9B7F950BACDF8CCB3803234ADD2C343B046634AF57C0C2"
+    },
+    {
+      "path": "codey/policies/permissions.py",
+      "before_sha256": "3B1CF15E90C80E05F22F7524C1E2DF5D345A647D44361E78ED6DE0F1FE9891DA",
+      "current_sha256": "FA596A9E5DC30C10F7C99CB0FE84185496AA2EAEA4E267D1BC5308424DA9289A"
+    },
+    {
+      "path": "tests/test_ghost_experience_role_budget.py",
+      "before_sha256": "21343EE29E58D5CF4774A629F20E982039FEAD75421A2A53AF981EF3967250E7",
+      "current_sha256": "C3DAA93F74A8BFF9737F853F39373AF4709B786F421D45E731536F06D8A6553B"
+    }
+  ],
+  "frozen_experiment_files_unchanged": true,
+  "limitations": [
+    "Partial descriptive metrics only; no full-matrix benefit, negative result, or cost decision.",
+    "No usage or latency is imputed for the interrupted attempt; token totals cover completed cells only.",
+    "Synthetic observations and mathematical action policy do not establish real-user satisfaction or calibration.",
+    "No additional generation, retry, prompt change, scorer change, or production wiring during closeout."
+  ],
+  "protocol": "docs/ghost_progress/proposal-risk-protocol-20261118.md",
+  "record": "docs/ghost_progress/proposal-risk-interrupted-20261118.md",
+  "final_action": "Close current batch, update documentation, commit, and stop as requested. Do not resume generation.",
+  "validation": {
+    "all_checks_passed": false,
+    "production_promotion": false,
+    "regressions": [
+      {
+        "command": "python -m pytest tests/test_proposal_risk_trial.py tests/test_semantic_goal_trial.py tests/test_interaction_feedback_trial.py tests/test_project_goal_production.py tests/test_project_experience_production.py tests/test_ghost_experience_role_budget.py -q",
+        "earlier_exit_code": 0,
+        "earlier_passed": 249,
+        "closeout_recheck_exit_code": 2,
+        "closeout_recheck_collection_errors": 6,
+        "recheck_log_written_utc": "2026-11-18T07:06:35.7326302Z",
+        "limitation": "Concurrent workspace edits changed imported interfaces after the earlier process loaded its modules and continued after the closeout recheck."
+      }
+    ],
+    "static_commands": [
+      {
+        "name": "ruff-final",
+        "exit_code": 1,
+        "seconds": 0.1604092,
+        "arguments": [
+          "-m",
+          "ruff",
+          "check",
+          "."
+        ]
+      },
+      {
+        "name": "mypy-production-final",
+        "exit_code": 1,
+        "seconds": 31.8511977,
+        "arguments": [
+          "-m",
+          "mypy",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "name": "pyrefly-production-final",
+        "exit_code": 0,
+        "seconds": 0.7481244,
+        "arguments": [
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "name": "ty-production-final",
+        "exit_code": 0,
+        "seconds": 0.5801143,
+        "arguments": [
+          "check",
+          "codey",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "name": "precision-final",
+        "exit_code": 0,
+        "seconds": 1.8222129,
+        "arguments": [
+          "-m",
+          "tools.kernel_type_precision_gate"
+        ]
+      },
+      {
+        "name": "mypy-owned-final",
+        "exit_code": 1,
+        "seconds": 12.3690786,
+        "arguments": [
+          "-m",
+          "mypy",
+          "codey/ghost/observation_index.py",
+          "codey/ghost/inbox.py",
+          "codey/operations/project_adapter.py",
+          "codey/operations/project_experiences.py",
+          "codey/operations/kernel_contracts.py",
+          "codey/operations/kernel_request_builder.py",
+          "codey/operations/kernel_actions.py",
+          "codey/policies/permissions.py",
+          "tests/test_ghost_experience_role_budget.py",
+          "tests/test_project_experience_production.py",
+          "tests/test_project_experience_continuity_trial.py",
+          "tests/manual/ghost_memory_routing/project_experience_continuity.py",
+          "tests/test_shell_approval_native_identity.py",
+          "tests/test_chat_shell_approval_preserves_workspace_and_intent.py",
+          "tests/manual/ghost_memory_routing/interaction_feedback_trial.py",
+          "tests/test_interaction_feedback_trial.py",
+          "codey/ghost/control_surface.py",
+          "codey/ghost/project_goals.py",
+          "codey/operations/project_goals.py",
+          "tests/test_project_goal_production.py",
+          "tests/manual/ghost_memory_routing/semantic_goal_trial.py",
+          "tests/test_semantic_goal_trial.py",
+          "tests/manual/ghost_memory_routing/proposal_risk_trial.py",
+          "tests/test_proposal_risk_trial.py",
+          "--python-version",
+          "3.11"
+        ]
+      },
+      {
+        "name": "pyrefly-owned-final",
+        "exit_code": 1,
+        "seconds": 0.4140568,
+        "arguments": [
+          "check",
+          "codey/ghost/observation_index.py",
+          "codey/ghost/inbox.py",
+          "codey/operations/project_adapter.py",
+          "codey/operations/project_experiences.py",
+          "codey/operations/kernel_contracts.py",
+          "codey/operations/kernel_request_builder.py",
+          "codey/operations/kernel_actions.py",
+          "codey/policies/permissions.py",
+          "tests/test_ghost_experience_role_budget.py",
+          "tests/test_project_experience_production.py",
+          "tests/test_project_experience_continuity_trial.py",
+          "tests/manual/ghost_memory_routing/project_experience_continuity.py",
+          "tests/test_shell_approval_native_identity.py",
+          "tests/test_chat_shell_approval_preserves_workspace_and_intent.py",
+          "tests/manual/ghost_memory_routing/interaction_feedback_trial.py",
+          "tests/test_interaction_feedback_trial.py",
+          "codey/ghost/control_surface.py",
+          "codey/ghost/project_goals.py",
+          "codey/operations/project_goals.py",
+          "tests/test_project_goal_production.py",
+          "tests/manual/ghost_memory_routing/semantic_goal_trial.py",
+          "tests/test_semantic_goal_trial.py",
+          "tests/manual/ghost_memory_routing/proposal_risk_trial.py",
+          "tests/test_proposal_risk_trial.py",
+          "--python-version",
+          "3.11",
+          "--output-format",
+          "min-text"
+        ]
+      },
+      {
+        "name": "ty-owned-final",
+        "exit_code": 1,
+        "seconds": 0.2581059,
+        "arguments": [
+          "check",
+          "codey/ghost/observation_index.py",
+          "codey/ghost/inbox.py",
+          "codey/operations/project_adapter.py",
+          "codey/operations/project_experiences.py",
+          "codey/operations/kernel_contracts.py",
+          "codey/operations/kernel_request_builder.py",
+          "codey/operations/kernel_actions.py",
+          "codey/policies/permissions.py",
+          "tests/test_ghost_experience_role_budget.py",
+          "tests/test_project_experience_production.py",
+          "tests/test_project_experience_continuity_trial.py",
+          "tests/manual/ghost_memory_routing/project_experience_continuity.py",
+          "tests/test_shell_approval_native_identity.py",
+          "tests/test_chat_shell_approval_preserves_workspace_and_intent.py",
+          "tests/manual/ghost_memory_routing/interaction_feedback_trial.py",
+          "tests/test_interaction_feedback_trial.py",
+          "codey/ghost/control_surface.py",
+          "codey/ghost/project_goals.py",
+          "codey/operations/project_goals.py",
+          "tests/test_project_goal_production.py",
+          "tests/manual/ghost_memory_routing/semantic_goal_trial.py",
+          "tests/test_semantic_goal_trial.py",
+          "tests/manual/ghost_memory_routing/proposal_risk_trial.py",
+          "tests/test_proposal_risk_trial.py",
+          "--python-version",
+          "3.11",
+          "--output-format",
+          "concise"
+        ]
+      },
+      {
+        "name": "any-owned-final",
+        "exit_code": 1,
+        "seconds": 28.6806817,
+        "arguments": [
+          "-m",
+          "mypy",
+          "codey/ghost/observation_index.py",
+          "codey/ghost/inbox.py",
+          "codey/operations/project_adapter.py",
+          "codey/operations/project_experiences.py",
+          "codey/operations/kernel_contracts.py",
+          "codey/operations/kernel_request_builder.py",
+          "codey/operations/kernel_actions.py",
+          "codey/policies/permissions.py",
+          "tests/test_ghost_experience_role_budget.py",
+          "tests/test_project_experience_production.py",
+          "tests/test_project_experience_continuity_trial.py",
+          "tests/manual/ghost_memory_routing/project_experience_continuity.py",
+          "tests/test_shell_approval_native_identity.py",
+          "tests/test_chat_shell_approval_preserves_workspace_and_intent.py",
+          "tests/manual/ghost_memory_routing/interaction_feedback_trial.py",
+          "tests/test_interaction_feedback_trial.py",
+          "codey/ghost/control_surface.py",
+          "codey/ghost/project_goals.py",
+          "codey/operations/project_goals.py",
+          "tests/test_project_goal_production.py",
+          "tests/manual/ghost_memory_routing/semantic_goal_trial.py",
+          "tests/test_semantic_goal_trial.py",
+          "tests/manual/ghost_memory_routing/proposal_risk_trial.py",
+          "tests/test_proposal_risk_trial.py",
+          "--python-version",
+          "3.11",
+          "--disallow-any-expr",
+          "--disallow-any-explicit"
+        ]
+      }
+    ],
+    "owned_files": [
+      "codey/ghost/observation_index.py",
+      "codey/ghost/inbox.py",
+      "codey/operations/project_adapter.py",
+      "codey/operations/project_experiences.py",
+      "codey/operations/kernel_contracts.py",
+      "codey/operations/kernel_request_builder.py",
+      "codey/operations/kernel_actions.py",
+      "codey/policies/permissions.py",
+      "tests/test_ghost_experience_role_budget.py",
+      "tests/test_project_experience_production.py",
+      "tests/test_project_experience_continuity_trial.py",
+      "tests/manual/ghost_memory_routing/project_experience_continuity.py",
+      "tests/test_shell_approval_native_identity.py",
+      "tests/test_chat_shell_approval_preserves_workspace_and_intent.py",
+      "tests/manual/ghost_memory_routing/interaction_feedback_trial.py",
+      "tests/test_interaction_feedback_trial.py",
+      "codey/ghost/control_surface.py",
+      "codey/ghost/project_goals.py",
+      "codey/operations/project_goals.py",
+      "tests/test_project_goal_production.py",
+      "tests/manual/ghost_memory_routing/semantic_goal_trial.py",
+      "tests/test_semantic_goal_trial.py",
+      "tests/manual/ghost_memory_routing/proposal_risk_trial.py",
+      "tests/test_proposal_risk_trial.py"
+    ],
+    "diagnostic_counts": [
+      {
+        "log": "mypy-owned-final",
+        "total_errors": 274,
+        "cumulative_owned_errors": 4,
+        "new_batch_file_errors": 0,
+        "dependency_errors": 270
+      },
+      {
+        "log": "any-owned-final",
+        "total_errors": 14053,
+        "cumulative_owned_errors": 8,
+        "new_batch_file_errors": 0,
+        "dependency_errors": 14045
+      }
+    ],
+    "blockers_at_check_time": [
+      "Ruff I001 in external project_goals.py import changes.",
+      "Production mypy assignment error in ghost_post_turn.py:71 after external typed ghost_context changes.",
+      "External removal of VERIFIED_PROJECT_EXPERIENCE_MODEL broke shared fixture imports in six regression modules.",
+      "External removal of VERIFIED_PROJECT_GOAL_MODEL and _configuration_enabled left three goal-test references unresolved."
+    ],
+    "resolution": "Preserve concurrent changes and hand final integration checks to their owning batch. These logs describe their check snapshots, not subsequent evolving source bytes. Do not claim full gates passed."
+  }
+}

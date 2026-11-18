@@ -1,8 +1,11 @@
 # Ghost 偏好投递与预算路由实验
 
-2026-11-18：[条件接受率/纠正成本冻结协议](../../../docs/ghost_progress/proposal-risk-protocol-20261118.md)，
-`proposal_risk_trial.py`及`tests/test_proposal_risk_trial.py`，155项相关契约通过。
-计划一次20流×3阶段×4臂矩阵；实际生成前冻结，尚无结果，不改变生产默认。
+2026-11-18：[条件接受率/纠正成本中断收尾](../../../docs/ghost_progress/proposal-risk-interrupted-20261118.md)，
+冻结`ede91617`，脚本`proposal_risk_trial.py`，状态`INCOMPLETE / USER_INTERRUPTED`。
+240格完成155格，另有一条无完整回执的尝试；不重试、不判阴性或收益、不晋级。
+较早249项相关回归通过；当前并行接口修改导致6项收集错误，静态阻塞见记录。
+原始证据留本地，脱敏报告`reports/proposal-risk-20261118.json`。
+收尾提交后停下，不能把局部统计算作完整实验，也不自动补跑。
 
 2026-11-18：[项目目标/新方案选择结果](../../../docs/ghost_progress/semantic-goal-result-20261118.md)，
 冻结`2b5946a8`、`semantic_goal_trial.py`；20条合成流、三阶段四臂240请求，output8192。
