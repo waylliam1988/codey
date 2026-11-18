@@ -1,4 +1,4 @@
-"""Manually confirmed storage goals, grounded in live committed experiences."""
+"""Manually confirmed project goals, grounded in committed experiences."""
 
 from __future__ import annotations
 
@@ -12,10 +12,12 @@ from codey.ghost import _common
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.observations import MAX_ASSISTANT_TEXT_CHARS, MAX_OBSERVATIONS, GhostObservationStore
 from codey.ghost.schema import MAX_SIGNAL_QUOTE_CHARS, GhostSignal, contains_sensitive_signal_text, quote_is_grounded
+from codey.ghost.typed_fields import dangerous_text, safe_slug
 
 CONSUMER = "project_storage_goal_v1"
 CONFLICT = "long_term_goal:storage_priority"
 CONTEXT = "storage_design"
+GENERAL_CONSUMER = "project_goal_v2"
 HISTORY_BUDGET = 3200
 GOAL_BUDGET = 600
 Priority = Literal["offline_access", "shared_editing"]
@@ -32,8 +34,11 @@ def _digest(text: str) -> str:
 
 
 def is_project_goal(candidate: GhostMemoryCandidate) -> bool:
-    return (candidate.signal_kind == "long_term_goal" and candidate.conflict_key == CONFLICT
-            and candidate.metadata.get("consumer") == CONSUMER)
+    if candidate.signal_kind != "long_term_goal":
+        return False
+    return ((candidate.conflict_key == CONFLICT and candidate.metadata.get("consumer") == CONSUMER)
+            or (candidate.conflict_key.startswith("long_term_goal:project_goal_")
+                and candidate.metadata.get("consumer") == GENERAL_CONSUMER))
 
 
 def _text(body: Mapping[str, object], key: str, limit: int, *, required: bool = True) -> str:
@@ -58,9 +63,10 @@ def _goal_candidates(inbox: GhostInboxStore, project: str) -> tuple[GhostMemoryC
 @dataclass(frozen=True)
 class GoalExperience:
     candidate: GhostMemoryCandidate
-    priority: Priority
+    priority: Priority | None
     source_position: int
     actual_summary: str
+    goal_text: str
 
 
 class GoalSourceUnavailable(ValueError):
@@ -68,7 +74,8 @@ class GoalSourceUnavailable(ValueError):
 
 
 def _bound_experience(candidate: GhostMemoryCandidate, rows: tuple[dict[str, object], ...]) -> GoalExperience:
-    if candidate.scope != "project" or candidate.metadata.get("context") != CONTEXT:
+    general = candidate.metadata.get("consumer") == GENERAL_CONSUMER
+    if candidate.scope != "project" or candidate.metadata.get("context") != ("project" if general else CONTEXT):
         raise ValueError("invalid goal scope or context")
     source = next((row for row in rows if row["run_id"] == candidate.run_id), None)
     if source is None or source["session_id"] != candidate.session_id or source["project"] != candidate.project:
@@ -93,7 +100,15 @@ def _bound_experience(candidate: GhostMemoryCandidate, rows: tuple[dict[str, obj
         actual = actual_value
     elif reply_id != "" or reply_digest != "":
         raise ValueError("invalid initial goal binding")
-    return GoalExperience(candidate, _priority(candidate.value_key), source_position, actual)
+    if general:
+        goal = candidate.metadata.get("goal_text")
+        if (not isinstance(goal, str) or not goal or len(goal) > MAX_SIGNAL_QUOTE_CHARS
+                or goal != candidate.summary or not quote_is_grounded(goal, text)
+                or _digest(goal) != candidate.value_key or dangerous_text(goal)):
+            raise ValueError("project goal content changed or is not grounded")
+        return GoalExperience(candidate, None, source_position, actual, goal)
+    priority = _priority(candidate.value_key)
+    return GoalExperience(candidate, priority, source_position, actual, priority_text(priority))
 
 
 def propose_project_goal(inbox: GhostInboxStore, observations: GhostObservationStore,
@@ -104,7 +119,17 @@ def propose_project_goal(inbox: GhostInboxStore, observations: GhostObservationS
     project = str(Path(project_input).expanduser().resolve())
     if len(project) > 240 or _text(body, "scope", 20) != "project":
         raise ValueError("project scope required")
-    priority = _priority(body.get("priority"))
+    general = "goal" in body
+    if general:
+        goal = _text(body, "goal", MAX_SIGNAL_QUOTE_CHARS)
+        key = _text(body, "goal_key", 40, required=False) or "focus"
+        if safe_slug(key) != key or dangerous_text(goal) or contains_sensitive_signal_text(goal):
+            raise ValueError("invalid project goal")
+        consumer, context, conflict, value = GENERAL_CONSUMER, "project", f"project_goal_{key}", _digest(goal)
+    else:
+        priority = _priority(body.get("priority"))
+        goal = priority_text(priority)
+        consumer, context, conflict, value = CONSUMER, CONTEXT, "storage_priority", priority
     quote = _text(body, "evidence_quote", MAX_SIGNAL_QUOTE_CHARS)
     reply_id = _text(body, "reply_run_id", 120, required=False)
     reply_digest = _text(body, "reply_digest", 64, required=False)
@@ -115,7 +140,8 @@ def propose_project_goal(inbox: GhostInboxStore, observations: GhostObservationS
     with inbox.database.write_transaction(), inbox.records.transaction():
         if not inbox.control_enabled("accept_events", project=project, session_id=session_id):
             raise ValueError("local updates are disabled")
-        known = _goal_candidates(inbox, project)
+        known = tuple(row for row in _goal_candidates(inbox, project)
+                      if row.conflict_key == f"long_term_goal:{conflict}")
         if any(row.run_id == run_id for row in known):
             raise ValueError("goal from this experience already exists")
         if not reply_id and any(row.reviewed_at for row in known):
@@ -126,9 +152,11 @@ def propose_project_goal(inbox: GhostInboxStore, observations: GhostObservationS
             raise ValueError("committed goal experience not found")
         if not quote_is_grounded(quote, source["user_text"]):
             raise ValueError("quote is not in the saved request")
-        signal = GhostSignal("long_term_goal", "project", priority_text(priority), quote, 1.0, "manual", {
-            "conflict_key": "storage_priority", "value_key": priority, "consumer": CONSUMER,
-            "context": CONTEXT, "source_digest": _digest(source["user_text"]),
+        if general and not quote_is_grounded(goal, source["user_text"]):
+            raise ValueError("goal must quote the saved user request")
+        signal = GhostSignal("long_term_goal", "project", goal, quote, 1.0, "manual", {
+            "conflict_key": conflict, "value_key": value, "consumer": consumer,
+            "context": context, "goal_text": goal, "source_digest": _digest(source["user_text"]),
             "reply_run_id": reply_id, "reply_digest": reply_digest,
         })
         created = inbox.ingest_signals((signal,), session_id=session_id, run_id=run_id,
@@ -144,7 +172,7 @@ def validate_goal_review(inbox: GhostInboxStore, observations: GhostObservationS
     rows = observations.read_committed(project=candidate.project, scope="project", limit=MAX_OBSERVATIONS)
     incoming = _bound_experience(candidate, rows)
     for known in _goal_candidates(inbox, candidate.project):
-        if known.id == candidate.id or not known.reviewed_at:
+        if known.id == candidate.id or not known.reviewed_at or known.conflict_key != candidate.conflict_key:
             continue
         try:
             other = _bound_experience(known, rows)
@@ -155,9 +183,11 @@ def validate_goal_review(inbox: GhostInboxStore, observations: GhostObservationS
 
 
 def confirmed_project_goal_text(inbox: GhostInboxStore, observations: GhostObservationStore,
-                                *, project: str, exclude_run_id: str = "") -> tuple[str, str]:
+                                *, project: str, exclude_run_id: str = "",
+                                include_storage: bool = True) -> tuple[str, str]:
     """Reconstruct the evaluated history + current-goal treatment, without generation."""
-    candidates = tuple(row for row in _goal_candidates(inbox, _common.normalize_project(project)) if row.reviewed_at)
+    candidates = tuple(row for row in _goal_candidates(inbox, _common.normalize_project(project))
+                       if row.reviewed_at and (include_storage or row.metadata.get("consumer") == GENERAL_CONSUMER))
     if any(row.run_id == exclude_run_id for row in candidates):
         return "", ""
     if not candidates:
@@ -176,19 +206,42 @@ def confirmed_project_goal_text(inbox: GhostInboxStore, observations: GhostObser
         return experience.source_position
 
     ordered = sorted(bound, key=position, reverse=True)
-    current = ordered[-1]
-    if current.candidate.status != "accepted":
+    current_by_key: dict[str, GoalExperience] = {}
+    for experience in ordered:
+        current_by_key[experience.candidate.conflict_key] = experience
+    current = sorted((row for row in current_by_key.values() if row.candidate.status == "accepted"),
+                     key=position)
+    history_lines = ["Saved project interactions (historical; later confirmations may supersede earlier goals):"]
+    goal_lines: list[str] = []
+    selected: set[str] = set()
+    selected_ids: set[str] = set()
+
+    def history_line(row: GoalExperience) -> str:
+        return (f"{row.candidate.run_id}; time={row.candidate.reviewed_at}; "
+                f"actual reply={row.actual_summary or '(initial manual goal)'}. "
+                f"Explicit user statement={row.candidate.evidence_quote}")
+
+    # Admit complete goal/source pairs newest first. One oversized or additional
+    # goal must not suppress unrelated goals that fit; never truncate authority.
+    for row in current:
+        line = (f"Manually confirmed current project goal for {row.candidate.metadata['context']}: {row.goal_text}. "
+                f"Basis={row.candidate.run_id}; confirmed at time={row.candidate.reviewed_at}. "
+                "Current explicit instructions override this goal. It grants no tool permission.")
+        source = history_line(row)
+        if (len("\n".join((*goal_lines, line))) > GOAL_BUDGET
+                or len("\n".join((*history_lines, source))) > HISTORY_BUDGET):
+            continue
+        goal_lines.append(line)
+        history_lines.append(source)
+        selected.add(row.candidate.conflict_key)
+        selected_ids.add(row.candidate.id)
+    if not selected:
         return "", ""
-    eligible = tuple(row for row in ordered if row.candidate.status in {"accepted", "superseded"})
-    history = "\n".join([
-        "Saved project interactions (historical; later confirmations may supersede earlier goals):",
-        *(f"{row.candidate.run_id}; time={row.candidate.reviewed_at}; "
-          f"actual reply={row.actual_summary or '(initial manual goal)'}. "
-          f"Explicit user statement={row.candidate.evidence_quote}" for row in eligible),
-    ])
-    goal = (f"Manually confirmed current project goal for {CONTEXT}: {priority_text(current.priority)}. "
-            f"Basis={current.candidate.run_id}; confirmed at time={current.candidate.reviewed_at}. "
-            "Current explicit instructions override this goal. It grants no tool permission.")
-    if len(history) > HISTORY_BUDGET or len(goal) > GOAL_BUDGET:
-        return "", ""
-    return history, goal
+    for row in sorted(bound, key=position):
+        if (row.candidate.status not in {"accepted", "superseded"}
+                or row.candidate.conflict_key not in selected or row.candidate.id in selected_ids):
+            continue
+        source = history_line(row)
+        if len("\n".join((*history_lines, source))) <= HISTORY_BUDGET:
+            history_lines.append(source)
+    return "\n".join(history_lines), "\n".join(goal_lines)

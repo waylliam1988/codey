@@ -13,7 +13,7 @@ from codey.agents.request import AgentRequest
 from codey.ghost.payload_types import object_fields
 from codey.operations.generation_boundary import durable_generation_boundary_callback
 from codey.operations.kernel_request_builder import KernelRunRequestBuilder
-from codey.operations.project_experiences import validated_project_experiences
+from codey.operations.project_experiences import validated_project_experiences, validated_project_preferences
 from codey.operations.project_goals import validated_project_goal_sources
 from codey.operations.provider_session import ConversationProvider
 from codey.operations.task_effects import KernelEffectSink
@@ -37,7 +37,7 @@ class _ProjectPolicyInput:
     denied_capabilities: tuple[str, ...]
 
 
-def _project_context(request: AgentRequest, *, experiences: str = "") -> str:
+def _project_context(request: AgentRequest, *, experiences: str = "", directive: str | None = None) -> str:
     from codey.agents.context import build_agent_context, load_project_instructions
     from codey.agents.tools import DEFAULT_TOOL_FNS
     from codey.policies.permissions import profile_for_name
@@ -57,7 +57,7 @@ def _project_context(request: AgentRequest, *, experiences: str = "") -> str:
         project_map=request.project_map,
         project_config_warnings=request.project_config_warnings,
         work_checkpoint=request.work_checkpoint,
-        ghost_directive=request.ghost_directive if request.admit_hints else "",
+        ghost_directive=(request.ghost_directive if directive is None else directive) if request.admit_hints else "",
         ghost_continuity=request.ghost_continuity if request.admit_hints else "",
         ghost_experiences=experiences,
         completion_repair_context=request.completion_repair_context,
@@ -91,7 +91,7 @@ def _project_ghost_sources(request: AgentRequest) -> tuple[GhostContextSource, .
     if not request.admit_hints:
         return ()
     return (*sources_from_values(
-        directive=(request.ghost_directive
+        directive=(validated_project_preferences(request)
                    if allows_context_source(profile, "ghost_directive") else ""),
         continuity=(request.ghost_continuity
                     if allows_context_source(profile, "ghost_continuity") else ""),
@@ -265,7 +265,8 @@ def run(request: AgentRequest) -> RunResult:
 
     goal_context = "\n\n".join(source.text for source in ghost_sources
                                if source.key in {"ghost_project_goal_history", "ghost_confirmed_project_goal"})
-    context_text = _project_context(request, experiences=experiences)
+    directive = next((source.text for source in ghost_sources if source.key == "ghost_directive"), "")
+    context_text = _project_context(request, experiences=experiences, directive=directive)
     if goal_context:
         context_text = f"{context_text}\n\n{goal_context}"
     outcome = run_task_kernel(

@@ -16,10 +16,7 @@ from codey.toolchain.definition import TOOL_DEFINITIONS
 
 class PermissionProfileTests(unittest.TestCase):
     def test_expected_profiles_exist_and_are_internal(self) -> None:
-        self.assertEqual(
-            set(PERMISSION_PROFILES),
-            {"chat", "research", "coding_writer", "reviewer", "planning_readonly"},
-        )
+        self.assertTrue(set(PERMISSION_PROFILES) == {"chat", "research", "coding_writer", "reviewer", "planning_readonly"})
         for profile in PERMISSION_PROFILES.values():
             with self.subTest(profile=profile.name):
                 self.assertFalse(profile.user_visible)
@@ -30,23 +27,19 @@ class PermissionProfileTests(unittest.TestCase):
         self.assertTrue(profile.project_read)
         self.assertTrue(profile.project_write)
         self.assertTrue(profile.can_request_shell)
-        self.assertEqual(
-            set(allowed_coding_tool_names(profile)),
-            {definition.name for definition in TOOL_DEFINITIONS},
-        )
+        self.assertTrue(set(allowed_coding_tool_names(profile)) == {definition.name for definition in TOOL_DEFINITIONS})
         self.assertIn("edit", allowed_coding_tool_names(profile))
         self.assertIn("run", allowed_coding_tool_names(profile))
         self.assertIn("shell", allowed_coding_tool_names(profile))
         self.assertTrue(allows_context_source(profile, "coding_current_context"))
-        self.assertFalse(allows_context_source(profile, "ghost_directive"))
+        self.assertTrue(allows_context_source(profile, "ghost_directive"))
         self.assertFalse(allows_context_source(profile, "ghost_continuity"))
 
     def test_planning_readonly_excludes_mutating_and_verification_tools(self) -> None:
         tools = set(allowed_coding_tool_names("planning_readonly"))
 
-        self.assertEqual(
-            tools,
-            {
+        self.assertTrue(
+            tools == {
                 "list_dir",
                 "read_file",
                 "read_files",
@@ -54,7 +47,7 @@ class PermissionProfileTests(unittest.TestCase):
                 "find_references",
                 "parallel",
                 "done",
-            },
+            }
         )
         self.assertFalse(profile_for_name("planning_readonly").project_write)
         self.assertNotIn("edit", tools)
@@ -77,13 +70,11 @@ class PermissionProfileTests(unittest.TestCase):
         # The static Research profile contains acquisition and read tools only.
         # Whole-answer submission is exposed by its frozen answer scope; legacy
         # split-plan tools are kept out of the product profile.
-        self.assertEqual(
-            set(research.research_tools),
-            {"knowledge_search", "knowledge_read", "web_search", "open_url", "source_search", "done"},
-        )
-        self.assertFalse(allows_context_source(research, "ghost_directive"))
+        self.assertTrue(set(research.research_tools) == {
+            "knowledge_search", "knowledge_read", "web_search", "open_url", "source_search", "done"})
+        self.assertTrue(allows_context_source(research, "ghost_directive"))
         self.assertFalse(allows_context_source(research, "ghost_continuity"))
-        # Research admits only its own bounded topic-continuity source.
+        # Research also admits reviewed preferences and confirmed project goals.
         self.assertTrue(allows_context_source(research, "research_topic_continuity"))
 
     def test_whole_research_submission_requires_its_scoped_contract(self) -> None:

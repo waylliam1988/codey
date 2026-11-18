@@ -1,5 +1,8 @@
 # 跨会话项目经历：生产接线验收
 
+> 后续范围更新：[通用生产接线](portable-context-production-20261118.md)已取消本文的精确模型/流式/输出预算启用白名单。
+> 下文保留原批次验收范围与测量，不能据此认为当前仍限制在output128或8192。
+
 日期2026-11-18。状态：`PRODUCTION_MERGED`，当前master本生产提交，受测范围默认启用。
 生产提交可用`git log --grep="enable validated project experience continuity"`定位。
 [脱敏验收报告](../../tests/manual/ghost_memory_routing/reports/project-experience-production-20261118.json)。

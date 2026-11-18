@@ -24,7 +24,6 @@ from codey.ghost.observation_index import (
     retrieve_relevant_observations,
 )
 from codey.ghost.payload_types import mapping_fields
-from codey.operations.project_experiences import VERIFIED_PROJECT_EXPERIENCE_MODEL
 from codey.operations.task_entry import run_task_submission
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ChatProvider
@@ -32,6 +31,7 @@ from codey.task.model import TaskSubmission
 from tests.test_ghost_received_input_lifetime import _queue
 
 USER = "sharedplan " + "long request details " * 160
+MODEL = "fixture-provider-independent-model"
 RESULT = "quartzstore chosen because offline durability matters; validation remains pending."
 
 
@@ -98,6 +98,8 @@ def test_multiple_experiences_preserve_labels_and_whole_block_budget() -> None:
 class Endpoint:
     url: str
     payloads: list[dict[str, object]] = field(default_factory=list)
+    paths: list[str] = field(default_factory=list)
+    streams: list[bool] = field(default_factory=list)
 
 
 @pytest.fixture()
@@ -112,17 +114,39 @@ def endpoint() -> Generator[Endpoint]:
             payload: object = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             assert mapping_fields(payload)
             capture.payloads.append(dict(payload))
+            capture.paths.append(self.path)
+            capture.streams.append(payload.get("stream") is True)
             arguments: dict[str, str] = {"summary": RESULT}
+            text_reply: dict[str, object] = {"tool": "done", "args": arguments}
             message: dict[str, object] = {"role": "assistant", "content": None, "tool_calls": [
                 {"id": f"done-{len(capture.payloads)}", "type": "function", "function": {
                     "name": "done", "arguments": json.dumps(arguments)}}]}
             if not payload.get("tools"):
-                text_reply: dict[str, object] = {"tool": "done", "args": arguments}
                 message = {"role": "assistant", "content": json.dumps(text_reply)}
             response: dict[str, object] = {"choices": [{"message": message, "finish_reason": "stop"}]}
+            if self.path.endswith("/responses"):
+                output: list[dict[str, object]] = [{"type": "function_call", "id": "fc_done",
+                    "call_id": "done-1", "name": "done", "arguments": json.dumps(arguments)}]
+                if not payload.get("tools"):
+                    output = [{"type": "message", "role": "assistant", "content": [
+                        {"type": "output_text", "text": json.dumps(text_reply)}]}]
+                response = {"id": "resp_done", "status": "completed", "output": output}
+            content_type = "application/json"
             body = json.dumps(response).encode()
+            if payload.get("stream") is True:
+                content_type = "text/event-stream"
+                if self.path.endswith("/responses"):
+                    event: dict[str, object] = {"type": "response.completed", "response": response}
+                    body = ("data: " + json.dumps(event) + "\n\n").encode()
+                else:
+                    delta = dict(message)
+                    if payload.get("tools"):
+                        delta["tool_calls"] = [{"index": 0, "id": "done-1", "type": "function", "function": {
+                            "name": "done", "arguments": json.dumps(arguments)}}]
+                    chunk: dict[str, object] = {"choices": [{"delta": delta, "finish_reason": "stop"}]}
+                    body = ("data: " + json.dumps(chunk) + "\n\ndata: [DONE]\n\n").encode()
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -144,13 +168,14 @@ def _execute(
     project: str | None = None, intent: str = "chat", identity: str,
     configure: Callable[[ApiProvider], None] | None = None,
     expected_stop: str = "done",
+    api_protocol: str = "openai-completions",
 ) -> Mapping[str, object]:
     request = TaskSubmission(session, project, task, 3, False, "deepseek", intent=intent, run_id=identity)
     _queue(state).create(identity, {
         "session_id": session, "project": project, "run_id": identity, "task": task,
         "provider": "deepseek", "intent": intent, "max_turns": 3, "project_changes_required": False,
     })
-    provider = ApiProvider(capture.url, VERIFIED_PROJECT_EXPERIENCE_MODEL, native_tools=True, temperature=0,
+    provider = ApiProvider(capture.url, MODEL, native_tools=True, temperature=0, api_protocol=api_protocol,
                            timeout=10, output_tokens=128, context_window_tokens=262144,
                            context_reserve_tokens=32768, context_keep_recent_tokens=32000)
     if configure is not None:
@@ -226,7 +251,9 @@ def test_normal_entry_preserves_completed_experience_after_restart(
         content = entry.get("content")
         if isinstance(content, str) and RETRIEVED_BLOCK_HEADER in content:
             sources.append(content)
-    assert bool(sources) == (boundary == "enabled")
+    assert bool(sources) == (boundary == "enabled"), [
+        source[source.index(RETRIEVED_BLOCK_HEADER):][:500] for source in sources
+    ]
     if boundary == "enabled":
         assert len(sources) == 1
         assert RESULT in sources[0] and "sharedplan" in sources[0]

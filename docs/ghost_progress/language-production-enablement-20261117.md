@@ -1,5 +1,8 @@
 # Ghost 已验证功能生产启用与遗漏核对
 
+> 后续范围更新：[通用生产接线](portable-context-production-20261118.md)已取消本文的精确模型/流式/输出预算启用白名单。
+> 下文保留原批次验收范围与测量，不能据此认为当前仍限制在output128或8192。
+
 - 日期：2026-11-17
 - 状态：`PRODUCTION_MERGED`（本次 master 生产提交；仅下述中文偏好范围）
 - 生产提交：见 `git log --grep="enable validated local Chinese preferences"`。

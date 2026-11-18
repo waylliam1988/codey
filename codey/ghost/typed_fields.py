@@ -39,6 +39,7 @@ VALUE_PHRASES = {
     "markdown": "Markdown",
     "table": "table",
     "technical": "technical",
+    "warm": "warm and considerate",
 }
 ALLOWED_TYPED_FIELD_PAIRS = frozenset({
     ("correction", "ghost_state_backend", "json_projection_jsonl"),
@@ -61,6 +62,7 @@ ALLOWED_TYPED_FIELD_PAIRS = frozenset({
     ("style_preference", "reply_structure", "answer_first_concise"),
     ("style_preference", "tone", "direct"),
     ("style_preference", "tone", "technical"),
+    ("style_preference", "tone", "warm"),
 })
 
 _DANGEROUS_DIRECTIVE_RE = re.compile(
@@ -200,8 +202,9 @@ def typed_field_pair_allowed(kind: object, conflict_key: object, value_key: obje
 
 
 def is_renderable_signal_typed_field(signal: object) -> bool:
-    kind = str(getattr(signal, "kind", "") or "").strip().lower()
-    metadata = getattr(signal, "metadata", {}) or {}
+    raw_kind: object = getattr(signal, "kind", "")
+    kind = str(raw_kind or "").strip().lower()
+    metadata: object = getattr(signal, "metadata", None)
     conflict_key = metadata_conflict_key(metadata)
     value_key = metadata_value_key(metadata)
     return bool(conflict_key and value_key and is_renderable_typed_field(kind, f"{kind}:{conflict_key}", value_key))

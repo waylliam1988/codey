@@ -9,14 +9,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Protocol, TypeVar, runtime_checkable
 
-from codey.ghost.work_queue import is_strict_work_continuation, proof_refs_from_task_event
-from codey.ghost.work_queue_model import GhostWorkItem
+from codey.ghost.affinity_model import AffinityHint
+from codey.ghost.continuity import GhostContinuityStore
+from codey.ghost.hebbian import GhostHebbianStore
+from codey.ghost.work_queue import GhostWorkQueueStore, is_strict_work_continuation, proof_refs_from_task_event
+from codey.ghost.work_queue_model import GhostWorkClaimResult, GhostWorkItem
 from codey.knowledge.research_interest import (
     apply_research_affinity_hints,
     build_research_interest_candidates,
 )
+from codey.knowledge.store import KnowledgeStore
 from codey.operations.context import RunFrame
 from codey.operations.ghost_context import ghost_affinity_store, ghost_control_enabled
 from codey.operations.research_flow import (
@@ -26,40 +30,57 @@ from codey.operations.research_flow import (
 )
 from codey.operations.task_state import TaskState
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
-from codey.runs.ledger_projection import load_run_projection
+from codey.research.evidence_ledger import EvidenceLedgerStore
+from codey.runs.ledger import RunLedgerStore
+from codey.runs.ledger_projection import RunLedgerProjection, load_run_projection
+from codey.runs.work_checkpoint import WorkCheckpointStore
+from codey.task.model import TaskSubmission
 from codey.utils.refs import digest_text
+
+_Store = TypeVar("_Store")
+
+
+def _store(state: object, name: str, kind: type[_Store]) -> _Store | None:
+    value: object = getattr(state, name, None)
+    return value if isinstance(value, kind) else None
+
+
+@runtime_checkable
+class _SleepScheduler(Protocol):
+    def kick_ghost_sleep(self, *, trigger: str, run_id: str, session_id: str,
+                         project: str, run_projection: object) -> bool: ...
 
 
 @dataclass(frozen=True)
 class GhostTaskPolicyDeps:
     state: TaskState
-    run_ledgers: Any = None
-    evidence_ledgers: Any = None
-    work_checkpoints: Any = None
-    knowledge_store: Any = None
+    run_ledgers: RunLedgerStore | None = None
+    evidence_ledgers: EvidenceLedgerStore | None = None
+    work_checkpoints: WorkCheckpointStore | None = None
+    knowledge_store: KnowledgeStore | None = None
     has_reviewable_diff: Callable[[str | None], bool] | None = None
-    record_completion_proof_trace: Callable[[Any, object], None] | None = None
+    record_completion_proof_trace: Callable[[object, object], None] | None = None
 
 
 def maybe_claim_work_item(
     deps: GhostTaskPolicyDeps,
-    request: Any,
+    request: TaskSubmission,
     *,
     run_id: str,
-) -> Any:
+) -> GhostWorkClaimResult | None:
     if str(request.intent or "auto").strip().lower() != "auto":
         return None
     if not is_strict_work_continuation(request.task):
         return None
-    store = getattr(deps.state, "ghost_work_queue", None)
+    store = _store(deps.state, "ghost_work_queue", GhostWorkQueueStore)
     if store is None:
         return None
-    if not _ghost_accept_events_enabled(deps.state, project=request.project, session_id=request.session_id):
+    if not _ghost_accept_events_enabled(deps.state, project=(request.project or ""), session_id=request.session_id):
         return None
     try:
-        affinity_hints = ()
+        affinity_hints: tuple[AffinityHint, ...] = ()
         affinity_store = ghost_affinity_store(
-            deps.state, project=request.project, session_id=request.session_id,
+            deps.state, project=(request.project or ""), session_id=request.session_id,
         )
         if affinity_store is not None:
             try:
@@ -92,7 +113,7 @@ def maybe_claim_work_item(
     except Exception as exc:
         _record_ghost_warning(deps, "work_claim", exc, request=request, run_id=run_id)
         return None
-    return result if getattr(result, "ok", False) and getattr(result, "item", None) is not None else None
+    return result if result.ok and result.item is not None else None
 
 
 def release_work_item(
@@ -104,7 +125,7 @@ def release_work_item(
 ) -> None:
     if item is None:
         return
-    store = getattr(deps.state, "ghost_work_queue", None)
+    store = _store(deps.state, "ghost_work_queue", GhostWorkQueueStore)
     if store is None:
         return
     try:
@@ -120,11 +141,11 @@ def run_ghost_post_turn(
     event: dict[str, object],
     item: GhostWorkItem | None,
     *,
-    research_result: Any = None,
+    research_result: object = None,
     project_text: str = "",
 ) -> None:
-    session_id = str(event.get("session_id") or getattr(getattr(frame, "request", None), "session_id", "") or "")
-    run_id = str(event.get("run_id") or getattr(frame, "run_id", "") or "")
+    session_id = str(event.get("session_id") or (frame.request.session_id if frame else ""))
+    run_id = str(event.get("run_id") or (frame.run_id if frame else "") or "")
     run_projection = _run_projection(deps, session_id, run_id)
     complete_or_block_work_item(
         deps,
@@ -154,9 +175,9 @@ def maybe_sync_continuity(
     frame: RunFrame,
     event: dict[str, object],
     *,
-    run_projection: Any = None,
+    run_projection: RunLedgerProjection | None = None,
 ) -> None:
-    store = getattr(deps.state, "ghost_continuity", None)
+    store = _store(deps.state, "ghost_continuity", GhostContinuityStore)
     if store is None:
         return
     mode = str(event.get("mode") or "")
@@ -167,7 +188,7 @@ def maybe_sync_continuity(
         session_id=frame.request.session_id,
     ):
         try:
-            deps.state.emit({
+            skipped: dict[str, object] = {
                 "type": "ghost_continuity_done",
                 "run_id": frame.run_id,
                 "session_id": frame.request.session_id,
@@ -176,7 +197,8 @@ def maybe_sync_continuity(
                 "items_changed": 0,
                 "total_items": 0,
                 "warnings": [],
-            })
+            }
+            deps.state.emit(skipped)
         except Exception as exc:
             _record_ghost_warning(
                 deps,
@@ -188,7 +210,7 @@ def maybe_sync_continuity(
         return
     try:
         result = store.sync_from_sources(
-            hebbian_store=getattr(deps.state, "ghost_hebbian", None),
+            hebbian_store=_store(deps.state, "ghost_hebbian", GhostHebbianStore),
             run_projection=run_projection,
             knowledge_store=deps.knowledge_store,
             user_focus_excerpt=frame.request.task,
@@ -208,7 +230,7 @@ def maybe_kick_sleep(
     frame: RunFrame,
     event: dict[str, object],
     *,
-    run_projection: Any = None,
+    run_projection: RunLedgerProjection | None = None,
 ) -> None:
     if str(event.get("stop_reason") or "") != "done":
         return
@@ -216,11 +238,10 @@ def maybe_kick_sleep(
         deps.state, project=frame.project_text, session_id=frame.request.session_id,
     ):
         return
-    kick = getattr(deps.state, "kick_ghost_sleep", None)
-    if not callable(kick):
+    if not isinstance(deps.state, _SleepScheduler):
         return
     try:
-        kick(
+        deps.state.kick_ghost_sleep(
             trigger="post_turn",
             run_id=frame.run_id,
             session_id=frame.request.session_id,
@@ -237,9 +258,9 @@ def maybe_sync_work_queue(
     frame: RunFrame,
     event: dict[str, object],
     *,
-    run_projection: Any = None,
+    run_projection: RunLedgerProjection | None = None,
 ) -> None:
-    store = getattr(deps.state, "ghost_work_queue", None)
+    store = _store(deps.state, "ghost_work_queue", GhostWorkQueueStore)
     affinity_store = ghost_affinity_store(
         deps.state, project=frame.project_text, session_id=frame.request.session_id,
     )
@@ -268,7 +289,7 @@ def maybe_sync_work_queue(
             )
         if store is not None:
             store.sync_from_sources(
-                continuity_store=getattr(deps.state, "ghost_continuity", None),
+                continuity_store=_store(deps.state, "ghost_continuity", GhostContinuityStore),
                 work_checkpoint_store=deps.work_checkpoints,
                 run_projection=run_projection,
                 terminal_event=event,
@@ -279,7 +300,7 @@ def maybe_sync_work_queue(
             )
         if affinity_store is not None:
             affinity_store.sync_from_sources(
-                hebbian_store=getattr(deps.state, "ghost_hebbian", None),
+                hebbian_store=_store(deps.state, "ghost_hebbian", GhostHebbianStore),
                 work_queue_store=store,
                 research_interest_candidates=research_interest_candidates,
                 run_projection=run_projection,
@@ -296,12 +317,12 @@ def sync_affinity_terminal_event(
     deps: GhostTaskPolicyDeps,
     event: dict[str, object],
     *,
-    request: Any | None,
+    request: TaskSubmission | None,
     run_id: str,
     project_text: str,
-    run_projection: Any = None,
+    run_projection: RunLedgerProjection | None = None,
 ) -> None:
-    session_id = str(event.get("session_id") or getattr(request, "session_id", "") or "")
+    session_id = str(event.get("session_id") or (request.session_id if request else "") or "")
     affinity_store = ghost_affinity_store(
         deps.state, project=project_text, session_id=session_id,
     )
@@ -309,8 +330,8 @@ def sync_affinity_terminal_event(
         return
     try:
         affinity_store.sync_from_sources(
-            hebbian_store=getattr(deps.state, "ghost_hebbian", None),
-            work_queue_store=getattr(deps.state, "ghost_work_queue", None),
+            hebbian_store=_store(deps.state, "ghost_hebbian", GhostHebbianStore),
+            work_queue_store=_store(deps.state, "ghost_work_queue", GhostWorkQueueStore),
             run_projection=run_projection,
             terminal_event=event,
             session_id=session_id,
@@ -327,12 +348,12 @@ def complete_or_block_work_item(
     event: dict[str, object],
     item: GhostWorkItem | None,
     *,
-    research_result: Any = None,
-    run_projection: Any = None,
+    research_result: object = None,
+    run_projection: RunLedgerProjection | None = None,
 ) -> None:
     if item is None:
         return
-    store = getattr(deps.state, "ghost_work_queue", None)
+    store = _store(deps.state, "ghost_work_queue", GhostWorkQueueStore)
     if store is None:
         return
     try:
@@ -355,8 +376,9 @@ def complete_or_block_work_item(
                     project=frame.project_text,
                     task=frame.request.task,
                 )
+                trace: object = frame.trace
                 if deps.record_completion_proof_trace is not None:
-                    deps.record_completion_proof_trace(frame.trace, decision.proof)
+                    deps.record_completion_proof_trace(trace, decision.proof)
                 if decision.complete:
                     store.complete_item(
                         item.id,
@@ -364,9 +386,9 @@ def complete_or_block_work_item(
                         proof_refs=decision.proof_refs,
                     )
                 else:
-                    record_research_proof_review_trace(frame.trace, decision.review)
+                    record_research_proof_review_trace(trace, decision.review)
                     record_research_plan_trace(
-                        frame.trace,
+                        trace,
                         decision.review,
                         question=research_queue_item_title(item) or frame.request.task,
                     )
@@ -425,40 +447,38 @@ def _record_ghost_warning(
     *,
     frame: RunFrame | None = None,
     event: dict[str, object] | None = None,
-    request: Any | None = None,
+    request: TaskSubmission | None = None,
     run_id: str = "",
 ) -> None:
-    emit = getattr(deps.state, "emit", None)
-    if not callable(emit):
-        return
     source_event = event or {}
-    request = request or getattr(frame, "request", None)
+    request = request or (frame.request if frame else None)
     session_id = str(
         source_event.get("session_id")
-        or getattr(request, "session_id", "")
+        or (request.session_id if request else "")
         or ""
     )
     resolved_run_id = str(
         source_event.get("run_id")
         or run_id
-        or getattr(frame, "run_id", "")
+        or (frame.run_id if frame else "")
         or ""
     )
     error_text = f"{stage}:{type(exc).__name__}:{exc}"
     try:
-        emit({
+        warning: dict[str, object] = {
             "type": "ghost_post_turn_warning",
             "stage": (stage or "unknown"),
             "run_id": resolved_run_id,
             "session_id": session_id,
             "error_type": type(exc).__name__,
             "error_ref": digest_text(error_text)[:24],
-        })
+        }
+        deps.state.emit(warning)
     except Exception:
         return
 
 
-def _run_projection(deps: GhostTaskPolicyDeps, session_id: str, run_id: str) -> Any:
+def _run_projection(deps: GhostTaskPolicyDeps, session_id: str, run_id: str) -> RunLedgerProjection | None:
     if deps.run_ledgers is None:
         return None
     try:

@@ -13,8 +13,9 @@ DRAWER = Path(__file__).resolve().parents[1] / "frontend" / "src" / "local_conte
 
 
 class LocalContextRenderTests(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for drawer behavior tests")
     def test_failed_accept_refreshes_to_show_retry_action(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("Node.js is required for drawer behavior tests")
         source = frontend_source("local_context_drawer")
         script = r"""
 const vm = require('node:vm');
@@ -35,6 +36,7 @@ const ids = new Map();
 function element(id) { if (!ids.has(id)) ids.set(id, new Element()); return ids.get(id); }
 let summaryReads = 0;
 const context = {
+  Element,
   window: { UiState: { setDrawerOpen: (id, open) => open ? element(id).classList.add('open') : element(id).classList.remove('open') } },
   document: { createElement: () => new Element() },
   URLSearchParams, setTimeout,
@@ -69,8 +71,9 @@ function allText(node) { return [node.textContent, ...node.children.flatMap(allT
         self.assertIn("2\n", result.stdout)
         self.assertIn("Needs attention", result.stdout)
 
-    @unittest.skipUnless(shutil.which("node"), "Node.js is required for drawer behavior tests")
     def test_observations_only_are_visible_instead_of_empty_state(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("Node.js is required for drawer behavior tests")
         source = frontend_source("local_context_drawer")
         script = r"""
 const vm = require('node:vm');
@@ -105,7 +108,7 @@ class Element {
 }
 const ids = new Map();
 function element(id) { if (!ids.has(id)) ids.set(id, new Element()); return ids.get(id); }
-const context = { window: {}, document: { createElement: () => new Element() } };
+const context = { Element, window: {}, document: { createElement: () => new Element() } };
 vm.runInNewContext(process.argv[1], context);
 context.window.LocalContextDrawer.init({
   $: element, getActiveId: () => 's1', currentProjectPath: () => '',

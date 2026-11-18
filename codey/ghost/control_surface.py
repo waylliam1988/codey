@@ -19,7 +19,7 @@ from codey.ghost.deletion_manifest_coordinator import DeletionManifestCoordinato
 from codey.ghost.deletion_manifest_store import DeletionManifestStore
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode, node_id_for_candidate
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
-from codey.ghost.observations import MAX_OBSERVATIONS, GhostObservationStore
+from codey.ghost.observations import MAX_ASSISTANT_TEXT_CHARS, MAX_OBSERVATIONS, GhostObservationStore
 from codey.ghost.payload_types import mapping_fields
 from codey.ghost.project_goals import is_project_goal, propose_project_goal, validate_goal_review
 from codey.ghost.schema import (
@@ -34,6 +34,7 @@ from codey.ghost.sqlite import GhostSQLite
 from codey.ghost.typed_fields import render_typed_field
 from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.ghost.work_queue_model import GhostWorkItem
+from codey.utils.refs import digest_text
 
 CONTROL_SURFACE_SCHEMA_VERSION = 1
 MAX_SUMMARY_ITEMS = 20
@@ -127,6 +128,7 @@ class GhostControlSurface:
             tuple(candidate for candidate in accepted if _candidate_needs_repair(candidate, all_nodes))
             if "active_context_read_failed" not in warnings else ()
         )
+        confirmed_goals = tuple(row for row in accepted if is_project_goal(row))
         continuity_items = _safe_rows(
             lambda: self.continuity.list_items(session_id=session_ref, project=project_ref)
             if self.continuity is not None
@@ -169,6 +171,7 @@ class GhostControlSurface:
         observation_rows = _safe_rows(
             lambda: self.observations.read_committed(
                 session_id=session_ref, project=project_ref, limit=MAX_SUMMARY_ITEMS,
+                scope="project" if project_ref else "session",
             )
             if self.observations is not None and session_ref
             else (),
@@ -203,7 +206,7 @@ class GhostControlSurface:
             "counts": {
                 "review": len(pending),
                 "repair": len(repair),
-                "active": len(active_nodes),
+                "active": len(active_nodes) + len(confirmed_goals),
                 "continuity": len(continuity_items),
                 "tasks": len(work_items),
                 "warnings": len(warning_rows),
@@ -213,6 +216,7 @@ class GhostControlSurface:
             "review": [_candidate_payload(row) for row in pending[:MAX_SUMMARY_ITEMS]],
             "repair": [_candidate_payload(row) for row in repair[:MAX_SUMMARY_ITEMS]],
             "active": [_node_payload(node, project=project_ref, session_id=session_ref) for node in active_nodes[:MAX_SUMMARY_ITEMS]],
+            "goals": [_candidate_payload(row) for row in confirmed_goals[:MAX_SUMMARY_ITEMS]],
             "tasks": [_work_item_payload(item) for item in work_items[:MAX_SUMMARY_ITEMS]],
             "observations": [_observation_payload(row) for row in observation_rows[:MAX_SUMMARY_ITEMS]],
             "deletions": deletions,
@@ -872,6 +876,8 @@ def _work_item_payload(item: GhostWorkItem) -> dict[str, object]:
 def _observation_payload(row: object) -> dict[str, object]:
     item: Mapping[str, object] = row if mapping_fields(row) else {}
     user_text = _safe_text(item.get("user_text"), MAX_EVIDENCE_PREVIEW_CHARS)
+    assistant = item.get("assistant_text")
+
     return {
         "id": _safe_text(item.get("run_id"), 120),
         "type": "observation",
@@ -881,6 +887,10 @@ def _observation_payload(row: object) -> dict[str, object]:
         "scope_label": _scope_label("session"),
         "status": "committed" if item.get("committed") is True else "recorded",
         "updated_at": _safe_text(item.get("ts"), 80),
+        "session_id": _safe_text(item.get("session_id"), 120),
+        "project": _safe_text(item.get("project"), 240),
+        "reply_digest": (digest_text(assistant).removeprefix("sha256:") if isinstance(assistant, str)
+                         and 0 < len(assistant) < MAX_ASSISTANT_TEXT_CHARS else ""),
     }
 
 

@@ -159,7 +159,7 @@ def test_normal_entry_controls_withdrawal_scope_and_persistent_deletion(
 
 
 @pytest.mark.parametrize("change", ("model", "temperature", "stream", "tools", "output", "window", "keep", "limit", "safety"))
-def test_unverified_configuration_falls_back_but_keeps_local_goal(tmp_path: Path, endpoint: Endpoint, change: str) -> None:
+def test_configuration_changes_keep_goal_available(tmp_path: Path, endpoint: Endpoint, change: str) -> None:
     project = tmp_path / "project"
     project.mkdir()
     with closing(AppContext(tmp_path / "state", start_scheduler=False)) as state:
@@ -183,7 +183,7 @@ def test_unverified_configuration_falls_back_but_keeps_local_goal(tmp_path: Path
                 provider._context_budget = values[change]
 
         normal(state, endpoint, project, identity="next", configure=configure)
-        assert not projected(endpoint)
+        assert projected(endpoint)
         assert surface.inbox is not None and len(surface.inbox.list_candidates(status="accepted")) == 1
     assert len(endpoint.payloads) == 2
 
@@ -217,9 +217,9 @@ def test_physical_send_revalidates_goal_after_request_assembly(tmp_path: Path, e
                     provider._context_budget = ContextBudget(262144, 128, 32640, 32000)
             provider.configure_request = before_send
 
-        normal(state, endpoint, project, identity="next", configure=configure, stop="error")
+        normal(state, endpoint, project, identity="next", configure=configure, stop="done" if change in {"model", "budget"} else "error")
         assert changed == [change]
-    assert len(endpoint.payloads) == 1, "stale goal must stop before physical HTTP"
+    assert len(endpoint.payloads) == (2 if change in {"model", "budget"} else 1), "revoked goals stop before HTTP"
 
 
 @pytest.mark.parametrize("fault", ("controls", "observations"))
@@ -420,16 +420,23 @@ def test_fresh_confirmed_source_survives_retirement_of_an_older_source_session(t
 
 
 @pytest.mark.parametrize("change", ("protocol", "remote_endpoint"))
-def test_configuration_gate_rejects_other_wire_protocol_and_endpoint(tmp_path: Path, change: str) -> None:
-    provider = ApiProvider("http://127.0.0.1:5001/v1", project_goals.VERIFIED_PROJECT_GOAL_MODEL,
-                           native_tools=True, temperature=0, output_tokens=8192,
-                           context_window_tokens=262144, context_reserve_tokens=32768, context_keep_recent_tokens=32000)
-    try:
-        assert project_goals._configuration_enabled(provider)
-        if change == "protocol":
-            provider.api_protocol = "openai-responses"
-        else:
-            provider.base_url = "https://unverified.example/v1"
-        assert not project_goals._configuration_enabled(provider)
-    finally:
-        provider.close()
+def test_goal_sources_are_independent_of_wire_protocol_and_endpoint(tmp_path: Path, endpoint: Endpoint, change: str) -> None:
+    from codey.agents.request import AgentRequest
+    from codey.workspace.revision import WorkspaceRevisionStore
+
+    project = tmp_path / "project"
+    project.mkdir()
+    home = tmp_path / "state"
+    with closing(AppContext(home, start_scheduler=False)) as state:
+        seed(state, endpoint, project)
+        provider = ApiProvider("http://127.0.0.1:5001/v1", "another-model", output_tokens=4000)
+        try:
+            if change == "protocol":
+                provider.api_protocol = "openai-responses"
+            else:
+                provider.base_url = "https://example.com/v1"
+            request = AgentRequest(provider=provider, project=project, task=TASK, session_id="new-session",
+                                   workspace_revision_store=WorkspaceRevisionStore(home))
+            assert project_goals.validated_project_goal_sources(request)
+        finally:
+            provider.close()

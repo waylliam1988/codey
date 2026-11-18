@@ -1,71 +1,51 @@
+"""Real Ghost store failures remain visible without disclosing private text."""
 from __future__ import annotations
 
-import unittest
-from types import SimpleNamespace
-from unittest import mock
+from contextlib import closing
+from pathlib import Path
 
-from codey.operations.ghost_post_turn import (
-    GhostTaskPolicyDeps,
-    maybe_sync_continuity,
-)
+import pytest
+
+from codey.agents.handoff import ConversationContext, ConversationSnapshot
+from codey.app.context import AppContext
+from codey.ghost.continuity import GhostContinuityResult, GhostContinuityStore, KnowledgeReader
+from codey.ghost.hebbian import GhostHebbianStore
+from codey.operations.context import RunFrame
+from codey.operations.ghost_post_turn import GhostTaskPolicyDeps, maybe_sync_continuity
+from codey.runs.ledger_projection import RunLedgerProjection
 from codey.task.model import TaskSubmission
 
 
-class _State:
-    def __init__(self) -> None:
-        self.events: list[dict[str, object]] = []
-        self.ghost_continuity = mock.Mock(
-            sync_from_sources=mock.Mock(side_effect=RuntimeError("secret path")),
-        )
-        self.ghost_hebbian = None
-        self.ghost_inbox = SimpleNamespace(control_enabled=mock.Mock(return_value=True))
+def test_continuity_failure_records_sanitized_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    events: list[dict[str, object]] = []
 
-    def emit(self, event: dict[str, object]) -> None:
-        self.events.append(dict(event))
+    def fail(self: GhostContinuityStore, *, hebbian_store: GhostHebbianStore | None = None,
+             run_projection: RunLedgerProjection | None = None, knowledge_store: KnowledgeReader | None = None,
+             user_focus_excerpt: str = "", session_id: str = "", run_id: str = "", project: str = "",
+             mode: str = "", maintenance_as_of: str | None = None, maintenance: bool = False) -> GhostContinuityResult:
+        calls.append(session_id)
+        raise RuntimeError("secret path")
 
+    def emit(event: dict[str, object]) -> None:
+        events.append(dict(event))
 
-class GhostPostTurnTests(unittest.TestCase):
-    def test_continuity_failure_records_sanitized_warning(self) -> None:
-        state = _State()
-        frame = SimpleNamespace(
-            request=TaskSubmission(
-                session_id="session-1",
-                project=None,
-                task="remember this",
-                max_turns=4,
-                continue_task=False,
-                provider_id="deepseek",
-            ),
-            run_id="run-1",
-            project_text="",
-        )
-
-        maybe_sync_continuity(
-            GhostTaskPolicyDeps(state=state),
-            frame,  # type: ignore[arg-type]
-            {
-                "type": "task_done",
-                "mode": "chat",
-                "run_id": "run-1",
-                "session_id": "session-1",
-                "stop_reason": "done",
-            },
-        )
-
-        state.ghost_continuity.sync_from_sources.assert_called_once()
-        state.ghost_inbox.control_enabled.assert_called_once_with(
-            "accept_events", project="", session_id="session-1",
-        )
-        self.assertEqual(len(state.events), 1)
-        warning = state.events[0]
-        self.assertEqual(warning["type"], "ghost_post_turn_warning")
-        self.assertEqual(warning["stage"], "continuity_sync")
-        self.assertEqual(warning["run_id"], "run-1")
-        self.assertEqual(warning["session_id"], "session-1")
-        self.assertEqual(warning["error_type"], "RuntimeError")
-        self.assertTrue(str(warning["error_ref"]).startswith("sha256:"))
-        self.assertNotIn("secret path", str(warning))
-
-
-if __name__ == "__main__":
-    unittest.main()
+    with closing(AppContext(tmp_path, start_scheduler=False)) as state:
+        monkeypatch.setattr(GhostContinuityStore, "sync_from_sources", fail)
+        monkeypatch.setattr(state, "emit", emit)
+        request = TaskSubmission("session-1", None, "remember this", 4, False, "deepseek")
+        frame = RunFrame(request, "run-1", "chat", None, "deepseek", "", ConversationContext(),
+                         True, "", "", ConversationSnapshot("chat"), "", False, set(), 0)
+        maybe_sync_continuity(GhostTaskPolicyDeps(state=state), frame, {
+            "type": "task_done", "mode": "chat", "run_id": "run-1",
+            "session_id": "session-1", "stop_reason": "done",
+        })
+    assert calls == ["session-1"]
+    assert len(events) == 1
+    warning = events[0]
+    assert warning["type"] == "ghost_post_turn_warning"
+    assert warning["stage"] == "continuity_sync"
+    assert warning["run_id"] == "run-1" and warning["session_id"] == "session-1"
+    assert warning["error_type"] == "RuntimeError"
+    assert str(warning["error_ref"]).startswith("sha256:")
+    assert "secret path" not in str(warning)

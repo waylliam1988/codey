@@ -1,5 +1,8 @@
 # 人工确认项目目标：生产接入与验收
 
+> 后续范围更新：[通用生产接线](portable-context-production-20261118.md)已取消本文的精确模型/流式/输出预算启用白名单。
+> 下文保留原批次验收范围与测量，不能据此认为当前仍限制在output128或8192。
+
 2026-11-18，`PRODUCTION_MERGED`，在受测范围默认启用。
 冻结`2b5946a8`，实验结果提交`a87e477f`；独立生产提交按
 `git log --oneline --grep="enable confirmed project storage goals"`定位。

@@ -1762,6 +1762,13 @@ R0  研究基准与可塑性实验    0.9.x+
 
 ### 用户连续性与个人适应主线（2026-11-18）
 
+最新[通用生产接线](docs/ghost_progress/portable-context-production-20261118.md)：
+已确认偏好跨正常Chat/代码/研究入口，user范围跨本机会话和项目；同项目经历、普通人工确认目标跨会话。
+取消模型名、API地址、流式和output128/8192的消费白名单。来源、admission、scope、关闭/撤回/删除边界保留。
+[实机冒烟](docs/ghost_progress/portable-context-result-20261118.md)完成12格及一次用户授权服务故障补测；
+短标签匹配失败、流式用量缺失和单合成样本限制保留，不宣布整体效果实验通过或各模型同等收益。
+以下窄配置范围及中断快照是历史记录，现行可用范围以本接线记录为准。World Model仍未生产晋级。
+
 新候选[条件接受率与纠正成本](docs/ghost_progress/proposal-risk-interrupted-20261118.md)
 冻结`ede91617`后被用户中断：240格完成155格，另有一条缺完整回执，84格未启动。
 状态`INCOMPLETE / USER_INTERRUPTED`，没有完整收益/成本结论，不重试、不判阴性或晋级。

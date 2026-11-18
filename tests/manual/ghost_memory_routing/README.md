@@ -1,5 +1,11 @@
 # Ghost 偏好投递与预算路由实验
 
+2026-11-18：[本地上下文通用化冒烟](../../../docs/ghost_progress/portable-context-result-20261118.md)，
+脚本`portable_context_trial.py`，12格/一个合成经历，包含用户授权的一次KoboldCpp故障补测。
+配置含大预算与流式；保留严格短标签失败和流式用量缺失，不重判原效果实验。
+[当前生产范围](../../../docs/ghost_progress/portable-context-production-20261118.md)已取消模型/输出/流式白名单，
+已确认上下文的跨连接可用性与跨模型行为收益分别记录。下方原范围和中断批次保留历史事实。
+
 2026-11-18：[条件接受率/纠正成本中断收尾](../../../docs/ghost_progress/proposal-risk-interrupted-20261118.md)，
 冻结`ede91617`，脚本`proposal_risk_trial.py`，状态`INCOMPLETE / USER_INTERRUPTED`。
 240格完成155格，另有一条无完整回执的尝试；不重试、不判阴性或收益、不晋级。

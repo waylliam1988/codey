@@ -315,8 +315,12 @@ class GhostObservationStore:
     ) -> tuple[dict[str, object], ...]:
         from codey.ghost.observation_index import fit_observation_rows, retrieve_relevant_observations
 
+        # A session can switch workspaces. Recall must not carry another
+        # project's raw interactions into the current model request.
         rows = tuple(row for row in self.read_committed(session_id=session_id, project=project, scope=scope)
-                     if str(row["run_id"]) != exclude_run_id)
+                     if str(row["run_id"]) != exclude_run_id
+                     and (scope != "session"
+                          or _common.normalize_project(row["project"]) == _common.normalize_project(project)))
         if self.vector_memory is not None:
             ranked = self.vector_memory.rank(query, rows, limit=max_items)
             return fit_observation_rows(ranked, budget_chars=budget_chars, max_items=max_items)

@@ -27,6 +27,7 @@ KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
     "completion_repair_context",
 })
 CODING_WRITER_CONTEXT_SOURCE_KEYS = (
+    "ghost_directive",
     "ghost_experiences",
     "ghost_project_goal_history",
     "ghost_confirmed_project_goal",
@@ -43,8 +44,11 @@ CODING_WRITER_CONTEXT_SOURCE_KEYS = (
     "completion_repair_context",
 )
 PLANNING_READONLY_CONTEXT_SOURCE_KEYS = (
+    "ghost_experiences",
     "ghost_continuity",
     "ghost_directive",
+    "ghost_project_goal_history",
+    "ghost_confirmed_project_goal",
     "project_instructions",
     "verified_facts",
     "research_brief",
@@ -95,9 +99,10 @@ PERMISSION_PROFILES = {
             "source_search",
             "done",
         ),
-        # Research admits only the bounded, research-specific topic
-        # continuity source -- never the raw chat-side ghost sources.
-        context_sources=("research_topic_continuity",),
+        # Preferences and confirmed goals guide presentation/intent, not evidence.
+        # Raw chat experiences remain excluded from this profile.
+        context_sources=("research_topic_continuity", "ghost_directive",
+                         "ghost_project_goal_history", "ghost_confirmed_project_goal"),
         project_read=False,
         project_write=False,
     ),

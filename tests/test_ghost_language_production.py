@@ -176,7 +176,7 @@ def test_language_default_entry_sends_only_reviewed_in_scope_enabled_preference(
 
 @pytest.mark.parametrize("change", ["model", "native_tools", "api_protocol", "context_window_tokens",
                                     "context_reserve_tokens", "context_keep_recent_tokens", "base_url"])
-def test_language_falls_back_for_unverified_model_or_configuration(tmp_path: Path, change: str) -> None:
+def test_language_is_portable_across_model_and_configuration(tmp_path: Path, change: str) -> None:
     provider = _provider("http://127.0.0.1:5001/v1")
     if change == "model":
         provider.model = "unverified-model"
@@ -195,7 +195,7 @@ def test_language_falls_back_for_unverified_model_or_configuration(tmp_path: Pat
         provider = _provider("http://127.0.0.1:5001/v1", context_keep_recent_tokens=12000)
     with closing(AppContext(_state_home(tmp_path))) as state:
         _remember(state)
-        assert LANGUAGE_LINE not in ghost_directive(state, provider=provider).text
+        assert LANGUAGE_LINE in ghost_directive(state, provider=provider).text
 
 
 @pytest.mark.parametrize("action", ["reject_candidate", "delete_scope", "reset_all"])
@@ -283,7 +283,7 @@ def test_language_is_rechecked_after_request_preparation_before_physical_http(
         provider.configure_request = change_after_assembly
         event = _execute(state, provider)
     assert changed == [change]
-    assert event["stop_reason"] == "provider_failure", (
+    assert event["stop_reason"] == ("done" if change == "model" else "provider_failure"), (
         event, len(payloads), [LANGUAGE_LINE in json.dumps(payload) for payload in payloads],
     )
-    assert payloads == []
+    assert len(payloads) == (1 if change == "model" else 0)

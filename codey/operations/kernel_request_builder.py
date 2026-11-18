@@ -54,6 +54,13 @@ class KernelRunRequestBuilder:
         execution: KernelExecutionDeps = _DEFAULT_EXECUTION,
         observation: KernelObservationDeps = _DEFAULT_OBSERVATION,
     ) -> KernelRunRequest:
+        from codey.operations.personal_context import supplement_personal_context
+
+        personal = supplement_personal_context(
+            text=self.context_text, sources=self.ghost_sources, scope=self.context_scope,
+            run_id=self.run_id, task=self.user_task, enabled=self.admit_hints,
+            execution=execution, validate=self.attempt_validate_ghost_sources,
+        )
         return KernelRunRequest(
             task_guidance=self.task_guidance,
             transport=KernelTransportDeps(
@@ -62,13 +69,13 @@ class KernelRunRequestBuilder:
                 effect_scope=self.effect_scope,
                 provider_id=self.provider_id,
                 user_task=self.user_task,
-                context_text=self.context_text,
+                context_text=personal.text,
                 context_scope=self.context_scope,
-                ghost_sources=self.ghost_sources,
+                ghost_sources=personal.sources,
                 admit_hints=self.admit_hints,
                 attempt_gate=self.attempt_gate,
                 attempt_admit_hints=self.attempt_admit_hints,
-                attempt_validate_ghost_sources=self.attempt_validate_ghost_sources,
+                attempt_validate_ghost_sources=personal.validate,
                 stop_flag=self.stop_flag,
                 stagnant_turns=self.stagnant_turns,
                 window_ref=self.window_ref,

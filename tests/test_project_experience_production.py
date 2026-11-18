@@ -53,7 +53,7 @@ def _change_config(provider: ApiProvider, change: str) -> None:
 
 
 @pytest.mark.parametrize("change", ("model", "temperature", "stream", "tools", "budget", "output"))
-def test_unverified_configuration_retains_history_but_omits_project_projection(
+def test_configuration_changes_retain_history_and_project_projection(
     tmp_path: Path, endpoint: Endpoint, change: str,
 ) -> None:
     project = tmp_path / "project"
@@ -69,7 +69,7 @@ def test_unverified_configuration_retains_history_but_omits_project_projection(
         assert state.ghost_observations is not None
         assert any(row["run_id"] == "source" for row in state.ghost_observations.read_all())
     assert len(endpoint.payloads) == 2
-    assert RETRIEVED_BLOCK_HEADER not in json.dumps(endpoint.payloads[-1])
+    assert RETRIEVED_BLOCK_HEADER in json.dumps(endpoint.payloads[-1])
 
 
 def test_actual_inbox_control_sqlite_failure_does_not_abort_project_settlement(
@@ -120,8 +120,8 @@ def test_restored_project_source_requires_current_entry_validation(
             # Fault injection models a receipt restoring old context/sources
             # after the new adapter assembled an empty projection. The shared
             # kernel and physical provider gate remain real.
-            assert bool(request.transport.ghost_sources) == (boundary in {"different_current", "same_current"})
-            assert all((source.text == history) == (boundary == "same_current")
+            assert bool(request.transport.ghost_sources) == (boundary in {"different_current", "same_current", "model"})
+            assert all((source.text == history) == (boundary in {"same_current", "model"})
                        for source in request.transport.ghost_sources)
             restored.append(True)
             sources = sources_from_values(experiences=history, scope=request.transport.context_scope)
@@ -135,11 +135,11 @@ def test_restored_project_source_requires_current_entry_validation(
         monkeypatch.setattr(task_loop, "run_task_kernel", restore_prior_request)
         event = _execute(state, endpoint, task="Recall the quartzstore decision. No changes required.",
                          session="new-session", project=str(project), intent="project", identity="next",
-                         configure=configure, expected_stop="done" if boundary == "same_current" else "error")
-        if boundary != "same_current":
+                         configure=configure, expected_stop="done" if boundary in {"same_current", "model"} else "error")
+        if boundary not in {"same_current", "model"}:
             assert "Ghost context admission rejected" in str(event)
     assert restored == [True]
-    assert len(endpoint.payloads) == (2 if boundary in {"different_current", "same_current"} else 1)
+    assert len(endpoint.payloads) == (2 if boundary in {"different_current", "same_current", "model"} else 1)
 
 
 @pytest.mark.parametrize("change", (
@@ -175,10 +175,11 @@ def test_project_history_is_rechecked_after_assembly_before_physical_send(
 
         event = _execute(state, endpoint, task="Recall the quartzstore decision. No changes required.",
                  session="new-session", project=str(project), intent="project", identity="next",
-                 configure=configure, expected_stop="error")
-        assert "Ghost context admission rejected" in str(event)
+                 configure=configure, expected_stop="error" if change in {"delete", "retrieve_off", "admit_off"} else "done")
+        if change in {"delete", "retrieve_off", "admit_off"}:
+            assert "Ghost context admission rejected" in str(event)
     assert changed == [change]
-    assert len(endpoint.payloads) == 1, "a stale history request must stop before physical HTTP"
+    assert len(endpoint.payloads) == (1 if change in {"delete", "retrieve_off", "admit_off"} else 2)
 
 
 @pytest.mark.parametrize("fault", ("controls", "observations"))

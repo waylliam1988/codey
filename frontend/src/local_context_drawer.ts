@@ -14,17 +14,19 @@ interface LocalScope {
   session_id: string;
   project: string;
 }
+function isRecord(value: unknown): value is LocalRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 function recordOf(value: unknown): LocalRecord {
-  return typeof value === 'object' && value !== null ? (value as LocalRecord) : {};
+  return isRecord(value) ? value : {};
 }
 function textField(row: LocalRecord, key: string): string {
   const value = row[key];
   return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
 }
 function rowsOf(value: unknown): LocalRecord[] {
-  return Array.isArray(value)
-    ? (value.filter((item) => typeof item === 'object' && item !== null) as LocalRecord[])
-    : [];
+  const rows: unknown[] = Array.isArray(value) ? value : [];
+  return rows.filter(isRecord);
 }
 /* Codey local context drawer: quiet audit UI for bounded local state. */
 (function () {
@@ -34,6 +36,7 @@ function rowsOf(value: unknown): LocalRecord[] {
   let loadedScope: LocalScope | null = null;
   let activeMenu: { row: LocalRecord; wrap: HTMLElement | null } | null = null;
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
+  let recentObservations: LocalRecord[] = [];
 
   function init(nextDeps: LocalContextDeps) {
     deps = nextDeps;
@@ -57,6 +60,7 @@ function rowsOf(value: unknown): LocalRecord[] {
     closeRowMenu();
     disarmDangerButtons();
     loadedScope = null;
+    recentObservations = [];
     runtime.UiState.setDrawerOpen('local-context-drawer', false);
   }
 
@@ -72,7 +76,8 @@ function rowsOf(value: unknown): LocalRecord[] {
       if (requestScope.project) params.set('project', requestScope.project);
       const suffix = params.toString() ? '?' + params.toString() : '';
       const response = await fetch('/api/ghost/summary' + suffix, { cache: 'no-store' });
-      const data = await response.json();
+      const decoded: unknown = await response.json();
+      const data = recordOf(decoded);
       if (!isOpen() || !sameScope(requestScope, currentScope())) return;
       loadedScope = data && data.scope ? cleanScope(data.scope) : requestScope;
       renderLocalContext(data);
@@ -136,8 +141,10 @@ function rowsOf(value: unknown): LocalRecord[] {
       reviewRows = rowsOf(data.review),
       repairRows = rowsOf(data.repair),
       activeRows = rowsOf(data.active),
+      goalRows = rowsOf(data.goals),
       taskRows = rowsOf(data.tasks),
       observationRows = rowsOf(data.observations);
+    recentObservations = observationRows;
     const health = recordOf(data.health);
     const warnings = Array.isArray(health.warnings) ? health.warnings : [];
     const hasContent = !!(
@@ -145,6 +152,7 @@ function rowsOf(value: unknown): LocalRecord[] {
       reviewRows.length ||
       repairRows.length ||
       activeRows.length ||
+      goalRows.length ||
       taskRows.length ||
       observationRows.length
     );
@@ -160,6 +168,9 @@ function rowsOf(value: unknown): LocalRecord[] {
     appendGroup(body, 'Pending review', reviewRows, reviewRowNode);
     appendGroup(body, 'Needs attention', repairRows, repairRowNode);
     appendGroup(body, 'Active preferences', activeRows, rowNode);
+    appendGroup(body, 'Confirmed project goals', goalRows, (row: LocalRecord) =>
+      baseRowNode(row, [['reject_candidate', 'Forget goal']]),
+    );
     appendGroup(body, 'Recent experiences', observationRows, (row: LocalRecord) => observationRowNode(row, enabled));
     appendGroup(body, 'Follow-ups', taskRows, taskRowNode);
     if (hasWarning || hasContent) body.appendChild(healthNode(health, enabled));
@@ -373,8 +384,8 @@ function rowsOf(value: unknown): LocalRecord[] {
   }
 
   function onMenuClick(event: MouseEvent): void {
-    const target = event.target as { closest?: (selector: string) => HTMLButtonElement | null } | null;
-    const button = target && typeof target.closest === 'function' ? target.closest('button[data-act]') : null;
+    const target = event.target;
+    const button = target instanceof Element ? target.closest<HTMLButtonElement>('button[data-act]') : null;
     if (!button || !activeMenu) return;
     const action = button.dataset.act;
     const row = activeMenu.row;
@@ -411,6 +422,7 @@ function rowsOf(value: unknown): LocalRecord[] {
       ['format:markdown', 'Markdown'],
       ['tone:direct', 'Direct tone'],
       ['tone:technical', 'Technical tone'],
+      ['tone:warm', 'Warm tone'],
     ]) {
       const option = document.createElement('option');
       option.value = value;
@@ -418,18 +430,56 @@ function rowsOf(value: unknown): LocalRecord[] {
       preference.appendChild(option);
     }
     preference.setAttribute('aria-label', 'Preference');
+    if (actionScope().project) {
+      const goalOption = document.createElement('option');
+      goalOption.value = 'project_goal';
+      goalOption.textContent = 'Project goal';
+      preference.appendChild(goalOption);
+    }
 
     const scope = document.createElement('select');
     scope.setAttribute('aria-label', 'Where to remember');
     const scopes = [['session', 'This chat']];
     if (actionScope().project) scopes.push(['project', 'Current project']);
-    scopes.push(['user', 'This device']);
+    scopes.push(['user', 'All chats and projects on this device']);
     for (const [value, label] of scopes) {
       const option = document.createElement('option');
       option.value = value;
       option.textContent = label;
       scope.appendChild(option);
     }
+    scope.value = 'user';
+
+    const goalName = document.createElement('input');
+    goalName.type = 'text';
+    goalName.value = 'focus';
+    goalName.maxLength = 40;
+    goalName.pattern = '[a-z0-9_]+';
+    goalName.setAttribute('aria-label', 'Goal name');
+    goalName.placeholder = 'Name for this goal';
+    goalName.hidden = true;
+    const reply = document.createElement('select');
+    reply.setAttribute('aria-label', 'Earlier exchange this updates');
+    reply.hidden = true;
+    const initial = document.createElement('option');
+    initial.value = '';
+    initial.textContent = 'New goal — no earlier exchange';
+    reply.appendChild(initial);
+    const sourcePosition = recentObservations.findIndex((item) => item.id === row.id);
+    for (const earlier of recentObservations.slice(sourcePosition + 1)) {
+      if (!textField(earlier, 'reply_digest')) continue;
+      const option = document.createElement('option');
+      option.value = textField(earlier, 'id');
+      option.textContent = textField(earlier, 'summary');
+      reply.appendChild(option);
+    }
+    preference.onchange = () => {
+      const isGoal = preference.value === 'project_goal';
+      scope.disabled = isGoal;
+      if (isGoal) scope.value = 'project';
+      goalName.hidden = !isGoal;
+      reply.hidden = !isGoal;
+    };
 
     const quote = document.createElement('input');
     quote.type = 'text';
@@ -456,12 +506,27 @@ function rowsOf(value: unknown): LocalRecord[] {
       form.remove();
       wrap.classList.remove('editing');
     };
-    form.append(preference, scope, quote, save, cancel);
+    form.append(preference, scope, quote, goalName, reply, save, cancel);
     form.onsubmit = (event) => {
       event.preventDefault();
+      if (preference.value === 'project_goal') {
+        const earlier = recentObservations.find((item) => item.id === reply.value);
+        postAction('propose_project_goal', {
+          id: row.id,
+          session_id: textField(row, 'session_id') || actionScope().session_id,
+          scope: 'project',
+          goal: quote.value.trim(),
+          goal_key: goalName.value.trim(),
+          evidence_quote: quote.value.trim(),
+          reply_run_id: reply.value,
+          reply_digest: earlier ? textField(earlier, 'reply_digest') : '',
+        });
+        return;
+      }
       const [conflict_key, value_key] = preference.value.split(':');
       postAction('propose_preference', {
         id: row.id,
+        session_id: textField(row, 'session_id') || actionScope().session_id,
         scope: scope.value,
         conflict_key,
         value_key,
@@ -492,10 +557,11 @@ function rowsOf(value: unknown): LocalRecord[] {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      const data = await response.json();
+      const decoded: unknown = await response.json();
+      const data = recordOf(decoded);
       if (!response.ok || !data.ok) {
         await loadLocalContextDrawer();
-        $('local-context-subtitle').textContent = data.error || 'Update failed';
+        $('local-context-subtitle').textContent = textField(data, 'error') || 'Update failed';
         return;
       }
       await loadLocalContextDrawer();
@@ -516,7 +582,8 @@ function rowsOf(value: unknown): LocalRecord[] {
     $('local-context-export').textContent = 'Exporting';
     try {
       const response = await fetch('/api/ghost/export', { cache: 'no-store' });
-      const data = await response.json();
+      const decoded: unknown = await response.json();
+      const data = recordOf(decoded);
       const ok = await deps.copyText(JSON.stringify(data, null, 2));
       $('local-context-export').textContent = ok ? 'Copied' : 'Failed';
     } catch {

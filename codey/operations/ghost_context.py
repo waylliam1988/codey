@@ -13,54 +13,41 @@ presented as confirmed long-term traits. These builders make no model calls.
 from __future__ import annotations
 
 import sqlite3
-from typing import Any
-from urllib.parse import urlsplit
+from typing import Protocol, runtime_checkable
 
-from codey.ghost.continuity import build_ghost_continuity
+from codey.ghost.affinity import GhostAffinityStore
+from codey.ghost.continuity import GhostContinuity, GhostContinuityStore, build_ghost_continuity
 from codey.ghost.directive import GhostDirective, build_ghost_directive
+from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostSettingsError
 from codey.ghost.observation_index import (
     MAX_RETRIEVED_ITEMS,
     RETRIEVAL_BUDGET_CHARS,
     render_retrieved_block,
 )
-from codey.ghost.observations import GhostObservationCorruptedError
-from codey.providers.compat_transport import provider_attribute
-from codey.providers.token_accounting import ContextBudget
-
-VERIFIED_LANGUAGE_MODEL = "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M"
-LANGUAGE_DIRECTIVE_LINE = "- Prefer: reply language = Chinese."
+from codey.ghost.observations import GhostObservationCorruptedError, GhostObservationStore
 
 
-def _language_directive_enabled(provider: object) -> bool:
-    """Enable the Chinese treatment only for the evaluated local configuration."""
-    if provider_attribute(provider, "model") != VERIFIED_LANGUAGE_MODEL:
-        return False
-    endpoint = urlsplit(str(provider_attribute(provider, "base_url") or ""))
-    budget = provider_attribute(provider, "context_budget")
-    return (
-        endpoint.scheme == "http" and endpoint.hostname in {"127.0.0.1", "localhost", "::1"}
-        and endpoint.path.rstrip("/") == "/v1"
-        and provider_attribute(provider, "api_protocol") == "openai-completions"
-        and provider_attribute(provider, "native_tools") is True
-        and isinstance(budget, ContextBudget)
-        and budget.window_tokens == 262144
-        and budget.output_tokens + budget.safety_tokens == 32768
-        and budget.keep_recent_tokens == 32000
-        and budget.input_limit_tokens is None
-    )
+@runtime_checkable
+class _WarningSink(Protocol):
+    def emit(self, event: dict[str, object]) -> object: ...
+
+
+@runtime_checkable
+class _ControlReader(Protocol):
+    def control_enabled(self, name: str, *, project: str = "", session_id: str = "") -> bool: ...
 
 
 def ghost_control_enabled(
-    state: Any,
+    state: object,
     name: str,
     *,
     project: str = "",
     session_id: str = "",
 ) -> bool:
     """Read an independent Ghost control and fail closed on bad settings."""
-    inbox = getattr(state, "ghost_inbox", None)
-    if inbox is None:
+    inbox: object = getattr(state, "ghost_inbox", None)
+    if not isinstance(inbox, _ControlReader):
         return False
     try:
         value = inbox.control_enabled(name, project=project, session_id=session_id)
@@ -70,13 +57,13 @@ def ghost_control_enabled(
 
 
 def ghost_affinity_store(
-    state: Any,
+    state: object,
     *,
     project: str = "",
     session_id: str = "",
-) -> Any:
-    store = getattr(state, "ghost_affinity", None)
-    if store is None:
+) -> GhostAffinityStore | None:
+    store: object = getattr(state, "ghost_affinity", None)
+    if not isinstance(store, GhostAffinityStore):
         return None
     if not ghost_control_enabled(state, "accept_events", project=project, session_id=session_id):
         return None
@@ -84,7 +71,7 @@ def ghost_affinity_store(
 
 
 def ghost_directive(
-    state: Any,
+    state: object,
     *,
     project: str = "",
     session_id: str = "",
@@ -92,28 +79,27 @@ def ghost_directive(
 ) -> GhostDirective:
     if not ghost_control_enabled(state, "retrieve_projections", project=project, session_id=session_id):
         return build_ghost_directive(None)
-    store = getattr(state, "ghost_hebbian", None)
-    if store is None:
+    store: object = getattr(state, "ghost_hebbian", None)
+    if not isinstance(store, GhostHebbianStore):
         return build_ghost_directive(None)
     return build_ghost_directive(
         store,
         project=project,
         session_id=session_id,
         affinity_store=ghost_affinity_store(state, project=project, session_id=session_id),
-        include_language=_language_directive_enabled(provider),
     )
 
 
 def ghost_continuity(
-    state: Any,
+    state: object,
     *,
     project: str = "",
     session_id: str = "",
-) -> Any:
+) -> GhostContinuity:
     if not ghost_control_enabled(state, "retrieve_projections", project=project, session_id=session_id):
         return build_ghost_continuity(None)
-    store = getattr(state, "ghost_continuity", None)
-    if store is None:
+    store: object = getattr(state, "ghost_continuity", None)
+    if not isinstance(store, GhostContinuityStore):
         return build_ghost_continuity(None)
     return build_ghost_continuity(
         store,
@@ -123,24 +109,24 @@ def ghost_continuity(
 
 
 def ghost_hints_enabled(
-    state: Any,
+    state: object,
     *,
     project: str = "",
     session_id: str = "",
     provider: object = None,
     directive_text: str = "",
 ) -> bool:
-    """Recheck a promoted language source at each physical send attempt."""
+    """Recheck every preference source at each physical send attempt."""
     if not ghost_control_enabled(state, "admit_hints", project=project, session_id=session_id):
         return False
-    if LANGUAGE_DIRECTIVE_LINE in directive_text:
+    if directive_text:
         current = ghost_directive(state, project=project, session_id=session_id, provider=provider)
         return current.text == directive_text
     return True
 
 
 def ghost_experiences(
-    state: Any,
+    state: object,
     *,
     session_id: str = "",
     project: str = "",
@@ -171,8 +157,8 @@ def ghost_experiences(
         _emit_settings_warning(state, session_id=session_id)
         return ""
     try:
-        store = getattr(state, "ghost_observations", None)
-        if store is None:
+        store: object = getattr(state, "ghost_observations", None)
+        if not isinstance(store, GhostObservationStore):
             return ""
         picked = store.retrieve(
             query or "", session_id=session_id, project=project or "", scope=scope,
@@ -187,13 +173,12 @@ def ghost_experiences(
     return render_retrieved_block(picked, budget_chars)
 
 
-def _emit_settings_warning(state: Any, *, session_id: str = "") -> None:
+def _emit_settings_warning(state: object, *, session_id: str = "") -> None:
     """Surface a corrupt learning switch as a visible local-health warning."""
-    emit = getattr(state, "emit", None)
-    if not callable(emit):
+    if not isinstance(state, _WarningSink):
         return
     try:
-        emit({
+        state.emit({
             "type": "ghost_post_turn_warning",
             "stage": "learning_settings",
             "run_id": "",
