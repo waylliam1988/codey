@@ -456,6 +456,7 @@
     "codey/providers/send_loop.py",
     "codey/providers/snapshot.py",
     "codey/providers/submission.py",
+    "codey/providers/summary_stream.py",
     "codey/providers/supervisor.py",
     "codey/providers/text_result_views.py",
     "codey/providers/text_tool_schema.py",
