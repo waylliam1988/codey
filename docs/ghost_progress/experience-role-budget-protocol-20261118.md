@@ -60,3 +60,12 @@ continuity/queue/Affinity 为独立派生消费者。人工确认偏好走 inbox
 不删除原行为断言。两轮完整日志/XML保存在本地
 `.e2e-artifacts/ghost-experience-role-budget-20261118/`。本文件与复现测试先提交，
 基线生产缺陷不作为服务阴性、模型收益或已通过生产验收。
+
+进一步追踪后的归属纠正：普通 project 经 `project_completion_flow → project_writer_phase →
+project_adapter`，writer 已正确传 project scope；实际丢失点是 `permissions.py` 没有登记
+`ghost_experiences`，且 `project_adapter._project_ghost_sources` 显式传空经历。
+因此前段把普通 project 归因于 `task_entry._entry_context` 不准确。保留原22项断言与
+13/9基线；双角色修复后21通过/1失败。尝试过的 task_entry 类型整理及错误归属产生的
+candidate日志保留，本轮已撤回全部自有 task_entry 改动，不将它们纳入生产提交。
+新增 project 经历投递属于实际启用新消费者，须另冻结单模型行为对照及相关准入边界，
+不能靠改scope或权限名单就宣称生产完成。
