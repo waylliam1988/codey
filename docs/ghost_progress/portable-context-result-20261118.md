@@ -3,6 +3,7 @@
 归因更正（2026-11-18）：原始流式请求未设置include_usage，已定位为实验脚本漏配置，
 不能将缺失直接归因于KoboldCpp。短标签提示未明示reason/tone合法值，评分混入格式遵循；
 原分数和null不改。修复及独立复验见[labels-v2协议](portable-context-labels-v2-20261118.md)。
+后续[labels-v3](portable-context-labels-v3-20261118.md)已实测请求usage，仍无事件；同版本服务工具转流分支有相应遗漏。
 
 状态 `COMPLETE_WITH_AUTHORIZED_RETRY / NORMAL_ENTRY_SMOKE_ONLY`。
 [冻结协议](portable-context-protocol-20261118.md)，初始提交`acad46df`，

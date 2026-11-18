@@ -1,5 +1,10 @@
 # Ghost 偏好投递与预算路由实验
 
+2026-11-18：[流式用量/明确JSON字符串复验](../../../docs/ghost_progress/portable-context-labels-v3-20261118.md)，
+脚本`portable_context_trial.py --protocol labels-v3`。脚本已补include_usage；v2首格、v3第二格
+非JSON停止，v3两次工具流仍无usage；KoboldCpp 1.117.1对应分支定位、13项最终回归和静态结果见记录。
+历史分数不改，不声称完整实机通过或新增学习收益；v2/v3脱敏指标独立保存在reports。
+
 2026-11-18：[本地上下文通用化冒烟](../../../docs/ghost_progress/portable-context-result-20261118.md)，
 脚本`portable_context_trial.py`，12格/一个合成经历，包含用户授权的一次KoboldCpp故障补测。
 配置含大预算与流式；保留严格短标签失败和流式用量缺失，不重判原效果实验。

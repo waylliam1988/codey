@@ -1,0 +1,59 @@
+{
+  "status": "INCOMPLETE",
+  "classification": "LABEL_INTERFACE_FAILURE_AND_MISSING_STREAM_USAGE",
+  "protocol": "labels-v3",
+  "protocol_commit": "c69c85d7",
+  "model": "koboldcpp/Gemma4-12B-QAT-Uncensored-HauhauCS-Balanced-Q4_K_M",
+  "server_version": "1.117.1",
+  "upstream_source_sha256": "d29a56f2ec17bba3442fd1ac53a328b95acca43e8895370df0202e87f2a8c5e1",
+  "planned_cells": 3,
+  "physical_attempts": 2,
+  "complete_responses": 2,
+  "scored_cells": 1,
+  "unstarted_cells": 1,
+  "include_usage_requests": 2,
+  "reported_usage_responses": 0,
+  "cells": [
+    {
+      "arm": "off",
+      "output_tokens": 8192,
+      "stream": true,
+      "format_valid": true,
+      "baseline_unknown": true,
+      "sources_present": false,
+      "usage_requested": true,
+      "usage_status": "missing",
+      "input_tokens": null,
+      "generated_tokens": null,
+      "json_events": 5,
+      "usage_events": 0,
+      "elapsed_ms": 4375
+    },
+    {
+      "arm": "on",
+      "output_tokens": 8192,
+      "stream": true,
+      "format_valid": false,
+      "error": "JSONDecodeError",
+      "failure": "Python single-quoted dictionary inside done.summary",
+      "behavior_scored": false,
+      "sources_present": true,
+      "usage_requested": true,
+      "usage_status": "missing",
+      "input_tokens": null,
+      "generated_tokens": null,
+      "json_events": 5,
+      "usage_events": 0,
+      "elapsed_ms": null
+    }
+  ],
+  "automatic_retries": 0,
+  "ghost_extra_generation_requests": 0,
+  "scorer_relaxed": false,
+  "limitations": [
+    "Single synthetic history; no mechanism effect or natural tone quality conclusion.",
+    "Override arm not started after the first format failure.",
+    "Usage requested but absent in both observed tool-call streams; no complete cost gate.",
+    "Same-version upstream source matches symptoms; local binary and model raw tokens were not independently inspected."
+  ]
+}

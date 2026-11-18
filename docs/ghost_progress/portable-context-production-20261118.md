@@ -3,6 +3,8 @@
 日期2026-11-18；本记录与生产实现同批提交到master，状态`PRODUCTION_MERGED`。
 生产提交：`git log --grep="generalize confirmed local context across providers"`。
 [实机记录](portable-context-result-20261118.md)和[冻结协议](portable-context-protocol-20261118.md)独立保存。
+后续[遥测/标签复验](portable-context-labels-v3-20261118.md)修正脚本用量配置，但服务工具流用量与
+summary序列化仍有缺口；不改变本生产接线范围，也不宣称实机效果或成本门完整通过。
 
 ## 默认行为
 

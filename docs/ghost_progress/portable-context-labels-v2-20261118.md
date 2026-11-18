@@ -62,6 +62,7 @@ python -m tests.manual.ghost_memory_routing.portable_context_trial --protocol la
 原始证据留`.e2e-artifacts/portable-context-labels-v2-20261118`；
 [脱敏指标](../../tests/manual/ghost_memory_routing/reports/portable-context-labels-v2-20261118.json)。
 后续如调整summary序列化要求，应独立冻结新协议，不补跑本批或合并结果。
+后续[三格流式v3](portable-context-labels-v3-20261118.md)另行冻结并按首次格式失败停止，结果不拼接。
 
 离线相关回归53项通过（61.82秒）：
 

@@ -1767,6 +1767,8 @@ R0  研究基准与可塑性实验    0.9.x+
 取消模型名、API地址、流式和output128/8192的消费白名单。来源、admission、scope、关闭/撤回/删除边界保留。
 [实机冒烟](docs/ghost_progress/portable-context-result-20261118.md)完成12格及一次用户授权服务故障补测；
 短标签匹配失败、流式用量缺失和单合成样本限制保留，不宣布整体效果实验通过或各模型同等收益。
+后续[遥测/标签定向复验](docs/ghost_progress/portable-context-labels-v3-20261118.md)修脚本include_usage遗漏，
+但工具流仍无usage且summary序列化失败，按协议停止；没有新增效果/成本验收或生产晋级。
 以下窄配置范围及中断快照是历史记录，现行可用范围以本接线记录为准。World Model仍未生产晋级。
 
 新候选[条件接受率与纠正成本](docs/ghost_progress/proposal-risk-interrupted-20261118.md)

@@ -21,6 +21,8 @@
 这项用户授权的可用性调整取代下文历史消费者的精确配置开关，不修改历史实机数据或新学习候选的晋级标准。
 各模型的效果结论继续注明实际证据；自动写回、预测、表示变更和World Model仍需独立验收。
 [12格实机冒烟](ghost_progress/portable-context-result-20261118.md)包含授权补测，保留短标签失败和流式tokens缺失。
+[用量/标签修复复验](ghost_progress/portable-context-labels-v3-20261118.md)已补脚本include_usage；
+KoboldCpp工具流仍无usage，summary单引号格式导致停止。保留INCOMPLETE，不重试或改分；13项专项通过，交付复查Ruff有并行collaboration改动6条诊断，完整类型与精度门通过。
 没有为Ghost增加生成，没有恢复下方被中断的条件接受率批次。
 
 ## 当前恢复批次（2026-11-18）
