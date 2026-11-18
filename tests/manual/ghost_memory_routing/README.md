@@ -1,5 +1,9 @@
 # Ghost 偏好投递与预算路由实验
 
+2026-11-18：[项目目标/新方案选择冻结协议](../../../docs/ghost_progress/semantic-goal-protocol-20261118.md)，
+`semantic_goal_trial.py`；20条合成流、三个时间阶段、四臂240请求，output8192。
+分别判断人工确认目标与方案反应预测，冻结时未运行，不代表生产启用。
+
 这里保存同 prompt 排序、扩槽位排序、分层路由、偏好族投递与预算压力实验的脚本和
 历史报告。它们是 manual/evaluation 材料，不是生产功能或自动上线控制器。
 
