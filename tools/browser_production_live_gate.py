@@ -162,8 +162,10 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
              inject_stale_ref: bool = False,
              additional_required_tools: tuple[str, ...] = (),
              explanation_bindings: tuple[str, ...] = BINDINGS,
-             explanation_schema: JsonObject | None = None) -> dict[str, object]:
+             explanation_schema: JsonObject | None = None,
+             requested_capabilities: tuple[str, ...] | None = None) -> dict[str, object]:
     directory.mkdir(parents=True, exist_ok=False)
+    project_task = mode in {"hybrid", "project"}
     provider = BrowserSearchProvider(headless=True)
     recording = ExperimentProvider(target, directory,
         fixed_acquisition=acquisition_action is not None or fixed_failure or fixed_source_attempt,
@@ -211,10 +213,11 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             if not observation.ok:
                 raise ValueError("stale-ref fixture could not refresh controls")
             stale_ref_injected = True
-            (directory / "stale-ref-injection.json").write_text(json.dumps({
+            injection: JsonObject = {
                 "trigger": "before_first_fill", "submitted_ref": ref,
                 "generation_before": before, "generation_after": browser.generation,
-            }), encoding="utf-8")
+            }
+            (directory / "stale-ref-injection.json").write_text(json.dumps(injection), encoding="utf-8")
         return original_fill(browser, ref, value)
 
     def inject_before_version_check(root: Path, rel: str, content: str, *, tool: str,
@@ -265,7 +268,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                  "直接 return unwrap(await tools.browser_read({}))，不要再取 .text。")
     if mode == "research":
         task += "用 submit_research_answer 提交完整答案，引用实际读到的 [eN] 原文。"
-    elif mode == "hybrid":
+    elif project_task:
         task += "然后读取项目的 result.json，将 amount 改为实测克数（JSON number），code 改为实测校验码（JSON string），再用 done 报告。"
         if stale_edit:
             task += ("本项验收要求实际验证文件版本冲突恢复：完整 read_file 后，以外层 Result.result_ref 作为 "
@@ -365,7 +368,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             sequence = (require_browser_research_sequence(url=URL, condition="text", value="鱼丸"),) if research_sequence else ()
             file_fields = tuple(require_browser_file_field(url=URL, prefix=prefix, suffix=suffix, path="result.json",
                 pointer=pointer, value_type=kind) for prefix, suffix, pointer, kind in (
-                    ("鱼丸净重为 ", " 克。", "/amount", "number"), ("记录校验码 ", "。", "/code", "string"))) if mode == "hybrid" else ()
+                    ("鱼丸净重为 ", " 克。", "/amount", "number"), ("记录校验码 ", "。", "/code", "string"))) if project_task else ()
             waits = (require_tool_success("browser_wait", via="codemode", arguments={
                 "condition": "text", "value": "UPLOAD_BYTES_82"}),) if upload_file and explicit_wait else ()
             output_schema: JsonObject = (explanation_schema if explanation_schema is not None else
@@ -374,12 +377,13 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                  "required": ["amount", "code"], "additionalProperties": False})
             selection: dict[str, str] = {"model": target.model, "base_url": target.base_url}
             request = HeadlessRequest(
-                project if mode == "hybrid" else None, task, intent=mode, provider_id="local", max_turns=max_turns,
+                project if project_task else None, task, intent=mode, provider_id="local", max_turns=max_turns,
                 session_id=session_id,
                 state_home=directory / "state", research_store_root=directory / "knowledge",
-                requested_capabilities=("web.read", "browser.observe", "browser.interact", *(
+                requested_capabilities=requested_capabilities if requested_capabilities is not None else (
+                    "web.read", "browser.observe", "browser.interact", *(
                     ("browser.effect",) if structured or explanation_output or upload_file or download_file or bound_output else ())),
-                project_changes_required=mode == "hybrid",
+                project_changes_required=project_task,
                 required_tools=(*(() if not declare_required_tools or source_failure and source_attempt_only else sorted(required)),
                                 *bindings, *sequence, *waits, *explanation_facts, *file_fields, *additional_required_tools),
                 output_format="json_explanation" if explanation_output or assembled_upload else "json" if bound_output else "text",
@@ -391,6 +395,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
             request_record: dict[str, object] = {
                 "task": task, "mode": mode, "max_turns": max_turns, "required_tools": request.required_tools,
                 "sources_open_required": request.sources_open_required, "strict_research": strict_research,
+                "requested_capabilities": request.requested_capabilities,
                 "output_format": request.output_format, "output_schema": request.output_schema,
                 "model": target.model, "base_url": target.base_url, "seed": target.seed,
                 "source_attempt_only": source_attempt_only, "fixed_source_attempt": fixed_source_attempt,
@@ -441,7 +446,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                   and (not (stale_ref or inject_stale_ref) or failed_refs >= 1)
                   and (not research_sequence or submission_only)
                   and (mode != "research" or re.search(r"\[e[1-9][0-9]*\]", answer) is not None)
-                  and (mode != "hybrid" or file_correct))
+                  and (not project_task or file_correct))
         if assembled_upload:
             try:
                 delivered = parse_json_object(answer)
@@ -467,7 +472,7 @@ def run_case(directory: Path, mode: str, target: Target, *, restore_snapshots: b
                        true_stale_conflicts=audit["true_stale_conflicts"], fresh_read_recovery=audit["fresh_read_recovery"],
                        facts_match=facts_match, assembled_upload=assembled_upload, source_attempt_only=source_attempt_only,
                        fixed_source_attempt=fixed_source_attempt)
-        if mode == "hybrid":
+        if project_task:
             summary.update(final_file_correct=file_correct, version_check_reached=version_check_reached,
                            conflict_injected=changed_after_read, conflict_recovery_covered=conflict_recovered,
                            conflict_coverage="recovered" if conflict_recovered else

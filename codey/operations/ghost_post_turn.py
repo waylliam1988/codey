@@ -177,6 +177,10 @@ def maybe_sync_continuity(
     *,
     run_projection: RunLedgerProjection | None = None,
 ) -> None:
+    # An approval/question is a suspended task, not a completed experience.
+    # Updating its projection here changes the context rebuilt for resume.
+    if event.get("stop_reason") != "done":
+        return
     store = _store(deps.state, "ghost_continuity", GhostContinuityStore)
     if store is None:
         return

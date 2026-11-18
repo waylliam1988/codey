@@ -1,23 +1,24 @@
-"""Explicit browser capabilities compose with existing frozen tool surfaces."""
+"""Default browser capabilities compose with existing frozen tool surfaces."""
 from __future__ import annotations
+
+from pathlib import Path
 
 import pytest
 
 from codey.operations.kernel_protocol import build_turn_snapshot, normalize_turn
 from codey.operations.task_session import TaskSession
+from codey.policies.capabilities import BROWSER_CAPABILITIES as BROWSER
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.providers.base import AssistantTurn, ProviderToolCall
 from codey.task.entry_auth import derive_entry_auth
 from codey.task.model import TaskSubmission
-
-BROWSER = ("browser.observe", "browser.interact", "browser.effect")
 
 
 @pytest.mark.parametrize("kind", ["chat", "project", "hybrid", "research"])
 def test_browser_capabilities_survive_entry_policy_and_recovery_without_changing_answer_tools(kind: str) -> None:
     from codey.research.answer_contract import ANSWER_TOOLS
 
-    auth = derive_entry_auth({"intent": kind, "requested_capabilities": BROWSER})
+    auth = derive_entry_auth({"intent": kind})
     request = TaskSubmission("s", None, "browser task", 8, False, "local",
                              requested_capabilities=auth.requested_capabilities,
                              strict_research=auth.strict_research)
@@ -28,14 +29,13 @@ def test_browser_capabilities_survive_entry_policy_and_recovery_without_changing
     assert "browser_eval" in snapshot.nested_tool_names
     assert not any(name.startswith("browser_") for name in snapshot.tool_names)
     assert not any(name.startswith("browser_") for name in ANSWER_TOOLS)
-    assert set(snapshot.nested_tool_names).isdisjoint(snapshot.tool_names)
+    assert {"web_search", "open_url"} <= set(snapshot.tool_names)
     if kind == "research":
         assert "submit_research_answer" in snapshot.tool_names
         assert "done" not in snapshot.tool_names
 
 
-def test_browser_authority_is_explicit_and_network_off_is_final() -> None:
-    assert not set(derive_entry_auth({"intent": "chat", "task": "打开网页，点击发送邮件"}).requested_capabilities) & set(BROWSER)
+def test_network_off_denies_default_and_explicit_browser_grants() -> None:
     auth = derive_entry_auth({"intent": "chat", "allow_web": False, "requested_capabilities": BROWSER})
     request = TaskSubmission("s", None, "task", 8, False, "local",
                              requested_capabilities=BROWSER, denied_capabilities=auth.denied_capabilities)
@@ -76,7 +76,7 @@ def test_explicit_exposure_does_not_duplicate_browser_leaf_with_codemode() -> No
 
 
 @pytest.mark.parametrize("native", [False, True])
-def test_aggregated_project_surface_does_not_advertise_unexecutable_text_wrappers(native: bool) -> None:
+def test_default_browser_keeps_executable_project_entrypoints(native: bool) -> None:
     from codey.protocols.text_turn import decode_text_turn
 
     session = TaskSession(task_kind="hybrid", policy=TaskPolicy(grants=frozenset({
@@ -84,25 +84,24 @@ def test_aggregated_project_surface_does_not_advertise_unexecutable_text_wrapper
     })))
     snapshot = build_turn_snapshot(session, native=native)
     assert "read_file" in snapshot.nested_tool_names
-    assert not {"read_file", "read_files", "parallel"} & set(snapshot.tool_names)
+    assert "read_file" in snapshot.tool_names
     plan = normalize_turn(decode_text_turn('{"tool":"read_files","args":{"paths":["result.json"]}}'),
                           snapshot=snapshot)
-    assert plan.protocol_error
+    assert not plan.protocol_error
     plan = normalize_turn(decode_text_turn('{"tool":"codemode","args":{'
         '"code":"return unwrap(await tools.read_file({path:inputs.path}));",'
         '"inputs":{"path":"result.json"}}}'), snapshot=snapshot)
     assert not plan.protocol_error
-    assert "edit" not in snapshot.tool_names and "edit" in snapshot.nested_tool_names
+    assert "edit" in snapshot.tool_names and "edit" in snapshot.nested_tool_names
     assert "run" not in snapshot.tool_names and "run" not in snapshot.nested_tool_names
 
 
-def test_mixed_task_requires_real_project_write_after_a_successful_codemode_return(tmp_path) -> None:
-    import json
-
+def test_mixed_task_requires_real_project_write_after_a_successful_codemode_return(tmp_path: Path) -> None:
     from codey.codemode.kernel import build_execute_turn_executor
     from codey.operations.completion_gate import evaluate
     from codey.operations.kernel_execution import execute_turn
     from codey.runtime.core.models import ToolCall
+    from codey.types.json_value import parse_json_object
     from codey.workspace.revision import WorkspaceRevisionStore
 
     original = '{"amount":0,"code":"unknown"}'
@@ -144,6 +143,6 @@ def test_mixed_task_requires_real_project_write_after_a_successful_codemode_retu
         snapshot=build_turn_snapshot(session), run_id="mixed", turn=2, effect_scope="task",
         project_path=project, workspace_revision_store=revisions, executors={"codemode": parent})
     assert result.ok, result.model_text
-    assert json.loads(target.read_text(encoding="utf-8")) == {"amount": 173, "code": "QUARTZ_851"}
+    assert parse_json_object(target.read_text(encoding="utf-8")) == {"amount": 173, "code": "QUARTZ_851"}
     assert any(record["name"] == "edit" for record in session.executed.values())
     assert evaluate(session, "Saved the measured result").complete

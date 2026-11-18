@@ -13,7 +13,7 @@ from codey.app.headless_runner import HeadlessRequest, HeadlessResult, run_headl
 from codey.policies.browser_requirement import require_browser_page_rounds, require_browser_research_sequence
 from codey.policies.task_policy import TaskPolicy, build_task_policy
 from codey.policies.tool_requirement import required_tool_names
-from codey.types.json_value import JsonObject, decode_json_object
+from codey.types.json_value import JsonObject, decode_json_object, parse_json_object
 from tests.test_protocol_surface import TARGET
 from tests.test_receipt_bound_edit_surface_probe import install_http
 from tools import browser_prerequisite_ab as fixture
@@ -32,8 +32,8 @@ def add_requirement(monkeypatch: pytest.MonkeyPatch, declaration: str) -> None:
 
 
 def request_messages(directory: Path) -> list[str]:
-    return [json.dumps(row["payload"]["messages"], ensure_ascii=False)
-            for row in map(json.loads, (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines())
+    return [json.dumps(decode_json_object(row["payload"])["messages"], ensure_ascii=False)
+            for row in map(parse_json_object, (directory / "provider.jsonl").read_text(encoding="utf-8").splitlines())
             if row.get("phase") == "request"]
 
 
@@ -82,7 +82,8 @@ def test_research_requires_the_declared_wait_read_and_citation(
 
 def test_research_sequence_is_explicit_and_frozen_without_granting_access() -> None:
     declaration = require_browser_research_sequence(url=gate.URL, condition="text", value="鱼丸")
-    submission = SimpleNamespace(project=None, strict_research=True, required_tools=(declaration,))
+    submission = SimpleNamespace(project=None, strict_research=True, required_tools=(declaration,),
+                                 denied_capabilities=("browser.observe",))
     policy = build_task_policy(submission, task_kind="research")
     assert declaration in policy.required_checks
     assert TaskPolicy.from_payload(policy.to_payload()) == policy
@@ -144,7 +145,8 @@ def test_page_rounds_require_distinct_navigations_and_ordered_actions(
 
 def test_rounds_declaration_is_opt_in_and_rejects_invalid_counts() -> None:
     declaration = rounds_requirement()
-    policy = build_task_policy(SimpleNamespace(project=None, required_tools=(declaration,)), task_kind="chat")
+    policy = build_task_policy(SimpleNamespace(project=None, required_tools=(declaration,),
+        denied_capabilities=("browser.interact",)), task_kind="chat")
     assert policy.required_checks == (declaration,)
     assert not policy.allows("browser.interact")
     assert TaskPolicy.from_payload(policy.to_payload()) == policy

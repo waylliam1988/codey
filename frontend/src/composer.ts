@@ -6,8 +6,6 @@ import type { Draft, Message, Project, Session } from './types/domain';
 import type { RunDetailsAction } from './run_details';
 import { recoveryForFailure } from './failure_presentation';
 
-const BROWSER_CAPABILITIES = ['browser.observe', 'browser.interact', 'browser.effect'] as const;
-
 export interface ComposerDeps {
   $: (id: string) => HTMLElement;
   getRunningSessionId: () => string | null;
@@ -21,7 +19,6 @@ export interface ComposerDeps {
   sessionProject: (session: Session | undefined) => Project | null | undefined;
   sessionProjectPath: (id: string) => string;
   currentIntentForSession: (id: string) => string;
-  toggleBrowserForActive: () => void;
   projectPickerBusy: () => boolean;
   persistActive: () => void;
   persistActiveNow: () => void;
@@ -51,7 +48,6 @@ export interface ComposerApi {
   resizeTask(): void;
   updateSend(): void;
   toggleResearchForActive(): void;
-  toggleBrowserForActive(): void;
   setActiveProvider(id: string): void;
   continueTask(sessionId: string, sourceRunId: string): Promise<void>;
   recallMessage(sessionId: string, text: string): void;
@@ -311,20 +307,6 @@ export interface ComposerApi {
     deps.renderChat();
   }
 
-  function toggleBrowserForActive() {
-    if (runningSessionId() === activeId() || sendingSessionId === activeId()) return;
-    const s = deps.activeSession();
-    if (!s) return;
-    s.browser = !s.browser;
-    deps.persistActiveNow();
-    deps.updateComposerContext();
-    deps.renderChat();
-  }
-
-  function requestedCapabilities(session: Session): string[] {
-    return session.browser ? [...BROWSER_CAPABILITIES] : [];
-  }
-
   function setActiveProvider(id: string) {
     const provider = PROVIDERS.includes(id) ? id : liveDefaultProvider();
     const s = deps.activeSession();
@@ -544,7 +526,6 @@ export interface ComposerApi {
           ...(refs.length ? { attachments: refs } : {}),
           provider,
           intent,
-          requested_capabilities: requestedCapabilities(s),
           ...(edit
             ? {
                 input: {
@@ -641,7 +622,6 @@ export interface ComposerApi {
           task,
           provider,
           intent: deps.currentIntentForSession(sessionId),
-          requested_capabilities: requestedCapabilities(session),
           input_mode: isRunningForSession(sessionId) ? 'steer' : 'follow_up',
           ...(files.length ? { attachments: files } : {}),
           ...runtime.ProviderUI.runSelection(session, provider),
@@ -791,7 +771,6 @@ export interface ComposerApi {
           input: { kind: 'resume_run', source_run_id: sourceRunId, instruction },
           provider: s.provider || liveDefaultProvider(),
           intent: deps.currentIntentForSession(sessionId),
-          requested_capabilities: requestedCapabilities(s),
           ...runtime.ProviderUI.runSelection(s, s.provider || liveDefaultProvider()),
         }),
       });
@@ -838,8 +817,6 @@ export interface ComposerApi {
         deps.attachCurrentChatToPickedProject();
       } else if (target.id === 'ctx-research') {
         toggleResearchForActive();
-      } else if (target.id === 'ctx-browser') {
-        toggleBrowserForActive();
       }
     };
     $('composer-context').addEventListener('keydown', (e: KeyboardEvent) => {
@@ -877,7 +854,6 @@ export interface ComposerApi {
     resizeTask,
     updateSend,
     toggleResearchForActive,
-    toggleBrowserForActive,
     setActiveProvider,
     continueTask,
     recallMessage,

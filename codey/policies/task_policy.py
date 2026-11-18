@@ -172,11 +172,11 @@ def _restored_bool(value: object, field: str) -> bool:
     return value
 
 
-def _browser_grants(kind: str, requested: frozenset[str]) -> frozenset[str]:
+def _default_web_grants(kind: str) -> frozenset[str]:
     if kind in {"project", "hybrid", "chat", "auto", "research"}:
-        return requested.intersection(BROWSER_CAPABILITIES)
+        return frozenset(("web.read", *BROWSER_CAPABILITIES))
     if kind in {"planning", "planning_readonly", "readonly"}:
-        return requested & {"browser.observe"}
+        return frozenset({"web.read", "browser.observe"})
     return frozenset()
 
 
@@ -308,9 +308,9 @@ def build_task_policy(
         grants.discard("project.verify")
         grants.discard("shell.approval")
 
-    # Browser authorization is explicit at entry; page content and model
-    # requests cannot widen it. Planning only accepts observation capability.
-    grants.update(_browser_grants(kind, requested))
+    # Browsing is a baseline capability of new tasks. Planning remains
+    # observational; explicit denials below and recovered policies stay final.
+    grants.update(_default_web_grants(kind))
 
     # Unknown requested capabilities are ignored (denied); they never widen grants.
     grants.intersection_update(KNOWN_TASK_GRANTS)

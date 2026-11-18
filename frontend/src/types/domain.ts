@@ -298,7 +298,6 @@ export interface Session {
   projectId?: string | null;
   provider?: string;
   research?: boolean;
-  browser?: boolean;
   modelSelection?: {
     connection_id?: string;
     base_url?: string;

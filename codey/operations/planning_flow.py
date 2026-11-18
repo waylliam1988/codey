@@ -5,12 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from codey.research.tools import ResearchTools
 
 from codey.agents.request import AgentRequest
+from codey.ghost.continuity import GhostContinuity
+from codey.ghost.directive import GhostDirective
+from codey.knowledge.store import KnowledgeStore
 from codey.operations.context import RunFrame, RunWork
 from codey.operations.ghost_context import ghost_continuity as _ghost_continuity_fn
 from codey.operations.ghost_context import ghost_control_enabled
@@ -19,44 +22,64 @@ from codey.operations.prompting import record_local_context_trace
 from codey.operations.result import ModeOutcome
 from codey.operations.task_context import ProjectTaskContextBuilder
 from codey.operations.task_state import TaskState, stop_flag_for
+from codey.policies.task_policy import TaskPolicy
+from codey.providers.base import ChatProvider
+from codey.runs.trace import RunTraceRecorder
+from codey.runtime.core.run_result import RunResult
 from codey.runtime.observe.events import RunEvent, render_run_event, run_event_ui_payload
+from codey.storage.managed_outputs import ManagedOutputStore
+from codey.task.model import TaskSubmission
 from codey.workspace.config import ProjectConfigLoadResult
 from codey.workspace.facts import ProjectFactsStore
+from codey.workspace.revision import WorkspaceRevisionStore
+
+
+class _DirectiveProjection(Protocol):
+    def __call__(self, *, project: str, session_id: str) -> GhostDirective: ...
+
+
+class _ContinuityProjection(Protocol):
+    def __call__(self, *, project: str, session_id: str) -> GhostContinuity: ...
+
+
+class _ExperienceProjection(Protocol):
+    def __call__(self, *, session_id: str, project: str, query: str) -> str: ...
 
 
 @dataclass(frozen=True)
 class PlanningFlowDeps:
     state: TaskState
-    agent_run: Callable[..., Any]
+    agent_run: Callable[[AgentRequest], RunResult]
     project_facts: ProjectFactsStore | None = None
-    knowledge_store: Any = None
-    search_factory: Callable[[], Any] | None = None
+    knowledge_store: KnowledgeStore | None = None
+    search_factory: Callable[[], object] | None = None
     review_log_lines: int = 80
-    ghost_directive: Callable[..., Any] | None = None
-    ghost_continuity: Callable[..., Any] | None = None
-    ghost_experiences: Callable[..., Any] | None = None
+    ghost_directive: _DirectiveProjection | None = None
+    ghost_continuity: _ContinuityProjection | None = None
+    ghost_experiences: _ExperienceProjection | None = None
 
 
-def _planning_entry_policy(frame: RunFrame, request: Any) -> Any:
+def _planning_entry_policy(frame: RunFrame, request: TaskSubmission) -> TaskPolicy:
     """Require a read-only policy before constructing execution resources."""
     from codey.operations.task_entry import build_task_policy_for_entry
 
     policy = frame.entry_policy
     if policy is None:
         policy = build_task_policy_for_entry(request, "planning")
-    readonly_grants = policy.grants & {"control", "project.read", "web.read", "knowledge.read"}
+    readonly_grants = policy.grants & {"control", "project.read", "web.read", "knowledge.read", "browser.observe"}
     if readonly_grants != policy.grants:
         policy = replace(policy, grants=frozenset(readonly_grants), source=policy.source + ";planning_readonly")
     return policy
 
 
-def _planning_research_tools(deps: PlanningFlowDeps, policy: Any, *, session_id: str, project: str) -> ResearchTools | None:
+def _planning_research_tools(deps: PlanningFlowDeps, policy: TaskPolicy, *, session_id: str, project: str) -> ResearchTools | None:
     """Construct source resources only when the resolved policy permits them."""
     from codey.operations.task_execution import build_research_tools
 
     if not policy.allows("web.read") and not policy.allows("knowledge.read"):
         return None
-    return build_research_tools(deps, session_id=session_id, project=project)
+    return build_research_tools(deps, session_id=session_id, project=project,
+                                browser_actions=policy.allows("browser.observe"))
 
 
 def run_planning_readonly_mode(
@@ -71,7 +94,9 @@ def run_planning_readonly_mode(
     project = request.project
     if project is None:
         raise RuntimeError("planning_readonly mode requires a project")
-    if frame.provider is None:
+    provider: ChatProvider | None = frame.provider
+    trace: RunTraceRecorder | None = frame.trace
+    if provider is None:
         raise RuntimeError("provider is not connected")
     if work.ledger is not None:
         work.record_agent_events_in_ledger = True
@@ -100,7 +125,7 @@ def run_planning_readonly_mode(
     if ghost_directive is None or ghost_continuity is None:
         ghost_directive = ghost_directive or _ghost_directive_fn(deps.state, project=project, session_id=request.session_id)
         ghost_continuity = ghost_continuity or _ghost_continuity_fn(deps.state, project=project, session_id=request.session_id)
-    record_local_context_trace(frame.trace, ghost_directive, ghost_continuity)
+    record_local_context_trace(trace, ghost_directive, ghost_continuity)
     experiences = ""
     if deps.ghost_experiences is not None:
         try:
@@ -119,12 +144,14 @@ def run_planning_readonly_mode(
     research_tools = _planning_research_tools(
         deps, entry_policy, session_id=request.session_id, project=project,
     )
+    workspace_revisions: WorkspaceRevisionStore | None = getattr(state, "workspace_revisions", None)
+    managed_outputs: ManagedOutputStore | None = getattr(state, "managed_outputs", None)
     try:
-        mutations = getattr(state, "runtime_mutations", None)
-        if mutations is not None and request.session_id and frame.run_id:
+        mutations = state.runtime_mutations
+        if request.session_id and frame.run_id:
             mutations.mark_writer_running(request.session_id, frame.run_id, provider_id=frame.provider_id)
         result = deps.agent_run(AgentRequest(
-            provider=frame.provider,
+            provider=provider,
             project=Path(project),
             task=request.task,
             max_turns=request.max_turns,
@@ -142,22 +169,22 @@ def run_planning_readonly_mode(
             project_config_warnings=project_context.project_config_warnings,
             ghost_directive=ghost_directive.text,
             ghost_continuity=ghost_continuity.text,
-            ghost_experiences=str(experiences or ""),
+            ghost_experiences=experiences,
             admit_hints=ghost_control_enabled(
                 state, "admit_hints", project=project, session_id=request.session_id,
             ),
             permission_profile="planning_readonly",
-            trace_recorder=frame.trace,
+            trace_recorder=trace,
             session_id=request.session_id,
             run_id=frame.run_id,
             effect_scope="planning:1",
-            runtime_mutations=getattr(state, "runtime_mutations", None),
-            durable=getattr(state, "durable", None),
-            workspace_revision_store=getattr(state, "workspace_revisions", None),
-            managed_outputs=getattr(state, "managed_outputs", None),
-            requested_capabilities=tuple(getattr(request, "requested_capabilities", ()) or ()),
-            strict_research=bool(getattr(request, "strict_research", False) is True),
-            project_changes_required=bool(getattr(request, "project_changes_required", False) is True),
+            runtime_mutations=mutations,
+            durable=state.durable,
+            workspace_revision_store=workspace_revisions,
+            managed_outputs=managed_outputs,
+            requested_capabilities=request.requested_capabilities,
+            strict_research=request.strict_research,
+            project_changes_required=request.project_changes_required,
             task_policy=entry_policy,
             research_tools=research_tools,
         ))
@@ -176,20 +203,19 @@ def run_planning_readonly_mode(
             blocker="" if result.stop_reason == "done" else result.summary,
         )
     )
-    return ModeOutcome(
-        {
-            "type": "task_done",
-            "run_id": frame.run_id,
-            "session_id": request.session_id,
-            "summary": result.summary,
-            "stop_reason": result.stop_reason,
-            "turns": result.turns,
-            "max_turns": request.max_turns,
-            "provider": frame.provider_id,
-            "mode": "planning",
-            "changed": False,
-        }
-    )
+    event: dict[str, object] = {
+        "type": "task_done",
+        "run_id": frame.run_id,
+        "session_id": request.session_id,
+        "summary": result.summary,
+        "stop_reason": result.stop_reason,
+        "turns": result.turns,
+        "max_turns": request.max_turns,
+        "provider": frame.provider_id,
+        "mode": "planning",
+        "changed": False,
+    }
+    return ModeOutcome(event)
 
 
 def record_planning_event(

@@ -26,6 +26,7 @@ def test_ordinary_entry_materializes_explicit_wait_without_granting_access() -> 
     policy = build_task_policy(SimpleNamespace(
         task="点击查询按钮，调用 browser_wait 等待出现结算完成，最后 browser_read 当前页。",
         project=None,
+        denied_capabilities=("browser.interact",),
     ), task_kind="hybrid")
     rules = [rule for check in policy.required_checks if (rule := parse_tool_success_check(check)) is not None]
     wait = next(rule for rule in rules if rule.tool == "browser_wait")

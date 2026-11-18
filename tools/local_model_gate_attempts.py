@@ -16,7 +16,7 @@ import tempfile
 import time
 import uuid
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
@@ -120,7 +120,7 @@ class _GenerationOptions(TypedDict):
     observe: _AttemptObserver
     cancelled: NotRequired[Callable[[], bool]]
     opened: NotRequired[Callable[[object], None]]
-    on_event: NotRequired[Callable[[dict[str, object]], None]]
+    on_event: NotRequired[Callable[[JsonObject], None]]
     on_control: NotRequired[Callable[[AttemptControl], None]]
     attempt_budget: NotRequired[AttemptBudget | None]
     idle_timeout: NotRequired[float | None]
@@ -216,7 +216,8 @@ class RecordingProvider(ApiProvider):
         self, *, attempt: int, data: bytes, phase: str, response_bytes: int, seconds: float,
     ) -> None:
         if phase == "request" and attempt == 1:
-            self._record({"type": "request", "exchange": self.exchange_number, "payload": json.loads(data),
+            payload: object = json.loads(data)
+            self._record({"type": "request", "exchange": self.exchange_number, "payload": payload,
                           "terminal": _TERMINAL_RECEIPT.get()})
         self._record({
             "type": "wire_attempt", "exchange": self.exchange_number, "attempt": attempt, "phase": phase,
@@ -265,7 +266,7 @@ def record_api_generations(path: Path) -> Iterator[None]:
 
     def generate(
         url: str, payload: Mapping[str, object], headers: Mapping[str, str], **kwargs: Unpack[_GenerationOptions],
-    ) -> dict[str, object]:
+    ) -> JsonObject:
         nonlocal counter
         with lock:
             counter += 1
@@ -286,18 +287,22 @@ def record_api_generations(path: Path) -> Iterator[None]:
         kwargs["observe"] = observe
         started = time.perf_counter()
         try:
-            body: dict[str, object] = original(url, payload, headers, **kwargs)
+            body = original(url, payload, headers, **kwargs)
         except Exception as exc:
+            http_status: object = getattr(exc, "status", None)
+            request_id: object = getattr(exc, "upstream_request_id", "")
+            reason_code: object = getattr(exc, "reason_code", "")
             append({**common, "type": "error", "error": f"{type(exc).__name__}: {exc}",
-                    "http_status": getattr(exc, "status", None),
-                    "upstream_request_id": getattr(exc, "upstream_request_id", ""),
-                    "reason_code": getattr(exc, "reason_code", "")})
+                    "http_status": http_status, "upstream_request_id": request_id, "reason_code": reason_code})
             raise
         append({**common, "type": "response", "payload": body, "seconds": time.perf_counter() - started})
         return body
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    original_acknowledge = ApiProvider.acknowledge_tool_results
+    provider_class: type[object] = ApiProvider
+    acknowledge_method = "acknowledge_tool_results"
+    original_acknowledge: Callable[[ApiProvider, list[ProviderToolResult], list[ProviderToolDefinition],
+                                    float | None], AssistantTurn] = getattr(provider_class, acknowledge_method)
 
     def acknowledge(
         provider: ApiProvider, results: list[ProviderToolResult], declared_tools: list[ProviderToolDefinition],
@@ -311,7 +316,7 @@ def record_api_generations(path: Path) -> Iterator[None]:
 
     token = _RECORDING_PATH.set(path.resolve())
     try:
-        with patch.object(api_generation, "generate", generate), patch.object(ApiProvider, "acknowledge_tool_results", acknowledge):
+        with patch.object(api_generation, "generate", generate), patch.object(provider_class, acknowledge_method, acknowledge):
             yield
     finally:
         _RECORDING_PATH.reset(token)
@@ -324,7 +329,8 @@ def isolate_gate_secondary_models(target: GateTarget) -> Iterator[None]:
 
     from codey.app import provider_services
 
-    with patch.object(provider_services, "provider_availability", return_value={target.provider_id: True}):
+    availability: dict[str, bool] = {target.provider_id: True}
+    with patch.object(provider_services, "provider_availability", return_value=availability):
         yield
 
 
@@ -475,7 +481,8 @@ def run_case_process(case: str, directory: Path, target: GateTarget, *, timeout:
     started = time.perf_counter()
     result = {"case": case, "ok": False, "scope": case_scope(case)}
     try:
-        write_json(directory / "input.json", {"target": asdict(target), "project": str(project), "state": str(state)})
+        target_payload: object = asdict(target)
+        write_json(directory / "input.json", {"target": target_payload, "project": str(project), "state": str(state)})
         command = [sys.executable, "-B", str(REPO_ROOT / "tools/local_model_release_gate.py"),
                    "--worker-case", case, "--worker-dir", str(directory)]
         proc, job = start_process(command, cwd=REPO_ROOT)
@@ -491,7 +498,9 @@ def run_case_process(case: str, directory: Path, target: GateTarget, *, timeout:
         artifact_errors = []
         artifact_warnings = []
         try:
-            shutil.copytree(project, directory / "project", symlinks=True, ignore=shutil.ignore_patterns("__pycache__"))
+            def ignore_pycache(_directory: str, names: list[str]) -> set[str]:
+                return {"__pycache__"}.intersection(names)
+            shutil.copytree(project, directory / "project", symlinks=True, ignore=ignore_pycache)
         except Exception as exc:
             artifact_errors.append(f"{type(exc).__name__}: {exc}")
         try:
@@ -544,15 +553,22 @@ def _is_transient_state_snapshot_error(exc: Exception) -> bool:
     """
     if isinstance(exc, FileNotFoundError):
         return True
-    if not isinstance(exc, shutil.Error) or not exc.args:
+    if not isinstance(exc, shutil.Error):
         return False
-    entries = exc.args[0]
+    arguments: tuple[object, ...] = exc.args
+    if not arguments:
+        return False
+    entries = arguments[0]
     if not isinstance(entries, list) or not entries:
         return False
-    for entry in entries:
+    rows: list[object] = entries
+    for entry in rows:
         if not isinstance(entry, (tuple, list)) or len(entry) != 3:
             return False
-        source, _destination, reason = entry
+        fields: Sequence[object] = entry
+        source, _destination, reason = fields
+        if not isinstance(source, str):
+            return False
         # copytree stringifies OS exceptions, and worker output may use a
         # different locale/encoding. Error identifiers survive that conversion.
         missing = re.search(r"\[(?:WinError [23]|Errno 2)\]", str(reason)) is not None

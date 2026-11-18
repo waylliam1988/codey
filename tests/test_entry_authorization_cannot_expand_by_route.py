@@ -1,11 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from codey.task.model import TaskSubmission
 from tests.support.task_entry_helpers import submission
 
 
 def test_negated_url_does_not_grant_web_read() -> None:
-    from codey.app.api import derive_entry_auth
+    from codey.task.entry_auth import derive_entry_auth
 
     auth = derive_entry_auth(
         {
@@ -25,12 +25,13 @@ def test_model_research_route_cannot_add_web_grant() -> None:
     class RoutedSubmission(TaskSubmission):
         model_hint: str = "ACTION: research\nPLAN: inspect docs"
 
-    request = submission()
+    request = replace(submission(), denied_capabilities=("web.read",))
     policy = build_task_policy_for_entry(request, "project")
     routed_request = RoutedSubmission(
         session_id=request.session_id, project=request.project, task=request.task,
         max_turns=request.max_turns, continue_task=request.continue_task,
         provider_id=request.provider_id,
+        denied_capabilities=request.denied_capabilities,
     )
     routed = build_task_policy_for_entry(routed_request, "project")
     assert routed.grants == policy.grants

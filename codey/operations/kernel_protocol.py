@@ -433,7 +433,10 @@ def _task_tool_specs(session: KernelSessionView, frozen: tuple[ToolSpec, ...],
                 if purpose == "chat":
                     spec = chat_knowledge_spec(spec, versions)
         elif bind_questions:
-            spec = question_bound_spec(spec, question_refs=question_refs)
+            bound = question_bound_spec(spec, question_refs=question_refs)
+            if bound is None:
+                continue
+            spec = bound
         selected.append(spec)
     return tuple(selected)
 
@@ -464,6 +467,8 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
     names = tuple(name for name in names if name not in denied_browser)
     frozen = tuple(spec for spec in frozen if spec.name not in denied_browser)
     frozen = _task_tool_specs(session, frozen, scope)
+    available = {spec.name for spec in frozen}
+    names = tuple(name for name in names if name in available)
     nested: tuple[str, ...] = ()
     binding = None
     task_navigation_url = None
@@ -488,13 +493,13 @@ def build_turn_snapshot(session: KernelSessionView, *, native: bool = False) -> 
             allow_project_run=session.policy.allows("project.write") and not aggregate_browser)
         nested = tuple(entry.name for entry in catalog.entries)
         if aggregate_browser:
-            # One declaration per leaf: browser-enabled tasks use the existing
-            # CodeMode entry for composable operations, keeping controls and
-            # answer submission on the outer surface. Inventory stays frozen.
-            # Text batches lower to the project read leaves. Once those leaves
-            # are nested-only, their old outer wrappers would advertise calls
-            # that fail this same snapshot's parser/execution checks.
-            names = tuple(name for name in names if name not in nested and not is_text_batch_tool(name))
+            # Browser leaves compose through CodeMode. Granting browsing must
+            # not remove the existing source, knowledge or project entrypoints.
+            # Both surfaces use these same frozen specs and kernel executors.
+            browser_names = {spec.name for spec in frozen if spec.executor == "browser"}
+            names = tuple(name for name in names if name not in browser_names)
+            if browser_followups.codemode_only(session.task_text):
+                names = tuple(name for name in names if name not in nested and not is_text_batch_tool(name))
         declarations = render_declarations(catalog)
         frozen = tuple(replace(spec, declarations=declarations)
                        if spec.name == "codemode" else spec for spec in frozen)

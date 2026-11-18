@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
 from codey.research.knowledge_schema import (
@@ -21,7 +21,14 @@ from codey.research.knowledge_schema import (
 )
 from codey.research.questions import QUESTION_BOUND_TOOLS
 from codey.toolchain.tool_spec import EXECUTION_CLAIMS_GUIDANCE, SOURCE_GAPS_GUIDANCE, ToolSpec
-from codey.types.json_value import JsonObject, ToolArgs, canonical_json_object, decode_json_object
+from codey.types.json_value import (
+    JsonObject,
+    ToolArgs,
+    canonical_json_object,
+    decode_json_object,
+    parse_json_object,
+    require_json_string,
+)
 
 PROTOCOL_NO_JSON = "no_json"
 PROTOCOL_UNKNOWN_TOOL = "unknown_tool"
@@ -31,12 +38,12 @@ PROTOCOL_DIRECT_ANSWER = "direct_answer"
 PROTOCOL_NATIVE_SEARCH_LEAK = "native_search_leak"
 PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
-STRUCTURED_REPORT_ARGS: ToolArgs = {"summary": "Supported conclusion [f1]", "report_sections": {
+STRUCTURED_REPORT_ARGS: JsonObject = {"summary": "Supported conclusion [f1]", "report_sections": {
     "evidence": ["Saved finding with its conditions [f1]"],
     "counter": ["Observed limitation and its scope [f1]"],
     "coverage": [{"question_ref": "q1", "state": "partial", "answer": "Answer and remaining gap",
                   "findings": ["f1"], "investigations": []}]}}
-STRUCTURED_REPORT_EXAMPLE = json.dumps({"tool": "done", "args": STRUCTURED_REPORT_ARGS}, separators=(",", ":"))
+STRUCTURED_REPORT_EXAMPLE = json.dumps(dict[str, object](tool="done", args=STRUCTURED_REPORT_ARGS), separators=(",", ":"))
 
 
 def knowledge_read_id_guidance(*, source_tool: str = "") -> str:
@@ -250,17 +257,19 @@ TOOL_CONTRACTS = {
 }
 
 
-def question_bound_spec(spec: ToolSpec, *, question_refs: tuple[str, ...]) -> ToolSpec:
+def question_bound_spec(spec: ToolSpec, *, question_refs: tuple[str, ...]) -> ToolSpec | None:
     """Bind this turn's research actions to its registered questions."""
     if spec.name not in QUESTION_BOUND_TOOLS and spec.evidence_route != "source_read":
         return spec
+    if not question_refs:
+        return None
     from codey.toolchain.tool_spec import freeze_spec_parameters
 
     parameters = {**dict(spec.parameters), "question_ref": {"type": "string", "enum": list(question_refs)}}
     keys = (*spec.required, "question_ref")
     examples = []
     for text in spec.json_examples:
-        example = decode_json_object(json.loads(text))
+        example = parse_json_object(text)
         schema_object(example, "args")["question_ref"] = question_refs[0]
         examples.append(json.dumps(example, separators=(",", ":")))
     return freeze_spec_parameters(replace(spec, parameters=tuple(parameters.items()), required=keys,
@@ -298,7 +307,8 @@ def done_spec_for_purpose(spec: ToolSpec, purpose: str, *, task: str = "", quest
         if task:
             from codey.research.task_requirements import coverage_requirements
 
-            refs = [row["task_ref"] for row in coverage_requirements(task)]
+            requirements: Sequence[Mapping[str, object]] = coverage_requirements(task)
+            refs = [require_json_string(row["task_ref"], "task_ref") for row in requirements]
             schema_object(properties, "task_refs").update(
                 items=canonical_json_object({"type": "string", **({"enum": refs} if refs else {})}), maxItems=len(refs))
             required_fields.append("task_refs")

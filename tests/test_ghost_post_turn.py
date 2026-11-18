@@ -14,6 +14,7 @@ from codey.operations.context import RunFrame
 from codey.operations.ghost_post_turn import GhostTaskPolicyDeps, maybe_sync_continuity
 from codey.runs.ledger_projection import RunLedgerProjection
 from codey.task.model import TaskSubmission
+from tests.test_ghost_received_input_lifetime import _queue
 
 
 def test_continuity_failure_records_sanitized_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,3 +50,26 @@ def test_continuity_failure_records_sanitized_warning(tmp_path: Path, monkeypatc
     assert warning["error_type"] == "RuntimeError"
     assert str(warning["error_ref"]).startswith("sha256:")
     assert "secret path" not in str(warning)
+
+
+@pytest.mark.parametrize("stop_reason", ("approval", "question", "provider_failure", "cancelled"))
+def test_suspended_or_failed_task_does_not_change_continuity(tmp_path: Path, stop_reason: str) -> None:
+    from codey.ghost.continuity import build_ghost_continuity
+
+    with closing(AppContext(tmp_path, start_scheduler=False)) as state:
+        assert state.ghost_continuity is not None
+        _queue(state).create("previous", {"session_id": "s", "project": None,
+            "run_id": "previous", "task": "Prior completed request", "provider": "local", "intent": "chat"})
+        state.ghost_continuity.sync_from_sources(user_focus_excerpt="Prior completed request",
+            session_id="s", run_id="previous", mode="chat")
+        before = build_ghost_continuity(state.ghost_continuity, session_id="s")
+        request = TaskSubmission("s", None, "Search Fuzhou online", 4, False, "local")
+        frame = RunFrame(request, "next", "chat", None, "local", "", ConversationContext(),
+                         True, "", "", ConversationSnapshot("chat"), "", False, set(), 0)
+        maybe_sync_continuity(GhostTaskPolicyDeps(state=state), frame, {
+            "type": "task_done", "mode": "chat", "run_id": "next", "session_id": "s",
+            "stop_reason": stop_reason,
+        })
+        after = build_ghost_continuity(state.ghost_continuity, session_id="s")
+        assert after.text == before.text
+        assert "Prior completed request" in after.text and "Search Fuzhou" not in after.text
