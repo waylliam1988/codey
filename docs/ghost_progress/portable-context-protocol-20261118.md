@@ -33,3 +33,9 @@ python -m tests.manual.ghost_memory_routing.portable_context_trial --output .e2e
 128/4096/8192、跨会话/跨项目用户偏好、项目隔离、待审与已确认目标、纠正、多目标预算、
 删除/撤回/禁用/重启/冷重建/发送前源校验。Research 的补充来源还需在实际 builder 边界验证，
 不把 builder 测试写成完整研究报告质量实验。
+
+运行器修正记录（生成目标、矩阵与评分不变）：首次启动在输入队列缺失 run_id 处停止，
+0次生成；第二次第一格模型已正常完成，但正常入口重绑 usage observer 导致脚本外接收集器为空，
+批次按协议停止，未计通过。两次目录与 failure.json 保留。
+修正为在 provider.bind_usage 边界同时保存自身记录并转发生产 observer，新增原始 reply 留存。
+完整矩阵在独立 v3 目录重开，不能拼接前两批为通过，也不能把该观测器错误称作模型服务失败。

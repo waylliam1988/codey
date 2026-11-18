@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
@@ -15,7 +16,7 @@ from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.payload_types import decoded_object, mapping_fields
 from codey.operations.task_entry import run_task_submission
 from codey.providers.api_provider import ApiProvider
-from codey.providers.base import ChatProvider
+from codey.providers.base import AssistantTurn, ChatProvider, ProviderToolDefinition
 from codey.providers.token_accounting import ApiExchangeUsage
 from codey.task.model import TaskSubmission
 from tests.manual.ghost_memory_routing.project_experience_continuity import _models
@@ -64,10 +65,28 @@ class CapturedProvider(ApiProvider):
     def __init__(self, home: Path, *, output: int, stream: bool) -> None:
         self.home, self.requests = home, 0
         self.wire = b""
+        self.usage_records: list[ApiExchangeUsage] = []
         super().__init__(ENDPOINT, MODEL, temperature=0, native_tools=True, timeout=60,
             output_tokens=output, stream=stream, context_window_tokens=262144,
             context_reserve_tokens=32768, context_keep_recent_tokens=32000,
             usage_parser=parse_usage, request_policy=SingleAttemptPolicy())
+
+    def bind_usage(self, connection_id: str, sink: Callable[[ApiExchangeUsage], None]) -> None:
+        def retain(record: ApiExchangeUsage) -> None:
+            self.usage_records.append(record)
+            sink(record)
+        super().bind_usage(connection_id, retain)
+
+    def send_turn(self, prompt: str, tools: list[ProviderToolDefinition] | None = None,
+                  timeout: float | None = None, *, tool_call_observations: str = "",
+                  tool_call_history_groups: int = 0, output_token_limit: int = 0,
+                  require_tool_call: bool = False) -> AssistantTurn:
+        turn = super().send_turn(prompt, tools, timeout, tool_call_observations=tool_call_observations,
+            tool_call_history_groups=tool_call_history_groups, output_token_limit=output_token_limit,
+            require_tool_call=require_tool_call)
+        save(self.home / "reply.json", {"text": turn.text, "reasoning": turn.reasoning,
+            "finish": turn.finish.value, "raw": dict(turn.raw)})
+        return turn
 
     def _observe_http_attempt(self, *, attempt: int, data: bytes, phase: str,
                               response_bytes: int, seconds: float) -> None:
@@ -136,12 +155,7 @@ def cell(home: Path, *, output: int, stream: bool, arm: str) -> dict[str, object
     if not surface.inbox.set_control("admit_hints", arm != "off"):
         raise ValueError("control update failed")
     provider = CapturedProvider(home, output=output, stream=stream)
-    usage: list[ApiExchangeUsage] = []
-
-    def capture_usage(row: ApiExchangeUsage) -> None:
-        usage.append(row)
-
-    provider.bind_usage(home.name, capture_usage)
+    usage = provider.usage_records
     task = TASK + (" For this turn explicitly choose animations and a technical tone." if arm == "override" else "")
     started = time.monotonic()
     try:
