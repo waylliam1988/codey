@@ -68,7 +68,18 @@ def supplement_personal_context(*, text: str, sources: tuple[GhostContextSource,
     # Do not create a second route around their validator.
     if not enabled or sink is None or validate is not None:
         return original
-    project = str(execution.project_path) if execution.project_path is not None else ""
+    # A Chat's physical tool workspace is not its logical project identity.
+    # Use the admitted task, which also owns the session and deletion receipt.
+    try:
+        task_record = sink.durable.task(run_id)
+    except KeyError:
+        return original
+    logical_project = task_record.state.get("project")
+    if logical_project is not None and not isinstance(logical_project, str):
+        return original
+    if task_record.conversation_id != sink.session_id:
+        return original
+    project = logical_project or ""
     if scope != request_scope(project, sink.session_id):
         return original
     try:

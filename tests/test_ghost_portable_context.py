@@ -23,6 +23,7 @@ from tests.manual.ghost_memory_routing.portable_context_trial import GOAL as TRI
 from tests.manual.ghost_memory_routing.portable_context_trial import SEED_REPLY, seed
 from tests.test_ghost_experience_role_budget import RESULT, Endpoint, _execute
 from tests.test_ghost_experience_role_budget import endpoint as endpoint
+from tests.test_ghost_received_input_lifetime import _queue
 from tests.test_project_goal_production import accept, rebuild, saved
 
 WARM = "Please use a warm and considerate tone."
@@ -172,6 +173,8 @@ def test_research_builder_uses_same_local_authority_and_rechecks(tmp_path: Path,
     assert surface.inbox is not None
     identity = next(row.id for row in surface.inbox.list_candidates() if row.signal_kind == "style_preference")
     with closing(AppContext(home, start_scheduler=False)) as state:
+        _queue(state).create("research", {"session_id": "next", "project": str(project),
+            "task": "Review accessibility research", "intent": "research", "run_id": "research"})
         sink = KernelEffectSink(state.runtime_mutations, session_id="next", run_id="research",
                                 provider_id="fixture", managed_outputs=state.managed_outputs, durable=state.durable)
         execution = KernelExecutionDeps(intent_sink=sink, project_path=project, permission_profile="research")
@@ -197,6 +200,26 @@ def test_research_builder_uses_same_local_authority_and_rechecks(tmp_path: Path,
             run_id="research", task="question", enabled=False, execution=execution, validate=None).text == "base"
         assert not supplement_personal_context(text="base", sources=(), scope="wrong-scope",
             run_id="research", task="question", enabled=True, execution=execution, validate=None).sources
+
+
+def test_chat_tool_workspace_does_not_replace_admitted_project_identity(tmp_path: Path, endpoint: Endpoint) -> None:
+    project, home = tmp_path / "source", tmp_path / "state"
+    project.mkdir()
+    seed_portable(home, project, endpoint)
+    with closing(AppContext(home, start_scheduler=False)) as state:
+        _queue(state).create("chat", {"session_id": "next", "project": None, "run_id": "chat",
+            "task": "Explain the options.", "intent": "chat"})
+        sink = KernelEffectSink(state.runtime_mutations, session_id="next", run_id="chat",
+                                provider_id="fixture", managed_outputs=state.managed_outputs, durable=state.durable)
+        execution = KernelExecutionDeps(intent_sink=sink, project_path=tmp_path / "temporary-tools",
+                                        permission_profile="coding_writer")
+        personal = supplement_personal_context(text="Question", sources=(), scope=request_scope("", "next"),
+            run_id="chat", task="Explain the options.", enabled=True, execution=execution, validate=None)
+        assert {source.key for source in personal.sources} == {"ghost_directive"}
+        assert "tone = warm and considerate" in personal.text and GOAL not in personal.text
+        assert personal.validate is not None and personal.validate(personal.sources)
+        assert not supplement_personal_context(text="Question", sources=(), scope=request_scope(project, "next"),
+            run_id="chat", task="Explain the options.", enabled=True, execution=execution, validate=None).sources
 
 
 def test_generic_goal_review_correction_independent_keys_and_cold_replay(tmp_path: Path) -> None:
