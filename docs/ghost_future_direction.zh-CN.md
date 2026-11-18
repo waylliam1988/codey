@@ -4,15 +4,68 @@
 > 当前行为以[能力说明](codey_capabilities.zh-CN.md)和
 > [Runtime 架构](runtime_architecture.zh-CN.md)为准。
 > 2026-10-19 修订：偏好投递与预算路由实验只支持按 hint family、模型和投递配置有条件晋级；
-> 0.6 的具体交付顺序以 [Roadmap](../ROADMAP.zh-CN.md#06-之后的可执行路线一个版本只推进一个可验证增量)为准。
+> 近期交付顺序以 [Roadmap 的用户连续性与个人适应主线](../ROADMAP.zh-CN.md#用户连续性与个人适应主线2026-11-18)为准；原版本号和历史验收门保留。
 > 当前状态更新（2026-11-17）：普通 Chat 的受测中文偏好已单模型验收、生产接线并默认启用，
 > 见[启用记录](ghost_progress/language-production-enablement-20261117.md)。下述 2026-10-19
 > 测量保留当时结论，不应读作当前仍缺中文生产接线。
 
 ## 定位
 
-Ghost 是本地、可审计、可删除的经验投影与上下文路由层。它通过经过验证的 hint
-影响模型提示，不拥有事实、权限或执行权；可塑性网络是单独的研究方向。
+目标定位：Ghost 是 Codey 在本地持续保存、根据共同经历更新的经验与个人适应内核。
+它维护对用户、协作关系和长期目标的可修正理解，让写代码、做研究和日常交流都具有连续性。
+生成模型和 API 可以更换，本地积累继续保留；它不拥有事实裁决、权限或执行权。
+
+当前实现：Ghost 是有界的经历记录、经验投影与上下文路由层。它保存已完成回合，
+在下一次正常调用前检索少量相关原话，由本来就要回答的模型理解。自动结构化抽取与确认
+已经停止；已接受候选的 Hebbian 强化不等于日常对话自动形成用户理解。
+人工确认的受测中文偏好已经接入生产；自动形成、持久化并由后续反馈修正理解的闭环尚未完整实现。
+当前事实以 [observations.py](../codey/ghost/observations.py) 和[能力说明](codey_capabilities.zh-CN.md#本地记忆)为准。
+
+### 陪伴的产品目标与状态区分
+
+| 目标 | 可感知行为 | 必须区分 |
+|---|---|---|
+| 共同经历的连续性 | 接续长期目标，记得一起尝试过什么、为什么选择或放弃某条路线 | 历史结果与当前有效结论 |
+| 对当前处境的理解 | 根据用户明确表达的近期状态调整交流，区分探索、执行与收尾 | 临时处境与长期偏好 |
+| 相处方式的适应 | 过去的明确纠正改变后续协作，再次纠正后能调整 | 有条件的理解与固定人格标签 |
+
+| 本地内容 | 示例 | 更新与使用方式 |
+|---|---|---|
+| 已发生的经历 | 曾尝试两阶段生成，用户明确认为等待体验差 | 保留原话来源、时间与真实结果；后续理解不能改写历史 |
+| 当前理解 | 讨论交互架构时，用户重视生成次数和响应延迟 | 标明适用情境、依据、更新时间及有效期；允许纠正、撤回和失效 |
+| 学习形成的状态 | 某种协作方式在相同情境下多次得到明确正向反馈 | 绑定实际行为与后续反馈；与检索、固定状态及简单统计比较收益 |
+
+上述后两层是目标，不是现有自动学习能力。不能用节点数量、重复确认次数或提示投递量
+代替行为收益。一次共同经历应能追溯到下一次交互中的具体变化。
+
+持续感知近期以 Codey 内的对话、任务事实、用户明确提供的处境和已授权接入的事件为来源。
+来源与作用域须明确；不因使用“持续感知”一词就假定已接入外部环境。
+用户说“今天只想收尾”不应自动固化为“永远不要详细解释”。
+
+失败经历分开处理：正常完成的讨论可以记录“实验失败”；错误或中断结束的回合当前
+默认不可检索。未来若引入恢复线索，应独立定义可消费的终态事实与来源，不能直接开放
+未完成回答，不能把技术失败或没有回复解释为用户不满意。
+
+### 零额外生成与模型可替换约束
+
+产品运行不加载本地 HF 模型。语义理解可以由正常主调用承担，本地保存和更新状态；
+小规模规则、统计或关联学习不等于再部署一个语言模型。
+
+默认路径保持：读取有界本地状态 → 正常回答 → 保存已发生的经历与可验证信号 → 下轮消费。
+不得为 Ghost 增加独立生成请求、第二遍最终回答、多候选重排或字段失败后的补发。
+写代码和研究本身需要的正常工具/模型过程不受此约束替代；比较成本时固定原任务流程。
+可选 embedding 端点另计请求、输入、延迟和数据发送，不能称为零额外请求。
+
+主调用理解相关经历，与将理解写成持久状态是两项能力。后者需要可靠信号入口：
+明确用户操作、可验证 runtime 事实，或支持的 provider 在同次主调用中的有界候选。
+候选字段是可选研究；不支持时继续经历检索与现有人工确认，不强制所有模型填写隐藏字段。
+候选缺失、无效或被拒绝不重试主调用；候选本身不能自动升级为确认偏好。
+验收同时检查流式可见文本、首字延迟、总延迟与输出 tokens，避免一个请求仍等待整包 JSON
+解析或先生成 Ghost 分析字段再开始用户正文。具体阶段与停止条件见 Roadmap。
+
+切换生成模型不应自动改变用户身份、清空经历或接受旧模型的全部推断。
+“本地状态保留且 scope 正确”与“新模型行为同样受益”分别验收；后者不阻塞已验证模型的启用。
+更换 embedding/特征表示时单独检查兼容性，保留可重建来源，不能直接混用不同坐标空间。
 
 ```text
 用户显式信号 / 项目经验 / provider 行为 / verification 结果
@@ -31,7 +84,7 @@ bounded event log
 一句话：
 
 ```text
-Ghost 不负责产生真相；Ghost 负责让 Codey 更会记住“什么值得下次参考”。
+Ghost 让共同经历在下一次相处中发挥作用；理解可修正，事实仍由原来源负责。
 ```
 
 更长期地说，Codey 里的 Ghost 是为了让 LLM 可以不断替换，但用户和项目仍然能在本地留下一点连续的东西：
@@ -136,12 +189,12 @@ Nezha-mini 给 Codey 的另一个重要来源是 World Model。它和 Ghost 应�
 
 ```text
 Ghost
-  关心：这个用户和这个项目长期怎样工作？
-  产物：偏好、习惯、affinity、continuity、repair/provider hints
+  关心：与这个用户经历过什么、目前怎样相处、长期想完成什么？
+  产物：经历、条件化理解、目标、偏好、affinity、continuity、repair/provider hints
   语气：subjective / adaptive
 
 World Model
-  关心：当前项目、研究对象、环境约束的状态是什么？
+  关心：用户交互、当前项目、研究对象与环境的哪些判断能被后续观测检验？
   产物：state estimate、claim graph、prediction/review、uncertainty、risk markers
   语气：structured / testable
 
@@ -176,7 +229,7 @@ Ghost
   本地连续性和自适应经验
 
 World Model
-  项目/研究/环境的结构化状态和预测复盘
+  用户交互/项目/研究/环境的结构化判断与预测复盘
 ```
 
 最小不变式：
@@ -198,6 +251,49 @@ Evidence / Verification / CompletionProof
 ```
 
 这个边界比模块名字更重要。未来即使实现细节变化，也不能让 Ghost 或 World Model 绕过 Evidence/Verification/CompletionProof。
+
+## Nezha-mini 参考清单（2026-11-18）
+
+来源仓库：`Nezha-mini`；本次核对提交：`52161b70368a63a5d419d99bd5aac1ff6884b757`。
+以下使用仓库内路径与符号定位，不依赖某台机器的绝对路径。迁移的是机制，尚未移植的
+代码与未经复核的历史实验不能作为 Codey 已有能力或收益证据。
+
+| 源文件与符号 | 借鉴机制 | Codey 迁移限制与当前证据 |
+|---|---|---|
+| `runtime/memory_orchestrator.py::MemoryOrchestrator.prefetch` | 将背景、近期关注、纠正与相关经历共同组织进当前交互 | 优先研究此刻该想起什么；复用现有 observation/continuity、预算和 admission，不复制一套权威记忆 |
+| `runtime/feedback_interpreter.py::interpret_natural_feedback` | 反馈绑定具体交互，区分纠正、风格要求与一般评价 | 参考目标归因；语义 analyzer 路径不能照搬成额外调用，无反馈保持未判断 |
+| `core/preference_controller.py::PreferenceController.update_texts_signed / render_prompt_directive` | 正负反馈、基线、遗忘与 provider 无关的文本出口 | 后者已有源码实现；不依赖 HF、词元偏置或多候选生成，学习算法须与简单统计独立比较 |
+| `runtime/user_world_model.py::record_user_prediction / review_due_user_predictions / _score_probe` | 预测身份、依据、时间范围、到期复盘与结果 | 当前仓库中预测写入调用点仅见测试；Sleep 有复盘消费者，日常生成入口未接通。probe 没有匹配事件可返回零并计 miss；用户反馈不足须 unjudged，事件缺失能否判 miss 取决于观测完整性与预测契约，还须核对 scope 和显式时间 |
+| `runtime/ghost_translator.py::GhostTextTranslator.render` | 确定性地把内部状态渲染进正常主调用 | 当前依赖 tensor 与 perceive；只借渲染思路，内部锚点相似度不是用户真实情绪 |
+| `runtime/cognitive_sleep.py::CognitiveSleepCycle.run_once` | 到期复盘、整理与健康检查 | 延续 Codey 维护入口、控制与显式时间，不新增生成请求 |
+| `runtime/continuity.py::build_identity_manifest / evaluate_identity_drift` | 状态契约、兼容性判断与显式迁移 | 生成模型变化、特征表示变化与用户身份变化分别处理，换连接不清空积累 |
+| `runtime/planning/world_model_planner.py::WorldModelPlanner` | 可解释的候选动作评分 | 当前为确定性研究规划器，下一状态含启发式近似；不是训练好的用户模拟器，不替换 Codey 执行内核 |
+
+本次代码核对不重跑 Nezha 实验。若继承其历史在线适应收益，须补报告路径、受测表示、
+漂移条件、反馈与输出通道；多候选选择的收益不能直接归属 Codey 单次回答。
+Codey 已有[结构化复盘负结果](ghost_progress/world-model-structured-review-20261118.md)
+保持原结论：on/off 各 8/20，输入 tokens +16.3%，重复当前验证事实的候选终止；
+这不否定所有用户理解预测，新候选须提供新增信息并有真实消费者。
+
+## 现代 Hopfield 机制比较的决策边界（2026-11-18）
+
+另行获准的[第二轮实验](ghost_progress/hopfield-confirmatory-result-20261118.md)已完成，
+协议与实现先冻结，再评估 96 条独立合成测试经历流；实机子集为 12 条独立流。
+状态为 `EXPERIMENT_COMPLETE`，生产决策为 `EXPERIMENT_ONLY`，没有改动生产代码。
+
+受测现代 Hopfield 相对普通向量检索有部分排序与行为收益，但未超过开发集锁定的简单
+关联主基线。自动字符 TF-IDF 表示下，hit@2 相对主基线低约 0.92 个百分点；第一次明确
+纠正后的命中率为 88.19%，简单关联与 Ghost 状态适配组为 100%。保留原查询的变体
+缓解了旧经历干扰，仍未展示达到预定门槛的替换收益。Ghost 适配组实际调用本地状态机制，
+不代表完整生产消费链路已验收。
+
+工程决定是继续现有经历、条件适用性、纠正与状态维护路线，暂不采用本轮 Hopfield 替换。
+机制选择保持开放；不能由此声称现有 Hebbian 复杂排序整体最优，或所有现代 Hopfield
+均不如 Ghost。两种固定表示、合成经历、有限参数网格和单一本地模型也未验证真实用户
+长期适应、可学习投影或 TB 训练。统计不确定性与成本补测详见报告。
+
+独立实机矩阵已按协议结束，Ghost 额外生成请求为零；它不恢复生产主线，也不授权
+继续实验。本轮文档修订不新增模型调用。
 
 ## 已有基础
 
@@ -463,20 +559,22 @@ World Model 的输出应该是可复盘状态和风险提示，不是事实裁�
   “因为项目通常允许联网，所以自动 Research。”
 ```
 
-特别要收窄 `UserModelState` 的含义：
+`UserModelState` 的范围应覆盖个人适应，同时保留可检验性：
 
 ```text
 Ghost 记录：
+  共同经历及其真实结果
+  近期处境、长期目标与相处方式的当前理解
   用户偏好
   长期兴趣
   表达习惯
   项目工作风格
 
-World Model 的 UserModelState 只记录：
-  交互预测
-  协作约束
-  结果形态的稳定要求
-  预测后来是否命中
+World Model 的 UserModelState 检验：
+  在明确情境下，用户更可能接受怎样的协作方式
+  某项近期处境或协作约束是否仍然有效
+  对目标与结果形态的理解是否被用户纠正
+  预测后来 hit / miss / unjudged，以及实际观测依据
 ```
 
 例如：
@@ -491,7 +589,11 @@ World Model 的 UserModelState 只记录：
   “这个用户喜欢某 provider，所以 provider 输出可以少验证。”
 ```
 
-World Model 对用户的建模应该是 calibration，不是 persona。它只能帮助 Codey 更准确地预测协作成本、验证偏好和误解风险，不能把用户偏好升级为事实。
+用户建模可以超出工程协作成本，服务日常交流、长期目标和共同经历；这些理解必须有条件、
+有来源且可以被用户纠正。Ghost 保存经历与当前理解，预测复盘机制检验具体判断，
+Runtime 保有任务与验证事实。用户与项目可以共享“观察—判断—预测—复盘”契约，
+但用户反馈与测试结果的判据不能混用。没有足够反馈时保留 `unjudged`，不默认满意或拒绝。
+这不要求新增统一 WorldModelManager、中央事件总线或第二套记忆权威来源。
 
 ### 10. Outcome / Affinity 不是事实裁决
 
@@ -907,7 +1009,8 @@ structured explanation facts
 
 ### J. World Model：结构化状态与预测复盘
 
-目标：让 Codey 有一个 bounded、可审计、可校正的项目/研究/环境状态模型，但不把它当事实来源。
+目标：让 Codey 有 bounded、可审计、可校正的用户交互/项目/研究/环境判断与预测复盘，
+但不把它当事实来源。近期用户理解候选按 Roadmap 的个人适应主线选择。
 
 2026-11-18 已有[首个验证预测复盘实验](ghost_progress/world-model-verification-review-20261118.md)：
 隔离真实 verification/proof、prediction/review、有界 ContextSource/admission 与单模型 40 次
@@ -918,13 +1021,14 @@ structured explanation facts
 后续[结构化传输对照](ghost_progress/world-model-structured-review-20261118.md)也已完成：
 两臂新 20/20 格式有效、正确数各 8/20，输入 tokens +16.3%。按冻结门终止重复当前
 verification 事实的持久性预测候选；不再仅调提示词，不将接口改善归因于预测收益。
-先继续 G0 实际缺口，下一 World Model 候选须提供新增预测信息和真实消费者。
+按下一消费者实际涉及的 G0 缺口补齐边界；不要求先完成整个远期目录。
+下一 World Model 候选须提供新增预测信息和真实消费者。
 
 可建模：
 
 ```text
 UserModelState
-  交互预测、协作约束、结果形态的稳定要求、预测命中/失败记录
+  条件化的相处理解、近期处境与目标相关判断、交互预测及 hit/miss/unjudged
 
 ProjectModelState
   项目结构、常用验证命令、已知环境约束、近期工作焦点
@@ -936,7 +1040,8 @@ EnvironmentState
   provider readiness、tool failure pattern、依赖/权限/网络状态、verification failure class
 
 PredictionReview
-  prediction -> due_at -> runtime evidence/proof -> hit/miss/error
+  prediction -> due_at -> runtime observation / explicit user feedback -> hit/miss/unjudged
+  存储或复盘执行错误独立记录，不作为预测 miss
 ```
 
 输入来源必须是 runtime 事件，而不是模型自由发挥：
@@ -1249,7 +1354,18 @@ World Model maintenance 不能执行 provider/search/tool calls
 
 ## 训练路线
 
-Codey 可以训练自己的东西，但顺序应该很克制。
+Ghost 学习与协议适配器训练分开立项，不共用收益结论。
+
+| 路线 | 学什么 | 与产品运行的关系 |
+|---|---|---|
+| 本地个人适应 | 从这个用户的真实经历与反馈更新条件化理解、关联和遗忘状态 | 近期主线；先比较检索、固定状态与简单统计，再决定是否采用学习权重 |
+| 离线基础学习 | 学习经验表示、条件化预测、适应与遗忘方法 | 独立研究，训练工具不进入产品的本地 HF 推理依赖，不训练外部语言模型 |
+| 协议适配器 | 错误分类、工具协议修复和策略排序 | 独立下游工程，不能替代“越来越懂用户”的验收 |
+
+个人适应的状态、信号与时序评估见[长期学习架构](codey_ghost_long_term_learning_architecture.md#个人适应的状态与学习契约2026-11-18)。
+训练必须保留有界语义内容、时序、情境及反馈，digest 只用于身份和完整性检查；
+不得把摘要哈希当作语义训练内容。Hebbian 是候选之一，是否采用取决于行为与成本证据。
+以下四阶段保留为经验路由与协议适配的工程路线，不是个人适应的强制前置条件。
 
 ### 第一阶段：冻结评估与最小路由，权重只作待验证特征
 
@@ -1302,7 +1418,7 @@ claim graph gap -> useful verification/research next step
 用户显式开启
 默认本地
 自动脱敏
-只导出 digest/bounded text
+导出有界语义内容与必要的时序/反馈；digest 用于身份和完整性
 保留 source refs / proof refs
 不导出 raw transcript / secret / webpage body
 ```
@@ -1407,7 +1523,8 @@ effect intent / settlement 与 operation state 的职责分离
 
 ### 0.6+
 
-具体版本以 Roadmap 为单一来源；本节只保留依赖顺序：
+具体交付以 Roadmap 的“用户连续性与个人适应主线”为顺序来源；下表保留版本验收门映射，
+不要求先完成所有其他 family、协议适配或研究机制才开始用户连续性。
 
 ```text
 0.6.0–0.6.4  冻结实验、最小事件契约、真实 admission、控制、冲突/删除与 replay
@@ -1427,7 +1544,7 @@ schema 可表达不等于默认可投，生产扩槽位先兑现语言，其他�
 WorldModelManager
 WorldModelPlanner
 mutable global WorldModelStore
-Ghost Chat / Ghost persona
+Ghost 作为第二个独立发言或执行的主体
 Ghost Explain provider verbalizer
 自动 Research
 自动 provider/tool selection
@@ -1439,12 +1556,14 @@ Ghost Explain provider verbalizer
 ```text
 先观察 durable facts，再生成 bounded hint
 先 shadow / manual A/B，再决定是否进入默认 prompt
-只存 refs / digest / counts，不存 raw prompt / reply / source body
+工程/协议投影存 refs / digest / counts 与必要的有界语义字段
+经历观察按既有授权保存有界用户原话/最终回答；不把原始回复、日志或 state 提交到仓库
 Ghost / World Model 不写 EvidenceLedger / CompletionProof
 无收益的 adapter / classifier / strategy 保持 shadow 或删除
 ```
 
-0.6+ 仍不做 Ghost persona、World Model 自动决策、跨 provider 自动仲裁、插件市场或大 UI。
+个人适应通过 Codey 当前回答发挥作用，不新增独立 Ghost 人格入口；World Model 自动决策、
+跨 provider 自动仲裁、插件市场或大 UI 不属于本主线。
 
 ## 最终目标
 
