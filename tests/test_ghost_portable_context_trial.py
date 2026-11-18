@@ -24,6 +24,8 @@ ANSWER = {"choice": "opalpanel", "reason": "offline_cursor_sync", "priority": "k
 class WireEndpoint:
     url: str
     omit_usage: bool = False
+    tool_name: str = "done"
+    arguments: dict[str, object] | None = None
     requests: list[dict[str, object]] = field(default_factory=list)
 
 
@@ -38,10 +40,11 @@ def wire_endpoint() -> Generator[WireEndpoint]:
         def do_POST(self) -> None:
             payload = decoded_object(self.rfile.read(int(self.headers["Content-Length"])).decode())
             endpoint.requests.append(payload)
-            arguments_payload: dict[str, str] = {"summary": json.dumps(ANSWER)}
+            arguments_payload: dict[str, object] = (endpoint.arguments if endpoint.arguments is not None
+                                                   else {"summary": json.dumps(ANSWER)})
             arguments = json.dumps(arguments_payload)
             call: dict[str, object] = {"id": "done-1", "type": "function",
-                                       "function": {"name": "done", "arguments": arguments}}
+                                       "function": {"name": endpoint.tool_name, "arguments": arguments}}
             usage = {"prompt_tokens": 13, "completion_tokens": 3}
             response: dict[str, object] = {"choices": [{"message": {
                 "role": "assistant", "content": None, "tool_calls": [call]}, "finish_reason": "tool_calls"}]}
