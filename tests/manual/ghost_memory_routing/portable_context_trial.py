@@ -17,7 +17,8 @@ from codey.ghost.payload_types import decoded_object, mapping_fields
 from codey.operations.task_entry import run_task_submission
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import AssistantTurn, ChatProvider, ProviderToolDefinition
-from codey.providers.token_accounting import ApiExchangeUsage
+from codey.providers.local_usage import configure_usage
+from codey.providers.token_accounting import ApiExchangeUsage, ReportedUsage
 from codey.task.model import TaskSubmission
 from tests.manual.ghost_memory_routing.project_experience_continuity import _models
 from tests.manual.ghost_memory_routing.world_model_verification_review import (
@@ -39,12 +40,55 @@ TASK = (
     "with string fields choice, reason, priority, tone. Use a short lowercase identifier for each field; "
     "priority is keyboard or animations. No changes required."
 )
+LABEL_TASK = (
+    "Recall our project interface choice and its reason, then choose the interface priority and response tone. "
+    "Use saved local context if available; otherwise use unknown for choice/reason/priority and neutral for tone. "
+    "Do not inspect files or call any other tools. Call done once with summary containing only a JSON object "
+    "with exactly four string fields. Each value must be exactly one of its listed labels, without explanations: "
+    "choice: unknown, opalpanel, riverkit, emberview; "
+    "reason: unknown, offline_cursor_sync, remote_multiwriter, local_cache; "
+    "priority: unknown, keyboard, animations; tone: neutral, warm, technical. "
+    "Map warm and considerate to the label warm. Choose values from the available context, "
+    "not merely because they appear in this list. No changes required."
+)
 CONFIGS: tuple[tuple[int, bool], ...] = ((128, False), (8192, False), (4096, True), (8192, True))
+PROTOCOL_CONFIGS = {"legacy": CONFIGS, "labels-v2": ((8192, False), (8192, True))}
+FIELD_LABELS: dict[str, tuple[str, ...]] = {
+    "choice": ("unknown", "opalpanel", "riverkit", "emberview"),
+    "reason": ("unknown", "offline_cursor_sync", "remote_multiwriter", "local_cache"),
+    "priority": ("unknown", "keyboard", "animations"),
+    "tone": ("neutral", "warm", "technical"),
+}
 ARMS = ("off", "on", "override")
 
 
 def save(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def configure_stream_usage(payload: dict[str, object]) -> None:
+    """Keep the experiment callback precise at the shared Local adapter boundary."""
+    configure_usage(payload)
+
+
+def score_answer(summary: object, *, arm: str) -> dict[str, bool]:
+    if arm not in ARMS:
+        raise ValueError("unsupported arm")
+    answer = decoded_object(summary)
+    choice = answer.get("choice") == "opalpanel"
+    reason = answer.get("reason") == "offline_cursor_sync"
+    return {
+        "format_valid": answer.keys() == FIELD_LABELS.keys() and all(
+            isinstance(value, str) and value in FIELD_LABELS[key] for key, value in answer.items()),
+        "choice_correct": choice,
+        "reason_correct": reason,
+        "recall_correct": choice and reason,
+        "priority_correct": answer.get("priority") == ("animations" if arm == "override" else "keyboard"),
+        "preference_correct": answer.get("tone") == ("technical" if arm == "override" else "warm"),
+        "baseline_unknown": all(answer.get(key) == value for key, value in
+                                (("choice", "unknown"), ("reason", "unknown"),
+                                 ("priority", "unknown"), ("tone", "neutral"))),
+    }
 
 
 class SeedProvider:
@@ -69,7 +113,12 @@ class CapturedProvider(ApiProvider):
         super().__init__(ENDPOINT, MODEL, temperature=0, native_tools=True, timeout=60,
             output_tokens=output, stream=stream, context_window_tokens=262144,
             context_reserve_tokens=32768, context_keep_recent_tokens=32000,
-            usage_parser=parse_usage, request_policy=SingleAttemptPolicy())
+            usage_parser=self._parse_usage, configure_request=configure_stream_usage, request_policy=SingleAttemptPolicy())
+
+    def _parse_usage(self, event: dict[str, object]) -> ReportedUsage | None:
+        with (self.home / "response-events.jsonl").open("a", encoding="utf-8") as output:
+            output.write(json.dumps(event, ensure_ascii=False) + "\n")
+        return parse_usage(event)
 
     def bind_usage(self, connection_id: str, sink: Callable[[ApiExchangeUsage], None]) -> None:
         def retain(record: ApiExchangeUsage) -> None:
@@ -144,7 +193,9 @@ def seed(home: Path, project: Path) -> None:
                 raise ValueError("source review failed")
 
 
-def cell(home: Path, *, output: int, stream: bool, arm: str) -> dict[str, object]:
+def cell(home: Path, *, output: int, stream: bool, arm: str, protocol: str = "legacy") -> dict[str, object]:
+    if protocol not in PROTOCOL_CONFIGS or arm not in ARMS:
+        raise ValueError("unsupported protocol or arm")
     home.mkdir(parents=True)
     project = home / "project"
     project.mkdir()
@@ -156,7 +207,8 @@ def cell(home: Path, *, output: int, stream: bool, arm: str) -> dict[str, object
         raise ValueError("control update failed")
     provider = CapturedProvider(home, output=output, stream=stream)
     usage = provider.usage_records
-    task = TASK + (" For this turn explicitly choose animations and a technical tone." if arm == "override" else "")
+    task = (LABEL_TASK if protocol == "labels-v2" else TASK) + (
+        " For this turn explicitly choose animations and a technical tone." if arm == "override" else "")
     started = time.monotonic()
     try:
         with closing(AppContext(state_home, start_scheduler=False)) as state:
@@ -169,19 +221,24 @@ def cell(home: Path, *, output: int, stream: bool, arm: str) -> dict[str, object
         summary = result.get("summary")
         if not isinstance(summary, str):
             raise ValueError("missing visible summary")
-        answer = decoded_object(summary)
-        expected_priority = "animations" if arm == "override" else "keyboard"
-        expected_tone = "technical" if arm == "override" else "warm"
+        scores = score_answer(summary, arm=arm)
         wire = provider.wire.decode("utf-8")
+        payload = decoded_object(wire)
+        usage_requested = payload.get("stream_options") == {"include_usage": True}
+        if usage_requested != stream:
+            raise ValueError("stream usage request configuration mismatch")
         sources_present = all(text in wire for text in ("tone = warm and considerate", GOAL, SEED_REPLY))
         if sources_present != (arm != "off"):
             raise ValueError("wire source admission mismatch")
-        return {"output_tokens": output, "stream": stream, "arm": arm, "requests": provider.requests,
-            "recall_correct": answer.get("choice") == "opalpanel" and answer.get("reason") == "offline_cursor_sync",
-            "priority_correct": answer.get("priority") == expected_priority,
-            "preference_correct": answer.get("tone") == expected_tone,
+        row: dict[str, object] = {"protocol": protocol, "output_tokens": output,
+            "stream": stream, "arm": arm, "requests": provider.requests, **scores,
             "sources_present": sources_present, "elapsed_ms": elapsed,
+            "usage_requested": usage_requested, "usage_status": usage[0].usage_status,
             "input_tokens": usage[0].usage.input_tokens, "generated_tokens": usage[0].usage.output_tokens}
+        save(home / "metrics.json", row)
+        if protocol == "labels-v2" and not scores["format_valid"]:
+            raise ValueError("explicit label interface failed; reply and metrics retained")
+        return row
     finally:
         provider.close()
 
@@ -189,12 +246,18 @@ def cell(home: Path, *, output: int, stream: bool, arm: str) -> dict[str, object
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--protocol", choices=tuple(PROTOCOL_CONFIGS), default="legacy")
     parser.add_argument("--resume-after-authorized-retry", action="store_true")
     args = parser.parse_args()
     output_value: object = args.output
     if not isinstance(output_value, Path):
         raise ValueError("output path required")
     home = output_value
+    protocol_value: object = args.protocol
+    if not isinstance(protocol_value, str) or protocol_value not in PROTOCOL_CONFIGS:
+        raise ValueError("unsupported protocol")
+    protocol = protocol_value
+    configs = PROTOCOL_CONFIGS[protocol]
     resume_value: object = args.resume_after_authorized_retry
     resume = resume_value is True
     completed: list[dict[str, object]] = []
@@ -206,8 +269,10 @@ def main() -> None:
         for item in rows:
             if not mapping_fields(item):
                 raise ValueError("invalid saved cell")
+            if item.get("protocol", "legacy") != protocol:
+                raise ValueError("cannot mix frozen protocols")
             completed.append(dict(item))
-        expected = [(output, stream, arm) for output, stream in CONFIGS for arm in ARMS]
+        expected = [(output, stream, arm) for output, stream in configs for arm in ARMS]
         if len(completed) >= len(expected) or any(
             (row.get("output_tokens"), row.get("stream"), row.get("arm")) != config
             for row, config in zip(completed, expected, strict=False)
@@ -221,7 +286,7 @@ def main() -> None:
     position = 0
     try:
         _models(home, "resume" if resume else "before")
-        for output, stream in CONFIGS:
+        for output, stream in configs:
             for arm in ARMS:
                 position += 1
                 if position <= completed_before:
@@ -231,14 +296,15 @@ def main() -> None:
                 retry = resume and position == completed_before + 1 and cell_home.exists()
                 if retry:
                     cell_home = cell_home / "authorized-retry-1"
-                row = cell(cell_home, output=output, stream=stream, arm=arm)
+                row = cell(cell_home, output=output, stream=stream, arm=arm, protocol=protocol)
                 if retry:
                     row["authorized_retry"] = True
                 completed.append(row)
                 save(home / "progress.json", completed)
                 print(json.dumps(row), flush=True)
         _models(home, "after")
-        save(home / "report.json", {"status": "COMPLETE_WITH_AUTHORIZED_RETRY" if resume else "COMPLETE", "kind": "portability_smoke", "model": MODEL,
+        save(home / "report.json", {"status": "COMPLETE_WITH_AUTHORIZED_RETRY" if resume else "COMPLETE",
+            "protocol": protocol, "kind": "portability_smoke", "model": MODEL,
             "independent_user_samples": 1, "cells": completed})
     except Exception as exc:
         save(home / ("resume-failure.json" if resume else "failure.json"), {"status": "INCOMPLETE", "type": type(exc).__name__,

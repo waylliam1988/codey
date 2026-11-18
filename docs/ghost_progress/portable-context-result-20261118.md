@@ -1,5 +1,9 @@
 # 本地上下文通用化：实机冒烟结果
 
+归因更正（2026-11-18）：原始流式请求未设置include_usage，已定位为实验脚本漏配置，
+不能将缺失直接归因于KoboldCpp。短标签提示未明示reason/tone合法值，评分混入格式遵循；
+原分数和null不改。修复及独立复验见[labels-v2协议](portable-context-labels-v2-20261118.md)。
+
 状态 `COMPLETE_WITH_AUTHORIZED_RETRY / NORMAL_ENTRY_SMOKE_ONLY`。
 [冻结协议](portable-context-protocol-20261118.md)，初始提交`acad46df`，
 用户授权重试修订`c54e711d`；[脱敏指标](../../tests/manual/ghost_memory_routing/reports/portable-context-20261118.json)。
