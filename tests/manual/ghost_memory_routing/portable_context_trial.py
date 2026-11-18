@@ -51,8 +51,18 @@ LABEL_TASK = (
     "Map warm and considerate to the label warm. Choose values from the available context, "
     "not merely because they appear in this list. No changes required."
 )
+JSON_STRING_TASK = LABEL_TASK + (
+    ' The done summary argument must be a STRING whose contents are valid JSON with double-quoted keys '
+    'and double-quoted values. For example, the unknown case is '
+    '{"choice":"unknown","reason":"unknown","priority":"unknown","tone":"neutral"}. '
+    'Encode that JSON object inside the summary string. Do not use Python dictionary notation, '
+    'single-quoted keys/values, Markdown fences, or surrounding prose.'
+)
 CONFIGS: tuple[tuple[int, bool], ...] = ((128, False), (8192, False), (4096, True), (8192, True))
-PROTOCOL_CONFIGS = {"legacy": CONFIGS, "labels-v2": ((8192, False), (8192, True))}
+PROTOCOL_CONFIGS: dict[str, tuple[tuple[int, bool], ...]] = {
+    "legacy": CONFIGS, "labels-v2": ((8192, False), (8192, True)), "labels-v3": ((8192, True),),
+}
+PROTOCOL_TASKS: dict[str, str] = {"legacy": TASK, "labels-v2": LABEL_TASK, "labels-v3": JSON_STRING_TASK}
 FIELD_LABELS: dict[str, tuple[str, ...]] = {
     "choice": ("unknown", "opalpanel", "riverkit", "emberview"),
     "reason": ("unknown", "offline_cursor_sync", "remote_multiwriter", "local_cache"),
@@ -207,7 +217,7 @@ def cell(home: Path, *, output: int, stream: bool, arm: str, protocol: str = "le
         raise ValueError("control update failed")
     provider = CapturedProvider(home, output=output, stream=stream)
     usage = provider.usage_records
-    task = (LABEL_TASK if protocol == "labels-v2" else TASK) + (
+    task = PROTOCOL_TASKS[protocol] + (
         " For this turn explicitly choose animations and a technical tone." if arm == "override" else "")
     started = time.monotonic()
     try:
@@ -236,7 +246,7 @@ def cell(home: Path, *, output: int, stream: bool, arm: str, protocol: str = "le
             "usage_requested": usage_requested, "usage_status": usage[0].usage_status,
             "input_tokens": usage[0].usage.input_tokens, "generated_tokens": usage[0].usage.output_tokens}
         save(home / "metrics.json", row)
-        if protocol == "labels-v2" and not scores["format_valid"]:
+        if protocol != "legacy" and not scores["format_valid"]:
             raise ValueError("explicit label interface failed; reply and metrics retained")
         return row
     finally:

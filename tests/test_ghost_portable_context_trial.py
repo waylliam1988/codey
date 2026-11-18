@@ -111,12 +111,13 @@ def test_missing_usage_remains_unknown_without_retry(tmp_path: Path, wire_endpoi
 
 
 @pytest.mark.parametrize("stream", (False, True))
+@pytest.mark.parametrize("protocol", ("labels-v2", "labels-v3"))
 def test_revised_cell_consumes_context_and_records_usage(
-    tmp_path: Path, wire_endpoint: WireEndpoint, stream: bool,
+    tmp_path: Path, wire_endpoint: WireEndpoint, stream: bool, protocol: str,
 ) -> None:
     with patch.object(trial, "ENDPOINT", wire_endpoint.url):
-        row = trial.cell(tmp_path / "cell", output=8192, stream=stream, arm="on", protocol="labels-v2")
-    assert row["protocol"] == "labels-v2" and row["format_valid"] is True
+        row = trial.cell(tmp_path / "cell", output=8192, stream=stream, arm="on", protocol=protocol)
+    assert row["protocol"] == protocol and row["format_valid"] is True
     assert row["recall_correct"] is True and row["preference_correct"] is True
     assert row["sources_present"] is True and row["usage_status"] == "reported"
     assert row["input_tokens"] == 13 and row["generated_tokens"] == 3
@@ -130,6 +131,12 @@ def test_strict_scores_do_not_reinterpret_historical_phrases() -> None:
     assert scores["choice_correct"] and scores["priority_correct"]
     assert not scores["format_valid"] and not scores["reason_correct"]
     assert not scores["recall_correct"] and not scores["preference_correct"]
+
+
+def test_python_dictionary_text_is_not_accepted_as_json() -> None:
+    with pytest.raises(json.JSONDecodeError):
+        trial.score_answer("{'choice': 'unknown', 'reason': 'unknown', 'priority': 'unknown', 'tone': 'neutral'}",
+                           arm="off")
 
 
 @pytest.mark.parametrize("answer", ({**ANSWER, "extra": "warm"}, {**ANSWER, "tone": 1}, {"choice": "opalpanel"}))
