@@ -20,6 +20,9 @@ from codey.workspace.context_epoch import (
     context_epoch_id,
 )
 
+# Local projection character cap, independent of model/output configuration.
+GHOST_TOTAL_BUDGET_CHARS = 6000
+
 
 @dataclass(frozen=True)
 class GhostContextSource:
@@ -75,6 +78,7 @@ def admit_ghost_context(
     admissions: list[ContextAdmission] = []
     rejected: list[GhostAdmissionRejection] = []
     seen_keys: set[str] = set()
+    used_chars = 0
     expected_scope = str(request_scope or "").strip()
     effective_as_of = _timestamp(as_of) if as_of else datetime.now(UTC)
     if effective_as_of is None:
@@ -117,11 +121,16 @@ def admit_ghost_context(
         if text not in prompt_text:
             rejected.append(GhostAdmissionRejection(key, "not_in_provider_payload"))
             continue
+        cost = len(text) + (2 if accepted else 0)
+        if used_chars + cost > GHOST_TOTAL_BUDGET_CHARS:
+            rejected.append(GhostAdmissionRejection(key, "combined_over_budget"))
+            continue
         admission = admission_from_rendered_source(source, admission_reason=PROVIDER_TURN_ADMISSION)
         if admission is None:
             rejected.append(GhostAdmissionRejection(key, "invalid_source"))
             continue
         accepted.append(source)
+        used_chars += cost
         admissions.append(admission)
     if require_all and rejected:
         raise GhostAdmissionError(rejected)

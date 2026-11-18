@@ -156,6 +156,10 @@ class KernelTransportDeps:
     # execution workspace. Unscoped standalone requests use "request".
     context_scope: str = "request"
     ghost_sources: tuple[GhostContextSource, ...] = ()
+    # Refs omitted only because their exact role text is retained by this
+    # protocol window. Rechecked against the actual outbound payload.
+    required_history_refs: frozenset[str] = frozenset()
+    required_history_inputs: tuple[tuple[str, str], ...] = ()
     admit_hints: bool = True
     attempt_gate: AttemptGateCallback | None = None
     attempt_admit_hints: Callable[[], bool] | None = None

@@ -18,8 +18,10 @@ from codey.operations.kernel_contracts import (
     KernelTransportDeps,
 )
 from codey.operations.provider_session import adapt_provider
+from codey.operations.represented_history import represented_history_refs, represented_inputs
 from codey.providers.attempt_gate import AttemptGateCallback
 from codey.workspace.context_admission import GhostContextSource
+from codey.workspace.ghost_selection import replace_ghost_text, select_ghost_sources
 
 if TYPE_CHECKING:
     from codey.operations.kernel_contracts import StopSignal
@@ -61,6 +63,29 @@ class KernelRunRequestBuilder:
             run_id=self.run_id, task=self.user_task, enabled=self.admit_hints,
             execution=execution, validate=self.attempt_validate_ghost_sources,
         )
+        def input_entry_id(run_id: str) -> str:
+            sink = execution.intent_sink
+            if sink is None:
+                return ""
+            try:
+                value = sink.durable.task(run_id).state.get("input_entry_id")
+                return value if isinstance(value, str) else ""
+            except KeyError:
+                return ""
+
+        inputs = represented_inputs(self.provider, personal.sources, input_entry_id)
+        represented = represented_history_refs(self.provider) | frozenset(ref for ref, _text in inputs)
+        selected = select_ghost_sources(personal.sources, represented=represented)
+        removed_refs = represented.intersection(
+            frozenset(ref for source in personal.sources for ref in _source_refs(source))
+        )
+
+        def validate_selected(actual: tuple[GhostContextSource, ...]) -> bool:
+            return (actual == selected
+                    and (not personal.sources or personal.validate is None or personal.validate(personal.sources))
+                    and removed_refs <= (represented_history_refs(self.provider) | frozenset(
+                        ref for ref, _text in represented_inputs(self.provider, personal.sources, input_entry_id))))
+
         return KernelRunRequest(
             task_guidance=self.task_guidance,
             transport=KernelTransportDeps(
@@ -69,13 +94,15 @@ class KernelRunRequestBuilder:
                 effect_scope=self.effect_scope,
                 provider_id=self.provider_id,
                 user_task=self.user_task,
-                context_text=personal.text,
+                context_text=replace_ghost_text(personal.text, personal.sources, selected),
                 context_scope=self.context_scope,
-                ghost_sources=personal.sources,
+                ghost_sources=selected,
+                required_history_refs=removed_refs,
+                required_history_inputs=inputs,
                 admit_hints=self.admit_hints,
                 attempt_gate=self.attempt_gate,
                 attempt_admit_hints=self.attempt_admit_hints,
-                attempt_validate_ghost_sources=personal.validate,
+                attempt_validate_ghost_sources=validate_selected,
                 stop_flag=self.stop_flag,
                 stagnant_turns=self.stagnant_turns,
                 window_ref=self.window_ref,
@@ -83,6 +110,12 @@ class KernelRunRequestBuilder:
             execution=execution,
             observation=observation,
         )
+
+
+def _source_refs(source: GhostContextSource) -> frozenset[str]:
+    from codey.ghost.observation_index import history_refs
+
+    return history_refs(source.text)
 
 
 __all__ = ["KernelRunRequestBuilder"]

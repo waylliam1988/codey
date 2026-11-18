@@ -23,6 +23,7 @@ from codey.ghost.inbox import GhostSettingsError
 from codey.ghost.observation_index import (
     MAX_RETRIEVED_ITEMS,
     RETRIEVAL_BUDGET_CHARS,
+    HistoryView,
     render_retrieved_block,
 )
 from codey.ghost.observations import GhostObservationCorruptedError, GhostObservationStore
@@ -156,6 +157,7 @@ def ghost_experiences(
     except (GhostSettingsError, OSError, ValueError, TypeError):
         _emit_settings_warning(state, session_id=session_id)
         return ""
+    view: HistoryView = "dialogue" if scope == "project" else "requests"
     try:
         store: object = getattr(state, "ghost_observations", None)
         if not isinstance(store, GhostObservationStore):
@@ -164,13 +166,13 @@ def ghost_experiences(
             query or "", session_id=session_id, project=project or "", scope=scope,
             exclude_run_id=(exclude_run_id or ""),
             max_items=max_items,
-            budget_chars=budget_chars,
+            budget_chars=budget_chars, view=view,
         )
     except (GhostObservationCorruptedError, OSError, TypeError, ValueError, OverflowError, sqlite3.Error, ImportError):
         return ""
     if not picked:
         return ""
-    return render_retrieved_block(picked, budget_chars)
+    return render_retrieved_block(picked, budget_chars, view=view)
 
 
 def _emit_settings_warning(state: object, *, session_id: str = "") -> None:

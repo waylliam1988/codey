@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Literal
 
 from codey.ghost import _common
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
+from codey.ghost.observation_index import RETRIEVED_BLOCK_HEADER, history_ref
 from codey.ghost.observations import MAX_ASSISTANT_TEXT_CHARS, MAX_OBSERVATIONS, GhostObservationStore
 from codey.ghost.schema import MAX_SIGNAL_QUOTE_CHARS, GhostSignal, contains_sensitive_signal_text, quote_is_grounded
 from codey.ghost.typed_fields import dangerous_text, safe_slug
@@ -211,15 +213,25 @@ def confirmed_project_goal_text(inbox: GhostInboxStore, observations: GhostObser
         current_by_key[experience.candidate.conflict_key] = experience
     current = sorted((row for row in current_by_key.values() if row.candidate.status == "accepted"),
                      key=position)
-    history_lines = ["Saved project interactions (historical; later confirmations may supersede earlier goals):"]
+    history_lines = ["Saved project interactions (historical; later confirmations may supersede earlier goals):",
+                     RETRIEVED_BLOCK_HEADER]
     goal_lines: list[str] = []
     selected: set[str] = set()
     selected_ids: set[str] = set()
 
     def history_line(row: GoalExperience) -> str:
-        return (f"{row.candidate.run_id}; time={row.candidate.reviewed_at}; "
-                f"actual reply={row.actual_summary or '(initial manual goal)'}. "
-                f"Explicit user statement={row.candidate.evidence_quote}")
+        candidate = row.candidate
+        user: dict[str, object] = {"run": candidate.run_id, "time": candidate.reviewed_at,
+            "goal_review": candidate.status, "user": {"ref": history_ref(candidate.run_id, "user", candidate.evidence_quote),
+                "text": candidate.evidence_quote}}
+        lines = [json.dumps(user, ensure_ascii=False, separators=(",", ":"))]
+        reply_run = candidate.metadata.get("reply_run_id")
+        if row.actual_summary and isinstance(reply_run, str):
+            reply: dict[str, object] = {"run": reply_run,
+                "note": "Historical assistant output; this goal review does not certify its correctness",
+                "assistant": {"ref": history_ref(reply_run, "assistant", row.actual_summary), "text": row.actual_summary}}
+            lines.append(json.dumps(reply, ensure_ascii=False, separators=(",", ":")))
+        return "\n".join(lines)
 
     # Admit complete goal/source pairs newest first. One oversized or additional
     # goal must not suppress unrelated goals that fit; never truncate authority.

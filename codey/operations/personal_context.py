@@ -11,7 +11,7 @@ from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.directive import build_ghost_directive
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
-from codey.ghost.observation_index import render_retrieved_block
+from codey.ghost.observation_index import MAX_RETRIEVED_ITEMS, RETRIEVAL_BUDGET_CHARS, render_retrieved_block
 from codey.ghost.observations import GhostObservationStore
 from codey.operations.kernel_contracts import KernelExecutionDeps
 from codey.operations.project_goals import project_goal_sources
@@ -44,9 +44,10 @@ def _read(home: Path, *, project: str, session_id: str, run_id: str, task: str,
         if project and "ghost_experiences" not in existing and allows_context_source(profile, "ghost_experiences"):
             observations = GhostObservationStore(home)
             history = observations.retrieve(task, project=project, session_id=session_id,
-                                            scope="project", exclude_run_id=run_id)
+                                            scope="project", exclude_run_id=run_id, view="requests",
+                                            max_items=MAX_RETRIEVED_ITEMS, budget_chars=RETRIEVAL_BUDGET_CHARS)
             if history:
-                result.extend(sources_from_values(experiences=render_retrieved_block(history),
+                result.extend(sources_from_values(experiences=render_retrieved_block(history, view="requests"),
                                                    scope=request_scope(project, session_id)))
         goal_keys = ("ghost_project_goal_history", "ghost_confirmed_project_goal")
         if not existing.intersection(goal_keys) and all(allows_context_source(profile, key) for key in goal_keys):
@@ -80,7 +81,8 @@ def supplement_personal_context(*, text: str, sources: tuple[GhostContextSource,
     if task_record.conversation_id != sink.session_id:
         return original
     project = logical_project or ""
-    if scope != request_scope(project, sink.session_id):
+    session_id = sink.session_id
+    if scope != request_scope(project, session_id):
         return original
     try:
         home = sink.managed_outputs.root.parent
@@ -89,16 +91,31 @@ def supplement_personal_context(*, text: str, sources: tuple[GhostContextSource,
     existing = frozenset(source.key for source in sources)
 
     def read() -> tuple[GhostContextSource, ...]:
-        return _read(home, project=project, session_id=sink.session_id, run_id=run_id, task=task,
+        return _read(home, project=project, session_id=session_id, run_id=run_id, task=task,
                      profile=execution.permission_profile, existing=existing)
 
     added = read()
-    if not added:
-        return original
     combined = (*sources, *added)
 
     def still_valid(actual: tuple[GhostContextSource, ...]) -> bool:
-        return actual == combined and read() == added
+        if actual != combined or read() != added:
+            return False
+        # Re-read the same session projection at every physical send. A source
+        # that was deleted or changed after assembly cannot ride an old prompt.
+        experience = next((source for source in sources if source.key == "ghost_experiences"), None)
+        if experience is None:
+            return True
+        try:
+            inbox = GhostInboxStore(home)
+            if not all(inbox.control_enabled(control, project=project, session_id=session_id)
+                       for control in ("retrieve_projections", "admit_hints")):
+                return False
+            history = GhostObservationStore(home).retrieve(task, project=project, session_id=session_id,
+                scope="session", exclude_run_id=run_id, view="requests",
+                max_items=MAX_RETRIEVED_ITEMS, budget_chars=RETRIEVAL_BUDGET_CHARS)
+            return bool(history) and render_retrieved_block(history, view="requests") == experience.text
+        except (OSError, sqlite3.Error, ValueError, TypeError, OverflowError):
+            return False
 
     return PersonalContext("\n\n".join(part for part in (text, *(source.text for source in added)) if part),
                            combined, still_valid)

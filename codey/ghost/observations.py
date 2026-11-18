@@ -22,6 +22,7 @@ from pathlib import Path
 from codey.ghost import _common
 from codey.ghost.embeddings import Embeddings, configured_embeddings
 from codey.ghost.event_windows import advance_observation_window, event_window, reset_window
+from codey.ghost.observation_index import HistoryView
 from codey.ghost.schema import clip_signal_text
 from codey.ghost.sqlite import GhostSQLite
 from codey.ghost.vectors import GhostVectorMemory, observation_digest
@@ -312,6 +313,7 @@ class GhostObservationStore:
     def retrieve(
         self, query: str, *, session_id: str = "", project: str = "", scope: str = "session",
         exclude_run_id: str = "", max_items: int = 4, budget_chars: int = 2000,
+        view: HistoryView = "dialogue",
     ) -> tuple[dict[str, object], ...]:
         from codey.ghost.observation_index import fit_observation_rows, retrieve_relevant_observations
 
@@ -321,10 +323,10 @@ class GhostObservationStore:
                      if str(row["run_id"]) != exclude_run_id
                      and (scope != "session"
                           or _common.normalize_project(row["project"]) == _common.normalize_project(project)))
-        if self.vector_memory is not None:
+        if self.vector_memory is not None and view == "dialogue":
             ranked = self.vector_memory.rank(query, rows, limit=max_items)
-            return fit_observation_rows(ranked, budget_chars=budget_chars, max_items=max_items)
-        return retrieve_relevant_observations(rows, query, max_items=max_items, budget_chars=budget_chars)
+            return fit_observation_rows(ranked, budget_chars=budget_chars, max_items=max_items, view=view)
+        return retrieve_relevant_observations(rows, query, max_items=max_items, budget_chars=budget_chars, view=view)
 
     def reset_all(self) -> None:
         with self.database.write_transaction() as database:

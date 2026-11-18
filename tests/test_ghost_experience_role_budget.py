@@ -1,4 +1,4 @@
-"""Both sides of a completed experience survive the actual retrieval budget."""
+"""Purpose-bound history preserves role identity and complete semantic units."""
 
 from __future__ import annotations
 
@@ -24,13 +24,15 @@ from codey.ghost.observation_index import (
     retrieve_relevant_observations,
 )
 from codey.ghost.payload_types import mapping_fields
+from codey.operations.kernel_contracts import KernelExecutionDeps, KernelObservationDeps, KernelRunRequest
+from codey.operations.kernel_request_builder import KernelRunRequestBuilder
 from codey.operations.task_entry import run_task_submission
 from codey.providers.api_provider import ApiProvider
 from codey.providers.base import ChatProvider
 from codey.task.model import TaskSubmission
 from tests.test_ghost_received_input_lifetime import _queue
 
-USER = "sharedplan " + "long request details " * 160
+USER = "For sharedplan compare quartzstore and opallog. Do not decide for me."
 MODEL = "fixture-provider-independent-model"
 RESULT = "quartzstore chosen because offline durability matters; validation remains pending."
 
@@ -40,58 +42,64 @@ def _row(*, user: str = USER, assistant: str = RESULT, mode: str = "chat") -> di
             "mode": mode, "ts": "2026-11-18T00:00:00Z"}
 
 
-@pytest.mark.parametrize("budget", (400, 900, 1800))
-@pytest.mark.parametrize("mode", ("chat", "project"))
-def test_assistant_only_retrieval_hit_retains_both_sides(budget: int, mode: str) -> None:
-    row = _row(mode=mode)
+@pytest.mark.parametrize("budget", (600, 900, 1800))
+def test_assistant_only_hit_is_consumer_bound(budget: int) -> None:
+    row = _row(user="Compare options without making a decision.")
     before = dict(row)
     picked = retrieve_relevant_observations([row], "quartzstore", budget_chars=budget)
-    assert picked == (row,)
     rendered = render_retrieved_block(picked, budget)
-    assert "sharedplan" in rendered
-    assert RESULT in rendered
-    assert "user said: " in rendered and "assistant said: " in rendered
-    assert "…" in rendered and len(rendered) <= budget
-    assert row == before
-
-
-@pytest.mark.parametrize("long_role", ("user", "assistant"))
-def test_short_role_releases_budget_to_long_role(long_role: str) -> None:
-    short, long = "ok", "abcdefghijklmnopqrstuvwxyz" * 200
-    row = _row(user=long if long_role == "user" else short,
-               assistant=long if long_role == "assistant" else short)
-    rendered = render_retrieved_block([row], 400)
-    assert short in rendered and long[:200] in rendered
-    assert len(rendered) == 400
+    assert picked == (row,) and RESULT in rendered
+    assert '"user":' in rendered and '"assistant":' in rendered
+    assert '"run":"past"' in rendered and "not user acceptance or verification" in rendered
+    assert len(rendered) <= budget and row == before
+    assert not retrieve_relevant_observations([row], "quartzstore", view="requests")
 
 
 @pytest.mark.parametrize("role", ("user", "assistant"))
-def test_one_role_uses_available_content_space(role: str) -> None:
-    row = _row(user="x" * 3000 if role == "user" else "",
-               assistant="y" * 3000 if role == "assistant" else "")
-    rendered = render_retrieved_block([row], 400)
-    assert ("x" * 200 if role == "user" else "y" * 200) in rendered
-    assert len(rendered) <= 400 and "…" in rendered
+def test_oversized_role_is_explicitly_omitted_without_clipping_other_role(role: str) -> None:
+    long = "Only today do not change the plan. " * 200
+    short = "Do not decide for me until I confirm."
+    row = _row(user=long if role == "user" else short,
+               assistant=long if role == "assistant" else short)
+    rendered = render_retrieved_block([row], 600)
+    assert short in rendered and long[:50] not in rendered
+    assert f'"omitted_roles":["{role}"]' in rendered
+    assert "…" not in rendered and len(rendered) <= 600
 
 
-def test_tiny_budget_never_silently_drops_one_role() -> None:
-    row = _row(user="uu", assistant="aa")
-    head = "- [chat 2026-11-18T00:00:00Z] user said: "
-    minimum = len(RETRIEVED_BLOCK_HEADER) + 1 + len(head) + len("\n  assistant said: ") + 4
-    for budget in range(minimum + 3):
-        picked = retrieve_relevant_observations([row], "uu", budget_chars=budget)
-        rendered = render_retrieved_block(picked, budget)
+def test_requests_projection_keeps_conditions_or_omits_whole_request() -> None:
+    text = "Only today, when exploring designs, do not decide for me."
+    row = _row(user=text)
+    full = render_retrieved_block([row], view="requests")
+    assert text in full and RESULT not in full
+    for budget in range(len(full) + 1):
+        rendered = render_retrieved_block([row], budget, view="requests")
         assert len(rendered) <= budget
-        assert ("user said: uu" in rendered) == ("assistant said: aa" in rendered)
-        assert bool(picked) == (budget >= minimum)
+        assert (text in rendered) == (budget >= len(full))
+        assert text[:20] not in rendered or text in rendered
 
 
-def test_multiple_experiences_preserve_labels_and_whole_block_budget() -> None:
-    rows: list[object] = [_row(user=f"sharedplan {i}", assistant=f"quartzstore {i}") for i in range(5)]
-    picked = retrieve_relevant_observations(rows, "quartzstore", budget_chars=400, max_items=3)
-    rendered = render_retrieved_block(picked, 400)
-    assert len(picked) == 3 and len(rendered) <= 400
-    assert rendered.count("user said:") == rendered.count("assistant said:") == 3
+def test_multiple_experiences_have_distinct_source_identity_and_atomic_budget() -> None:
+    rows: list[object] = [{**_row(user=f"sharedplan {i}", assistant=f"quartzstore {i}"),
+                          "run_id": f"past-{i}"} for i in range(5)]
+    picked = retrieve_relevant_observations(rows, "quartzstore", budget_chars=1800, max_items=3)
+    rendered = render_retrieved_block(picked, 1800)
+    assert len(picked) == 3 and len(rendered) <= 1800
+    assert rendered.count('"user":') == rendered.count('"assistant":') == 3
+    assert all(f'"run":"past-{i}"' in rendered for i in range(3))
+
+
+def test_food_history_does_not_reinject_unverified_assistant_claims() -> None:
+    user = "你帮我上网看看福州有什么好吃的。"
+    old_answer = "扁肉类似肉包子；燕类似肉饼；鼎边糊属于面食；安泰社区食堂不踩雷。"
+    row = _row(user=user, assistant=old_answer)
+    before = dict(row)
+    picked = retrieve_relevant_observations([row], "你帮我去知乎上看看呢", view="requests")
+    assert picked == (row,)
+    rendered = render_retrieved_block(picked, view="requests")
+    assert user in rendered and '"run":"past"' in rendered
+    assert all(claim not in rendered for claim in ("肉包子", "肉饼", "面食", "不踩雷"))
+    assert row == before
 
 
 @dataclass
@@ -219,7 +227,7 @@ def test_normal_entry_preserves_completed_experience_after_restart(
         assert store is not None
         rows = store.read_committed(session_id="source-session")
         assert len(rows) == 1 and rows[0]["assistant_text"] == RESULT
-        assert len(str(rows[0]["user_text"])) == 3000
+        assert rows[0]["user_text"] == USER
         surface = GhostControlSurface.from_state_home(home)
         assert surface.inbox is not None
         if boundary in {"retrieve_off", "admit_off"}:
@@ -239,7 +247,7 @@ def test_normal_entry_preserves_completed_experience_after_restart(
         next_project = str(other)
     session = "new-session" if consumer == "project" else "source-session"
     with closing(AppContext(home, start_scheduler=False)) as state:
-        _execute(state, endpoint, task="Explain the quartzstore decision. No changes are required.",
+        _execute(state, endpoint, task="Explain the sharedplan quartzstore comparison. No changes are required.",
                  session=session, project=next_project, intent=consumer, identity="next")
     assert len(endpoint.payloads) == 2, "Ghost must not add generation or retry calls"
     messages: object = endpoint.payloads[-1]["messages"]
@@ -251,9 +259,61 @@ def test_normal_entry_preserves_completed_experience_after_restart(
         content = entry.get("content")
         if isinstance(content, str) and RETRIEVED_BLOCK_HEADER in content:
             sources.append(content)
-    assert bool(sources) == (boundary == "enabled"), [
+    assert bool(sources) == (boundary == "enabled" and consumer == "project"), [
         source[source.index(RETRIEVED_BLOCK_HEADER):][:500] for source in sources
     ]
-    if boundary == "enabled":
+    if boundary == "enabled" and consumer == "project":
         assert len(sources) == 1
-        assert RESULT in sources[0] and "sharedplan" in sources[0]
+        assert "sharedplan" in sources[0]
+        assert ('"assistant":' in sources[0]) == (consumer == "project")
+    elif boundary == "enabled":
+        assert any(mapping_fields(entry) and entry.get("role") == "user" and entry.get("content") == USER
+                   for entry in entries), "only dedup when the original canonical input is actually retained"
+
+
+@pytest.mark.parametrize("change", ("delete", "retrieve_off", "admit_off"))
+def test_deduplicated_history_still_rechecks_revocation_and_allows_fresh_recovery(
+    tmp_path: Path, endpoint: Endpoint, change: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with closing(AppContext(tmp_path / "state", start_scheduler=False)) as state:
+        _execute(state, endpoint, task=USER, session="same", identity="source")
+        surface = GhostControlSurface.from_state_home(state.state_home)
+        assert surface.inbox is not None
+        changed: list[str] = []
+        clients: list[ApiProvider] = []
+        original = KernelRunRequestBuilder.build
+        empty_execution, empty_observation = KernelExecutionDeps(), KernelObservationDeps()
+
+        def configure(provider: ApiProvider) -> None:
+            clients.append(provider)
+
+        def build(builder: KernelRunRequestBuilder, *, execution: KernelExecutionDeps = empty_execution,
+                  observation: KernelObservationDeps = empty_observation) -> KernelRunRequest:
+            request = original(builder, execution=execution, observation=observation)
+            if builder.run_id != "revoked":
+                return request
+            assert request.transport.required_history_refs, "freeze a real deduplication before revoking it"
+
+            def before_send(payload: dict[str, object]) -> None:
+                assert RETRIEVED_BLOCK_HEADER not in json.dumps(payload), "the retained user input was deduplicated"
+                if changed:
+                    return
+                changed.append(change)
+                if change == "delete":
+                    status, result = surface.dispatch_action({"action": "delete_scope", "scope": "session",
+                        "session_id": "same", "confirm": True})
+                    assert status == 200 and result["ok"], result
+                else:
+                    assert surface.inbox is not None
+                    assert surface.inbox.set_control("retrieve_projections" if change == "retrieve_off" else "admit_hints", False)
+            clients[-1].configure_request = before_send
+            return request
+
+        monkeypatch.setattr(KernelRunRequestBuilder, "build", build)
+
+        _execute(state, endpoint, task="Explain the sharedplan quartzstore comparison. No changes required.",
+            session="same", identity="revoked", configure=configure, expected_stop="provider_failure")
+        assert changed == [change] and len(endpoint.payloads) == 1, "revoked projection stops before HTTP"
+        _execute(state, endpoint, task="A fresh independent question. No changes required.",
+            session="fresh", identity="recovery")
+        assert len(endpoint.payloads) == 2
