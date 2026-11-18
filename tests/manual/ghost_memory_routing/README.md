@@ -1,5 +1,10 @@
 # Ghost 偏好投递与预算路由实验
 
+2026-11-18：[开放协作学习提取收尾](../../../docs/ghost_progress/open-collaboration-result-20261118.md)。
+两轮完整矩阵各26请求、四个诊断均保留；自然任务未产生偏好记录，自动写回不晋级。
+原型和脚本在`open_collaboration_candidate.patch`，应用前审查并`git apply --check`，无需worktree。
+脱敏指标见`reports/open-collaboration-20261118.json`；同名Python脚本仅在应用补丁后存在。
+
 2026-11-18：[原生字段上下文接口冒烟](../../../docs/ghost_progress/portable-context-native-fields-20261118.md)，
 脚本`portable_context_native_trial.py`，协议`native-fields-v4`，实机前冻结`cf8e7c2d`。
 六格完成，每格一次请求，直接工具字段均合法；关闭unknown、开启恢复与当前指令覆盖均正确。

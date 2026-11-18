@@ -1,0 +1,380 @@
+{
+  "status": "EXPERIMENT_COMPLETE / NOT_PROMOTED",
+  "normal_entry_learning_demonstrated": false,
+  "rows": [
+    {
+      "run": "open-collaboration-v1-first",
+      "mode": "nonstream",
+      "cells": 13,
+      "completed": 13,
+      "generation_requests": 13,
+      "max_accepted_requests": 0,
+      "max_accepted_feedback": 0,
+      "visible_metadata_leaks": 0,
+      "cell_behavior_flags": [
+        {
+          "cell": "seed",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "plan",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "error",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "disabled",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "override",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "revise",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "changed",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "feedback",
+          "correct": null,
+          "attributed": false,
+          "false_learning": null
+        },
+        {
+          "cell": "forget",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "forgotten",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "turn",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "after-turn",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "quoted",
+          "correct": null,
+          "attributed": null,
+          "false_learning": false
+        }
+      ]
+    },
+    {
+      "run": "open-collaboration-v1-first",
+      "mode": "stream",
+      "cells": 13,
+      "completed": 13,
+      "generation_requests": 13,
+      "max_accepted_requests": 0,
+      "max_accepted_feedback": 0,
+      "visible_metadata_leaks": 0,
+      "cell_behavior_flags": [
+        {
+          "cell": "seed",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "plan",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "error",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "disabled",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "override",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "revise",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "changed",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "feedback",
+          "correct": null,
+          "attributed": false,
+          "false_learning": null
+        },
+        {
+          "cell": "forget",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "forgotten",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "turn",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "after-turn",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "quoted",
+          "correct": null,
+          "attributed": null,
+          "false_learning": false
+        }
+      ]
+    },
+    {
+      "run": "open-collaboration-v2-guidance",
+      "mode": "nonstream",
+      "cells": 13,
+      "completed": 13,
+      "generation_requests": 13,
+      "max_accepted_requests": 0,
+      "max_accepted_feedback": 0,
+      "visible_metadata_leaks": 0,
+      "cell_behavior_flags": [
+        {
+          "cell": "seed",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "plan",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "error",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "disabled",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "override",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "revise",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "changed",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "feedback",
+          "correct": null,
+          "attributed": false,
+          "false_learning": null
+        },
+        {
+          "cell": "forget",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "forgotten",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "turn",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "after-turn",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "quoted",
+          "correct": null,
+          "attributed": null,
+          "false_learning": false
+        }
+      ]
+    },
+    {
+      "run": "open-collaboration-v2-guidance",
+      "mode": "stream",
+      "cells": 13,
+      "completed": 13,
+      "generation_requests": 13,
+      "max_accepted_requests": 0,
+      "max_accepted_feedback": 0,
+      "visible_metadata_leaks": 0,
+      "cell_behavior_flags": [
+        {
+          "cell": "seed",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "plan",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "error",
+          "correct": false,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "disabled",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "override",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "revise",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "changed",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "feedback",
+          "correct": null,
+          "attributed": false,
+          "false_learning": null
+        },
+        {
+          "cell": "forget",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "forgotten",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "turn",
+          "correct": null,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "after-turn",
+          "correct": true,
+          "attributed": null,
+          "false_learning": null
+        },
+        {
+          "cell": "quoted",
+          "correct": null,
+          "attributed": null,
+          "false_learning": false
+        }
+      ]
+    }
+  ],
+  "additional_diagnostics": {
+    "v3_final_guidance_seed_accepted": 0,
+    "explicit_remember_seed_accepted": 0,
+    "compatibility_text_seed_accepted": 0,
+    "forced_single_tool_output_updates": 1
+  },
+  "total_generation_requests": 56,
+  "extra_ghost_generations": 0,
+  "stream_reported_usage": "unknown",
+  "limitations": [
+    "synthetic deterministic histories, one model",
+    "same-session behavior may be supplied by history",
+    "absence of false learning without any extraction is not a quality demonstration"
+  ]
+}

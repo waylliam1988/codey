@@ -1,5 +1,9 @@
 # 开放协作学习：冻结协议 v1
 
+收尾：此候选未通过实机提取门，已停止生产接入。实现和脚本保存在
+[`open_collaboration_candidate.patch`](../../tests/manual/ghost_memory_routing/open_collaboration_candidate.patch)，
+结果见[收尾记录](open-collaboration-result-20261118.md)。下文保留各次运行前的冻结内容。
+
 冻结于首次实机调用前。此实验验证同次回答的开放内容学习闭环，不比较 Hebbian、向量或 Hopfield 排序优劣，不声称统计显著性。
 
 - 假设：用户明确提出、可逐字归因的条件式要求，可通过普通 `done` 的可选字段留在现有 Inbox，并影响后续正常 Chat；不用开发者枚举偏好内容，不增加模型请求。
@@ -13,7 +17,9 @@
 - 停止：服务异常、非 done、额外请求立即停止该次轨迹并标 INCOMPLETE；行为或提取失败继续记录后续格以定位传播影响，不能删格或用重跑覆盖。重跑用新目录、标明原因；模型错误不修改生产合同。确定性代码问题修复后，修复前结果仍保留，重跑注明版本。
 - 晋级：受测入口须通过相关 scope、撤回、删除、重建、重启、并发、禁用、故障和流式隐私回归。只报告实测范围；未测模型可靠性、自然语气评价、大规模排序、Research 专用完成合同自动学习不在此实验结论内。
 
-复现：`python -m tests.manual.ghost_memory_routing.open_collaboration_trial --output <全新本地目录>`。
+复现：在可审查的干净 checkout 中先核对并应用归档补丁，再运行
+`python -m tests.manual.ghost_memory_routing.open_collaboration_trial --output <全新本地目录>`。
+补丁复现最后的 v3 实现；v1/v2 的提示差异按下文和本地原始请求审计，不用最后版本覆盖历史数据。
 
 ## 首次失败与 v2 运行前冻结
 
